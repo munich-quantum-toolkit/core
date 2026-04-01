@@ -77,14 +77,20 @@ def AllocOp : QCOOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let hasVerifier = 1;
 }
 
-def DeallocOp : QCOOp<"dealloc", [MemoryEffects<[MemFree]>]> {
-  let summary = "Deallocate a qubit";
+def SinkOp : QCOOp<"sink", [MemoryEffects<[MemFree]>]> {
+  let summary = "Consume a qubit value (end of lifetime)";
   let description = [{
-        Deallocates a qubit, releasing its resources.
+        Consumes a qubit SSA value and marks the end of its lifetime.
+
+        This operation is the canonical "sink" for QCO's linear/value semantics:
+        every qubit value must be consumed exactly once on all paths.
+
+        When converting back to QC (reference semantics), sinks corresponding to
+        static qubits may be erased.
 
         Example:
         ```mlir
-        qco.dealloc %q : !qco.qubit
+        qco.sink %q : !qco.qubit
         ```
     }];
 

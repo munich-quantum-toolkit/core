@@ -395,23 +395,22 @@ struct ConvertQCOAllocOpToJeff final
 };
 
 /**
- * @brief Converts qco.dealloc to jeff.qubit_free_zero
+ * @brief Converts qco.sink to jeff.qubit_free_zero
  *
  * @par Example:
  * ```mlir
- * qco.dealloc %q : !qco.qubit
+ * qco.sink %q : !qco.qubit
  * ```
  * is converted to
  * ```mlir
  * jeff.qubit_free_zero %q : !jeff.qubit
  * ```
  */
-struct ConvertQCODeallocOpToJeff final
-    : StatefulOpConversionPattern<qco::DeallocOp> {
+struct ConvertQCOSinkOpToJeff final : StatefulOpConversionPattern<qco::SinkOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::DeallocOp op, OpAdaptor adaptor,
+  matchAndRewrite(qco::SinkOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.replaceOpWithNewOp<jeff::QubitFreeZeroOp>(op, adaptor.getQubit());
     return success();
@@ -1501,7 +1500,7 @@ protected:
     patterns.add<
         ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
         ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
-        ConvertQCODeallocOpToJeff, ConvertQCOMeasureOpToJeff,
+        ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
         ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff,
         ConvertQCOOneTargetZeroParameterToJeff<qco::IdOp, jeff::IOp, false>,
         ConvertQCOOneTargetZeroParameterToJeff<qco::XOp, jeff::XOp, false>,

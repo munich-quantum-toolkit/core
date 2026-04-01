@@ -515,7 +515,7 @@ struct ConvertJeffQubitAllocOpToQCO final
 };
 
 /**
- * @brief Converts jeff.qubit_free to qco.reset + qco.dealloc
+ * @brief Converts jeff.qubit_free to qco.reset + qco.sink
  *
  * @par Example:
  * ```mlir
@@ -524,7 +524,7 @@ struct ConvertJeffQubitAllocOpToQCO final
  * is converted to
  * ```mlir
  * %q_out = qco.reset %q_in : !qco.qubit
- * qco.dealloc %q_out : !qco.qubit
+ * qco.sink %q_out : !qco.qubit
  * ```
  */
 struct ConvertJeffQubitFreeOpToQCO final
@@ -536,13 +536,13 @@ struct ConvertJeffQubitFreeOpToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto resetOp =
         qco::ResetOp::create(rewriter, op.getLoc(), adaptor.getInQubit());
-    rewriter.replaceOpWithNewOp<qco::DeallocOp>(op, resetOp.getQubitOut());
+    rewriter.replaceOpWithNewOp<qco::SinkOp>(op, resetOp.getQubitOut());
     return success();
   }
 };
 
 /**
- * @brief Converts jeff.qubit_free_zero to qco.dealloc
+ * @brief Converts jeff.qubit_free_zero to qco.sink
  *
  * @par Example:
  * ```mlir
@@ -550,7 +550,7 @@ struct ConvertJeffQubitFreeOpToQCO final
  * ```
  * is converted to
  * ```mlir
- * qco.dealloc %q : !qco.qubit
+ * qco.sink %q : !qco.qubit
  * ```
  */
 struct ConvertJeffQubitFreeZeroOpToQCO final
@@ -560,13 +560,13 @@ struct ConvertJeffQubitFreeZeroOpToQCO final
   LogicalResult
   matchAndRewrite(jeff::QubitFreeZeroOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<qco::DeallocOp>(op, adaptor.getInQubit());
+    rewriter.replaceOpWithNewOp<qco::SinkOp>(op, adaptor.getInQubit());
     return success();
   }
 };
 
 /**
- * @brief Converts jeff.qubit_measure to qco.measure + qco.dealloc
+ * @brief Converts jeff.qubit_measure to qco.measure + qco.sink
  *
  * @par Example:
  * ```mlir
@@ -575,7 +575,7 @@ struct ConvertJeffQubitFreeZeroOpToQCO final
  * is converted to
  * ```mlir
  * %q_out, %result = qco.measure %q_in : !qco.qubit
- * qco.dealloc %q_out : !qco.qubit
+ * qco.sink %q_out : !qco.qubit
  * ```
  */
 struct ConvertJeffQubitMeasureOpToQCO final
@@ -588,7 +588,7 @@ struct ConvertJeffQubitMeasureOpToQCO final
     auto loc = op.getLoc();
     auto measureOp =
         qco::MeasureOp::create(rewriter, loc, adaptor.getInQubit());
-    qco::DeallocOp::create(rewriter, loc, measureOp.getQubitOut());
+    qco::SinkOp::create(rewriter, loc, measureOp.getQubitOut());
     rewriter.replaceOp(op, measureOp.getResult());
     return success();
   }

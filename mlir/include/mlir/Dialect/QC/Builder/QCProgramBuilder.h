@@ -110,7 +110,7 @@ public:
 
   /**
    * @brief Get a static qubit by index
-   * @param index The qubit index (must be non-negative)
+   * @param index The qubit index
    * @return A qubit reference
    *
    * @par Example:
@@ -121,7 +121,7 @@ public:
    * %q0 = qc.static 0 : !qc.qubit
    * ```
    */
-  Value staticQubit(int64_t index);
+  Value staticQubit(uint64_t index);
 
   /**
    * @brief Allocate a qubit register

@@ -196,6 +196,31 @@ INSTANTIATE_TEST_SUITE_P(
             "StaticQubits", nullptr, MQT_NAMED_BUILDER(mlir::qc::staticQubits),
             MQT_NAMED_BUILDER(mlir::qc::staticQubits),
             MQT_NAMED_BUILDER(mlir::qir::staticQubits), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithOps", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithOps), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithParametricOps", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithParametricOps),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithParametricOps),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithParametricOps), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithTwoTargetOps", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithTwoTargetOps),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithTwoTargetOps),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithTwoTargetOps), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithCtrl", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithCtrl),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithCtrl),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithCtrl), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithInv", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithInv),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithInv),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithInv), false},
         CompilerPipelineTestCase{"AllocQubit",
                                  MQT_NAMED_BUILDER(qc::allocQubit), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::emptyQC),
@@ -418,8 +443,9 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(mlir::qc::p),
                                  MQT_NAMED_BUILDER(mlir::qir::p)},
         CompilerPipelineTestCase{
-            "SingleControlledP", MQT_NAMED_BUILDER(qc::singleControlledP),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledP),
+            "SingleControlledP",
+            MQT_NAMED_BUILDER(qc::singleControlledP), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledP),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledP)},
         CompilerPipelineTestCase{
             "MultipleControlledP", MQT_NAMED_BUILDER(qc::multipleControlledP),

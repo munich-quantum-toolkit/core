@@ -104,8 +104,8 @@ template <typename Fn> void walkUnit(Region& region, Fn&& fn) {
         .template Case<MeasureOp>([&](MeasureOp op) {
           qubits.remap(op.getQubitIn(), op.getQubitOut());
         })
-        .template Case<DeallocOp>(
-            [&](DeallocOp op) { qubits.remove(op.getQubit()); });
+        .template Case<SinkOp>(
+            [&](SinkOp op) { qubits.remove(op.getQubit()); });
   }
 }
 } // namespace mlir::qco
