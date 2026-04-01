@@ -61,7 +61,7 @@ public:
   [[nodiscard]] TypedValue<QubitType> getHardwareQubit(std::size_t index) const;
 
   /**
-   * @returns the qubit value assigned to a hardware index.
+   * @returns the hardware index assigned to the given qubit value.
    */
   [[nodiscard]] std::size_t getHardwareIndex(TypedValue<QubitType> q) const;
 

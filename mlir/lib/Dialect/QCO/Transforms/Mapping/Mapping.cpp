@@ -75,8 +75,6 @@ LogicalResult isExecutable(Region& region, const Architecture& arch) {
         const auto i0 = qubits.getHardwareIndex(q0);
         const auto i1 = qubits.getHardwareIndex(q1);
         if (!arch.areAdjacent(i0, i1)) {
-          llvm::dbgs() << "not adjacent: " << i0 << " and " << i1 << '\n';
-          llvm::dbgs() << op->getLoc() << '\n';
           executable = false;
           return WalkResult::interrupt();
         }
