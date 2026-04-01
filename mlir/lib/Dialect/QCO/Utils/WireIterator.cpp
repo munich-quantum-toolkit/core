@@ -24,8 +24,8 @@
 
 namespace mlir::qco {
 mlir::Value WireIterator::qubit() const {
-  // A deallocation doesn't have an OpResult.
-  if (op_ != nullptr && mlir::isa<DeallocOp>(op_)) {
+  // A sink/deallocation doesn't have an OpResult.
+  if (op_ != nullptr && mlir::isa<SinkOp>(op_)) {
     return nullptr;
   }
   return qubit_;
@@ -41,8 +41,8 @@ void WireIterator::forward() {
   assert(qubit_.getNumUses() == 1 && "expected linear typing");
   op_ = *(qubit_.getUsers().begin());
 
-  // A deallocation op defines the end of the qubit wire (dynamic and static).
-  if (mlir::isa<DeallocOp>(op_)) {
+  // A sink op defines the end of the qubit wire (dynamic and static).
+  if (mlir::isa<SinkOp>(op_)) {
     isSentinel_ = true;
     return;
   }
@@ -69,8 +69,9 @@ void WireIterator::backward() {
     return;
   }
 
-  // For deallocations, qubit_ is an OpOperand. Hence, only get the def-op.
-  if (mlir::isa<DeallocOp>(op_)) {
+  // For sinks/deallocations, qubit_ is an OpOperand. Hence, only get the
+  // def-op.
+  if (mlir::isa<SinkOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     return;
   }
