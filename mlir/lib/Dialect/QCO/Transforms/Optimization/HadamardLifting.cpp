@@ -336,6 +336,121 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
       : OpRewritePattern(context) {}
 
   /**
+   * @brief This method swaps two qubits on a gate.
+   *
+   * This method swaps two qubits on a gate. Input and output are exchanged.
+   *
+   * @param gate The gate that the qubits belong to.
+   * @param inputQubit1 The input qubit of the qubit to be exchanged with 2.
+   * @param inputQubit2 The input qubit of the qubit to be exchanged with 1.
+   * @param succeedingOp1 The operation succeeding gate on the corresponding
+   * output of inputQubit1.
+   * @param succeedingOp2 The operation succeeding gate on the corresponding
+   * output of inputQubit2.
+   * @param rewriter The used rewriter.
+   */
+  static void swapQubits(UnitaryOpInterface gate, mlir::Value inputQubit1,
+                         mlir::Value inputQubit2,
+                         mlir::Operation* succeedingOp1,
+                         mlir::Operation* succeedingOp2,
+                         mlir::PatternRewriter& rewriter) {
+    mlir::Value outputQubit1 = gate.getOutputForInput(inputQubit1);
+    mlir::Value outputQubit2 = gate.getOutputForInput(inputQubit2);
+    auto temporary =
+        rewriter.create<IdOp>(gate.getLoc(), gate.getInputTarget(0))
+            .getResult();
+
+    rewriter.replaceUsesWithIf(outputQubit1, temporary,
+                               [&](mlir::OpOperand& operand) {
+                                 return operand.getOwner() == gate ||
+                                        operand.getOwner() == succeedingOp1 ||
+                                        operand.getOwner() == succeedingOp2;
+                               });
+    rewriter.replaceUsesWithIf(outputQubit2, outputQubit1,
+                               [&](mlir::OpOperand& operand) {
+                                 return operand.getOwner() == gate ||
+                                        operand.getOwner() == succeedingOp1 ||
+                                        operand.getOwner() == succeedingOp2;
+                               });
+    rewriter.replaceUsesWithIf(temporary, outputQubit2,
+                               [&](mlir::OpOperand& operand) {
+                                 return operand.getOwner() == gate ||
+                                        operand.getOwner() == succeedingOp1 ||
+                                        operand.getOwner() == succeedingOp2;
+                               });
+
+    rewriter.replaceUsesWithIf(
+        inputQubit1, temporary,
+        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+    rewriter.replaceUsesWithIf(
+        inputQubit2, inputQubit1,
+        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+    rewriter.replaceUsesWithIf(
+        temporary, inputQubit2,
+        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+  }
+
+  /**
+   * @brief This method adds hadamrad gates before a given gate.
+   *
+   * @param gate The gate before which hadamard gates should be applied.
+   * @param inputQubits The input qubits of gate before which hadamard gates
+   * should be applied.
+   * @param rewriter The used rewriter.
+   * @returns One of the created hadamard gates.
+   */
+  static HOp addHadamardGatesBeforeGate(UnitaryOpInterface gate,
+                                        std::vector<mlir::Value> inputQubits,
+                                        mlir::PatternRewriter& rewriter) {
+    HOp newHOP;
+    for (mlir::Value inputQubit : inputQubits) {
+
+      std::vector<mlir::Value> inQubits{inputQubit};
+      std::vector<mlir::Type> outQubits{inputQubit.getType()};
+
+      newHOP = rewriter.create<HOp>(gate->getLoc(), inQubits);
+
+      rewriter.moveOpBefore(newHOP, gate);
+
+      rewriter.replaceUsesWithIf(
+          inputQubit, newHOP.getOutputTarget(0),
+          [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+    }
+    return newHOP;
+  }
+
+  /**
+   * @brief This method adds Hadamard gates after a given gate.
+   *
+   * @param gate The gate after which Hadamard gates should be applied.
+   * @param outputQubits The output qubits of gate after which Hadamard gates
+   * should be applied.
+   * @param rewriter The used rewriter.
+   * @returns One of the created hadamard gates.
+   */
+  static HOp addHadamardGatesAfterGate(UnitaryOpInterface gate,
+                                       std::vector<mlir::Value> outputQubits,
+                                       mlir::PatternRewriter& rewriter) {
+    HOp newHOp;
+    for (mlir::Value outputQubit : outputQubits) {
+
+      std::vector<mlir::Value> inQubit{outputQubit};
+      std::vector<mlir::Type> outQubit{outputQubit.getType()};
+
+      newHOp = rewriter.create<HOp>(gate->getLoc(), inQubit);
+
+      rewriter.moveOpAfter(newHOp, gate);
+
+      rewriter.replaceUsesWithIf(
+          newHOp.getInputTarget(0), newHOp.getOutputTarget(0),
+          [&](mlir::OpOperand& operand) {
+            return operand.getOwner() != gate && operand.getOwner() != newHOp;
+          });
+    }
+    return newHOp;
+  }
+
+  /**
    * @brief This pattern remove an H gate between a CNOT and a measurement.
    *
    * @param op The operation to match (only uncontrolled Hadamard gates trigger
@@ -346,7 +461,48 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    return mlir::failure();
+    // A Hadamard gate needs to be in front of the measurement
+    const auto qubitInMeasurement = op.getQubitIn();
+    auto* predecessor = qubitInMeasurement.getDefiningOp();
+    auto hadamardGate = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
+    if (!hadamardGate || hadamardGate.getNumTargets() != 1 ||
+        hadamardGate->getName().stripDialect().str() != "h") {
+      return failure();
+    }
+
+    // The Hadamard gate must be successor of the target of a CNOT
+    auto inQubitHadamard = hadamardGate.getInputQubit(0);
+    predecessor = inQubitHadamard.getDefiningOp();
+    auto cnotGate = mlir::dyn_cast<CtrlOp>(predecessor);
+    if (!cnotGate || cnotGate.getNumTargets() != 1 ||
+        cnotGate.getBodyUnitary()->getName().stripDialect().str() != "x" ||
+        cnotGate.getOutputTarget(0) != inQubitHadamard) {
+      return failure();
+    }
+
+    // Remove the Hadamard gate
+    for (auto outQubit : hadamardGate.getOutputQubits()) {
+      rewriter.replaceAllUsesWith(outQubit,
+                                  hadamardGate.getInputForOutput(outQubit));
+    }
+    rewriter.eraseOp(hadamardGate);
+
+    // Add Hadamard gates to the other in and output gates of cnot
+    std::vector<mlir::Value> relevantInputQubitsForHadamard{
+        cnotGate.getInputTarget(0), cnotGate.getInputControl(0)};
+    HOp newHOPBefore = addHadamardGatesBeforeGate(
+        cnotGate, relevantInputQubitsForHadamard, rewriter);
+
+    std::vector<mlir::Value> relevantOutputQubitsForHadamard{
+        cnotGate.getOutputForInput(cnotGate.getInputControl(0))};
+    HOp newHOPAfterCtrl = addHadamardGatesAfterGate(
+        cnotGate, relevantOutputQubitsForHadamard, rewriter);
+
+    // Flip CNOT targets and ctrl
+    swapQubits(cnotGate, cnotGate.getInputControl(0),
+               cnotGate.getInputTarget(0), op, newHOPAfterCtrl, rewriter);
+
+    return success();
   }
 };
 

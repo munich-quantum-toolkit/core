@@ -380,11 +380,6 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
   runCanonicalizationPasses(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  // auto qco = captureIR(module.get());
-  // std::cout << qco;
-  // qco = captureIR(reference.get());
-  // std::cout << qco;
-
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
@@ -409,11 +404,11 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   auto qRef = referenceBuilder.allocQubitRegister(2);
   auto bRef = referenceBuilder.allocClassicalBitRegister(1);
   qRef[0] = referenceBuilder.s(qRef[0]);
-  qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
+  qRef[0] = referenceBuilder.h(qRef[0]);
   auto qubitPairRef = referenceBuilder.cx(qRef[1], qRef[0]);
-  referenceBuilder.h(qubitPairRef.first);
-  referenceBuilder.measure(qubitPairRef.second, bRef[0]);
+  referenceBuilder.h(qubitPairRef.second);
+  referenceBuilder.measure(qubitPairRef.first, bRef[0]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -444,11 +439,11 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
   auto qubitPairRangeRef = referenceBuilder.ctrl(
-      {qRef[1], qRef[2]}, {qRef[0]}, [&](mlir::ValueRange target) {
+      {qRef[0], qRef[2]}, {qRef[1]}, [&](mlir::ValueRange target) {
         return llvm::SmallVector<mlir::Value>{referenceBuilder.x(target[0])};
       });
-  referenceBuilder.h(qubitPairRangeRef.first[0]);
-  referenceBuilder.measure(qubitPairRangeRef.second[0], bRef[0]);
+  referenceBuilder.h(qubitPairRangeRef.second[0]);
+  referenceBuilder.measure(qubitPairRangeRef.first[0], bRef[0]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -493,6 +488,11 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   runCanonicalizationPasses(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
+
+  // auto qco = captureIR(module.get());
+  // std::cout << qco;
+  // qco = captureIR(reference.get());
+  // std::cout << qco;
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
