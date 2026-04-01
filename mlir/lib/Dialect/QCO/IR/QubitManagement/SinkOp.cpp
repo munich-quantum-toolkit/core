@@ -21,7 +21,7 @@ using namespace mlir::qco;
 namespace {
 
 /**
- * @brief Remove matching allocation/static and sink pairs without operations
+ * @brief Remove matching alloc/static and sink pairs without operations
  * between them.
  */
 struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
