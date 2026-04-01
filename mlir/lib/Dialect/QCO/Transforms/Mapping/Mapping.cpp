@@ -63,7 +63,7 @@ namespace mlir::qco {
 
 LogicalResult isExecutable(Region& region, const Architecture& arch) {
   bool executable = true;
-  walkUnit(region, [&](Operation* op, Qubits& qubits) {
+  walkUnit(region, [&](Operation* op, const Qubits& qubits) {
     if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
       if (isa<BarrierOp>(u)) {
         return WalkResult::advance();
@@ -1075,8 +1075,7 @@ private:
     const auto advFront = [](WireIterator& it) {
       auto next = std::next(it);
       while (true) {
-        if (isa<DeallocOp>(next.operation()) ||
-            isa<MeasureOp>(next.operation()) ||
+        if (isa<SinkOp>(next.operation()) || isa<MeasureOp>(next.operation()) ||
             isa<BarrierOp>(next.operation())) {
           break;
         }
