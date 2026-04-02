@@ -176,7 +176,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultiplePauliGate) {
  * @brief Test: Checks if Hadamard gates are lifted over preceding and not over
  * succeeding Pauli gates.
  */
-TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPreceedingPauliGate) {
+TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPrecedingPauliGate) {
   auto q = programBuilder.allocQubitRegister(2);
   q[0] = programBuilder.x(q[0]);
   q[0] = programBuilder.h(q[0]);
