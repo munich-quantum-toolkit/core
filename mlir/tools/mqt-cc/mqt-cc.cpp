@@ -73,8 +73,8 @@ static cl::opt<bool>
 
 static cl::opt<bool>
     hadamardLifting("hadamard-lifting",
-                          cl::desc("Apply Hadamard lifting during optimization"),
-                          cl::init(false));
+                    cl::desc("Apply Hadamard lifting during optimization"),
+                    cl::init(false));
 
 /**
  * @brief Load and parse a .qasm file
