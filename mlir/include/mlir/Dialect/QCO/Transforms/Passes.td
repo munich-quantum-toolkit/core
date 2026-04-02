@@ -78,7 +78,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
 def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "This pass attempts to lift Hadamards as much as possible by flipping them with Pauli gates.";
+  let summary = "This pass attempts to lift Hadamards as much as possible by "
+                "flipping them with Pauli gates.";
   let description = [{
     This pass lifts hadamards away from the measurements in order to apply lift-measurements more effectively. It uses
     the following commutation rules:
@@ -95,7 +96,7 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
 
     If the Hadamard and Pauli gates are controlled, they are only lifted if both gates are controlled by exactly the
     same qubits. One exception to this are the controlled Pauli Z gates. For these gates, controls and targets are
-    interchangable. Therefore, tranformation routines as follows are possible and applied:
+    interchangeable. Therefore, transformation routines as follows are possible and applied:
         ┌───┐
         ┤ Z ├──■──    ──■────■──    ──■────■──
         └─┬─┘┌─┴─┐ => ┌─┴─┐┌─┴─┐ => ┌─┴─┐┌─┴─┐
