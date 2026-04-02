@@ -8,12 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "../../../../../../include/mqt-core/ir/operations/OpType.hpp"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Pass/Pass.h>
@@ -42,7 +39,7 @@ bool containRangesOfSameElements(const std::vector<Value>& range1,
   bool result = true;
   result &= range1.size() == range2.size();
   for (auto element : range1) {
-    result &= std::find(range2.begin(), range2.end(), element) != range2.end();
+    result &= std::ranges::find(range2, element) != range2.end();
   }
   return result;
 }
@@ -56,9 +53,9 @@ bool containRangesOfSameElements(const std::vector<Value>& range1,
  * a ctrl at the hadamard and vice versa, we can change the target of Pauli Z to
  * the Hadamard's. This is done in this pattern.
  */
-struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
+struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
 
-  explicit AdaptCtrldPauliZToLiftingPattern(mlir::MLIRContext* context)
+  explicit AdaptCtrldPauliZToLiftingPattern(MLIRContext* context)
       : OpRewritePattern(context) {}
 
   /**
@@ -76,10 +73,10 @@ struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
    * False otherwise.
    */
   static bool areTargetsControlsAtTheOtherGates(CtrlOp gate1, CtrlOp gate2) {
-    Value targetQubitGate2 = gate2.getInputTarget(0);
-    Value targetQubitGate1 = gate1.getOutputTarget(0);
-    auto inCtrlGate2 = gate2.getControlsIn();
-    auto outCtrlGate1 = gate1.getControlsOut();
+    const Value targetQubitGate2 = gate2.getInputTarget(0);
+    const Value targetQubitGate1 = gate1.getOutputTarget(0);
+    const auto inCtrlGate2 = gate2.getControlsIn();
+    const auto outCtrlGate1 = gate1.getControlsOut();
 
     return std::find(inCtrlGate2.begin(), inCtrlGate2.end(),
                      targetQubitGate1) != inCtrlGate2.end() &&
@@ -100,20 +97,21 @@ struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
    * @param qubit2 Second qubit, exchanged with first.
    * @param rewriter The rewriter.
    */
-  static void exchangeTwoQubitsAtGate(UnitaryOpInterface gate, Value qubit1,
-                                      Value qubit2, PatternRewriter& rewriter) {
+  static void exchangeTwoQubitsAtGate(UnitaryOpInterface gate,
+                                      const Value qubit1, const Value qubit2,
+                                      PatternRewriter& rewriter) {
     auto temporary =
         rewriter.create<IdOp>(gate.getLoc(), gate.getInputTarget(0))
             .getResult();
     rewriter.replaceUsesWithIf(
         qubit1, temporary,
-        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
-    rewriter.replaceUsesWithIf(qubit2, qubit1, [&](mlir::OpOperand& operand) {
+        [&](const OpOperand& operand) { return operand.getOwner() == gate; });
+    rewriter.replaceUsesWithIf(qubit2, qubit1, [&](const OpOperand& operand) {
       return operand.getOwner() == gate;
     });
     rewriter.replaceUsesWithIf(
         temporary, qubit2,
-        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+        [&](const OpOperand& operand) { return operand.getOwner() == gate; });
   }
 
   /**
@@ -147,10 +145,10 @@ struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    std::vector<Value> outputsOp(op.getOutputQubits().begin(),
-                                 op.getOutputQubits().end());
-    std::vector<Value> inputsH(hadamardGate.getInputQubits().begin(),
-                               hadamardGate.getInputQubits().end());
+    const std::vector<Value> outputsOp(op.getOutputQubits().begin(),
+                                       op.getOutputQubits().end());
+    const std::vector<Value> inputsH(hadamardGate.getInputQubits().begin(),
+                                     hadamardGate.getInputQubits().end());
     if (!containRangesOfSameElements(outputsOp, inputsH)) {
       return failure();
     }
@@ -162,14 +160,16 @@ struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
     }
 
     // Put the Z target to the same qubit as the hadamard target is
-    Value originalInputTargetQubitZ = op.getInputTarget(0);
-    Value targetInputQubitHadamard = hadamardGate.getInputTarget(0);
-    Value newTargetInputQubitZ = op.getInputForOutput(targetInputQubitHadamard);
+    const Value originalInputTargetQubitZ = op.getInputTarget(0);
+    const Value targetInputQubitHadamard = hadamardGate.getInputTarget(0);
+    const Value newTargetInputQubitZ =
+        op.getInputForOutput(targetInputQubitHadamard);
 
     exchangeTwoQubitsAtGate(op, originalInputTargetQubitZ, newTargetInputQubitZ,
                             rewriter);
 
-    Value newTargetInputQubitH = op.getOutputForInput(newTargetInputQubitZ);
+    const Value newTargetInputQubitH =
+        op.getOutputForInput(newTargetInputQubitZ);
 
     exchangeTwoQubitsAtGate(hadamardGate, targetInputQubitHadamard,
                             newTargetInputQubitH, rewriter);
@@ -205,9 +205,9 @@ struct LiftHadamardsAbovePauliGatesPattern final
    */
   static bool areControlsControlledBySameQubits(CtrlOp firstCtrl,
                                                 CtrlOp secondCtrl) {
-    std::vector<Value> controlOutputsFirstGate(
+    const std::vector<Value> controlOutputsFirstGate(
         firstCtrl.getControlsOut().begin(), firstCtrl.getControlsOut().end());
-    std::vector<Value> controlInputsSecondGate(
+    const std::vector<Value> controlInputsSecondGate(
         secondCtrl.getControlsIn().begin(), secondCtrl.getControlsIn().end());
     return containRangesOfSameElements(controlOutputsFirstGate,
                                        controlInputsSecondGate);
@@ -330,9 +330,9 @@ struct LiftHadamardsAbovePauliGatesPattern final
  * and ctrl involved in the transformation get hadamard gates assigned.
  * For now, the involved ctrl to be flipped with the target is chosen randomly.
  */
-struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
+struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
 
-  explicit LiftHadamardAboveCNOTPattern(mlir::MLIRContext* context)
+  explicit LiftHadamardAboveCNOTPattern(MLIRContext* context)
       : OpRewritePattern(context) {}
 
   /**
@@ -349,31 +349,31 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
    * output of inputQubit2.
    * @param rewriter The used rewriter.
    */
-  static void swapQubits(UnitaryOpInterface gate, mlir::Value inputQubit1,
-                         mlir::Value inputQubit2,
-                         mlir::Operation* succeedingOp1,
-                         mlir::Operation* succeedingOp2,
-                         mlir::PatternRewriter& rewriter) {
-    mlir::Value outputQubit1 = gate.getOutputForInput(inputQubit1);
-    mlir::Value outputQubit2 = gate.getOutputForInput(inputQubit2);
+  static void swapQubits(UnitaryOpInterface gate, const Value inputQubit1,
+                         const Value inputQubit2,
+                         const Operation* succeedingOp1,
+                         const Operation* succeedingOp2,
+                         PatternRewriter& rewriter) {
+    const Value outputQubit1 = gate.getOutputForInput(inputQubit1);
+    const Value outputQubit2 = gate.getOutputForInput(inputQubit2);
     auto temporary =
         rewriter.create<IdOp>(gate.getLoc(), gate.getInputTarget(0))
             .getResult();
 
     rewriter.replaceUsesWithIf(outputQubit1, temporary,
-                               [&](mlir::OpOperand& operand) {
+                               [&](const OpOperand& operand) {
                                  return operand.getOwner() == gate ||
                                         operand.getOwner() == succeedingOp1 ||
                                         operand.getOwner() == succeedingOp2;
                                });
     rewriter.replaceUsesWithIf(outputQubit2, outputQubit1,
-                               [&](mlir::OpOperand& operand) {
+                               [&](const OpOperand& operand) {
                                  return operand.getOwner() == gate ||
                                         operand.getOwner() == succeedingOp1 ||
                                         operand.getOwner() == succeedingOp2;
                                });
     rewriter.replaceUsesWithIf(temporary, outputQubit2,
-                               [&](mlir::OpOperand& operand) {
+                               [&](const OpOperand& operand) {
                                  return operand.getOwner() == gate ||
                                         operand.getOwner() == succeedingOp1 ||
                                         operand.getOwner() == succeedingOp2;
@@ -381,13 +381,13 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
 
     rewriter.replaceUsesWithIf(
         inputQubit1, temporary,
-        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+        [&](const OpOperand& operand) { return operand.getOwner() == gate; });
     rewriter.replaceUsesWithIf(
         inputQubit2, inputQubit1,
-        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+        [&](const OpOperand& operand) { return operand.getOwner() == gate; });
     rewriter.replaceUsesWithIf(
         temporary, inputQubit2,
-        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+        [&](const OpOperand& operand) { return operand.getOwner() == gate; });
   }
 
   /**
@@ -400,13 +400,13 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
    * @returns One of the created hadamard gates.
    */
   static HOp addHadamardGatesBeforeGate(UnitaryOpInterface gate,
-                                        std::vector<mlir::Value> inputQubits,
-                                        mlir::PatternRewriter& rewriter) {
+                                        std::vector<Value> inputQubits,
+                                        PatternRewriter& rewriter) {
     HOp newHOP;
-    for (mlir::Value inputQubit : inputQubits) {
+    for (Value inputQubit : inputQubits) {
 
-      std::vector<mlir::Value> inQubits{inputQubit};
-      std::vector<mlir::Type> outQubits{inputQubit.getType()};
+      std::vector<Value> inQubits{inputQubit};
+      std::vector<Type> outQubits{inputQubit.getType()};
 
       newHOP = rewriter.create<HOp>(gate->getLoc(), inQubits);
 
@@ -414,7 +414,7 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
 
       rewriter.replaceUsesWithIf(
           inputQubit, newHOP.getOutputTarget(0),
-          [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+          [&](const OpOperand& operand) { return operand.getOwner() == gate; });
     }
     return newHOP;
   }
@@ -429,13 +429,13 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
    * @returns One of the created hadamard gates.
    */
   static HOp addHadamardGatesAfterGate(UnitaryOpInterface gate,
-                                       std::vector<mlir::Value> outputQubits,
-                                       mlir::PatternRewriter& rewriter) {
+                                       const std::vector<Value>& outputQubits,
+                                       PatternRewriter& rewriter) {
     HOp newHOp;
-    for (mlir::Value outputQubit : outputQubits) {
+    for (Value outputQubit : outputQubits) {
 
-      std::vector<mlir::Value> inQubit{outputQubit};
-      std::vector<mlir::Type> outQubit{outputQubit.getType()};
+      std::vector<Value> inQubit{outputQubit};
+      std::vector<Type> outQubit{outputQubit.getType()};
 
       newHOp = rewriter.create<HOp>(gate->getLoc(), inQubit);
 
@@ -443,7 +443,7 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
 
       rewriter.replaceUsesWithIf(
           newHOp.getInputTarget(0), newHOp.getOutputTarget(0),
-          [&](mlir::OpOperand& operand) {
+          [&](const OpOperand& operand) {
             return operand.getOwner() != gate && operand.getOwner() != newHOp;
           });
     }
@@ -458,9 +458,8 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
    * @param rewriter Pattern rewriter for applying transformations
    * @return success() if circuit was changed, failure() otherwise
    */
-  mlir::LogicalResult
-  matchAndRewrite(MeasureOp op,
-                  mlir::PatternRewriter& rewriter) const override {
+  LogicalResult matchAndRewrite(MeasureOp op,
+                                PatternRewriter& rewriter) const override {
     // A Hadamard gate needs to be in front of the measurement
     const auto qubitInMeasurement = op.getQubitIn();
     auto* predecessor = qubitInMeasurement.getDefiningOp();
@@ -488,12 +487,12 @@ struct LiftHadamardAboveCNOTPattern final : mlir::OpRewritePattern<MeasureOp> {
     rewriter.eraseOp(hadamardGate);
 
     // Add Hadamard gates to the other in and output gates of cnot
-    std::vector<mlir::Value> relevantInputQubitsForHadamard{
+    const std::vector<Value> relevantInputQubitsForHadamard{
         cnotGate.getInputTarget(0), cnotGate.getInputControl(0)};
-    HOp newHOPBefore = addHadamardGatesBeforeGate(
-        cnotGate, relevantInputQubitsForHadamard, rewriter);
+    addHadamardGatesBeforeGate(cnotGate, relevantInputQubitsForHadamard,
+                               rewriter);
 
-    std::vector<mlir::Value> relevantOutputQubitsForHadamard{
+    const std::vector<Value> relevantOutputQubitsForHadamard{
         cnotGate.getOutputForInput(cnotGate.getInputControl(0))};
     HOp newHOPAfterCtrl = addHadamardGatesAfterGate(
         cnotGate, relevantOutputQubitsForHadamard, rewriter);
@@ -515,7 +514,7 @@ struct HadamardLifting final : impl::HadamardLiftingBase<HadamardLifting> {
 
 protected:
   void runOnOperation() override {
-    auto op = getOperation();
+    const auto op = getOperation();
     auto* ctx = &getContext();
 
     // Define the set of patterns to use.
