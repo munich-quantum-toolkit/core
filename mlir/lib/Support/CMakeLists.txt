@@ -23,7 +23,8 @@ add_mlir_library(
   MLIRTransformUtils
   MLIRLLVMDialect
   MLIRFuncDialect
-  MLIRArithDialect)
+  MLIRArithDialect
+  MLIRQTensorDialect)
 
 mqt_mlir_target_use_project_options(MLIRSupportMQT)
 
