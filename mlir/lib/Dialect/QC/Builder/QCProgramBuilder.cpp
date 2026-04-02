@@ -96,24 +96,18 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  auto qubitType = QubitType::get(ctx);
-  auto memrefType = mlir::MemRefType::get({size}, qubitType);
+  auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
   auto memref = memref::AllocOp::create(*this, memrefType);
+  allocatedMemrefs.insert(memref);
 
   llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
-
   for (int64_t i = 0; i < size; ++i) {
-    auto index = arith::ConstantOp::create(*this, getIndexAttr(i));
+    auto index = arith::ConstantIndexOp::create(*this, i);
     auto load = memref::LoadOp::create(*this, memref, index.getResult());
     const auto& qubit = qubits.emplace_back(load.getResult());
-    // Track the allocated qubit for automatic deallocation
     allocatedQubits.insert(qubit);
   }
-
-  allocatedMemrefs.insert(memref);
-
-  // TODO: Return register
   return qubits;
 }
 
@@ -498,42 +492,16 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  llvm::SmallVector<Value> freeQubits;
   for (auto qubit : allocatedQubits) {
     if (!llvm::isa<memref::LoadOp>(qubit.getDefiningOp())) {
-      freeQubits.emplace_back(qubit);
+      DeallocOp::create(*this, qubit);
     }
   }
+  allocatedQubits.clear();
 
-  auto blockOrderComparator = [](Value a, Value b) {
-    auto* opA = a.getDefiningOp();
-    auto* opB = b.getDefiningOp();
-    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
-    }
-    return opA->isBeforeInBlock(opB);
-  };
-
-  // Automatically deallocate all still-allocated qubits
-  // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(freeQubits.begin(), freeQubits.end());
-  llvm::sort(sortedQubits, blockOrderComparator);
-
-  for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, qubit);
-  }
-
-  // Automatically deallocate all still-allocated memrefs
-  // Sort memrefs for deterministic output
-  llvm::SmallVector<Value> sortedMemrefs(allocatedMemrefs.begin(),
-                                         allocatedMemrefs.end());
-  llvm::sort(sortedMemrefs, blockOrderComparator);
-
-  for (auto memref : sortedMemrefs) {
+  for (auto memref : allocatedMemrefs) {
     memref::DeallocOp::create(*this, memref);
   }
-
-  allocatedQubits.clear();
   allocatedMemrefs.clear();
 
   // Create constant 0 for successful exit code
