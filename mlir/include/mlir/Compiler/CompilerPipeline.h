@@ -115,8 +115,8 @@ private:
    * @brief Add canonicalization and cleanup passes
    *
    * @details
-   * Always adds the standard MLIR canonicalization pass followed by dead
-   * value removal.
+   * Always adds the standard MLIR canonicalization pass followed by common
+   * sub-expression elimination and dead value removal.
    */
   static void addCleanupPasses(PassManager& pm);
 
