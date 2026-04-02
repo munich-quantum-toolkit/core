@@ -269,15 +269,15 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfDifferentControls) {
  */
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfGateBetweenControls) {
   auto q = programBuilder.allocQubitRegister(2);
-  auto qubitPair = programBuilder.cz(q[1], q[0]);
-  q[1] = programBuilder.s(qubitPair.first);
-  programBuilder.ch(q[1], qubitPair.second);
+  auto [q1, q2] = programBuilder.cz(q[1], q[0]);
+  q[1] = programBuilder.s(q1);
+  programBuilder.ch(q[1], q2);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
-  auto qubitPairRef = referenceBuilder.cz(qRef[1], qRef[0]);
-  qRef[1] = referenceBuilder.s(qubitPairRef.first);
-  referenceBuilder.ch(qRef[1], qubitPairRef.second);
+  auto [q1Ref, q2Ref] = referenceBuilder.cz(qRef[1], qRef[0]);
+  qRef[1] = referenceBuilder.s(q1Ref);
+  referenceBuilder.ch(qRef[1], q2Ref);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -294,19 +294,19 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfGateBetweenControls) {
  */
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfSomeDifferentControls) {
   auto q = programBuilder.allocQubitRegister(3);
-  auto qubitPairRange =
-      programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{programBuilder.z(target[0])};
+  auto [q12, q0] =
+      programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](const ValueRange target) {
+        return SmallVector<Value>{programBuilder.z(target[0])};
       });
-  programBuilder.ch(qubitPairRange.first[0], qubitPairRange.second[0]);
+  programBuilder.ch(q12[0], q0[0]);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
-  auto qubitPairRangeRef = referenceBuilder.ctrl(
-      {qRef[1], qRef[2]}, {qRef[0]}, [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{referenceBuilder.z(target[0])};
+  auto [q12Ref, q0Ref] = referenceBuilder.ctrl(
+      {qRef[1], qRef[2]}, {qRef[0]}, [&](const ValueRange target) {
+        return SmallVector<Value>{referenceBuilder.z(target[0])};
       });
-  referenceBuilder.ch(qubitPairRangeRef.first[0], qubitPairRangeRef.second[0]);
+  referenceBuilder.ch(q12Ref[0], q0Ref[0]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -325,25 +325,25 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
   auto q = programBuilder.allocQubitRegister(3);
   q[0] = programBuilder.s(q[0]);
   auto qubitPairRange =
-      programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{programBuilder.z(target[0])};
+      programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](const ValueRange target) {
+        return SmallVector<Value>{programBuilder.z(target[0])};
       });
   qubitPairRange = programBuilder.ctrl(
       {qubitPairRange.second[0], qubitPairRange.first[1]},
-      {qubitPairRange.first[0]}, [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{programBuilder.h(target[0])};
+      {qubitPairRange.first[0]}, [&](const ValueRange target) {
+        return SmallVector<Value>{programBuilder.h(target[0])};
       });
   q[0] = programBuilder.s(qubitPairRange.first[0]);
   auto qubitPair = programBuilder.cz(qubitPairRange.second[0], q[0]);
   qubitPairRange = programBuilder.ctrl(
       {qubitPairRange.first[1], qubitPair.second}, {qubitPair.first},
-      [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{programBuilder.h(target[0])};
+      [&](const ValueRange target) {
+        return SmallVector<Value>{programBuilder.h(target[0])};
       });
   qubitPairRange = programBuilder.ctrl(
       qubitPairRange.first, qubitPairRange.second,
-      [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{programBuilder.z(target[0])};
+      [&](const ValueRange target) {
+        return SmallVector<Value>{programBuilder.z(target[0])};
       });
   programBuilder.cz(qubitPairRange.second[0], qubitPairRange.first[0]);
   module = programBuilder.finalize();
@@ -351,25 +351,25 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
   auto qRef = referenceBuilder.allocQubitRegister(3);
   qRef[0] = referenceBuilder.s(qRef[0]);
   auto qubitPairRangeRef = referenceBuilder.ctrl(
-      {qRef[0], qRef[2]}, {qRef[1]}, [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{referenceBuilder.h(target[0])};
+      {qRef[0], qRef[2]}, {qRef[1]}, [&](const ValueRange target) {
+        return SmallVector<Value>{referenceBuilder.h(target[0])};
       });
   qubitPairRangeRef = referenceBuilder.ctrl(
       qubitPairRangeRef.first, qubitPairRangeRef.second,
-      [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{referenceBuilder.x(target[0])};
+      [&](const ValueRange target) {
+        return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
   qRef[0] = referenceBuilder.s(qubitPairRangeRef.first[0]);
   auto qubitPairRef = referenceBuilder.cz(qubitPairRangeRef.second[0], qRef[0]);
   qubitPairRangeRef = referenceBuilder.ctrl(
       {qubitPairRangeRef.first[1], qubitPairRef.second}, {qubitPairRef.first},
-      [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{referenceBuilder.h(target[0])};
+      [&](const ValueRange target) {
+        return SmallVector<Value>{referenceBuilder.h(target[0])};
       });
   qubitPairRangeRef = referenceBuilder.ctrl(
       qubitPairRangeRef.first, qubitPairRangeRef.second,
-      [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{referenceBuilder.z(target[0])};
+      [&](const ValueRange target) {
+        return SmallVector<Value>{referenceBuilder.z(target[0])};
       });
   referenceBuilder.cz(qubitPairRangeRef.second[0], qubitPairRangeRef.first[0]);
   reference = referenceBuilder.finalize();
@@ -392,21 +392,21 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   auto q = programBuilder.allocQubitRegister(2);
-  auto b = programBuilder.allocClassicalBitRegister(1);
+  const auto b = programBuilder.allocClassicalBitRegister(1);
   q[0] = programBuilder.s(q[0]);
-  auto qubitPair = programBuilder.cx(q[0], q[1]);
-  q[1] = programBuilder.h(qubitPair.second);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  q[1] = programBuilder.h(q1);
   programBuilder.measure(q[1], b[0]);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
-  auto bRef = referenceBuilder.allocClassicalBitRegister(1);
+  const auto bRef = referenceBuilder.allocClassicalBitRegister(1);
   qRef[0] = referenceBuilder.s(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
   qRef[0] = referenceBuilder.h(qRef[0]);
-  auto qubitPairRef = referenceBuilder.cx(qRef[1], qRef[0]);
-  referenceBuilder.h(qubitPairRef.second);
-  referenceBuilder.measure(qubitPairRef.first, bRef[0]);
+  auto [q1Ref, q0Ref] = referenceBuilder.cx(qRef[1], qRef[0]);
+  referenceBuilder.h(q0Ref);
+  referenceBuilder.measure(q1Ref, bRef[0]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -423,25 +423,25 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   auto q = programBuilder.allocQubitRegister(3);
-  auto b = programBuilder.allocClassicalBitRegister(1);
-  auto qubitPairRange =
-      programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{programBuilder.x(target[0])};
+  const auto b = programBuilder.allocClassicalBitRegister(1);
+  auto [q12, q0] =
+      programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](const ValueRange target) {
+        return SmallVector<Value>{programBuilder.x(target[0])};
       });
-  q[1] = programBuilder.h(qubitPairRange.second[0]);
+  q[1] = programBuilder.h(q0[0]);
   programBuilder.measure(q[1], b[0]);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
-  auto bRef = referenceBuilder.allocClassicalBitRegister(1);
+  const auto bRef = referenceBuilder.allocClassicalBitRegister(1);
   qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
-  auto qubitPairRangeRef = referenceBuilder.ctrl(
-      {qRef[0], qRef[2]}, {qRef[1]}, [&](mlir::ValueRange target) {
-        return llvm::SmallVector<mlir::Value>{referenceBuilder.x(target[0])};
+  auto [q02Ref, q1Ref] = referenceBuilder.ctrl(
+      {qRef[0], qRef[2]}, {qRef[1]}, [&](const ValueRange target) {
+        return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
-  referenceBuilder.h(qubitPairRangeRef.second[0]);
-  referenceBuilder.measure(qubitPairRangeRef.first[0], bRef[0]);
+  referenceBuilder.h(q1Ref[0]);
+  referenceBuilder.measure(q02Ref[0], bRef[0]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -458,26 +458,26 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
  */
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   auto q = programBuilder.allocQubitRegister(6);
-  auto b = programBuilder.allocClassicalBitRegister(3);
+  const auto b = programBuilder.allocClassicalBitRegister(3);
   programBuilder.cx(q[1], q[0]);
-  auto qubitPairOne = programBuilder.cx(q[3], q[2]);
-  programBuilder.measure(qubitPairOne.first, b[0]);
-  auto qubitPairTwo = programBuilder.cx(q[5], q[4]);
-  q[4] = programBuilder.h(qubitPairTwo.second);
-  q[5] = programBuilder.h(qubitPairTwo.first);
+  auto [q3, q2] = programBuilder.cx(q[3], q[2]);
+  programBuilder.measure(q3, b[0]);
+  auto [q5, q4] = programBuilder.cx(q[5], q[4]);
+  q[4] = programBuilder.h(q4);
+  q[5] = programBuilder.h(q5);
   q[4] = programBuilder.s(q[4]);
   programBuilder.measure(q[4], b[1]);
   programBuilder.measure(q[5], b[2]);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(6);
-  auto bRef = referenceBuilder.allocClassicalBitRegister(3);
+  const auto bRef = referenceBuilder.allocClassicalBitRegister(3);
   referenceBuilder.cx(qRef[1], qRef[0]);
-  auto qubitPairOneRef = referenceBuilder.cx(qRef[3], qRef[2]);
-  referenceBuilder.measure(qubitPairOneRef.first, bRef[0]);
-  auto qubitPairTwoRef = referenceBuilder.cx(qRef[5], qRef[4]);
-  qRef[4] = referenceBuilder.h(qubitPairTwoRef.second);
-  qRef[5] = referenceBuilder.h(qubitPairTwoRef.first);
+  auto [q3Ref, q2Ref] = referenceBuilder.cx(qRef[3], qRef[2]);
+  referenceBuilder.measure(q3Ref, bRef[0]);
+  auto [q5Ref, q4Ref] = referenceBuilder.cx(qRef[5], qRef[4]);
+  qRef[4] = referenceBuilder.h(q4Ref);
+  qRef[5] = referenceBuilder.h(q5Ref);
   qRef[4] = referenceBuilder.s(qRef[4]);
   referenceBuilder.measure(qRef[4], bRef[1]);
   referenceBuilder.measure(qRef[5], bRef[2]);
