@@ -122,12 +122,6 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
      Afterwards, the measurement lifting routine could transform the CNOT into a classically controlled Pauli X.
 
   }];
-  let statistics = [Statistic<"numPauliZTargetChange", "num-pauli-z-target-change",
-                              "The number of times the target qubit of controlled Pauli Z gates was changed.">,
-                    Statistic<"numHadamardLiftings", "num-hadamard-liftings",
-                              "The number of times Hadamard gates were lifted in front of Pauli gates.">,
-                    Statistic<"numMeasurementHadamardCNOTLiftings", "num-measurement-hadamard-cnot-liftings",
-                              "The number of times the target and controls of a CNOT were lifted to put a measurement directly after a control qubit.">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
