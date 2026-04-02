@@ -74,4 +74,21 @@ std::size_t Qubits::getHardwareIndex(TypedValue<QubitType> q) const {
   assert(location == QubitLocation::Hardware);
   return index;
 }
+
+namespace impl {
+std::optional<ArrayRef<WireIterator*>>
+visit(DanglingMap& map, UnitaryOpInterface op, WireIterator* wire) {
+  const auto [it, ins] = map.try_emplace(op, SmallVector{wire});
+  if (!ins) {
+    it->second.emplace_back(wire);
+  }
+
+  // Release iterators whenever all qubits have been seen.
+  if (it->second.size() == op.getNumQubits()) {
+    return it->second;
+  }
+
+  return std::nullopt;
+}
+} // namespace impl
 } // namespace mlir::qco
