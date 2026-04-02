@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
 
+#include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
@@ -184,6 +185,108 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
   return success();
 }
+
+/**
+ * @brief Generic converter for unitary QC ops to QIR calls.
+ *
+ * @details
+ * Many QC gates lower to a QIR runtime call where the callee name depends on
+ * the number of active controls. This helper factors out that boilerplate
+ * without relying on preprocessor macros.
+ *
+ * @par Examples
+ * The examples below illustrate the shapes that were previously documented via
+ * `DEFINE_ONE_TARGET_ZERO_PARAMETER`, `DEFINE_ONE_TARGET_ONE_PARAMETER`, etc.
+ *
+ * @par One target, zero parameters
+ * ```mlir
+ * qc.x %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
+ * ```
+ *
+ * @par One target, one parameter
+ * ```mlir
+ * qc.rx(%theta) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+ * ```
+ *
+ * @par One target, two parameters
+ * ```mlir
+ * qc.r(%theta, %phi) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__r__body(%q, %theta, %phi) : (!llvm.ptr, f64, f64)
+ * -> ()
+ * ```
+ *
+ * @par One target, three parameters
+ * ```mlir
+ * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__u3__body(%q, %theta, %phi, %lambda)
+ *     : (!llvm.ptr, f64, f64, f64) -> ()
+ * ```
+ *
+ * @par Two targets, zero parameters
+ * ```mlir
+ * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
+ * ()
+ * ```
+ *
+ * @par Two targets, one parameter
+ * ```mlir
+ * qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__rxx__body(%q0, %q1, %theta)
+ *     : (!llvm.ptr, !llvm.ptr, f64) -> ()
+ * ```
+ *
+ * @par Two targets, two parameters
+ * ```mlir
+ * qc.xx_plus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__xx_plus_yy__body(%q0, %q1, %theta, %beta)
+ *     : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+ * ```
+ *
+ * @tparam OpType The QC operation type to convert
+ * @tparam NumTargets Number of target qubits for this operation
+ * @tparam NumParams Number of floating-point parameters for this operation
+ * @tparam GetFnName Function that maps numCtrls -> QIR function name
+ */
+template <typename OpType, std::size_t NumTargets, std::size_t NumParams,
+          auto GetFnName>
+struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
+  using StatefulOpConversionPattern<OpType>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(OpType op, typename OpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    const auto inCtrlOp = state.inCtrlOp;
+    const size_t numCtrls = inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;
+    const auto fnName = GetFnName(numCtrls);
+    return convertUnitaryToCallOp(op, adaptor, rewriter, this->getContext(),
+                                  state, fnName, NumTargets, NumParams);
+  }
+};
 
 namespace {
 
@@ -530,295 +633,6 @@ struct ConvertQCGPhaseOpQIR final : StatefulOpConversionPattern<GPhaseOp> {
   }
 };
 
-// OneTargetZeroParameter
-
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL, \
-                                         QIR_NAME)                             \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL %q : !qc.qubit                                           \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q) : (!llvm.ptr) -> ()         \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 1, 0);                      \
-    }                                                                          \
-  };
-
-DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, I, id, i)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, X, x, x)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, Y, y, y)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, Z, z, z)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, H, h, h)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, S, s, s)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, SDG, sdg, sdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, T, t, t)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, TDG, tdg, tdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, SX, sx, sx)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, SXDG, sxdg, sxdg)
-
-#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
-
-// OneTargetOneParameter
-
-#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
-                                        QIR_NAME, PARAM)                       \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM) %q : !qc.qubit                                   \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM) : (!llvm.ptr, f64)  \
-   * -> ()                                                                     \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 1, 1);                      \
-    }                                                                          \
-  };
-
-DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, RX, rx, rx, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, RY, ry, ry, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, RZ, rz, rz, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(POp, P, p, p, theta)
-
-#undef DEFINE_ONE_TARGET_ONE_PARAMETER
-
-// OneTargetTwoParameter
-
-#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
-                                        QIR_NAME, PARAM1, PARAM2)              \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM1, %PARAM2) %q : !qc.qubit                         \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM1, %PARAM2) :         \
-   * (!llvm.ptr, f64, f64) -> ()                                               \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 1, 2);                      \
-    }                                                                          \
-  };
-
-DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, R, r, r, theta, phi)
-DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, U2, u2, u2, phi, lambda)
-
-#undef DEFINE_ONE_TARGET_TWO_PARAMETER
-
-// OneTargetThreeParameter
-
-#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME_BIG,               \
-                                          OP_NAME_SMALL, QIR_NAME)             \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM1, %PARAM2, %PARAM3) %q : !qc.qubit                \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM1, %PARAM2, %PARAM3)  \
-   * : (!llvm.ptr, f64, f64, f64) -> ()                                        \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp<OP_CLASS>(                                 \
-          op, adaptor, rewriter, getContext(), state, fnName, 1, 3);           \
-    }                                                                          \
-  };
-
-DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, U, u, u3)
-
-#undef DEFINE_ONE_TARGET_THREE_PARAMETER
-
-// TwoTargetZeroParameter
-
-#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL, \
-                                         QIR_NAME)                             \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL %q1, %q2 : !qc.qubit, !qc.qubit                          \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q1, %q2) : (!llvm.ptr,         \
-   * !llvm.ptr) -> ()                                                          \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 2, 0);                      \
-    }                                                                          \
-  };
-
-DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, SWAP, swap, swap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, ISWAP, iswap, iswap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, DCX, dcx, dcx)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ECR, ecr, ecr)
-
-#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
-
-// TwoTargetOneParameter
-
-#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
-                                        QIR_NAME, PARAM)                       \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM) %q1, %q2 : !qc.qubit, !qc.qubit                  \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q1, %q2, %PARAM) :             \
-   * (!llvm.ptr, !llvm.ptr, f64) -> ()                                         \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 2, 1);                      \
-    }                                                                          \
-  };
-
-DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, RXX, rxx, rxx, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RYYOp, RYY, ryy, ryy, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RZXOp, RZX, rzx, rzx, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, RZZ, rzz, rzz, theta)
-
-#undef DEFINE_TWO_TARGET_ONE_PARAMETER
-
-// TwoTargetTwoParameter
-
-#define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
-                                        QIR_NAME, PARAM1, PARAM2)              \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM1, %PARAM2) %q1, %q2 : !qc.qubit,                  \
-   * !qc.qubit                                                                 \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q1, %q2, %PARAM1, %PARAM2) :   \
-   * (!llvm.ptr, !llvm.ptr, f64, f64) -> ()                                    \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 2, 2);                      \
-    }                                                                          \
-  };
-
-DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, XXPLUSYY, xx_plus_yy, xx_plus_yy,
-                                theta, beta)
-DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, XXMINUSYY, xx_minus_yy,
-                                xx_minus_yy, theta, beta)
-
-#undef DEFINE_TWO_TARGET_TWO_PARAMETER
-
 // BarrierOp
 
 /**
@@ -872,6 +686,37 @@ struct ConvertQCYieldQIR final : StatefulOpConversionPattern<YieldOp> {
     return success();
   }
 };
+
+/**
+ * @brief Populates conversion patterns for QC-to-QIR lowering.
+ *
+ * @details
+ * Centralizes pattern registration so adding a new QC gate typically only
+ * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
+ * list of unitary gates below.
+ */
+void populateQCToQIRPatterns(RewritePatternSet& patterns,
+                             QCToQIRTypeConverter& typeConverter,
+                             MLIRContext* ctx, LoweringState& state) {
+  patterns.add<ConvertQCAllocQIR>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCDeallocQIR>(typeConverter, ctx);
+  patterns.add<ConvertQCStaticQIR>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCMeasureQIR>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCResetQIR>(typeConverter, ctx);
+  patterns.add<ConvertQCGPhaseOpQIR>(typeConverter, ctx, &state);
+
+  // Note: `MQT_GATE_TABLE` is defined in `mlir/Conversion/GateTable.h`.
+#define MQT_ADD_QC_TO_QIR_UNITARY(                                             \
+    KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP,                   \
+    JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND, QIR_FN)           \
+  patterns.add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
+      typeConverter, ctx, &state);
+  MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
+#undef MQT_ADD_QC_TO_QIR_UNITARY
+
+  patterns.add<ConvertQCBarrierQIR, ConvertQCCtrlQIR, ConvertQCYieldQIR>(
+      typeConverter, ctx, &state);
+}
 
 /**
  * @brief Pass for converting QC dialect operations to QIR
@@ -1192,44 +1037,7 @@ protected:
       RewritePatternSet qcPatterns(ctx);
       target.addIllegalDialect<QCDialect>();
 
-      // Add conversion patterns for QC operations
-      qcPatterns.add<ConvertQCAllocQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCDeallocQIR>(typeConverter, ctx);
-      qcPatterns.add<ConvertQCStaticQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCMeasureQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCResetQIR>(typeConverter, ctx);
-      qcPatterns.add<ConvertQCGPhaseOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCIdOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCZOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCHOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSdgOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCTOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCTdgOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSXdgOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRZOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCPOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCROpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCU2OpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCUOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSWAPOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCiSWAPOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCDCXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCECROpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRXXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRYYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRZXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRZZOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCXXPlusYYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCXXMinusYYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCBarrierQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCCtrlQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCYieldQIR>(typeConverter, ctx, &state);
+      populateQCToQIRPatterns(qcPatterns, typeConverter, ctx, state);
 
       if (applyPartialConversion(moduleOp, target, std::move(qcPatterns))
               .failed()) {
