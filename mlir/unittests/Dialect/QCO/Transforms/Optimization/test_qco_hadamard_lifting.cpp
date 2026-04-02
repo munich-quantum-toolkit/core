@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-// #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
@@ -34,7 +32,7 @@ namespace {
 using namespace mlir;
 using namespace mlir::qco;
 
-class QCOHadamardLiftingTest : public ::testing::Test {
+class QCOHadamardLiftingTest : public testing::Test {
 protected:
   MLIRContext context;
   QCOProgramBuilder programBuilder;
@@ -467,7 +465,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   auto qubitPairTwo = programBuilder.cx(q[5], q[4]);
   q[4] = programBuilder.h(qubitPairTwo.second);
   q[5] = programBuilder.h(qubitPairTwo.first);
-  q[5] = programBuilder.s(q[5]);
+  q[4] = programBuilder.s(q[4]);
   programBuilder.measure(q[4], b[1]);
   programBuilder.measure(q[5], b[2]);
   module = programBuilder.finalize();
@@ -480,7 +478,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   auto qubitPairTwoRef = referenceBuilder.cx(qRef[5], qRef[4]);
   qRef[4] = referenceBuilder.h(qubitPairTwoRef.second);
   qRef[5] = referenceBuilder.h(qubitPairTwoRef.first);
-  qRef[5] = referenceBuilder.s(qRef[5]);
+  qRef[4] = referenceBuilder.s(qRef[4]);
   referenceBuilder.measure(qRef[4], bRef[1]);
   referenceBuilder.measure(qRef[5], bRef[2]);
   reference = referenceBuilder.finalize();
@@ -488,11 +486,6 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   runCanonicalizationPasses(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
-
-  // auto qco = captureIR(module.get());
-  // std::cout << qco;
-  // qco = captureIR(reference.get());
-  // std::cout << qco;
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
