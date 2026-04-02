@@ -100,8 +100,8 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
   static void exchangeTwoQubitsAtGate(UnitaryOpInterface gate,
                                       const Value qubit1, const Value qubit2,
                                       PatternRewriter& rewriter) {
-    auto temporary =
-        rewriter.create<IdOp>(gate.getLoc(), gate.getInputTarget(0))
+    const auto temporary =
+        IdOp::create(rewriter, gate.getLoc(), gate.getInputTarget(0))
             .getResult();
     rewriter.replaceUsesWithIf(
         qubit1, temporary,
@@ -135,7 +135,7 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
     if (users.empty()) {
       return failure();
     }
-    auto user = *users.begin();
+    const auto user = *users.begin();
     if (user->getName().stripDialect().str() != "ctrl") {
       return failure();
     }
@@ -147,8 +147,8 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
 
     const std::vector<Value> outputsOp(op.getOutputQubits().begin(),
                                        op.getOutputQubits().end());
-    const std::vector<Value> inputsH(hadamardGate.getInputQubits().begin(),
-                                     hadamardGate.getInputQubits().end());
+    const std::vector inputsH(hadamardGate.getInputQubits().begin(),
+                              hadamardGate.getInputQubits().end());
     if (!containRangesOfSameElements(outputsOp, inputsH)) {
       return failure();
     }
@@ -207,7 +207,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
                                                 CtrlOp secondCtrl) {
     const std::vector<Value> controlOutputsFirstGate(
         firstCtrl.getControlsOut().begin(), firstCtrl.getControlsOut().end());
-    const std::vector<Value> controlInputsSecondGate(
+    const std::vector controlInputsSecondGate(
         secondCtrl.getControlsIn().begin(), secondCtrl.getControlsIn().end());
     return containRangesOfSameElements(controlOutputsFirstGate,
                                        controlInputsSecondGate);
@@ -227,10 +227,9 @@ struct LiftHadamardsAbovePauliGatesPattern final
    * @param rewriter The used rewriter.
    * @return success() if circuit was changed, failure() otherwise
    */
-  static mlir::LogicalResult
-  swapPauliWithHadamard(UnitaryOpInterface gate,
-                        UnitaryOpInterface hadamardGate,
-                        mlir::PatternRewriter& rewriter) {
+  static LogicalResult swapPauliWithHadamard(UnitaryOpInterface gate,
+                                             UnitaryOpInterface hadamardGate,
+                                             PatternRewriter& rewriter) {
     const auto gateName = gate->getName().stripDialect().str();
     const auto hadamardName = hadamardGate->getName().stripDialect().str();
     if (hadamardName != "h" ||
@@ -286,7 +285,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     // op needs to be a Pauli gate
-    std::string opName = op->getName().stripDialect().str();
+    const std::string opName = op->getName().stripDialect().str();
     if (opName != "x" && opName != "y" && opName != "z" && opName != "ctrl") {
       return failure();
     }
@@ -296,8 +295,8 @@ struct LiftHadamardsAbovePauliGatesPattern final
     if (users.empty()) {
       return failure();
     }
-    auto user = *users.begin();
-    auto userName = user->getName().stripDialect().str();
+    const auto user = *users.begin();
+    const auto userName = user->getName().stripDialect().str();
     if (userName != "h") {
       if (opName == "ctrl" && userName == "ctrl") {
         return handleTwoSucceedingControls(mlir::dyn_cast<CtrlOp>(*op),
@@ -356,8 +355,8 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
                          PatternRewriter& rewriter) {
     const Value outputQubit1 = gate.getOutputForInput(inputQubit1);
     const Value outputQubit2 = gate.getOutputForInput(inputQubit2);
-    auto temporary =
-        rewriter.create<IdOp>(gate.getLoc(), gate.getInputTarget(0))
+    const auto temporary =
+        IdOp::create(rewriter, gate.getLoc(), gate.getInputTarget(0))
             .getResult();
 
     rewriter.replaceUsesWithIf(outputQubit1, temporary,
@@ -399,24 +398,23 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
    * @param rewriter The used rewriter.
    * @returns One of the created hadamard gates.
    */
-  static HOp addHadamardGatesBeforeGate(UnitaryOpInterface gate,
-                                        std::vector<Value> inputQubits,
+  static HOp addHadamardGatesBeforeGate(const UnitaryOpInterface gate,
+                                        const std::vector<Value>& inputQubits,
                                         PatternRewriter& rewriter) {
-    HOp newHOP;
-    for (Value inputQubit : inputQubits) {
+    HOp newHOp;
+    for (const Value inputQubit : inputQubits) {
 
-      std::vector<Value> inQubits{inputQubit};
-      std::vector<Type> outQubits{inputQubit.getType()};
+      std::vector inQubits{inputQubit};
 
-      newHOP = rewriter.create<HOp>(gate->getLoc(), inQubits);
+      newHOp = HOp::create(rewriter, gate->getLoc(), inQubits);
 
-      rewriter.moveOpBefore(newHOP, gate);
+      rewriter.moveOpBefore(newHOp, gate);
 
       rewriter.replaceUsesWithIf(
-          inputQubit, newHOP.getOutputTarget(0),
+          inputQubit, newHOp.getOutputTarget(0),
           [&](const OpOperand& operand) { return operand.getOwner() == gate; });
     }
-    return newHOP;
+    return newHOp;
   }
 
   /**
@@ -428,16 +426,16 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
    * @param rewriter The used rewriter.
    * @returns One of the created hadamard gates.
    */
-  static HOp addHadamardGatesAfterGate(UnitaryOpInterface gate,
+  static HOp addHadamardGatesAfterGate(const UnitaryOpInterface gate,
                                        const std::vector<Value>& outputQubits,
                                        PatternRewriter& rewriter) {
     HOp newHOp;
     for (Value outputQubit : outputQubits) {
 
-      std::vector<Value> inQubit{outputQubit};
-      std::vector<Type> outQubit{outputQubit.getType()};
+      std::vector inQubit{outputQubit};
+      std::vector outQubit{outputQubit.getType()};
 
-      newHOp = rewriter.create<HOp>(gate->getLoc(), inQubit);
+      newHOp = HOp::create(rewriter, gate->getLoc(), inQubit);
 
       rewriter.moveOpAfter(newHOp, gate);
 
@@ -470,7 +468,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     }
 
     // The Hadamard gate must be successor of the target of a CNOT
-    auto inQubitHadamard = hadamardGate.getInputQubit(0);
+    const auto inQubitHadamard = hadamardGate.getInputQubit(0);
     predecessor = inQubitHadamard.getDefiningOp();
     auto cnotGate = mlir::dyn_cast<CtrlOp>(predecessor);
     if (!cnotGate || cnotGate.getNumTargets() != 1 ||
@@ -480,21 +478,21 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     }
 
     // Remove the Hadamard gate
-    for (auto outQubit : hadamardGate.getOutputQubits()) {
+    for (const auto outQubit : hadamardGate.getOutputQubits()) {
       rewriter.replaceAllUsesWith(outQubit,
                                   hadamardGate.getInputForOutput(outQubit));
     }
     rewriter.eraseOp(hadamardGate);
 
     // Add Hadamard gates to the other in and output gates of cnot
-    const std::vector<Value> relevantInputQubitsForHadamard{
+    const std::vector relevantInputQubitsForHadamard{
         cnotGate.getInputTarget(0), cnotGate.getInputControl(0)};
     addHadamardGatesBeforeGate(cnotGate, relevantInputQubitsForHadamard,
                                rewriter);
 
-    const std::vector<Value> relevantOutputQubitsForHadamard{
+    const std::vector relevantOutputQubitsForHadamard{
         cnotGate.getOutputForInput(cnotGate.getInputControl(0))};
-    HOp newHOPAfterCtrl = addHadamardGatesAfterGate(
+    const HOp newHOPAfterCtrl = addHadamardGatesAfterGate(
         cnotGate, relevantOutputQubitsForHadamard, rewriter);
 
     // Flip CNOT targets and ctrl
