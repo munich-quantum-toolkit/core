@@ -136,7 +136,7 @@ template <WalkDirection d> static bool proceedOnWire(const WireIterator& it) {
   if constexpr (d == WalkDirection::Forward) {
     return it != std::default_sentinel;
   } else {
-    return !isa<AllocOp>(it.operation());
+    return !isa<AllocOp>(it.operation()) && !isa<StaticOp>(it.operation());
   }
 }
 
@@ -178,10 +178,12 @@ static void skipTwoQubitBlock(WireIterator& first, WireIterator& second) {
   }
 }
 
-using DanglingMap = DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
+using PendingWiresMap =
+    DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
 
 std::optional<ArrayRef<WireIterator*>>
-visit(DanglingMap& map, UnitaryOpInterface op, WireIterator* wire);
+tryReleaseReadyWires(PendingWiresMap& map, UnitaryOpInterface op,
+                     WireIterator* wire);
 }; // namespace impl
 
 template <WalkDirection d, typename Fn>
@@ -190,7 +192,7 @@ void walkLayers(Region& region, Fn&& fn) {
   const auto ffn = std::forward<Fn>(fn);
 
   Qubits qubits;
-  impl::DanglingMap map;
+  impl::PendingWiresMap pending;
   SmallVector<WireIterator*> hold;
   SmallVector<UnitaryOpInterface> front;
   SmallVector<WireIterator> wires;
@@ -211,17 +213,17 @@ void walkLayers(Region& region, Fn&& fn) {
              [&](AllocOp op) { wires.emplace_back(op.getResult()); });
   }
 
-  map.reserve(wires.size());
+  pending.reserve(wires.size());
   front.reserve((wires.size() + 1) / 2);
 
   while (true) {
-
     for (WireIterator& it : wires) {
       while (impl::proceedOnWire<d>(it)) {
         const auto res =
             TypeSwitch<Operation*, WalkResult>(it.operation())
                 .template Case<BarrierOp>([&](BarrierOp op) {
-                  if (auto released = impl::visit(map, op, &it)) {
+                  if (auto released =
+                          impl::tryReleaseReadyWires(pending, op, &it)) {
                     for (const auto& [in, out] :
                          llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
                       const auto inQ = cast<TypedValue<QubitType>>(in);
@@ -250,7 +252,8 @@ void walkLayers(Region& region, Fn&& fn) {
                   }
 
                   // Ready two-qubit gate?
-                  if (auto released = impl::visit(map, op, &it)) {
+                  if (auto released =
+                          impl::tryReleaseReadyWires(pending, op, &it)) {
                     front.emplace_back(op);
                     for (WireIterator* x : *released) {
                       hold.emplace_back(x);
@@ -320,7 +323,7 @@ void walkLayers(Region& region, Fn&& fn) {
 
     front.clear();
     hold.clear();
-    map.clear();
+    pending.clear();
   }
 }
 } // namespace mlir::qco

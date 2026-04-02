@@ -77,15 +77,19 @@ std::size_t Qubits::getHardwareIndex(TypedValue<QubitType> q) const {
 
 namespace impl {
 std::optional<ArrayRef<WireIterator*>>
-visit(DanglingMap& map, UnitaryOpInterface op, WireIterator* wire) {
-  const auto [it, ins] = map.try_emplace(op, SmallVector{wire});
-  if (!ins) {
-    it->second.emplace_back(wire);
+tryReleaseReadyWires(PendingWiresMap& map, UnitaryOpInterface op,
+                     WireIterator* wire) {
+  auto [it, inserted] = map.try_emplace(op);
+  auto& wires = it->second;
+
+  if (inserted) {
+    wires.reserve(op.getNumQubits());
   }
 
-  // Release iterators whenever all qubits have been seen.
-  if (it->second.size() == op.getNumQubits()) {
-    return it->second;
+  wires.emplace_back(wire);
+
+  if (wires.size() == op.getNumQubits()) {
+    return std::move(wires);
   }
 
   return std::nullopt;
