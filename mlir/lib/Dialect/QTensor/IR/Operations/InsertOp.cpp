@@ -24,21 +24,77 @@ using namespace mlir;
 using namespace mlir::qtensor;
 
 /**
- * @brief Find the `qtensor.extract` operation for a given `qtensor.insert`
- * operation.
+ * @brief Checks whether two index values are equivalent for matching.
  */
-static ExtractOp findExtractOp(InsertOp op, Value index) {
-  auto* definingOp = op.getDest().getDefiningOp();
-  if (llvm::isa<ExtractOp>(definingOp)) {
-    return llvm::cast<ExtractOp>(definingOp);
+static bool areEquivalentIndices(Value lhs, Value rhs) {
+  return getAsOpFoldResult(lhs) == getAsOpFoldResult(rhs);
+}
+
+/**
+ * @brief Checks whether removing an extract-insert pair is linearity-safe.
+ */
+static bool isRemovableExtractInsertPair(InsertOp insertOp,
+                                         ExtractOp extractOp) {
+  return insertOp.getScalar() == extractOp.getResult() &&
+         areEquivalentIndices(insertOp.getIndex(), extractOp.getIndex());
+}
+
+/**
+ * @brief Fold the direct pattern
+ * `insert(extract(tensor, idx).qubit, extract(tensor, idx).out, idx)`.
+ */
+static Value foldInsertAfterExtract(InsertOp insertOp) {
+  auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
+  if (!extractOp) {
+    return nullptr;
   }
-  if (llvm::isa<InsertOp>(definingOp)) {
-    auto nestedInsertOp = llvm::cast<InsertOp>(definingOp);
-    if (nestedInsertOp.getIndex() == index) {
-      return nullptr;
+
+  if (insertOp.getDest() != extractOp.getOutTensor()) {
+    return nullptr;
+  }
+
+  if (!isRemovableExtractInsertPair(insertOp, extractOp)) {
+    return nullptr;
+  }
+
+  return extractOp.getTensor();
+}
+
+OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
+  if (auto result = foldInsertAfterExtract(*this)) {
+    return result;
+  }
+
+  return {};
+}
+
+/**
+ * @brief Find a matching `qtensor.extract` for an insert index in a tensor
+ * chain by traversing nested `qtensor.insert` and `qtensor.extract` ops.
+ */
+static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
+  Value current = tensor;
+  while (Operation* definingOp = current.getDefiningOp()) {
+    if (auto nestedInsertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
+      // A more recent write to the same index shadows all older extracts.
+      if (areEquivalentIndices(nestedInsertOp.getIndex(), index)) {
+        return nullptr;
+      }
+      current = nestedInsertOp.getDest();
+      continue;
     }
-    return findExtractOp(nestedInsertOp, index);
+
+    if (auto extractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
+      if (areEquivalentIndices(extractOp.getIndex(), index)) {
+        return extractOp;
+      }
+      current = extractOp.getTensor();
+      continue;
+    }
+
+    break;
   }
+
   return nullptr;
 }
 
@@ -52,18 +108,13 @@ struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
 
   LogicalResult matchAndRewrite(InsertOp op,
                                 PatternRewriter& rewriter) const override {
-    auto index = op.getIndex();
-
-    auto extractOp = findExtractOp(op, index);
+    auto extractOp =
+        findMatchingExtractInTensorChain(op.getDest(), op.getIndex());
     if (!extractOp) {
       return failure();
     }
 
-    if (op.getScalar() != extractOp.getResult()) {
-      return failure();
-    }
-
-    if (index != extractOp.getIndex()) {
+    if (!isRemovableExtractInsertPair(op, extractOp)) {
       return failure();
     }
 
