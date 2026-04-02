@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
 
+#include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
@@ -193,6 +194,108 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
   return success();
 }
+
+/**
+ * @brief Generic converter for unitary QC ops to QIR calls.
+ *
+ * @details
+ * Many QC gates lower to a QIR runtime call where the callee name depends on
+ * the number of active controls. This helper factors out that boilerplate
+ * without relying on preprocessor macros.
+ *
+ * @par Examples
+ * The examples below illustrate the shapes that were previously documented via
+ * `DEFINE_ONE_TARGET_ZERO_PARAMETER`, `DEFINE_ONE_TARGET_ONE_PARAMETER`, etc.
+ *
+ * @par One target, zero parameters
+ * ```mlir
+ * qc.x %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
+ * ```
+ *
+ * @par One target, one parameter
+ * ```mlir
+ * qc.rx(%theta) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+ * ```
+ *
+ * @par One target, two parameters
+ * ```mlir
+ * qc.r(%theta, %phi) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__r__body(%q, %theta, %phi) : (!llvm.ptr, f64, f64)
+ * -> ()
+ * ```
+ *
+ * @par One target, three parameters
+ * ```mlir
+ * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__u3__body(%q, %theta, %phi, %lambda)
+ *     : (!llvm.ptr, f64, f64, f64) -> ()
+ * ```
+ *
+ * @par Two targets, zero parameters
+ * ```mlir
+ * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
+ * ()
+ * ```
+ *
+ * @par Two targets, one parameter
+ * ```mlir
+ * qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__rxx__body(%q0, %q1, %theta)
+ *     : (!llvm.ptr, !llvm.ptr, f64) -> ()
+ * ```
+ *
+ * @par Two targets, two parameters
+ * ```mlir
+ * qc.xx_plus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__xx_plus_yy__body(%q0, %q1, %theta, %beta)
+ *     : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+ * ```
+ *
+ * @tparam OpType The QC operation type to convert
+ * @tparam NumTargets Number of target qubits for this operation
+ * @tparam NumParams Number of floating-point parameters for this operation
+ * @tparam GetFnName Function that maps numCtrls -> QIR function name
+ */
+template <typename OpType, std::size_t NumTargets, std::size_t NumParams,
+          auto GetFnName>
+struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
+  using StatefulOpConversionPattern<OpType>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(OpType op, typename OpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    const auto inCtrlOp = state.inCtrlOp;
+    const size_t numCtrls = inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;
+    const auto fnName = GetFnName(numCtrls);
+    return convertUnitaryToCallOp(op, adaptor, rewriter, this->getContext(),
+                                  state, fnName, NumTargets, NumParams);
+  }
+};
 
 namespace {
 
@@ -1037,6 +1140,37 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
 };
 
 /**
+ * @brief Populates conversion patterns for QC-to-QIR lowering.
+ *
+ * @details
+ * Centralizes pattern registration so adding a new QC gate typically only
+ * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
+ * list of unitary gates below.
+ */
+void populateQCToQIRPatterns(RewritePatternSet& patterns,
+                             QCToQIRTypeConverter& typeConverter,
+                             MLIRContext* ctx, LoweringState& state) {
+  patterns.add<ConvertQCAllocQIR>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCDeallocQIR>(typeConverter, ctx);
+  patterns.add<ConvertQCStaticQIR>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCMeasureQIR>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCResetQIR>(typeConverter, ctx);
+  patterns.add<ConvertQCGPhaseOpQIR>(typeConverter, ctx, &state);
+
+  // Note: `MQT_GATE_TABLE` is defined in `mlir/Conversion/GateTable.h`.
+#define MQT_ADD_QC_TO_QIR_UNITARY(                                             \
+    KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP,                   \
+    JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND, QIR_FN)           \
+  patterns.add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
+      typeConverter, ctx, &state);
+  MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
+#undef MQT_ADD_QC_TO_QIR_UNITARY
+
+  patterns.add<ConvertQCBarrierQIR, ConvertQCCtrlQIR, ConvertQCYieldQIR>(
+      typeConverter, ctx, &state);
+}
+
+/**
  * @brief Pass for converting QC dialect operations to QIR
  *
  * @details
@@ -1345,20 +1479,8 @@ protected:
     {
       RewritePatternSet patterns(ctx);
       target.addIllegalDialect<QCDialect, memref::MemRefDialect>();
-
-      patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp,
-                   ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
-                   ConvertQCStaticOp, ConvertQCMeasureOp, ConvertQCResetOp,
-                   ConvertQCGPhaseOp, ConvertQCIdOp, ConvertQCXOp, ConvertQCYOp,
-                   ConvertQCZOp, ConvertQCHOp, ConvertQCSOp, ConvertQCSdgOp,
-                   ConvertQCTOp, ConvertQCTdgOp, ConvertQCSXOp, ConvertQCSXdgOp,
-                   ConvertQCRXOp, ConvertQCRYOp, ConvertQCRZOp, ConvertQCPOp,
-                   ConvertQCROp, ConvertQCU2Op, ConvertQCUOp, ConvertQCSWAPOp,
-                   ConvertQCiSWAPOp, ConvertQCDCXOp, ConvertQCECROp,
-                   ConvertQCRXXOp, ConvertQCRYYOp, ConvertQCRZXOp,
-                   ConvertQCRZZOp, ConvertQCXXPlusYYOp, ConvertQCXXMinusYYOp,
-                   ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp>(
-          typeConverter, ctx, &state);
+ 
+      populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
 
       if (applyPartialConversion(moduleOp, target, std::move(patterns))
               .failed()) {
