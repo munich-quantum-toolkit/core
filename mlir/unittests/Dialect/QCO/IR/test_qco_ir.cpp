@@ -26,6 +26,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
 
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -67,6 +68,34 @@ protected:
   }
 };
 
+OwningOpRef<ModuleOp>
+buildTwoQubitInsertChainProgram(MLIRContext* context,
+                                const bool reverseInsertOrder,
+                                const bool swapInsertTargets) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(2);
+  auto [tensorAfterFirstExtract, qubit0] = builder.qtensorExtract(tensor, 0);
+  auto [baseTensor, qubit1] =
+      builder.qtensorExtract(tensorAfterFirstExtract, 1);
+
+  const int64_t qubit0Target = swapInsertTargets ? 1 : 0;
+  const int64_t qubit1Target = swapInsertTargets ? 0 : 1;
+
+  Value currentTensor = baseTensor;
+  if (reverseInsertOrder) {
+    currentTensor = builder.qtensorInsert(qubit1, currentTensor, qubit1Target);
+    currentTensor = builder.qtensorInsert(qubit0, currentTensor, qubit0Target);
+  } else {
+    currentTensor = builder.qtensorInsert(qubit0, currentTensor, qubit0Target);
+    currentTensor = builder.qtensorInsert(qubit1, currentTensor, qubit1Target);
+  }
+
+  builder.qtensorDealloc(currentTensor);
+  return builder.finalize();
+}
+
 } // namespace
 
 TEST_P(QCOTest, ProgramEquivalence) {
@@ -93,6 +122,40 @@ TEST_P(QCOTest, ProgramEquivalence) {
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, InsertChainPermutationEquivalence) {
+  auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildTwoQubitInsertChainProgram(context.get(), true, false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, InsertChainDifferentAssignmentsNotEquivalent) {
+  auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildTwoQubitInsertChainProgram(context.get(), true, true);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_FALSE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 

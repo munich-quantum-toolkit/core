@@ -1360,7 +1360,7 @@ private:
   };
 
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
-  /// Only values present in this set are valid for use in operations.
+  /// Only values present in this map are valid for use in operations.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseMap<Value, QubitInfo> validQubits;
@@ -1390,7 +1390,7 @@ private:
   };
 
   /// Track valid (unconsumed) tensor SSA values for linear type enforcement.
-  /// Only values present in this set are valid for use in operations.
+  /// Only values present in this map are valid for use in operations.
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseMap<Value, TensorInfo> validTensors;
