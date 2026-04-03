@@ -141,6 +141,40 @@ buildMixedExtractInsertProgram(MLIRContext* context, const bool reverseOrder,
 }
 
 OwningOpRef<ModuleOp>
+buildMixedScalarSliceInsertProgram(MLIRContext* context,
+                                   const bool reverseOrder, const bool overlap,
+                                   const bool mutateScalar) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(6);
+  auto [tensorAfterSliceExtract, slice] =
+      builder.qtensorExtractSlice(tensor, 1, 2);
+  const int64_t scalarIndex = overlap ? 1 : 5;
+  auto [tensorAfterScalarExtract, scalar] =
+      builder.qtensorExtract(tensorAfterSliceExtract, scalarIndex);
+  if (mutateScalar) {
+    scalar = builder.h(scalar);
+  }
+
+  Value tensorAfterWrites = tensorAfterScalarExtract;
+  if (reverseOrder) {
+    tensorAfterWrites =
+        builder.qtensorInsertSlice(slice, tensorAfterWrites, 1, 2);
+    tensorAfterWrites =
+        builder.qtensorInsert(scalar, tensorAfterWrites, scalarIndex);
+  } else {
+    tensorAfterWrites =
+        builder.qtensorInsert(scalar, tensorAfterWrites, scalarIndex);
+    tensorAfterWrites =
+        builder.qtensorInsertSlice(slice, tensorAfterWrites, 1, 2);
+  }
+
+  builder.qtensorDealloc(tensorAfterWrites);
+  return builder.finalize();
+}
+
+OwningOpRef<ModuleOp>
 buildResetWithCommutingInsertProgram(MLIRContext* context,
                                      const bool withReset) {
   qco::QCOProgramBuilder builder(context);
@@ -276,6 +310,44 @@ TEST_F(QCOTest, MixedExtractInsertDifferentAssignmentsNotEquivalent) {
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildMixedExtractInsertProgram(context.get(), true, true);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, MixedScalarSliceInsertPermutationEquivalence) {
+  auto program =
+      buildMixedScalarSliceInsertProgram(context.get(), false, false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference =
+      buildMixedScalarSliceInsertProgram(context.get(), true, false, false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, MixedScalarSliceInsertOverlapNotEquivalent) {
+  auto program =
+      buildMixedScalarSliceInsertProgram(context.get(), false, true, true);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference =
+      buildMixedScalarSliceInsertProgram(context.get(), true, true, true);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
   runCanonicalizationPasses(reference.get());

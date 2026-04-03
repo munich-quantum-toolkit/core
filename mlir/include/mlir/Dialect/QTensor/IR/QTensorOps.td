@@ -176,6 +176,7 @@ def ExtractSliceOp
   let builders = [OpBuilder<(ins "Value":$tensor, "Value":$offset,
       "Value":$size, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>];
 
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
   let hasVerifier = 1;
 }
@@ -245,6 +246,7 @@ def InsertSliceOp
         attr-dict `:` type($source) `into` type($dest)
     }];
 
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
   let hasVerifier = 1;
 }

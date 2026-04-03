@@ -19,6 +19,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstdint>
+
 using namespace mlir;
 using namespace mlir::qtensor;
 
@@ -37,6 +39,8 @@ LogicalResult ExtractOp::verify() {
   return success();
 }
 
+enum class AccessRelation : std::uint8_t { Disjoint, Overlap, Unknown };
+
 /**
  * @brief Checks whether two index values are equivalent for matching.
  */
@@ -45,11 +49,32 @@ static bool areEquivalentIndices(Value lhs, Value rhs) {
 }
 
 /**
- * @brief Tensor-transforming ops in a chain that can commute past
- * `qtensor.extract` at a different index.
+ * @brief Classify the relation between a scalar index and a slice range.
+ */
+static AccessRelation classifyIndexAndRange(Value index, Value offset,
+                                            Value size) {
+  if (areEquivalentIndices(index, offset)) {
+    return AccessRelation::Overlap;
+  }
+
+  const auto indexValue = getConstantIntValue(index);
+  const auto offsetValue = getConstantIntValue(offset);
+  const auto sizeValue = getConstantIntValue(size);
+  if (!indexValue || !offsetValue || !sizeValue) {
+    return AccessRelation::Unknown;
+  }
+
+  if (*indexValue < *offsetValue || *indexValue >= *offsetValue + *sizeValue) {
+    return AccessRelation::Disjoint;
+  }
+  return AccessRelation::Overlap;
+}
+
+/**
+ * @brief Tensor-transforming ops in a chain that can commute with extracts.
  */
 static bool isTensorChainOp(Operation* op) {
-  return llvm::isa<InsertOp, ExtractOp>(op);
+  return llvm::isa<InsertOp, ExtractOp, InsertSliceOp, ExtractSliceOp>(op);
 }
 
 /**
@@ -62,7 +87,45 @@ static Value getTensorChainInput(Operation* op) {
   if (auto extractOp = llvm::dyn_cast<ExtractOp>(op)) {
     return extractOp.getTensor();
   }
+  if (auto insertSliceOp = llvm::dyn_cast<InsertSliceOp>(op)) {
+    return insertSliceOp.getDest();
+  }
+  if (auto extractSliceOp = llvm::dyn_cast<ExtractSliceOp>(op)) {
+    return extractSliceOp.getTensor();
+  }
   return nullptr;
+}
+
+/**
+ * @brief Returns the tensor output of a tensor-transforming op.
+ */
+static Value getTensorChainOutput(Operation* op) {
+  if (auto insertOp = llvm::dyn_cast<InsertOp>(op)) {
+    return insertOp.getResult();
+  }
+  if (auto extractOp = llvm::dyn_cast<ExtractOp>(op)) {
+    return extractOp.getOutTensor();
+  }
+  if (auto insertSliceOp = llvm::dyn_cast<InsertSliceOp>(op)) {
+    return insertSliceOp.getResult();
+  }
+  if (auto extractSliceOp = llvm::dyn_cast<ExtractSliceOp>(op)) {
+    return extractSliceOp.getOutTensor();
+  }
+  return nullptr;
+}
+
+/**
+ * @brief Rewire the tensor input of a tensor-transforming op.
+ */
+static void setTensorChainInput(Operation* op, Value tensor) {
+  if (llvm::isa<InsertOp, InsertSliceOp>(op)) {
+    op->setOperand(1, tensor);
+    return;
+  }
+  if (llvm::isa<ExtractOp, ExtractSliceOp>(op)) {
+    op->setOperand(0, tensor);
+  }
 }
 
 /**
@@ -96,31 +159,11 @@ LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,
 namespace {
 
 /**
- * @brief Remove matching insert-extract pairs through commuting tensor-chain
- * operations on different indices.
+ * @brief Remove matching insert-extract pairs through commuting disjoint
+ * tensor-chain operations.
  */
 struct RemoveInsertExtractPair final : OpRewritePattern<ExtractOp> {
   using OpRewritePattern::OpRewritePattern;
-
-  static Value getTensorChainOutput(Operation* op) {
-    if (auto insertOp = llvm::dyn_cast<InsertOp>(op)) {
-      return insertOp.getResult();
-    }
-    if (auto nestedExtractOp = llvm::dyn_cast<ExtractOp>(op)) {
-      return nestedExtractOp.getOutTensor();
-    }
-    return nullptr;
-  }
-
-  static void setTensorChainInput(Operation* op, Value tensor) {
-    if (llvm::isa<InsertOp>(op)) {
-      op->setOperand(1, tensor);
-      return;
-    }
-    if (llvm::isa<ExtractOp>(op)) {
-      op->setOperand(0, tensor);
-    }
-  }
 
   LogicalResult matchAndRewrite(ExtractOp extractOp,
                                 PatternRewriter& rewriter) const override {
@@ -138,11 +181,24 @@ struct RemoveInsertExtractPair final : OpRewritePattern<ExtractOp> {
           matchedInsertOp = insertOp;
           break;
         }
-      } else {
-        auto nestedExtractOp = llvm::cast<ExtractOp>(definingOp);
+      } else if (auto nestedExtractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
         if (areEquivalentIndices(nestedExtractOp.getIndex(),
                                  extractOp.getIndex())) {
           // Do not reorder reads from the same index.
+          return failure();
+        }
+      } else if (auto insertSliceOp =
+                     llvm::dyn_cast<InsertSliceOp>(definingOp)) {
+        if (classifyIndexAndRange(
+                extractOp.getIndex(), insertSliceOp.getOffset(),
+                insertSliceOp.getSize()) != AccessRelation::Disjoint) {
+          return failure();
+        }
+      } else if (auto extractSliceOp =
+                     llvm::dyn_cast<ExtractSliceOp>(definingOp)) {
+        if (classifyIndexAndRange(
+                extractOp.getIndex(), extractSliceOp.getOffset(),
+                extractSliceOp.getSize()) != AccessRelation::Disjoint) {
           return failure();
         }
       }
