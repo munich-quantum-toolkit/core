@@ -188,8 +188,9 @@ using PendingWiresMap =
 void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire);
 }; // namespace impl
 
-using WalkLayersCallback = function_ref<FailureOr<ArrayRef<UnitaryOpInterface>>(
-    ArrayRef<UnitaryOpInterface> front, const Qubits& qubits)>;
+using ReleasedOps = SmallVector<UnitaryOpInterface, 8>;
+using WalkLayersCallback = function_ref<LogicalResult(
+    ArrayRef<UnitaryOpInterface>, const Qubits&, ReleasedOps&)>;
 /**
  * TODO: Update description
  * @brief Collect the layers of independently executable two-qubit gates of a
@@ -200,13 +201,16 @@ using WalkLayersCallback = function_ref<FailureOr<ArrayRef<UnitaryOpInterface>>(
  * gate is found. If a two-qubit gate is visited twice, it is considered ready
  * and inserted into the layer. This process is repeated until no more
  * two-qubit are found anymore.
- * @returns a vector of layers.
+ * The return value of the callback determines which two-qubit gates are to be
+ * released in next iteration.
+ * @returns failure() if the callback returns failure(), success() otherwise.
  */
 template <WalkDirection d>
 LogicalResult walkLayers(Region& region, WalkLayersCallback onLayer) {
   constexpr auto step = d == WalkDirection::Forward ? 1 : -1;
 
   Qubits qubits;
+  ReleasedOps released;
   impl::PendingWiresMap pending;
   SmallVector<UnitaryOpInterface> front;
   SmallVector<WireIterator> wires;
@@ -305,18 +309,16 @@ LogicalResult walkLayers(Region& region, WalkLayersCallback onLayer) {
       break;
     }
 
-    // The caller determines which two-qubit gates are to be released for next
-    // iteration.
-    const auto released = std::invoke(onLayer, front, qubits);
-    if (failed(released)) {
+    released.clear();
+    if (failed(std::invoke(onLayer, front, qubits, released))) {
       return failure();
     }
 
-    if (released->empty()) {
+    if (released.empty()) {
       break;
     }
 
-    for (UnitaryOpInterface op : *released) {
+    for (UnitaryOpInterface op : released) {
       for (WireIterator* it : pending.at(op)) {
         std::ranges::advance(*it, step);
       }

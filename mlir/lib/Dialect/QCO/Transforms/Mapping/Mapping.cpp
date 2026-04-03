@@ -755,10 +755,10 @@ private:
     const auto width = 1 + nlookahead;
 
     Window window;
-    walkLayers<d>(
+    const auto res = walkLayers<d>(
         func.getFunctionBody(),
-        [&](ArrayRef<UnitaryOpInterface> front,
-            const Qubits& qubits) -> FailureOr<ArrayRef<UnitaryOpInterface>> {
+        [&](ArrayRef<UnitaryOpInterface> front, const Qubits& qubits,
+            ReleasedOps& released) {
           SmallVector<IndexGate> layer;
           layer.reserve(front.size());
 
@@ -778,7 +778,8 @@ private:
             window.pop_front();
           }
 
-          return front;
+          released.append(front.begin(), front.end());
+          return success();
         });
 
     while (!window.empty()) {
@@ -788,7 +789,7 @@ private:
       window.pop_front();
     }
 
-    return success();
+    return res;
   }
 
   /**
