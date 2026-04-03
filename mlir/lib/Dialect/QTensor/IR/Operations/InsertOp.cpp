@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -20,41 +21,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cstdint>
-
 using namespace mlir;
 using namespace mlir::qtensor;
-
-enum class AccessRelation : std::uint8_t { Disjoint, Overlap, Unknown };
-
-/**
- * @brief Checks whether two index values are equivalent for matching.
- */
-static bool areEquivalentIndices(Value lhs, Value rhs) {
-  return getAsOpFoldResult(lhs) == getAsOpFoldResult(rhs);
-}
-
-/**
- * @brief Classify the relation between a scalar index and a slice range.
- */
-static AccessRelation classifyIndexAndRange(Value index, Value offset,
-                                            Value size) {
-  if (areEquivalentIndices(index, offset)) {
-    return AccessRelation::Overlap;
-  }
-
-  const auto indexValue = getConstantIntValue(index);
-  const auto offsetValue = getConstantIntValue(offset);
-  const auto sizeValue = getConstantIntValue(size);
-  if (!indexValue || !offsetValue || !sizeValue) {
-    return AccessRelation::Unknown;
-  }
-
-  if (*indexValue < *offsetValue || *indexValue >= *offsetValue + *sizeValue) {
-    return AccessRelation::Disjoint;
-  }
-  return AccessRelation::Overlap;
-}
 
 /**
  * @brief Checks whether removing an extract-insert pair is linearity-safe.
@@ -96,7 +64,7 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
 
 /**
  * @brief Find a matching `qtensor.extract` for an insert index in a tensor
- * chain by traversing nested `qtensor.insert` and `qtensor.extract` ops.
+ * chain by traversing nested scalar and slice tensor ops.
  */
 static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
   Value current = tensor;

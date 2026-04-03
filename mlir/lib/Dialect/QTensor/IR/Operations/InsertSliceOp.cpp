@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -20,78 +21,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cstdint>
-
 using namespace mlir;
 using namespace mlir::qtensor;
-
-enum class RangeRelation : std::uint8_t { Disjoint, Overlap, Equal, Unknown };
-
-/**
- * @brief Checks whether two index values are equivalent for matching.
- */
-static bool areEquivalentIndices(Value lhs, Value rhs) {
-  return getAsOpFoldResult(lhs) == getAsOpFoldResult(rhs);
-}
-
-/**
- * @brief Checks whether two slice ranges are equivalent for matching.
- */
-static bool areEquivalentRanges(Value lhsOffset, Value lhsSize, Value rhsOffset,
-                                Value rhsSize) {
-  return areEquivalentIndices(lhsOffset, rhsOffset) &&
-         areEquivalentIndices(lhsSize, rhsSize);
-}
-
-/**
- * @brief Classify the relation between a scalar index and a slice range.
- */
-static RangeRelation classifyIndexAndRange(Value index, Value offset,
-                                           Value size) {
-  if (areEquivalentIndices(index, offset)) {
-    return RangeRelation::Overlap;
-  }
-
-  const auto indexValue = getConstantIntValue(index);
-  const auto offsetValue = getConstantIntValue(offset);
-  const auto sizeValue = getConstantIntValue(size);
-  if (!indexValue || !offsetValue || !sizeValue) {
-    return RangeRelation::Unknown;
-  }
-
-  if (*indexValue < *offsetValue || *indexValue >= *offsetValue + *sizeValue) {
-    return RangeRelation::Disjoint;
-  }
-  return RangeRelation::Overlap;
-}
-
-/**
- * @brief Classify the relation between two slice ranges.
- */
-static RangeRelation classifyRanges(Value lhsOffset, Value lhsSize,
-                                    Value rhsOffset, Value rhsSize) {
-  if (areEquivalentRanges(lhsOffset, lhsSize, rhsOffset, rhsSize)) {
-    return RangeRelation::Equal;
-  }
-
-  const auto lhsOffsetValue = getConstantIntValue(lhsOffset);
-  const auto lhsSizeValue = getConstantIntValue(lhsSize);
-  const auto rhsOffsetValue = getConstantIntValue(rhsOffset);
-  const auto rhsSizeValue = getConstantIntValue(rhsSize);
-  if (!lhsOffsetValue || !lhsSizeValue || !rhsOffsetValue || !rhsSizeValue) {
-    if (areEquivalentIndices(lhsOffset, rhsOffset)) {
-      return RangeRelation::Overlap;
-    }
-    return RangeRelation::Unknown;
-  }
-
-  const auto lhsEnd = *lhsOffsetValue + *lhsSizeValue;
-  const auto rhsEnd = *rhsOffsetValue + *rhsSizeValue;
-  if (lhsEnd <= *rhsOffsetValue || rhsEnd <= *lhsOffsetValue) {
-    return RangeRelation::Disjoint;
-  }
-  return RangeRelation::Overlap;
-}
 
 /**
  * @brief Checks whether removing an extract_slice-insert_slice pair is
@@ -116,7 +47,7 @@ findMatchingExtractSliceInTensorChain(Value tensor, Value offset, Value size) {
   while (Operation* definingOp = current.getDefiningOp()) {
     if (auto nestedInsertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
       if (classifyIndexAndRange(nestedInsertOp.getIndex(), offset, size) !=
-          RangeRelation::Disjoint) {
+          AccessRelation::Disjoint) {
         return nullptr;
       }
       current = nestedInsertOp.getDest();
@@ -125,7 +56,7 @@ findMatchingExtractSliceInTensorChain(Value tensor, Value offset, Value size) {
     if (auto nestedInsertSliceOp = llvm::dyn_cast<InsertSliceOp>(definingOp)) {
       if (classifyRanges(nestedInsertSliceOp.getOffset(),
                          nestedInsertSliceOp.getSize(), offset,
-                         size) != RangeRelation::Disjoint) {
+                         size) != AccessRelation::Disjoint) {
         return nullptr;
       }
       current = nestedInsertSliceOp.getDest();
@@ -133,7 +64,7 @@ findMatchingExtractSliceInTensorChain(Value tensor, Value offset, Value size) {
     }
     if (auto extractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
       if (classifyIndexAndRange(extractOp.getIndex(), offset, size) !=
-          RangeRelation::Disjoint) {
+          AccessRelation::Disjoint) {
         return nullptr;
       }
       current = extractOp.getTensor();
@@ -142,10 +73,10 @@ findMatchingExtractSliceInTensorChain(Value tensor, Value offset, Value size) {
     if (auto extractSliceOp = llvm::dyn_cast<ExtractSliceOp>(definingOp)) {
       const auto relation = classifyRanges(
           extractSliceOp.getOffset(), extractSliceOp.getSize(), offset, size);
-      if (relation == RangeRelation::Equal) {
+      if (relation == AccessRelation::Equal) {
         return extractSliceOp;
       }
-      if (relation != RangeRelation::Disjoint) {
+      if (relation != AccessRelation::Disjoint) {
         return nullptr;
       }
       current = extractSliceOp.getTensor();
@@ -202,13 +133,9 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
     return nullptr;
   }
 
-  auto insertOffset = insertSliceOp.getOffset();
-  auto extractOffset = extractSliceOp.getOffset();
-  auto insertSize = insertSliceOp.getSize();
-  auto extractSize = extractSliceOp.getSize();
-
-  if (!areEquivalentRanges(insertOffset, insertSize, extractOffset,
-                           extractSize)) {
+  if (!areEquivalentRanges(insertSliceOp.getOffset(), insertSliceOp.getSize(),
+                           extractSliceOp.getOffset(),
+                           extractSliceOp.getSize())) {
     return nullptr;
   }
 
