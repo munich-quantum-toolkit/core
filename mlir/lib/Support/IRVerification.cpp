@@ -24,6 +24,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -139,6 +140,18 @@ static bool areValuesEquivalent(Value lhsValue, Value rhsValue,
   return true;
 }
 
+static bool areEquivalentIndices(Value lhsValue, Value rhsValue) {
+  return getAsOpFoldResult(lhsValue) == getAsOpFoldResult(rhsValue);
+}
+
+static bool areIndexValuesEquivalent(Value lhsValue, Value rhsValue,
+                                     ValueEquivalenceMap& valueMap) {
+  if (areEquivalentIndices(lhsValue, rhsValue)) {
+    return true;
+  }
+  return areValuesEquivalent(lhsValue, rhsValue, valueMap);
+}
+
 static bool isQTensorInsertOp(Operation* op) {
   return llvm::isa<qtensor::InsertOp>(op);
 }
@@ -219,11 +232,14 @@ summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
     }
 
     // Reordering writes to the same index is not semantics-preserving.
-    llvm::DenseSet<Value> seenIndices;
+    llvm::SmallVector<Value> seenIndices;
     for (const auto& write : chain.writes) {
-      if (!seenIndices.insert(write.index).second) {
+      if (llvm::any_of(seenIndices, [&](Value seenIndex) {
+            return areEquivalentIndices(seenIndex, write.index);
+          })) {
         return false;
       }
+      seenIndices.push_back(write.index);
     }
   }
 
@@ -247,8 +263,8 @@ static bool areInsertWritesEquivalentRec(const size_t lhsIdx,
     ValueEquivalenceMap tempMap = valueMap;
     if (!areValuesEquivalent(lhsWrites[lhsIdx].scalar, rhsWrites[rhsIdx].scalar,
                              tempMap) ||
-        !areValuesEquivalent(lhsWrites[lhsIdx].index, rhsWrites[rhsIdx].index,
-                             tempMap)) {
+        !areIndexValuesEquivalent(lhsWrites[lhsIdx].index,
+                                  rhsWrites[rhsIdx].index, tempMap)) {
       continue;
     }
 

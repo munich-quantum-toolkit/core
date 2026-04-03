@@ -134,6 +134,7 @@ def ExtractOp
   let results = (outs 1DTensorOf<[QubitType]>:$out_tensor, QubitType:$result);
   let assemblyFormat = "$tensor `[` $index `]` attr-dict `:` type($tensor)";
 
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
   let hasVerifier = 1;
 }

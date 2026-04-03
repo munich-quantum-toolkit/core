@@ -31,6 +31,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -96,6 +97,49 @@ buildTwoQubitInsertChainProgram(MLIRContext* context,
   return builder.finalize();
 }
 
+OwningOpRef<ModuleOp>
+buildMixedExtractInsertProgram(MLIRContext* context, const bool reverseOrder,
+                               const bool swapInsertTargets) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(3);
+  Value tensorAfterReads = tensor;
+  Value qubit0 = nullptr;
+  Value qubit1 = nullptr;
+
+  if (reverseOrder) {
+    std::tie(tensorAfterReads, qubit1) =
+        builder.qtensorExtract(tensorAfterReads, 1);
+    std::tie(tensorAfterReads, qubit0) =
+        builder.qtensorExtract(tensorAfterReads, 0);
+  } else {
+    std::tie(tensorAfterReads, qubit0) =
+        builder.qtensorExtract(tensorAfterReads, 0);
+    std::tie(tensorAfterReads, qubit1) =
+        builder.qtensorExtract(tensorAfterReads, 1);
+  }
+
+  const int64_t q0Target = 0;
+  const int64_t q1Target = swapInsertTargets ? 2 : 1;
+
+  Value tensorAfterWrites = tensorAfterReads;
+  if (reverseOrder) {
+    tensorAfterWrites =
+        builder.qtensorInsert(qubit0, tensorAfterWrites, q0Target);
+    tensorAfterWrites =
+        builder.qtensorInsert(qubit1, tensorAfterWrites, q1Target);
+  } else {
+    tensorAfterWrites =
+        builder.qtensorInsert(qubit1, tensorAfterWrites, q1Target);
+    tensorAfterWrites =
+        builder.qtensorInsert(qubit0, tensorAfterWrites, q0Target);
+  }
+
+  builder.qtensorDealloc(tensorAfterWrites);
+  return builder.finalize();
+}
+
 } // namespace
 
 TEST_P(QCOTest, ProgramEquivalence) {
@@ -150,6 +194,40 @@ TEST_F(QCOTest, InsertChainDifferentAssignmentsNotEquivalent) {
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildTwoQubitInsertChainProgram(context.get(), true, true);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, MixedExtractInsertPermutationEquivalence) {
+  auto program = buildMixedExtractInsertProgram(context.get(), false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildMixedExtractInsertProgram(context.get(), true, false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, MixedExtractInsertDifferentAssignmentsNotEquivalent) {
+  auto program = buildMixedExtractInsertProgram(context.get(), false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildMixedExtractInsertProgram(context.get(), true, true);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
   runCanonicalizationPasses(reference.get());
