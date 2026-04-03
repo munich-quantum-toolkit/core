@@ -57,6 +57,11 @@ public:
   void remap(TypedValue<QubitType> prev, TypedValue<QubitType> next);
 
   /**
+   * @brief Remap all input qubits of the unitary to its outputs.
+   */
+  void remap(UnitaryOpInterface op);
+
+  /**
    * @brief Remove the qubit value.
    */
   void remove(TypedValue<QubitType> q);
@@ -113,14 +118,8 @@ template <typename Fn> void walkUnit(Region& region, Fn&& fn) {
         .template Case<StaticOp>(
             [&](StaticOp op) { qubits.add(op.getQubit(), op.getIndex()); })
         .template Case<AllocOp>([&](AllocOp op) { qubits.add(op.getResult()); })
-        .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-          for (const auto& [prevV, nextV] :
-               llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-            const auto prevQ = cast<TypedValue<QubitType>>(prevV);
-            const auto nextQ = cast<TypedValue<QubitType>>(nextV);
-            qubits.remap(prevQ, nextQ);
-          }
-        })
+        .template Case<UnitaryOpInterface>(
+            [&](UnitaryOpInterface op) { qubits.remap(op); })
         .template Case<ResetOp>([&](ResetOp op) {
           qubits.remap(op.getQubitIn(), op.getQubitOut());
         })
@@ -242,12 +241,7 @@ void walkLayers(Region& region, OnLayer&& onLayer) {
                     for (WireIterator* wire : pending[op]) {
                       std::ranges::advance(*wire, step);
                     }
-                    for (const auto& [prevV, nextV] :
-                         llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-                      const auto prevQ = cast<TypedValue<QubitType>>(prevV);
-                      const auto nextQ = cast<TypedValue<QubitType>>(nextV);
-                      qubits.remap(prevQ, nextQ);
-                    }
+                    qubits.remap(op);
                     return WalkResult::advance();
                   }
 
@@ -257,11 +251,7 @@ void walkLayers(Region& region, OnLayer&& onLayer) {
                   assert(op.getNumQubits() > 0 && op.getNumQubits() <= 2);
 
                   if (op.getNumQubits() == 1) {
-                    const auto in = op.getInputQubit(0);
-                    const auto out = op.getOutputQubit(0);
-                    const auto inQ = cast<TypedValue<QubitType>>(in);
-                    const auto outQ = cast<TypedValue<QubitType>>(out);
-                    qubits.remap(inQ, outQ);
+                    qubits.remap(op);
                     std::ranges::advance(it, step);
                     return WalkResult::advance();
                   }
@@ -270,6 +260,7 @@ void walkLayers(Region& region, OnLayer&& onLayer) {
                   if (pending[op].size() == op.getNumQubits()) {
                     front.emplace_back(op);
                   }
+
                   return WalkResult::interrupt(); // Stop at two-qubit gate.
                 })
                 .template Case<AllocOp>([&](AllocOp op) {
@@ -324,12 +315,7 @@ void walkLayers(Region& region, OnLayer&& onLayer) {
       for (WireIterator* it : pending.at(op)) {
         std::ranges::advance(*it, step);
       }
-      for (const auto& [prevV, nextV] :
-           llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-        const auto prevQ = cast<TypedValue<QubitType>>(prevV);
-        const auto nextQ = cast<TypedValue<QubitType>>(nextV);
-        qubits.remap(prevQ, nextQ);
-      }
+      qubits.remap(op);
     }
 
     front.clear();

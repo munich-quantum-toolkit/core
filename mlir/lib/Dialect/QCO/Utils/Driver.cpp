@@ -44,6 +44,13 @@ void Qubits::remap(TypedValue<QubitType> prev, TypedValue<QubitType> next) {
   hardwareToValue_[index] = next;
 }
 
+void Qubits::remap(UnitaryOpInterface op) {
+  for (const auto& [in, out] :
+       llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
+    remap(cast<TypedValue<QubitType>>(in), cast<TypedValue<QubitType>>(out));
+  }
+}
+
 void Qubits::remove(TypedValue<QubitType> q) {
   assert(valueToIndex_.contains(q));
   const auto& [location, index] = valueToIndex_.lookup(q);
