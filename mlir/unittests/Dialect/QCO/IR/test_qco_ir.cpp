@@ -68,8 +68,9 @@ protected:
     context->loadAllAvailableDialects();
   }
 };
+} // namespace
 
-OwningOpRef<ModuleOp>
+static OwningOpRef<ModuleOp>
 buildTwoQubitInsertChainProgram(MLIRContext* context,
                                 const bool reverseInsertOrder,
                                 const bool swapInsertTargets) {
@@ -97,7 +98,7 @@ buildTwoQubitInsertChainProgram(MLIRContext* context,
   return builder.finalize();
 }
 
-OwningOpRef<ModuleOp>
+static OwningOpRef<ModuleOp>
 buildMixedExtractInsertProgram(MLIRContext* context, const bool reverseOrder,
                                const bool swapInsertTargets) {
   qco::QCOProgramBuilder builder(context);
@@ -140,7 +141,7 @@ buildMixedExtractInsertProgram(MLIRContext* context, const bool reverseOrder,
   return builder.finalize();
 }
 
-OwningOpRef<ModuleOp>
+static OwningOpRef<ModuleOp>
 buildMixedScalarSliceInsertProgram(MLIRContext* context,
                                    const bool reverseOrder, const bool overlap,
                                    const bool mutateScalar) {
@@ -174,7 +175,7 @@ buildMixedScalarSliceInsertProgram(MLIRContext* context,
   return builder.finalize();
 }
 
-OwningOpRef<ModuleOp>
+static OwningOpRef<ModuleOp>
 buildResetWithCommutingInsertProgram(MLIRContext* context,
                                      const bool withReset) {
   qco::QCOProgramBuilder builder(context);
@@ -195,7 +196,7 @@ buildResetWithCommutingInsertProgram(MLIRContext* context,
   return builder.finalize();
 }
 
-OwningOpRef<ModuleOp>
+static OwningOpRef<ModuleOp>
 buildResetWithSameIndexInsertProgram(MLIRContext* context,
                                      const bool withReset) {
   qco::QCOProgramBuilder builder(context);
@@ -222,8 +223,6 @@ buildResetWithSameIndexInsertProgram(MLIRContext* context,
   return builder.finalize();
 }
 
-} // namespace
-
 TEST_P(QCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
@@ -234,7 +233,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -243,7 +242,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -255,13 +254,13 @@ TEST_F(QCOTest, InsertChainPermutationEquivalence) {
   auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildTwoQubitInsertChainProgram(context.get(), true, false);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -272,13 +271,13 @@ TEST_F(QCOTest, InsertChainDifferentAssignmentsNotEquivalent) {
   auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildTwoQubitInsertChainProgram(context.get(), true, true);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_FALSE(
@@ -289,13 +288,13 @@ TEST_F(QCOTest, MixedExtractInsertPermutationEquivalence) {
   auto program = buildMixedExtractInsertProgram(context.get(), false, false);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildMixedExtractInsertProgram(context.get(), true, false);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -306,13 +305,13 @@ TEST_F(QCOTest, MixedExtractInsertDifferentAssignmentsNotEquivalent) {
   auto program = buildMixedExtractInsertProgram(context.get(), false, false);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildMixedExtractInsertProgram(context.get(), true, true);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_FALSE(
@@ -324,14 +323,14 @@ TEST_F(QCOTest, MixedScalarSliceInsertPermutationEquivalence) {
       buildMixedScalarSliceInsertProgram(context.get(), false, false, false);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference =
       buildMixedScalarSliceInsertProgram(context.get(), true, false, false);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -343,14 +342,14 @@ TEST_F(QCOTest, MixedScalarSliceInsertOverlapNotEquivalent) {
       buildMixedScalarSliceInsertProgram(context.get(), false, true, true);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference =
       buildMixedScalarSliceInsertProgram(context.get(), true, true, true);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_FALSE(
@@ -361,13 +360,13 @@ TEST_F(QCOTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
   auto program = buildResetWithCommutingInsertProgram(context.get(), true);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildResetWithCommutingInsertProgram(context.get(), false);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -378,13 +377,13 @@ TEST_F(QCOTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
   auto program = buildResetWithSameIndexInsertProgram(context.get(), true);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildResetWithSameIndexInsertProgram(context.get(), false);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_FALSE(
@@ -414,14 +413,14 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto directBuilder = builder.finalize();
   ASSERT_TRUE(directBuilder);
   EXPECT_TRUE(verify(*directBuilder).succeeded());
-  runCanonicalizationPasses(directBuilder.get());
+  runQCOCleanupPipeline(directBuilder.get());
   EXPECT_TRUE(verify(*directBuilder).succeeded());
 
   auto refBuilder =
       QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
-  runCanonicalizationPasses(refBuilder.get());
+  runQCOCleanupPipeline(refBuilder.get());
   EXPECT_TRUE(verify(*refBuilder).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),

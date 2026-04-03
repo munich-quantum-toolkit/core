@@ -99,7 +99,7 @@ protected:
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder) const {
     auto module = mlir::qc::QCProgramBuilder::build(context.get(), builder.fn);
-    runCanonicalizationPasses(module.get());
+    runQCCleanupPipeline(module.get());
     return module;
   }
 
@@ -107,7 +107,7 @@ protected:
   buildQIRReference(const QIRProgramBuilderFn builder) const {
     auto module =
         mlir::qir::QIRProgramBuilder::build(context.get(), builder.fn);
-    runCanonicalizationPasses(module.get());
+    runQIRCleanupPipeline(module.get());
     return module;
   }
 

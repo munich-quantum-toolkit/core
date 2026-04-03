@@ -72,18 +72,18 @@ struct CompilationRecord {
  *
  * 1. QC dialect (reference semantics) - imported from
  * qc::QuantumComputation
- * 2. Canonicalization + cleanup
+ * 2. QC cleanup pipeline
  * 3. QCO dialect (value semantics) - enables SSA-based optimizations
- * 4. Canonicalization + cleanup
+ * 4. QCO cleanup pipeline
  * 5. Quantum optimization passes
- * 6. Canonicalization + cleanup
+ * 6. QCO cleanup pipeline
  * 7. QC dialect - converted back for backend lowering
- * 8. Canonicalization + cleanup
+ * 8. QC cleanup pipeline
  * 9. QIR (Quantum Intermediate Representation) - optional final lowering
- * 10. Canonicalization + cleanup
+ * 10. QIR cleanup pipeline
  *
- * Following MLIR best practices, canonicalization and dead value removal
- * are always run after each major transformation stage.
+ * Following MLIR best practices, simplification and dead-value cleanup are
+ * run after each major transformation stage.
  */
 class QuantumCompilerPipeline {
 public:
@@ -111,15 +111,6 @@ public:
                             CompilationRecord* record = nullptr) const;
 
 private:
-  /**
-   * @brief Add canonicalization and cleanup passes
-   *
-   * @details
-   * Always adds the standard MLIR canonicalization pass followed by common
-   * sub-expression elimination and dead value removal.
-   */
-  static void addCleanupPasses(PassManager& pm);
-
   /**
    * @brief Configure PassManager with diagnostic options
    *

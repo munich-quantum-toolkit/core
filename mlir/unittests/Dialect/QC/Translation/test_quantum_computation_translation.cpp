@@ -81,7 +81,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
-  runCanonicalizationPasses(translated.get());
+  runQCCleanupPipeline(translated.get());
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
@@ -91,7 +91,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  runQCCleanupPipeline(reference.get());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
