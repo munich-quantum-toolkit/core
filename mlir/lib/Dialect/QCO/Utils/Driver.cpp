@@ -75,10 +75,16 @@ std::size_t Qubits::getHardwareIndex(TypedValue<QubitType> q) const {
   return index;
 }
 
+std::size_t Qubits::getProgramIndex(TypedValue<QubitType> q) const {
+  assert(valueToIndex_.contains(q));
+  const auto& [location, index] = valueToIndex_.lookup(q);
+  assert(location == QubitLocation::Program);
+  return index;
+}
+
 namespace impl {
-std::optional<ArrayRef<WireIterator*>>
-tryReleaseReadyWires(PendingWiresMap& map, UnitaryOpInterface op,
-                     WireIterator* wire) {
+
+void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire) {
   auto [it, inserted] = map.try_emplace(op);
   auto& wires = it->second;
 
@@ -87,12 +93,6 @@ tryReleaseReadyWires(PendingWiresMap& map, UnitaryOpInterface op,
   }
 
   wires.emplace_back(wire);
-
-  if (wires.size() == op.getNumQubits()) {
-    return std::move(wires);
-  }
-
-  return std::nullopt;
 }
 } // namespace impl
 } // namespace mlir::qco

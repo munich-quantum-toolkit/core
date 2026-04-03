@@ -77,6 +77,11 @@ public:
    */
   [[nodiscard]] std::size_t getHardwareIndex(TypedValue<QubitType> q) const;
 
+  /**
+   * @returns the program index assigned to the given qubit value.
+   */
+  [[nodiscard]] std::size_t getProgramIndex(TypedValue<QubitType> q) const;
+
 private:
   DenseMap<std::size_t, TypedValue<QubitType>> programToValue_;
   DenseMap<std::size_t, TypedValue<QubitType>> hardwareToValue_;
@@ -181,19 +186,28 @@ static void skipTwoQubitBlock(WireIterator& first, WireIterator& second) {
 using PendingWiresMap =
     DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
 
-std::optional<ArrayRef<WireIterator*>>
-tryReleaseReadyWires(PendingWiresMap& map, UnitaryOpInterface op,
-                     WireIterator* wire);
+void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire);
 }; // namespace impl
 
-template <WalkDirection d, typename Fn>
-void walkLayers(Region& region, Fn&& fn) {
+/**
+ * TODO: Update description
+ * @brief Collect the layers of independently executable two-qubit gates of a
+ * circuit.
+ * @details Depending on the template parameter, the function collects the
+ * layers in forward or backward direction, respectively. Towards that end,
+ * the function traverses the def-use chain of each qubit until a two-qubit
+ * gate is found. If a two-qubit gate is visited twice, it is considered ready
+ * and inserted into the layer. This process is repeated until no more
+ * two-qubit are found anymore.
+ * @returns a vector of layers.
+ */
+template <WalkDirection d, typename OnLayer>
+void walkLayers(Region& region, OnLayer&& onLayer) {
   constexpr auto step = d == WalkDirection::Forward ? 1 : -1;
-  const auto ffn = std::forward<Fn>(fn);
+  const auto callback = std::forward<OnLayer>(onLayer);
 
   Qubits qubits;
   impl::PendingWiresMap pending;
-  SmallVector<WireIterator*> hold;
   SmallVector<UnitaryOpInterface> front;
   SmallVector<WireIterator> wires;
 
@@ -203,12 +217,12 @@ void walkLayers(Region& region, Fn&& fn) {
 
   if (!staticOps.empty()) { // Static Addressing.
     assert(dynamicOps.empty() && "Mixing addressing modes is invalid.");
-    wires.reserve(llvm::range_size(staticOps));
+    wires.reserve(range_size(staticOps));
     for_each(staticOps,
              [&](StaticOp op) { wires.emplace_back(op.getQubit()); });
   } else { // Dynamic Addressing.
     assert(staticOps.empty() && "Mixing addressing modes is invalid.");
-    wires.reserve(llvm::range_size(dynamicOps));
+    wires.reserve(range_size(dynamicOps));
     for_each(dynamicOps,
              [&](AllocOp op) { wires.emplace_back(op.getResult()); });
   }
@@ -222,16 +236,17 @@ void walkLayers(Region& region, Fn&& fn) {
         const auto res =
             TypeSwitch<Operation*, WalkResult>(it.operation())
                 .template Case<BarrierOp>([&](BarrierOp op) {
-                  if (auto released =
-                          impl::tryReleaseReadyWires(pending, op, &it)) {
-                    for (const auto& [in, out] :
-                         llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-                      const auto inQ = cast<TypedValue<QubitType>>(in);
-                      const auto outQ = cast<TypedValue<QubitType>>(out);
-                      qubits.remap(inQ, outQ);
-                    }
-                    for (WireIterator* wire : *released) {
+                  impl::insert(pending, op, &it);
+                  // Release barrier directly.
+                  if (pending[op].size() == op.getNumQubits()) {
+                    for (WireIterator* wire : pending[op]) {
                       std::ranges::advance(*wire, step);
+                    }
+                    for (const auto& [prevV, nextV] :
+                         llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
+                      const auto prevQ = cast<TypedValue<QubitType>>(prevV);
+                      const auto nextQ = cast<TypedValue<QubitType>>(nextV);
+                      qubits.remap(prevQ, nextQ);
                     }
                     return WalkResult::advance();
                   }
@@ -251,16 +266,11 @@ void walkLayers(Region& region, Fn&& fn) {
                     return WalkResult::advance();
                   }
 
-                  // Ready two-qubit gate?
-                  if (auto released =
-                          impl::tryReleaseReadyWires(pending, op, &it)) {
+                  impl::insert(pending, op, &it);
+                  if (pending[op].size() == op.getNumQubits()) {
                     front.emplace_back(op);
-                    for (WireIterator* x : *released) {
-                      hold.emplace_back(x);
-                    }
                   }
-
-                  return WalkResult::interrupt();
+                  return WalkResult::interrupt(); // Stop at two-qubit gate.
                 })
                 .template Case<AllocOp>([&](AllocOp op) {
                   qubits.add(op.getResult());
@@ -303,26 +313,26 @@ void walkLayers(Region& region, Fn&& fn) {
       break;
     }
 
-    if (ffn(front, qubits).wasInterrupted()) {
+    // The caller determines which two-qubit gates are to be released for next
+    // iteration.
+    const auto released = std::invoke(callback, front, qubits);
+    if (released.empty()) {
       break;
-    };
+    }
 
-    // Jump over ready two-qubit operations.
-    for (UnitaryOpInterface op : front) {
-      for (const auto& [in, out] :
+    for (UnitaryOpInterface op : released) {
+      for (WireIterator* it : pending.at(op)) {
+        std::ranges::advance(*it, step);
+      }
+      for (const auto& [prevV, nextV] :
            llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-        const auto inQ = cast<TypedValue<QubitType>>(in);
-        const auto outQ = cast<TypedValue<QubitType>>(out);
-        qubits.remap(inQ, outQ);
+        const auto prevQ = cast<TypedValue<QubitType>>(prevV);
+        const auto nextQ = cast<TypedValue<QubitType>>(nextV);
+        qubits.remap(prevQ, nextQ);
       }
     }
 
-    for (WireIterator* it : hold) {
-      std::ranges::advance(*it, step);
-    }
-
     front.clear();
-    hold.clear();
     pending.clear();
   }
 }
