@@ -177,19 +177,20 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCBarrierOpTest, QCTest,
-    testing::Values(
-        QCTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),
-                   MQT_NAMED_BUILDER(barrier)},
-        QCTestCase{"BarrierTwoQubits", MQT_NAMED_BUILDER(barrierTwoQubits),
-                   MQT_NAMED_BUILDER(barrierTwoQubits)},
-        QCTestCase{"BarrierMultipleQubits",
-                   MQT_NAMED_BUILDER(barrierMultipleQubits),
-                   MQT_NAMED_BUILDER(barrierMultipleQubits)},
-        QCTestCase{"SingleControlledBarrier",
-                   MQT_NAMED_BUILDER(singleControlledBarrier),
-                   MQT_NAMED_BUILDER(singleControlledBarrierCanonicalized)},
-        QCTestCase{"InverseBarrier", MQT_NAMED_BUILDER(inverseBarrier),
-                   MQT_NAMED_BUILDER(barrier)}));
+    testing::Values(QCTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),
+                               MQT_NAMED_BUILDER(barrier)},
+                    QCTestCase{"BarrierTwoQubits",
+                               MQT_NAMED_BUILDER(barrierTwoQubits),
+                               MQT_NAMED_BUILDER(barrierTwoQubits)},
+                    QCTestCase{"BarrierMultipleQubits",
+                               MQT_NAMED_BUILDER(barrierMultipleQubits),
+                               MQT_NAMED_BUILDER(barrierMultipleQubits)},
+                    QCTestCase{"SingleControlledBarrier",
+                               MQT_NAMED_BUILDER(singleControlledBarrier),
+                               MQT_NAMED_BUILDER(barrier)},
+                    QCTestCase{"InverseBarrier",
+                               MQT_NAMED_BUILDER(inverseBarrier),
+                               MQT_NAMED_BUILDER(barrier)}));
 /// @}
 
 /// \name QC/Operations/StandardGates/DcxOp.cpp
@@ -257,7 +258,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledP)},
         QCTestCase{"NestedControlledGlobalPhase",
                    MQT_NAMED_BUILDER(nestedControlledGlobalPhase),
-                   MQT_NAMED_BUILDER(nestedControlledGlobalPhaseCanonicalized)},
+                   MQT_NAMED_BUILDER(singleControlledP)},
         QCTestCase{"TrivialControlledGlobalPhase",
                    MQT_NAMED_BUILDER(trivialControlledGlobalPhase),
                    MQT_NAMED_BUILDER(globalPhase)},
@@ -299,13 +300,13 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(identity)},
         QCTestCase{"SingleControlledIdentity",
                    MQT_NAMED_BUILDER(singleControlledIdentity),
-                   MQT_NAMED_BUILDER(singleControlledIdentityCanonicalized)},
+                   MQT_NAMED_BUILDER(identity)},
         QCTestCase{"MultipleControlledIdentity",
                    MQT_NAMED_BUILDER(multipleControlledIdentity),
-                   MQT_NAMED_BUILDER(multipleControlledIdentityCanonicalized)},
+                   MQT_NAMED_BUILDER(identity)},
         QCTestCase{"NestedControlledIdentity",
                    MQT_NAMED_BUILDER(nestedControlledIdentity),
-                   MQT_NAMED_BUILDER(nestedControlledIdentityCanonicalized)},
+                   MQT_NAMED_BUILDER(identity)},
         QCTestCase{"TrivialControlledIdentity",
                    MQT_NAMED_BUILDER(trivialControlledIdentity),
                    MQT_NAMED_BUILDER(identity)},
@@ -313,8 +314,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(identity)},
         QCTestCase{"InverseMultipleControlledIdentity",
                    MQT_NAMED_BUILDER(inverseMultipleControlledIdentity),
-                   MQT_NAMED_BUILDER(
-                       inverseMultipleControlledIdentityCanonicalized)}));
+                   MQT_NAMED_BUILDER(identity)}));
 /// @}
 
 /// \name QC/Operations/StandardGates/IswapOp.cpp

@@ -393,10 +393,10 @@ TEST_F(QCOTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
 
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
-  auto c0 = arith::ConstantOp::create(builder, builder.getIndexAttr(0));
-  auto c1 = arith::ConstantOp::create(builder, builder.getIndexAttr(1));
+  auto c0 = arith::ConstantIndexOp::create(builder, 0);
+  auto c1 = arith::ConstantIndexOp::create(builder, 1);
   auto r0 = qtensor::AllocOp::create(builder, c1);
   auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
   auto q1 = HOp::create(builder, extractOp.getResult());
@@ -405,7 +405,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
                    [&](ValueRange qubits) -> llvm::SmallVector<Value> {
                      auto innerQubit = XOp::create(builder, qubits[0]);
-                     return llvm::SmallVector<mlir::Value>{innerQubit};
+                     return llvm::SmallVector<Value>{innerQubit};
                    });
   auto r2 = qtensor::InsertOp::create(builder, ifOp.getResult(0),
                                       extractOp.getOutTensor(), c0);
@@ -486,21 +486,22 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOBarrierOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),
-                    MQT_NAMED_BUILDER(barrier)},
-        QCOTestCase{"BarrierTwoQubits", MQT_NAMED_BUILDER(barrierTwoQubits),
-                    MQT_NAMED_BUILDER(barrierTwoQubits)},
-        QCOTestCase{"BarrierMultipleQubits",
-                    MQT_NAMED_BUILDER(barrierMultipleQubits),
-                    MQT_NAMED_BUILDER(barrierMultipleQubits)},
-        QCOTestCase{"SingleControlledBarrier",
-                    MQT_NAMED_BUILDER(singleControlledBarrier),
-                    MQT_NAMED_BUILDER(singleControlledBarrierCanonicalized)},
-        QCOTestCase{"InverseBarrier", MQT_NAMED_BUILDER(inverseBarrier),
-                    MQT_NAMED_BUILDER(barrier)},
-        QCOTestCase{"TwoBarrier", MQT_NAMED_BUILDER(twoBarrier),
-                    MQT_NAMED_BUILDER(barrierTwoQubits)}));
+    testing::Values(QCOTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),
+                                MQT_NAMED_BUILDER(barrier)},
+                    QCOTestCase{"BarrierTwoQubits",
+                                MQT_NAMED_BUILDER(barrierTwoQubits),
+                                MQT_NAMED_BUILDER(barrierTwoQubits)},
+                    QCOTestCase{"BarrierMultipleQubits",
+                                MQT_NAMED_BUILDER(barrierMultipleQubits),
+                                MQT_NAMED_BUILDER(barrierMultipleQubits)},
+                    QCOTestCase{"SingleControlledBarrier",
+                                MQT_NAMED_BUILDER(singleControlledBarrier),
+                                MQT_NAMED_BUILDER(barrier)},
+                    QCOTestCase{"InverseBarrier",
+                                MQT_NAMED_BUILDER(inverseBarrier),
+                                MQT_NAMED_BUILDER(barrier)},
+                    QCOTestCase{"TwoBarrier", MQT_NAMED_BUILDER(twoBarrier),
+                                MQT_NAMED_BUILDER(barrierTwoQubits)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/DcxOp.cpp

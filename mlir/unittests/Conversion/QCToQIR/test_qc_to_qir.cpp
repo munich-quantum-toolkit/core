@@ -119,17 +119,16 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBarrierOpTest, QCToQIRTest,
     testing::Values(
         QCToQIRTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
-                        MQT_NAMED_BUILDER(qir::barrierConverted)},
+                        MQT_NAMED_BUILDER(qir::emptyQIR)},
         QCToQIRTestCase{"BarrierTwoQubits",
                         MQT_NAMED_BUILDER(qc::barrierTwoQubits),
-                        MQT_NAMED_BUILDER(qir::barrierTwoQubitsConverted)},
+                        MQT_NAMED_BUILDER(qir::emptyQIR)},
         QCToQIRTestCase{"BarrierMultipleQubits",
                         MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
-                        MQT_NAMED_BUILDER(qir::barrierMultipleQubitsConverted)},
-        QCToQIRTestCase{
-            "SingleControlledBarrier",
-            MQT_NAMED_BUILDER(qc::singleControlledBarrier),
-            MQT_NAMED_BUILDER(qir::singleControlledBarrierConverted)}));
+                        MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRTestCase{"SingleControlledBarrier",
+                        MQT_NAMED_BUILDER(qc::singleControlledBarrier),
+                        MQT_NAMED_BUILDER(qir::emptyQIR)}));
 /// @}
 
 /// \name QCToQIR/Operations/StandardGates/DcxOp.cpp
@@ -192,14 +191,12 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCToQIRTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
                         MQT_NAMED_BUILDER(qir::identity)},
-        QCToQIRTestCase{
-            "SingleControlledIdentity",
-            MQT_NAMED_BUILDER(qc::singleControlledIdentity),
-            MQT_NAMED_BUILDER(qir::singleControlledIdentityConverted)},
-        QCToQIRTestCase{
-            "MultipleControlledIdentity",
-            MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-            MQT_NAMED_BUILDER(qir::multipleControlledIdentityConverted)}));
+        QCToQIRTestCase{"SingleControlledIdentity",
+                        MQT_NAMED_BUILDER(qc::singleControlledIdentity),
+                        MQT_NAMED_BUILDER(qir::identity)},
+        QCToQIRTestCase{"MultipleControlledIdentity",
+                        MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
+                        MQT_NAMED_BUILDER(qir::identity)}));
 /// @}
 
 /// \name QCToQIR/Operations/StandardGates/IswapOp.cpp

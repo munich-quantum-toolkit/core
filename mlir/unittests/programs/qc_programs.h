@@ -106,9 +106,6 @@ void multipleControlledGlobalPhase(QCProgramBuilder& b);
 /// Creates a circuit with a nested controlled global phase gate.
 void nestedControlledGlobalPhase(QCProgramBuilder& b);
 
-/// Canonicalized version of `nestedControlledGlobalPhase`.
-void nestedControlledGlobalPhaseCanonicalized(QCProgramBuilder& b);
-
 /// Creates a circuit with a trivial controlled global phase gate.
 void trivialControlledGlobalPhase(QCProgramBuilder& b);
 
@@ -127,20 +124,11 @@ void identity(QCProgramBuilder& b);
 /// Creates a controlled identity gate with a single control qubit.
 void singleControlledIdentity(QCProgramBuilder& b);
 
-/// Canonicalized version of `singleControlledIdentity`.
-void singleControlledIdentityCanonicalized(QCProgramBuilder& b);
-
 /// Creates a multi-controlled identity gate with multiple control qubits.
 void multipleControlledIdentity(QCProgramBuilder& b);
 
-/// Canonicalized version of `multipleControlledIdentity`.
-void multipleControlledIdentityCanonicalized(QCProgramBuilder& b);
-
 /// Creates a circuit with a nested controlled identity gate.
 void nestedControlledIdentity(QCProgramBuilder& b);
-
-/// Canonicalized version of `nestedControlledIdentity`.
-void nestedControlledIdentityCanonicalized(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled identity gate.
 void trivialControlledIdentity(QCProgramBuilder& b);
@@ -151,9 +139,6 @@ void inverseIdentity(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled identity
 /// gate.
 void inverseMultipleControlledIdentity(QCProgramBuilder& b);
-
-/// Canonicalized version of `inverseMultipleControlledIdentity`.
-void inverseMultipleControlledIdentityCanonicalized(QCProgramBuilder& b);
 
 // --- XOp ------------------------------------------------------------------ //
 
@@ -800,9 +785,6 @@ void barrierMultipleQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled barrier.
 void singleControlledBarrier(QCProgramBuilder& b);
-
-/// Canonicalized version of `singleControlledBarrier`.
-void singleControlledBarrierCanonicalized(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a barrier.
 void inverseBarrier(QCProgramBuilder& b);
