@@ -180,6 +180,7 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType]> {
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 

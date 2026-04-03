@@ -140,6 +140,54 @@ buildMixedExtractInsertProgram(MLIRContext* context, const bool reverseOrder,
   return builder.finalize();
 }
 
+OwningOpRef<ModuleOp>
+buildResetWithCommutingInsertProgram(MLIRContext* context,
+                                     const bool withReset) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(2);
+  auto [tensorAfterExtract0, qubit0] = builder.qtensorExtract(tensor, 0);
+  auto tensorAfterInsert0 =
+      builder.qtensorInsert(qubit0, tensorAfterExtract0, 0);
+  auto [tensorAfterExtract1, qubit1] =
+      builder.qtensorExtract(tensorAfterInsert0, 1);
+  if (withReset) {
+    qubit1 = builder.reset(qubit1);
+  }
+  auto tensorFinal = builder.qtensorInsert(qubit1, tensorAfterExtract1, 1);
+  builder.qtensorDealloc(tensorFinal);
+
+  return builder.finalize();
+}
+
+OwningOpRef<ModuleOp>
+buildResetWithSameIndexInsertProgram(MLIRContext* context,
+                                     const bool withReset) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(2);
+  auto [tensorAfterExtract0, qubit0] = builder.qtensorExtract(tensor, 0);
+  auto [tensorAfterExtract1, qubit1] =
+      builder.qtensorExtract(tensorAfterExtract0, 1);
+  qubit1 = builder.h(qubit1);
+  auto tensorAfterInsert1 =
+      builder.qtensorInsert(qubit1, tensorAfterExtract1, 1);
+  auto [tensorAfterReadBack1, qubit1ReadBack] =
+      builder.qtensorExtract(tensorAfterInsert1, 1);
+  if (withReset) {
+    qubit1ReadBack = builder.reset(qubit1ReadBack);
+  }
+  auto tensorAfterInsert1ReadBack =
+      builder.qtensorInsert(qubit1ReadBack, tensorAfterReadBack1, 1);
+  auto tensorFinal =
+      builder.qtensorInsert(qubit0, tensorAfterInsert1ReadBack, 0);
+  builder.qtensorDealloc(tensorFinal);
+
+  return builder.finalize();
+}
+
 } // namespace
 
 TEST_P(QCOTest, ProgramEquivalence) {
@@ -228,6 +276,40 @@ TEST_F(QCOTest, MixedExtractInsertDifferentAssignmentsNotEquivalent) {
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildMixedExtractInsertProgram(context.get(), true, true);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
+  auto program = buildResetWithCommutingInsertProgram(context.get(), true);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildResetWithCommutingInsertProgram(context.get(), false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
+  auto program = buildResetWithSameIndexInsertProgram(context.get(), true);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildResetWithSameIndexInsertProgram(context.get(), false);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
   runCanonicalizationPasses(reference.get());
