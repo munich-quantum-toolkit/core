@@ -734,6 +734,8 @@ private:
     }
 
     std::invoke(callback, *swaps);
+
+    return success();
   }
 
   /**
@@ -755,7 +757,8 @@ private:
     Window window;
     walkLayers<d>(
         func.getFunctionBody(),
-        [&](ArrayRef<UnitaryOpInterface> front, const Qubits& qubits) {
+        [&](ArrayRef<UnitaryOpInterface> front,
+            const Qubits& qubits) -> FailureOr<ArrayRef<UnitaryOpInterface>> {
           SmallVector<IndexGate> layer;
           layer.reserve(front.size());
 
@@ -769,7 +772,9 @@ private:
           window.emplace_back(layer);
 
           if (window.size() == width) {
-            routeWindow(window, arch, params, layout, callback);
+            if (failed(routeWindow(window, arch, params, layout, callback))) {
+              return failure();
+            }
             window.pop_front();
           }
 
@@ -777,7 +782,9 @@ private:
         });
 
     while (!window.empty()) {
-      routeWindow(window, arch, params, layout, callback);
+      if (failed(routeWindow(window, arch, params, layout, callback))) {
+        return failure();
+      }
       window.pop_front();
     }
 

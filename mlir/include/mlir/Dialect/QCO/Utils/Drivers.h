@@ -188,6 +188,8 @@ using PendingWiresMap =
 void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire);
 }; // namespace impl
 
+using WalkLayersCallback = function_ref<FailureOr<ArrayRef<UnitaryOpInterface>>(
+    ArrayRef<UnitaryOpInterface> front, const Qubits& qubits)>;
 /**
  * TODO: Update description
  * @brief Collect the layers of independently executable two-qubit gates of a
@@ -200,10 +202,9 @@ void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire);
  * two-qubit are found anymore.
  * @returns a vector of layers.
  */
-template <WalkDirection d, typename OnLayer>
-void walkLayers(Region& region, OnLayer&& onLayer) {
+template <WalkDirection d>
+LogicalResult walkLayers(Region& region, WalkLayersCallback onLayer) {
   constexpr auto step = d == WalkDirection::Forward ? 1 : -1;
-  const auto callback = std::forward<OnLayer>(onLayer);
 
   Qubits qubits;
   impl::PendingWiresMap pending;
@@ -306,12 +307,16 @@ void walkLayers(Region& region, OnLayer&& onLayer) {
 
     // The caller determines which two-qubit gates are to be released for next
     // iteration.
-    const auto released = std::invoke(callback, front, qubits);
-    if (released.empty()) {
+    const auto released = std::invoke(onLayer, front, qubits);
+    if (failed(released)) {
+      return failure();
+    }
+
+    if (released->empty()) {
       break;
     }
 
-    for (UnitaryOpInterface op : released) {
+    for (UnitaryOpInterface op : *released) {
       for (WireIterator* it : pending.at(op)) {
         std::ranges::advance(*it, step);
       }
@@ -321,5 +326,7 @@ void walkLayers(Region& region, OnLayer&& onLayer) {
     front.clear();
     pending.clear();
   }
+
+  return success();
 }
 } // namespace mlir::qco
