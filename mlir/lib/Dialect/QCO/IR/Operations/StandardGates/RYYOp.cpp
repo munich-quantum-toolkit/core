@@ -56,18 +56,6 @@ struct MergeSwappedTargetsRYY final : OpRewritePattern<RYYOp> {
   }
 };
 
-/**
- * @brief Remove trivial RYY operations.
- */
-struct RemoveTrivialRYY final : OpRewritePattern<RYYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RYYOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTrivialTwoTargetOneParameter(op, rewriter);
-  }
-};
-
 } // namespace
 
 void RYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -78,10 +66,20 @@ void RYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 
+LogicalResult RYYOp::fold(FoldAdaptor /*adaptor*/,
+                          SmallVectorImpl<OpFoldResult>& results) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    results.emplace_back(getInputQubit(0));
+    results.emplace_back(getInputQubit(1));
+    return success();
+  }
+  return failure();
+}
+
 void RYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRYY, MergeSwappedTargetsRYY, RemoveTrivialRYY>(
-      context);
+  results.add<MergeSubsequentRYY, MergeSwappedTargetsRYY>(context);
 }
 
 std::optional<Eigen::Matrix4cd> RYYOp::getUnitaryMatrix() {

@@ -17,9 +17,11 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -87,29 +89,25 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
 }
 
 llvm::SmallVector<Value>
-QCProgramBuilder::allocQubitRegister(const int64_t size,
-                                     const std::string& name) {
+QCProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  // Allocate a sequence of qubits with register metadata
+  auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
+  auto memref = memref::AllocOp::create(*this, memrefType);
+  allocatedMemrefs.insert(memref);
+
   llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
-
-  auto nameAttr = getStringAttr(name);
-  auto sizeAttr = getI64IntegerAttr(size);
-
   for (int64_t i = 0; i < size; ++i) {
-    auto indexAttr = getI64IntegerAttr(i);
-    auto allocOp = AllocOp::create(*this, nameAttr, sizeAttr, indexAttr);
-    const auto& qubit = qubits.emplace_back(allocOp.getResult());
-    // Track the allocated qubit for automatic deallocation
+    auto index = arith::ConstantIndexOp::create(*this, i);
+    auto load = memref::LoadOp::create(*this, memref, index.getResult());
+    const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
   }
-
   return qubits;
 }
 
@@ -494,24 +492,17 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  // Automatically deallocate all still-allocated qubits
-  // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(allocatedQubits.begin(),
-                                        allocatedQubits.end());
-  llvm::sort(sortedQubits, [](Value a, Value b) {
-    auto* opA = a.getDefiningOp();
-    auto* opB = b.getDefiningOp();
-    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
+  for (auto qubit : allocatedQubits) {
+    if (!llvm::isa<memref::LoadOp>(qubit.getDefiningOp())) {
+      DeallocOp::create(*this, qubit);
     }
-    return opA->isBeforeInBlock(opB);
-  });
-  for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, qubit);
   }
-
-  // Clear the tracking set
   allocatedQubits.clear();
+
+  for (auto memref : allocatedMemrefs) {
+    memref::DeallocOp::create(*this, memref);
+  }
+  allocatedMemrefs.clear();
 
   // Create constant 0 for successful exit code
   auto exitCode = intConstant(0);

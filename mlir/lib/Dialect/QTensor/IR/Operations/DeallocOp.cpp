@@ -35,7 +35,7 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
       return failure();
     }
 
-    // Remove the AllocOp and the DeallocOp
+    // Remove the AllocOp and the DeallocOp.
     rewriter.eraseOp(op);
     rewriter.eraseOp(allocOp);
     return success();

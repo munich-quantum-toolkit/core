@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -134,21 +135,20 @@ public:
   /**
    * @brief Allocate a qubit register
    * @param size Number of qubits (must be positive)
-   * @param name Register name (default: "q")
    * @return Vector of tracked, valid qubit SSA values
    *
    * @par Example:
    * ```c++
-   * auto q = builder.allocQubitRegister(3, "q");
+   * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %q0 = qco.alloc("q", 3, 0) : !qco.qubit
-   * %q1 = qco.alloc("q", 3, 1) : !qco.qubit
-   * %q2 = qco.alloc("q", 3, 2) : !qco.qubit
+   * %t0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+   * %t1, %q0 = qtensor.extract %t0[%c0]: tensor<3x!qco.qubit>
+   * %t2, %q1 = qtensor.extract %t1[%c1]: tensor<3x!qco.qubit>
+   * %t3, %q2 = qtensor.extract %t2[%c2]: tensor<3x!qco.qubit>
    * ```
    */
-  llvm::SmallVector<Value> allocQubitRegister(int64_t size,
-                                              const std::string& name = "q");
+  llvm::SmallVector<Value> allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -272,8 +272,7 @@ public:
    * %outTensor, %q0 = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
    * ```
    */
-  std::pair<Value, Value>
-  qtensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
+  std::pair<Value, Value> qtensorExtract(Value tensor, const int64_t index);
 
   /**
    * @brief Extract a qubit slice from a tensor
@@ -1347,11 +1346,24 @@ private:
    */
   void updateQubitTracking(Value inputQubit, Value outputQubit);
 
+  /// Count unique tensors
+  int64_t tensorCounter = 0;
+
+  /**
+   * @brief Information about a qubit
+   */
+  struct QubitInfo {
+    /// ID of the register the qubit belongs to
+    int64_t regId = -1;
+    /// Index of the qubit within its register
+    int64_t regIndex = -1;
+  };
+
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
-  /// Only values present in this set are valid for use in operations.
+  /// Only values present in this map are valid for use in operations.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseSet<Value> validQubits;
+  llvm::DenseMap<Value, QubitInfo> validQubits;
 
   /**
    * @brief Validate that a tensor value is valid and unconsumed. This also
@@ -1369,10 +1381,18 @@ private:
    */
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
+  /**
+   * @brief Information about a tensor
+   */
+  struct TensorInfo {
+    /// ID of the register the tensor corresponds to
+    int64_t regId = -1;
+  };
+
   /// Track valid (unconsumed) tensor SSA values for linear type enforcement.
-  /// Only values present in this set are valid for use in operations.
+  /// Only values present in this map are valid for use in operations.
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseSet<Value> validTensors;
+  llvm::DenseMap<Value, TensorInfo> validTensors;
 };
 } // namespace mlir::qco

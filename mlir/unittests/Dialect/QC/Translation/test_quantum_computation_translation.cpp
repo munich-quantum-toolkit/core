@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -58,7 +59,7 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mlir::qc::QCDialect, mlir::arith::ArithDialect,
-                    mlir::func::FuncDialect>();
+                    mlir::func::FuncDialect, mlir::memref::MemRefDialect>();
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -80,7 +81,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
-  runCanonicalizationPasses(translated.get());
+  runQCCleanupPipeline(translated.get());
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
@@ -90,7 +91,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  runQCCleanupPipeline(reference.get());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 

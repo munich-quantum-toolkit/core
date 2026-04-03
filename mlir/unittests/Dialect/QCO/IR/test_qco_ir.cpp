@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -25,10 +26,12 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
 
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -65,8 +68,160 @@ protected:
     context->loadAllAvailableDialects();
   }
 };
-
 } // namespace
+
+static OwningOpRef<ModuleOp>
+buildTwoQubitInsertChainProgram(MLIRContext* context,
+                                const bool reverseInsertOrder,
+                                const bool swapInsertTargets) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(2);
+  auto [tensorAfterFirstExtract, qubit0] = builder.qtensorExtract(tensor, 0);
+  auto [baseTensor, qubit1] =
+      builder.qtensorExtract(tensorAfterFirstExtract, 1);
+
+  const int64_t qubit0Target = swapInsertTargets ? 1 : 0;
+  const int64_t qubit1Target = swapInsertTargets ? 0 : 1;
+
+  Value currentTensor = baseTensor;
+  if (reverseInsertOrder) {
+    currentTensor = builder.qtensorInsert(qubit1, currentTensor, qubit1Target);
+    currentTensor = builder.qtensorInsert(qubit0, currentTensor, qubit0Target);
+  } else {
+    currentTensor = builder.qtensorInsert(qubit0, currentTensor, qubit0Target);
+    currentTensor = builder.qtensorInsert(qubit1, currentTensor, qubit1Target);
+  }
+
+  builder.qtensorDealloc(currentTensor);
+  return builder.finalize();
+}
+
+static OwningOpRef<ModuleOp>
+buildMixedExtractInsertProgram(MLIRContext* context, const bool reverseOrder,
+                               const bool swapInsertTargets) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(3);
+  Value tensorAfterReads = tensor;
+  Value qubit0 = nullptr;
+  Value qubit1 = nullptr;
+
+  if (reverseOrder) {
+    std::tie(tensorAfterReads, qubit1) =
+        builder.qtensorExtract(tensorAfterReads, 1);
+    std::tie(tensorAfterReads, qubit0) =
+        builder.qtensorExtract(tensorAfterReads, 0);
+  } else {
+    std::tie(tensorAfterReads, qubit0) =
+        builder.qtensorExtract(tensorAfterReads, 0);
+    std::tie(tensorAfterReads, qubit1) =
+        builder.qtensorExtract(tensorAfterReads, 1);
+  }
+
+  const int64_t q0Target = 0;
+  const int64_t q1Target = swapInsertTargets ? 2 : 1;
+
+  Value tensorAfterWrites = tensorAfterReads;
+  if (reverseOrder) {
+    tensorAfterWrites =
+        builder.qtensorInsert(qubit0, tensorAfterWrites, q0Target);
+    tensorAfterWrites =
+        builder.qtensorInsert(qubit1, tensorAfterWrites, q1Target);
+  } else {
+    tensorAfterWrites =
+        builder.qtensorInsert(qubit1, tensorAfterWrites, q1Target);
+    tensorAfterWrites =
+        builder.qtensorInsert(qubit0, tensorAfterWrites, q0Target);
+  }
+
+  builder.qtensorDealloc(tensorAfterWrites);
+  return builder.finalize();
+}
+
+static OwningOpRef<ModuleOp>
+buildMixedScalarSliceInsertProgram(MLIRContext* context,
+                                   const bool reverseOrder, const bool overlap,
+                                   const bool mutateScalar) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(6);
+  auto [tensorAfterSliceExtract, slice] =
+      builder.qtensorExtractSlice(tensor, 1, 2);
+  const int64_t scalarIndex = overlap ? 1 : 5;
+  auto [tensorAfterScalarExtract, scalar] =
+      builder.qtensorExtract(tensorAfterSliceExtract, scalarIndex);
+  if (mutateScalar) {
+    scalar = builder.h(scalar);
+  }
+
+  Value tensorAfterWrites = tensorAfterScalarExtract;
+  if (reverseOrder) {
+    tensorAfterWrites =
+        builder.qtensorInsertSlice(slice, tensorAfterWrites, 1, 2);
+    tensorAfterWrites =
+        builder.qtensorInsert(scalar, tensorAfterWrites, scalarIndex);
+  } else {
+    tensorAfterWrites =
+        builder.qtensorInsert(scalar, tensorAfterWrites, scalarIndex);
+    tensorAfterWrites =
+        builder.qtensorInsertSlice(slice, tensorAfterWrites, 1, 2);
+  }
+
+  builder.qtensorDealloc(tensorAfterWrites);
+  return builder.finalize();
+}
+
+static OwningOpRef<ModuleOp>
+buildResetWithCommutingInsertProgram(MLIRContext* context,
+                                     const bool withReset) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(2);
+  auto [tensorAfterExtract0, qubit0] = builder.qtensorExtract(tensor, 0);
+  auto tensorAfterInsert0 =
+      builder.qtensorInsert(qubit0, tensorAfterExtract0, 0);
+  auto [tensorAfterExtract1, qubit1] =
+      builder.qtensorExtract(tensorAfterInsert0, 1);
+  if (withReset) {
+    qubit1 = builder.reset(qubit1);
+  }
+  auto tensorFinal = builder.qtensorInsert(qubit1, tensorAfterExtract1, 1);
+  builder.qtensorDealloc(tensorFinal);
+
+  return builder.finalize();
+}
+
+static OwningOpRef<ModuleOp>
+buildResetWithSameIndexInsertProgram(MLIRContext* context,
+                                     const bool withReset) {
+  qco::QCOProgramBuilder builder(context);
+  builder.initialize();
+
+  auto tensor = builder.qtensorAlloc(2);
+  auto [tensorAfterExtract0, qubit0] = builder.qtensorExtract(tensor, 0);
+  auto [tensorAfterExtract1, qubit1] =
+      builder.qtensorExtract(tensorAfterExtract0, 1);
+  qubit1 = builder.h(qubit1);
+  auto tensorAfterInsert1 =
+      builder.qtensorInsert(qubit1, tensorAfterExtract1, 1);
+  auto [tensorAfterReadBack1, qubit1ReadBack] =
+      builder.qtensorExtract(tensorAfterInsert1, 1);
+  if (withReset) {
+    qubit1ReadBack = builder.reset(qubit1ReadBack);
+  }
+  auto tensorAfterInsert1ReadBack =
+      builder.qtensorInsert(qubit1ReadBack, tensorAfterReadBack1, 1);
+  auto tensorFinal =
+      builder.qtensorInsert(qubit0, tensorAfterInsert1ReadBack, 0);
+  builder.qtensorDealloc(tensorFinal);
+
+  return builder.finalize();
+}
 
 TEST_P(QCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
@@ -78,7 +233,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  runQCOCleanupPipeline(program.get());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -87,7 +242,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  runQCOCleanupPipeline(reference.get());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -95,32 +250,177 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QCOTest, InsertChainPermutationEquivalence) {
+  auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildTwoQubitInsertChainProgram(context.get(), true, false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, InsertChainDifferentAssignmentsNotEquivalent) {
+  auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildTwoQubitInsertChainProgram(context.get(), true, true);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, MixedExtractInsertPermutationEquivalence) {
+  auto program = buildMixedExtractInsertProgram(context.get(), false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildMixedExtractInsertProgram(context.get(), true, false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, MixedExtractInsertDifferentAssignmentsNotEquivalent) {
+  auto program = buildMixedExtractInsertProgram(context.get(), false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildMixedExtractInsertProgram(context.get(), true, true);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, MixedScalarSliceInsertPermutationEquivalence) {
+  auto program =
+      buildMixedScalarSliceInsertProgram(context.get(), false, false, false);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference =
+      buildMixedScalarSliceInsertProgram(context.get(), true, false, false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, MixedScalarSliceInsertOverlapNotEquivalent) {
+  auto program =
+      buildMixedScalarSliceInsertProgram(context.get(), false, true, true);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference =
+      buildMixedScalarSliceInsertProgram(context.get(), true, true, true);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
+  auto program = buildResetWithCommutingInsertProgram(context.get(), true);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildResetWithCommutingInsertProgram(context.get(), false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCOTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
+  auto program = buildResetWithSameIndexInsertProgram(context.get(), true);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  auto reference = buildResetWithSameIndexInsertProgram(context.get(), false);
+  ASSERT_TRUE(reference);
+  EXPECT_TRUE(verify(*reference).succeeded());
+  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(verify(*reference).succeeded());
+
+  EXPECT_FALSE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
-  auto q0 = AllocOp::create(builder);
-  auto q1 = HOp::create(builder, q0);
+  auto c0 = arith::ConstantIndexOp::create(builder, 0);
+  auto c1 = arith::ConstantIndexOp::create(builder, 1);
+  auto r0 = qtensor::AllocOp::create(builder, c1);
+  auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
+  auto q1 = HOp::create(builder, extractOp.getResult());
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp =
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
                    [&](ValueRange qubits) -> llvm::SmallVector<Value> {
                      auto innerQubit = XOp::create(builder, qubits[0]);
-                     return llvm::SmallVector<mlir::Value>{innerQubit};
+                     return llvm::SmallVector<Value>{innerQubit};
                    });
-  SinkOp::create(builder, ifOp.getResult(0));
+  auto r2 = qtensor::InsertOp::create(builder, ifOp.getResult(0),
+                                      extractOp.getOutTensor(), c0);
+  qtensor::DeallocOp::create(builder, r2);
 
   auto directBuilder = builder.finalize();
   ASSERT_TRUE(directBuilder);
   EXPECT_TRUE(verify(*directBuilder).succeeded());
-  runCanonicalizationPasses(directBuilder.get());
+  runQCOCleanupPipeline(directBuilder.get());
   EXPECT_TRUE(verify(*directBuilder).succeeded());
 
   auto refBuilder =
       QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
-  runCanonicalizationPasses(refBuilder.get());
+  runQCOCleanupPipeline(refBuilder.get());
   EXPECT_TRUE(verify(*refBuilder).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),

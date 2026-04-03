@@ -9,10 +9,14 @@
  */
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -44,10 +48,7 @@ static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
     return nullptr;
   }
 
-  Value insertIndex = insertOp.getIndex();
-  Value extractIndex = extractOp.getIndex();
-
-  if (getAsOpFoldResult(insertIndex) != getAsOpFoldResult(extractIndex)) {
+  if (!areEquivalentIndices(insertOp.getIndex(), extractOp.getIndex())) {
     return nullptr;
   }
 
@@ -63,4 +64,83 @@ LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,
   }
 
   return failure();
+}
+
+namespace {
+
+/**
+ * @brief Remove matching insert-extract pairs through commuting disjoint
+ * tensor-chain operations.
+ */
+struct RemoveInsertExtractPair final : OpRewritePattern<ExtractOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ExtractOp extractOp,
+                                PatternRewriter& rewriter) const override {
+    llvm::SmallVector<Operation*> traversedOps;
+    Value currentTensor = extractOp.getTensor();
+    InsertOp matchedInsertOp = nullptr;
+
+    while (auto* definingOp = currentTensor.getDefiningOp()) {
+      if (!isTensorChainOp(definingOp)) {
+        break;
+      }
+
+      if (auto insertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
+        if (areEquivalentIndices(insertOp.getIndex(), extractOp.getIndex())) {
+          matchedInsertOp = insertOp;
+          break;
+        }
+      } else if (auto nestedExtractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
+        if (areEquivalentIndices(nestedExtractOp.getIndex(),
+                                 extractOp.getIndex())) {
+          // Do not reorder reads from the same index.
+          return failure();
+        }
+      } else if (auto insertSliceOp =
+                     llvm::dyn_cast<InsertSliceOp>(definingOp)) {
+        if (classifyIndexAndRange(
+                extractOp.getIndex(), insertSliceOp.getOffset(),
+                insertSliceOp.getSize()) != AccessRelation::Disjoint) {
+          return failure();
+        }
+      } else if (auto extractSliceOp =
+                     llvm::dyn_cast<ExtractSliceOp>(definingOp)) {
+        if (classifyIndexAndRange(
+                extractOp.getIndex(), extractSliceOp.getOffset(),
+                extractSliceOp.getSize()) != AccessRelation::Disjoint) {
+          return failure();
+        }
+      }
+
+      traversedOps.push_back(definingOp);
+      currentTensor = getTensorChainInput(definingOp);
+    }
+
+    if (!matchedInsertOp) {
+      return failure();
+    }
+
+    Value outTensor = matchedInsertOp.getDest();
+    if (!traversedOps.empty()) {
+      Operation* oldestCommutedOp = traversedOps.back();
+      rewriter.modifyOpInPlace(oldestCommutedOp, [&]() {
+        setTensorChainInput(oldestCommutedOp, matchedInsertOp.getDest());
+      });
+      outTensor = getTensorChainOutput(traversedOps.front());
+      if (!outTensor) {
+        return failure();
+      }
+    }
+
+    rewriter.replaceOp(extractOp, {outTensor, matchedInsertOp.getScalar()});
+    return success();
+  }
+};
+
+} // namespace
+
+void ExtractOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                            MLIRContext* context) {
+  results.add<RemoveInsertExtractPair>(context);
 }

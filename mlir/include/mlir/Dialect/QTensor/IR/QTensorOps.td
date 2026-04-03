@@ -134,6 +134,7 @@ def ExtractOp
   let results = (outs 1DTensorOf<[QubitType]>:$out_tensor, QubitType:$result);
   let assemblyFormat = "$tensor `[` $index `]` attr-dict `:` type($tensor)";
 
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
   let hasVerifier = 1;
 }
@@ -175,6 +176,7 @@ def ExtractSliceOp
   let builders = [OpBuilder<(ins "Value":$tensor, "Value":$offset,
       "Value":$size, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>];
 
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
   let hasVerifier = 1;
 }
@@ -207,6 +209,7 @@ def InsertOp
         $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
 
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
   let hasVerifier = 1;
 }
@@ -243,6 +246,7 @@ def InsertSliceOp
         attr-dict `:` type($source) `into` type($dest)
     }];
 
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
   let hasVerifier = 1;
 }

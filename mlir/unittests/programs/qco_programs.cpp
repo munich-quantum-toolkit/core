@@ -27,8 +27,8 @@ void allocQubit(QCOProgramBuilder& b) { b.allocQubit(); }
 void allocQubitRegister(QCOProgramBuilder& b) { b.allocQubitRegister(2); }
 
 void allocMultipleQubitRegisters(QCOProgramBuilder& b) {
-  b.allocQubitRegister(2, "reg0");
-  b.allocQubitRegister(3, "reg1");
+  b.allocQubitRegister(2);
+  b.allocQubitRegister(3);
 }
 
 void allocLargeRegister(QCOProgramBuilder& b) { b.allocQubitRegister(100); }
@@ -126,9 +126,9 @@ void repeatedResetWithoutOp(QCOProgramBuilder& b) {
 }
 
 void resetQubitAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
@@ -140,11 +140,11 @@ void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
 }
 
 void repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
-  q = b.reset(q);
-  q = b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void globalPhase(QCOProgramBuilder& b) { b.gphase(0.123); }

@@ -9,14 +9,18 @@
  */
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -78,13 +82,9 @@ foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
     return nullptr;
   }
 
-  auto insertOffset = insertSliceOp.getOffset();
-  auto extractOffset = extractSliceOp.getOffset();
-  auto insertSize = insertSliceOp.getSize();
-  auto extractSize = extractSliceOp.getSize();
-
-  if (getAsOpFoldResult(insertOffset) != getAsOpFoldResult(extractOffset) ||
-      getAsOpFoldResult(insertSize) != getAsOpFoldResult(extractSize)) {
+  if (!areEquivalentRanges(insertSliceOp.getOffset(), insertSliceOp.getSize(),
+                           extractSliceOp.getOffset(),
+                           extractSliceOp.getSize())) {
     return nullptr;
   }
 
@@ -100,4 +100,91 @@ LogicalResult ExtractSliceOp::fold(FoldAdaptor /*adaptor*/,
   }
 
   return failure();
+}
+
+namespace {
+
+/**
+ * @brief Remove matching insert_slice-extract_slice pairs through commuting
+ * disjoint tensor-chain operations.
+ */
+struct RemoveInsertSliceExtractSlicePair final
+    : OpRewritePattern<ExtractSliceOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ExtractSliceOp extractSliceOp,
+                                PatternRewriter& rewriter) const override {
+    llvm::SmallVector<Operation*> traversedOps;
+    Value currentTensor = extractSliceOp.getTensor();
+    InsertSliceOp matchedInsertSliceOp = nullptr;
+
+    while (auto* definingOp = currentTensor.getDefiningOp()) {
+      if (!isTensorChainOp(definingOp)) {
+        break;
+      }
+
+      if (auto insertSliceOp = llvm::dyn_cast<InsertSliceOp>(definingOp)) {
+        const auto relation = classifyRanges(
+            insertSliceOp.getOffset(), insertSliceOp.getSize(),
+            extractSliceOp.getOffset(), extractSliceOp.getSize());
+        if (relation == AccessRelation::Equal) {
+          matchedInsertSliceOp = insertSliceOp;
+          break;
+        }
+        if (relation != AccessRelation::Disjoint) {
+          return failure();
+        }
+      } else if (auto insertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
+        if (classifyIndexAndRange(
+                insertOp.getIndex(), extractSliceOp.getOffset(),
+                extractSliceOp.getSize()) != AccessRelation::Disjoint) {
+          return failure();
+        }
+      } else if (auto nestedExtractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
+        if (classifyIndexAndRange(
+                nestedExtractOp.getIndex(), extractSliceOp.getOffset(),
+                extractSliceOp.getSize()) != AccessRelation::Disjoint) {
+          return failure();
+        }
+      } else if (auto nestedExtractSliceOp =
+                     llvm::dyn_cast<ExtractSliceOp>(definingOp)) {
+        if (classifyRanges(
+                nestedExtractSliceOp.getOffset(),
+                nestedExtractSliceOp.getSize(), extractSliceOp.getOffset(),
+                extractSliceOp.getSize()) != AccessRelation::Disjoint) {
+          return failure();
+        }
+      }
+
+      traversedOps.push_back(definingOp);
+      currentTensor = getTensorChainInput(definingOp);
+    }
+
+    if (!matchedInsertSliceOp) {
+      return failure();
+    }
+
+    Value outTensor = matchedInsertSliceOp.getDest();
+    if (!traversedOps.empty()) {
+      Operation* oldestCommutedOp = traversedOps.back();
+      rewriter.modifyOpInPlace(oldestCommutedOp, [&]() {
+        setTensorChainInput(oldestCommutedOp, matchedInsertSliceOp.getDest());
+      });
+      outTensor = getTensorChainOutput(traversedOps.front());
+      if (!outTensor) {
+        return failure();
+      }
+    }
+
+    rewriter.replaceOp(extractSliceOp,
+                       {outTensor, matchedInsertSliceOp.getSource()});
+    return success();
+  }
+};
+
+} // namespace
+
+void ExtractSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                                 MLIRContext* context) {
+  results.add<RemoveInsertSliceExtractSlicePair>(context);
 }

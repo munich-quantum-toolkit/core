@@ -12,9 +12,38 @@
 
 namespace mlir {
 class ModuleOp;
-}
+class PassManager;
+} // namespace mlir
 
 /**
- * @brief Run canonicalization and dead value removal on the given module.
+ * @brief Populate a QC-oriented cleanup pipeline on the given pass manager.
+ * @details Adds generic cleanup and QC qubit-register shrinking.
  */
-void runCanonicalizationPasses(mlir::ModuleOp module);
+void populateQCCleanupPipeline(mlir::PassManager& passManager);
+
+/**
+ * @brief Populate a QCO-oriented cleanup pipeline on the given pass manager.
+ * @details Adds generic cleanup and qtensor shrink-to-fit.
+ */
+void populateQCOCleanupPipeline(mlir::PassManager& passManager);
+
+/**
+ * @brief Populate a QIR-oriented cleanup pipeline on the given pass manager.
+ * @details Adds generic cleanup and QIR-specific simplifications.
+ */
+void populateQIRCleanupPipeline(mlir::PassManager& passManager);
+
+/**
+ * @brief Run the QC-oriented cleanup pipeline on a module.
+ */
+void runQCCleanupPipeline(mlir::ModuleOp module);
+
+/**
+ * @brief Run the QCO-oriented cleanup pipeline on a module.
+ */
+void runQCOCleanupPipeline(mlir::ModuleOp module);
+
+/**
+ * @brief Run the QIR-oriented cleanup pipeline on a module.
+ */
+void runQIRCleanupPipeline(mlir::ModuleOp module);

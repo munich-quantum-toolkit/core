@@ -76,18 +76,6 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
   }
 };
 
-/**
- * @brief Remove trivial XXPlusYY operations.
- */
-struct RemoveTrivialXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(XXPlusYYOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTrivialTwoTargetOneParameter(op, rewriter);
-  }
-};
-
 } // namespace
 
 void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -100,9 +88,20 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
+LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
+                               SmallVectorImpl<OpFoldResult>& results) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    results.emplace_back(getInputQubit(0));
+    results.emplace_back(getInputQubit(1));
+    return success();
+  }
+  return failure();
+}
+
 void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                              MLIRContext* context) {
-  results.add<MergeSubsequentXXPlusYY, RemoveTrivialXXPlusYY>(context);
+  results.add<MergeSubsequentXXPlusYY>(context);
 }
 
 std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {

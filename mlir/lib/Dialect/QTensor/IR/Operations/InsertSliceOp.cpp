@@ -9,16 +9,85 @@
  */
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qtensor;
+
+/**
+ * @brief Checks whether removing an extract_slice-insert_slice pair is
+ * linearity-safe.
+ */
+static bool
+isRemovableExtractSliceInsertSlicePair(InsertSliceOp insertSliceOp,
+                                       ExtractSliceOp extractSliceOp) {
+  return insertSliceOp.getSource() == extractSliceOp.getResult() &&
+         areEquivalentRanges(insertSliceOp.getOffset(), insertSliceOp.getSize(),
+                             extractSliceOp.getOffset(),
+                             extractSliceOp.getSize());
+}
+
+/**
+ * @brief Find a matching `qtensor.extract_slice` for an insert_slice range in
+ * a tensor chain by traversing scalar and slice tensor operations.
+ */
+static ExtractSliceOp
+findMatchingExtractSliceInTensorChain(Value tensor, Value offset, Value size) {
+  Value current = tensor;
+  while (Operation* definingOp = current.getDefiningOp()) {
+    if (auto nestedInsertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
+      if (classifyIndexAndRange(nestedInsertOp.getIndex(), offset, size) !=
+          AccessRelation::Disjoint) {
+        return nullptr;
+      }
+      current = nestedInsertOp.getDest();
+      continue;
+    }
+    if (auto nestedInsertSliceOp = llvm::dyn_cast<InsertSliceOp>(definingOp)) {
+      if (classifyRanges(nestedInsertSliceOp.getOffset(),
+                         nestedInsertSliceOp.getSize(), offset,
+                         size) != AccessRelation::Disjoint) {
+        return nullptr;
+      }
+      current = nestedInsertSliceOp.getDest();
+      continue;
+    }
+    if (auto extractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
+      if (classifyIndexAndRange(extractOp.getIndex(), offset, size) !=
+          AccessRelation::Disjoint) {
+        return nullptr;
+      }
+      current = extractOp.getTensor();
+      continue;
+    }
+    if (auto extractSliceOp = llvm::dyn_cast<ExtractSliceOp>(definingOp)) {
+      const auto relation = classifyRanges(
+          extractSliceOp.getOffset(), extractSliceOp.getSize(), offset, size);
+      if (relation == AccessRelation::Equal) {
+        return extractSliceOp;
+      }
+      if (relation != AccessRelation::Disjoint) {
+        return nullptr;
+      }
+      current = extractSliceOp.getTensor();
+      continue;
+    }
+
+    break;
+  }
+
+  return nullptr;
+}
 
 LogicalResult InsertSliceOp::verify() {
   auto srcDim = getSource().getType().getDimSize(0);
@@ -64,13 +133,9 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
     return nullptr;
   }
 
-  auto insertOffset = insertSliceOp.getOffset();
-  auto extractOffset = extractSliceOp.getOffset();
-  auto insertSize = insertSliceOp.getSize();
-  auto extractSize = extractSliceOp.getSize();
-
-  if (getAsOpFoldResult(insertOffset) != getAsOpFoldResult(extractOffset) ||
-      getAsOpFoldResult(insertSize) != getAsOpFoldResult(extractSize)) {
+  if (!areEquivalentRanges(insertSliceOp.getOffset(), insertSliceOp.getSize(),
+                           extractSliceOp.getOffset(),
+                           extractSliceOp.getSize())) {
     return nullptr;
   }
 
@@ -83,4 +148,39 @@ OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
   }
 
   return {};
+}
+
+namespace {
+
+/**
+ * @brief Remove matching `qtensor.insert_slice` and `qtensor.extract_slice`
+ * pairs through commuting disjoint tensor-chain operations.
+ */
+struct RemoveExtractSliceInsertSlicePair final
+    : OpRewritePattern<InsertSliceOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertSliceOp op,
+                                PatternRewriter& rewriter) const override {
+    auto extractSliceOp = findMatchingExtractSliceInTensorChain(
+        op.getDest(), op.getOffset(), op.getSize());
+    if (!extractSliceOp) {
+      return failure();
+    }
+
+    if (!isRemovableExtractSliceInsertSlicePair(op, extractSliceOp)) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op, op.getDest());
+    rewriter.replaceOp(extractSliceOp, {extractSliceOp.getTensor(), nullptr});
+    return success();
+  }
+};
+
+} // namespace
+
+void InsertSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                                MLIRContext* context) {
+  results.add<RemoveExtractSliceInsertSlicePair>(context);
 }

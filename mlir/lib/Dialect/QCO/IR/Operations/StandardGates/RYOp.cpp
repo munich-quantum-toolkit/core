@@ -43,18 +43,6 @@ struct MergeSubsequentRY final : OpRewritePattern<RYOp> {
   }
 };
 
-/**
- * @brief Remove trivial RY operations.
- */
-struct RemoveTrivialRY final : OpRewritePattern<RYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RYOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTrivialOneTargetOneParameter(op, rewriter);
-  }
-};
-
 } // namespace
 
 void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -64,9 +52,17 @@ void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
+OpFoldResult RYOp::fold(FoldAdaptor /*adaptor*/) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    return getInputQubit(0);
+  }
+  return {};
+}
+
 void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<MergeSubsequentRY, RemoveTrivialRY>(context);
+  results.add<MergeSubsequentRY>(context);
 }
 
 std::optional<Eigen::Matrix2cd> RYOp::getUnitaryMatrix() {
