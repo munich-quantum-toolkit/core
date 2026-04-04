@@ -200,11 +200,11 @@ struct MergeRotationGatesPattern final
    *   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
    *   Quaternion product:     qPhi * qTheta * qLambda
    *
-   * @note U(theta,phi,lambda) is in U(2) but quaternions represent SU(2), so
-   * the global phase is intentionally discarded. In a ctrl modifier, the inner
-   * gate's global phase becomes an observable conditional phase; however, the
-   * dialect permits only one gate per ctrl modifier, so no mergeable chain can
-   * form there.
+   * @note U is defined as P(phi)*RY(theta)*P(lambda), which equals
+   * e^{i*(phi+lambda)/2} * RZ(phi)*RY(theta)*RZ(lambda).
+   * Since quaternions represent SU(2), this pass works with the SU(2) part
+   * RZ(phi)*RY(theta)*RZ(lambda) and tracks the factored-out global phase
+   * (phi+lambda)/2 separately via globalPhaseOf.
    *
    * @param theta The Y-rotation angle
    * @param phi The first Z-rotation angle
@@ -332,6 +332,48 @@ struct MergeRotationGatesPattern final
         .Case<UOp>(
             [&](auto) { return quaternionFromUOp(op, constants, rewriter); })
         .Default([](auto) -> Quaternion {
+          llvm_unreachable("Unsupported operation type");
+        });
+  }
+
+  /**
+   * @brief Returns the global phase contribution of a rotation gate.
+   *
+   * Rotation gates can be factored as U = e^{i*phase} * SU(2), where SU(2)
+   * is the quaternion-representable part and phase is the global phase. This
+   * function returns the global phase for each gate type:
+   *
+   *   RX, RY, RZ, R        -> none (already SU(2), no global phase)
+   *   P(theta)             -> theta / 2     (P = e^{i*theta/2} * RZ(theta))
+   *   U(theta, phi, lambda)   -> (phi + lambda) / 2
+   *   U2(phi, lambda)         -> (phi + lambda) / 2
+   *
+   * @param op The rotation gate to query
+   * @param constants Pre-created arithmetic constants
+   * @param loc Source location for created operations
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return The global phase as a Value, or std::nullopt for SU(2) gates
+   */
+  static std::optional<Value> globalPhaseOf(UnitaryOpInterface op,
+                                            const Constants& constants,
+                                            Location loc,
+                                            PatternRewriter& rewriter) {
+    return llvm::TypeSwitch<Operation*, std::optional<Value>>(op.getOperation())
+        .Case<RXOp, RYOp, RZOp, ROp>(
+            [&](auto) -> std::optional<Value> { return std::nullopt; })
+        .Case<POp>([&](auto) -> std::optional<Value> {
+          return arith::DivFOp::create(rewriter, loc, op.getParameter(0),
+                                       constants.two);
+        })
+        .Case<UOp, U2Op>([&](auto) -> std::optional<Value> {
+          // phi is at different indexes for UOp and U2Op
+          auto phiIdx = isa<UOp>(op.getOperation()) ? 1U : 0U;
+          auto sum =
+              arith::AddFOp::create(rewriter, loc, op.getParameter(phiIdx),
+                                    op.getParameter(phiIdx + 1));
+          return arith::DivFOp::create(rewriter, loc, sum, constants.two);
+        })
+        .Default([](auto) -> std::optional<Value> {
           llvm_unreachable("Unsupported operation type");
         });
   }
@@ -570,18 +612,37 @@ struct MergeRotationGatesPattern final
     auto loc = op->getLoc();
     auto constants = createConstants(loc, rewriter);
 
-    // Initialize quaternion accumulator from the first operation
+    // Initialize accumulators from the first operation
     auto qAccum = quaternionFromRotation(chain.front(), constants, rewriter);
+    auto phaseAccum = globalPhaseOf(chain.front(), constants, loc, rewriter);
 
     // Fold remaining operations via Hamilton product
     for (auto chainOp : llvm::drop_begin(chain)) {
       auto qi = quaternionFromRotation(chainOp, constants, rewriter);
       qAccum = hamiltonProduct(qi, qAccum, loc, rewriter);
 
-    // Bypass and erase each tail op, then replace the head with the merged UOp
-    for (auto chainOp : llvm::drop_begin(chain)) {
-      rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
+      if (auto phase = globalPhaseOf(chainOp, constants, loc, rewriter)) {
+        phaseAccum = phaseAccum ? Value(arith::AddFOp::create(
+                                      rewriter, loc, *phaseAccum, *phase))
+                                : phase;
+      }
     }
+
+    // Extract Euler angles from merged quaternion
+    auto [theta, phi, lambda] =
+        anglesFromQuaternion(qAccum, loc, constants, rewriter);
+
+    // Emit global phase correction:
+    //   The synthesized UOp carries an intrinsic phase
+    //   outPhase = (phi+lambda)/2 that must always be compensated.
+    //   correction = totalInputPhase - outPhase
+    auto phiPlusLambda = arith::AddFOp::create(rewriter, loc, phi, lambda);
+    auto outPhase =
+        arith::DivFOp::create(rewriter, loc, phiPlusLambda, constants.two);
+    Value inputPhase = phaseAccum.value_or(constants.zero);
+    auto correction =
+        arith::SubFOp::create(rewriter, loc, inputPhase, outPhase);
+    GPhaseOp::create(rewriter, loc, correction.getResult());
 
     // Replace the tail with the merged UOp;
     // the rest of the chain is now unused and will be deleted by DCE
