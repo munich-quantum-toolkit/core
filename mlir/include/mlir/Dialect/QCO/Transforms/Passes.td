@@ -11,6 +11,37 @@
 
 include "mlir/Pass/PassBase.td"
 
+def MergeSingleQubitRotationGates
+    : Pass<"merge-single-qubit-rotation-gates", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::math::MathDialect"];
+  let summary = "Merge rotation gates using quaternion-based fusion";
+  let description = [{
+    Merges consecutive single-qubit rotation gates acting on the same qubit into
+    a single equivalent `u` gate, reducing circuit depth and gate count.
+
+    Supported gate types: `rx`, `ry`, `rz`, `p`, `r`, `u2`, `u`.
+
+    The pass greedily collects the longest possible chain of consecutive
+    mergeable gates. Each gate is converted to a unit quaternion:
+
+    - `rx`, `ry`, `rz`, `p`: single-axis rotations via half-angle formulas.
+    - `r(theta, phi)`: rotation by `theta` around axis `(cos(phi), sin(phi), 0)`.
+    - `u2(phi, lambda) = u(pi/2, phi, lambda)`.
+    - `u(theta, phi, lambda)`: ZYZ decomposition `rz(phi)*ry(theta)*rz(lambda)`,
+      each factor converted to a quaternion and merged via the Hamilton product.
+
+    The gates are then folded one by one via the Hamilton product into a single
+    quaternion, which is decomposed back into ZYZ Euler angles and emitted as a
+    single `u` gate.
+
+    Gates that are not purely SU(2) carry a global phase (`p`, `u`, `u2`).
+    This phase is accumulated across the chain and emitted as a correcting
+    global phase gate.
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
