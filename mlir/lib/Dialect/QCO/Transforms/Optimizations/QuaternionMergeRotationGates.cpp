@@ -21,7 +21,6 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -58,7 +57,12 @@ struct MergeRotationGatesPattern final
   enum class RotationAxis : std::uint8_t { X, Y, Z };
 
   struct Constants {
-    Value negOne, zero, one, two, eps, pi;
+    Value negOne;
+    Value zero;
+    Value one;
+    Value two;
+    Value eps;
+    Value pi;
   };
 
   /**
@@ -122,24 +126,22 @@ struct MergeRotationGatesPattern final
   static Constants createConstants(Location loc, PatternRewriter& rewriter) {
     // MLIR types are pointer-sized wrappers;
     // slicing FloatType to Type is safe and intentional.
-    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
-    Type f64 = rewriter.getF64Type();
     return {
-        .negOne = arith::ConstantOp::create(rewriter, loc,
-                                            rewriter.getFloatAttr(f64, -1.0)),
-        .zero = arith::ConstantOp::create(rewriter, loc,
-                                          rewriter.getFloatAttr(f64, 0.0)),
-        .one = arith::ConstantOp::create(rewriter, loc,
-                                         rewriter.getFloatAttr(f64, 1.0)),
-        .two = arith::ConstantOp::create(rewriter, loc,
-                                         rewriter.getFloatAttr(f64, 2.0)),
+        .negOne = arith::ConstantFloatOp::create(
+            rewriter, loc, rewriter.getF64Type(), APFloat(-1.0)),
+        .zero = arith::ConstantFloatOp::create(
+            rewriter, loc, rewriter.getF64Type(), APFloat(0.0)),
+        .one = arith::ConstantFloatOp::create(
+            rewriter, loc, rewriter.getF64Type(), APFloat(1.0)),
+        .two = arith::ConstantFloatOp::create(
+            rewriter, loc, rewriter.getF64Type(), APFloat(2.0)),
         // Tolerance for gimbal-lock detection in quaternion-to-Euler
         // conversion. Value from reference implementation:
         // https://github.com/evbernardes/quaternion_to_euler/blob/main/euler_from_quat.py
-        .eps = arith::ConstantOp::create(rewriter, loc,
-                                         rewriter.getFloatAttr(f64, 1e-12)),
-        .pi = arith::ConstantOp::create(
-            rewriter, loc, rewriter.getFloatAttr(f64, std::numbers::pi)),
+        .eps = arith::ConstantFloatOp::create(
+            rewriter, loc, rewriter.getF64Type(), APFloat(1e-12)),
+        .pi = arith::ConstantFloatOp::create(
+            rewriter, loc, rewriter.getF64Type(), APFloat(std::numbers::pi)),
     };
   }
 
@@ -182,13 +184,11 @@ struct MergeRotationGatesPattern final
                                          Location loc,
                                          const Constants& constants,
                                          PatternRewriter& rewriter) {
-    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
-    Type f64 = rewriter.getF64Type();
     auto half = arith::DivFOp::create(rewriter, loc, angle, constants.two);
     // cos(angle/2)
-    auto cos = math::CosOp::create(rewriter, loc, f64, half);
+    auto cos = math::CosOp::create(rewriter, loc, half);
     // sin(angle/2)
-    auto sin = math::SinOp::create(rewriter, loc, f64, half);
+    auto sin = math::SinOp::create(rewriter, loc, half);
 
     switch (axis) {
     case RotationAxis::X:
@@ -300,16 +300,14 @@ struct MergeRotationGatesPattern final
                                       const Constants& constants,
                                       PatternRewriter& rewriter) {
     auto loc = op->getLoc();
-    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
-    Type f64 = rewriter.getF64Type();
     auto theta = op.getParameter(0);
     auto phi = op.getParameter(1);
 
     auto halfTheta = arith::DivFOp::create(rewriter, loc, theta, constants.two);
-    auto cosHalf = math::CosOp::create(rewriter, loc, f64, halfTheta);
-    auto sinHalf = math::SinOp::create(rewriter, loc, f64, halfTheta);
-    auto cosPhi = math::CosOp::create(rewriter, loc, f64, phi);
-    auto sinPhi = math::SinOp::create(rewriter, loc, f64, phi);
+    auto cosHalf = math::CosOp::create(rewriter, loc, halfTheta);
+    auto sinHalf = math::SinOp::create(rewriter, loc, halfTheta);
+    auto cosPhi = math::CosOp::create(rewriter, loc, phi);
+    auto sinPhi = math::SinOp::create(rewriter, loc, phi);
 
     auto x = arith::MulFOp::create(rewriter, loc, sinHalf, cosPhi);
     auto y = arith::MulFOp::create(rewriter, loc, sinHalf, sinPhi);
