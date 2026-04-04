@@ -47,6 +47,7 @@ struct MergeRotationGatesPattern final
   explicit MergeRotationGatesPattern(MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
+  /// Quaternion representation (w + xi + yj + zk) using MLIR Values.
   struct Quaternion {
     Value w;
     Value x;
@@ -54,8 +55,10 @@ struct MergeRotationGatesPattern final
     Value z;
   };
 
+  /// Axis of a single-axis rotation gate.
   enum class RotationAxis : std::uint8_t { X, Y, Z };
 
+  /// Cached frequently-used constant Values.
   struct Constants {
     Value negOne;
     Value zero;
@@ -65,12 +68,7 @@ struct MergeRotationGatesPattern final
     Value pi;
   };
 
-  /**
-   * @brief Checks if an operation is a mergeable rotation gate.
-   *
-   * @param op The operation to check
-   * @return True if mergeable, false otherwise
-   */
+  /// Returns whether an operation is considered mergeable
   static bool isMergeable(Operation* op) {
     return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
   }
@@ -619,15 +617,12 @@ struct MergeRotationGates final
 
 protected:
   void runOnOperation() override {
-    // Get the current operation being operated on.
     auto op = getOperation();
     auto* ctx = &getContext();
 
-    // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);
     patterns.add<MergeRotationGatesPattern>(patterns.getContext());
 
-    // Apply patterns in an iterative and greedy manner.
     if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
