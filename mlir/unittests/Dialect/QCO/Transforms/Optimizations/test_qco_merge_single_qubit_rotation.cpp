@@ -44,7 +44,7 @@ using namespace mlir::qco;
 /// A constant for the value of \f$\pi\f$.
 constexpr double PI = std::numbers::pi;
 
-class QCOQuaternionMergeTest : public ::testing::Test {
+class MergeSingleQubitRotationGatesTest : public ::testing::Test {
 protected:
   MLIRContext context;
   QCOProgramBuilder builder;
@@ -60,7 +60,7 @@ protected:
     llvm::SmallVector<double, 4> angles;
   };
 
-  QCOQuaternionMergeTest() : builder(&context) {}
+  MergeSingleQubitRotationGatesTest() : builder(&context) {}
 
   void SetUp() override {
     context.loadDialect<QCODialect>();
@@ -212,7 +212,7 @@ protected:
  * @brief Test: RX->RX should merge into a single U gate
 
  */
-TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRXRXGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, noMergeRXRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -223,7 +223,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRXRXGates) {
 /**
  * @brief Test: RX->RY should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRYGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
                   .succeeded());
@@ -235,7 +235,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRYGates) {
 /**
  * @brief Test: RX->RZ should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRZGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRZGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RZ, .angles = {1.}}})
                   .succeeded());
@@ -247,7 +247,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRZGates) {
 /**
  * @brief Test: RY->RX should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRXGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRYRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -259,7 +259,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRXGates) {
 /**
  * @brief Test: RY->RY should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRYRYGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, noMergeRYRYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
                   .succeeded());
@@ -270,7 +270,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRYRYGates) {
 /**
  * @brief Test: RY->RZ should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRZGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRYRZGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::RZ, .angles = {1.}}})
                   .succeeded());
@@ -282,7 +282,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRZGates) {
 /**
  * @brief Test: RZ->RX should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRXGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRZRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -294,7 +294,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRXGates) {
 /**
  * @brief Test: RZ->RY should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRYGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRZRYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
                   .succeeded());
@@ -306,7 +306,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRYGates) {
 /**
  * @brief Test: RZ->RZ should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRZRZGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, noMergeRZRZGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::RZ, .angles = {1.}}})
                   .succeeded());
@@ -317,7 +317,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRZRZGates) {
 /**
  * @brief Test: U->U should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeUUGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeUUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::U, .angles = {4., 5., 6.}}})
                   .succeeded());
@@ -327,7 +327,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeUUGates) {
 /**
  * @brief Test: U->RX should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeURXGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeURXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -338,7 +338,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeURXGates) {
 /**
  * @brief Test: U->RY should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeURYGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeURYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::RY, .angles = {1.}}})
                   .succeeded());
@@ -349,7 +349,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeURYGates) {
 /**
  * @brief Test: U->RZ should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeURZGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeURZGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::RZ, .angles = {1.}}})
                   .succeeded());
@@ -360,7 +360,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeURZGates) {
 /**
  * @brief Test: RX->U should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRXUGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRXUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
                   .succeeded());
@@ -371,7 +371,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRXUGates) {
 /**
  * @brief Test: RY->U should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRYUGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRYUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
                   .succeeded());
@@ -382,7 +382,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRYUGates) {
 /**
  * @brief Test: RZ->U should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRZUGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRZUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
                   .succeeded());
@@ -392,7 +392,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRZUGates) {
 /**
  * @brief Test: P->RX should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergePRXGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergePRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -404,7 +404,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergePRXGates) {
 /**
  * @brief Test: P->RY should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergePRYGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergePRYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
                   .succeeded());
@@ -416,7 +416,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergePRYGates) {
 /**
  * @brief Test: P->U should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergePUGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergePUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
                   .succeeded());
@@ -427,7 +427,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergePUGates) {
 /**
  * @brief Test: R->RX should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRRXGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::R, .angles = {1., 1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -439,7 +439,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRRXGates) {
 /**
  * @brief Test: P->P should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionNoMergePPGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, noMergePPGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::P, .angles = {1.}}})
                   .succeeded());
@@ -451,7 +451,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergePPGates) {
  * @brief Test: R->R should merge into a single U gate (same multi-parameter
  *        type always uses quaternion merge)
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeRRGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeRRGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::R, .angles = {1., 1.}},
                              {.type = GateType::R, .angles = {2., 1.}}})
                   .succeeded());
@@ -462,7 +462,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRRGates) {
 /**
  * @brief Test: U2->U should merge into a single U gate
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeU2UGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeU2UGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U2, .angles = {1., 2.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
                   .succeeded());
@@ -474,7 +474,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeU2UGates) {
  * @brief Test: U2->U2 should merge into a single U gate (same multi-parameter
  *        type always uses quaternion merge)
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeU2U2Gates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeU2U2Gates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U2, .angles = {1., 2.}},
                              {.type = GateType::U2, .angles = {3., 4.}}})
                   .succeeded());
@@ -489,7 +489,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeU2U2Gates) {
 /**
  * @brief Test: single RX should not convert to U
  */
-TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRXGate) {
+TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRXGate) {
   ASSERT_TRUE(
       testGateMerge({{.type = GateType::RX, .angles = {1.}}}).succeeded());
   EXPECT_EQ(countOps<UOp>(), 0);
@@ -499,7 +499,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRXGate) {
 /**
  * @brief Test: single RY should not convert to U
  */
-TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRYGate) {
+TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRYGate) {
   ASSERT_TRUE(
       testGateMerge({{.type = GateType::RY, .angles = {1.}}}).succeeded());
   EXPECT_EQ(countOps<UOp>(), 0);
@@ -509,7 +509,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRYGate) {
 /**
  * @brief Test: single RZ should not convert to U
  */
-TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRZGate) {
+TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRZGate) {
   ASSERT_TRUE(
       testGateMerge({{.type = GateType::RZ, .angles = {1.}}}).succeeded());
   EXPECT_EQ(countOps<UOp>(), 0);
@@ -519,7 +519,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRZGate) {
 /**
  * @brief Test: Gates on different qubits should not merge
  */
-TEST_F(QCOQuaternionMergeTest, dontMergeGatesFromDifferentQubits) {
+TEST_F(MergeSingleQubitRotationGatesTest, dontMergeGatesFromDifferentQubits) {
   auto q = builder.allocQubitRegister(2);
 
   const Value qubit1 = q[0];
@@ -536,7 +536,7 @@ TEST_F(QCOQuaternionMergeTest, dontMergeGatesFromDifferentQubits) {
 /**
  * @brief Test: Non-consecutive gates should not merge
  */
-TEST_F(QCOQuaternionMergeTest, dontMergeNonConsecutiveGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, dontMergeNonConsecutiveGates) {
   auto q = builder.allocQubitRegister(1);
 
   auto q1 = builder.rx(1.0, q[0]);
@@ -558,7 +558,7 @@ TEST_F(QCOQuaternionMergeTest, dontMergeNonConsecutiveGates) {
 /**
  * @brief Test: Many gates should greedily merge into one U
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeManyGates) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeManyGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RY, .angles = {2.}},
@@ -575,7 +575,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeManyGates) {
  * @brief Test: Many gates with one unmergeable in between
  * should merge into two U with the unmergeable in between.
  */
-TEST_F(QCOQuaternionMergeTest, quaternionMergeManyWithUnmergeable) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeManyWithUnmergeable) {
   auto q = builder.allocQubitRegister(1);
   Value qubit = buildRotations({{.type = GateType::U, .angles = {1., 2., 3.}},
                                 {.type = GateType::RX, .angles = {1.}},
@@ -606,7 +606,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeManyWithUnmergeable) {
 /**
  * @brief Test: Consecutive gates with another gate in between should merge
  */
-TEST_F(QCOQuaternionMergeTest, mergeConsecutiveWithGateInBetween) {
+TEST_F(MergeSingleQubitRotationGatesTest, mergeConsecutiveWithGateInBetween) {
   auto q = builder.allocQubitRegister(2);
 
   auto q1 = builder.rx(1.0, q[0]);
@@ -627,7 +627,7 @@ TEST_F(QCOQuaternionMergeTest, mergeConsecutiveWithGateInBetween) {
  *        but will be removed by dead code removal from
  *        applyPatternsGreedily
  */
-TEST_F(QCOQuaternionMergeTest, noUsedGate) {
+TEST_F(MergeSingleQubitRotationGatesTest, noUsedGate) {
   const char* mlirCode = R"(
       module {
         func.func @noUsedGate() {
@@ -660,7 +660,7 @@ TEST_F(QCOQuaternionMergeTest, noUsedGate) {
  * @brief Test: RX(1)->RY(1) should merge into
  *        U(1.27455578230629, -1.07542903757622, 0.495367289218673)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRY) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRXRY) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
                   .succeeded());
@@ -675,7 +675,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRY) {
  * @brief Test: RX(1)->RZ(1) should merge into
  *        U(1.00000000000000, -0.570796326794897, 1.57079632679490)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRZ) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRXRZ) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RZ, .angles = {1.}}})
                   .succeeded());
@@ -690,7 +690,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRZ) {
  * @brief Test: RY(1)->RX(1) should merge into
  *        U(1.27455578230629, -0.495367289218673, 1.07542903757622)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRX) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRYRX) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -705,7 +705,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRX) {
  * @brief Test: RY(1)->RZ(1) should merge into
  *        U(1.00000000000000, 1.00000000000000, 0.)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRZ) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRYRZ) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::RZ, .angles = {1.}}})
                   .succeeded());
@@ -720,7 +720,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRZ) {
  * @brief Test: RZ(1)->RX(1) should merge into
  *        U(1.00000000000000, -1.57079632679490, 2.57079632679490)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRX) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRZRX) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -735,7 +735,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRX) {
  * @brief Test: RZ(1)->RY(1) should merge into
  *        U(1.00000000000000, 0, 1.00000000000000)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRY) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRZRY) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
                   .succeeded());
@@ -750,7 +750,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRY) {
  * @brief Test: U(1,2,3)->U(4,5,6) should merge into
  *        U(2.03289042623884, 0.663830775701153, 0.849231441867857)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyUU) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::U, .angles = {4., 5., 6.}}})
                   .succeeded());
@@ -763,7 +763,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
  * @brief Test: RZ(PI)->RY(PI)->RX(PI) should merge into
  *        U(0, 0, 0) or U(0, 2*PI, 0)
  */
-TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {PI}},
                              {.type = GateType::RY, .angles = {PI}},
                              {.type = GateType::RX, .angles = {PI}}})
@@ -779,7 +779,7 @@ TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity) {
  * @brief Test: RY(1)->RZ(1)->RY(-1)->RZ(-1) should merge into
  *        U(0, 0, 0)
  */
-TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity2) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity2) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1}},
                              {.type = GateType::RZ, .angles = {1}},
                              {.type = GateType::RZ, .angles = {-1}},
@@ -796,7 +796,7 @@ TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity2) {
  * @brief Test: RX(0.001)->RY(0.001) should merge into
  *        U(0.00141421344452194, -0.785398413397490, 0.785397913397407)
  */
-TEST_F(QCOQuaternionMergeTest, numericalSmallAngles) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalSmallAngles) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {0.001}},
                              {.type = GateType::RY, .angles = {0.001}}})
                   .succeeded());
@@ -811,7 +811,7 @@ TEST_F(QCOQuaternionMergeTest, numericalSmallAngles) {
  * @brief Test: RX(PI)->RY(PI) should merge into
  *        U(0, -PI, 0.)
  */
-TEST_F(QCOQuaternionMergeTest, numericalGimbalLock) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalGimbalLock) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {PI}},
                              {.type = GateType::RY, .angles = {PI}}})
                   .succeeded());
@@ -829,7 +829,7 @@ TEST_F(QCOQuaternionMergeTest, numericalGimbalLock) {
  *        phase)
  *
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyPRX) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyPRX) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
@@ -846,7 +846,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyPRX) {
  * @brief Test: R(1,2)->R(3,4) should merge into
  *        U(2.07770669385131, 1.36334275733332, 2.85969871348886)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyRR) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRR) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::R, .angles = {1., 2.}},
                              {.type = GateType::R, .angles = {3., 4.}}})
                   .succeeded());
@@ -860,7 +860,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRR) {
  * @brief Test: R(1,1)->R(1,1) (same axis) should merge into
  *        U(2.00000000000000, -0.570796326794897, 0.570796326794897)
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyRRSameAxis) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRRSameAxis) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::R, .angles = {1., 1.}},
                              {.type = GateType::R, .angles = {1., 1.}}})
                   .succeeded());
@@ -879,7 +879,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRRSameAxis) {
  *       GPhaseOp tracking is implemented (see PLAN.md), a GPhaseOp assertion
  *       should be added.
  */
-TEST_F(QCOQuaternionMergeTest, numericalAccuracyU2U2) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyU2U2) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U2, .angles = {1., 2.}},
                              {.type = GateType::U2, .angles = {3., 4.}}})
                   .succeeded());
@@ -895,7 +895,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyU2U2) {
  * These specific numbers would produce NaN if acos parameter would not be
  * clamped to [-1, 1]
  */
-TEST_F(QCOQuaternionMergeTest, numericalAcosClampingPreventsNaN) {
+TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
   ASSERT_TRUE(testGateMerge(
                   {{.type = GateType::U, .angles = {0, -2.0360075460227076, 0}},
                    {.type = GateType::U, .angles = {0, 4.157656961105587, 0}}})

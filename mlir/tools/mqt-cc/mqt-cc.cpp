@@ -72,7 +72,7 @@ static cl::opt<bool>
                           cl::init(false));
 
 static cl::opt<bool> mergeSingleQubitRotationGates(
-    "mlir-merge-single-qubit-rotation-gates",
+    "merge-single-qubit-rotation-gates",
     cl::desc("Enable quaternion-based single-qubit rotation gate merging"),
     cl::init(false));
 

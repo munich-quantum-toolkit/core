@@ -11,7 +11,8 @@
 
 include "mlir/Pass/PassBase.td"
 
-def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
+def MergeSingleQubitRotationGates
+    : Pass<"merge-single-qubit-rotation-gates", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::math::MathDialect"];

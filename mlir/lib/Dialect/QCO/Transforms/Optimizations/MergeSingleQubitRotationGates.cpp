@@ -33,7 +33,7 @@
 
 namespace mlir::qco {
 
-#define GEN_PASS_DEF_MERGEROTATIONGATES
+#define GEN_PASS_DEF_MERGESINGLEQUBITROTATIONGATES
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
@@ -42,9 +42,9 @@ namespace {
  * @brief Pattern that merges consecutive rotation gates using quaternion
  * multiplication.
  */
-struct MergeRotationGatesPattern final
+struct MergeSingleQubitRotationGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
-  explicit MergeRotationGatesPattern(MLIRContext* context)
+  explicit MergeSingleQubitRotationGatesPattern(MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
   /// Quaternion representation (w + xi + yj + zk) using MLIR Values.
@@ -659,10 +659,10 @@ struct MergeRotationGatesPattern final
  * @brief Pass that merges consecutive rotation gates using quaternion
  * multiplication.
  */
-struct MergeRotationGates final
-    : impl::MergeRotationGatesBase<MergeRotationGates> {
-  using impl::MergeRotationGatesBase<
-      MergeRotationGates>::MergeRotationGatesBase;
+struct MergeSingleQubitRotationGates final
+    : impl::MergeSingleQubitRotationGatesBase<MergeSingleQubitRotationGates> {
+  using impl::MergeSingleQubitRotationGatesBase<
+      MergeSingleQubitRotationGates>::MergeSingleQubitRotationGatesBase;
 
 protected:
   void runOnOperation() override {
@@ -670,7 +670,7 @@ protected:
     auto* ctx = &getContext();
 
     RewritePatternSet patterns(ctx);
-    patterns.add<MergeRotationGatesPattern>(patterns.getContext());
+    patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext());
 
     if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();

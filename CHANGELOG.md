@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add a `mlir-merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407]) ([**@J4MMlE**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407]) ([**@J4MMlE**])
 - ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
 - ✨ Add conversions between Jeff and QCO ([#1479], [#1548], [#1565]) ([**@denialhaag**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588]) ([**@MatthiasReumann**])
