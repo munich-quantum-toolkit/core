@@ -82,6 +82,44 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
 };
 
 /**
+ * @brief Reorder inv around pow, i.e., `inv(pow(p, g)) => pow(p, inv(g))`.
+ */
+struct MovePowOutside final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto innerPow =
+        llvm::dyn_cast<PowOp>(invOp.getBodyUnitary().getOperation());
+    if (!innerPow) {
+      return failure();
+    }
+
+    const double exponent = innerPow.getExponentValue();
+
+    rewriter.replaceOpWithNewOp<PowOp>(
+        invOp, invOp.getQubitsIn(), exponent,
+        [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
+          return InvOp::create(
+                     rewriter, invOp.getLoc(), powArgs,
+                     [&](ValueRange invArgs) -> llvm::SmallVector<Value> {
+                       IRMapping mapping;
+                       auto* innerBody = innerPow.getBody();
+                       for (size_t i = 0; i < innerPow.getNumTargets(); ++i) {
+                         mapping.map(innerBody->getArgument(i), invArgs[i]);
+                       }
+                       return rewriter
+                           .clone(*innerPow.getBodyUnitary().getOperation(),
+                                  mapping)
+                           ->getResults();
+                     })
+              .getResults();
+        });
+    return success();
+  }
+};
+
+/**
  * @brief Remove inverse modifiers around self-adjoint gates.
  *
  * For self-adjoint gates U (i.e., U = U†), inv(U) = U holds.
@@ -401,8 +439,8 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MoveCtrlOutside, InlineSelfAdjoint, ReplaceWithKnownGates,
-              CancelNestedInv>(context);
+  results.add<MoveCtrlOutside, MovePowOutside, InlineSelfAdjoint,
+              ReplaceWithKnownGates, CancelNestedInv>(context);
 }
 
 std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
