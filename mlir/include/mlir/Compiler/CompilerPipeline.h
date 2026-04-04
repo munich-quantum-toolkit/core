@@ -40,6 +40,9 @@ struct QuantumCompilerConfig {
 
   /// Print IR after each stage
   bool printIRAfterAllStages = false;
+
+  /// Enable Hadamard lifting
+  bool hadamardLifting = false;
 };
 
 /**

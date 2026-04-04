@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add optimization routine Hadamard lifting ([#1605]) ([**@lirem101**])
 - ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
 - ✨ Add conversions between Jeff and QCO ([#1479], [#1548], [#1565]) ([**@denialhaag**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588]) ([**@MatthiasReumann**])
@@ -335,6 +336,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1605]: https://github.com/munich-quantum-toolkit/core/pull/1605
 [#1602]: https://github.com/munich-quantum-toolkit/core/pull/1602
 [#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
 [#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
