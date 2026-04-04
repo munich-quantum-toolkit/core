@@ -20,6 +20,7 @@
 #include <utility>
 
 using namespace mlir;
+using namespace mlir::qco;
 
 std::string_view Architecture::name() const { return name_; }
 

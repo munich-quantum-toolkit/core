@@ -12,7 +12,6 @@
 
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -22,21 +21,19 @@ using namespace mlir::qco;
 namespace {
 
 /**
- * @brief Remove matching allocation and deallocation pairs without operations
+ * @brief Remove matching alloc/static and sink pairs without operations
  * between them.
  */
-struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
+struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(DeallocOp op,
+  LogicalResult matchAndRewrite(SinkOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an AllocOp or a StaticOp
     auto* defOp = op.getQubit().getDefiningOp();
-    if (!llvm::isa<AllocOp, StaticOp>(defOp)) {
+    if (!llvm::isa_and_nonnull<AllocOp, StaticOp>(defOp)) {
       return failure();
     }
 
-    // Remove the AllocOp/StaticOp and the DeallocOp
     rewriter.eraseOp(op);
     rewriter.eraseOp(defOp);
     return success();
@@ -45,7 +42,7 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
 
 } // namespace
 
-void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                            MLIRContext* context) {
-  results.add<RemoveAllocDeallocPair>(context);
+void SinkOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* context) {
+  results.add<RemoveAllocSinkPair>(context);
 }

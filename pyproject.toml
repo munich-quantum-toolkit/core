@@ -102,6 +102,13 @@ build.targets = [
   "mqt-core-qdmi-sc-device-dyn",
 ]
 
+install.components = [
+  "mqt-core_Runtime",
+  "mqt-core_Development",
+  "mqt-core_Python",
+  "qdmi_Development",
+]
+
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.include = ["python/mqt/core/_version.py"]
 sdist.exclude = [
@@ -360,5 +367,5 @@ dev = [
   {include-group = "test"},
   "lit>=18.1.8",
   "nox>=2025.11.12",
-  "ty==0.0.19",
+  "ty==0.0.26",
 ]

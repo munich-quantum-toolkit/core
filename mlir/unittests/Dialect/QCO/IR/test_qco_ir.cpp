@@ -108,7 +108,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
                      auto innerQubit = XOp::create(builder, qubits[0]);
                      return llvm::SmallVector<mlir::Value>{innerQubit};
                    });
-  DeallocOp::create(builder, ifOp.getResult(0));
+  SinkOp::create(builder, ifOp.getResult(0));
 
   auto directBuilder = builder.finalize();
   ASSERT_TRUE(directBuilder);
@@ -1060,7 +1060,22 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
                     MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
+        QCOTestCase{"StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithOps)},
+        QCOTestCase{"StaticQubitsWithParametricOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithParametricOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithParametricOps)},
+        QCOTestCase{"StaticQubitsWithTwoTargetOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithTwoTargetOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithTwoTargetOps)},
+        QCOTestCase{"StaticQubitsWithCtrl",
+                    MQT_NAMED_BUILDER(staticQubitsWithCtrl),
+                    MQT_NAMED_BUILDER(staticQubitsWithCtrl)},
+        QCOTestCase{"StaticQubitsWithInv",
+                    MQT_NAMED_BUILDER(staticQubitsWithInv),
+                    MQT_NAMED_BUILDER(staticQubitsWithInv)},
+        QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 

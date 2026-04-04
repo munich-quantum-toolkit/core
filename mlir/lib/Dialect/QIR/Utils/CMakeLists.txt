@@ -8,14 +8,7 @@
 
 file(GLOB QIR_UTILS_SOURCES *.cpp)
 
-add_mlir_library(
-  MLIRQIRUtils
-  ${QIR_UTILS_SOURCES}
-  LINK_LIBS
-  PUBLIC
-  MLIRLLVMDialect
-  MLIRIR
-  DISABLE_INSTALL)
+add_mlir_library(MLIRQIRUtils ${QIR_UTILS_SOURCES} LINK_LIBS PUBLIC MLIRLLVMDialect MLIRIR)
 
 mqt_mlir_target_use_project_options(MLIRQIRUtils)
 

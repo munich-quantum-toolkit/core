@@ -52,8 +52,8 @@ TEST_P(WireIteratorTest, MixedUse) {
   const auto [q02, q11] = builder.cx(q01, q10);
   const auto [q03, c0] = builder.measure(q02);
   const auto q04 = builder.reset(q03);
-  builder.dealloc(q04);
-  builder.dealloc(q11);
+  builder.sink(q04);
+  builder.sink(q11);
   [[maybe_unused]] auto module = builder.finalize();
 
   // Setup WireIterator.
@@ -83,7 +83,7 @@ TEST_P(WireIteratorTest, MixedUse) {
   ASSERT_EQ(it.qubit(), q04);
 
   ++it;
-  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.dealloc
+  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.sink
   ASSERT_EQ(it.qubit(), nullptr);
 
   ++it;
@@ -97,7 +97,7 @@ TEST_P(WireIteratorTest, MixedUse) {
   //
 
   --it;
-  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.dealloc
+  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.sink
   ASSERT_EQ(it.qubit(), nullptr);
 
   --it;

@@ -9,7 +9,8 @@
  */
 
 /**
- * @file This file is a thin wrapper around MQT's Neutral Atom QDMI Device with
+ * @file DynDevice.cpp
+ * @brief This file is a thin wrapper around MQT's Neutral Atom QDMI Device with
  * another prefix.
  */
 

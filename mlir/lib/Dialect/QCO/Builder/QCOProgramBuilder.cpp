@@ -83,15 +83,10 @@ Value QCOProgramBuilder::allocQubit() {
   return qubit;
 }
 
-Value QCOProgramBuilder::staticQubit(const int64_t index) {
+Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
 
-  if (index < 0) {
-    llvm::reportFatalUsageError("Index must be non-negative");
-  }
-
-  auto indexAttr = getI64IntegerAttr(index);
-  auto staticOp = StaticOp::create(*this, indexAttr);
+  auto staticOp = StaticOp::create(*this, index);
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
@@ -764,12 +759,13 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
-  for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
+  for (const auto& [control, controlOut] :
+       llvm::zip_equal(controls, controlsOut)) {
     updateQubitTracking(control, controlOut);
   }
   const auto& targetsOut = ctrlOp.getTargetsOut();
   for (const auto& [target, targetOut] :
-       llvm::zip(innerTargetsOut, targetsOut)) {
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 
@@ -805,7 +801,7 @@ ValueRange QCOProgramBuilder::inv(
   // Update tracking
   const auto& targetsOut = invOp.getQubitsOut();
   for (const auto& [target, targetOut] :
-       llvm::zip(innerTargetsOut, targetsOut)) {
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 
@@ -816,13 +812,13 @@ ValueRange QCOProgramBuilder::inv(
 // Deallocation
 //===----------------------------------------------------------------------===//
 
-QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
+QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
   checkFinalized();
 
   validateQubitValue(qubit);
   validQubits.erase(qubit);
 
-  DeallocOp::create(*this, qubit);
+  SinkOp::create(*this, qubit);
 
   return *this;
 }
@@ -924,35 +920,15 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  auto blockOrderComparator = [](Value a, Value b) {
-    auto* opA = a.getDefiningOp();
-    auto* opB = b.getDefiningOp();
-    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
-    }
-    return opA->isBeforeInBlock(opB);
-  };
-
   // Automatically deallocate all still-allocated qubits
-  // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
-  llvm::sort(sortedQubits, blockOrderComparator);
-
-  for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, qubit);
+  for (auto qubit : validQubits) {
+    SinkOp::create(*this, qubit);
   }
+  validQubits.clear();
 
-  // Automatically deallocate all still-allocated tensors
-  // Sort tensors for deterministic output
-  llvm::SmallVector<Value> sortedTensors(validTensors.begin(),
-                                         validTensors.end());
-  llvm::sort(sortedTensors, blockOrderComparator);
-
-  for (auto tensor : sortedTensors) {
+  for (auto tensor : validTensors) {
     qtensor::DeallocOp::create(*this, tensor);
   }
-
-  validQubits.clear();
   validTensors.clear();
 
   // Create constant 0 for successful exit code

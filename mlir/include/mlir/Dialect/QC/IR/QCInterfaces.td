@@ -44,12 +44,18 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       (ins "size_t":$i)>,
       InterfaceMethod<"Returns the i-th control qubit.", "Value", "getControl",
                       (ins "size_t":$i)>,
+      InterfaceMethod<"Returns a range of all target qubits.", "ValueRange",
+                      "getTargets", (ins)>,
+      InterfaceMethod<"Returns a range of all control qubits.", "ValueRange",
+                      "getControls", (ins)>,
 
       // Parameter handling
       InterfaceMethod<"Returns the number of parameters.", "size_t",
                       "getNumParams", (ins)>,
       InterfaceMethod<"Returns the i-th parameter.", "Value", "getParameter",
                       (ins "size_t":$i)>,
+      InterfaceMethod<"Returns a range of all parameters.", "ValueRange",
+                      "getParameters", (ins)>,
 
       // Convenience methods
       InterfaceMethod<"Returns true if the operation has any control qubits, "

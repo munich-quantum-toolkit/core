@@ -14,6 +14,7 @@ target_link_libraries(
   PRIVATE GTest::gtest_main
           MLIRParser
           MLIRQCProgramBuilder
+          MLIRQCOProgramBuilder
           MLIRQCOUtils
           MLIRQCToQCO
           MLIRQCOToQC
