@@ -136,19 +136,25 @@ struct MergeRotationGatesPattern final
   /**
    * @brief Normalizes an angle to the range [-PI, PI].
    *
-   * Uses the identity atan2(sin(a), cos(a)) which projects the angle onto the
-   * unit circle and recovers the canonical representative in [-PI, PI].
+   * Uses floor-based modular arithmetic:
+   *   normalize(a) = a - floor((a + π) / 2π) * 2π
    *
    * @param angle The angle value to normalize
    * @param loc Source location for the created operations
+   * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
    * @return The normalized angle value
    */
   static Value normalizeAngle(Value angle, Location loc,
+                              const Constants& constants,
                               PatternRewriter& rewriter) {
-    auto sinA = math::SinOp::create(rewriter, loc, angle);
-    auto cosA = math::CosOp::create(rewriter, loc, angle);
-    return math::Atan2Op::create(rewriter, loc, sinA, cosA);
+    auto twoPi =
+        arith::MulFOp::create(rewriter, loc, constants.two, constants.pi);
+    auto shifted = arith::AddFOp::create(rewriter, loc, angle, constants.pi);
+    auto divided = arith::DivFOp::create(rewriter, loc, shifted, twoPi);
+    auto floored = math::FloorOp::create(rewriter, loc, divided);
+    auto multiple = arith::MulFOp::create(rewriter, loc, floored, twoPi);
+    return arith::SubFOp::create(rewriter, loc, angle, multiple);
   }
 
   /**
@@ -577,8 +583,8 @@ struct MergeRotationGatesPattern final
 
     // normalize alpha and gamma to [-PI, PI] since they are sums/differences
     // of atan2 results and can exceed that range
-    auto alphaNorm = normalizeAngle(alpha, loc, rewriter);
-    auto gammaNorm = normalizeAngle(gamma, loc, rewriter);
+    auto alphaNorm = normalizeAngle(alpha, loc, constants, rewriter);
+    auto gammaNorm = normalizeAngle(gamma, loc, constants, rewriter);
 
     return {.theta = beta.getResult(), .phi = alphaNorm, .lambda = gammaNorm};
   }
