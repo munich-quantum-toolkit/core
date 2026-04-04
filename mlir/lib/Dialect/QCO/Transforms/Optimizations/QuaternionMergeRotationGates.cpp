@@ -80,26 +80,9 @@ struct MergeRotationGatesPattern final
     return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
   }
 
-  /**
-   * @brief Checks if two gates require quaternion-based merging.
-   *
-   * Returns true for different gate types (e.g., RXOp+RYOp) or same-type
-   * multi-parameter gates (UOp, U2Op, ROp). Same-type single-parameter gates
-   * (e.g., RXOp+RXOp, POp+POp) use angle addition and aren't handled here.
-   *
-   * @param a The first gate
-   * @param b The second gate
-   * @return True if quaternion-based merging should be used, false otherwise
-   */
+  /// Checks if two gates a and b are mergeable via quaternion-based merging.
   [[nodiscard]] static bool areQuaternionMergeable(Operation& a, Operation& b) {
-    if (!isMergeable(&a) || !isMergeable(&b)) {
-      return false;
-    }
-
-    // Different gate types always require quaternion merging.
-    // Same-type multi-parameter gates (UOp, U2Op, ROp) also require it,
-    // since they cannot be merged by simple angle addition.
-    return (a.getName() != b.getName()) || isa<UOp, U2Op, ROp>(a);
+    return isMergeable(&a) && isMergeable(&b);
   }
 
   /**
@@ -378,8 +361,7 @@ struct MergeRotationGatesPattern final
    * @brief Collects a chain of consecutive mergeable gates.
    *
    * Walks forward via single-use SSA edges. Breaks when the next operation is
-   * not mergeable or would form a same-type single-parameter pair with the
-   * current tail (leaving those for canonicalization).
+   * not considered as mergeable.
    *
    * @param start The chain head (must satisfy isChainStart)
    * @return The chain of operations in circuit order (first applied to last)
