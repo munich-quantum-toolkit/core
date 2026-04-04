@@ -418,13 +418,12 @@ struct MergeRotationGatesPattern final
   collectChain(UnitaryOpInterface start) {
     SmallVector<UnitaryOpInterface> chain = {start};
     auto current = start;
-    while (!current->use_empty()) {
+    while (true) {
       auto* userOp = *current->getUsers().begin();
       if (!areQuaternionMergeable(*current.getOperation(), *userOp)) {
         break;
       }
-      chain.push_back(cast<UnitaryOpInterface>(userOp));
-      current = chain.back();
+      current = chain.emplace_back(cast<UnitaryOpInterface>(userOp));
     }
     return chain;
   }
