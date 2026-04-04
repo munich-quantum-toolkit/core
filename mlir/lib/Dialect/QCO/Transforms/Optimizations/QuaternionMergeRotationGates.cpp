@@ -68,6 +68,13 @@ struct MergeRotationGatesPattern final
     Value pi;
   };
 
+  /// Euler-angle triple for a U gate (theta, phi, lambda).
+  struct UOpAngles {
+    Value theta;
+    Value phi;
+    Value lambda;
+  };
+
   /// Returns whether an operation is considered mergeable
   static bool isMergeable(Operation* op) {
     return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
@@ -451,7 +458,7 @@ struct MergeRotationGatesPattern final
   }
 
   /**
-   * @brief Converts a quaternion to a UOp using ZYZ Euler angle extraction.
+   * @brief Extracts ZYZ Euler angles from a unit quaternion.
    *
    * For unit quaternion q = w + x*i + y*j + z*k, extracts UOp parameters:
    *   alpha = atan2(z, w) + atan2(-x, y)
@@ -469,16 +476,14 @@ struct MergeRotationGatesPattern final
    *
    * @note Floating-point errors may accumulate when merging many gates.
    * @param q The quaternion to convert
-   * @param op The current operation (used for location and type information)
+   * @param loc Source location for the created operations
    * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
-   * @return UOp equivalent to the quaternion rotation
+   * @return UOpAngles {theta, phi, lambda} suitable for UOp::create
    */
-  static UnitaryOpInterface uOpFromQuaternion(Quaternion q,
-                                              UnitaryOpInterface op,
-                                              const Constants& constants,
-                                              PatternRewriter& rewriter) {
-    auto loc = op->getLoc();
+  static UOpAngles anglesFromQuaternion(Quaternion q, Location loc,
+                                        const Constants& constants,
+                                        PatternRewriter& rewriter) {
 
     // calculate angle beta (for y-rotation)
     // beta = acos(2 * (w^2 + z^2) - 1)
@@ -551,8 +556,7 @@ struct MergeRotationGatesPattern final
     auto alphaNorm = normalizeAngle(alpha, loc, rewriter);
     auto gammaNorm = normalizeAngle(gamma, loc, rewriter);
 
-    return UOp::create(rewriter, loc, op.getInputQubit(0), beta.getResult(),
-                       alphaNorm, gammaNorm);
+    return {.theta = beta.getResult(), .phi = alphaNorm, .lambda = gammaNorm};
   }
 
   /**
@@ -591,16 +595,16 @@ struct MergeRotationGatesPattern final
     for (auto chainOp : llvm::drop_begin(chain)) {
       auto qi = quaternionFromRotation(chainOp, constants, rewriter);
       qAccum = hamiltonProduct(qi, qAccum, loc, rewriter);
-    }
-
-    // Convert merged quaternion back to UOp
-    auto newOp = uOpFromQuaternion(qAccum, op, constants, rewriter);
 
     // Bypass and erase each tail op, then replace the head with the merged UOp
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
     }
-    rewriter.replaceOp(chain.front(), newOp);
+
+    // Replace the tail with the merged UOp;
+    // the rest of the chain is now unused and will be deleted by DCE
+    rewriter.replaceOpWithNewOp<UOp>(
+        chain.back(), chain.front().getInputQubit(0), theta, phi, lambda);
 
     return success();
   }
