@@ -247,8 +247,7 @@ struct MergeRotationGatesPattern final
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the UOp
    */
-  static Quaternion quaternionFromUOp(UnitaryOpInterface op,
-                                      const Constants& constants,
+  static Quaternion quaternionFromUOp(UOp op, const Constants& constants,
                                       PatternRewriter& rewriter) {
     return quaternionFromZYZ(op.getParameter(0), op.getParameter(1),
                              op.getParameter(2), op->getLoc(), constants,
@@ -268,8 +267,7 @@ struct MergeRotationGatesPattern final
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the U2Op
    */
-  static Quaternion quaternionFromU2Op(UnitaryOpInterface op,
-                                       const Constants& constants,
+  static Quaternion quaternionFromU2Op(U2Op op, const Constants& constants,
                                        PatternRewriter& rewriter) {
     auto loc = op->getLoc();
     auto piHalf =
@@ -290,8 +288,7 @@ struct MergeRotationGatesPattern final
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the ROp
    */
-  static Quaternion quaternionFromROp(UnitaryOpInterface op,
-                                      const Constants& constants,
+  static Quaternion quaternionFromROp(ROp op, const Constants& constants,
                                       PatternRewriter& rewriter) {
     auto loc = op->getLoc();
     auto theta = op.getParameter(0);
@@ -332,11 +329,11 @@ struct MergeRotationGatesPattern final
     // Multi-parameter gates each need their own conversion
     return llvm::TypeSwitch<Operation*, Quaternion>(op.getOperation())
         .Case<ROp>(
-            [&](auto) { return quaternionFromROp(op, constants, rewriter); })
+            [&](ROp o) { return quaternionFromROp(o, constants, rewriter); })
         .Case<U2Op>(
-            [&](auto) { return quaternionFromU2Op(op, constants, rewriter); })
+            [&](U2Op o) { return quaternionFromU2Op(o, constants, rewriter); })
         .Case<UOp>(
-            [&](auto) { return quaternionFromUOp(op, constants, rewriter); })
+            [&](UOp o) { return quaternionFromUOp(o, constants, rewriter); })
         .Default([](auto) -> Quaternion {
           llvm_unreachable("Unsupported operation type");
         });
