@@ -408,23 +408,19 @@ struct ConvertMemRefAllocOp final
       return failure();
     }
 
-    auto& state = getState();
-    auto* operation = op.getOperation();
-
     auto memref = op.getResult();
-
     Value qtensor;
     if (shape[0] == ShapedType::kDynamic) {
       qtensor = rewriter.replaceOpWithNewOp<qtensor::AllocOp>(
           op, adaptor.getDynamicSizes()[0]);
     } else {
-      auto size = arith::ConstantOp::create(rewriter, op.getLoc(),
-                                            rewriter.getIndexAttr(shape[0]));
+      auto size =
+          arith::ConstantIndexOp::create(rewriter, op.getLoc(), shape[0]);
       qtensor =
           rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
     }
-
-    assignMappedTensor(state, operation, memref, qtensor);
+    auto& state = getState();
+    assignMappedTensor(state, qtensor.getDefiningOp(), memref, qtensor);
 
     return success();
   }
@@ -448,7 +444,8 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!llvm::isa<qc::QubitType>(op.getMemref().getType().getElementType())) {
+    auto memref = op.getMemref();
+    if (!llvm::isa<qc::QubitType>(memref.getType().getElementType())) {
       return failure();
     }
 
@@ -457,7 +454,6 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     auto* operation = op.getOperation();
 
     // Look up latest QTensor value for this QC register
-    auto memref = op.getMemref();
     auto qtensor = lookupMappedTensor(state, operation, memref);
 
     auto index = adaptor.getIndices()[0];
@@ -471,11 +467,11 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     assignMappedTensor(state, operation, memref, extract.getOutTensor());
 
     QubitInfo info{.reg = memref, .index = index};
-    if (auto it = qubitInfoMap.find(operation->getParentRegion());
-        it != qubitInfoMap.end()) {
+    auto* parentRegion = operation->getParentRegion();
+    if (auto it = qubitInfoMap.find(parentRegion); it != qubitInfoMap.end()) {
       it->second[qcQubit] = info;
     } else {
-      qubitInfoMap[operation->getParentRegion()][qcQubit] = info;
+      qubitInfoMap[parentRegion][qcQubit] = info;
     }
 
     rewriter.eraseOp(op);
@@ -510,7 +506,8 @@ struct ConvertMemRefDeallocOp final
   LogicalResult
   matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!llvm::isa<qc::QubitType>(op.getMemref().getType().getElementType())) {
+    auto memref = op.getMemref();
+    if (!llvm::isa<qc::QubitType>(memref.getType().getElementType())) {
       return failure();
     }
 
@@ -520,45 +517,24 @@ struct ConvertMemRefDeallocOp final
     auto& qubitInfoMap = state.qubitInfoMap[op->getParentRegion()];
 
     // Look up latest QTensor value for this QC register
-    auto memref = op.getMemref();
     auto qtensor = lookupMappedTensor(state, op.getOperation(), memref);
 
     // Filter out qubits belonging to this tensor
-    llvm::SmallVector<std::pair<Value, Value>> toInsert;
-    toInsert.reserve(qubitMap.size());
-    for (auto [qcQubit, qcoQubit] : qubitMap) {
-      auto& info = qubitInfoMap[qcQubit];
-      if (info.reg != memref) {
+    for (auto it = qubitMap.begin(); it != qubitMap.end(); ++it) {
+      auto& [qcQubit, qcoQubit] = *it;
+      auto& [reg, index] = qubitInfoMap[qcQubit];
+      if (reg != memref) {
         continue;
       }
-      toInsert.emplace_back(qcQubit, qcoQubit);
-    }
-
-    // Sort qubits for deterministic output
-    llvm::sort(toInsert, [](const auto& a, const auto& b) {
-      auto* opA = a.first.getDefiningOp();
-      auto* opB = b.first.getDefiningOp();
-      if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-        return a.first.getAsOpaquePointer() < b.first.getAsOpaquePointer();
-      }
-      return opA->isBeforeInBlock(opB);
-    });
-
-    // Insert qubits
-    for (auto [qcQubit, qcoQubit] : toInsert) {
-      auto& info = qubitInfoMap[qcQubit];
-      auto index = info.index;
-      auto insert = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
-                                              qtensor, index);
-      qtensor = insert.getResult();
-      qubitMap.erase(qcQubit);
+      qtensor = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
+                                          qtensor, index)
+                    .getResult();
+      qubitMap.erase(it);
       qubitInfoMap.erase(qcQubit);
     }
-
-    rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, qtensor);
-
     tensorMap.erase(memref);
 
+    rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, qtensor);
     return success();
   }
 };
@@ -670,7 +646,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
     auto qcQubit = op.getQubit();
 
     auto qcoOp = rewriter.replaceOpWithNewOp<qco::StaticOp>(op, op.getIndex());
-    assignMappedQubit(state, operation, qcQubit, qcoOp.getQubit());
+    assignMappedQubit(state, qcoOp, qcQubit, qcoOp.getQubit());
 
     return success();
   }
