@@ -161,18 +161,26 @@ currentModifierFrame(LoweringState& state) {
   return state.modifierFrames.back();
 }
 
-/** @brief Finds the nearest region-local map containing @p reference. */
-[[nodiscard]] static llvm::DenseMap<Value, Value>*
+/**
+ * @brief Finds the nearest region-local map containing @p reference and
+ * returns the pair containing the map and a mutable reference to the value in
+ * the map.
+ */
+[[nodiscard]] static std::pair<llvm::DenseMap<Value, Value>*, Value*>
 findRegionLocalMap(llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>>& map,
                    Operation* anchor, Value reference) {
   for (auto* current = anchor->getParentRegion(); current != nullptr;
        current = current->getParentRegion()) {
-    auto it = map.find(current);
-    if (it != map.end() && it->second.contains(reference)) {
-      return &it->second;
+    if (auto it = map.find(current); it != map.end()) {
+      auto& regionMap = it->second;
+      if (auto valueIt = regionMap.find(reference);
+          valueIt != regionMap.end()) {
+        return {&regionMap, &valueIt->second};
+      }
+      return {&regionMap, nullptr};
     }
   }
-  return nullptr;
+  return {nullptr, nullptr};
 }
 
 /** @brief Resolves the latest QCO SSA value for a QC qubit reference. */
@@ -186,21 +194,20 @@ findRegionLocalMap(llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>>& map,
     }
   }
 
-  auto* qubitMap = findRegionLocalMap(state.qubitMap, anchor, qcQubit);
-  assert(qubitMap != nullptr && "QC qubit not found");
-  auto it = qubitMap->find(qcQubit);
-  assert(it != qubitMap->end() && "QC qubit not found");
-  return it->second;
+  const auto& [qubitMap, qubitValue] =
+      findRegionLocalMap(state.qubitMap, anchor, qcQubit);
+  assert(qubitMap != nullptr && qubitValue != nullptr && "QC qubit not found");
+  return *qubitValue;
 }
 
 /** @brief Resolves the latest QTensor SSA value for a QC register. */
 [[nodiscard]] static Value lookupMappedTensor(LoweringState& state,
                                               Operation* anchor, Value memref) {
-  auto* tensorMap = findRegionLocalMap(state.tensorMap, anchor, memref);
-  assert(tensorMap != nullptr && "QC register not found");
-  auto it = tensorMap->find(memref);
-  assert(it != tensorMap->end() && "QC register not found");
-  return it->second;
+  const auto& [tensorMap, tensorValue] =
+      findRegionLocalMap(state.tensorMap, anchor, memref);
+  assert(tensorMap != nullptr && tensorValue != nullptr &&
+         "QC register not found");
+  return *tensorValue;
 }
 
 /** @brief Updates the latest QCO SSA value for a QC qubit reference. */
@@ -215,22 +222,33 @@ static void assignMappedQubit(LoweringState& state, Operation* anchor,
     }
   }
 
-  if (auto* qubitMap = findRegionLocalMap(state.qubitMap, anchor, qcQubit)) {
+  auto [qubitMap, qubitValue] =
+      findRegionLocalMap(state.qubitMap, anchor, qcQubit);
+  if (qubitValue != nullptr) {
+    *qubitValue = qcoQubit;
+    return;
+  }
+  if (qubitMap != nullptr) {
     (*qubitMap)[qcQubit] = qcoQubit;
     return;
   }
-
   state.qubitMap[anchor->getParentRegion()][qcQubit] = qcoQubit;
 }
 
 /** @brief Updates the latest QTensor SSA value for a QC register. */
 static void assignMappedTensor(LoweringState& state, Operation* anchor,
                                Value memref, Value tensor) {
-  if (auto* tensorMap = findRegionLocalMap(state.tensorMap, anchor, memref)) {
+  auto [tensorMap, tensorValue] =
+      findRegionLocalMap(state.tensorMap, anchor, memref);
+
+  if (tensorValue != nullptr) {
+    *tensorValue = tensor;
+    return;
+  }
+  if (tensorMap != nullptr) {
     (*tensorMap)[memref] = tensor;
     return;
   }
-
   state.tensorMap[anchor->getParentRegion()][memref] = tensor;
 }
 
