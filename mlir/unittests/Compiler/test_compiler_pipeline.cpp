@@ -114,11 +114,12 @@ protected:
   }
 
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
-                          const bool mergeSingleQubitRotationGates,
+                          const bool disableMergeSingleQubitRotationGates,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
-    config.mergeSingleQubitRotationGates = mergeSingleQubitRotationGates;
+    config.disableMergeSingleQubitRotationGates =
+        disableMergeSingleQubitRotationGates;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 
@@ -209,7 +210,7 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
   ASSERT_TRUE(module);
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), false, true, record);
+  runPipeline(module.get(), false, false, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);

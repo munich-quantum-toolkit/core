@@ -144,7 +144,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   // Stage 5: Optimization passes
   if (failed(runStage([&](PassManager& pm) {
-        if (config_.mergeSingleQubitRotationGates) {
+        if (!config_.disableMergeSingleQubitRotationGates) {
           pm.addPass(qco::createMergeSingleQubitRotationGates());
         }
       }))) {
