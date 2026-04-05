@@ -19,7 +19,7 @@ def MergeSingleQubitRotationGates
   let summary = "Merge rotation gates using quaternion-based fusion";
   let description = [{
     Merges consecutive single-qubit rotation gates acting on the same qubit into
-    a single equivalent `u` gate, reducing circuit depth and gate count.
+    a single equivalent U gate, reducing circuit depth and gate count.
 
     Supported gate types: `rx`, `ry`, `rz`, `p`, `r`, `u2`, `u`.
 
@@ -34,11 +34,17 @@ def MergeSingleQubitRotationGates
 
     The gates are then folded one by one via the Hamilton product into a single
     quaternion, which is decomposed back into ZYZ Euler angles and emitted as a
-    single `u` gate.
+    single `UOp`, representing the same rotation as the chain of single gates.
+    The global phase of each gate is tracked alongside and combined together.
 
-    Gates that are not purely SU(2) carry a global phase (`p`, `u`, `u2`).
-    This phase is accumulated across the chain and emitted as a correcting
-    global phase gate.
+    The U gate which is emitted is defined as:
+    U = e^{i(phi+lambda)/2} RZ(phi) RY(theta) RZ(lambda)
+    Each merge emits a `GPhaseOp` carrying the accumulated input phase
+    of the chain. Because the synthesized `UOp`
+    introduces an additional intrinsic phase of (phi+lambda)/2, the `GPhaseOp`
+    must compensate for it. This applies even to chains composed entirely of
+    SU(2) gates (`rx`, `ry`, `rz`, `r`), because the synthesis into a `UOp`
+    still produces the intrinsic phase term.
   }];
 }
 
