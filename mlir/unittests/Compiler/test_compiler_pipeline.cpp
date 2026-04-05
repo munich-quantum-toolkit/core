@@ -114,9 +114,12 @@ protected:
   }
 
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
+                          const bool disableMergeSingleQubitRotationGates,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
+    config.disableMergeSingleQubitRotationGates =
+        disableMergeSingleQubitRotationGates;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 
@@ -160,7 +163,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   EXPECT_TRUE(mlir::verify(*module).succeeded());
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), testCase.convertToQIR, record);
+  runPipeline(module.get(), testCase.convertToQIR, false, record);
 
   ASSERT_TRUE(testCase.qcReferenceBuilder);
   auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
@@ -184,6 +187,33 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
     ASSERT_TRUE(finalQIR);
     printer.record(finalQIR.get(), "Final QIR IR" + name);
   }
+}
+
+/**
+ * @brief Test: Rotation merging pass is invoked during the optimization stage
+ *
+ * @details
+ * The merged U gate parameters are computed via floating-point arithmetic
+ * that is not bit-identical across platforms, so we cannot use
+ * verifyAllStages with hardcoded expected values. Instead, we run the
+ * pipeline once with the pass enabled and compare afterQCOCanon against
+ * afterOptimization to verify the pass transformed the IR.
+ * Correctness of the pass is tested in a dedicated test.
+ */
+TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), [&](mlir::qc::QCProgramBuilder& b) {
+        auto q = b.allocQubit();
+        b.rz(1.0, q);
+        b.rx(1.0, q);
+      });
+  ASSERT_TRUE(module);
+
+  mlir::CompilationRecord record;
+  runPipeline(module.get(), false, false, record);
+
+  // The outputs must differ, proving the pass ran and transformed the IR
+  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
 }
 
 INSTANTIATE_TEST_SUITE_P(
