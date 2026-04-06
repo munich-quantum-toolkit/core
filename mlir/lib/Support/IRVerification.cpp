@@ -167,7 +167,7 @@ static bool isCommutableQTensorInsertDependency(Operation* dependent,
 }
 
 static Value getInsertChainBaseTensor(Value tensor, const OperationSet& group) {
-  Value current = tensor;
+  auto current = tensor;
   while (auto insertOp = current.getDefiningOp<qtensor::InsertOp>()) {
     if (!group.contains(insertOp.getOperation())) {
       break;

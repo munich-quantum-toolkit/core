@@ -93,12 +93,15 @@ struct RemoveInsertExtractPair final : OpRewritePattern<ExtractOp> {
           break;
         }
       } else if (auto nestedExtractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
-        if (areEquivalentIndices(nestedExtractOp.getIndex(),
-                                 extractOp.getIndex())) {
+        if (areEquivalentIndices(extractOp.getIndex(),
+                                 nestedExtractOp.getIndex())) {
           // Do not reorder reads from the same index.
           return failure();
         }
+      } else {
+        return failure();
       }
+
       traversedOps.push_back(definingOp);
       currentTensor = getTensorChainInput(definingOp);
     }

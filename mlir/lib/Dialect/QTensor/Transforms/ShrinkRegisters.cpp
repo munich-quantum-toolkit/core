@@ -88,7 +88,7 @@ namespace mlir::qtensor {
 [[nodiscard]] static LogicalResult collectLiveIndices(AllocOp allocOp,
                                                       llvm::BitVector& live,
                                                       DeallocOp& deallocOp) {
-  Value tensor = allocOp.getResult();
+  auto tensor = allocOp.getResult();
   while (true) {
     auto* user = getLinearTensorUser(tensor);
     if (user == nullptr) {
@@ -176,8 +176,8 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     auto newAlloc =
         AllocOp::create(rewriter, allocOp.getLoc(), size.getResult());
 
-    Value oldTensor = allocOp.getResult();
-    Value currentTensor = newAlloc.getResult();
+    auto oldTensor = allocOp.getResult();
+    auto currentTensor = newAlloc.getResult();
     while (true) {
       Operation* currentOp = getLinearTensorUser(oldTensor);
       if (currentOp == nullptr) {
@@ -208,8 +208,8 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         if (mappedIndex < 0) {
           return failure();
         }
-        Value oldOutTensor = extractOp.getOutTensor();
-        Operation* nextOp = getLinearTensorUser(oldOutTensor);
+        auto oldOutTensor = extractOp.getOutTensor();
+        auto* nextOp = getLinearTensorUser(oldOutTensor);
         if (nextOp == nullptr) {
           return failure();
         }
@@ -244,8 +244,8 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         if (mappedIndex < 0) {
           return failure();
         }
-        Value oldResultTensor = insertOp.getResult();
-        Operation* nextOp = getLinearTensorUser(oldResultTensor);
+        auto oldResultTensor = insertOp.getResult();
+        auto* nextOp = getLinearTensorUser(oldResultTensor);
         if (nextOp == nullptr) {
           return failure();
         }

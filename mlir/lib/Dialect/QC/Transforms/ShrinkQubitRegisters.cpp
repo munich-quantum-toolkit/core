@@ -80,7 +80,7 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
         return failure();
       }
       auto index = getLoadIndex(loadOp);
-      if (!index) {
+      if (!index || *index < 0 || *index >= memRefType.getDimSize(0)) {
         return failure();
       }
       loadOps.push_back(loadOp);

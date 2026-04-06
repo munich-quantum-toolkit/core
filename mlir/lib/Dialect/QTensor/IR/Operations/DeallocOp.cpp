@@ -20,7 +20,7 @@ using namespace mlir::qtensor;
 namespace {
 
 /**
- * @brief Remove matching allocation and deallocation pairs without operations
+ * @brief Remove matching allocation-deallocation pairs without operations
  * between them.
  */
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {

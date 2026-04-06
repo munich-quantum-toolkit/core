@@ -894,24 +894,22 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     validTensorIds.insert(info.regId);
   }
 
-  llvm::DenseMap<Value, QubitInfo> registerQubits;
+  llvm::DenseMap<int64_t, llvm::SmallVector<std::pair<Value, QubitInfo>>>
+      qubitsByRegister;
   for (auto [qubit, info] : validQubits) {
     if (info.regId == -1 || !validTensorIds.contains(info.regId)) {
       // Automatically deallocate all still-allocated qubits
       SinkOp::create(*this, qubit);
     } else {
-      registerQubits.try_emplace(qubit, info);
+      qubitsByRegister[info.regId].emplace_back(qubit, info);
     }
   }
 
   // Automatically deallocate all still-allocated tensors
   for (auto& [tensor, tensorInfo] : validTensors) {
-    Value currentTensor = tensor;
+    auto currentTensor = tensor;
     // Filter out qubits belonging to this tensor
-    for (auto& [qubit, qubitInfo] : registerQubits) {
-      if (qubitInfo.regId != tensorInfo.regId) {
-        continue;
-      }
+    for (auto& [qubit, qubitInfo] : qubitsByRegister[tensorInfo.regId]) {
       auto indexValue = constantFromScalar(*this, getLoc(), qubitInfo.regIndex);
       currentTensor =
           qtensor::InsertOp::create(*this, qubit, currentTensor, indexValue)

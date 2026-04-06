@@ -142,10 +142,12 @@ static void normalizeQIRMetadata(ModuleOp module) {
 }
 
 namespace {
+
 /**
- * @brief Remove dead QIR qubit-array allocation/release pairs.
- * @details Matches an unused `__quantum__rt__qubit_array_allocate` /
- * `__quantum__rt__qubit_array_release` pair on the same stack slot.
+ * @brief Remove matching allocation-release pairs of qubit arrays.
+ * @details Matches an unused
+ * `__quantum__rt__qubit_array_allocate`-`__quantum__rt__qubit_array_release`
+ * pair on the same stack slot.
  */
 struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -197,6 +199,11 @@ struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
   }
 };
 
+/**
+ * @brief Clean up QIR.
+ * @details Removes dead allocation-release pairs of qubit arrays, drops unused
+ * external declarations, and normalizes QIR metadata.
+ */
 struct QIRCleanupPass final : impl::QIRCleanupPassBase<QIRCleanupPass> {
 protected:
   void runOnOperation() override {

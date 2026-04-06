@@ -227,7 +227,7 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
   // We need a block argument to act as a non-constant size.
   auto* block = module.getBody();
   block->addArgument(IndexType::get(context.get()), loc);
-  Value dynSizeVal = block->getArgument(0);
+  auto dynSizeVal = block->getArgument(0);
 
   b.setInsertionPointToEnd(block);
   auto qubitType = qco::QubitType::get(context.get());
@@ -267,8 +267,8 @@ TEST_F(QTensorTest, DeallocOpDeallocOfNonAllocIsNotRemoved) {
   });
   ASSERT_TRUE(canonicalized);
   EXPECT_TRUE(verify(*canonicalized).succeeded());
-  // After canonicalization the extract/insert pair simplifies, but there
-  // should still be either an alloc+dealloc pair or both get eliminated
+  // After canonicalization the extract-insert pair simplifies, but there
+  // should still be either an alloc-dealloc pair or both get eliminated
   // through further folding — just check the module is valid.
   // The important invariant: DeallocOp count is not negative, i.e., the
   // transform did not crash.
@@ -293,7 +293,7 @@ TEST_F(QTensorTest, ExtractOpValidIndexVerifies) {
 TEST_F(QTensorTest, ExtractOpNegativeIndexFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
-  Value tensor = builder.qtensorAlloc(3);
+  auto tensor = builder.qtensorAlloc(3);
   auto negIdx = arith::ConstantIndexOp::create(builder, -1);
   ExtractOp::create(builder, tensor, negIdx.getResult());
   auto module = builder.finalize();
@@ -306,7 +306,7 @@ TEST_F(QTensorTest, ExtractOpNegativeIndexFailsVerification) {
 TEST_F(QTensorTest, ExtractOpIndexAtDimFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
-  Value tensor = builder.qtensorAlloc(3);
+  auto tensor = builder.qtensorAlloc(3);
   // index = 3, tensor has dim 3 → out of bounds
   auto idx3 = arith::ConstantIndexOp::create(builder, 3);
   ExtractOp::create(builder, tensor, idx3.getResult());
@@ -321,7 +321,7 @@ TEST_F(QTensorTest, ExtractOpIndexAtDimMinusOneVerifies) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   // qtensorAlloc(3) creates tensor<3x!qco.qubit> and tracks it.
-  Value tensor = builder.qtensorAlloc(3);
+  auto tensor = builder.qtensorAlloc(3);
   auto idx2 = arith::ConstantIndexOp::create(builder, 2);
   // Create extract at index 2 — last valid index for dim 3.
   // (Use the raw op creator to bypass builder tracking.)
@@ -691,7 +691,7 @@ buildTwoQubitInsertChainProgram(MLIRContext* context,
   const int64_t qubit0Target = swapInsertTargets ? 1 : 0;
   const int64_t qubit1Target = swapInsertTargets ? 0 : 1;
 
-  Value currentTensor = baseTensor;
+  auto currentTensor = baseTensor;
   if (reverseInsertOrder) {
     currentTensor = builder.qtensorInsert(qubit1, currentTensor, qubit1Target);
     currentTensor = builder.qtensorInsert(qubit0, currentTensor, qubit0Target);
@@ -711,7 +711,7 @@ buildMixedExtractInsertProgram(MLIRContext* context, const bool reverseOrder,
   builder.initialize();
 
   auto tensor = builder.qtensorAlloc(3);
-  Value tensorAfterReads = tensor;
+  auto tensorAfterReads = tensor;
   Value qubit0 = nullptr;
   Value qubit1 = nullptr;
 
@@ -730,7 +730,7 @@ buildMixedExtractInsertProgram(MLIRContext* context, const bool reverseOrder,
   const int64_t q0Target = 0;
   const int64_t q1Target = swapInsertTargets ? 2 : 1;
 
-  Value tensorAfterWrites = tensorAfterReads;
+  auto tensorAfterWrites = tensorAfterReads;
   if (reverseOrder) {
     tensorAfterWrites =
         builder.qtensorInsert(qubit0, tensorAfterWrites, q0Target);

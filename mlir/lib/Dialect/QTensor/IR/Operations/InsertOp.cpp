@@ -66,8 +66,8 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
  * chain by traversing nested scalar tensor ops.
  */
 static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
-  Value current = tensor;
-  while (Operation* definingOp = current.getDefiningOp()) {
+  auto current = tensor;
+  while (auto* definingOp = current.getDefiningOp()) {
     if (auto nestedInsertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
       // A more recent write to the same index shadows all older extracts.
       if (areEquivalentIndices(nestedInsertOp.getIndex(), index)) {
@@ -91,7 +91,7 @@ static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
 namespace {
 
 /**
- * @brief Remove matching `qtensor.insert` and `qtensor.extract` pairs.
+ * @brief Remove matching `qtensor.insert`-`qtensor.extract` pairs.
  */
 struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;

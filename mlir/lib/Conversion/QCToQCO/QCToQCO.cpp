@@ -408,7 +408,6 @@ struct ConvertMemRefAllocOp final
       return failure();
     }
 
-    auto memref = op.getResult();
     Value qtensor;
     if (shape[0] == ShapedType::kDynamic) {
       qtensor = rewriter.replaceOpWithNewOp<qtensor::AllocOp>(
@@ -419,7 +418,9 @@ struct ConvertMemRefAllocOp final
       qtensor =
           rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
     }
+
     auto& state = getState();
+    auto memref = op.getResult();
     assignMappedTensor(state, qtensor.getDefiningOp(), memref, qtensor);
 
     return success();
@@ -520,17 +521,26 @@ struct ConvertMemRefDeallocOp final
     auto qtensor = lookupMappedTensor(state, op.getOperation(), memref);
 
     // Filter out qubits belonging to this tensor
-    for (auto it = qubitMap.begin(); it != qubitMap.end(); ++it) {
-      auto& [qcQubit, qcoQubit] = *it;
-      auto& [reg, index] = qubitInfoMap[qcQubit];
+    for (auto it = qubitMap.begin(); it != qubitMap.end();) {
+      auto current = it++;
+      auto qcQubit = current->first;
+      auto qcoQubit = current->second;
+
+      auto infoIt = qubitInfoMap.find(qcQubit);
+      if (infoIt == qubitInfoMap.end()) {
+        continue;
+      }
+
+      auto& [reg, index] = infoIt->second;
       if (reg != memref) {
         continue;
       }
+
       qtensor = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
                                           qtensor, index)
                     .getResult();
-      qubitMap.erase(it);
-      qubitInfoMap.erase(qcQubit);
+      qubitMap.erase(current);
+      qubitInfoMap.erase(infoIt);
     }
     tensorMap.erase(memref);
 

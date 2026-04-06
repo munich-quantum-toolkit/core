@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
 #include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -23,16 +23,15 @@ using namespace mlir;
 using namespace mlir::qco;
 
 /**
- * @brief Check if a `qtensor.extract` operation is guaranteed to read from a
- * `qtensor.alloc` chain.
+ * @brief Check if a `qtensor.extract` operation reads from a `qtensor.alloc`
+ * chain.
  *
- * In QTensor's linear tensor model, reads/writes on different indices commute.
- * We can therefore skip over `qtensor.insert` on other indices while tracing
- * provenance. A write to the same index invalidates the proof.
+ * @details In QTensor's linear tensor model, reads/writes on different indices
+ * commute. We can therefore skip over `qtensor.insert` on other indices while
+ * tracing provenance. A write to the same index invalidates the proof.
  */
-static bool originatesFromAlloc(qtensor::ExtractOp extractOp) {
-  Value currentTensor = extractOp.getTensor();
-  const auto extractIndex = getAsOpFoldResult(extractOp.getIndex());
+static bool originatesFromQTensorAlloc(qtensor::ExtractOp extractOp) {
+  auto currentTensor = extractOp.getTensor();
 
   while (auto* definingOp = currentTensor.getDefiningOp()) {
     if (llvm::isa<qtensor::AllocOp>(definingOp)) {
@@ -45,7 +44,8 @@ static bool originatesFromAlloc(qtensor::ExtractOp extractOp) {
     }
 
     if (auto insertOp = llvm::dyn_cast<qtensor::InsertOp>(definingOp)) {
-      if (getAsOpFoldResult(insertOp.getIndex()) == extractIndex) {
+      if (qtensor::areEquivalentIndices(extractOp.getIndex(),
+                                        insertOp.getIndex())) {
         return false;
       }
       currentTensor = insertOp.getDest();
@@ -76,7 +76,7 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
     }
 
     // Check if the tensor originates from an AllocOp
-    if (!originatesFromAlloc(extractOp)) {
+    if (!originatesFromQTensorAlloc(extractOp)) {
       return failure();
     }
 

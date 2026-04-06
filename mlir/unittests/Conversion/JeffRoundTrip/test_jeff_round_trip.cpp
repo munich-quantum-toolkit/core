@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -27,6 +28,7 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <memory>
 #include <ostream>
@@ -101,7 +103,14 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted Jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runQCOCleanupPipeline(program.get());
+  PassManager pm(context.get());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+  pm.addPass(createRemoveDeadValuesPass());
+  if (pm.run(program.get()).failed()) {
+    llvm::errs() << "Failed to run cleanup passes." << "\n";
+  }
+
   printer.record(program.get(), "Canonicalized Converted Jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
