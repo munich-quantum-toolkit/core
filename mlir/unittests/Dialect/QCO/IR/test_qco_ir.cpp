@@ -26,12 +26,10 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
 
-#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;

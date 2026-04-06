@@ -154,7 +154,7 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
   validQubits.erase(it);
 
   // Add the output (new) value to tracking
-  validQubits.try_emplace(outputQubit, std::move(info));
+  validQubits.try_emplace(outputQubit, info);
 }
 
 void QCOProgramBuilder::validateTensorValue(Value tensor) const {
@@ -187,7 +187,7 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validTensors.erase(it);
 
   // Add the output (new) value to tracking
-  validTensors.try_emplace(outputTensor, std::move(info));
+  validTensors.try_emplace(outputTensor, info);
 }
 
 //===----------------------------------------------------------------------===//

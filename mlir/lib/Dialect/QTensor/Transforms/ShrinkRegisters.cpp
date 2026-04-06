@@ -14,13 +14,18 @@
 #include <llvm/ADT/BitVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <utility>
 
 namespace mlir::qtensor {
@@ -41,7 +46,7 @@ namespace mlir::qtensor {
  */
 [[nodiscard]] static LogicalResult markLiveIndex(const int64_t index,
                                                  llvm::BitVector& liveIndices) {
-  if (index < 0 || index >= static_cast<int64_t>(liveIndices.size())) {
+  if (index < 0 || std::cmp_greater_equal(index, liveIndices.size())) {
     return failure();
   }
   liveIndices.set(static_cast<size_t>(index));
@@ -86,7 +91,7 @@ namespace mlir::qtensor {
   Value tensor = allocOp.getResult();
   while (true) {
     auto* user = getLinearTensorUser(tensor);
-    if (!user) {
+    if (user == nullptr) {
       return failure();
     }
 
@@ -125,6 +130,8 @@ namespace mlir::qtensor {
     return failure();
   }
 }
+
+namespace {
 
 /**
  * @brief Shrink static qtensors by removing never-accessed indices.
@@ -173,7 +180,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     Value currentTensor = newAlloc.getResult();
     while (true) {
       Operation* currentOp = getLinearTensorUser(oldTensor);
-      if (!currentOp) {
+      if (currentOp == nullptr) {
         return failure();
       }
 
@@ -193,7 +200,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         }
         const auto oldIndex = *getConstantIntValue(extractOp.getIndex());
         if (oldIndex < 0 ||
-            oldIndex >= static_cast<int64_t>(newIndexByOldIndex.size())) {
+            std::cmp_greater_equal(oldIndex, newIndexByOldIndex.size())) {
           return failure();
         }
         const auto mappedIndex =
@@ -203,7 +210,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         }
         Value oldOutTensor = extractOp.getOutTensor();
         Operation* nextOp = getLinearTensorUser(oldOutTensor);
-        if (!nextOp) {
+        if (nextOp == nullptr) {
           return failure();
         }
 
@@ -229,7 +236,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         }
         const auto oldIndex = *getConstantIntValue(insertOp.getIndex());
         if (oldIndex < 0 ||
-            oldIndex >= static_cast<int64_t>(newIndexByOldIndex.size())) {
+            std::cmp_greater_equal(oldIndex, newIndexByOldIndex.size())) {
           return failure();
         }
         const auto mappedIndex =
@@ -239,7 +246,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         }
         Value oldResultTensor = insertOp.getResult();
         Operation* nextOp = getLinearTensorUser(oldResultTensor);
-        if (!nextOp) {
+        if (nextOp == nullptr) {
           return failure();
         }
 
@@ -278,5 +285,7 @@ protected:
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir::qtensor

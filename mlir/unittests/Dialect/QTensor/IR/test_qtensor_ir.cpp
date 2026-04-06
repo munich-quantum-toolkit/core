@@ -24,17 +24,20 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -97,14 +100,14 @@ protected:
 // 1. QTensorUtils — direct tests of scalar chain helpers
 // ============================================================================
 
-TEST_F(QTensorTest, AreEquivalentIndices_SameValueIsEquivalent) {
+TEST_F(QTensorTest, AreEquivalentIndicesSameValueIsEquivalent) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   auto c2 = arith::ConstantIndexOp::create(builder, 2);
   EXPECT_TRUE(areEquivalentIndices(c2.getResult(), c2.getResult()));
 }
 
-TEST_F(QTensorTest, AreEquivalentIndices_DifferentConstantsAreNotEquivalent) {
+TEST_F(QTensorTest, AreEquivalentIndicesDifferentConstantsAreNotEquivalent) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   auto c0 = arith::ConstantIndexOp::create(builder, 0);
@@ -112,13 +115,13 @@ TEST_F(QTensorTest, AreEquivalentIndices_DifferentConstantsAreNotEquivalent) {
   EXPECT_FALSE(areEquivalentIndices(c0.getResult(), c1.getResult()));
 }
 
-TEST_F(QTensorTest, TensorChainHelpers_InsertAndExtractAreRecognized) {
+TEST_F(QTensorTest, TensorChainHelpersInsertAndExtractAreRecognized) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   auto tensor = builder.qtensorAlloc(3);
   auto [outTensor, q0] = builder.qtensorExtract(tensor, 0);
-  auto insert = builder.qtensorInsert(q0, outTensor, 0).getDefiningOp();
-  auto extract = outTensor.getDefiningOp();
+  auto* insert = builder.qtensorInsert(q0, outTensor, 0).getDefiningOp();
+  auto* extract = outTensor.getDefiningOp();
 
   ASSERT_NE(insert, nullptr);
   ASSERT_NE(extract, nullptr);
@@ -128,7 +131,7 @@ TEST_F(QTensorTest, TensorChainHelpers_InsertAndExtractAreRecognized) {
   EXPECT_EQ(getTensorChainInput(extract), tensor);
 }
 
-TEST_F(QTensorTest, TensorChainHelpers_SetTensorChainInputRewiresOperand) {
+TEST_F(QTensorTest, TensorChainHelpersSetTensorChainInputRewiresOperand) {
   auto module =
       QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
         auto t1 = b.qtensorAlloc(3);
@@ -152,7 +155,7 @@ TEST_F(QTensorTest, TensorChainHelpers_SetTensorChainInputRewiresOperand) {
 // ============================================================================
 
 /// A valid static alloc should pass verification.
-TEST_F(QTensorTest, AllocOp_ValidStaticAllocVerifies) {
+TEST_F(QTensorTest, AllocOpValidStaticAllocVerifies) {
   auto module = QCOProgramBuilder::build(
       context.get(), [](QCOProgramBuilder& b) { b.qtensorAlloc(3); });
   ASSERT_TRUE(module);
@@ -162,7 +165,7 @@ TEST_F(QTensorTest, AllocOp_ValidStaticAllocVerifies) {
 /// AllocOp with a constant size ≤ 0 must fail verification.
 /// Note: The builder asserts on zero/negative, so we verify the verifier
 /// by constructing the op manually bypassing the builder assertion.
-TEST_F(QTensorTest, AllocOp_ZeroSizeFailsVerification) {
+TEST_F(QTensorTest, AllocOpZeroSizeFailsVerification) {
   // Build a module manually to bypass builder-level assertion.
   auto loc = UnknownLoc::get(context.get());
   auto module = ModuleOp::create(loc);
@@ -184,7 +187,7 @@ TEST_F(QTensorTest, AllocOp_ZeroSizeFailsVerification) {
 }
 
 /// AllocOp where static result type dim ≠ constant size must fail.
-TEST_F(QTensorTest, AllocOp_StaticTypeMismatchFailsVerification) {
+TEST_F(QTensorTest, AllocOpStaticTypeMismatchFailsVerification) {
   auto loc = UnknownLoc::get(context.get());
   auto module = ModuleOp::create(loc);
   ImplicitLocOpBuilder b(loc, context.get());
@@ -200,7 +203,7 @@ TEST_F(QTensorTest, AllocOp_StaticTypeMismatchFailsVerification) {
 }
 
 /// AllocOp with a dynamic result type but a constant size operand is valid.
-TEST_F(QTensorTest, AllocOp_DynamicTypeWithConstantSizeVerifies) {
+TEST_F(QTensorTest, AllocOpDynamicTypeWithConstantSizeVerifies) {
   auto loc = UnknownLoc::get(context.get());
   auto module = ModuleOp::create(loc);
   ImplicitLocOpBuilder b(loc, context.get());
@@ -217,7 +220,7 @@ TEST_F(QTensorTest, AllocOp_DynamicTypeWithConstantSizeVerifies) {
 
 /// AllocOp with a static result type but a non-constant (dynamic) size
 /// operand must fail verification.
-TEST_F(QTensorTest, AllocOp_StaticTypeWithDynamicSizeOperandFailsVerification) {
+TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
   auto loc = UnknownLoc::get(context.get());
   auto module = ModuleOp::create(loc);
   ImplicitLocOpBuilder b(loc, context.get());
@@ -240,7 +243,7 @@ TEST_F(QTensorTest, AllocOp_StaticTypeWithDynamicSizeOperandFailsVerification) {
 // ============================================================================
 
 /// An alloc immediately followed by dealloc should be eliminated entirely.
-TEST_F(QTensorTest, DeallocOp_AllocDeallocPairIsRemoved) {
+TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     auto t = b.qtensorAlloc(3);
     b.qtensorDealloc(t);
@@ -253,7 +256,7 @@ TEST_F(QTensorTest, DeallocOp_AllocDeallocPairIsRemoved) {
 }
 
 /// A dealloc whose operand is not directly an AllocOp should not be removed.
-TEST_F(QTensorTest, DeallocOp_DeallocOfNonAllocIsNotRemoved) {
+TEST_F(QTensorTest, DeallocOpDeallocOfNonAllocIsNotRemoved) {
   // Extract then insert to create a different tensor SSA value before dealloc.
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(3);
@@ -276,7 +279,7 @@ TEST_F(QTensorTest, DeallocOp_DeallocOfNonAllocIsNotRemoved) {
 // ============================================================================
 
 /// A valid extract at index 0 from a size-1 tensor must pass verification.
-TEST_F(QTensorTest, ExtractOp_ValidIndexVerifies) {
+TEST_F(QTensorTest, ExtractOpValidIndexVerifies) {
   auto module =
       QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
         auto t = b.qtensorAlloc(1);
@@ -287,7 +290,7 @@ TEST_F(QTensorTest, ExtractOp_ValidIndexVerifies) {
 }
 
 /// An extract at a negative constant index must fail verification.
-TEST_F(QTensorTest, ExtractOp_NegativeIndexFailsVerification) {
+TEST_F(QTensorTest, ExtractOpNegativeIndexFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   Value tensor = builder.qtensorAlloc(3);
@@ -300,7 +303,7 @@ TEST_F(QTensorTest, ExtractOp_NegativeIndexFailsVerification) {
 
 /// An extract at an index equal to the tensor dimension must fail (out of
 /// bounds).
-TEST_F(QTensorTest, ExtractOp_IndexAtDimFailsVerification) {
+TEST_F(QTensorTest, ExtractOpIndexAtDimFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   Value tensor = builder.qtensorAlloc(3);
@@ -313,7 +316,7 @@ TEST_F(QTensorTest, ExtractOp_IndexAtDimFailsVerification) {
 }
 
 /// An extract at an index one less than the dimension must pass.
-TEST_F(QTensorTest, ExtractOp_IndexAtDimMinusOneVerifies) {
+TEST_F(QTensorTest, ExtractOpIndexAtDimMinusOneVerifies) {
   // Build inside a proper func.func body via QCOProgramBuilder.
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -332,7 +335,7 @@ TEST_F(QTensorTest, ExtractOp_IndexAtDimMinusOneVerifies) {
 
 /// foldExtractAfterInsert: extract(insert(t, q, i), i) → (t, q)
 /// The fold must eliminate the round-trip at the same index.
-TEST_F(QTensorTest, ExtractOp_FoldExtractAfterInsertSameIndex) {
+TEST_F(QTensorTest, ExtractOpFoldExtractAfterInsertSameIndex) {
   // Use the full QCO pipeline so that both the fold and subsequent DCE of the
   // dead InsertOp run to convergence (single canonicalizer pass may leave
   // unreachable Pure ops if DCE and folding don't interleave).
@@ -354,7 +357,7 @@ TEST_F(QTensorTest, ExtractOp_FoldExtractAfterInsertSameIndex) {
 }
 
 /// foldExtractAfterInsert: extract at a different index must NOT fold.
-TEST_F(QTensorTest, ExtractOp_NoFoldExtractAfterInsertDifferentIndex) {
+TEST_F(QTensorTest, ExtractOpNoFoldExtractAfterInsertDifferentIndex) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(3);
     auto [outTensor, q0] = b.qtensorExtract(tensor, 0);
@@ -371,7 +374,7 @@ TEST_F(QTensorTest, ExtractOp_NoFoldExtractAfterInsertDifferentIndex) {
 
 /// RemoveInsertExtractPair: extract through a disjoint InsertOp should find
 /// the original extract and eliminate both.
-TEST_F(QTensorTest, ExtractOp_RemoveInsertExtractPairThroughDisjointInsert) {
+TEST_F(QTensorTest, ExtractOpRemoveInsertExtractPairThroughDisjointInsert) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(3);
     // Extract qubit 0.
@@ -392,7 +395,7 @@ TEST_F(QTensorTest, ExtractOp_RemoveInsertExtractPairThroughDisjointInsert) {
 /// RemoveInsertExtractPair: a nested ExtractOp at the same index must block
 /// re-ordering (linearity guard).
 TEST_F(QTensorTest,
-       ExtractOp_RemoveInsertExtractPairBlockedByNestedExtractAtSameIndex) {
+       ExtractOpRemoveInsertExtractPairBlockedByNestedExtractAtSameIndex) {
   // Pattern: insert q0 at 0, then extract-at-0 twice (would violate linearity
   // if the first extraction were skipped).
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
@@ -416,7 +419,7 @@ TEST_F(QTensorTest,
 // ============================================================================
 
 /// A valid insert at index 0 into a size-3 tensor must pass verification.
-TEST_F(QTensorTest, InsertOp_ValidIndexVerifies) {
+TEST_F(QTensorTest, InsertOpValidIndexVerifies) {
   auto module =
       QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
         auto t = b.qtensorAlloc(3);
@@ -428,7 +431,7 @@ TEST_F(QTensorTest, InsertOp_ValidIndexVerifies) {
 }
 
 /// An insert at a negative constant index must fail verification.
-TEST_F(QTensorTest, InsertOp_NegativeIndexFailsVerification) {
+TEST_F(QTensorTest, InsertOpNegativeIndexFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   // Extract qubit 0 to get both a tracked tensor and a qubit.
@@ -445,7 +448,7 @@ TEST_F(QTensorTest, InsertOp_NegativeIndexFailsVerification) {
 }
 
 /// An insert at an index equal to the destination dimension must fail.
-TEST_F(QTensorTest, InsertOp_IndexAtDimFailsVerification) {
+TEST_F(QTensorTest, InsertOpIndexAtDimFailsVerification) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
   auto tensor = builder.qtensorAlloc(3);
@@ -459,7 +462,7 @@ TEST_F(QTensorTest, InsertOp_IndexAtDimFailsVerification) {
 
 /// foldInsertAfterExtract: insert(extract(t, i).qubit, extract(t, i).out, i)
 /// should fold to `t`.
-TEST_F(QTensorTest, InsertOp_FoldInsertAfterExtractSameIndex) {
+TEST_F(QTensorTest, InsertOpFoldInsertAfterExtractSameIndex) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(3);
     auto [outTensor, q0] = b.qtensorExtract(tensor, 0);
@@ -475,7 +478,7 @@ TEST_F(QTensorTest, InsertOp_FoldInsertAfterExtractSameIndex) {
 
 /// foldInsertAfterExtract: inserting the qubit at a different index must NOT
 /// fold.
-TEST_F(QTensorTest, InsertOp_NoFoldInsertAfterExtractDifferentIndex) {
+TEST_F(QTensorTest, InsertOpNoFoldInsertAfterExtractDifferentIndex) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(3);
     auto [outTensor, q0] = b.qtensorExtract(tensor, 0);
@@ -489,7 +492,7 @@ TEST_F(QTensorTest, InsertOp_NoFoldInsertAfterExtractDifferentIndex) {
 
 /// foldInsertAfterExtract: inserting into a different tensor (not the extract's
 /// out_tensor) must NOT fold.
-TEST_F(QTensorTest, InsertOp_NoFoldInsertAfterExtractDifferentDest) {
+TEST_F(QTensorTest, InsertOpNoFoldInsertAfterExtractDifferentDest) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     auto t1 = b.qtensorAlloc(3);
     auto t2 = b.qtensorAlloc(3);
@@ -506,7 +509,7 @@ TEST_F(QTensorTest, InsertOp_NoFoldInsertAfterExtractDifferentDest) {
 
 /// RemoveExtractInsertPair: an insert-after-extract that has been modified
 /// (qubit passed through an H gate) must NOT be eliminated.
-TEST_F(QTensorTest, InsertOp_NoRemoveExtractInsertPairAfterMutation) {
+TEST_F(QTensorTest, InsertOpNoRemoveExtractInsertPairAfterMutation) {
   auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(3);
     auto [outTensor, q0] = b.qtensorExtract(tensor, 0);
@@ -521,7 +524,7 @@ TEST_F(QTensorTest, InsertOp_NoRemoveExtractInsertPairAfterMutation) {
 
 /// RemoveExtractInsertPair: insert shadowed by an earlier InsertOp at the same
 /// index must not be eliminated.
-TEST_F(QTensorTest, InsertOp_RemoveExtractInsertPairBlockedByShadowingInsert) {
+TEST_F(QTensorTest, InsertOpRemoveExtractInsertPairBlockedByShadowingInsert) {
   // Pattern:
   //   t1, q0 = extract(alloc, 0)
   //   t2 = insert(q0, t1, 0)           ← overwrites index 0
@@ -544,7 +547,7 @@ TEST_F(QTensorTest, InsertOp_RemoveExtractInsertPairBlockedByShadowingInsert) {
 
 /// RemoveExtractInsertPair: insert blocked by a disjoint insert (different
 /// index) should still succeed in finding the original extract.
-TEST_F(QTensorTest, InsertOp_RemoveExtractInsertPairThroughDisjointInsert) {
+TEST_F(QTensorTest, InsertOpRemoveExtractInsertPairThroughDisjointInsert) {
   // Pattern:
   //   t1, q0 = extract(alloc, 0)
   //   t2, q1 = extract(t1, 1)          ← disjoint from index 0
@@ -577,11 +580,16 @@ struct QTensorIntegrationTestCase {
   mqt::test::NamedBuilder<QCOProgramBuilder> programBuilder;
   mqt::test::NamedBuilder<QCOProgramBuilder> referenceBuilder;
 
+  // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
   friend std::ostream& operator<<(std::ostream& os,
-                                  const QTensorIntegrationTestCase& info) {
-    return os << "QTensor{" << info.name << "}";
-  }
+                                  const QTensorIntegrationTestCase& info);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os,
+                         const QTensorIntegrationTestCase& info) {
+  return os << "QTensor{" << info.name << "}";
+}
 
 class QTensorIntegrationTest
     : public testing::TestWithParam<QTensorIntegrationTestCase> {

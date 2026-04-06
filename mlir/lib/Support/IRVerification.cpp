@@ -215,8 +215,8 @@ summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
     }
 
     auto& chain = chains[chainIdx];
-    chain.writes.push_back(
-        InsertWrite{insertOp.getScalar(), insertOp.getIndex()});
+    chain.writes.push_back(InsertWrite{.scalar = insertOp.getScalar(),
+                                       .index = insertOp.getIndex()});
 
     if (!consumedInsertResults.contains(insertOp.getResult())) {
       if (chain.finalTensor) {

@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
 
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
