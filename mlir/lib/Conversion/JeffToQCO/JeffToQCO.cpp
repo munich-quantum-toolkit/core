@@ -458,10 +458,8 @@ struct ConvertJeffQuregInsertIndexOpToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto index = arith::IndexCastOp::create(
         rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
-    rewriter.replaceOpWithNewOp<qtensor::InsertOp>(op, adaptor.getInQubit(),
-                                                   adaptor.getInQreg(),
-
-                                                   index.getResult());
+    rewriter.replaceOpWithNewOp<qtensor::InsertOp>(
+        op, adaptor.getInQubit(), adaptor.getInQreg(), index.getResult());
     return success();
   }
 };
