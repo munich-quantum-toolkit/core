@@ -58,13 +58,12 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
   if (auto result = foldInsertAfterExtract(*this)) {
     return result;
   }
-
   return {};
 }
 
 /**
  * @brief Find a matching `qtensor.extract` for an insert index in a tensor
- * chain by traversing nested scalar and slice tensor ops.
+ * chain by traversing nested scalar tensor ops.
  */
 static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
   Value current = tensor;
@@ -77,16 +76,6 @@ static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
       current = nestedInsertOp.getDest();
       continue;
     }
-    if (auto nestedInsertSliceOp = llvm::dyn_cast<InsertSliceOp>(definingOp)) {
-      if (classifyIndexAndRange(index, nestedInsertSliceOp.getOffset(),
-                                nestedInsertSliceOp.getSize()) !=
-          AccessRelation::Disjoint) {
-        return nullptr;
-      }
-      current = nestedInsertSliceOp.getDest();
-      continue;
-    }
-
     if (auto extractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
       if (areEquivalentIndices(extractOp.getIndex(), index)) {
         return extractOp;
@@ -94,19 +83,8 @@ static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
       current = extractOp.getTensor();
       continue;
     }
-    if (auto extractSliceOp = llvm::dyn_cast<ExtractSliceOp>(definingOp)) {
-      if (classifyIndexAndRange(index, extractSliceOp.getOffset(),
-                                extractSliceOp.getSize()) !=
-          AccessRelation::Disjoint) {
-        return nullptr;
-      }
-      current = extractSliceOp.getTensor();
-      continue;
-    }
-
     break;
   }
-
   return nullptr;
 }
 

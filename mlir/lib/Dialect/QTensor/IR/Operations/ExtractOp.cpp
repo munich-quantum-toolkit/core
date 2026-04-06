@@ -97,22 +97,7 @@ struct RemoveInsertExtractPair final : OpRewritePattern<ExtractOp> {
           // Do not reorder reads from the same index.
           return failure();
         }
-      } else if (auto insertSliceOp =
-                     llvm::dyn_cast<InsertSliceOp>(definingOp)) {
-        if (classifyIndexAndRange(
-                extractOp.getIndex(), insertSliceOp.getOffset(),
-                insertSliceOp.getSize()) != AccessRelation::Disjoint) {
-          return failure();
-        }
-      } else if (auto extractSliceOp =
-                     llvm::dyn_cast<ExtractSliceOp>(definingOp)) {
-        if (classifyIndexAndRange(
-                extractOp.getIndex(), extractSliceOp.getOffset(),
-                extractSliceOp.getSize()) != AccessRelation::Disjoint) {
-          return failure();
-        }
       }
-
       traversedOps.push_back(definingOp);
       currentTensor = getTensorChainInput(definingOp);
     }

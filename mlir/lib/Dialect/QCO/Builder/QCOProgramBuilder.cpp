@@ -246,24 +246,6 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
   return {outTensor, qubit};
 }
 
-std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
-    Value tensor, const std::variant<int64_t, Value>& offset,
-    const std::variant<int64_t, Value>& size) {
-  checkFinalized();
-
-  auto offsetValue = variantToValue(*this, getLoc(), offset);
-  auto sizesValue = variantToValue(*this, getLoc(), size);
-  auto extractSliceOp =
-      qtensor::ExtractSliceOp::create(*this, tensor, offsetValue, sizesValue);
-  auto slicedTensor = extractSliceOp.getResult();
-  auto outTensor = extractSliceOp.getOutTensor();
-
-  validTensors.try_emplace(slicedTensor, TensorInfo{tensorCounter++});
-  updateTensorTracking(tensor, outTensor);
-
-  return {outTensor, slicedTensor};
-}
-
 Value QCOProgramBuilder::qtensorInsert(
     Value scalar, Value tensor, const std::variant<int64_t, Value>& index) {
   checkFinalized();
@@ -276,25 +258,6 @@ Value QCOProgramBuilder::qtensorInsert(
   validateQubitValue(scalar);
   validQubits.erase(scalar);
   updateTensorTracking(tensor, outTensor);
-
-  return outTensor;
-}
-
-Value QCOProgramBuilder::qtensorInsertSlice(
-    Value source, Value dest, const std::variant<int64_t, Value>& offset,
-    const std::variant<int64_t, Value>& size) {
-  checkFinalized();
-
-  auto offsetValue = variantToValue(*this, getLoc(), offset);
-  auto sizeValue = variantToValue(*this, getLoc(), size);
-  auto insertSliceOp = qtensor::InsertSliceOp::create(*this, source, dest,
-                                                      offsetValue, sizeValue);
-
-  auto outTensor = insertSliceOp.getResult();
-
-  validateTensorValue(source);
-  validTensors.erase(source);
-  updateTensorTracking(dest, outTensor);
 
   return outTensor;
 }

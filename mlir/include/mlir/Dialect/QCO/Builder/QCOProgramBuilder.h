@@ -275,34 +275,6 @@ public:
   std::pair<Value, Value> qtensorExtract(Value tensor, const int64_t index);
 
   /**
-   * @brief Extract a qubit slice from a tensor
-   *
-   * @details
-   * Extracts a slice from a one-dimensional tensor of qubits at the given
-   * offset and size and returns the updated input tensor and the extracted
-   * tensor. The extracted tensor is added to the qubit tensor tracking and the
-   * tracking for the input tensor is updated.
-   *
-   * @param tensor Source tensor (must be valid/unconsumed)
-   * @param offset The offset from where the slice is extracted
-   * @param size The size of the extracted slice
-   * @return Pair of (outTensor, extractedSlice)
-   *
-   * @par Example:
-   * ```c++
-   * auto [outTensor, extractedSlice] = builder.qtensorExtractSlice(tensor, 0,
-   * 2);
-   * ```
-   * ```mlir
-   * %outTensor, %extractedSlice = qtensor.extract_slice %tensor[%c0][%c2]
-   * : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
-   * ```
-   */
-  std::pair<Value, Value>
-  qtensorExtractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
-                      const std::variant<int64_t, Value>& size);
-
-  /**
    * @brief Insert a qubit into a tensor
    *
    * @details
@@ -326,35 +298,6 @@ public:
    */
   Value qtensorInsert(Value scalar, Value tensor,
                       const std::variant<int64_t, Value>& index);
-
-  /**
-   * @brief Insert a qubit slice into a tensor
-   *
-   * @details
-   * Inserts a one-dimensional tensor of qubits into another one-dimensional
-   * tensor of qubits at the given offset and size. The inserted tensor slice is
-   * consumed and removed from the tracking, while the tracking for the
-   * destination tensor is updated.
-   *
-   * @param sourceTensor The slice that is inserted (must be valid/unconsumed)
-   * @param destTensor The tensor where the slice is inserted (must be
-   * valid/unconsumed)
-   * @param offset The offset into where the slice is inserted
-   * @param size The size of the inserted slice
-   * @return The output tensor
-   *
-   * @par Example:
-   * ```c++
-   * auto outTensor = builder.qtensorInsertSlice(slicedTensor, tensor, 0, 2);
-   * ```
-   * ```mlir
-   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2]
-   * : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
-   * ```
-   */
-  Value qtensorInsertSlice(Value sourceTensor, Value destTensor,
-                           const std::variant<int64_t, Value>& offset,
-                           const std::variant<int64_t, Value>& size);
 
   /**
    * @brief Explicitly deallocate a tensor

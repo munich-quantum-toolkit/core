@@ -49,22 +49,6 @@ namespace mlir::qtensor {
 }
 
 /**
- * @brief Mark a contiguous live range.
- */
-[[nodiscard]] static LogicalResult markLiveRange(const int64_t offset,
-                                                 const int64_t size,
-                                                 llvm::BitVector& liveIndices) {
-  if (offset < 0 || size <= 0 ||
-      offset + size > static_cast<int64_t>(liveIndices.size())) {
-    return failure();
-  }
-  for (int64_t index = offset; index < offset + size; ++index) {
-    liveIndices.set(static_cast<size_t>(index));
-  }
-  return success();
-}
-
-/**
  * @brief Redirect the tensor operand from @p from to @p to.
  */
 [[nodiscard]] static LogicalResult remapTensorOperand(Operation* op, Value from,
@@ -81,20 +65,6 @@ namespace mlir::qtensor {
       return failure();
     }
     insertOp->setOperand(1, to);
-    return success();
-  }
-  if (auto extractSliceOp = llvm::dyn_cast<ExtractSliceOp>(op)) {
-    if (extractSliceOp.getTensor() != from) {
-      return failure();
-    }
-    extractSliceOp->setOperand(0, to);
-    return success();
-  }
-  if (auto insertSliceOp = llvm::dyn_cast<InsertSliceOp>(op)) {
-    if (insertSliceOp.getDest() != from) {
-      return failure();
-    }
-    insertSliceOp->setOperand(1, to);
     return success();
   }
   if (auto deallocOp = llvm::dyn_cast<DeallocOp>(op)) {
@@ -149,32 +119,6 @@ namespace mlir::qtensor {
         return failure();
       }
       tensor = insertOp.getResult();
-      continue;
-    }
-
-    if (auto extractSliceOp = llvm::dyn_cast<ExtractSliceOp>(user)) {
-      if (extractSliceOp.getTensor() != tensor) {
-        return failure();
-      }
-      auto offset = getConstantIntValue(extractSliceOp.getOffset());
-      auto size = getConstantIntValue(extractSliceOp.getSize());
-      if (!offset || !size || failed(markLiveRange(*offset, *size, live))) {
-        return failure();
-      }
-      tensor = extractSliceOp.getOutTensor();
-      continue;
-    }
-
-    if (auto insertSliceOp = llvm::dyn_cast<InsertSliceOp>(user)) {
-      if (insertSliceOp.getDest() != tensor) {
-        return failure();
-      }
-      auto offset = getConstantIntValue(insertSliceOp.getOffset());
-      auto size = getConstantIntValue(insertSliceOp.getSize());
-      if (!offset || !size || failed(markLiveRange(*offset, *size, live))) {
-        return failure();
-      }
-      tensor = insertSliceOp.getResult();
       continue;
     }
 
@@ -311,86 +255,6 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
           return failure();
         }
         rewriter.eraseOp(insertOp);
-        continue;
-      }
-
-      if (auto extractSliceOp = llvm::dyn_cast<ExtractSliceOp>(currentOp)) {
-        if (extractSliceOp.getTensor() != oldTensor) {
-          return failure();
-        }
-        const auto oldOffset = *getConstantIntValue(extractSliceOp.getOffset());
-        const auto oldSliceSize =
-            *getConstantIntValue(extractSliceOp.getSize());
-        if (oldOffset < 0 || oldSliceSize <= 0 ||
-            oldOffset + oldSliceSize >
-                static_cast<int64_t>(newIndexByOldIndex.size())) {
-          return failure();
-        }
-        const auto mappedOffset =
-            newIndexByOldIndex[static_cast<size_t>(oldOffset)];
-        if (mappedOffset < 0) {
-          return failure();
-        }
-        Value oldOutTensor = extractSliceOp.getOutTensor();
-        Operation* nextOp = getLinearTensorUser(oldOutTensor);
-        if (!nextOp) {
-          return failure();
-        }
-        rewriter.setInsertionPoint(extractSliceOp);
-        auto newOffset = arith::ConstantIndexOp::create(
-            rewriter, extractSliceOp.getLoc(), mappedOffset);
-        auto newSliceSize = arith::ConstantIndexOp::create(
-            rewriter, extractSliceOp.getLoc(), oldSliceSize);
-        auto newExtractSlice = ExtractSliceOp::create(
-            rewriter, extractSliceOp.getLoc(), currentTensor,
-            newOffset.getResult(), newSliceSize.getResult());
-        rewriter.replaceAllUsesWith(extractSliceOp.getResult(),
-                                    newExtractSlice.getResult());
-
-        currentTensor = newExtractSlice.getOutTensor();
-        if (failed(remapTensorOperand(nextOp, oldOutTensor, oldTensor))) {
-          return failure();
-        }
-        rewriter.eraseOp(extractSliceOp);
-        continue;
-      }
-
-      if (auto insertSliceOp = llvm::dyn_cast<InsertSliceOp>(currentOp)) {
-        if (insertSliceOp.getDest() != oldTensor) {
-          return failure();
-        }
-        const auto oldOffset = *getConstantIntValue(insertSliceOp.getOffset());
-        const auto oldSliceSize = *getConstantIntValue(insertSliceOp.getSize());
-        if (oldOffset < 0 || oldSliceSize <= 0 ||
-            oldOffset + oldSliceSize >
-                static_cast<int64_t>(newIndexByOldIndex.size())) {
-          return failure();
-        }
-        const auto mappedOffset =
-            newIndexByOldIndex[static_cast<size_t>(oldOffset)];
-        if (mappedOffset < 0) {
-          return failure();
-        }
-        Value oldResultTensor = insertSliceOp.getResult();
-        Operation* nextOp = getLinearTensorUser(oldResultTensor);
-        if (!nextOp) {
-          return failure();
-        }
-
-        rewriter.setInsertionPoint(insertSliceOp);
-        auto newOffset = arith::ConstantIndexOp::create(
-            rewriter, insertSliceOp.getLoc(), mappedOffset);
-        auto newSliceSize = arith::ConstantIndexOp::create(
-            rewriter, insertSliceOp.getLoc(), oldSliceSize);
-        auto newInsertSlice = InsertSliceOp::create(
-            rewriter, insertSliceOp.getLoc(), insertSliceOp.getSource(),
-            currentTensor, newOffset.getResult(), newSliceSize.getResult());
-
-        currentTensor = newInsertSlice.getResult();
-        if (failed(remapTensorOperand(nextOp, oldResultTensor, oldTensor))) {
-          return failure();
-        }
-        rewriter.eraseOp(insertSliceOp);
         continue;
       }
 
