@@ -100,6 +100,10 @@ namespace {
  * The primary conversion is from !qco.qubit to !qc.qubit, which
  * represents the semantic shift from value types to reference types.
  *
+ * Qubit tensor types preserve their shape during conversion: a statically
+ * shaped `tensor<Nx!qco.qubit>` becomes `memref<Nx!qc.qubit>`, while a
+ * dynamically shaped `tensor<?x!qco.qubit>` becomes `memref<?x!qc.qubit>`.
+ *
  * Other types (integers, booleans, etc.) pass through unchanged via
  * the identity conversion.
  */
@@ -116,7 +120,7 @@ public:
 
     addConversion([ctx](RankedTensorType type) -> Type {
       if (llvm::isa<qco::QubitType>(type.getElementType())) {
-        return MemRefType::get({ShapedType::kDynamic}, qc::QubitType::get(ctx));
+        return MemRefType::get(type.getShape(), qc::QubitType::get(ctx));
       }
       return type;
     });
@@ -142,8 +146,17 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto qubitType = qc::QubitType::get(op.getContext());
-    auto memrefType = mlir::MemRefType::get({ShapedType::kDynamic}, qubitType);
-    rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType, op.getSize());
+    auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
+
+    if (tensorType.hasStaticShape()) {
+      // Static size: no dynamic size operand needed
+      rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType);
+    } else {
+      // Dynamic size: forward the runtime size operand
+      rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType,
+                                                   op.getSize());
+    }
     return success();
   }
 };
