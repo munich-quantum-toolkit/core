@@ -446,12 +446,14 @@ QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
 QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   checkFinalized();
 
+  if (llvm::isa_and_nonnull<memref::LoadOp>(qubit.getDefiningOp())) {
+    llvm::reportFatalUsageError(
+        "Register-backed qubits cannot be deallocated manually");
+  }
+
   // Check if the qubit is in the tracking set
   if (!allocatedQubits.erase(qubit)) {
-    // Qubit was not found in the set - either never allocated or already
-    // deallocated
-    llvm::reportFatalUsageError(
-        "Double deallocation or invalid qubit deallocation");
+    llvm::reportFatalUsageError("Invalid qubit deallocation");
   }
 
   // Create the DeallocOp
