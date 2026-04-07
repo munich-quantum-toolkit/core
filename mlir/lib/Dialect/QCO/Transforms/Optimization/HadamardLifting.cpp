@@ -10,15 +10,16 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Pass/Pass.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <ranges>
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -27,8 +28,6 @@ namespace mlir::qco {
 
 #define GEN_PASS_DEF_HADAMARDLIFTING
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
-
-namespace {
 
 /**
  * @brief This method checks if two ranges contain of exactly the same
@@ -39,8 +38,8 @@ namespace {
  * @param range1 The first range.
  * @param range2 The second range.
  */
-static bool containRangesOfSameElements(const std::vector<Value>& range1,
-                                        const std::vector<Value>& range2) {
+bool containRangesOfSameElements(const std::vector<Value>& range1,
+                                 const std::vector<Value>& range2) {
   bool result = true;
   result &= range1.size() == range2.size();
   for (auto element : range1) {
@@ -48,6 +47,8 @@ static bool containRangesOfSameElements(const std::vector<Value>& range1,
   }
   return result;
 }
+
+namespace {
 
 /**
  * @brief This pattern changes the target of a controlled Pauli Z gate if a
