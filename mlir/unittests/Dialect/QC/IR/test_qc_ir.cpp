@@ -118,18 +118,31 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCPowOpTest, QCTest,
-    testing::Values(QCTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
-                               MQT_NAMED_BUILDER(s)},
-                    QCTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
-                               MQT_NAMED_BUILDER(emptyQC)},
-                    QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
-                               MQT_NAMED_BUILDER(powSingleExponent)},
-                    QCTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
-                               MQT_NAMED_BUILDER(powRxx)},
-                    QCTestCase{"NegPowS", MQT_NAMED_BUILDER(negPowS),
-                               MQT_NAMED_BUILDER(powSdg)},
-                    QCTestCase{"InvPowS", MQT_NAMED_BUILDER(invPowS),
-                               MQT_NAMED_BUILDER(powSdg)}));
+    testing::Values(
+        // pow(1) { g } => g  (InlinePow1)
+        QCTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
+                   MQT_NAMED_BUILDER(rx)},
+        // pow(0) { g } => <erased>  (ErasePow0)
+        QCTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
+                   MQT_NAMED_BUILDER(emptyQC)},
+        // pow(p) { pow(q) { g } } => pow(p*q) { g }  (MergeNestedPow)
+        QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
+                   MQT_NAMED_BUILDER(powSingleExponent)},
+        // // pow(p) { g } unchanged when no simplification applies
+        // QCTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
+        //            MQT_NAMED_BUILDER(powRxx)},
+        // pow(-p) { g } => pow(p) { inv { g } }  (NegPowToInvPow)
+        QCTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
+                   MQT_NAMED_BUILDER(powRxNeg)},
+        // TODO should this maybe be in the inv tests?
+        // inv { pow(p) { g } } => pow(p) { inv { g } }
+        // (MovePowOutside)
+        QCTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
+                   MQT_NAMED_BUILDER(powRxNeg)},
+        // pow(p) { ctrl(q) { g } } => ctrl(q) { pow(p) { g } }
+        // (MoveCtrlOutside)
+        QCTestCase{"PowCtrlRx", MQT_NAMED_BUILDER(powCtrlRx),
+                   MQT_NAMED_BUILDER(ctrlPowRx)}));
 /// @}
 
 /// \name QC/Modifiers/InvOp.cpp

@@ -86,6 +86,30 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
 }
 /// @}
 
+/// \name QCO/Modifiers/PowOp.cpp
+/// @{
+TEST_F(QCOMatrixTest, PowRxxOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powRxx);
+  ASSERT_TRUE(moduleOp);
+
+  // Get the PowOp from the module
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+
+  // RXX(0.123)^2 = RXX(2 * 0.123) = RXX(0.246)
+  const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RXX, {0.246});
+  Eigen::Matrix4cd eigenDefinition;
+  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
+      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
+      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
+      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
+      definition[3][3];
+
+  ASSERT_TRUE(matrix->isApprox(eigenDefinition));
+}
+/// @}
+
 /// \name QCO/Modifiers/InvOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {

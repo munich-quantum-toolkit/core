@@ -154,10 +154,10 @@ INSTANTIATE_TEST_SUITE_P(
                                     MQT_NAMED_BUILDER(qco::powSingleExponent)},
                     QCToQCOTestCase{"PowRxx", MQT_NAMED_BUILDER(qc::powRxx),
                                     MQT_NAMED_BUILDER(qco::powRxx)},
-                    QCToQCOTestCase{"NegPowS", MQT_NAMED_BUILDER(qc::negPowS),
-                                    MQT_NAMED_BUILDER(qco::negPowS)},
-                    QCToQCOTestCase{"InvPowS", MQT_NAMED_BUILDER(qc::invPowS),
-                                    MQT_NAMED_BUILDER(qco::powSdg)}));
+                    QCToQCOTestCase{"NegPowRx", MQT_NAMED_BUILDER(qc::negPowRx),
+                                    MQT_NAMED_BUILDER(qco::negPowRx)},
+                    QCToQCOTestCase{"InvPowRx", MQT_NAMED_BUILDER(qc::invPowRx),
+                                    MQT_NAMED_BUILDER(qco::powRxNeg)}));
 /// @}
 
 /// \name QCToQCO/Modifiers/InvOp.cpp

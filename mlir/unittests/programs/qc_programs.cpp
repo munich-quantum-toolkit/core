@@ -1274,22 +1274,22 @@ void invCtrlSandwich(QCProgramBuilder& b) {
 
 void pow1Inline(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(1.0, [&] { b.s(q[0]); });
+  b.pow(1.0, [&] { b.rx(0.123, q[0]); });
 }
 
 void pow0Erase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(0.0, [&] { b.s(q[0]); });
+  b.pow(0.0, [&] { b.rx(0.123, q[0]); });
 }
 
 void nestedPow(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(3.0, [&] { b.pow(2.0, [&] { b.s(q[0]); }); });
+  b.pow(3.0, [&] { b.pow(2.0, [&] { b.rx(0.123, q[0]); }); });
 }
 
 void powSingleExponent(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(6.0, [&] { b.s(q[0]); });
+  b.pow(6.0, [&] { b.rx(0.123, q[0]); });
 }
 
 void powRxx(QCProgramBuilder& b) {
@@ -1297,19 +1297,29 @@ void powRxx(QCProgramBuilder& b) {
   b.pow(2.0, [&] { b.rxx(0.123, q[0], q[1]); });
 }
 
-void negPowS(QCProgramBuilder& b) {
+void negPowRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(-2.0, [&] { b.s(q[0]); });
+  b.pow(-2.0, [&] { b.rx(0.123, q[0]); });
 }
 
-void invPowS(QCProgramBuilder& b) {
+void invPowRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv([&] { b.pow(2.0, [&] { b.s(q[0]); }); });
+  b.inv([&] { b.pow(2.0, [&] { b.rx(0.123, q[0]); }); });
 }
 
-void powSdg(QCProgramBuilder& b) {
+void powRxNeg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow(2.0, [&] { b.sdg(q[0]); });
+  b.pow(2.0, [&] { b.rx(-0.123, q[0]); });
+}
+
+void powCtrlRx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, [&] { b.ctrl(q[0], [&] { b.rx(0.123, q[1]); }); });
+}
+
+void ctrlPowRx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], [&] { b.pow(2.0, [&] { b.rx(0.123, q[1]); }); });
 }
 
 } // namespace mlir::qc

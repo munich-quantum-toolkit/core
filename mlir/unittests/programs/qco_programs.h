@@ -987,15 +987,24 @@ void powSingleExponent(QCOProgramBuilder& b);
 /// Creates a circuit with pow(2.0) wrapping a two-qubit RXX gate.
 void powRxx(QCOProgramBuilder& b);
 
-/// Creates a circuit with pow(-2.0) wrapping an S gate (negative exponent).
-void negPowS(QCOProgramBuilder& b);
+/// Creates a circuit with pow(-2.0) wrapping an RX gate (negative exponent).
+void negPowRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
 /// inv).
-void invPowS(QCOProgramBuilder& b);
+void invPowRx(QCOProgramBuilder& b);
 
-/// Creates a circuit with pow(2.0) wrapping sdg (reference for invPowS).
-void powSdg(QCOProgramBuilder& b);
+/// Creates a circuit with pow(2.0) wrapping RX(-0.123) (reference for
+/// negPowRx and invPowRx — inv folds into angle negation).
+void powRxNeg(QCOProgramBuilder& b);
+
+/// Creates a circuit with pow wrapping ctrl wrapping RX (should move ctrl
+/// outside).
+void powCtrlRx(QCOProgramBuilder& b);
+
+/// Creates a circuit with ctrl wrapping pow wrapping RX (reference for
+/// powCtrlRx).
+void ctrlPowRx(QCOProgramBuilder& b);
 
 // --- IfOp ---------------------------------------------------------------- //
 
