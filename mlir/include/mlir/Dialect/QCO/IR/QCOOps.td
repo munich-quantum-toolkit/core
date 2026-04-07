@@ -180,6 +180,7 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType]> {
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -524,6 +525,7 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -552,6 +554,7 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -580,6 +583,7 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -608,6 +612,7 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit_in,
       "const std::variant<double, Value>&":$theta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -841,6 +846,7 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -872,6 +878,7 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -903,6 +910,7 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -934,6 +942,7 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
       "const std::variant<double, Value>&":$theta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -968,6 +977,7 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy",
       "const std::variant<double, Value>&":$theta,
       "const std::variant<double, Value>&":$beta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 
@@ -1002,6 +1012,7 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy",
       "const std::variant<double, Value>&":$theta,
       "const std::variant<double, Value>&":$beta)>];
 
+  let hasFolder = 1;
   let hasCanonicalizer = 1;
 }
 

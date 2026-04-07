@@ -12,6 +12,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <jeff/Conversion/NativeToJeff/NativeToJeff.h>
 #include <jeff/IR/JeffDialect.h>
@@ -23,6 +25,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -243,6 +246,129 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
 }
 
 namespace {
+
+/**
+ * @brief Converts qtensor.alloc to jeff.qureg_alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %qureg = jeff.qureg_alloc(%c3) : !jeff.qureg
+ * ```
+ */
+struct ConvertQTensorAllocOp final
+    : StatefulOpConversionPattern<qtensor::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qtensor::AllocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // TODO: Why is this not happening in native conversion?
+    auto sizeValue = getConstantIntValue(adaptor.getSize());
+    Value size;
+    if (sizeValue.has_value()) {
+      size = jeff::IntConst32Op::create(rewriter, op.getLoc(), *sizeValue);
+    } else {
+      size = adaptor.getSize();
+    }
+    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, size);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qtensor.extract to jeff.qureg_extract_index
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %qureg_out, %q = jeff.qureg_extract_index(%c0) %qureg_in : !jeff.qureg,
+ * !jeff.qubit
+ * ```
+ */
+struct ConvertQTensorExtractOp final
+    : StatefulOpConversionPattern<qtensor::ExtractOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // TODO: Why is this not happening in native conversion?
+    auto indexValue = getConstantIntValue(adaptor.getIndex());
+    Value index;
+    if (indexValue.has_value()) {
+      index = jeff::IntConst32Op::create(rewriter, op.getLoc(), *indexValue);
+    } else {
+      index = adaptor.getIndex();
+    }
+    rewriter.replaceOpWithNewOp<jeff::QuregExtractIndexOp>(
+        op, adaptor.getTensor(), index);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qtensor.insert to jeff.qureg_insert_index
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor_out = qtensor.insert %q into %tensor_in[%c0] : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %qureg_out = jeff.qureg_insert_index(%c0) %qureg_in %q : !jeff.qureg
+ * ```
+ */
+struct ConvertQTensorInsertOp final
+    : StatefulOpConversionPattern<qtensor::InsertOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // TODO: Why is this not happening in native conversion?
+    auto indexValue = getConstantIntValue(adaptor.getIndex());
+    Value index;
+    if (indexValue.has_value()) {
+      index = jeff::IntConst32Op::create(rewriter, op.getLoc(), *indexValue);
+    } else {
+      index = adaptor.getIndex();
+    }
+    rewriter.replaceOpWithNewOp<jeff::QuregInsertIndexOp>(
+        op, adaptor.getDest(), index, adaptor.getScalar());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qtensor.dealloc to jeff.qureg_free_zero
+ *
+ * @par Example:
+ * ```mlir
+ * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * jeff.qureg_free_zero %qureg : !jeff.qureg
+ * ```
+ */
+struct ConvertQTensorDeallocOp final
+    : StatefulOpConversionPattern<qtensor::DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qtensor::DeallocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<jeff::QuregFreeZeroOp>(op, adaptor.getTensor());
+    return success();
+  }
+};
 
 /**
  * @brief Converts qco.alloc to jeff.qubit_alloc
@@ -1320,7 +1446,8 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
  * @brief Type converter for QCO-to-Jeff conversion
  *
  * @details
- * Converts `!qco.qubit` to `!jeff.qubit`.
+ * Converts `!qco.qubit` to `!jeff.qubit` and `tensor<?x!qco.qubit>` to
+ * `!jeff.qureg`.
  */
 class QCOToJeffTypeConverter final : public TypeConverter {
 public:
@@ -1330,6 +1457,13 @@ public:
 
     addConversion([ctx](qco::QubitType /*type*/) -> Type {
       return jeff::QubitType::get(ctx);
+    });
+
+    addConversion([ctx](RankedTensorType type) -> Type {
+      if (llvm::isa<qco::QubitType>(type.getElementType())) {
+        return jeff::QuregType::get(ctx);
+      }
+      return type;
     });
   }
 };
@@ -1352,7 +1486,8 @@ protected:
     LoweringState state;
 
     // Configure conversion target
-    target.addIllegalDialect<QCODialect, arith::ArithDialect, math::MathDialect,
+    target.addIllegalDialect<QCODialect, qtensor::QTensorDialect,
+                             arith::ArithDialect, math::MathDialect,
                              tensor::TensorDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
 
@@ -1363,9 +1498,10 @@ protected:
     // Register operation conversion patterns
     jeff::populateNativeToJeffConversionPatterns(patterns);
     patterns.add<
-        ConvertQCOAllocOpToJeff, ConvertQCOSinkOpToJeff,
-        ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
-        ConvertQCOGPhaseOpToJeff,
+        ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+        ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
+        ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
+        ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff,
         ConvertQCOOneTargetZeroParameterToJeff<qco::IdOp, jeff::IOp, false>,
         ConvertQCOOneTargetZeroParameterToJeff<qco::XOp, jeff::XOp, false>,
         ConvertQCOOneTargetZeroParameterToJeff<qco::YOp, jeff::YOp, false>,

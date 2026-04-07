@@ -17,8 +17,10 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
 #include <complex>
 #include <optional>
 #include <variant>
@@ -55,18 +57,6 @@ struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
   }
 };
 
-/**
- * @brief Remove trivial RZZ operations.
- */
-struct RemoveTrivialRZZ final : OpRewritePattern<RZZOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RZZOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTrivialTwoTargetOneParameter(op, rewriter);
-  }
-};
-
 } // namespace
 
 void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -77,10 +67,20 @@ void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 
+LogicalResult RZZOp::fold(FoldAdaptor /*adaptor*/,
+                          SmallVectorImpl<OpFoldResult>& results) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    results.emplace_back(getInputQubit(0));
+    results.emplace_back(getInputQubit(1));
+    return success();
+  }
+  return failure();
+}
+
 void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ, RemoveTrivialRZZ>(
-      context);
+  results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ>(context);
 }
 
 std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {

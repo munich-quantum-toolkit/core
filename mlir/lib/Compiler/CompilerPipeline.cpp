@@ -13,6 +13,7 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -20,7 +21,6 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/Passes.h>
 
 #include <string>
 
@@ -43,14 +43,6 @@ static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
                                   std::to_string(totalStages) + ": " +
                                   stageName.str();
   printProgram(module, stageHeader, llvm::errs());
-}
-
-void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {
-  // Always run canonicalization, common sub-expression elimination, and dead
-  // value removal
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
 }
 
 void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
@@ -85,15 +77,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
 
   // Determine total number of stages for progress indication
   // 1. QC import
-  // 2. QC canonicalization
+  // 2. QC cleanup
   // 3. QC-to-QCO conversion
-  // 4. QCO canonicalization
+  // 4. QCO cleanup
   // 5. Optimization passes
-  // 6. QCO canonicalization
+  // 6. QCO cleanup
   // 7. QCO-to-QC conversion
-  // 8. QC canonicalization
+  // 8. QC cleanup
   // 9. QC-to-QIR conversion (optional)
-  // 10. QIR canonicalization (optional)
+  // 10. QIR cleanup (optional)
   auto totalStages = 8;
   if (config_.convertToQIR) {
     totalStages += 2;
@@ -108,14 +100,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
   }
 
-  // Stage 2: QC canonicalization
-  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
+  // Stage 2: QC cleanup
+  if (failed(
+          runStage([&](PassManager& pm) { populateQCCleanupPipeline(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterInitialCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial QC Canonicalization", ++currentStage,
+      prettyPrintStage(module, "Initial QC Cleanup", ++currentStage,
                        totalStages);
     }
   }
@@ -130,20 +123,22 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  // Stage 4: QCO canonicalization
-  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
+  // Stage 4: QCO cleanup
+  if (failed(
+          runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterQCOCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial QCO Canonicalization", ++currentStage,
+      prettyPrintStage(module, "Initial QCO Cleanup", ++currentStage,
                        totalStages);
     }
   }
   // Stage 5: Optimization passes
   // TODO: Add optimization passes
-  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
+  if (failed(
+          runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -153,14 +148,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  // Stage 6: QCO canonicalization
-  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
+  // Stage 6: QCO cleanup
+  if (failed(
+          runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterOptimizationCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final QCO Canonicalization", ++currentStage,
+      prettyPrintStage(module, "Final QCO Cleanup", ++currentStage,
                        totalStages);
     }
   }
@@ -175,15 +171,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  // Stage 8: QC canonicalization
-  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
+  // Stage 8: QC cleanup
+  if (failed(
+          runStage([&](PassManager& pm) { populateQCCleanupPipeline(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterQCCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final QC Canonicalization", ++currentStage,
-                       totalStages);
+      prettyPrintStage(module, "Final QC Cleanup", ++currentStage, totalStages);
     }
   }
   // Stage 9: QC-to-QIR conversion (optional)
@@ -199,15 +195,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                          totalStages);
       }
     }
-    // Stage 10: QIR canonicalization (optional)
-    if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
+    // Stage 10: QIR cleanup (optional)
+    if (failed(runStage(
+            [&](PassManager& pm) { populateQIRCleanupPipeline(pm); }))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {
       record->afterQIRCanon = captureIR(module);
       if (config_.printIRAfterAllStages) {
-        prettyPrintStage(module, "QIR Canonicalization", ++currentStage,
-                         totalStages);
+        prettyPrintStage(module, "QIR Cleanup", ++currentStage, totalStages);
       }
     }
   }
