@@ -23,9 +23,9 @@
 
 using namespace mlir;
 
-static void addSimplificationPasses(PassManager& passManager) {
-  passManager.addPass(createCanonicalizerPass());
-  passManager.addPass(createCSEPass());
+static void addSimplificationPasses(PassManager& pm) {
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
 }
 
 static void
@@ -39,22 +39,22 @@ runWithPassManager(ModuleOp module,
   }
 }
 
-void populateQCCleanupPipeline(PassManager& passManager) {
-  addSimplificationPasses(passManager);
-  passManager.addPass(qc::createShrinkQubitRegistersPass());
-  passManager.addPass(createRemoveDeadValuesPass());
+void populateQCCleanupPipeline(PassManager& pm) {
+  addSimplificationPasses(pm);
+  pm.addPass(qc::createShrinkQubitRegistersPass());
+  pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(PassManager& passManager) {
-  addSimplificationPasses(passManager);
-  passManager.addPass(qtensor::createShrinkQTensorToFitPass());
-  passManager.addPass(createRemoveDeadValuesPass());
+void populateQCOCleanupPipeline(PassManager& pm) {
+  addSimplificationPasses(pm);
+  pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQIRCleanupPipeline(PassManager& passManager) {
-  addSimplificationPasses(passManager);
-  passManager.addPass(qir::createQIRCleanupPass());
-  passManager.addPass(createRemoveDeadValuesPass());
+void populateQIRCleanupPipeline(PassManager& pm) {
+  addSimplificationPasses(pm);
+  pm.addPass(qir::createQIRCleanupPass());
+  pm.addPass(createRemoveDeadValuesPass());
 }
 
 void runQCCleanupPipeline(ModuleOp module) {

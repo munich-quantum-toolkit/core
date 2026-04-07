@@ -107,9 +107,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());
-  if (pm.run(program.get()).failed()) {
-    llvm::errs() << "Failed to run cleanup passes." << "\n";
-  }
+  EXPECT_TRUE(pm.run(program.get()).succeeded());
 
   printer.record(program.get(), "Canonicalized Converted Jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());

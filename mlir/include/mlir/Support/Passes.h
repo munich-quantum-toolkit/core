@@ -19,19 +19,19 @@ class PassManager;
  * @brief Populate a QC-oriented cleanup pipeline on the given pass manager.
  * @details Adds generic cleanup and QC qubit-register shrinking.
  */
-void populateQCCleanupPipeline(mlir::PassManager& passManager);
+void populateQCCleanupPipeline(mlir::PassManager& pm);
 
 /**
  * @brief Populate a QCO-oriented cleanup pipeline on the given pass manager.
  * @details Adds generic cleanup and qtensor shrink-to-fit.
  */
-void populateQCOCleanupPipeline(mlir::PassManager& passManager);
+void populateQCOCleanupPipeline(mlir::PassManager& pm);
 
 /**
  * @brief Populate a QIR-oriented cleanup pipeline on the given pass manager.
  * @details Adds generic cleanup and QIR-specific simplifications.
  */
-void populateQIRCleanupPipeline(mlir::PassManager& passManager);
+void populateQIRCleanupPipeline(mlir::PassManager& pm);
 
 /**
  * @brief Run the QC-oriented cleanup pipeline on a module.

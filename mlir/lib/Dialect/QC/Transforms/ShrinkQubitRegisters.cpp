@@ -66,6 +66,12 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
     if (!llvm::isa<QubitType>(memRefType.getElementType())) {
       return failure();
     }
+    if (!memRefType.getLayout().isIdentity()) {
+      return failure();
+    }
+    if (memRefType.getMemorySpace() != 0) {
+      return failure();
+    }
 
     llvm::SmallVector<memref::LoadOp> loadOps;
     llvm::SmallVector<int64_t> liveIndices;
