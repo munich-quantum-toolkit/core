@@ -38,8 +38,8 @@ namespace mlir::qco {
  * @param range1 The first range.
  * @param range2 The second range.
  */
-bool containRangesOfSameElements(const std::vector<Value>& range1,
-                                 const std::vector<Value>& range2) {
+static bool containRangesOfSameElements(const std::vector<Value>& range1,
+                                        const std::vector<Value>& range2) {
   bool result = true;
   result &= range1.size() == range2.size();
   for (auto element : range1) {
@@ -147,7 +147,7 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
     if (user->getName().stripDialect().str() != "ctrl") {
       return failure();
     }
-    auto hadamardGate = mlir::dyn_cast<CtrlOp>(user);
+    auto hadamardGate = llvm::dyn_cast<CtrlOp>(user);
     if (hadamardGate.getNumTargets() != 1 ||
         hadamardGate.getBodyUnitary()->getName().stripDialect().str() != "h") {
       return failure();
@@ -307,14 +307,14 @@ struct LiftHadamardsAbovePauliGatesPattern final
     const auto userName = user->getName().stripDialect().str();
     if (userName != "h") {
       if (opName == "ctrl" && userName == "ctrl") {
-        return handleTwoSucceedingControls(mlir::dyn_cast<CtrlOp>(*op),
-                                           mlir::dyn_cast<CtrlOp>(user),
+        return handleTwoSucceedingControls(llvm::dyn_cast<CtrlOp>(*op),
+                                           llvm::dyn_cast<CtrlOp>(user),
                                            rewriter);
       }
       return failure();
     }
 
-    auto hadamardGate = mlir::dyn_cast<UnitaryOpInterface>(user);
+    auto hadamardGate = llvm::dyn_cast<UnitaryOpInterface>(user);
 
     if (op.getNumControls() > 0 || hadamardGate.getNumControls() > 0 ||
         op.getNumTargets() != 1 || hadamardGate.getNumTargets() != 1 ||
@@ -469,7 +469,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     // A Hadamard gate needs to be in front of the measurement
     const auto qubitInMeasurement = op.getQubitIn();
     auto* predecessor = qubitInMeasurement.getDefiningOp();
-    auto hadamardGate = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
+    auto hadamardGate = llvm::dyn_cast<UnitaryOpInterface>(predecessor);
     if (!hadamardGate || hadamardGate.getNumTargets() != 1 ||
         hadamardGate->getName().stripDialect().str() != "h") {
       return failure();
@@ -478,7 +478,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     // The Hadamard gate must be successor of the target of a CNOT
     const auto inQubitHadamard = hadamardGate.getInputQubit(0);
     predecessor = inQubitHadamard.getDefiningOp();
-    auto cnotGate = mlir::dyn_cast<CtrlOp>(predecessor);
+    auto cnotGate = llvm::dyn_cast<CtrlOp>(predecessor);
     if (!cnotGate || cnotGate.getNumTargets() != 1 ||
         cnotGate.getBodyUnitary()->getName().stripDialect().str() != "x" ||
         cnotGate.getOutputTarget(0) != inQubitHadamard) {
