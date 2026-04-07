@@ -208,18 +208,29 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOPowOpTest, QCOTest,
-    testing::Values(QCOTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
-                                MQT_NAMED_BUILDER(s)},
-                    QCOTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
-                                MQT_NAMED_BUILDER(emptyQCO)},
-                    QCOTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
-                                MQT_NAMED_BUILDER(powSingleExponent)},
-                    QCOTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
-                                MQT_NAMED_BUILDER(powRxx)},
-                    QCOTestCase{"NegPowS", MQT_NAMED_BUILDER(negPowS),
-                                MQT_NAMED_BUILDER(powSdg)},
-                    QCOTestCase{"InvPowS", MQT_NAMED_BUILDER(invPowS),
-                                MQT_NAMED_BUILDER(powSdg)}));
+    testing::Values(
+        // pow(1) { g } => g  (InlinePow1)
+        QCOTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
+                    MQT_NAMED_BUILDER(rx)},
+        // pow(0) { g } => <erased>  (ErasePow0)
+        QCOTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        // pow(p) { pow(q) { g } } => pow(p*q) { g }  (MergeNestedPow)
+        QCOTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
+                    MQT_NAMED_BUILDER(powSingleExponent)},
+        // pow(p) { g } unchanged when no simplification applies
+        QCOTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
+                    MQT_NAMED_BUILDER(powRxx)},
+        // pow(-p) { g } => pow(p) { inv { g } }  (NegPowToInvPow)
+        QCOTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
+                    MQT_NAMED_BUILDER(powRxNeg)},
+        // inv { pow(p) { g } } => pow(p) { inv { g } }
+        QCOTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
+                    MQT_NAMED_BUILDER(powRxNeg)},
+        // pow(p) { ctrl(q) { g } } => ctrl(q) { pow(p) { g } }
+        // (MoveCtrlOutside)
+        QCOTestCase{"PowCtrlRx", MQT_NAMED_BUILDER(powCtrlRx),
+                    MQT_NAMED_BUILDER(ctrlPowRx)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/BarrierOp.cpp

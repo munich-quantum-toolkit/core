@@ -851,14 +851,23 @@ void powSingleExponent(QCProgramBuilder& b);
 /// Creates a circuit with pow(2.0) wrapping a two-qubit RXX gate.
 void powRxx(QCProgramBuilder& b);
 
-/// Creates a circuit with pow(-2.0) wrapping an S gate (negative exponent).
-void negPowS(QCProgramBuilder& b);
+/// Creates a circuit with pow(-2.0) wrapping an RX gate (negative exponent).
+void negPowRx(QCProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
 /// inv).
-void invPowS(QCProgramBuilder& b);
+void invPowRx(QCProgramBuilder& b);
 
-/// Creates a circuit with pow(2.0) wrapping sdg (reference for invPowS).
-void powSdg(QCProgramBuilder& b);
+/// Creates a circuit with pow(2.0) wrapping RX(-0.123) (reference for
+/// negPowRx and invPowRx — inv folds into angle negation).
+void powRxNeg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow wrapping ctrl wrapping RX (should move ctrl
+/// outside).
+void powCtrlRx(QCProgramBuilder& b);
+
+/// Creates a circuit with ctrl wrapping pow wrapping RX (reference for
+/// powCtrlRx).
+void ctrlPowRx(QCProgramBuilder& b);
 
 } // namespace mlir::qc

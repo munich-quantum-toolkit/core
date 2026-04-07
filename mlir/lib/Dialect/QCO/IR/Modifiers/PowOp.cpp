@@ -137,21 +137,20 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
 
     const auto numControls = innerCtrlOp.getNumControls();
     const auto numTargets = innerCtrlOp.getNumTargets();
-    auto powTargets = op.getInputQubits();
-    auto controls = powTargets.take_front(numControls);
-    auto targets = powTargets.take_back(numTargets);
+    auto inputQubits = op.getInputQubits();
+    auto controls = inputQubits.take_front(numControls);
+    auto targets = inputQubits.take_back(numTargets);
+    const double exponent = op.getExponentValue();
 
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets,
-        [&](ValueRange newTargetArgs) -> llvm::SmallVector<Value> {
+        [&](ValueRange ctrlTargetArgs) -> llvm::SmallVector<Value> {
           return PowOp::create(
-                     rewriter, op.getLoc(), newTargetArgs,
-                     op.getExponentValue(),
+                     rewriter, op.getLoc(), ctrlTargetArgs, exponent,
                      [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
                        IRMapping mapping;
                        auto* innerBody = innerCtrlOp.getBody();
-                       for (size_t i = 0; i < innerCtrlOp.getNumTargets();
-                            ++i) {
+                       for (size_t i = 0; i < numTargets; ++i) {
                          mapping.map(innerBody->getArgument(i), powArgs[i]);
                        }
                        auto* cloned = rewriter.clone(
