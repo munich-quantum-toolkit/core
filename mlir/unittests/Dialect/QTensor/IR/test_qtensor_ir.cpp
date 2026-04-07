@@ -115,6 +115,14 @@ TEST_F(QTensorTest, AreEquivalentIndicesDifferentConstantsAreNotEquivalent) {
   EXPECT_FALSE(areEquivalentIndices(c0.getResult(), c1.getResult()));
 }
 
+TEST_F(QTensorTest, AreEquivalentIndicesSameConstantDifferentSSAAreEquivalent) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto lhs = arith::ConstantIndexOp::create(builder, 2);
+  auto rhs = arith::ConstantIndexOp::create(builder, 2);
+  EXPECT_TRUE(areEquivalentIndices(lhs.getResult(), rhs.getResult()));
+}
+
 TEST_F(QTensorTest, TensorChainHelpersInsertAndExtractAreRecognized) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
