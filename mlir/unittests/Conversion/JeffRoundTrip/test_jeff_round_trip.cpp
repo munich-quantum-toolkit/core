@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>

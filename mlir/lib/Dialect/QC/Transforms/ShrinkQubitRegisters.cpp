@@ -69,7 +69,7 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
     if (!memRefType.getLayout().isIdentity()) {
       return failure();
     }
-    if (memRefType.getMemorySpace() != 0) {
+    if (memRefType.getMemorySpace() != nullptr) {
       return failure();
     }
 
