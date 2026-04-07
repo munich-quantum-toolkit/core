@@ -15,9 +15,29 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
 
+#include <cmath>
+#include <numbers>
 #include <variant>
 
 namespace mlir::utils {
+
+/// Check if a floating-point value is an integer.
+[[nodiscard]] inline bool isIntegerExponent(double r) {
+  return r == std::floor(r) && std::isfinite(r);
+}
+
+/// Normalize an angle to (-π, π].
+[[nodiscard]] inline double normalizeAngle(double theta) {
+  const double twoPi = 2.0 * std::numbers::pi;
+  theta = std::fmod(theta, twoPi);
+  if (theta > std::numbers::pi) {
+    theta -= twoPi;
+  }
+  if (theta <= -std::numbers::pi) {
+    theta += twoPi;
+  }
+  return theta;
+}
 
 constexpr auto TOLERANCE = 1e-15;
 
