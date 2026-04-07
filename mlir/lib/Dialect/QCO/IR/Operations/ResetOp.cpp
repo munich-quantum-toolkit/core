@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
 #include <llvm/Support/Casting.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -31,24 +32,32 @@ using namespace mlir::qco;
  * tracing provenance. A write to the same index invalidates the proof.
  */
 static bool originatesFromQTensorAlloc(qtensor::ExtractOp extractOp) {
-  auto currentTensor = extractOp.getTensor();
+  auto current = extractOp.getTensor();
 
-  while (auto* definingOp = currentTensor.getDefiningOp()) {
+  auto extractIndex = extractOp.getIndex();
+  if (!getConstantIntValue(extractIndex)) {
+    return false;
+  }
+
+  while (auto* definingOp = current.getDefiningOp()) {
     if (llvm::isa<qtensor::AllocOp>(definingOp)) {
       return true;
     }
 
     if (auto nestedExtractOp = llvm::dyn_cast<qtensor::ExtractOp>(definingOp)) {
-      currentTensor = nestedExtractOp.getTensor();
+      current = nestedExtractOp.getTensor();
       continue;
     }
 
     if (auto insertOp = llvm::dyn_cast<qtensor::InsertOp>(definingOp)) {
-      if (qtensor::areEquivalentIndices(extractOp.getIndex(),
-                                        insertOp.getIndex())) {
+      auto insertIndex = insertOp.getIndex();
+      if (!getConstantIntValue(insertIndex)) {
         return false;
       }
-      currentTensor = insertOp.getDest();
+      if (qtensor::areEquivalentIndices(extractIndex, insertIndex)) {
+        return false;
+      }
+      current = insertOp.getDest();
       continue;
     }
 

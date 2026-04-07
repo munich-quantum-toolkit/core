@@ -67,17 +67,30 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
  */
 static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
   auto current = tensor;
+
+  if (!getConstantIntValue(index)) {
+    return nullptr;
+  }
+
   while (auto* definingOp = current.getDefiningOp()) {
     if (auto nestedInsertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
-      // A more recent write to the same index shadows all older extracts.
-      if (areEquivalentIndices(nestedInsertOp.getIndex(), index)) {
+      auto nestedInsertIndex = nestedInsertOp.getIndex();
+      if (!getConstantIntValue(nestedInsertIndex)) {
+        return nullptr;
+      }
+      // A more recent write to the same index shadows all older extracts
+      if (areEquivalentIndices(nestedInsertIndex, index)) {
         return nullptr;
       }
       current = nestedInsertOp.getDest();
       continue;
     }
     if (auto extractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
-      if (areEquivalentIndices(extractOp.getIndex(), index)) {
+      auto extractIndex = extractOp.getIndex();
+      if (!getConstantIntValue(extractIndex)) {
+        return nullptr;
+      }
+      if (areEquivalentIndices(extractIndex, index)) {
         return extractOp;
       }
       current = extractOp.getTensor();

@@ -143,6 +143,15 @@ static bool areValuesEquivalent(Value lhs, Value rhs,
   return true;
 }
 
+/**
+ * @brief Checks whether two index values are equivalent.
+ *
+ * @details This is a conservative check that returns true if both indices are
+ * constant integers with the same value. It returns false if either index is
+ * non-constant or if they have different constant values. Note that this means
+ * that some equivalent indices may be considered non-equivalent by this
+ * function, but no non-equivalent indices will be considered equivalent.
+ */
 static bool areEquivalentIndices(Value lhs, Value rhs) {
   auto lhsValue = getConstantIntValue(lhs);
   auto rhsValue = getConstantIntValue(rhs);

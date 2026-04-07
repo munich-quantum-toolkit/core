@@ -40,8 +40,8 @@ LogicalResult ExtractOp::verify() {
 }
 
 /**
- * @brief If an ExtractOp consumes an InsertOp with the same index,
- * return the scalar and the destTensor from the InsertOp directly.
+ * @brief Check if a `qtensor.extract` operation reads from a `qtensor.insert`
+ * operation.
  */
 static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
   auto insertOp = extractOp.getTensor().getDefiningOp<InsertOp>();
@@ -79,23 +79,35 @@ struct RemoveInsertExtractPair final : OpRewritePattern<ExtractOp> {
   LogicalResult matchAndRewrite(ExtractOp extractOp,
                                 PatternRewriter& rewriter) const override {
     llvm::SmallVector<Operation*> traversedOps;
-    Value currentTensor = extractOp.getTensor();
+    Value current = extractOp.getTensor();
     InsertOp matchedInsertOp = nullptr;
 
-    while (auto* definingOp = currentTensor.getDefiningOp()) {
+    auto extractIndex = extractOp.getIndex();
+    if (!getConstantIntValue(extractIndex)) {
+      return failure();
+    }
+
+    while (auto* definingOp = current.getDefiningOp()) {
       if (!isTensorChainOp(definingOp)) {
         break;
       }
 
       if (auto insertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
-        if (areEquivalentIndices(insertOp.getIndex(), extractOp.getIndex())) {
+        auto insertIndex = insertOp.getIndex();
+        if (!getConstantIntValue(insertIndex)) {
+          return failure();
+        }
+        if (areEquivalentIndices(insertIndex, extractIndex)) {
           matchedInsertOp = insertOp;
           break;
         }
       } else if (auto nestedExtractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
-        if (areEquivalentIndices(extractOp.getIndex(),
-                                 nestedExtractOp.getIndex())) {
-          // Do not reorder reads from the same index.
+        auto nestedExtractIndex = nestedExtractOp.getIndex();
+        if (!getConstantIntValue(nestedExtractIndex)) {
+          return failure();
+        }
+        // Do not reorder reads from the same index
+        if (areEquivalentIndices(extractIndex, nestedExtractIndex)) {
           return failure();
         }
       } else {
@@ -103,7 +115,7 @@ struct RemoveInsertExtractPair final : OpRewritePattern<ExtractOp> {
       }
 
       traversedOps.push_back(definingOp);
-      currentTensor = getTensorChainInput(definingOp);
+      current = getTensorChainInput(definingOp);
     }
 
     if (!matchedInsertOp) {
