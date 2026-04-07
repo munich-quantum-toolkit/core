@@ -164,7 +164,16 @@ static bool isCommutableQTensorInsertDependency(Operation* dependent,
   if (!dependentInsert || !dependencyInsert) {
     return false;
   }
-  return dependentInsert.getDest() == dependencyInsert.getResult();
+  if (dependentInsert.getDest() != dependencyInsert.getResult()) {
+    return false;
+  }
+  auto dependentIndex = dependentInsert.getIndex();
+  auto dependencyIndex = dependencyInsert.getIndex();
+  if (!getConstantIntValue(dependentIndex) ||
+      !getConstantIntValue(dependencyIndex)) {
+    return false;
+  }
+  return !qtensor::areEquivalentIndices(dependentIndex, dependencyIndex);
 }
 
 static Value getInsertChainBaseTensor(Value tensor, const OperationSet& group) {
