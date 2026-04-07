@@ -13,10 +13,15 @@
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Pass/Pass.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <ranges>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace mlir::qco {
 
@@ -34,8 +39,8 @@ namespace {
  * @param range1 The first range.
  * @param range2 The second range.
  */
-bool containRangesOfSameElements(const std::vector<Value>& range1,
-                                 const std::vector<Value>& range2) {
+static bool containRangesOfSameElements(const std::vector<Value>& range1,
+                                        const std::vector<Value>& range2) {
   bool result = true;
   result &= range1.size() == range2.size();
   for (auto element : range1) {
@@ -77,11 +82,13 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
     const Value targetQubitGate1 = gate1.getOutputTarget(0);
     const auto inCtrlGate2 = gate2.getControlsIn();
     const auto outCtrlGate1 = gate1.getControlsOut();
+    std::vector inCtrlGate2Vec(inCtrlGate2.begin(), inCtrlGate2.end());
+    std::vector outCtrlGate1Vec(outCtrlGate1.begin(), outCtrlGate1.end());
 
-    return std::find(inCtrlGate2.begin(), inCtrlGate2.end(),
-                     targetQubitGate1) != inCtrlGate2.end() &&
-           std::find(outCtrlGate1.begin(), outCtrlGate1.end(),
-                     targetQubitGate2) != outCtrlGate1.end();
+    return std::ranges::find(inCtrlGate2Vec, targetQubitGate1) !=
+               inCtrlGate2Vec.end() &&
+           std::ranges::find(outCtrlGate1Vec, targetQubitGate2) !=
+               outCtrlGate1Vec.end();
   }
 
   /**
@@ -135,7 +142,7 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
     if (users.empty()) {
       return failure();
     }
-    const auto user = *users.begin();
+    auto* const user = *users.begin();
     if (user->getName().stripDialect().str() != "ctrl") {
       return failure();
     }
@@ -295,7 +302,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
     if (users.empty()) {
       return failure();
     }
-    const auto user = *users.begin();
+    auto* const user = *users.begin();
     const auto userName = user->getName().stripDialect().str();
     if (userName != "h") {
       if (opName == "ctrl" && userName == "ctrl") {
