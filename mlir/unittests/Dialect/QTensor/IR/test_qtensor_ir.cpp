@@ -360,7 +360,7 @@ TEST_F(QTensorTest, ExtractOpFoldExtractAfterInsertSameIndex) {
       });
   ASSERT_TRUE(module);
   EXPECT_TRUE(verify(*module).succeeded());
-  runQCOCleanupPipeline(module.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(module.get()).succeeded());
   EXPECT_TRUE(verify(*module).succeeded());
   // The extra extract at the same index should fold away.
   EXPECT_EQ(countOps<ExtractOp>(*module), 1U); // original extract
@@ -626,7 +626,7 @@ TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QTensor IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QTensor IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -635,7 +635,7 @@ TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QTensor IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QTensor IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -810,13 +810,13 @@ TEST_F(QTensorTest, InsertChainPermutationEquivalence) {
   auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
-  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildTwoQubitInsertChainProgram(context.get(), true, false);
   ASSERT_TRUE(reference);
   EXPECT_TRUE(verify(*reference).succeeded());
-  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -826,12 +826,12 @@ TEST_F(QTensorTest, InsertChainPermutationEquivalence) {
 TEST_F(QTensorTest, InsertChainDifferentAssignmentsNotEquivalent) {
   auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
   ASSERT_TRUE(program);
-  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildTwoQubitInsertChainProgram(context.get(), true, true);
   ASSERT_TRUE(reference);
-  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_FALSE(
@@ -841,12 +841,12 @@ TEST_F(QTensorTest, InsertChainDifferentAssignmentsNotEquivalent) {
 TEST_F(QTensorTest, MixedExtractInsertPermutationEquivalence) {
   auto program = buildMixedExtractInsertProgram(context.get(), false, false);
   ASSERT_TRUE(program);
-  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildMixedExtractInsertProgram(context.get(), true, false);
   ASSERT_TRUE(reference);
-  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -856,12 +856,12 @@ TEST_F(QTensorTest, MixedExtractInsertPermutationEquivalence) {
 TEST_F(QTensorTest, MixedExtractInsertDifferentAssignmentsNotEquivalent) {
   auto program = buildMixedExtractInsertProgram(context.get(), false, false);
   ASSERT_TRUE(program);
-  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildMixedExtractInsertProgram(context.get(), true, true);
   ASSERT_TRUE(reference);
-  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_FALSE(
@@ -871,12 +871,12 @@ TEST_F(QTensorTest, MixedExtractInsertDifferentAssignmentsNotEquivalent) {
 TEST_F(QTensorTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
   auto program = buildResetWithCommutingInsertProgram(context.get(), true);
   ASSERT_TRUE(program);
-  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildResetWithCommutingInsertProgram(context.get(), false);
   ASSERT_TRUE(reference);
-  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -886,12 +886,12 @@ TEST_F(QTensorTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
 TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
   auto program = buildResetWithSameIndexInsertProgram(context.get(), true);
   ASSERT_TRUE(program);
-  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = buildResetWithSameIndexInsertProgram(context.get(), false);
   ASSERT_TRUE(reference);
-  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_FALSE(

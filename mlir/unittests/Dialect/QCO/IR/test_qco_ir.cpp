@@ -78,7 +78,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runQCOCleanupPipeline(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -87,7 +87,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runQCOCleanupPipeline(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -118,14 +118,14 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto directBuilder = builder.finalize();
   ASSERT_TRUE(directBuilder);
   EXPECT_TRUE(verify(*directBuilder).succeeded());
-  runQCOCleanupPipeline(directBuilder.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(directBuilder.get()).succeeded());
   EXPECT_TRUE(verify(*directBuilder).succeeded());
 
   auto refBuilder =
       QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
-  runQCOCleanupPipeline(refBuilder.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
   EXPECT_TRUE(verify(*refBuilder).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),

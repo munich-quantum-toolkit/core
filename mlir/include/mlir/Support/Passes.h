@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Support/LogicalResult.h"
+
 namespace mlir {
 class ModuleOp;
 class PassManager;
@@ -36,14 +38,14 @@ void populateQIRCleanupPipeline(mlir::PassManager& pm);
 /**
  * @brief Run the QC-oriented cleanup pipeline on a module.
  */
-void runQCCleanupPipeline(mlir::ModuleOp module);
+[[nodiscard]] mlir::LogicalResult runQCCleanupPipeline(mlir::ModuleOp module);
 
 /**
  * @brief Run the QCO-oriented cleanup pipeline on a module.
  */
-void runQCOCleanupPipeline(mlir::ModuleOp module);
+[[nodiscard]] mlir::LogicalResult runQCOCleanupPipeline(mlir::ModuleOp module);
 
 /**
  * @brief Run the QIR-oriented cleanup pipeline on a module.
  */
-void runQIRCleanupPipeline(mlir::ModuleOp module);
+[[nodiscard]] mlir::LogicalResult runQIRCleanupPipeline(mlir::ModuleOp module);

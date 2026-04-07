@@ -19,6 +19,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
 using namespace mlir;
@@ -28,7 +29,7 @@ static void addSimplificationPasses(PassManager& pm) {
   pm.addPass(createCSEPass());
 }
 
-static void
+static LogicalResult
 runWithPassManager(ModuleOp module,
                    const llvm::function_ref<void(PassManager&)> populatePasses,
                    const llvm::StringRef errorMessage) {
@@ -36,7 +37,9 @@ runWithPassManager(ModuleOp module,
   populatePasses(pm);
   if (pm.run(module).failed()) {
     llvm::errs() << errorMessage << "\n";
+    return failure();
   }
+  return success();
 }
 
 void populateQCCleanupPipeline(PassManager& pm) {
@@ -57,17 +60,17 @@ void populateQIRCleanupPipeline(PassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void runQCCleanupPipeline(ModuleOp module) {
-  runWithPassManager(module, populateQCCleanupPipeline,
-                     "Failed to run QC cleanup pipeline.");
+[[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp module) {
+  return runWithPassManager(module, populateQCCleanupPipeline,
+                            "Failed to run QC cleanup pipeline.");
 }
 
-void runQCOCleanupPipeline(ModuleOp module) {
-  runWithPassManager(module, populateQCOCleanupPipeline,
-                     "Failed to run QCO cleanup pipeline.");
+[[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp module) {
+  return runWithPassManager(module, populateQCOCleanupPipeline,
+                            "Failed to run QCO cleanup pipeline.");
 }
 
-void runQIRCleanupPipeline(ModuleOp module) {
-  runWithPassManager(module, populateQIRCleanupPipeline,
-                     "Failed to run QIR cleanup pipeline.");
+[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp module) {
+  return runWithPassManager(module, populateQIRCleanupPipeline,
+                            "Failed to run QIR cleanup pipeline.");
 }

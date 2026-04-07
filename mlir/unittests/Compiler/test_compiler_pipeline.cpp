@@ -99,7 +99,7 @@ protected:
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder) const {
     auto module = mlir::qc::QCProgramBuilder::build(context.get(), builder.fn);
-    runQCCleanupPipeline(module.get());
+    EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }
 
@@ -107,7 +107,7 @@ protected:
   buildQIRReference(const QIRProgramBuilderFn builder) const {
     auto module =
         mlir::qir::QIRProgramBuilder::build(context.get(), builder.fn);
-    runQIRCleanupPipeline(module.get());
+    EXPECT_TRUE(runQIRCleanupPipeline(module.get()).succeeded());
     return module;
   }
 
