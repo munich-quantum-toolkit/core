@@ -254,10 +254,8 @@ struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
     assert(qubitMode != QubitAddressingMode::Static &&
            "Static qubits cannot be mixed with dynamic qubits");
 
-    // Create qc.alloc with preserved register metadata
-    rewriter.replaceOpWithNewOp<qc::AllocOp>(op, op.getRegisterNameAttr(),
-                                             op.getRegisterSizeAttr(),
-                                             op.getRegisterIndexAttr());
+    // Create qc.alloc
+    rewriter.replaceOpWithNewOp<qc::AllocOp>(op);
 
     return success();
   }

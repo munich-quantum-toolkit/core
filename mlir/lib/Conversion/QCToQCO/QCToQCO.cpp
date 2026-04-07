@@ -577,10 +577,8 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
     auto* operation = op.getOperation();
     auto qcQubit = op.getResult();
 
-    // Create the qco.alloc operation with preserved register metadata
-    auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(
-        op, op.getRegisterNameAttr(), op.getRegisterSizeAttr(),
-        op.getRegisterIndexAttr());
+    // Create the qco.alloc operation
+    auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(op);
 
     auto qcoQubit = qcoOp.getResult();
 

@@ -33,48 +33,23 @@ class QCOOp<string mnemonic, list<Trait> traits = []>
 def AllocOp : QCOOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let summary = "Allocate a qubit dynamically";
   let description = [{
-        Allocates a new qubit dynamically and returns an SSA value representing it.
-        The qubit is initialized to the |0⟩ state.
+    Allocates a new qubit dynamically and returns an SSA value representing it.
+    The qubit is initialized to the |0⟩ state.
 
-        Optionally, the qubit can be part of a register by specifying:
-        - `register_name`: The name of the register this qubit belongs to
-        - `register_size`: The total size of the register
-        - `register_index`: The index of this qubit within the register
+    Example:
+    ```mlir
+    %q = qco.alloc : !qco.qubit
+    ```
+  }];
 
-        Example (single qubit):
-        ```mlir
-        %q = qco.alloc : !qco.qubit
-        ```
-
-        Example (qubits in a register):
-        ```mlir
-        %q0 = qco.alloc("q", 3, 0) : !qco.qubit
-        %q1 = qco.alloc("q", 3, 1) : !qco.qubit
-        %q2 = qco.alloc("q", 3, 2) : !qco.qubit
-        ```
-    }];
-
-  let arguments = (ins OptionalAttr<StrAttr>:$register_name,
-      OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
-      OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
   let results = (outs QubitType:$result);
   let assemblyFormat = [{
-        (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
-        attr-dict `:` type($result)
-    }];
+    attr-dict `:` type($result)
+  }];
 
   let builders = [OpBuilder<(ins), [{
-            build($_builder, $_state, QubitType::get($_builder.getContext()), nullptr, nullptr, nullptr);
-        }]>,
-                  OpBuilder<(ins "::mlir::StringAttr":$register_name,
-                                "::mlir::IntegerAttr":$register_size,
-                                "::mlir::IntegerAttr":$register_index),
-                            [{
-            build($_builder, $_state, QubitType::get($_builder.getContext()),
-                  register_name, register_size, register_index);
+            build($_builder, $_state, QubitType::get($_builder.getContext()));
         }]>];
-
-  let hasVerifier = 1;
 }
 
 def SinkOp : QCOOp<"sink", [MemoryEffects<[MemFree]>]> {
