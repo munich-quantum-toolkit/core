@@ -166,6 +166,7 @@ def InsertOp
     }];
 
   let hasCanonicalizer = 1;
+  let hasFolder = 1;
   let hasVerifier = 1;
 }
 

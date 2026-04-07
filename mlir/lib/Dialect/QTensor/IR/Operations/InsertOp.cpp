@@ -34,11 +34,31 @@ static bool isRemovableExtractInsertPair(InsertOp insertOp,
 }
 
 /**
- * @brief Finds the `qtensor.extract` operation corresponding to a given
- * `qtensor.insert` operation.
+ * @brief Folds an insert operation after a matching extract operation into the
+ * original tensor.
+ */
+static Value foldInsertAfterExtract(InsertOp insertOp) {
+  auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
+  if (!extractOp) {
+    return nullptr;
+  }
+
+  if (insertOp.getDest() != extractOp.getOutTensor()) {
+    return nullptr;
+  }
+
+  if (!isRemovableExtractInsertPair(insertOp, extractOp)) {
+    return nullptr;
+  }
+
+  return extractOp.getTensor();
+}
+
+/**
+ * @brief Finds the extract operation corresponding to a given insert operation.
  *
- * @details The function traverses the tensor chain of the `qtensor.insert`
- * operation until it finds the matching `qtensor.extract` operation.
+ * @details The function traverses the tensor chain of the insert operation
+ * until it finds the matching extract operation.
  */
 static ExtractOp findMatchingExtractInTensorChain(InsertOp insertOp) {
   auto current = insertOp.getDest();
@@ -119,6 +139,13 @@ LogicalResult InsertOp::verify() {
   }
 
   return success();
+}
+
+OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
+  if (auto result = foldInsertAfterExtract(*this)) {
+    return result;
+  }
+  return {};
 }
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
