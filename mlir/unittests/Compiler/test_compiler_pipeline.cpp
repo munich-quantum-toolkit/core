@@ -85,11 +85,12 @@ protected:
   std::unique_ptr<mlir::MLIRContext> context;
 
   /**
-   * @brief Prepare a fresh MLIRContext and register the dialects required by the tests.
+   * @brief Prepare a fresh MLIRContext and register the dialects required by
+   * the tests.
    *
-   * This initializes the fixture's MLIRContext, appends a DialectRegistry containing
-   * the QC, QCO, QTensor, Arith, ControlFlow, Func, MemRef, SCF, and LLVM dialects,
-   * and loads all available dialects into the context.
+   * This initializes the fixture's MLIRContext, appends a DialectRegistry
+   * containing the QC, QCO, QTensor, Arith, ControlFlow, Func, MemRef, SCF, and
+   * LLVM dialects, and loads all available dialects into the context.
    */
   void SetUp() override {
     mlir::DialectRegistry registry;
@@ -104,13 +105,17 @@ protected:
   }
 
   /**
-   * @brief Builds a QC MLIR module from a named QC program builder and runs the QC cleanup pipeline.
+   * @brief Builds a QC MLIR module from a named QC program builder and runs the
+   * QC cleanup pipeline.
    *
-   * Constructs a QC module using the provided `builder`, runs the QC cleanup pipeline on the module
-   * (the test asserts the pipeline succeeded), and returns the processed module.
+   * Constructs a QC module using the provided `builder`, runs the QC cleanup
+   * pipeline on the module (the test asserts the pipeline succeeded), and
+   * returns the processed module.
    *
-   * @param builder Named builder that populates a QC program into the MLIR context.
-   * @return mlir::OwningOpRef<mlir::ModuleOp> The resulting QC MLIR module after cleanup. 
+   * @param builder Named builder that populates a QC program into the MLIR
+   * context.
+   * @return mlir::OwningOpRef<mlir::ModuleOp> The resulting QC MLIR module
+   * after cleanup.
    */
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder) const {
@@ -120,13 +125,17 @@ protected:
   }
 
   /**
-   * @brief Builds a QIR MLIR module from the provided QIR program builder and runs the QIR cleanup pipeline.
+   * @brief Builds a QIR MLIR module from the provided QIR program builder and
+   * runs the QIR cleanup pipeline.
    *
-   * Constructs a module using the given QIRProgramBuilderFn and then executes the QIR cleanup pipeline on the module.
-   * The function asserts that the cleanup pipeline completed successfully.
+   * Constructs a module using the given QIRProgramBuilderFn and then executes
+   * the QIR cleanup pipeline on the module. The function asserts that the
+   * cleanup pipeline completed successfully.
    *
-   * @param builder Wrapper for the QIR program builder function used to populate the module.
-   * @return mlir::OwningOpRef<mlir::ModuleOp> The resulting MLIR ModuleOp containing the cleaned QIR module.
+   * @param builder Wrapper for the QIR program builder function used to
+   * populate the module.
+   * @return mlir::OwningOpRef<mlir::ModuleOp> The resulting MLIR ModuleOp
+   * containing the cleaned QIR module.
    */
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildQIRReference(const QIRProgramBuilderFn builder) const {

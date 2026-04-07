@@ -39,12 +39,13 @@ struct MergeSubsequentRZX final : OpRewritePattern<RZXOp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * Attempt to merge consecutive RZX operations acting on the same two qubits by
-   * combining their rotation parameters and rewriting the IR accordingly.
+   * Attempt to merge consecutive RZX operations acting on the same two qubits
+   * by combining their rotation parameters and rewriting the IR accordingly.
    *
    * @param op The RZX operation to consider for merging.
    * @param rewriter Utility used to perform IR replacements during the rewrite.
-   * @return LogicalResult `success()` if a merge and rewrite were performed, `failure()` otherwise.
+   * @return LogicalResult `success()` if a merge and rewrite were performed,
+   * `failure()` otherwise.
    */
   LogicalResult matchAndRewrite(RZXOp op,
                                 PatternRewriter& rewriter) const override {
@@ -52,18 +53,7 @@ struct MergeSubsequentRZX final : OpRewritePattern<RZXOp> {
   }
 };
 
-} /**
- * @brief Construct an RZX operation, accepting either a double angle or an SSA value for theta.
- *
- * Converts the provided `theta` variant into an operand value and uses it to populate
- * the given OperationState via the OpBuilder.
- *
- * @param odsBuilder Builder used to create the operation.
- * @param odsState OperationState to populate for the new RZX operation.
- * @param qubit0In Value representing the first input qubit.
- * @param qubit1In Value representing the second input qubit.
- * @param theta Angle parameter for the RZX gate, given either as a double or as a Value.
- */
+} // namespace
 
 void RZXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   Value qubit0In, Value qubit1In,
@@ -74,7 +64,8 @@ void RZXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 /**
- * @brief Fold the RZX operation away when its rotation angle is effectively zero.
+ * @brief Fold the RZX operation away when its rotation angle is effectively
+ * zero.
  *
  * When the operation's `theta` operand is a constant whose absolute value is
  * less than or equal to `TOLERANCE`, replaces the operation by emitting its
@@ -111,18 +102,16 @@ void RZXOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 /**
- * Compute the 4×4 unitary matrix of the RZX gate for the operation's theta parameter.
+ * Compute the 4×4 unitary matrix of the RZX gate for the operation's theta
+ * parameter.
  *
- * If the operation's `theta` can be converted to a numeric value, the returned matrix is
- * constructed using mc = cos(theta / 2) (real) and ms = i * sin(theta / 2) (pure imaginary),
- * with rows:
- *   [ mc, -ms,  0,  0 ]
- *   [ -ms, mc,  0,  0 ]
- *   [  0,   0, mc, ms ]
- *   [  0,   0, ms, mc ]
+ * If the operation's `theta` can be converted to a numeric value, the returned
+ * matrix is constructed using mc = cos(theta / 2) (real) and ms = i * sin(theta
+ * / 2) (pure imaginary), with rows: [ mc, -ms,  0,  0 ] [ -ms, mc,  0,  0 ] [
+ * 0,   0, mc, ms ] [  0,   0, ms, mc ]
  *
- * @return `std::optional<Eigen::Matrix4cd>` containing the 4×4 complex unitary matrix when
- *         `theta` is available; `std::nullopt` otherwise.
+ * @return `std::optional<Eigen::Matrix4cd>` containing the 4×4 complex unitary
+ * matrix when `theta` is available; `std::nullopt` otherwise.
  */
 std::optional<Eigen::Matrix4cd> RZXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;

@@ -50,9 +50,12 @@ namespace mlir::qtensor {
 /**
  * @brief Mark the specified index as live in the provided bit vector.
  *
- * @param index The index to set as live; must be in the range [0, liveIndices.size()).
- * @param liveIndices Bit vector tracking live indices; the bit at `index` will be set on success.
- * @return LogicalResult `success()` if `index` is within bounds and was marked, `failure()` otherwise.
+ * @param index The index to set as live; must be in the range [0,
+ * liveIndices.size()).
+ * @param liveIndices Bit vector tracking live indices; the bit at `index` will
+ * be set on success.
+ * @return LogicalResult `success()` if `index` is within bounds and was marked,
+ * `failure()` otherwise.
  */
 [[nodiscard]] static LogicalResult markLiveIndex(const int64_t index,
                                                  llvm::BitVector& liveIndices) {
@@ -64,16 +67,19 @@ namespace mlir::qtensor {
 }
 
 /**
- * @brief Replace a tensor operand referring to one Value with another for supported ops.
+ * @brief Replace a tensor operand referring to one Value with another for
+ * supported ops.
  *
- * Attempts to replace uses of `from` with `to` on the tensor operand of the provided
- * operation when the operation is an `ExtractOp`, `InsertOp`, or `DeallocOp`.
+ * Attempts to replace uses of `from` with `to` on the tensor operand of the
+ * provided operation when the operation is an `ExtractOp`, `InsertOp`, or
+ * `DeallocOp`.
  *
  * @param op Operation to inspect and potentially modify.
  * @param from The tensor Value to be replaced.
  * @param to The tensor Value to use as the replacement.
- * @return LogicalResult `success()` if `op` is one of the supported ops and the matching
- * operand referred to `from` and was updated to `to`; `failure()` otherwise.
+ * @return LogicalResult `success()` if `op` is one of the supported ops and the
+ * matching operand referred to `from` and was updated to `to`; `failure()`
+ * otherwise.
  */
 [[nodiscard]] static LogicalResult remapTensorOperand(Operation* op, Value from,
                                                       Value to) {
@@ -102,20 +108,24 @@ namespace mlir::qtensor {
 }
 
 /**
- * @brief Traverse the single-use tensor chain from an allocation and mark indices that are accessed.
+ * @brief Traverse the single-use tensor chain from an allocation and mark
+ * indices that are accessed.
  *
- * Walks forward from `allocOp` following the linear (single-user) tensor chain composed of
- * `qtensor.extract`, `qtensor.insert`, and terminating `qtensor.dealloc`. For each visited
- * `extract` or `insert` with a constant index, marks that index in `live`. On success returns
- * the terminating `dealloc` operation via `deallocOp`.
+ * Walks forward from `allocOp` following the linear (single-user) tensor chain
+ * composed of `qtensor.extract`, `qtensor.insert`, and terminating
+ * `qtensor.dealloc`. For each visited `extract` or `insert` with a constant
+ * index, marks that index in `live`. On success returns the terminating
+ * `dealloc` operation via `deallocOp`.
  *
- * @param allocOp The allocation operation whose result tensor is the start of the chain.
- * @param[out] live BitVector sized to the allocation's length; bits corresponding to accessed
- *                   indices are set to 1.
- * @param[out] deallocOp Will be assigned the `qtensor.dealloc` operation that terminates the chain.
- * @return LogicalResult `success()` if a matching linear chain was found, all accessed indices
- *         were constant and within bounds, and the terminating dealloc was located; `failure()`
- *         otherwise.
+ * @param allocOp The allocation operation whose result tensor is the start of
+ * the chain.
+ * @param[out] live BitVector sized to the allocation's length; bits
+ * corresponding to accessed indices are set to 1.
+ * @param[out] deallocOp Will be assigned the `qtensor.dealloc` operation that
+ * terminates the chain.
+ * @return LogicalResult `success()` if a matching linear chain was found, all
+ * accessed indices were constant and within bounds, and the terminating dealloc
+ * was located; `failure()` otherwise.
  */
 [[nodiscard]] static LogicalResult collectLiveIndices(AllocOp allocOp,
                                                       llvm::BitVector& live,
@@ -173,13 +183,23 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * @brief Attempts to shrink a statically-sized `qtensor.alloc` by removing unused indices and rewriting its linear user chain.
+   * @brief Attempts to shrink a statically-sized `qtensor.alloc` by removing
+   * unused indices and rewriting its linear user chain.
    *
-   * Validates the allocation has a positive constant size, collects the set of accessed indices along the single-use alloc→...→dealloc chain, builds a dense remapping for live indices, creates a smaller `qtensor.alloc`, and rewrites subsequent `qtensor.extract`/`qtensor.insert` and the final `qtensor.dealloc` to operate on the new, compact tensor.
+   * Validates the allocation has a positive constant size, collects the set of
+   * accessed indices along the single-use alloc→...→dealloc chain, builds a
+   * dense remapping for live indices, creates a smaller `qtensor.alloc`, and
+   * rewrites subsequent `qtensor.extract`/`qtensor.insert` and the final
+   * `qtensor.dealloc` to operate on the new, compact tensor.
    *
-   * @param allocOp The `qtensor.alloc` operation to match and potentially rewrite.
+   * @param allocOp The `qtensor.alloc` operation to match and potentially
+   * rewrite.
    * @param rewriter PatternRewriter used to create and replace operations.
-   * @returns LogicalResult `success()` if the alloc was shrunk and the chain was successfully rewritten; `failure()` if any validation fails (missing/invalid constant size, live-index collection failure, missing or mismatched dealloc, new size is zero or unchanged, unexpected user pattern, non-constant or out-of-range indices, or any remapping failure).
+   * @returns LogicalResult `success()` if the alloc was shrunk and the chain
+   * was successfully rewritten; `failure()` if any validation fails
+   * (missing/invalid constant size, live-index collection failure, missing or
+   * mismatched dealloc, new size is zero or unchanged, unexpected user pattern,
+   * non-constant or out-of-range indices, or any remapping failure).
    */
   LogicalResult matchAndRewrite(AllocOp allocOp,
                                 PatternRewriter& rewriter) const override {
@@ -318,7 +338,8 @@ struct ShrinkQTensorToFitPass final
     : impl::ShrinkQTensorToFitPassBase<ShrinkQTensorToFitPass> {
 protected:
   /**
-   * @brief Run the pass: register and apply the shrink-qtensor rewrite patterns.
+   * @brief Run the pass: register and apply the shrink-qtensor rewrite
+   * patterns.
    *
    * Registers the ShrinkStaticQTensor rewrite pattern and applies all patterns
    * greedily to the current operation, signaling pass failure if pattern

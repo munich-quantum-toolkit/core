@@ -117,16 +117,19 @@ Value QCOProgramBuilder::staticQubit(const uint64_t index) {
 }
 
 /**
- * @brief Allocates a qtensor of length `size` and returns its constituent qubits.
+ * @brief Allocates a qtensor of length `size` and returns its constituent
+ * qubits.
  *
  * Allocates a 1-D qtensor containing `size` qubits, extracts each element in
  * index order (0 .. size-1), and returns a SmallVector of the extracted qubit
  * SSA values.
  *
  * @param size Number of qubits to allocate; must be greater than zero.
- * @return llvm::SmallVector<Value> Extracted qubit SSA values in ascending index order.
+ * @return llvm::SmallVector<Value> Extracted qubit SSA values in ascending
+ * index order.
  *
- * @note This function requires the builder to be finalized (see checkFinalized()).
+ * @note This function requires the builder to be finalized (see
+ * checkFinalized()).
  * @note Fatal error occurs if `size <= 0`.
  */
 llvm::SmallVector<Value>
@@ -183,7 +186,8 @@ void QCOProgramBuilder::validateQubitValue(Value qubit) const {
  * original QubitInfo metadata (register id/index).
  *
  * @param inputQubit The currently tracked qubit SSA value to consume.
- * @param outputQubit The new qubit SSA value that replaces @p inputQubit in tracking.
+ * @param outputQubit The new qubit SSA value that replaces @p inputQubit in
+ * tracking.
  *
  * @note This function fatal-errors if @p inputQubit is not present in the
  *       builder's tracking map.
@@ -231,13 +235,16 @@ void QCOProgramBuilder::validateTensorValue(Value tensor) const {
 }
 
 /**
- * @brief Transfer tensor tracking metadata from an input tensor SSA value to its replacement.
+ * @brief Transfer tensor tracking metadata from an input tensor SSA value to
+ * its replacement.
  *
- * Validates that `inputTensor` is a tracked 1-D tensor of qubits, removes its tracking entry,
- * and inserts `outputTensor` with the same stored TensorInfo so tracking continues under the new SSA value.
+ * Validates that `inputTensor` is a tracked 1-D tensor of qubits, removes its
+ * tracking entry, and inserts `outputTensor` with the same stored TensorInfo so
+ * tracking continues under the new SSA value.
  *
  * @param inputTensor The tracked tensor SSA value being consumed.
- * @param outputTensor The new tensor SSA value that should inherit the input's tracking metadata.
+ * @param outputTensor The new tensor SSA value that should inherit the input's
+ * tracking metadata.
  */
 void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
                                              Value outputTensor) {
@@ -259,11 +266,11 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 /**
  * @brief Allocate a 1-D qtensor of qubits with the given size.
  *
- * @param size Size of the tensor: either an `int64_t` element count or an MLIR SSA
- *             `Value` that provides the tensor size/index.
- * @return Value The allocated 1-D tensor `Value` (element type `QubitType`); the
- *               returned tensor is recorded in the builder's tracking map with a
- *               newly assigned tensor register id.
+ * @param size Size of the tensor: either an `int64_t` element count or an MLIR
+ * SSA `Value` that provides the tensor size/index.
+ * @return Value The allocated 1-D tensor `Value` (element type `QubitType`);
+ * the returned tensor is recorded in the builder's tracking map with a newly
+ * assigned tensor register id.
  */
 
 Value QCOProgramBuilder::qtensorAlloc(
@@ -289,7 +296,8 @@ Value QCOProgramBuilder::qtensorAlloc(
  * @param elements Ordered qubit SSA values to pack into the resulting tensor.
  *                 Each element must have type `QubitType` and be currently
  *                 tracked by the builder.
- * @return Value The resulting 1-D qtensor SSA value containing the provided qubits.
+ * @return Value The resulting 1-D qtensor SSA value containing the provided
+ * qubits.
  *
  * @note This function fatal-errors if `elements` is empty, if any element is
  *       not of `QubitType`, or if any element is not currently tracked.
@@ -316,16 +324,20 @@ Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
 }
 
 /**
- * @brief Extracts a qubit from a 1-D qtensor at a specific index and returns the updated tensor.
+ * @brief Extracts a qubit from a 1-D qtensor at a specific index and returns
+ * the updated tensor.
  *
- * Validates that `tensor` is a tracked 1-D qtensor of qubits, produces an extracted qubit value
- * and an updated tensor value with that element removed/replaced, records the extracted qubit
- * in the builder's tracking using the tensor's register id and the provided index, and updates
- * tensor tracking to replace the input tensor with the returned out-tensor.
+ * Validates that `tensor` is a tracked 1-D qtensor of qubits, produces an
+ * extracted qubit value and an updated tensor value with that element
+ * removed/replaced, records the extracted qubit in the builder's tracking using
+ * the tensor's register id and the provided index, and updates tensor tracking
+ * to replace the input tensor with the returned out-tensor.
  *
- * @param tensor The qtensor Value to extract from (must be a tracked 1-D tensor of qubits).
+ * @param tensor The qtensor Value to extract from (must be a tracked 1-D tensor
+ * of qubits).
  * @param index Zero-based element index within the tensor to extract.
- * @return std::pair<Value, Value> First = the tensor Value after extraction (out-tensor), Second = the extracted qubit Value.
+ * @return std::pair<Value, Value> First = the tensor Value after extraction
+ * (out-tensor), Second = the extracted qubit Value.
  */
 std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
                                                           const int64_t index) {
@@ -346,16 +358,17 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
 }
 
 /**
- * @brief Inserts a qubit into a 1-D qtensor at the given index and returns the updated tensor.
+ * @brief Inserts a qubit into a 1-D qtensor at the given index and returns the
+ * updated tensor.
  *
- * Requires the builder to be finalized. Consumes the provided `scalar` qubit (it is removed
- * from the builder's qubit tracking) and updates tensor tracking so the returned tensor
- * replaces the input `tensor`.
+ * Requires the builder to be finalized. Consumes the provided `scalar` qubit
+ * (it is removed from the builder's qubit tracking) and updates tensor tracking
+ * so the returned tensor replaces the input `tensor`.
  *
  * @param scalar The qubit value to insert; must be a tracked qubit.
  * @param tensor The input 1-D qtensor into which the qubit will be inserted.
- * @param index Integer index or an SSA value specifying the insertion position; will be
- *              converted to an MLIR value before use.
+ * @param index Integer index or an SSA value specifying the insertion position;
+ * will be converted to an MLIR value before use.
  * @return Value The resulting qtensor value after insertion.
  */
 Value QCOProgramBuilder::qtensorInsert(
@@ -403,15 +416,18 @@ std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
 }
 
 /**
- * @brief Measures a qubit and writes the measurement result into a classical register.
+ * @brief Measures a qubit and writes the measurement result into a classical
+ * register.
  *
- * The classical destination is specified by `bit` (its `registerName`, `registerSize`,
- * and `registerIndex` fields are used to form the MeasureOp attributes). The builder's
- * qubit tracking is updated to replace the input qubit SSA with the post-measurement qubit.
+ * The classical destination is specified by `bit` (its `registerName`,
+ * `registerSize`, and `registerIndex` fields are used to form the MeasureOp
+ * attributes). The builder's qubit tracking is updated to replace the input
+ * qubit SSA with the post-measurement qubit.
  *
  * @param qubit The qubit SSA value to measure.
  * @param bit Descriptor of the target classical register (name, size, index).
- * @return Value The post-measurement qubit SSA value produced by the measure operation.
+ * @return Value The post-measurement qubit SSA value produced by the measure
+ * operation.
  */
 Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
@@ -430,9 +446,11 @@ Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
 }
 
 /**
- * @brief Reset a tracked qubit to the zero state and produce its post-reset SSA value.
+ * @brief Reset a tracked qubit to the zero state and produce its post-reset SSA
+ * value.
  *
- * Replaces the input qubit in the builder's linear tracking with the reset output.
+ * Replaces the input qubit in the builder's linear tracking with the reset
+ * output.
  *
  * @param qubit The tracked qubit SSA value to reset.
  * @return Value The qubit SSA value produced by the reset operation.
@@ -825,7 +843,8 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
  * its corresponding output qubit produced by the barrier.
  *
  * @param qubits The qubit SSA values to act on, in order.
- * @return ValueRange The qubit SSA values produced by the barrier, in the same order as `qubits`.
+ * @return ValueRange The qubit SSA values produced by the barrier, in the same
+ * order as `qubits`.
  */
 
 ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
@@ -842,16 +861,25 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 //===----------------------------------------------------------------------===//
 // Modifiers
 /**
- * @brief Create a controlled region that applies a sequence of operations on the given targets guarded by the given controls.
+ * @brief Create a controlled region that applies a sequence of operations on
+ * the given targets guarded by the given controls.
  *
- * The provided `body` is invoked with block arguments corresponding to the target qubits; it must return one Value per target representing the inner target outputs.
- * The builder updates internal qubit tracking so that each original control and target is replaced by the corresponding output produced by the control region.
+ * The provided `body` is invoked with block arguments corresponding to the
+ * target qubits; it must return one Value per target representing the inner
+ * target outputs. The builder updates internal qubit tracking so that each
+ * original control and target is replaced by the corresponding output produced
+ * by the control region.
  *
  * @param controls The control qubits that guard the region.
- * @param targets The target qubits passed into the control region as block arguments.
- * @param body A callback invoked with the block arguments for the targets; it should emit the inner operations and return a SmallVector<Value> containing exactly one output value per target.
- * @returns A pair containing: first, the control-qubit outputs produced by the control op; second, the target-qubit outputs produced by the control op.
- * @throws llvm::ReportFatalError if `body` returns a number of outputs different from the number of `targets`.
+ * @param targets The target qubits passed into the control region as block
+ * arguments.
+ * @param body A callback invoked with the block arguments for the targets; it
+ * should emit the inner operations and return a SmallVector<Value> containing
+ * exactly one output value per target.
+ * @returns A pair containing: first, the control-qubit outputs produced by the
+ * control op; second, the target-qubit outputs produced by the control op.
+ * @throws llvm::ReportFatalError if `body` returns a number of outputs
+ * different from the number of `targets`.
  */
 
 std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
@@ -892,22 +920,25 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 }
 
 /**
- * @brief Create an inversion region for the given qubits and return the region outputs.
+ * @brief Create an inversion region for the given qubits and return the region
+ * outputs.
  *
- * Builds an `InvOp` whose body receives block arguments for each input qubit, invokes
- * `body` with those block arguments, yields the body's results, updates the builder's
- * qubit tracking to reflect the region's inputs and outputs, and returns the op's output
- * qubits.
+ * Builds an `InvOp` whose body receives block arguments for each input qubit,
+ * invokes `body` with those block arguments, yields the body's results, updates
+ * the builder's qubit tracking to reflect the region's inputs and outputs, and
+ * returns the op's output qubits.
  *
- * @param qubits The qubits to be used as inputs to the inversion region; each qubit is
- *               forwarded into the region as a block argument.
- * @param body   A callback that emits the region's operations and returns a SmallVector of
- *               output qubits; the callback must produce exactly one output qubit per
- *               input qubit.
- * @return ValueRange The `InvOp`'s output qubits corresponding positionally to `qubits`.
+ * @param qubits The qubits to be used as inputs to the inversion region; each
+ * qubit is forwarded into the region as a block argument.
+ * @param body   A callback that emits the region's operations and returns a
+ * SmallVector of output qubits; the callback must produce exactly one output
+ * qubit per input qubit.
+ * @return ValueRange The `InvOp`'s output qubits corresponding positionally to
+ * `qubits`.
  *
- * @note This function fatally aborts if the builder is not finalized or if `body` returns
- *       a number of outputs different from the number of input `qubits`.
+ * @note This function fatally aborts if the builder is not finalized or if
+ * `body` returns a number of outputs different from the number of input
+ * `qubits`.
  */
 ValueRange QCOProgramBuilder::inv(
     ValueRange qubits,
@@ -975,9 +1006,9 @@ QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
  * @param condition A boolean or SSA `Value` used as the branch condition.
  * @param qubits The qubit values passed into the if regions and used as region
  *               block arguments.
- * @param thenBody Callback that is invoked to build the then-region. It receives
- *                 the then-region block arguments and must return a vector of
- *                 qubit `Value`s with the same length as `qubits`.
+ * @param thenBody Callback that is invoked to build the then-region. It
+ * receives the then-region block arguments and must return a vector of qubit
+ * `Value`s with the same length as `qubits`.
  * @param elseBody Callback that is invoked to build the else-region. If empty,
  *                 the else-region yields its incoming block arguments. When
  *                 provided it must return a vector of qubit `Value`s with the
@@ -1059,19 +1090,22 @@ void QCOProgramBuilder::checkFinalized() const {
 }
 
 /**
- * @brief Finalize the program, automatically clean up resources, and return the module.
+ * @brief Finalize the program, automatically clean up resources, and return the
+ * module.
  *
- * Finalizes IR emission by verifying the presence of a `main` function and that the
- * current insertion point is the entry block of `main`. Any still-allocated qubits
- * are either sunk or re-inserted into their associated tensors; all tracked tensors
- * are reconstructed as needed then deallocated. Clears internal tracking, appends a
- * `return 0` to `main`, and invalidates the builder instance so it cannot be used
- * after finalization.
+ * Finalizes IR emission by verifying the presence of a `main` function and that
+ * the current insertion point is the entry block of `main`. Any still-allocated
+ * qubits are either sunk or re-inserted into their associated tensors; all
+ * tracked tensors are reconstructed as needed then deallocated. Clears internal
+ * tracking, appends a `return 0` to `main`, and invalidates the builder
+ * instance so it cannot be used after finalization.
  *
- * This function will terminate the process with a fatal usage error if no `main`
- * function is found or if the insertion point is not the entry block of `main`.
+ * This function will terminate the process with a fatal usage error if no
+ * `main` function is found or if the insertion point is not the entry block of
+ * `main`.
  *
- * @return OwningOpRef<ModuleOp> The owned MLIR module containing the built program.
+ * @return OwningOpRef<ModuleOp> The owned MLIR module containing the built
+ * program.
  */
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   checkFinalized();

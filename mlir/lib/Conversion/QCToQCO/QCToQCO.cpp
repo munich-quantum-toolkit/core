@@ -165,7 +165,8 @@ private:
  * Asserts if no modifier frame is active.
  *
  * @param state LoweringState that must contain at least one modifier frame.
- * @return LoweringState::ModifierFrame& Reference to the top (active) modifier frame.
+ * @return LoweringState::ModifierFrame& Reference to the top (active) modifier
+ * frame.
  */
 [[nodiscard]] static LoweringState::ModifierFrame&
 currentModifierFrame(LoweringState& state) {
@@ -211,14 +212,16 @@ findRegionLocalMap(llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>>& map,
 }
 
 /**
- * Resolve the current mapped QCO qubit SSA value for a given QC qubit reference.
+ * Resolve the current mapped QCO qubit SSA value for a given QC qubit
+ * reference.
  *
  * Looks up the latest QCO value for `qcQubit` by first checking the active
  * modifier frame (if any) and then searching the nearest region-local mapping
  * anchored at `anchor`.
  *
  * @param state Lowering state containing mapping tables and modifier frames.
- * @param anchor Operation used to determine the region scope for region-local lookup.
+ * @param anchor Operation used to determine the region scope for region-local
+ * lookup.
  * @param qcQubit The QC qubit reference value to resolve.
  * @return Value The resolved QCO qubit SSA value corresponding to `qcQubit`.
  *
@@ -260,14 +263,19 @@ findRegionLocalMap(llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>>& map,
 }
 
 /**
- * @brief Record or update the current QCO SSA value associated with a QC qubit reference.
+ * @brief Record or update the current QCO SSA value associated with a QC qubit
+ * reference.
  *
  * Updates the mapping for `qcQubit` to `qcoQubit` in the appropriate location:
- * - If inside a modifier frame and the qubit is present in the frame's `currentQubits`, update it there.
- * - Otherwise, update the nearest region-local entry if one exists; if not, insert a new mapping in the anchor's parent region.
+ * - If inside a modifier frame and the qubit is present in the frame's
+ * `currentQubits`, update it there.
+ * - Otherwise, update the nearest region-local entry if one exists; if not,
+ * insert a new mapping in the anchor's parent region.
  *
- * @param state The lowering state containing per-region maps and modifier frames.
- * @param anchor An operation used to locate the relevant parent region for region-local mappings.
+ * @param state The lowering state containing per-region maps and modifier
+ * frames.
+ * @param anchor An operation used to locate the relevant parent region for
+ * region-local mappings.
  * @param qcQubit The QC qubit reference value to update.
  * @param qcoQubit The new QCO qubit SSA value to associate with `qcQubit`.
  */
@@ -296,14 +304,17 @@ static void assignMappedQubit(LoweringState& state, Operation* anchor,
 }
 
 /**
- * @brief Record or update the QTensor SSA value associated with a QC register in the nearest region-local mapping.
+ * @brief Record or update the QTensor SSA value associated with a QC register
+ * in the nearest region-local mapping.
  *
- * Updates the nearest region-local entry for `memref` to `tensor` if one exists; otherwise inserts a new mapping in
- * the region containing `anchor`.
+ * Updates the nearest region-local entry for `memref` to `tensor` if one
+ * exists; otherwise inserts a new mapping in the region containing `anchor`.
  *
  * @param state Global lowering state containing per-region tensor maps.
- * @param anchor Operation used to determine the relevant parent region for region-local mapping.
- * @param memref The QC register value (memref) whose current QTensor SSA value is being recorded.
+ * @param anchor Operation used to determine the relevant parent region for
+ * region-local mapping.
+ * @param memref The QC register value (memref) whose current QTensor SSA value
+ * is being recorded.
  * @param tensor The QTensor SSA value to associate with `memref`.
  */
 static void assignMappedTensor(LoweringState& state, Operation* anchor,
@@ -325,16 +336,20 @@ static void assignMappedTensor(LoweringState& state, Operation* anchor,
 /** @brief Resolves a range of QC qubits to their latest QCO values. */
 template <typename Range>
 /**
- * @brief Resolve a sequence of QC qubit references to their current QCO SSA values.
+ * @brief Resolve a sequence of QC qubit references to their current QCO SSA
+ * values.
  *
- * Produces a vector of QCO qubit Values corresponding, in order, to each QC qubit in the input range.
+ * Produces a vector of QCO qubit Values corresponding, in order, to each QC
+ * qubit in the input range.
  *
  * @param state LoweringState that holds the region-local qubit mappings.
  * @param anchor Operation used to determine the region scope for lookup.
  * @param qcQubits Range of QC qubit reference Values to resolve.
- * @return SmallVector<Value> QCO qubit Values mapped from the inputs, in the same order as `qcQubits`.
+ * @return SmallVector<Value> QCO qubit Values mapped from the inputs, in the
+ * same order as `qcQubits`.
  *
- * @pre Each `qcQubit` in `qcQubits` must have an existing mapping in `state` for the region determined by `anchor`.
+ * @pre Each `qcQubit` in `qcQubits` must have an existing mapping in `state`
+ * for the region determined by `anchor`.
  */
 [[nodiscard]] static SmallVector<Value>
 resolveMappedQubits(LoweringState& state, Operation* anchor,
@@ -402,19 +417,22 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Sinks any live QCO qubits not returned by a function and rewrites the return.
+   * @brief Sinks any live QCO qubits not returned by a function and rewrites
+   * the return.
    *
-   * For each operand of the QC `func.return`, uses the latest mapped QCO qubit when one
-   * exists and otherwise forwards the adapted operand. Any mapped QCO qubit in the
-   * function-local qubit map that is not among the returned qubits is replaced with a
-   * `qco.sink` to drop that qubit. The function-local qubit mapping is then erased and
-   * the original `func.return` is replaced with a new `func.return` using the resolved
-   * return values.
+   * For each operand of the QC `func.return`, uses the latest mapped QCO qubit
+   * when one exists and otherwise forwards the adapted operand. Any mapped QCO
+   * qubit in the function-local qubit map that is not among the returned qubits
+   * is replaced with a `qco.sink` to drop that qubit. The function-local qubit
+   * mapping is then erased and the original `func.return` is replaced with a
+   * new `func.return` using the resolved return values.
    *
    * @param op The original `func::ReturnOp` to be rewritten.
    * @param adaptor The op adaptor providing type-converted operands.
-   * @param rewriter The pattern rewriter used to create new ops and replace the return.
-   * @return LogicalResult `success()` when the return was rewritten and sinks inserted.
+   * @param rewriter The pattern rewriter used to create new ops and replace the
+   * return.
+   * @return LogicalResult `success()` when the return was rewritten and sinks
+   * inserted.
    */
   LogicalResult
   matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
@@ -467,10 +485,11 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
 class QCToQCOTypeConverter final : public TypeConverter {
 public:
   /**
-   * @brief Constructs a TypeConverter that lowers QC dialect qubit types to QCO qubit types.
+   * @brief Constructs a TypeConverter that lowers QC dialect qubit types to QCO
+   * qubit types.
    *
-   * Registers an identity conversion for all types and a specific conversion that maps
-   * qc::QubitType to qco::QubitType within the provided MLIR context.
+   * Registers an identity conversion for all types and a specific conversion
+   * that maps qc::QubitType to qco::QubitType within the provided MLIR context.
    *
    * @param ctx MLIRContext used to create QCO qubit type instances.
    */
@@ -502,18 +521,21 @@ struct ConvertMemRefAllocOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a 1D qubit-bearing memref.alloc to a qtensor.alloc and records the mapping.
+   * @brief Lowers a 1D qubit-bearing memref.alloc to a qtensor.alloc and
+   * records the mapping.
    *
-   * Converts a memref.alloc whose element type is `qc::QubitType` and whose shape is 1D into
-   * a corresponding `qtensor::AllocOp`. If the allocation length is dynamic the adaptor's
-   * dynamic size operand is forwarded; if static, a constant index is created. The new
-   * qtensor value is recorded in the lowering state's per-region tensor map for the original
-   * memref result.
+   * Converts a memref.alloc whose element type is `qc::QubitType` and whose
+   * shape is 1D into a corresponding `qtensor::AllocOp`. If the allocation
+   * length is dynamic the adaptor's dynamic size operand is forwarded; if
+   * static, a constant index is created. The new qtensor value is recorded in
+   * the lowering state's per-region tensor map for the original memref result.
    *
    * @param op The memref.alloc operation to convert.
-   * @param adaptor Pattern adaptor providing adapted operands (used for dynamic size).
+   * @param adaptor Pattern adaptor providing adapted operands (used for dynamic
+   * size).
    * @param rewriter Rewriter used to create and replace operations.
-   * @return LogicalResult `success` if the op was converted and replaced, `failure` otherwise.
+   * @return LogicalResult `success` if the op was converted and replaced,
+   * `failure` otherwise.
    */
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
@@ -562,21 +584,22 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a `memref.load` of a qubit-bearing memref to a `qtensor.extract`
-   *        and updates lowering state mappings.
+   * @brief Lowers a `memref.load` of a qubit-bearing memref to a
+   * `qtensor.extract` and updates lowering state mappings.
    *
    * Converts a `memref.load` whose element type is `qc::QubitType` into a
-   * `qtensor.extract`, records the extracted QCO qubit as the latest mapping for
-   * the loaded QC qubit, updates the memref→qtensor mapping for the source
+   * `qtensor.extract`, records the extracted QCO qubit as the latest mapping
+   * for the loaded QC qubit, updates the memref→qtensor mapping for the source
    * register, and stores the source register and index in `qubitInfoMap`.
    * The original `memref.load` is erased on success.
    *
    * @param op The `memref.load` operation to match and rewrite.
-   * @param adaptor The adaptor providing converted operands (used for the index).
+   * @param adaptor The adaptor providing converted operands (used for the
+   * index).
    * @param rewriter The pattern rewriter used to create replacement ops and
    *                erase the original op.
-   * @return LogicalResult `success()` if the op was a qubit-bearing load and was
-   *         rewritten, `failure()` otherwise.
+   * @return LogicalResult `success()` if the op was a qubit-bearing load and
+   * was rewritten, `failure()` otherwise.
    */
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
@@ -641,17 +664,19 @@ struct ConvertMemRefDeallocOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a memref.dealloc of a qubit-bearing memref to a qtensor.dealloc.
+   * @brief Lowers a memref.dealloc of a qubit-bearing memref to a
+   * qtensor.dealloc.
    *
-   * For memrefs whose element type is `!qc.qubit`, reinserts any currently-tracked
-   * QCO qubits that originated from that memref back into the latest QTensor at
-   * their recorded indices, removes the memref and qubit tracking entries from
-   * the lowering state, and replaces the original op with a `qtensor.dealloc`
-   * of the final tensor.
+   * For memrefs whose element type is `!qc.qubit`, reinserts any
+   * currently-tracked QCO qubits that originated from that memref back into the
+   * latest QTensor at their recorded indices, removes the memref and qubit
+   * tracking entries from the lowering state, and replaces the original op with
+   * a `qtensor.dealloc` of the final tensor.
    *
    * @param op The `memref::DeallocOp` to rewrite.
    * @param adaptor Unused adaptor for converted operands/results.
-   * @param rewriter Pattern rewriter used to create new ops and replace the old op.
+   * @param rewriter Pattern rewriter used to create new ops and replace the old
+   * op.
    * @returns `success` if the op was lowered; `failure` if the memref element
    *          type is not `qc::QubitType`.
    */
@@ -762,11 +787,12 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Rewrites a `qc.dealloc` into a `qco.sink` and updates lowering state.
+   * @brief Rewrites a `qc.dealloc` into a `qco.sink` and updates lowering
+   * state.
    *
-   * Replaces the QC deallocation of a qubit reference with a QCO sink consuming the
-   * corresponding mapped QCO qubit, and removes the QC qubit reference from the
-   * region's qubit map in the lowering state.
+   * Replaces the QC deallocation of a qubit reference with a QCO sink consuming
+   * the corresponding mapped QCO qubit, and removes the QC qubit reference from
+   * the region's qubit map in the lowering state.
    *
    * @param op The `qc.dealloc` operation being rewritten.
    * @param adaptor Unused adaptor for the operation's operands.
@@ -812,13 +838,15 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a `qc.static` operation to a `qco.static` operation and updates the lowering state.
+   * @brief Lowers a `qc.static` operation to a `qco.static` operation and
+   * updates the lowering state.
    *
-   * Replaces the matched `qc::StaticOp` with a `qco::StaticOp` preserving the index attribute,
-   * and records the mapping from the original QC qubit reference to the produced QCO qubit SSA value
-   * in the shared LoweringState.
+   * Replaces the matched `qc::StaticOp` with a `qco::StaticOp` preserving the
+   * index attribute, and records the mapping from the original QC qubit
+   * reference to the produced QCO qubit SSA value in the shared LoweringState.
    *
-   * @return LogicalResult `success()` if the rewrite completed and the mapping was recorded.
+   * @return LogicalResult `success()` if the rewrite completed and the mapping
+   * was recorded.
    */
   LogicalResult
   matchAndRewrite(qc::StaticOp op, OpAdaptor /*adaptor*/,
@@ -860,17 +888,18 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a `qc::MeasureOp` to a `qco::MeasureOp` and updates state mappings.
+   * @brief Lowers a `qc::MeasureOp` to a `qco::MeasureOp` and updates state
+   * mappings.
    *
-   * Creates a `qco.measure` that consumes the currently mapped QCO qubit for the
-   * QC operand, preserves the register name/size/index attributes, updates the
-   * lowering state's mapping so the QC qubit now refers to the measure's output
-   * qubit, and replaces the QC op's classical-bit result with the QCO measure's
-   * classical result.
+   * Creates a `qco.measure` that consumes the currently mapped QCO qubit for
+   * the QC operand, preserves the register name/size/index attributes, updates
+   * the lowering state's mapping so the QC qubit now refers to the measure's
+   * output qubit, and replaces the QC op's classical-bit result with the QCO
+   * measure's classical result.
    *
    * @param op The `qc::MeasureOp` to convert.
    * @param rewriter The pattern rewriter used to create and replace operations.
-   * @return LogicalResult `success()` if the rewrite was applied. 
+   * @return LogicalResult `success()` if the rewrite was applied.
    */
   LogicalResult
   matchAndRewrite(qc::MeasureOp op, OpAdaptor /*adaptor*/,
@@ -919,11 +948,12 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a qc.reset into a qco.reset, updates the lowering state's qubit mapping,
-   * and erases the original qc.reset operation.
+   * @brief Lowers a qc.reset into a qco.reset, updates the lowering state's
+   * qubit mapping, and erases the original qc.reset operation.
    *
    * @param op The qc.reset operation to rewrite.
-   * @param rewriter Rewriter used to create the qco.reset and erase the original operation.
+   * @param rewriter Rewriter used to create the qco.reset and erase the
+   * original operation.
    * @return LogicalResult `success` if the rewrite completed.
    */
   LogicalResult
@@ -1050,13 +1080,18 @@ struct ConvertQCOneTargetOneParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   /**
-   * @brief Rewrites a one-target, one-parameter QC gate into the corresponding QCO gate and updates mapping state.
+   * @brief Rewrites a one-target, one-parameter QC gate into the corresponding
+   * QCO gate and updates mapping state.
    *
-   * Creates the QCO operation consuming the mapped input qubit and the gate parameter, updates the LoweringState mapping for the QC qubit to the QCO output qubit, and removes the original QC operation.
+   * Creates the QCO operation consuming the mapped input qubit and the gate
+   * parameter, updates the LoweringState mapping for the QC qubit to the QCO
+   * output qubit, and removes the original QC operation.
    *
    * @param op The QC operation to convert.
-   * @param rewriter Rewriter used to create the QCO operation and erase the original op.
-   * @return LogicalResult `success` if the QC op was converted and the qubit mapping updated, `failure` otherwise.
+   * @param rewriter Rewriter used to create the QCO operation and erase the
+   * original op.
+   * @return LogicalResult `success` if the QC op was converted and the qubit
+   * mapping updated, `failure` otherwise.
    */
   LogicalResult
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
@@ -1148,13 +1183,16 @@ struct ConvertQCOneTargetThreeParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   /**
-   * @brief Rewrite a three-parameter, single-target QC op to the corresponding QCO op.
+   * @brief Rewrite a three-parameter, single-target QC op to the corresponding
+   * QCO op.
    *
-   * Looks up the latest QCO qubit mapped from the QC input, creates the corresponding
-   * QCO operation using the three numeric parameters from the QC op, updates the
-   * qubit mapping to the QCO operation's output qubit, and erases the original QC op.
+   * Looks up the latest QCO qubit mapped from the QC input, creates the
+   * corresponding QCO operation using the three numeric parameters from the QC
+   * op, updates the qubit mapping to the QCO operation's output qubit, and
+   * erases the original QC op.
    *
-   * @returns LogicalResult `success()` if the rewrite completed; `failure()` otherwise.
+   * @returns LogicalResult `success()` if the rewrite completed; `failure()`
+   * otherwise.
    */
   LogicalResult
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
@@ -1209,7 +1247,7 @@ struct ConvertQCTwoTargetZeroParameterToQCO final
    * @param /*adaptor*/ Unused adaptor for the pattern; present for compatibility with the
    *                     conversion pattern interface.
    * @param rewriter Rewriter used to create the QCO operation and remove the original QC op.
-   * @return LogicalResult `success()` if the rewrite and mapping updates completed. 
+   * @return LogicalResult `success()` if the rewrite and mapping updates completed.
    */
   LogicalResult
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
@@ -1255,12 +1293,13 @@ struct ConvertQCTwoTargetOneParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   /**
-   * @brief Convert a two-target QC gate into the equivalent QCO two-target gate and
-   * update the lowering state to reflect the produced QCO qubits.
+   * @brief Convert a two-target QC gate into the equivalent QCO two-target gate
+   * and update the lowering state to reflect the produced QCO qubits.
    *
-   * Creates the corresponding QCO operation that consumes the current mapped QCO
-   * inputs and produces new QCO outputs, assigns those outputs as the latest
-   * mappings for the original QC qubit references, and erases the original QC op.
+   * Creates the corresponding QCO operation that consumes the current mapped
+   * QCO inputs and produces new QCO outputs, assigns those outputs as the
+   * latest mappings for the original QC qubit references, and erases the
+   * original QC op.
    *
    * @return LogicalResult `success` on successful rewrite, `failure` otherwise.
    */
@@ -1309,11 +1348,15 @@ struct ConvertQCTwoTargetTwoParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   /**
-   * @brief Converts a two-target, two-parameter QC gate into the corresponding QCO gate and updates the lowering state mappings.
+   * @brief Converts a two-target, two-parameter QC gate into the corresponding
+   * QCO gate and updates the lowering state mappings.
    *
-   * Replaces the QC operation with a QCO operation that consumes the mapped input qubits and produces new output qubits, updates the per-region qubit mapping for both targets, and erases the original QC operation.
+   * Replaces the QC operation with a QCO operation that consumes the mapped
+   * input qubits and produces new output qubits, updates the per-region qubit
+   * mapping for both targets, and erases the original QC operation.
    *
-   * @returns LogicalResult `success` if the rewrite completed and mappings were updated, `failure` otherwise.
+   * @returns LogicalResult `success` if the rewrite completed and mappings were
+   * updated, `failure` otherwise.
    */
   LogicalResult
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
@@ -1355,14 +1398,16 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a `qc::BarrierOp` to a `qco::BarrierOp` and updates the qubit mapping.
+   * @brief Lowers a `qc::BarrierOp` to a `qco::BarrierOp` and updates the qubit
+   * mapping.
    *
-   * Resolves the current QCO qubit values for the barrier's QC qubit operands, emits a
-   * `qco.barrier` producing new QCO outputs, updates the lowering state's qubit mappings
-   * to point each original QC qubit to the corresponding barrier output, and erases the
-   * original `qc::BarrierOp`.
+   * Resolves the current QCO qubit values for the barrier's QC qubit operands,
+   * emits a `qco.barrier` producing new QCO outputs, updates the lowering
+   * state's qubit mappings to point each original QC qubit to the corresponding
+   * barrier output, and erases the original `qc::BarrierOp`.
    *
-   * @returns LogicalResult `success()` if the barrier was lowered and the original op erased, `failure()` otherwise.
+   * @returns LogicalResult `success()` if the barrier was lowered and the
+   * original op erased, `failure()` otherwise.
    */
   LogicalResult
   matchAndRewrite(qc::BarrierOp op, OpAdaptor /*adaptor*/,
@@ -1539,10 +1584,11 @@ protected:
   /**
    * @brief Runs the QC->QCO lowering pass over the current module.
    *
-   * Configures conversion state, establishes legality rules and type conversions
-   * (including special handling for memrefs with `qc::QubitType` element types
-   * and `func.return` qubit-sinking), registers all QC->QCO and memref->qtensor
-   * rewrite patterns, and applies the partial conversion to the module.
+   * Configures conversion state, establishes legality rules and type
+   * conversions (including special handling for memrefs with `qc::QubitType`
+   * element types and `func.return` qubit-sinking), registers all QC->QCO and
+   * memref->qtensor rewrite patterns, and applies the partial conversion to the
+   * module.
    *
    * If conversion fails, signals pass failure.
    */

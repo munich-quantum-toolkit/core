@@ -52,8 +52,8 @@ struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * @brief Try to canonicalize by merging this `RZZOp` with a subsequent `RZZOp`
-   * that has the same parameter but swapped target qubits.
+   * @brief Try to canonicalize by merging this `RZZOp` with a subsequent
+   * `RZZOp` that has the same parameter but swapped target qubits.
    *
    * Attempts to combine the two operations into a single `RZZOp` (adjusting the
    * parameter as needed) by delegating to the merge helper.
@@ -69,16 +69,7 @@ struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
   }
 };
 
-} /**
- * @brief Builds an RZZOp where `theta` may be provided as either a `double` or an SSA `Value`.
- *
- * Converts the `theta` variant to an MLIR `Value` and constructs the operation using
- * the standard `Value`-based builder overload.
- *
- * @param qubit0In First qubit operand.
- * @param qubit1In Second qubit operand.
- * @param theta Angle parameter supplied either as a `double` (constant) or as an SSA `Value`.
- */
+} // namespace
 
 void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   Value qubit0In, Value qubit1In,
@@ -116,8 +107,8 @@ LogicalResult RZZOp::fold(FoldAdaptor /*adaptor*/,
 /**
  * @brief Registers canonicalization patterns for RZZOp.
  *
- * Adds rewrite patterns that merge consecutive RZZ operations acting on the same
- * qubits and those with swapped target qubits.
+ * Adds rewrite patterns that merge consecutive RZZ operations acting on the
+ * same qubits and those with swapped target qubits.
  *
  * @param results Pattern list to which the canonicalization patterns are added.
  * @param context MLIR context used to construct the patterns.
@@ -128,11 +119,15 @@ void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 /**
- * @brief Compute the 4×4 unitary matrix implemented by this RZZ operation when the rotation angle is available.
+ * @brief Compute the 4×4 unitary matrix implemented by this RZZ operation when
+ * the rotation angle is available.
  *
- * The matrix is diagonal with entries [e^{-i theta/2}, e^{i theta/2}, e^{i theta/2}, e^{-i theta/2}].
+ * The matrix is diagonal with entries [e^{-i theta/2}, e^{i theta/2}, e^{i
+ * theta/2}, e^{-i theta/2}].
  *
- * @return std::optional<Eigen::Matrix4cd> The 4×4 complex unitary matrix when `theta` can be resolved to a double; `std::nullopt` if `theta` is not available.
+ * @return std::optional<Eigen::Matrix4cd> The 4×4 complex unitary matrix when
+ * `theta` can be resolved to a double; `std::nullopt` if `theta` is not
+ * available.
  */
 std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {
   using namespace std::complex_literals;

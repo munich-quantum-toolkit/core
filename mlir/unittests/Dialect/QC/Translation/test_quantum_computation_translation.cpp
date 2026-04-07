@@ -57,7 +57,8 @@ protected:
   std::unique_ptr<mlir::MLIRContext> context;
 
   /**
-   * @brief Initialize the MLIR context and required dialects for the test fixture.
+   * @brief Initialize the MLIR context and required dialects for the test
+   * fixture.
    *
    * Registers the QCDialect, ArithDialect, FuncDialect, and MemRefDialect,
    * constructs an MLIRContext, appends the dialect registry to the context, and
@@ -73,11 +74,7 @@ protected:
   }
 };
 
-} /**
- * @brief Verifies that a QuantumComputation translated to QC MLIR is equivalent to a reference QC MLIR module after cleanup.
- *
- * Constructs a source ::qc::QuantumComputation using the provided program builder, translates it to an MLIR QC module, runs the QC cleanup pipeline, and verifies the module. Constructs a reference MLIR QC module using the reference builder, runs the same cleanup pipeline, and verifies the reference. Asserts the cleaned translated module and the cleaned reference module are equivalent up to permitted permutations.
- */
+} // namespace
 
 TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();

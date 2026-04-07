@@ -94,13 +94,17 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
 }
 
 /**
- * @brief Allocate a contiguous register of qubits backed by a memref and return SSA values for each element.
+ * @brief Allocate a contiguous register of qubits backed by a memref and return
+ * SSA values for each element.
  *
- * Allocates a memref of shape `{size}` with element type `QubitType`, tracks the backing memref for
- * later deallocation, and returns a vector of SSA values obtained by loading each element of the memref.
+ * Allocates a memref of shape `{size}` with element type `QubitType`, tracks
+ * the backing memref for later deallocation, and returns a vector of SSA values
+ * obtained by loading each element of the memref.
  *
- * @param size Number of qubits to allocate; must be greater than zero. Aborts if `size <= 0`.
- * @return llvm::SmallVector<Value> Vector of SSA qubit values, one per register index.
+ * @param size Number of qubits to allocate; must be greater than zero. Aborts
+ * if `size <= 0`.
+ * @return llvm::SmallVector<Value> Vector of SSA qubit values, one per register
+ * index.
  */
 llvm::SmallVector<Value>
 QCProgramBuilder::allocQubitRegister(const int64_t size) {
@@ -502,17 +506,21 @@ void QCProgramBuilder::checkFinalized() const {
 }
 
 /**
- * @brief Finalizes the QC program, emits cleanup/return, and transfers module ownership.
+ * @brief Finalizes the QC program, emits cleanup/return, and transfers module
+ * ownership.
  *
- * Finalizes the builder by auto-deallocating tracked qubits (skipping register-backed qubits),
- * deallocating any tracked backing memrefs, appending a `return 0` to the `main` function,
- * invalidating the builder for further use, and returning ownership of the constructed module.
+ * Finalizes the builder by auto-deallocating tracked qubits (skipping
+ * register-backed qubits), deallocating any tracked backing memrefs, appending
+ * a `return 0` to the `main` function, invalidating the builder for further
+ * use, and returning ownership of the constructed module.
  *
- * This function will terminate via `llvm::reportFatalUsageError` if no `main` function named
- * `"main"` is present in the module or if the current insertion point is not the entry block
- * of that `main` function.
+ * This function will terminate via `llvm::reportFatalUsageError` if no `main`
+ * function named
+ * `"main"` is present in the module or if the current insertion point is not
+ * the entry block of that `main` function.
  *
- * @return OwningOpRef<ModuleOp> The owned module containing the finalized program.
+ * @return OwningOpRef<ModuleOp> The owned module containing the finalized
+ * program.
  */
 OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   checkFinalized();

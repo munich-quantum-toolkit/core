@@ -38,11 +38,14 @@ struct MergeSubsequentRY final : OpRewritePattern<RYOp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * @brief Matches consecutive `RY` operations on the same qubit and merges them into a single `RY` with the combined rotation angle.
+   * @brief Matches consecutive `RY` operations on the same qubit and merges
+   * them into a single `RY` with the combined rotation angle.
    *
    * @param op The `RY` operation to examine for a merge opportunity.
-   * @param rewriter Pattern rewriter used to perform the transformation when a match is found.
-   * @return LogicalResult `success` if the pattern was applied and the rewrite performed, `failure` otherwise.
+   * @param rewriter Pattern rewriter used to perform the transformation when a
+   * match is found.
+   * @return LogicalResult `success` if the pattern was applied and the rewrite
+   * performed, `failure` otherwise.
    */
   LogicalResult matchAndRewrite(RYOp op,
                                 PatternRewriter& rewriter) const override {
@@ -50,12 +53,7 @@ struct MergeSubsequentRY final : OpRewritePattern<RYOp> {
   }
 };
 
-} /**
- * @brief Constructs an RY operation from a qubit and a theta specified as either a literal or an SSA value.
- *
- * @param qubitIn Qubit value that the rotation will target.
- * @param theta Angle for the rotation, provided either as a `double` (radians) or as an MLIR `Value` that yields the angle.
- */
+} // namespace
 
 void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
@@ -65,11 +63,14 @@ void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 }
 
 /**
- * @brief Folds an RY rotation into its input when the rotation angle is statically zero within tolerance.
+ * @brief Folds an RY rotation into its input when the rotation angle is
+ * statically zero within tolerance.
  *
- * If the `theta` operand is a compile-time constant and its absolute value is <= TOLERANCE, the operation is folded away.
+ * If the `theta` operand is a compile-time constant and its absolute value is
+ * <= TOLERANCE, the operation is folded away.
  *
- * @return OpFoldResult The input qubit `Value` to replace this operation when folded, or an empty `OpFoldResult` if no folding applies.
+ * @return OpFoldResult The input qubit `Value` to replace this operation when
+ * folded, or an empty `OpFoldResult` if no folding applies.
  */
 OpFoldResult RYOp::fold(FoldAdaptor /*adaptor*/) {
   if (const auto theta = valueToDouble(getTheta());
@@ -94,15 +95,16 @@ void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 /**
- * @brief Computes the 2x2 unitary matrix for this RY rotation when its angle is constant.
+ * @brief Computes the 2x2 unitary matrix for this RY rotation when its angle is
+ * constant.
  *
- * When the rotation angle `theta` is statically known, returns the Y-rotation unitary
- * matrix:
+ * When the rotation angle `theta` is statically known, returns the Y-rotation
+ * unitary matrix:
  *   [[cos(theta/2), -sin(theta/2)],
  *    [ sin(theta/2),  cos(theta/2)]]
  *
- * @return std::optional<Eigen::Matrix2cd> The 2x2 unitary matrix for the RY rotation if `theta`
- *         is available as a constant; `std::nullopt` otherwise.
+ * @return std::optional<Eigen::Matrix2cd> The 2x2 unitary matrix for the RY
+ * rotation if `theta` is available as a constant; `std::nullopt` otherwise.
  */
 std::optional<Eigen::Matrix2cd> RYOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {

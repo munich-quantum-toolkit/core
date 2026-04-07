@@ -30,8 +30,8 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
    * @brief Removes a paired qtensor::AllocOp when the given DeallocOp's tensor
    * is directly defined by that AllocOp.
    *
-   * @param op The DeallocOp to match; its tensor operand is checked for a defining
-   *           qtensor::AllocOp.
+   * @param op The DeallocOp to match; its tensor operand is checked for a
+   * defining qtensor::AllocOp.
    * @param rewriter The PatternRewriter used to erase matching operations.
    * @return LogicalResult `success()` if a defining AllocOp was found and both
    *         the AllocOp and DeallocOp were erased, `failure()` otherwise.

@@ -156,7 +156,8 @@ void resetQubitAfterSingleOp(QCOProgramBuilder& b) {
 }
 
 /**
- * @brief Allocates two qubits, applies a Hadamard to each, then resets each qubit.
+ * @brief Allocates two qubits, applies a Hadamard to each, then resets each
+ * qubit.
  */
 void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
@@ -2225,11 +2226,12 @@ void qtensorExtract(QCOProgramBuilder& b) {
 }
 
 /**
- * @brief Allocates a 3-element qtensor, applies a Hadamard to element 0, and reinserts it.
+ * @brief Allocates a 3-element qtensor, applies a Hadamard to element 0, and
+ * reinserts it.
  *
- * Allocates a qtensor of size 3, extracts the element at index 0 (producing an updated
- * qtensor and the extracted qubit), applies an H gate to the extracted qubit, and inserts
- * the updated qubit back into the qtensor at index 0.
+ * Allocates a qtensor of size 3, extracts the element at index 0 (producing an
+ * updated qtensor and the extracted qubit), applies an H gate to the extracted
+ * qubit, and inserts the updated qubit back into the qtensor at index 0.
  */
 void qtensorInsert(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
@@ -2239,7 +2241,8 @@ void qtensorInsert(QCOProgramBuilder& b) {
 }
 
 /**
- * @brief Allocate a qtensor, extract an element, and insert it at a different index.
+ * @brief Allocate a qtensor, extract an element, and insert it at a different
+ * index.
  *
  * Allocates a qtensor of size 3, extracts the element at index 0 (producing an
  * updated tensor and the extracted qubit), then inserts that extracted qubit
@@ -2255,7 +2258,8 @@ void qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b) {
 }
 
 /**
- * @brief Allocate a 3-element qtensor, extract the element at index 0, and reinsert that element at index 0.
+ * @brief Allocate a 3-element qtensor, extract the element at index 0, and
+ * reinsert that element at index 0.
  *
  */
 void qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
@@ -2265,11 +2269,13 @@ void qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
 }
 
 /**
- * @brief Constructs a qtensor allocation and performs extract/insert operations with mismatched indices.
+ * @brief Constructs a qtensor allocation and performs extract/insert operations
+ * with mismatched indices.
  *
- * Creates a qtensor of size 3, extracts the element at index 0, applies a Hadamard to the extracted qubit and
- * inserts it back at index 0, then extracts the element at index 1 and inserts that element at index 0,
- * producing an extract/insert index mismatch scenario.
+ * Creates a qtensor of size 3, extracts the element at index 0, applies a
+ * Hadamard to the extracted qubit and inserts it back at index 0, then extracts
+ * the element at index 1 and inserts that element at index 0, producing an
+ * extract/insert index mismatch scenario.
  */
 void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
@@ -2281,11 +2287,13 @@ void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
 }
 
 /**
- * @brief Demonstrates extracting, transforming, and reinserting an element of a qtensor at the same index.
+ * @brief Demonstrates extracting, transforming, and reinserting an element of a
+ * qtensor at the same index.
  *
- * Allocates a qtensor of size 3, extracts element 0 (producing an updated tensor and qubit),
- * applies a Hadamard to the extracted qubit, reinserts it back at index 0, then re-extracts
- * index 0 and reinserts the extracted qubit at the same index.
+ * Allocates a qtensor of size 3, extracts element 0 (producing an updated
+ * tensor and qubit), applies a Hadamard to the extracted qubit, reinserts it
+ * back at index 0, then re-extracts index 0 and reinserts the extracted qubit
+ * at the same index.
  */
 void qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);

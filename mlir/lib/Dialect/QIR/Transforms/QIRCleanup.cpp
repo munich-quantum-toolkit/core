@@ -58,7 +58,8 @@ namespace mlir::qir {
 /**
  * @brief Retrieve the callee symbol name from an LLVM call operation.
  *
- * @return llvm::StringRef The callee name when the call's callee attribute is a `FlatSymbolRefAttr`, empty `StringRef` otherwise.
+ * @return llvm::StringRef The callee name when the call's callee attribute is a
+ * `FlatSymbolRefAttr`, empty `StringRef` otherwise.
  */
 [[nodiscard]] static llvm::StringRef getCalleeName(LLVM::CallOp callOp) {
   auto calleeAttr = callOp.getCalleeAttr();
@@ -70,10 +71,12 @@ namespace mlir::qir {
 }
 
 /**
- * @brief Determine whether the module contains dynamic qubit allocation runtime calls.
+ * @brief Determine whether the module contains dynamic qubit allocation runtime
+ * calls.
  *
  * @param module The MLIR module to scan.
- * @return `true` if the module contains calls to `QIR_QUBIT_ALLOC` or `QIR_QUBIT_ARRAY_ALLOC`, `false` otherwise.
+ * @return `true` if the module contains calls to `QIR_QUBIT_ALLOC` or
+ * `QIR_QUBIT_ARRAY_ALLOC`, `false` otherwise.
  */
 [[nodiscard]] static bool moduleHasDynamicQubitRuntimeCalls(ModuleOp module) {
   return llvm::any_of(module.getOps<LLVM::CallOp>(), [](LLVM::CallOp callOp) {
@@ -83,13 +86,15 @@ namespace mlir::qir {
 }
 
 /**
- * @brief Checks whether the module contains QIR dynamic result allocation calls.
+ * @brief Checks whether the module contains QIR dynamic result allocation
+ * calls.
  *
  * Scans the module's `LLVM::CallOp` operations for calls targeting
  * `QIR_RESULT_ALLOC` or `QIR_RESULT_ARRAY_ALLOC`.
  *
  * @param module The module to scan.
- * @return `true` if at least one call to `QIR_RESULT_ALLOC` or `QIR_RESULT_ARRAY_ALLOC` is present, `false` otherwise.
+ * @return `true` if at least one call to `QIR_RESULT_ALLOC` or
+ * `QIR_RESULT_ARRAY_ALLOC` is present, `false` otherwise.
  */
 [[nodiscard]] static bool moduleHasDynamicResultRuntimeCalls(ModuleOp module) {
   return llvm::any_of(module.getOps<LLVM::CallOp>(), [](LLVM::CallOp callOp) {
@@ -99,10 +104,12 @@ namespace mlir::qir {
 }
 
 /**
- * @brief Erase external LLVM function declarations in the module that have no known symbol uses.
+ * @brief Erase external LLVM function declarations in the module that have no
+ * known symbol uses.
  *
- * Iterates over all `LLVM::LLVMFuncOp` operations in `module`, and removes each function
- * that is marked external and has no known symbol uses within the module.
+ * Iterates over all `LLVM::LLVMFuncOp` operations in `module`, and removes each
+ * function that is marked external and has no known symbol uses within the
+ * module.
  *
  * @param module The module to scan and prune.
  */
@@ -205,11 +212,16 @@ struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * @brief Matches a qubit-array release call paired with a corresponding allocate call using the same alloca stack slot and removes both (and the alloca if it becomes unused).
+   * @brief Matches a qubit-array release call paired with a corresponding
+   * allocate call using the same alloca stack slot and removes both (and the
+   * alloca if it becomes unused).
    *
-   * @param releaseCall The `LLVM::CallOp` to match; expected to be a `__quantum__rt__qubit_array_release` call whose second operand is an `LLVM::AllocaOp` result.
+   * @param releaseCall The `LLVM::CallOp` to match; expected to be a
+   * `__quantum__rt__qubit_array_release` call whose second operand is an
+   * `LLVM::AllocaOp` result.
    * @param rewriter Rewriter used to erase the matched operations.
-   * @return LogicalResult `success()` if the release and its matching allocate (and optionally the alloca) were erased, `failure()` otherwise.
+   * @return LogicalResult `success()` if the release and its matching allocate
+   * (and optionally the alloca) were erased, `failure()` otherwise.
    */
   LogicalResult matchAndRewrite(LLVM::CallOp releaseCall,
                                 PatternRewriter& rewriter) const override {
@@ -268,9 +280,9 @@ protected:
   /**
    * @brief Execute the QIR cleanup pass on the current module.
    *
-   * Applies rewrite patterns to remove dead qubit-array alloc/release pairs, then
-   * removes unused external LLVM declarations and normalizes QIR metadata on the
-   * module's main function.
+   * Applies rewrite patterns to remove dead qubit-array alloc/release pairs,
+   * then removes unused external LLVM declarations and normalizes QIR metadata
+   * on the module's main function.
    *
    * If pattern application fails, the pass is marked as failed and remaining
    * cleanup steps are not executed.

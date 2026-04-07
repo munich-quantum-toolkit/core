@@ -264,14 +264,17 @@ struct ConvertQTensorAllocOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a `qtensor.alloc` into a `jeff.qureg_alloc`, materializing a constant size.
+   * @brief Lowers a `qtensor.alloc` into a `jeff.qureg_alloc`, materializing a
+   * constant size.
    *
-   * If the allocator size is a constant integer, emits a `jeff::IntConst32Op` for that value;
-   * otherwise forwards the original size value to the created `jeff::QuregAllocOp`.
+   * If the allocator size is a constant integer, emits a `jeff::IntConst32Op`
+   * for that value; otherwise forwards the original size value to the created
+   * `jeff::QuregAllocOp`.
    *
    * @param op The `qtensor.alloc` operation being rewritten.
    * @param adaptor The adaptor providing the op's operands/attributes.
-   * @return LogicalResult `success()` if the replacement was created, `failure()` otherwise.
+   * @return LogicalResult `success()` if the replacement was created,
+   * `failure()` otherwise.
    */
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor adaptor,
@@ -307,11 +310,13 @@ struct ConvertQTensorExtractOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a qtensor.extract into a jeff.qureg_extract_index operation, materializing constant indices.
+   * @brief Lowers a qtensor.extract into a jeff.qureg_extract_index operation,
+   * materializing constant indices.
    *
-   * If the adaptor's index is a compile-time integer, a `jeff::IntConst32Op` for that value is created;
-   * otherwise the adaptor-provided index value is forwarded. The original `qtensor.extract` is replaced
-   * with the new `jeff::QuregExtractIndexOp`.
+   * If the adaptor's index is a compile-time integer, a `jeff::IntConst32Op`
+   * for that value is created; otherwise the adaptor-provided index value is
+   * forwarded. The original `qtensor.extract` is replaced with the new
+   * `jeff::QuregExtractIndexOp`.
    *
    * @returns LogicalResult `success()` on successful replacement.
    */
@@ -349,12 +354,16 @@ struct ConvertQTensorInsertOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a `qtensor.insert` operation to a `jeff.qureg_insert_index` operation.
+   * @brief Lowers a `qtensor.insert` operation to a `jeff.qureg_insert_index`
+   * operation.
    *
-   * If the provided index is a constant integer, materializes it as a `jeff::IntConst32Op`; otherwise forwards the original index value.
-   * Replaces the original op with a `jeff::QuregInsertIndexOp` built from the destination qureg, the chosen index value, and the scalar to insert.
+   * If the provided index is a constant integer, materializes it as a
+   * `jeff::IntConst32Op`; otherwise forwards the original index value. Replaces
+   * the original op with a `jeff::QuregInsertIndexOp` built from the
+   * destination qureg, the chosen index value, and the scalar to insert.
    *
-   * @return LogicalResult `success()` if the rewrite was performed, `failure()` otherwise.
+   * @return LogicalResult `success()` if the rewrite was performed, `failure()`
+   * otherwise.
    */
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
@@ -390,10 +399,11 @@ struct ConvertQTensorDeallocOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   /**
-   * @brief Lowers a `qtensor.dealloc` operation to a `jeff.qureg_free_zero` op and replaces the original.
+   * @brief Lowers a `qtensor.dealloc` operation to a `jeff.qureg_free_zero` op
+   * and replaces the original.
    *
-   * Replaces the given `qtensor::DeallocOp` with a newly created `jeff::QuregFreeZeroOp`
-   * that uses the adaptor-provided tensor operand.
+   * Replaces the given `qtensor::DeallocOp` with a newly created
+   * `jeff::QuregFreeZeroOp` that uses the adaptor-provided tensor operand.
    *
    * @returns LogicalResult `success()` on successful replacement.
    */
@@ -1492,7 +1502,8 @@ public:
    * Configures these conversions:
    * - Identity conversion for all types by default.
    * - `qco::QubitType` -> `jeff::QubitType`.
-   * - Ranked tensor whose element type is `qco::QubitType` -> `jeff::QuregType`.
+   * - Ranked tensor whose element type is `qco::QubitType` ->
+   * `jeff::QuregType`.
    * - Any other `RankedTensorType` is left unchanged.
    *
    * @param ctx The MLIR context used to create Jeff dialect types.

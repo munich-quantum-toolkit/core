@@ -38,11 +38,13 @@ struct MergeSubsequentRZ final : OpRewritePattern<RZOp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * @brief Attempts to merge this RZ operation with a subsequent RZ on the same qubit.
+   * @brief Attempts to merge this RZ operation with a subsequent RZ on the same
+   * qubit.
    *
    * @param op The RZ operation to match and potentially rewrite.
    * @param rewriter Rewriter used to apply the merge when applicable.
-   * @return LogicalResult `success` if a merge was applied, `failure` otherwise.
+   * @return LogicalResult `success` if a merge was applied, `failure`
+   * otherwise.
    */
   LogicalResult matchAndRewrite(RZOp op,
                                 PatternRewriter& rewriter) const override {
@@ -50,14 +52,7 @@ struct MergeSubsequentRZ final : OpRewritePattern<RZOp> {
   }
 };
 
-} /**
- * @brief Construct an RZ operation from a qubit and a theta that may be either a constant double or an MLIR Value.
- *
- * @param odsBuilder Builder used to create the operation.
- * @param odsState OperationState to populate.
- * @param qubitIn Input qubit value the RZ acts on.
- * @param theta Rotation angle as either a `double` constant or an existing MLIR `Value`; the variant form will be converted to an SSA `Value` before constructing the operation.
- */
+} // namespace
 
 void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
@@ -67,11 +62,15 @@ void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 }
 
 /**
- * @brief Fold trivial RZ rotations by replacing the operation with its input qubit when the angle is effectively zero.
+ * @brief Fold trivial RZ rotations by replacing the operation with its input
+ * qubit when the angle is effectively zero.
  *
- * If `theta` is a constant and its absolute value is less than or equal to TOLERANCE, returns the operation's input qubit to indicate the RZ can be removed; otherwise indicates no folding.
+ * If `theta` is a constant and its absolute value is less than or equal to
+ * TOLERANCE, returns the operation's input qubit to indicate the RZ can be
+ * removed; otherwise indicates no folding.
  *
- * @return OpFoldResult `Value` of the input qubit when folded, empty `OpFoldResult` otherwise.
+ * @return OpFoldResult `Value` of the input qubit when folded, empty
+ * `OpFoldResult` otherwise.
  */
 OpFoldResult RZOp::fold(FoldAdaptor /*adaptor*/) {
   if (const auto theta = valueToDouble(getTheta());
@@ -96,13 +95,15 @@ void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 /**
- * @brief Compute the 2×2 unitary matrix for this RZ rotation when the rotation angle is a constant.
+ * @brief Compute the 2×2 unitary matrix for this RZ rotation when the rotation
+ * angle is a constant.
  *
- * When the operator's `theta` is available as a compile-time constant, returns the matrix
- * diag(e^{-i*theta/2}, e^{i*theta/2}) as an Eigen::Matrix2cd. If `theta` is not a constant,
- * indicates absence by returning `std::nullopt`.
+ * When the operator's `theta` is available as a compile-time constant, returns
+ * the matrix diag(e^{-i*theta/2}, e^{i*theta/2}) as an Eigen::Matrix2cd. If
+ * `theta` is not a constant, indicates absence by returning `std::nullopt`.
  *
- * @return std::optional<Eigen::Matrix2cd> The 2×2 unitary matrix for the RZ rotation if `theta` is constant, `std::nullopt` otherwise.
+ * @return std::optional<Eigen::Matrix2cd> The 2×2 unitary matrix for the RZ
+ * rotation if `theta` is constant, `std::nullopt` otherwise.
  */
 std::optional<Eigen::Matrix2cd> RZOp::getUnitaryMatrix() {
   using namespace std::complex_literals;

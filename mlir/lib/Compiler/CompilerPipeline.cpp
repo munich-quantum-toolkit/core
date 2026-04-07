@@ -27,14 +27,17 @@
 namespace mlir {
 
 /**
- * @brief Print the module IR with an ASCII-art bordered header indicating the pipeline stage.
+ * @brief Print the module IR with an ASCII-art bordered header indicating the
+ * pipeline stage.
  *
  * Prints the module to stderr (`llvm::errs()`) with a header of the form
  * "Stage X/Y: <stageName>" and an ASCII-art box around the program output.
  *
  * @param module The MLIR module to print.
- * @param stageName Human-readable name of the compilation stage shown in the header.
- * @param stageNumber The current stage index (1-based) shown as X in "Stage X/Y".
+ * @param stageName Human-readable name of the compilation stage shown in the
+ * header.
+ * @param stageNumber The current stage index (1-based) shown as X in "Stage
+ * X/Y".
  * @param totalStages The total number of stages shown as Y in "Stage X/Y".
  */
 static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,

@@ -24,13 +24,15 @@ using namespace mlir;
 using namespace mlir::qco;
 
 /**
- * @brief Determine whether a `qtensor::ExtractOp` is provably sourced from a `qtensor::AllocOp`.
+ * @brief Determine whether a `qtensor::ExtractOp` is provably sourced from a
+ * `qtensor::AllocOp`.
  *
  * @param extractOp The extract operation whose tensor provenance to trace.
- * @return `true` if tracing the defining operations of the extract's tensor reaches a
- * `qtensor::AllocOp` while tolerating intervening `qtensor::InsertOp`/`qtensor::ExtractOp`
- * only when those ops use constant indices that are not equivalent to the extract's index;
- * `false` otherwise. Non-constant indices cause this check to fail (`false`).
+ * @return `true` if tracing the defining operations of the extract's tensor
+ * reaches a `qtensor::AllocOp` while tolerating intervening
+ * `qtensor::InsertOp`/`qtensor::ExtractOp` only when those ops use constant
+ * indices that are not equivalent to the extract's index; `false` otherwise.
+ * Non-constant indices cause this check to fail (`false`).
  */
 static bool originatesFromQTensorAlloc(qtensor::ExtractOp extractOp) {
   auto current = extractOp.getTensor();
@@ -92,7 +94,8 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
    * traces back to an `qtensor::AllocOp` (subject to the provenance rules), the
    * pattern replaces the `ResetOp` with the qubit operand.
    *
-   * @returns `success` if the `ResetOp` was replaced and removed, `failure` otherwise.
+   * @returns `success` if the `ResetOp` was replaced and removed, `failure`
+   * otherwise.
    */
   LogicalResult matchAndRewrite(ResetOp op,
                                 PatternRewriter& rewriter) const override {
@@ -113,14 +116,7 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
   }
 };
 
-} /**
- * @brief Fold a `ResetOp` into its qubit operand when that operand is directly allocated.
- *
- * If the qubit input is defined by a `qtensor::AllocOp`, returns the qubit value to replace
- * the `ResetOp`; otherwise no folding is performed.
- *
- * @return OpFoldResult The qubit SSA value when folded, or an empty result indicating no fold.
- */
+} // namespace
 
 OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
   if (getQubitIn().getDefiningOp<AllocOp>()) {

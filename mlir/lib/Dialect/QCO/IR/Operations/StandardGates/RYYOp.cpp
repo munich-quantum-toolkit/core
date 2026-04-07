@@ -52,11 +52,13 @@ struct MergeSwappedTargetsRYY final : OpRewritePattern<RYYOp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * @brief Matches an RYY operation whose neighboring RYY can be merged by swapping targets, and performs the merged rewrite.
+   * @brief Matches an RYY operation whose neighboring RYY can be merged by
+   * swapping targets, and performs the merged rewrite.
    *
    * @param op The RYY operation to match.
    * @param rewriter The rewriter used to apply the transformation.
-   * @return LogicalResult `success()` if the operation was merged and rewritten, `failure()` otherwise.
+   * @return LogicalResult `success()` if the operation was merged and
+   * rewritten, `failure()` otherwise.
    */
   LogicalResult matchAndRewrite(RYYOp op,
                                 PatternRewriter& rewriter) const override {
@@ -64,20 +66,7 @@ struct MergeSwappedTargetsRYY final : OpRewritePattern<RYYOp> {
   }
 };
 
-} /**
- * @brief Constructs an RYY operation with two qubit inputs and a theta specified
- *        as either a double or an SSA Value.
- *
- * Converts `theta` from `std::variant<double, Value>` into an MLIR `Value` and
- * creates the operation using the provided builder and operation state.
- *
- * @param odsBuilder Builder used to create IR constructs.
- * @param odsState OperationState to populate for the new RYY operation.
- * @param qubit0In Value representing the first qubit input (target 0).
- * @param qubit1In Value representing the second qubit input (target 1).
- * @param theta Angle for the RYY rotation, specified either as a `double`
- *        (radians) or as an SSA `Value`.
- */
+} // namespace
 
 void RYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   Value qubit0In, Value qubit1In,
@@ -88,15 +77,17 @@ void RYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 /**
- * @brief Canonicalizes the op by folding it away when the rotation angle is effectively zero.
+ * @brief Canonicalizes the op by folding it away when the rotation angle is
+ * effectively zero.
  *
- * If the `theta` operand can be converted to a `double` and its absolute value is less than or
- * equal to `TOLERANCE`, the operation is replaced by its two input qubit values.
+ * If the `theta` operand can be converted to a `double` and its absolute value
+ * is less than or equal to `TOLERANCE`, the operation is replaced by its two
+ * input qubit values.
  *
- * @param results Container to which the op's folded results are appended; when folding occurs
- *                the two input qubit Values are emplaced into this vector.
- * @return LogicalResult `success()` if the op was folded (theta ≈ 0 and results populated),
- *                       `failure()` otherwise.
+ * @param results Container to which the op's folded results are appended; when
+ * folding occurs the two input qubit Values are emplaced into this vector.
+ * @return LogicalResult `success()` if the op was folded (theta ≈ 0 and results
+ * populated), `failure()` otherwise.
  */
 LogicalResult RYYOp::fold(FoldAdaptor /*adaptor*/,
                           SmallVectorImpl<OpFoldResult>& results) {
@@ -124,13 +115,15 @@ void RYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 /**
- * @brief Compute the 4x4 unitary matrix representing the RYY rotation in the computational basis.
+ * @brief Compute the 4x4 unitary matrix representing the RYY rotation in the
+ * computational basis.
  *
- * The returned matrix corresponds to the two-qubit RYY(theta) gate for the gate's current
- * `theta` value.
+ * The returned matrix corresponds to the two-qubit RYY(theta) gate for the
+ * gate's current `theta` value.
  *
- * @return std::optional<Eigen::Matrix4cd> A 4x4 complex matrix for RYY(theta) if `theta` can be
- * converted to a `double`; `std::nullopt` if `theta` is not statically convertible to a numeric value.
+ * @return std::optional<Eigen::Matrix4cd> A 4x4 complex matrix for RYY(theta)
+ * if `theta` can be converted to a `double`; `std::nullopt` if `theta` is not
+ * statically convertible to a numeric value.
  */
 std::optional<Eigen::Matrix4cd> RYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;

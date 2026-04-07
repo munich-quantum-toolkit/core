@@ -42,16 +42,22 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * @brief Merge a following XXMinusYYOp into this one when they act on the same qubits and share the same beta.
+   * @brief Merge a following XXMinusYYOp into this one when they act on the
+   * same qubits and share the same beta.
    *
-   * If the immediate user of this operation's first output is another XXMinusYYOp that targets the same
-   * second qubit and has an equal `beta` (either numerically within TOLERANCE or identical operands), this
-   * pattern adds the two `theta` parameters and updates this operation to use the summed `theta`, then
-   * removes the successor by replacing it with this operation's results.
+   * If the immediate user of this operation's first output is another
+   * XXMinusYYOp that targets the same second qubit and has an equal `beta`
+   * (either numerically within TOLERANCE or identical operands), this pattern
+   * adds the two `theta` parameters and updates this operation to use the
+   * summed `theta`, then removes the successor by replacing it with this
+   * operation's results.
    *
-   * @param op The XXMinusYYOp to match and potentially merge with its immediate successor.
-   * @param rewriter PatternRewriter used to create the add operation for theta and perform the replacement.
-   * @return LogicalResult `success()` if a merge occurred, `failure()` otherwise.
+   * @param op The XXMinusYYOp to match and potentially merge with its immediate
+   * successor.
+   * @param rewriter PatternRewriter used to create the add operation for theta
+   * and perform the replacement.
+   * @return LogicalResult `success()` if a merge occurred, `failure()`
+   * otherwise.
    */
   LogicalResult matchAndRewrite(XXMinusYYOp op,
                                 PatternRewriter& rewriter) const override {
@@ -89,18 +95,7 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
   }
 };
 
-} /**
- * @brief Builder overload that accepts `theta` and `beta` as either a `double` constant or an IR `Value`.
- *
- * Converts `theta` and `beta` variants to MLIR `Value`s and forwards them, along with the input qubits, to the standard builder.
- *
- * @param odsBuilder Builder used to create IR values.
- * @param odsState OperationState to populate.
- * @param qubit0In First input qubit value.
- * @param qubit1In Second input qubit value.
- * @param theta Rotation angle either as a `double` or as an existing IR `Value`.
- * @param beta Phase parameter either as a `double` or as an existing IR `Value`.
- */
+} // namespace
 
 void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                         Value qubit0In, Value qubit1In,
@@ -113,7 +108,8 @@ void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 /**
- * @brief Folds the operation into its input qubits when the rotation is negligible.
+ * @brief Folds the operation into its input qubits when the rotation is
+ * negligible.
  *
  * If `theta` is a compile-time constant and its absolute value is less than or
  * equal to TOLERANCE, the operation is removed and its results are replaced by
@@ -151,9 +147,11 @@ void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 /**
- * @brief Computes the 4x4 unitary matrix for this XX-YY operation when `theta` and `beta` are available as doubles.
+ * @brief Computes the 4x4 unitary matrix for this XX-YY operation when `theta`
+ * and `beta` are available as doubles.
  *
- * If either `theta` or `beta` cannot be converted to a double, the function returns `std::nullopt`.
+ * If either `theta` or `beta` cannot be converted to a double, the function
+ * returns `std::nullopt`.
  *
  * @return std::optional<Eigen::Matrix4cd> The unitary matrix with rows:
  * Row 0: {mc, 0, 0, msm}

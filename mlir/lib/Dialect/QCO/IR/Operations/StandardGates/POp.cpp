@@ -38,9 +38,11 @@ struct MergeSubsequentP final : OpRewritePattern<POp> {
   using OpRewritePattern::OpRewritePattern;
 
   /**
-   * @brief Attempts to merge consecutive single-target, single-parameter `P` operations on the same qubit into a single `P`.
+   * @brief Attempts to merge consecutive single-target, single-parameter `P`
+   * operations on the same qubit into a single `P`.
    *
-   * @returns `success` if the pattern was applied and the operation was rewritten, `failure` otherwise.
+   * @returns `success` if the pattern was applied and the operation was
+   * rewritten, `failure` otherwise.
    */
   LogicalResult matchAndRewrite(POp op,
                                 PatternRewriter& rewriter) const override {
@@ -48,15 +50,7 @@ struct MergeSubsequentP final : OpRewritePattern<POp> {
   }
 };
 
-} /**
- * @brief Create a POp where the rotation parameter may be specified as a constant or an SSA value.
- *
- * Converts the supplied `theta` (either a numeric constant or an MLIR `Value`) into an operand
- * and constructs the operation using the provided builder/state.
- *
- * @param qubitIn The input qubit `Value` targeted by the POp.
- * @param theta A `double` representing a constant rotation angle or an MLIR `Value` representing a runtime angle; if a constant is provided it will be converted to an SSA `Value`.
- */
+} // namespace
 
 void POp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta) {
@@ -66,7 +60,8 @@ void POp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 }
 
 /**
- * @brief Fold the P gate into its input when the rotation angle is effectively zero.
+ * @brief Fold the P gate into its input when the rotation angle is effectively
+ * zero.
  *
  * If `theta` is statically known and `abs(theta) <= TOLERANCE`, the operation
  * can be folded away and replaced by its single input qubit.
@@ -86,7 +81,8 @@ OpFoldResult POp::fold(FoldAdaptor /*adaptor*/) {
  * @brief Register canonicalization patterns for POp.
  *
  * Adds the MergeSubsequentP pattern to the provided rewrite pattern set so
- * adjacent P operations on the same qubit can be merged during canonicalization.
+ * adjacent P operations on the same qubit can be merged during
+ * canonicalization.
  *
  * @param results Pattern set to populate with canonicalization patterns.
  * @param context MLIR context used to construct the patterns.
@@ -97,11 +93,14 @@ void POp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 /**
- * @brief Compute the 2×2 unitary matrix represented by this P gate when its rotation angle is constant.
+ * @brief Compute the 2×2 unitary matrix represented by this P gate when its
+ * rotation angle is constant.
  *
- * If the gate's theta is a compile-time constant, returns the diagonal matrix diag(1, e^{i theta}).
+ * If the gate's theta is a compile-time constant, returns the diagonal matrix
+ * diag(1, e^{i theta}).
  *
- * @return std::optional<Eigen::Matrix2cd> The 2×2 complex unitary matrix when theta is known, `std::nullopt` when theta is not a constant.
+ * @return std::optional<Eigen::Matrix2cd> The 2×2 complex unitary matrix when
+ * theta is known, `std::nullopt` when theta is not a constant.
  */
 std::optional<Eigen::Matrix2cd> POp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {

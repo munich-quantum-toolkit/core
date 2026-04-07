@@ -38,16 +38,20 @@ static void addSimplificationPasses(PassManager& pm) {
 }
 
 /**
- * @brief Build and run a pass pipeline for a module using a caller-provided population callback.
+ * @brief Build and run a pass pipeline for a module using a caller-provided
+ * population callback.
  *
- * The function constructs a PassManager for the given module, invokes the provided
- * callback to populate it with passes, executes the pipeline, and emits the
- * provided error message to llvm::errs() if pipeline execution fails.
+ * The function constructs a PassManager for the given module, invokes the
+ * provided callback to populate it with passes, executes the pipeline, and
+ * emits the provided error message to llvm::errs() if pipeline execution fails.
  *
  * @param module The MLIR module to run the pass pipeline on.
- * @param populatePasses Callback that receives the PassManager and adds passes to it.
- * @param errorMessage Message printed to llvm::errs() when pipeline execution fails.
- * @return LogicalResult `success()` if the pipeline ran without failure, `failure()` otherwise.
+ * @param populatePasses Callback that receives the PassManager and adds passes
+ * to it.
+ * @param errorMessage Message printed to llvm::errs() when pipeline execution
+ * fails.
+ * @return LogicalResult `success()` if the pipeline ran without failure,
+ * `failure()` otherwise.
  */
 static LogicalResult
 runWithPassManager(ModuleOp module,
@@ -77,7 +81,8 @@ void populateQCCleanupPipeline(PassManager& pm) {
 }
 
 /**
- * @brief Populates a PassManager with a cleanup pipeline for the QCO (qtensor) dialect.
+ * @brief Populates a PassManager with a cleanup pipeline for the QCO (qtensor)
+ * dialect.
  *
  * The pipeline performs general simplification (canonicalization and CSE),
  * a qtensor-specific shrink-to-fit pass, and a final dead-value removal pass.
@@ -112,7 +117,8 @@ void populateQIRCleanupPipeline(PassManager& pm) {
  * and runs it on the provided module.
  *
  * @param module The module to run the cleanup pipeline on.
- * @returns LogicalResult `success()` if the pipeline completed successfully, `failure()` otherwise.
+ * @returns LogicalResult `success()` if the pipeline completed successfully,
+ * `failure()` otherwise.
  *
  * On failure, an error message is emitted to `llvm::errs()`.
  */
@@ -124,7 +130,8 @@ void populateQIRCleanupPipeline(PassManager& pm) {
 /**
  * Runs the QCO (qtensor) cleanup pass pipeline on the given module.
  *
- * @returns `success()` if the pipeline completed successfully, `failure()` otherwise.
+ * @returns `success()` if the pipeline completed successfully, `failure()`
+ * otherwise.
  */
 [[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp module) {
   return runWithPassManager(module, populateQCOCleanupPipeline,
@@ -134,7 +141,8 @@ void populateQIRCleanupPipeline(PassManager& pm) {
 /**
  * Run the QIR cleanup pass pipeline on the given module.
  *
- * @returns `success()` if the pipeline completed successfully, `failure()` otherwise.
+ * @returns `success()` if the pipeline completed successfully, `failure()`
+ * otherwise.
  */
 [[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp module) {
   return runWithPassManager(module, populateQIRCleanupPipeline,

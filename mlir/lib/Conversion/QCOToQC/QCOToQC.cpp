@@ -153,13 +153,14 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   /**
-   * @brief Lowers a qtensor.alloc to a memref.alloc with `!qc.qubit` element type.
+   * @brief Lowers a qtensor.alloc to a memref.alloc with `!qc.qubit` element
+   * type.
    *
    * Converts the allocated ranked tensor type into a memref type with the same
-   * shape and element type `qc::QubitType`. If the tensor has a static shape the
-   * replacement memref.alloc is created without size operands; if the tensor has
-   * a dynamic shape the original runtime size operand is forwarded to the
-   * memref.alloc.
+   * shape and element type `qc::QubitType`. If the tensor has a static shape
+   * the replacement memref.alloc is created without size operands; if the
+   * tensor has a dynamic shape the original runtime size operand is forwarded
+   * to the memref.alloc.
    *
    * @param op The qtensor.alloc operation to rewrite.
    * @param adaptor Unused adaptor for the operation operands.
@@ -229,13 +230,16 @@ struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
   using OpConversionPattern::OpConversionPattern;
 
   /**
-   * @brief Lowers `qtensor.insert` by removing the insert and forwarding its destination.
+   * @brief Lowers `qtensor.insert` by removing the insert and forwarding its
+   * destination.
    *
-   * Replaces the given `qtensor.insert` operation with its destination operand from the
-   * adaptor, effectively eliminating the insert and preserving the destination value.
+   * Replaces the given `qtensor.insert` operation with its destination operand
+   * from the adaptor, effectively eliminating the insert and preserving the
+   * destination value.
    *
    * @param op The original `qtensor.insert` operation being rewritten.
-   * @param adaptor Adapter providing the already-converted operands (used to fetch the destination).
+   * @param adaptor Adapter providing the already-converted operands (used to
+   * fetch the destination).
    * @param rewriter Pattern rewriter used to perform the replacement.
    * @return LogicalResult `success()` if the operation was replaced.
    */
@@ -991,11 +995,11 @@ protected:
   /**
    * @brief Execute the QCO→QC lowering pass on the current module.
    *
-   * Configures a type converter, conversion target, and rewrite patterns to lower
-   * QCO and qtensor operations to QC and memref equivalents, registers patterns
-   * that require shared lowering state (addressing mode tracking), updates
-   * function/call/return/branch legality based on type conversion, and applies
-   * the partial conversion to the module.
+   * Configures a type converter, conversion target, and rewrite patterns to
+   * lower QCO and qtensor operations to QC and memref equivalents, registers
+   * patterns that require shared lowering state (addressing mode tracking),
+   * updates function/call/return/branch legality based on type conversion, and
+   * applies the partial conversion to the module.
    *
    * If the conversion fails, the pass is marked as failed.
    */

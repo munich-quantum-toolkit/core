@@ -56,13 +56,7 @@ protected:
   void SetUp() override;
 };
 
-} /**
- * @brief Initialize the MLIR context and register dialects required by the tests.
- *
- * Registers the QC, arith, func, and memref dialects, appends the registry to
- * a newly created MLIRContext, and loads all available dialects so test builders
- * can construct and verify MLIR QC programs.
- */
+} // namespace
 
 void QCTest::SetUp() {
   // Register all necessary dialects
@@ -77,10 +71,10 @@ void QCTest::SetUp() {
 /**
  * @brief Verifies that a generated QC program and its reference are equivalent.
  *
- * Builds the "program" and "reference" MLIR QC modules using the provided builders,
- * verifies each module, runs the QC cleanup/canonicalization pipeline on both,
- * re-verifies them, and asserts that the resulting modules are equivalent up to
- * qubit/permutation mappings.
+ * Builds the "program" and "reference" MLIR QC modules using the provided
+ * builders, verifies each module, runs the QC cleanup/canonicalization pipeline
+ * on both, re-verifies them, and asserts that the resulting modules are
+ * equivalent up to qubit/permutation mappings.
  */
 TEST_P(QCTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
