@@ -232,18 +232,15 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
   auto funcType =
       FunctionType::get(context.get(), {IndexType::get(context.get())}, {});
   auto func = func::FuncOp::create(b, "test", funcType);
-
-  // Add a block with an index argument
-  auto& block = func.getBody().emplaceBlock();
-  block.addArgument(IndexType::get(context.get()), loc);
-
-  b.setInsertionPointToStart(&block);
+  auto* block = func.addEntryBlock();
+  b.setInsertionPointToStart(block);
 
   // Static result type dim = 3, but size operand is dynamic → error
   auto qubitType = qco::QubitType::get(context.get());
   auto staticType = RankedTensorType::get({3}, qubitType);
-  auto dynSizeVal = block.getArgument(0);
+  auto dynSizeVal = block->getArgument(0);
   AllocOp::create(b, staticType, dynSizeVal);
+  func::ReturnOp::create(b);
 
   EXPECT_TRUE(verify(module).failed());
 }

@@ -147,7 +147,7 @@ static bool areEquivalentIndices(Value lhs, Value rhs) {
   auto lhsValue = getConstantIntValue(lhs);
   auto rhsValue = getConstantIntValue(rhs);
   if (!lhsValue || !rhsValue) {
-    return lhs == rhs;
+    return false;
   }
   return *lhsValue == *rhsValue;
 }
