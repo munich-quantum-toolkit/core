@@ -34,7 +34,9 @@ namespace mlir::qc {
 #include "mlir/Dialect/QC/Transforms/Passes.h.inc"
 
 /**
- * @brief Return the constant index of a one-dimensional memref load.
+ * @brief Obtain the constant index of a one-dimensional memref::LoadOp.
+ *
+ * @return std::optional<int64_t> The constant index when the load has exactly one index and that index is a constant integer, `std::nullopt` otherwise.
  */
 [[nodiscard]] static std::optional<int64_t>
 getLoadIndex(memref::LoadOp loadOp) {
@@ -51,6 +53,32 @@ namespace {
 struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
 
+  /**
+   * @brief Attempts to replace a deallocated 1-D static qubit memref with a smaller
+   * memref that contains only the qubit indices actually read, updating loads and
+   * the dealloc accordingly.
+   *
+   * Matches a memref::DeallocOp whose memref is defined by a memref::AllocOp of
+   * rank 1, static shape, identity layout, null memory space, and element type
+   * QubitType. If all non-dealloc users are memref::LoadOp with a single
+   * constant, in-bounds index, the pass collects loads whose results are used
+   * ("live" loads). If there are no live loads it erases the loads, the alloc,
+   * and the dealloc. If the live indices cover the entire original range the
+   * rewrite is not performed. Otherwise it allocates a new, smaller memref sized
+   * to the number of live indices, replaces each live load with a load from the
+   * new memref using the remapped index, inserts a dealloc for the new memref,
+   * and erases the original alloc and dealloc.
+   *
+   * @param op The memref::DeallocOp to match and potentially rewrite.
+   * @param rewriter PatternRewriter used to perform rewrites and insertions.
+   * @return LogicalResult `success()` when the pattern rewrites the IR or erases
+   *         the allocation/dealloc when there are no live loads; `failure()`
+   *         when the op does not meet the required shape/type/layout/memory
+   *         constraints, any non-dealloc user is not a memref::LoadOp, any load
+   *         index is not a constant or is out of bounds, or when live indices
+   *         cover the original register completely (in which case no shrink is
+   *         performed).
+   */
   LogicalResult matchAndRewrite(memref::DeallocOp op,
                                 PatternRewriter& rewriter) const override {
     auto allocOp = op.getMemref().getDefiningOp<memref::AllocOp>();
@@ -155,6 +183,13 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
 struct ShrinkQubitRegistersPass final
     : impl::ShrinkQubitRegistersPassBase<ShrinkQubitRegistersPass> {
 protected:
+  /**
+   * @brief Runs the pass and applies the ShrinkQubitRegister rewrite pattern.
+   *
+   * Inserts the ShrinkQubitRegister pattern into a RewritePatternSet and applies
+   * the patterns greedily to the pass's operation. If pattern application fails,
+   * signals the pass as failed.
+   */
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     patterns.add<ShrinkQubitRegister>(&getContext());

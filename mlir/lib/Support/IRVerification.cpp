@@ -134,7 +134,17 @@ struct InsertChainSummary {
   llvm::SmallVector<InsertWrite> writes;
 };
 
-} // namespace
+} /**
+ * @brief Ensure that `lhs` is mapped to `rhs` in the provided equivalence map.
+ *
+ * If `lhs` already has an entry in `valueMap`, this verifies the existing
+ * mapping equals `rhs`. Otherwise, it inserts the mapping `lhs -> rhs`.
+ *
+ * @param lhs The value from the left-hand side to check or record.
+ * @param rhs The value from the right-hand side to associate with `lhs`.
+ * @param valueMap Mapping of already-established SSA value equivalences.
+ * @return `true` if `lhs` is (or was successfully) mapped to `rhs`, `false` otherwise.
+ */
 
 static bool areValuesEquivalent(Value lhs, Value rhs,
                                 ValueEquivalenceMap& valueMap) {
@@ -145,6 +155,20 @@ static bool areValuesEquivalent(Value lhs, Value rhs,
   return true;
 }
 
+/**
+ * @brief Determines whether two index values should be considered equivalent.
+ *
+ * First uses the specialized index equivalence check; if that does not
+ * consider them equivalent, falls back to SSA-based equivalence which may
+ * establish or validate a mapping in |valueMap|.
+ *
+ * @param lhs The left-hand index value.
+ * @param rhs The right-hand index value.
+ * @param valueMap Mapping of already-established equivalent SSA values;
+ *                 may be updated to record a new equivalence lhs -> rhs.
+ * @return true if the indices are equivalent (either by the specialized
+ *         check or by a consistent/established SSA mapping), false otherwise.
+ */
 static bool areIndexValuesEquivalent(Value lhs, Value rhs,
                                      ValueEquivalenceMap& valueMap) {
   if (qtensor::areEquivalentIndices(lhs, rhs)) {
@@ -153,10 +177,29 @@ static bool areIndexValuesEquivalent(Value lhs, Value rhs,
   return areValuesEquivalent(lhs, rhs, valueMap);
 }
 
+/**
+ * @brief Determines whether an operation is a qtensor::InsertOp.
+ *
+ * @param op Operation pointer to test.
+ * @return true if `op` is a `qtensor::InsertOp`, false otherwise.
+ */
 static bool isQTensorInsertOp(Operation* op) {
   return llvm::isa<qtensor::InsertOp>(op);
 }
 
+/**
+ * @brief Determines whether a dependency between two operations that are
+ * qtensor::InsertOp can be treated as commutable (i.e., the dependent can be
+ * reordered relative to the dependency without semantic conflict).
+ *
+ * Both parameters must be `qtensor::InsertOp`; the dependent must take the
+ * dependency's result as its destination, both insert indices must be constant
+ * integers, and the two indices must refer to different element positions.
+ *
+ * @param dependent The operation that depends on `dependency` (consumer).
+ * @param dependency The operation producing a tensor used by `dependent` (producer).
+ * @return true if the dependency edge can be considered commutable, false otherwise.
+ */
 static bool isCommutableQTensorInsertDependency(Operation* dependent,
                                                 Operation* dependency) {
   auto dependentInsert = llvm::dyn_cast<qtensor::InsertOp>(dependent);
@@ -176,6 +219,17 @@ static bool isCommutableQTensorInsertDependency(Operation* dependent,
   return !qtensor::areEquivalentIndices(dependentIndex, dependencyIndex);
 }
 
+/**
+ * @brief Find the earliest tensor in an insert chain that lies within a given group.
+ *
+ * Walks backwards from `tensor` through defining `qtensor::InsertOp` operations while each
+ * encountered insert operation is a member of `group`, and returns the first tensor reached
+ * that is not produced by an insert in `group`.
+ *
+ * @param tensor Starting tensor value at the end of an insert chain.
+ * @param group Set of operations considered part of the insert group.
+ * @return Value The base tensor of the chain (the earliest tensor not defined by a group insert).
+ */
 static Value getInsertChainBaseTensor(Value tensor, const OperationSet& group) {
   auto current = tensor;
   while (auto insertOp = current.getDefiningOp<qtensor::InsertOp>()) {
@@ -187,6 +241,21 @@ static Value getInsertChainBaseTensor(Value tensor, const OperationSet& group) {
   return current;
 }
 
+/**
+ * @brief Summarizes a set of `qtensor.insert` operations into insert chains.
+ *
+ * Builds one InsertChainSummary per distinct base tensor found among the given
+ * operations. Each chain records the base tensor, the ordered sequence of
+ * `{scalar, index}` writes encountered for that base, and the final tensor
+ * produced by the chain.
+ *
+ * @param ops Array of operations expected to be `qtensor::InsertOp`.
+ * @param[out] chains Populated with the resulting InsertChainSummary entries;
+ *                    existing contents will be appended to.
+ * @return true if every chain has a single unambiguous final tensor and no
+ *         chain contains multiple writes that target equivalent indices;
+ *         returns false on ambiguity or on duplicate-equivalent-index writes.
+ */
 static bool
 summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
                      llvm::SmallVectorImpl<InsertChainSummary>& chains) {
@@ -256,6 +325,32 @@ summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
   return true;
 }
 
+/**
+ * @brief Determines whether two sequences of insert writes can be matched one-to-one.
+ *
+ * Attempts to match each write in `lhsWrites` to a distinct, unused write in
+ * `rhsWrites` (order-independent) using backtracking. A match requires the
+ * corresponding scalar values to be equivalent and the indices to be
+ * equivalent under the equivalence checks; temporary SSA mappings are merged
+ * into `valueMap` only when a complete matching for all remaining writes is
+ * found.
+ *
+ * @param lhsIdx Index of the current write in `lhsWrites` to match; callers
+ *               should pass 0 to start a full matching.
+ * @param lhsWrites Left-hand sequence of writes to match.
+ * @param rhsWrites Right-hand sequence of writes to match against.
+ * @param rhsUsed Mutable boolean-like vector (chars) parallel to `rhsWrites`
+ *               that marks which `rhsWrites` entries are already used during
+ *               the current matching search; its contents are preserved on
+ *               failure paths and reflect usage on success (matching is
+ *               committed into `valueMap`).
+ * @param valueMap Mapping of SSA values from left to right that will be
+ *                 tentatively extended during matching and permanently updated
+ *                 only if a complete match is found.
+ * @return true if there exists a one-to-one matching of all writes in
+ *         `lhsWrites` to distinct writes in `rhsWrites` satisfying scalar and
+ *         index equivalence; `false` otherwise.
+ */
 static bool areInsertWritesEquivalentRec(const size_t lhsIdx,
                                          llvm::ArrayRef<InsertWrite> lhsWrites,
                                          llvm::ArrayRef<InsertWrite> rhsWrites,
@@ -290,6 +385,25 @@ static bool areInsertWritesEquivalentRec(const size_t lhsIdx,
   return false;
 }
 
+/**
+ * @brief Determines whether two sequences of insert writes are equivalent as a
+ *        multiset, allowing writes to be reordered.
+ *
+ * Compares the `lhsWrites` and `rhsWrites` sequences by finding a one-to-one
+ * pairing between writes such that corresponding scalar values and indices are
+ * equivalent. The provided `valueMap` is tentatively extended during matching
+ * and is committed only if a complete matching succeeds; on failure `valueMap`
+ * is left unchanged.
+ *
+ * @param lhsWrites Sequence of writes (each contains a scalar and an index) from
+ *                  the left-hand side.
+ * @param rhsWrites Sequence of writes from the right-hand side.
+ * @param valueMap  Mapping of SSA values from lhs to rhs that will be updated
+ *                  only when the sequences are found equivalent.
+ * @return true if the two write sequences have the same size and can be
+ *         matched one-to-one with equivalent scalars and indices, `false`
+ *         otherwise.
+ */
 static bool areInsertWritesEquivalent(llvm::ArrayRef<InsertWrite> lhsWrites,
                                       llvm::ArrayRef<InsertWrite> rhsWrites,
                                       ValueEquivalenceMap& valueMap) {
@@ -301,6 +415,18 @@ static bool areInsertWritesEquivalent(llvm::ArrayRef<InsertWrite> lhsWrites,
                                       valueMap);
 }
 
+/**
+ * @brief Determine whether two insert-chain summaries are equivalent and, if so, commit the resulting SSA value mappings.
+ *
+ * Compares the two chains' base tensors, ordered writes, and final tensors for structural and SSA equivalence
+ * while tentatively extending the provided value mapping. The input mapping is only updated when the chains
+ * are fully matched.
+ *
+ * @param lhsChain The insert-chain summary from the left-hand side.
+ * @param rhsChain The insert-chain summary from the right-hand side.
+ * @param valueMap Mapping of SSA values from lhs to rhs; extended on success to include new equivalences.
+ * @return true if the chains are equivalent and `valueMap` has been updated with the matching; false otherwise.
+ */
 static bool areInsertChainsEquivalent(const InsertChainSummary& lhsChain,
                                       const InsertChainSummary& rhsChain,
                                       ValueEquivalenceMap& valueMap) {
@@ -322,6 +448,20 @@ static bool areInsertChainsEquivalent(const InsertChainSummary& lhsChain,
   return true;
 }
 
+/**
+ * @brief Recursively matches each insert chain in `lhsChains` to a distinct chain in `rhsChains`, establishing SSA value equivalences.
+ *
+ * Attempts to find a bijection between `lhsChains` and `rhsChains` by backtracking: for each unmatched left chain (starting at `lhsChainIdx`),
+ * it tries unused right chains and tests chain-level equivalence. When a full matching is found, `valueMap` is updated to include all established
+ * equivalences; on failure `valueMap` is left unchanged.
+ *
+ * @param lhsChainIdx Index of the current left-chain to match.
+ * @param lhsChains Array of left-side insert chain summaries to match.
+ * @param rhsChains Array of right-side insert chain summaries to match.
+ * @param rhsChainUsed Mutable bitmap indicating which `rhsChains` entries are already matched (nonzero = used).
+ * @param valueMap Mutable SSA value equivalence map that is extended on successful complete matching.
+ * @return true if a complete injective matching from remaining `lhsChains` to unused `rhsChains` exists and `valueMap` has been updated accordingly, `false` otherwise.
+ */
 static bool areInsertGroupsEquivalentRec(
     const size_t lhsChainIdx, llvm::ArrayRef<InsertChainSummary> lhsChains,
     llvm::ArrayRef<InsertChainSummary> rhsChains,
@@ -353,6 +493,21 @@ static bool areInsertGroupsEquivalentRec(
   return false;
 }
 
+/**
+ * @brief Determines whether two collections of `qtensor.insert` operations form
+ * equivalent insert groups and, if so, extends the SSA value equivalence map.
+ *
+ * Both input arrays are treated as unordered groups of insert chains; the
+ * function validates that the groups contain the same number of operations,
+ * that each side can be summarized into compatible insert chains, and that the
+ * chains and their writes can be pairwise matched under a consistent value
+ * mapping. On success, `valueMap` is updated with the discovered equivalences.
+ *
+ * @param lhsOps Array of operations from the left-hand group (expected to be `qtensor.insert`).
+ * @param rhsOps Array of operations from the right-hand group (expected to be `qtensor.insert`).
+ * @param valueMap Mapping of SSA values from lhs to rhs which will be extended when equivalence is found.
+ * @return `true` if the two groups are equivalent and `valueMap` was extended accordingly, `false` otherwise.
+ */
 static bool areInsertGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
                                       llvm::ArrayRef<Operation*> rhsOps,
                                       ValueEquivalenceMap& valueMap) {
@@ -377,6 +532,11 @@ static bool areInsertGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
 
 /// DenseMapInfo specialization for StructuralOperationKey
 template <> struct llvm::DenseMapInfo<StructuralOperationKey> {
+  /**
+   * @brief Constructs an empty StructuralOperationKey sentinel.
+   *
+   * @return StructuralOperationKey A key representing the DenseMap empty sentinel for an `Operation*`.
+   */
   static StructuralOperationKey getEmptyKey() {
     return StructuralOperationKey(DenseMapInfo<Operation*>::getEmptyKey());
   }
@@ -625,7 +785,24 @@ llvm::DenseMap<
 }
 
 /// Partition operations into groups that can be compared as multisets.
-/// Operations in the same group are independent and can be reordered.
+/**
+ * @brief Partition a sequence of operations into sequential groups whose
+ * operations are independent and may be reordered within each group.
+ *
+ * The function preserves the original program order between groups. An
+ * operation is placed into the current group unless it depends on any
+ * operation already in that group (per the dependence graph) or the
+ * operation imposes ordering constraints; in those cases a new group is
+ * started. A dependence from an insert operation to another insert is
+ * treated as commutable (and thus ignored) when `isCommutableQTensorInsertDependency`
+ * permits it. Operations for which `hasOrderingConstraints` returns true
+ * force a group boundary.
+ *
+ * @param ops Sequence of operations in program order to partition.
+ * @return llvm::SmallVector<llvm::SmallVector<Operation*>> A vector of groups
+ *         (in original order). Each inner vector contains operations that are
+ *         independent of one another and may be reordered within that group.
+ */
 llvm::SmallVector<llvm::SmallVector<
     Operation*>> static partitionIndependentGroups(llvm::ArrayRef<Operation*>
                                                        ops) {
@@ -717,7 +894,25 @@ static bool areIndependentGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
 }
 
 /// Compare two blocks for structural equivalence, allowing permutations
-/// of independent operations.
+/**
+ * @brief Determines whether two blocks are structurally equivalent up to
+ *        reordering of independent operations.
+ *
+ * Compares block arguments (types and establishes initial SSA mappings), then
+ * partitions each block's operations into independent groups and verifies
+ * equivalence group-by-group. Groups composed entirely of `qtensor.insert`
+ * operations are compared with insert-chain semantics; other groups are matched
+ * as multisets of structurally equivalent operations while updating the SSA
+ * mapping and recursively checking nested regions.
+ *
+ * @param lhs Left-hand block to compare.
+ * @param rhs Right-hand block to compare.
+ * @param valueMap Mapping of SSA values from `lhs` to `rhs`; updated on success
+ *                 to reflect established equivalences.
+ * @return true if the blocks are equivalent (modulo permitted independent
+ *         operation reorderings) and `valueMap` reflects the mapping between
+ *         their SSA values, `false` otherwise.
+ */
 static bool areBlocksEquivalent(Block& lhs, Block& rhs,
                                 ValueEquivalenceMap& valueMap) {
   // Check block arguments

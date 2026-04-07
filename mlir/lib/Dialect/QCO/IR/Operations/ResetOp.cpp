@@ -24,12 +24,13 @@ using namespace mlir;
 using namespace mlir::qco;
 
 /**
- * @brief Check if a `qtensor.extract` operation reads from a `qtensor.alloc`
- * chain.
+ * @brief Determine whether a `qtensor::ExtractOp` is provably sourced from a `qtensor::AllocOp`.
  *
- * @details In QTensor's linear tensor model, reads/writes on different indices
- * commute. We can therefore skip over `qtensor.insert` on other indices while
- * tracing provenance. A write to the same index invalidates the proof.
+ * @param extractOp The extract operation whose tensor provenance to trace.
+ * @return `true` if tracing the defining operations of the extract's tensor reaches a
+ * `qtensor::AllocOp` while tolerating intervening `qtensor::InsertOp`/`qtensor::ExtractOp`
+ * only when those ops use constant indices that are not equivalent to the extract's index;
+ * `false` otherwise. Non-constant indices cause this check to fail (`false`).
  */
 static bool originatesFromQTensorAlloc(qtensor::ExtractOp extractOp) {
   auto current = extractOp.getTensor();
@@ -83,6 +84,16 @@ namespace {
 struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
   using OpRewritePattern::OpRewritePattern;
 
+  /**
+   * Rewrites a `qtensor::ResetOp` away when its qubit input can be proven to
+   * originate from a `qtensor::AllocOp` via an extract/insert provenance chain.
+   *
+   * If the qubit operand is defined by a `qtensor::ExtractOp` and that extract
+   * traces back to an `qtensor::AllocOp` (subject to the provenance rules), the
+   * pattern replaces the `ResetOp` with the qubit operand.
+   *
+   * @returns `success` if the `ResetOp` was replaced and removed, `failure` otherwise.
+   */
   LogicalResult matchAndRewrite(ResetOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the predecessor is an ExtractOp
@@ -102,7 +113,14 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
   }
 };
 
-} // namespace
+} /**
+ * @brief Fold a `ResetOp` into its qubit operand when that operand is directly allocated.
+ *
+ * If the qubit input is defined by a `qtensor::AllocOp`, returns the qubit value to replace
+ * the `ResetOp`; otherwise no folding is performed.
+ *
+ * @return OpFoldResult The qubit SSA value when folded, or an empty result indicating no fold.
+ */
 
 OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
   if (getQubitIn().getDefiningOp<AllocOp>()) {
@@ -112,6 +130,16 @@ OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
   return {};
 }
 
+/**
+ * @brief Register canonicalization patterns for ResetOp.
+ *
+ * Adds the RemoveResetAfterExtract rewrite pattern to the provided pattern
+ * set so ResetOp instances can be canonicalized based on extract-origin
+ * provenance.
+ *
+ * @param results Pattern set to populate with canonicalization patterns.
+ * @param context MLIR context used to construct the rewrite pattern.
+ */
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
   results.add<RemoveResetAfterExtract>(context);

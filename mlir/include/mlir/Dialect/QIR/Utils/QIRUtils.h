@@ -28,7 +28,65 @@ namespace LLVM {
 class AddressOfOp;
 class LLVMFuncOp;
 } // namespace LLVM
-} // namespace mlir
+} /**
+ * Finds the main LLVM function marked as the entry point.
+ *
+ * @param op The module operation to search in.
+ * @return The LLVM function with the `entry_point` passthrough attribute, or `nullptr` if none is found.
+ */
+
+/**
+ * Annotates the given main LLVM function with QIR base-profile metadata.
+ *
+ * Adds attributes required by the QIR base profile, including `entry_point`,
+ * `output_labeling_schema` = "labeled", `qir_profiles` = "base_profile",
+ * `required_num_qubits`, `required_num_results`, `qir_major_version` = 2,
+ * `qir_minor_version` = 1, `dynamic_qubit_management`, and `dynamic_result_management`.
+ *
+ * @param main The main LLVM function to annotate.
+ * @param metadata QIR metadata providing required qubit/result counts and dynamic-management flags.
+ */
+
+/**
+ * Retrieve an existing QIR function declaration by name or insert a new declaration.
+ *
+ * If a declaration with `fnName` exists in the module's symbol table it is returned;
+ * otherwise a new LLVM function declaration with type `fnType` is created at the
+ * end of the module. For irreversible QIR functions (e.g., measurement, reset),
+ * the `"irreversible"` attribute is added automatically.
+ *
+ * @param builder Builder used to create the declaration when absent.
+ * @param op Operation providing module/context for insertion.
+ * @param fnName The QIR function name to look up or create.
+ * @param fnType The LLVM function type for the declaration.
+ * @return The existing or newly created LLVM function declaration.
+ */
+
+/**
+ * Create a module-level global string for result labeling and materialize its address.
+ *
+ * Creates a global constant holding `label` (with a symbol name derived from
+ * `symbolPrefix`) and inserts an AddressOf operation at the start of the main
+ * function's entry block that points to that global.
+ *
+ * @param builder Builder used to create global and address operations.
+ * @param op Operation providing module/context for insertion.
+ * @param label The label string to store in the global (e.g., "r0").
+ * @param symbolPrefix Prefix used to construct the global symbol name (default: "qir.result_label").
+ * @return The AddressOf operation referencing the created global string constant.
+ */
+
+/**
+ * Construct a pointer value corresponding to a static integer index.
+ *
+ * Creates an integer constant for `index` and converts it to a pointer value
+ * using an integer-to-pointer conversion suitable for QIR static qubit/result references.
+ *
+ * @param builder Builder used to create the constant and conversion.
+ * @param loc Location to assign to created operations.
+ * @param index The integer index to convert into a pointer.
+ * @return A Value representing the pointer obtained from `index`.
+ */
 
 namespace mlir::qir {
 

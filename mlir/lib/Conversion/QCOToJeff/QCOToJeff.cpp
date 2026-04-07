@@ -263,6 +263,16 @@ struct ConvertQTensorAllocOp final
     : StatefulOpConversionPattern<qtensor::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a `qtensor.alloc` into a `jeff.qureg_alloc`, materializing a constant size.
+   *
+   * If the allocator size is a constant integer, emits a `jeff::IntConst32Op` for that value;
+   * otherwise forwards the original size value to the created `jeff::QuregAllocOp`.
+   *
+   * @param op The `qtensor.alloc` operation being rewritten.
+   * @param adaptor The adaptor providing the op's operands/attributes.
+   * @return LogicalResult `success()` if the replacement was created, `failure()` otherwise.
+   */
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -296,6 +306,15 @@ struct ConvertQTensorExtractOp final
     : StatefulOpConversionPattern<qtensor::ExtractOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a qtensor.extract into a jeff.qureg_extract_index operation, materializing constant indices.
+   *
+   * If the adaptor's index is a compile-time integer, a `jeff::IntConst32Op` for that value is created;
+   * otherwise the adaptor-provided index value is forwarded. The original `qtensor.extract` is replaced
+   * with the new `jeff::QuregExtractIndexOp`.
+   *
+   * @returns LogicalResult `success()` on successful replacement.
+   */
   LogicalResult
   matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -329,6 +348,14 @@ struct ConvertQTensorInsertOp final
     : StatefulOpConversionPattern<qtensor::InsertOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a `qtensor.insert` operation to a `jeff.qureg_insert_index` operation.
+   *
+   * If the provided index is a constant integer, materializes it as a `jeff::IntConst32Op`; otherwise forwards the original index value.
+   * Replaces the original op with a `jeff::QuregInsertIndexOp` built from the destination qureg, the chosen index value, and the scalar to insert.
+   *
+   * @return LogicalResult `success()` if the rewrite was performed, `failure()` otherwise.
+   */
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -362,6 +389,14 @@ struct ConvertQTensorDeallocOp final
     : StatefulOpConversionPattern<qtensor::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a `qtensor.dealloc` operation to a `jeff.qureg_free_zero` op and replaces the original.
+   *
+   * Replaces the given `qtensor::DeallocOp` with a newly created `jeff::QuregFreeZeroOp`
+   * that uses the adaptor-provided tensor operand.
+   *
+   * @returns LogicalResult `success()` on successful replacement.
+   */
   LogicalResult
   matchAndRewrite(qtensor::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -1451,6 +1486,17 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
  */
 class QCOToJeffTypeConverter final : public TypeConverter {
 public:
+  /**
+   * @brief Constructs a type converter for lowering QCO types to Jeff types.
+   *
+   * Configures these conversions:
+   * - Identity conversion for all types by default.
+   * - `qco::QubitType` -> `jeff::QubitType`.
+   * - Ranked tensor whose element type is `qco::QubitType` -> `jeff::QuregType`.
+   * - Any other `RankedTensorType` is left unchanged.
+   *
+   * @param ctx The MLIR context used to create Jeff dialect types.
+   */
   explicit QCOToJeffTypeConverter(MLIRContext* ctx) {
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
@@ -1475,6 +1521,17 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
   using QCOToJeffBase::QCOToJeffBase;
 
 protected:
+  /**
+   * @brief Execute the QCO-to-Jeff conversion pass on the current module.
+   *
+   * Configures the conversion target and type converter, registers lowering
+   * patterns that lower QCO and QTensor dialect operations to the Jeff
+   * dialect (including modifier and entry-point handling), applies the partial
+   * conversion to the module, and finalizes module-level Jeff attributes.
+   *
+   * The pass signals failure if the partial conversion fails or if finalization
+   * (cleanup) fails.
+   */
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();

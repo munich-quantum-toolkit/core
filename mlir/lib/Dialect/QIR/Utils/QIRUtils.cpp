@@ -31,6 +31,12 @@
 
 namespace mlir::qir {
 
+/**
+ * Finds the LLVM function marked as the QIR entry point in the module containing the given operation.
+ *
+ * @param op Operation whose containing module will be searched for the entry point function.
+ * @return LLVM::LLVMFuncOp The first function whose `passthrough` attribute array contains the string `"entry_point"`, or `nullptr` if no such function exists or if no module is found.
+ */
 LLVM::LLVMFuncOp getMainFunction(Operation* op) {
   auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
@@ -56,6 +62,17 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
   return nullptr;
 }
 
+/**
+ * @brief Populate QIR passthrough attributes on the given LLVM function representing the QIR entry point.
+ *
+ * Sets QIR metadata (entry point marker, labeling/profile, resource requirements, dynamic management flags,
+ * and QIR major/minor version) as the `passthrough` attribute on `main` based on values in `metadata`.
+ *
+ * @param main The LLVM function op that represents the QIR entry point to annotate.
+ * @param metadata Configuration describing required qubits/results and whether qubit/result management is dynamic.
+ *
+ * @throws llvm::FatalError If `useDynamicQubit` is enabled while `numQubits` is not zero.
+ */
 void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   if (metadata.useDynamicQubit && metadata.numQubits != 0) {
     llvm::reportFatalUsageError(

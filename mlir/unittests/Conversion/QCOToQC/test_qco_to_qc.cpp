@@ -59,6 +59,12 @@ class QCOToQCTest : public testing::TestWithParam<QCOToQCTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  /**
+   * @brief Prepare the MLIR test environment by registering and loading required dialects.
+   *
+   * Creates an MLIRContext, registers the QCO, QC, QTensor, Arith, Func, and MemRef
+   * dialects with the context, and loads all available dialects into the context.
+   */
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
@@ -79,6 +85,15 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
   return pm.run(module);
 }
 
+/**
+ * @brief Verifies that converting a QCO program to QC produces the expected QC module.
+ *
+ * Builds the original QCO program and the reference QC program, runs verification
+ * and cleanup pipelines on both, performs the QCO→QC conversion for the original,
+ * and asserts that all build, verification, cleanup, and conversion steps succeed.
+ * Finally, compares the converted module to the reference for module-level
+ * equivalence allowing qubit/permutation differences.
+ */
 TEST_P(QCOToQCTest, ProgramEquivalence) {
   const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + nameStr + ")";

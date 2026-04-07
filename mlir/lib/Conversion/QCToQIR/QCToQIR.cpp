@@ -207,6 +207,13 @@ namespace {
  * - `memref<?x!qc.qubit>` -> `!llvm.ptr` (opaque pointer to array in QIR)
  */
 struct QCToQIRTypeConverter final : LLVMTypeConverter {
+  /**
+   * @brief Constructs the type converter with QC-to-LLVM conversion rules.
+   *
+   * Registers conversions so that a `!qc.qubit` and any one-dimensional
+   * `memref` whose element type is `!qc.qubit` are represented as LLVM opaque
+   * pointers in the lowered IR; other types are left unchanged.
+   */
   explicit QCToQIRTypeConverter(MLIRContext* ctx) : LLVMTypeConverter(ctx) {
     // Convert QubitType to LLVM pointer (QIR uses opaque pointers for qubits)
     addConversion(
@@ -240,6 +247,21 @@ struct ConvertMemRefAllocOp final
     : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a one-dimensional qubit memref allocation to a QIR qubit-array allocation.
+   *
+   * Converts a rank-1 `memref.alloc` whose element type is a qubit into an LLVM
+   * alloca for an array of qubit pointers and emits a call to the QIR runtime
+   * qubit-array allocation function. The computed allocation size is cached in
+   * the lowering state for later deallocation and bookkeeping. Replaces the
+   * original `memref.alloc` with the resulting array pointer.
+   *
+   * If the memref shape is dynamic, the dynamic size operand is used; if static,
+   * a constant i64 size is created and cached.
+   *
+   * @return LogicalResult `success()` on successful lowering; `failure()` if the
+   *         operation is not a one-dimensional memref (a diagnostic is emitted).
+   */
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -300,6 +322,20 @@ struct ConvertMemRefAllocOp final
 struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * Lowers a one-dimensional memref.load of a qubit register to an LLVM GEP and load,
+   * replacing the original op with the loaded element pointer.
+   *
+   * The pattern requires the memref to be rank 1; if the memref has a different
+   * rank a match failure diagnostic is emitted.
+   *
+   * @param op The memref.load operation being rewritten.
+   * @param adaptor Adaptor providing converted operands.
+   * @param rewriter Rewriter used to create LLVM IR and replace the op.
+   * @return LogicalResult `success()` if the op was lowered and replaced,
+   *         `failure()` if the memref is not one-dimensional (and a match
+   *         failure diagnostic was emitted).
+   */
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -342,6 +378,19 @@ struct ConvertMemRefDeallocOp final
     : StatefulOpConversionPattern<memref::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a one-dimensional memref.dealloc of a qubit register into a QIR
+   * qubit-array release call and erases the original operation.
+   *
+   * The release call is emitted at the output block terminator using the cached
+   * allocation size for the memref.
+   *
+   * @param op The `memref::DeallocOp` to lower.
+   * @param adaptor Adaptor providing already-converted operands for `op`.
+   * @param rewriter Rewriter used to insert the QIR call and erase `op`.
+   * @return LogicalResult `success()` if the dealloc was lowered and erased;
+   * `failure()` if the op did not match (e.g., the memref is not rank 1).
+   */
   LogicalResult
   matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -396,6 +445,16 @@ struct ConvertMemRefDeallocOp final
 struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a `qc.alloc` operation to a QIR qubit allocation call and replaces
+   * the original operation with the returned qubit pointer.
+   *
+   * Marks the lowering state as using dynamic qubit allocation and emits a call
+   * to the QIR qubit allocation runtime, producing an LLVM pointer that
+   * replaces the `qc.alloc` result.
+   *
+   * @return LogicalResult `success()` if the operation was successfully replaced.
+   */
   LogicalResult
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
@@ -431,6 +490,14 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
 struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a qc.dealloc operation to a QIR qubit-release call emitted in the output block.
+   *
+   * Inserts a call to __quantum__rt__qubit_release using the operation's qubit operand at the
+   * terminator of the configured output block, then erases the original DeallocOp.
+   *
+   * @returns LogicalResult `success()` indicating the rewrite succeeded.
+   */
   LogicalResult
   matchAndRewrite(DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -477,6 +544,18 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
 struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a `qc.static` operation to an LLVM opaque pointer for the given static qubit index,
+   *        caching the pointer in the lowering state and updating the tracked number of qubits.
+   *
+   * Replaces the original operation with the resulting pointer value and stores the pointer in
+   * `state.staticQubits` keyed by the integer index; if the index is greater than or equal to the
+   * previously recorded `state.numQubits`, `state.numQubits` is updated to `index + 1`.
+   *
+   * @param op The `qc.static` operation to be lowered.
+   * @param rewriter Rewriter used to replace the operation and insert new IR.
+   * @return LogicalResult `success()` on successful rewrite, `failure()` otherwise.
+   */
   LogicalResult
   matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
@@ -535,6 +614,18 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a `qc.measure` op into QIR result allocation and a QIR measurement call.
+   *
+   * For register-backed measurements, this creates a result array and per-element loads
+   * in the entry block (once per register), caches them in the lowering state, and
+   * selects the pointer for the requested index. For non-register measurements, this
+   * allocates a single result pointer in the entry block and tracks it. The function
+   * emits the QIR measurement runtime call in the measurements block and replaces the
+   * original `qc.measure` with the resulting pointer.
+   *
+   * @returns LogicalResult `success()` on successful rewrite, `failure()` otherwise.
+   */
   LogicalResult
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -646,6 +737,15 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a `qc.reset` operation to a QIR reset call emitted in the measurements block.
+   *
+   * This rewrites the op into a call to the QIR runtime function `QIR_RESET` (signature: `void(ptr)`),
+   * inserting the call at the terminator of the pass's measurements block. The builder insertion
+   * point is preserved and restored after the rewrite.
+   *
+   * @returns `success()` if the operation was replaced with the QIR call, `failure()` otherwise.
+   */
   LogicalResult
   matchAndRewrite(ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -688,6 +788,16 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
 struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Lowers a `qc.gphase` operation to the QIR `__quantum__qis__gphase__body` call.
+   *
+   * Rejects and reports an error if the operation appears inside a control modifier.
+   *
+   * @param op The pattern-matched `GPhaseOp`.
+   * @param adaptor Adaptor providing operands for the operation.
+   * @param rewriter Rewriter used to perform replacements.
+   * @return LogicalResult `success()` if the op was successfully lowered to the corresponding QIR call, `failure()` if the op is inside a control modifier or lowering fails.
+   */
   LogicalResult
   matchAndRewrite(GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -990,6 +1100,13 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, XXMINUSYY, xx_minus_yy,
 struct ConvertQCBarrierOp final : StatefulOpConversionPattern<BarrierOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Erases a qc.barrier operation as a no-op during lowering.
+   *
+   * This rewrite removes the BarrierOp from the IR; no code is emitted for barriers.
+   *
+   * @returns LogicalResult `success()` indicating the op was erased.
+   */
   LogicalResult
   matchAndRewrite(BarrierOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
@@ -1004,6 +1121,18 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<BarrierOp> {
 struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Records a control-region modifier and inlines its region into the surrounding block.
+   *
+   * Increments the pass-local control depth counter, saves the adaptor-provided control qubits
+   * under the new depth in the lowering state, inlines the region body immediately before the
+   * original control operation, and erases the control operation.
+   *
+   * @param op The `qc.ctrl` operation whose region is being inlined.
+   * @param adaptor Provides the control qubit operands from the original operation.
+   * @param rewriter Rewriter used to perform the inlining and erase the original op.
+   * @return LogicalResult `success()` after recording controls and inlining the region.
+   */
   LogicalResult
   matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -1028,6 +1157,13 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
 struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
+  /**
+   * @brief Erases a `qc.yield` operation from the IR.
+   *
+   * Removes the given `YieldOp` and signals a successful pattern application.
+   *
+   * @returns LogicalResult `success()` on successful erase.
+   */
   LogicalResult
   matchAndRewrite(YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
@@ -1062,20 +1198,16 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
   using QCToQIRBase::QCToQIRBase;
 
   /**
-   * @brief Ensures proper block structure for QIR base profile
+   * @brief Restructure the given LLVM function into the QIR Base Profile 4-block layout.
    *
-   * @details
-   * The QIR base profile requires a specific 4-block structure:
-   * 1. **Entry block**: Contains constant operations and initialization
-   * 2. **Body block**: Contains reversible quantum operations (gates)
-   * 3. **Measurements block**: Contains irreversible operations (measure and
-   * reset)
-   * 4. **Output block**: Contains output recording calls
+   * Reorganizes the function so it contains an entry block (constants/initialization),
+   * a body block (reversible quantum operations), a measurements block (irreversible
+   * operations such as measure/reset), and an output block (output recording), with
+   * unconditional branches connecting them in that order.
    *
-   * Blocks are connected with unconditional jumps (entry, body, measurements,
-   * output). This structure ensures proper QIR Base Profile semantics.
-   *
-   * @param main The main LLVM function to restructure
+   * @param main The LLVM function to restructure; must initially contain exactly one block.
+   * @param state Conversion state object whose block pointers (entryBlock, measurementsBlock,
+   *              outputBlock) will be set to the newly created blocks.
    */
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     if (main.getBlocks().size() > 1) {
@@ -1130,14 +1262,15 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
   }
 
   /**
-   * @brief Adds QIR initialization call to the entry block
+   * @brief Insert the QIR runtime initialization call at the start of the entry block.
    *
-   * @details
-   * This QIR runtime function initializes the quantum execution environment.
+   * Declares or reuses the `QIR_INITIALIZE` runtime function and emits a call to it
+   * using a null/zero pointer as the argument; the call is placed at the beginning
+   * of `state.entryBlock`.
    *
-   * @param main The main LLVM function
-   * @param ctx The MLIR context
-   * @param state The lowering state
+   * @param main The main LLVM function containing the entry block.
+   * @param ctx The MLIR context used to construct IR builders and types.
+   * @param state Conversion state holding the entry/measurements/output blocks.
    */
   static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                             LoweringState& state) {
@@ -1243,7 +1376,17 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
   }
 
   /**
-   * @brief Iterates through all result pointers and releases them
+   * @brief Emit QIR runtime calls to release all tracked measurement results.
+   *
+   * Inserts calls into the output block (just before its terminator) that
+   * release each non-register result pointer and each result array tracked in
+   * the lowering state. For result arrays the function uses the alloca'd array
+   * size and the array pointer when emitting the release call.
+   *
+   * @param main The LLVM function being lowered; used to insert and declare runtime calls.
+   * @param ctx The MLIR context for creating IR types and builders.
+   * @param state LoweringState containing tracked `resultPtrs` and `resultArrays` whose
+   *              resources should be released.
    */
   static void releaseResults(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                              LoweringState* state) {
@@ -1274,36 +1417,17 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
 
 protected:
   /**
-   * @brief Executes the QC to QIR conversion pass
+   * @brief Execute the QC→QIR lowering pass over the module.
    *
    * @details
-   * Performs the conversion in seven stages:
-   *
-   * **Stage 1: Func to LLVM**
-   * Convert func dialect operations (main function) to LLVM dialect
-   * equivalents.
-   *
-   * **Stage 2: Block structure**
-   * Create proper 4-block structure for QIR base profile (entry, main,
-   * irreversible, output).
-   *
-   * **Stage 3: Initialization**
-   * Insert the `__quantum__rt__initialize` call.
-   *
-   * **Stage 4: QC to LLVM**
-   * Convert QC dialect operations to QIR calls and add output recording to the
-   * output block.
-   *
-   * **Stage 5: QIR attributes**
-   * Add QIR base profile metadata to the main function, including qubit/result
-   * counts and version information.
-   *
-   * **Stage 6: Standard dialects to LLVM**
-   * Convert arith and control flow dialects to LLVM (for index arithmetic and
-   * function control flow).
-   *
-   * **Stage 7: Reconcile casts**
-   * Clean up any unrealized cast operations introduced during type conversion.
+   * Performs the full pass pipeline in seven stages:
+   * 1. Convert func dialect operations to LLVM.
+   * 2. Restructure the main function into entry, body, measurements, and output blocks required by the QIR base profile.
+   * 3. Insert the QIR runtime initialization call.
+   * 4. Lower QC and memref operations into QIR runtime calls and emit measurement/result recording and releases.
+   * 5. Attach QIR base-profile metadata (qubit/result counts and version information) to the main function.
+   * 6. Lower standard dialects used for index arithmetic and control flow (arith, cf) to LLVM.
+   * 7. Run a pass to reconcile unrealized casts introduced during conversion.
    */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();

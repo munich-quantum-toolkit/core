@@ -15,6 +15,19 @@
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 
+/**
+ * Include-generated QTensor pass declarations.
+ *
+ * Defining `GEN_PASS_DECL` before including the generated header emits the
+ * public pass declaration symbols for the QTensor dialect.
+ */
+/**
+ * Include-generated QTensor pass registration.
+ *
+ * Defining `GEN_PASS_REGISTRATION` before including the generated header emits
+ * the code that registers QTensor transformation passes with the MLIR pass
+ * registry.
+ */
 namespace mlir::qtensor {
 
 #define GEN_PASS_DECL

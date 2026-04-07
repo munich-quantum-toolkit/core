@@ -27,12 +27,15 @@
 namespace mlir {
 
 /**
- * @brief Pretty print IR with ASCII art borders and stage identifier
+ * @brief Print the module IR with an ASCII-art bordered header indicating the pipeline stage.
  *
- * @param module The module to print
- * @param stageName Name of the compilation stage
- * @param stageNumber Current stage number
- * @param totalStages Total number of stages (for progress indication)
+ * Prints the module to stderr (`llvm::errs()`) with a header of the form
+ * "Stage X/Y: <stageName>" and an ASCII-art box around the program output.
+ *
+ * @param module The MLIR module to print.
+ * @param stageName Human-readable name of the compilation stage shown in the header.
+ * @param stageNumber The current stage index (1-based) shown as X in "Stage X/Y".
+ * @param totalStages The total number of stages shown as Y in "Stage X/Y".
  */
 static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
                              const int stageNumber, const int totalStages) {
@@ -45,6 +48,14 @@ static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
   printProgram(module, stageHeader, llvm::errs());
 }
 
+/**
+ * @brief Apply pipeline configuration flags to a PassManager.
+ *
+ * Enables timing and pass statistics on the provided PassManager when those
+ * options are enabled in the pipeline configuration.
+ *
+ * @param pm PassManager to configure.
+ */
 void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
   // Enable timing statistics if requested
   if (config_.enableTiming) {
@@ -57,6 +68,24 @@ void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
   }
 }
 
+/**
+ * @brief Execute the full compilation pipeline over the provided MLIR module.
+ *
+ * Runs a sequence of transformation and cleanup stages on `module`, optionally
+ * recording intermediate IR snapshots into `record` and optionally printing
+ * per-stage formatted IR and a final compilation summary to stderr.
+ *
+ * @param module The MLIR module to compile.
+ * @param record If non-null and `config_.recordIntermediates` is enabled,
+ *        intermediate IR is captured into the corresponding fields of this
+ *        record after each stage; otherwise this parameter is ignored.
+ *        Note: enabling `config_.printIRAfterAllStages` requires that
+ *        `config_.recordIntermediates` is enabled and `record` is non-null.
+ *
+ * @returns `success()` if all pipeline stages complete successfully,
+ *          `failure()` if any stage fails or if configuration preconditions
+ *          (such as printing without recording) are violated.
+ */
 LogicalResult
 QuantumCompilerPipeline::runPipeline(ModuleOp module,
                                      CompilationRecord* record) const {

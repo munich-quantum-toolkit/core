@@ -24,6 +24,18 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
+/**
+ * @brief Validates the ExtractOp's index against the tensor's first dimension.
+ *
+ * If the index is a constant, this verifies it is greater than or equal to zero
+ * and, when the tensor's first dimension is statically known, less than that
+ * dimension size. On validation failure an operation error is emitted with a
+ * descriptive message.
+ *
+ * @return LogicalResult `success()` if the index is absent or within bounds;
+ * `failure()` after emitting an op error if the index is negative or exceeds
+ * the static dimension.
+ */
 LogicalResult ExtractOp::verify() {
   auto tensorDim = getTensor().getType().getDimSize(0);
   auto index = getConstantIntValue(getIndex());

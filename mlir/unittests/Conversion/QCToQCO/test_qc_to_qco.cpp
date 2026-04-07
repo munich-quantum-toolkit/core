@@ -59,6 +59,12 @@ class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  /**
+   * @brief Initialize the test fixture MLIRContext and register required dialects.
+   *
+   * Creates a new MLIRContext, registers the QC, QCO, QTensor, Arith, Func, and
+   * MemRef dialects, and loads all available dialects into the context.
+   */
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;

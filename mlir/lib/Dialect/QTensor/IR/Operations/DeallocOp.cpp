@@ -26,6 +26,16 @@ namespace {
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
 
+  /**
+   * @brief Removes a paired qtensor::AllocOp when the given DeallocOp's tensor
+   * is directly defined by that AllocOp.
+   *
+   * @param op The DeallocOp to match; its tensor operand is checked for a defining
+   *           qtensor::AllocOp.
+   * @param rewriter The PatternRewriter used to erase matching operations.
+   * @return LogicalResult `success()` if a defining AllocOp was found and both
+   *         the AllocOp and DeallocOp were erased, `failure()` otherwise.
+   */
   LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
     // Check whether the tensor is directly defined by a qtensor::AllocOp.

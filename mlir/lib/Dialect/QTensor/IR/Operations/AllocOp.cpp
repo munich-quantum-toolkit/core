@@ -37,6 +37,17 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, Value size) {
   build(builder, result, resultType, size);
 }
 
+/**
+ * @brief Validates the AllocOp's size operand against its result tensor type.
+ *
+ * Performs these checks:
+ * - If the size operand is a constant, it must be greater than 0.
+ * - If the result tensor's dimension 0 is static, the size operand must be a constant
+ *   and its value must equal the static dimension.
+ *
+ * @returns LogicalResult `success()` if validation passes, `failure()` and emits an
+ * op error describing the problem otherwise.
+ */
 LogicalResult AllocOp::verify() {
   auto resultType = cast<RankedTensorType>(getResult().getType());
   auto sizeValue = getConstantIntValue(getSize());

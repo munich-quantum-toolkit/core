@@ -109,6 +109,16 @@ namespace {
  */
 class QCOToQCTypeConverter final : public TypeConverter {
 public:
+  /**
+   * @brief Constructs a TypeConverter that maps QCO types to QC types.
+   *
+   * Registers conversion rules:
+   * - Identity conversion for all types by default.
+   * - Converts `qco::QubitType` values to `qc::QubitType`.
+   * - Converts `RankedTensorType` whose element is `qco::QubitType` into a
+   *   `MemRefType` with the same shape and `qc::QubitType` element.
+   * - Leaves ranked tensors with non-qubit element types unchanged.
+   */
   explicit QCOToQCTypeConverter(MLIRContext* ctx) {
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
@@ -142,6 +152,20 @@ public:
 struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /**
+   * @brief Lowers a qtensor.alloc to a memref.alloc with `!qc.qubit` element type.
+   *
+   * Converts the allocated ranked tensor type into a memref type with the same
+   * shape and element type `qc::QubitType`. If the tensor has a static shape the
+   * replacement memref.alloc is created without size operands; if the tensor has
+   * a dynamic shape the original runtime size operand is forwarded to the
+   * memref.alloc.
+   *
+   * @param op The qtensor.alloc operation to rewrite.
+   * @param adaptor Unused adaptor for the operation operands.
+   * @param rewriter Rewriter used to perform the replacement.
+   * @return LogicalResult `success()` if the operation was replaced.
+   */
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
@@ -176,6 +200,18 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
 struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /**
+   * Lower a `qtensor.extract` operation into a `memref.load` and replace the
+   * original op with the underlying tensor and the loaded qubit value.
+   *
+   * The converted `memref.load` is created at the original location using the
+   * adaptor-provided tensor and index operands. The original `qtensor.extract`
+   * is replaced with two values: the converted tensor (unchanged) and the
+   * result of the `memref.load`.
+   *
+   * @returns
+   * `success()` on successful replacement.
+   */
   LogicalResult
   matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -192,6 +228,17 @@ struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
 struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /**
+   * @brief Lowers `qtensor.insert` by removing the insert and forwarding its destination.
+   *
+   * Replaces the given `qtensor.insert` operation with its destination operand from the
+   * adaptor, effectively eliminating the insert and preserving the destination value.
+   *
+   * @param op The original `qtensor.insert` operation being rewritten.
+   * @param adaptor Adapter providing the already-converted operands (used to fetch the destination).
+   * @param rewriter Pattern rewriter used to perform the replacement.
+   * @return LogicalResult `success()` if the operation was replaced.
+   */
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -215,6 +262,17 @@ struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
 struct ConvertQTensorDeallocOp final : OpConversionPattern<qtensor::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /**
+   * @brief Lowers a `qtensor.dealloc` operation to a `memref.dealloc`.
+   *
+   * Replaces the original operation with a `memref::DeallocOp` targeting the
+   * converted tensor provided by the adaptor.
+   *
+   * @param op The original `qtensor::DeallocOp` being rewritten.
+   * @param adaptor Adaptor providing the converted operands; its tensor operand
+   *                is used as the target for the `memref.dealloc`.
+   * @return LogicalResult `success()` if the replacement was performed.
+   */
   LogicalResult
   matchAndRewrite(qtensor::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -930,6 +988,17 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
   using QCOToQCBase::QCOToQCBase;
 
 protected:
+  /**
+   * @brief Execute the QCO→QC lowering pass on the current module.
+   *
+   * Configures a type converter, conversion target, and rewrite patterns to lower
+   * QCO and qtensor operations to QC and memref equivalents, registers patterns
+   * that require shared lowering state (addressing mode tracking), updates
+   * function/call/return/branch legality based on type conversion, and applies
+   * the partial conversion to the module.
+   *
+   * If the conversion fails, the pass is marked as failed.
+   */
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();

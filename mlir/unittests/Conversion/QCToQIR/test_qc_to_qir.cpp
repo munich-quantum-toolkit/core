@@ -59,6 +59,13 @@ class QCToQIRTest : public testing::TestWithParam<QCToQIRTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  /**
+   * @brief Initializes the MLIRContext for the test fixture and registers required dialects.
+   *
+   * Allocates and stores a new MLIRContext in the fixture's `context` member, appends a
+   * DialectRegistry containing the QC, LLVM, arith, func, and memref dialects, and loads
+   * all available dialects into the context.
+   */
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<qc::QCDialect, LLVM::LLVMDialect, arith::ArithDialect,
@@ -77,6 +84,13 @@ static LogicalResult runQCToQIRConversion(ModuleOp module) {
   return pm.run(module);
 }
 
+/**
+ * @brief Verifies that a QC-built program converts to a QIR module equivalent to a reference QIR.
+ *
+ * Builds a QC program and a reference QIR module from the provided builders, runs cleanup/canonicalization
+ * pipelines on each, converts the QC module to QIR, verifies IR validity after each step, and asserts
+ * semantic equivalence of the converted module and the reference under qubit/permutation mappings.
+ */
 TEST_P(QCToQIRTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";

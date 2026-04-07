@@ -20,13 +20,29 @@ void emptyQC([[maybe_unused]] QCProgramBuilder& builder) {}
 
 void allocQubit(QCProgramBuilder& b) { b.allocQubit(); }
 
+/**
+ * @brief Allocates a two-qubit register in the quantum program builder.
+ *
+ * This instructs the provided QCProgramBuilder to create a qubit register of size 2.
+ */
 void allocQubitRegister(QCProgramBuilder& b) { b.allocQubitRegister(2); }
 
+/**
+ * @brief Allocates two qubit registers of sizes 2 and 3.
+ *
+ * Creates one 2-qubit register and one 3-qubit register in the provided
+ * QCProgramBuilder.
+ */
 void allocMultipleQubitRegisters(QCProgramBuilder& b) {
   b.allocQubitRegister(2);
   b.allocQubitRegister(3);
 }
 
+/**
+ * @brief Allocate a contiguous register of 100 qubits in the given program builder.
+ *
+ * This makes a 100-qubit register available to subsequent builder operations via the builder's qubit indexing APIs.
+ */
 void allocLargeRegister(QCProgramBuilder& b) { b.allocQubitRegister(100); }
 
 void staticQubits(QCProgramBuilder& b) {
@@ -116,6 +132,12 @@ void repeatedMeasurementToDifferentBits(QCProgramBuilder& b) {
   b.measure(q[0], c[2]);
 }
 
+/**
+ * @brief Allocates a 3-qubit register and two classical bit registers, then maps measurements from qubits to classical bits.
+ *
+ * Allocates a quantum register of size 3, a classical register named "c0" of size 1 and a classical register named "c1" of size 2,
+ * then measures q[0] into c0[0], q[1] into c1[0], and q[2] into c1[1].
+ */
 void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto& c0 = b.allocClassicalBitRegister(1, "c0");
@@ -125,17 +147,32 @@ void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   b.measure(q[2], c1[1]);
 }
 
+/**
+ * @brief Allocate a single qubit and reset it to the zero state.
+ *
+ * Allocates a 1-qubit register and performs a reset on its first qubit.
+ */
 void resetQubitWithoutOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
 }
 
+/**
+ * @brief Allocates a two-qubit register and resets both qubits.
+ *
+ * Allocates a register of two qubits and applies reset to each qubit index (q[0] and q[1]).
+ */
 void resetMultipleQubitsWithoutOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.reset(q[0]);
   b.reset(q[1]);
 }
 
+/**
+ * @brief Allocates a one-qubit register and issues three consecutive resets to that qubit.
+ *
+ * Allocates a register of size 1 and calls reset on the single qubit three times in sequence.
+ */
 void repeatedResetWithoutOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
@@ -143,12 +180,24 @@ void repeatedResetWithoutOp(QCProgramBuilder& b) {
   b.reset(q[0]);
 }
 
+/**
+ * @brief Applies a Hadamard gate to a freshly allocated qubit and then resets it to |0>.
+ *
+ * Allocates a 1-qubit register, applies `h` to the qubit at index 0, and then issues a reset
+ * on that same qubit.
+ */
 void resetQubitAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   b.reset(q[0]);
 }
 
+/**
+ * @brief Allocates two qubits, applies a Hadamard to each, and then resets each qubit.
+ *
+ * Allocates a two-qubit register, performs `h` on the first qubit followed by `reset`,
+ * then performs `h` on the second qubit followed by `reset`.
+ */
 void resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
@@ -157,6 +206,12 @@ void resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
   b.reset(q[1]);
 }
 
+/**
+ * @brief Applies a Hadamard to a single allocated qubit and then resets it three times.
+ *
+ * Allocates a one-qubit register, applies `h` to the qubit at index 0, and invokes
+ * `reset` on that same qubit three consecutive times.
+ */
 void repeatedResetAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
@@ -165,6 +220,11 @@ void repeatedResetAfterSingleOp(QCProgramBuilder& b) {
   b.reset(q[0]);
 }
 
+/**
+ * @brief Applies a global phase to the current quantum program.
+ *
+ * Applies a global phase of 0.123 radians to the program.
+ */
 void globalPhase(QCProgramBuilder& b) { b.gphase(0.123); }
 
 void singleControlledGlobalPhase(QCProgramBuilder& b) {
@@ -172,16 +232,33 @@ void singleControlledGlobalPhase(QCProgramBuilder& b) {
   b.cgphase(0.123, q[0]);
 }
 
+/**
+ * @brief Allocates three qubits and applies a global phase of 0.123 controlled by all three.
+ *
+ * Applies a multi-controlled global phase of 0.123 with the allocated qubits as controls.
+ */
 void multipleControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcgphase(0.123, {q[0], q[1], q[2]});
 }
 
+/**
+ * @brief Applies a control from one qubit around a controlled global phase on another qubit.
+ *
+ * The function allocates a 3-qubit register and uses q[0] as the outer control to conditionally
+ * apply a controlled global phase of 0.123 on q[1].
+ */
 void nestedControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(q[0], [&] { b.cgphase(0.123, q[1]); });
 }
 
+/**
+ * @brief Applies a global phase of 0.123 using an empty control set.
+ *
+ * Emits a multiple-controlled global-phase operation with no controls,
+ * applying the phase unconditionally to the program.
+ */
 void trivialControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcgphase(0.123, {});
@@ -206,16 +283,35 @@ void singleControlledIdentity(QCProgramBuilder& b) {
   b.cid(q[1], q[0]);
 }
 
+/**
+ * @brief Applies a multiple-controlled identity gate using two control qubits.
+ *
+ * Allocates a 3-qubit register and applies a multiple-controlled identity with
+ * controls q[2] and q[1] and target q[0].
+ */
 void multipleControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcid({q[2], q[1]}, q[0]);
 }
 
+/**
+ * @brief Applies a two-control identity gate to a target qubit.
+ *
+ * Allocates a 3-qubit register and uses q[2] as an outer control around a
+ * controlled-identity of q[1] onto q[0], resulting in the identity on q[0]
+ * when both q[2] and q[1] act as controls.
+ */
 void nestedControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(q[2], [&] { b.cid(q[1], q[0]); });
 }
 
+/**
+ * @brief Applies an identity operation to one qubit with no controls.
+ *
+ * Allocates a one-qubit register and invokes the multiple-controlled identity
+ * operation with an empty control set on that qubit.
+ */
 void trivialControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcid({}, q[0]);

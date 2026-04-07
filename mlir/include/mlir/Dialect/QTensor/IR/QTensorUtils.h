@@ -16,6 +16,45 @@
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Value.h>
 
+/**
+ * Determine whether two index Values represent the same constant integer.
+ *
+ * @param lhs The first index Value to compare.
+ * @param rhs The second index Value to compare.
+ * @returns `true` if both `lhs` and `rhs` are constant integers and have equal
+ *          values, `false` otherwise.
+ */
+/**
+ * Check if an operation is a QTensor scalar insert or extract.
+ *
+ * @param op The operation to test.
+ * @returns `true` if `op` is an `InsertOp` or `ExtractOp`, `false` otherwise.
+ */
+/**
+ * Get the tensor used as the input/source for a tensor-chain operation.
+ *
+ * @param op The tensor-transforming operation.
+ * @returns The tensor input `Value` (`InsertOp::getDest()` or
+ *          `ExtractOp::getTensor()`), or `nullptr` if `op` is not a supported
+ *          tensor-chain operation.
+ */
+/**
+ * Get the tensor produced as the output of a tensor-chain operation.
+ *
+ * @param op The tensor-transforming operation.
+ * @returns The tensor output `Value` (`InsertOp::getResult()` or
+ *          `ExtractOp::getOutTensor()`), or `nullptr` if `op` is not a
+ *          supported tensor-chain operation.
+ */
+/**
+ * Set the tensor input operand on a tensor-chain operation.
+ *
+ * @param op The tensor-transforming operation to modify.
+ * @param tensor The tensor `Value` to set as the new chain input.
+ *
+ * This sets operand index 1 for `InsertOp` and operand index 0 for `ExtractOp`.
+ * If `op` is not a supported tensor-chain operation, no change is made.
+ */
 namespace mlir::qtensor {
 
 /**

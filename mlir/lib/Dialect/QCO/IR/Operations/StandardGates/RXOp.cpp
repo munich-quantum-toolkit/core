@@ -37,13 +37,32 @@ namespace {
 struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
   using OpRewritePattern::OpRewritePattern;
 
+  /**
+   * @brief Combines consecutive RX operations on the same target into a single RX with an accumulated rotation angle.
+   *
+   * @param op The RX operation to match and attempt to merge with adjacent RX operations targeting the same qubit.
+   * @param rewriter The PatternRewriter used to perform the rewrite if a merge is applied.
+   * @return LogicalResult `success` if a rewrite (merge) was performed, `failure` otherwise.
+   */
   LogicalResult matchAndRewrite(RXOp op,
                                 PatternRewriter& rewriter) const override {
     return mergeOneTargetOneParameter(op, rewriter);
   }
 };
 
-} // namespace
+} /**
+ * @brief Builds an RX operation where the rotation angle may be provided as a raw
+ * numeric value or as an SSA Value.
+ *
+ * Converts the `theta` variant into the operand form required by the operation
+ * and forwards to the primary `build` overload.
+ *
+ * @param odsBuilder Builder used to create the operation.
+ * @param odsState OperationState to populate for the new RX operation.
+ * @param qubitIn Qubit input value the RX gate will act on.
+ * @param theta Rotation angle given either as a `double` (literal radians) or
+ *              as an SSA `Value` representing the angle expression.
+ */
 
 void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
@@ -52,6 +71,16 @@ void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
+/**
+ * @brief Fold an `RX` operation when its rotation angle is effectively zero.
+ *
+ * If the operation's `theta` operand can be converted to a numeric value and its
+ * absolute value is less than or equal to `TOLERANCE`, fold the `RX` by
+ * returning the operation's input qubit (the rotation is a no-op).
+ *
+ * @return OpFoldResult The input qubit `Value` when `theta` is within `TOLERANCE`,
+ *         otherwise an empty `OpFoldResult`.
+ */
 OpFoldResult RXOp::fold(FoldAdaptor /*adaptor*/) {
   if (const auto theta = valueToDouble(getTheta());
       theta && std::abs(*theta) <= TOLERANCE) {
@@ -60,11 +89,29 @@ OpFoldResult RXOp::fold(FoldAdaptor /*adaptor*/) {
   return {};
 }
 
+/**
+ * @brief Register canonicalization patterns for RXOp.
+ *
+ * Adds the pattern that merges consecutive RX operations targeting the same
+ * qubit by accumulating their rotation parameter.
+ *
+ * @param results Container to which canonicalization patterns are added.
+ * @param context MLIR context used to construct the pattern.
+ */
 void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<MergeSubsequentRX>(context);
 }
 
+/**
+ * @brief Computes the 2x2 unitary matrix for an RX gate using the operation's theta.
+ *
+ * Produces the SU(2) rotation matrix for a rotation about the X axis by angle theta.
+ *
+ * @return std::optional<Eigen::Matrix2cd> The matrix
+ * [[cos(theta/2), -i*sin(theta/2)], [-i*sin(theta/2), cos(theta/2)]] if theta
+ * can be converted to a double; `std::nullopt` if theta is not a concrete numeric value.
+ */
 std::optional<Eigen::Matrix2cd> RXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 

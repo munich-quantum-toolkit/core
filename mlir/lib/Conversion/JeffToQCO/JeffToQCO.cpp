@@ -399,6 +399,14 @@ struct ConvertJeffQuregAllocOpToQCO final
     : OpConversionPattern<jeff::QuregAllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /**
+   * @brief Rewrites a jeff::QuregAllocOp into a qtensor::AllocOp using an index-cast of the qureg size.
+   *
+   * The adaptor's `numQubits` operand is cast to the MLIR index type and used as the size argument
+   * for the created `qtensor::AllocOp`.
+   *
+   * @return `success()` if the replacement was performed, `failure()` otherwise.
+   */
   LogicalResult
   matchAndRewrite(jeff::QuregAllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -426,6 +434,16 @@ struct ConvertJeffQuregExtractIndexOpToQCO final
     : OpConversionPattern<jeff::QuregExtractIndexOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /**
+   * @brief Convert a `jeff.qureg_extract_index` operation to a `qtensor.extract` operation.
+   *
+   * The operation's index operand is cast to the MLIR index type before creating the
+   * `qtensor::ExtractOp` with the adapted input qureg.
+   *
+   * @param op The matched `jeff::QuregExtractIndexOp`.
+   * @param adaptor Adapted operands and attributes (provides `inQreg` and `index`).
+   * @return LogicalResult `success` if the replacement was performed, `failure` otherwise.
+   */
   LogicalResult
   matchAndRewrite(jeff::QuregExtractIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -453,6 +471,17 @@ struct ConvertJeffQuregInsertIndexOpToQCO final
     : OpConversionPattern<jeff::QuregInsertIndexOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /**
+   * @brief Convert a `jeff::QuregInsertIndexOp` into a `qtensor::InsertOp`.
+   *
+   * Casts the op's index operand to the MLIR index type and replaces the original
+   * operation with a `qtensor::InsertOp(inQubit, inQreg, index)`.
+   *
+   * @param op The matched `jeff::QuregInsertIndexOp`.
+   * @param adaptor Adaptor providing `inQubit`, `inQreg`, and `index` operands.
+   * @param rewriter The rewriter used to create the cast and replacement op.
+   * @return LogicalResult `success()` if the rewrite was applied.
+   */
   LogicalResult
   matchAndRewrite(jeff::QuregInsertIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -480,6 +509,13 @@ struct ConvertJeffQuregFreeZeroOpToQCO final
     : OpConversionPattern<jeff::QuregFreeZeroOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /**
+   * @brief Rewrites a jeff::QuregFreeZeroOp to a qtensor::DeallocOp.
+   *
+   * @param op The original Jeff qureg free-zero operation to rewrite.
+   * @param adaptor Adaptor providing the adapted `qreg` operand used to create the dealloc.
+   * @return LogicalResult `success()` if the operation was replaced.
+   */
   LogicalResult
   matchAndRewrite(jeff::QuregFreeZeroOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -1005,6 +1041,15 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
  */
 class JeffToQCOTypeConverter final : public TypeConverter {
 public:
+  /**
+   * @brief Initializes the type converter for Jeff-to-QCO dialect lowering.
+   *
+   * Registers default identity type conversion and explicit mappings:
+   * - `jeff::QubitType` -> `qco::QubitType`
+   * - `jeff::QuregType` -> `tensor<? x !qco.qubit>` (rank-1 tensor with dynamic dimension)
+   *
+   * @param ctx MLIR context used to construct target QCO types.
+   */
   explicit JeffToQCOTypeConverter(MLIRContext* ctx) {
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
@@ -1027,6 +1072,14 @@ struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
   using JeffToQCOBase::JeffToQCOBase;
 
 protected:
+  /**
+   * @brief Run the Jeff-to-QCO conversion pass on the current module.
+   *
+   * Configures the conversion target and type converter, registers all
+   * Jeff→QCO/qtensor conversion patterns (including qureg and qubit
+   * conversions), and applies a partial conversion to the module. If the
+   * conversion or the subsequent cleanup fails, the pass is marked as failed.
+   */
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();

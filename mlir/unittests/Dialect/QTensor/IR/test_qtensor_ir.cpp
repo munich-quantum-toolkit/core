@@ -52,6 +52,13 @@ class QTensorTest : public ::testing::Test {
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  /**
+   * @brief Initialize the MLIRContext and register/load the dialects required by the tests.
+   *
+   * This sets up a fresh MLIRContext, appends a registry containing QCODialect,
+   * arith::ArithDialect, func::FuncDialect, and QTensorDialect, and loads all
+   * available dialects into the context.
+   */
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
@@ -61,7 +68,15 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  /// Build a module using the QCOProgramBuilder and run the cleanup pipeline.
+  /**
+   * @brief Builds an MLIR module with the provided QCOProgramBuilder callback and
+   * applies the QCO cleanup pipeline to canonicalize it.
+   *
+   * @param buildFn Callback that populates a QCOProgramBuilder to construct the
+   * module.
+   * @return OwningOpRef<ModuleOp> Owning reference to the canonicalized module,
+   * or an empty `OwningOpRef` if building or cleanup failed.
+   */
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildAndCanonicalize(void (*buildFn)(QCOProgramBuilder&)) const {
     auto module = QCOProgramBuilder::build(context.get(), buildFn);
@@ -76,6 +91,15 @@ protected:
 
   /// Count occurrences of a specific op kind inside a module.
   template <typename OpT>
+  /**
+   * @brief Count occurrences of a specific operation type within an MLIR module.
+   *
+   * Counts the number of operations of type `OpT` found anywhere in `module`.
+   *
+   * @tparam OpT The operation class/type to count.
+   * @param module The module to search.
+   * @return std::size_t The number of `OpT` operations present in `module`.
+   */
   [[nodiscard]] static std::size_t countOps(ModuleOp module) {
     std::size_t count = 0;
     module.walk([&](OpT) { ++count; });
@@ -266,7 +290,22 @@ TEST_F(QTensorTest, InsertOpIndexAtDimFailsVerification) {
 
 // ============================================================================
 // Canonicalization
-// ============================================================================
+/**
+ * @brief Builds a small QTensor program that allocates a 2-qubit tensor, extracts both qubits,
+ * reinserts them (order and target positions controlled by flags), then deallocates the tensor.
+ *
+ * The produced module contains a sequence of QTensor operations representing the allocation,
+ * two extracts, two inserts (with ordering/target swapping determined by the parameters), and a
+ * final deallocation.
+ *
+ * @param context MLIR context used to create the module and operations.
+ * @param reverseInsertOrder If `true`, the second-extracted qubit is inserted before the
+ * first-extracted qubit; if `false`, the first-extracted qubit is inserted first.
+ * @param swapInsertTargets If `true`, the insertion target indices for the two qubits are
+ * swapped (i.e., qubit0 is inserted at index 1 and qubit1 at index 0); if `false`, they
+ * are inserted at their original indices (0 and 1 respectively).
+ * @return OwningOpRef<ModuleOp> An owning reference to the constructed MLIR module.
+ */
 
 static OwningOpRef<ModuleOp>
 buildTwoQubitInsertChainProgram(MLIRContext* context,
@@ -297,6 +336,14 @@ buildTwoQubitInsertChainProgram(MLIRContext* context,
   return builder.finalize();
 }
 
+/**
+ * @brief Constructs an MLIR module that allocates a two-element qtensor, extracts
+ * and reinserts qubits (optionally resetting the second qubit), and then deallocates it.
+ *
+ * @param context MLIRContext used to create and own the module and operations.
+ * @param withReset If `true`, applies a reset to the second extracted qubit before reinserting it.
+ * @return OwningOpRef<ModuleOp> The finalized module containing the built program.
+ */
 static OwningOpRef<ModuleOp>
 buildResetWithCommutingInsertProgram(MLIRContext* context,
                                      const bool withReset) {
@@ -319,6 +366,25 @@ buildResetWithCommutingInsertProgram(MLIRContext* context,
   return builder.finalize();
 }
 
+/**
+ * @brief Builds an MLIR module that allocates a 2-qubit QTensor, performs a
+ * sequence of extracts and inserts where two inserts target the same index,
+ * optionally applies a reset to the second extracted qubit, then deallocates.
+ *
+ * The constructed program:
+ * - allocates a 2-element QTensor,
+ * - extracts index 0 (q0) and index 1 (q10),
+ * - applies H to q10 and reinserts it at index 1,
+ * - extracts index 1 again (q11), optionally resets q11 if `withReset` is true,
+ * - reinserts q11 at index 1, reinserts q0 at index 0,
+ * - deallocates the tensor and finalizes the module.
+ *
+ * @param context The MLIRContext used to create IR.
+ * @param withReset If true, applies a reset to the second extracted qubit
+ *                  before reinserting it at the same index.
+ * @return OwningOpRef<ModuleOp> The finalized MLIR module containing the
+ *         constructed program.
+ */
 static OwningOpRef<ModuleOp>
 buildResetWithSameIndexInsertProgram(MLIRContext* context,
                                      const bool withReset) {
@@ -398,6 +464,15 @@ TEST_F(QTensorTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+/**
+ * @brief Verifies that a reset performed after extracting a qubit and reinserting
+ * it at the same index is preserved by the QCO cleanup pipeline.
+ *
+ * Builds a program that performs an extract, reinserts at the same index, then
+ * applies a reset; canonicalizes it. Builds a reference program without the
+ * reset and canonicalizes it. Asserts that the two canonicalized modules are
+ * not equivalent up to qubit permutations.
+ */
 TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
   auto program = buildResetWithSameIndexInsertProgram(context.get(), true);
   ASSERT_TRUE(program);
@@ -428,7 +503,13 @@ struct QTensorIntegrationTestCase {
                                   const QTensorIntegrationTestCase& info);
 };
 
-// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+/**
+ * @brief Formats a QTensorIntegrationTestCase as `QTensor{<name>}` for streaming.
+ *
+ * @param os The output stream to write to.
+ * @param info The test case whose name will be inserted into the formatted output.
+ * @return std::ostream& Reference to the output stream after writing.
+ */
 std::ostream& operator<<(std::ostream& os,
                          const QTensorIntegrationTestCase& info) {
   return os << "QTensor{" << info.name << "}";
@@ -439,6 +520,13 @@ class QTensorIntegrationTest
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  /**
+   * @brief Initialize the MLIRContext and register/load the dialects required by the tests.
+   *
+   * This sets up a fresh MLIRContext, appends a registry containing QCODialect,
+   * arith::ArithDialect, func::FuncDialect, and QTensorDialect, and loads all
+   * available dialects into the context.
+   */
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,

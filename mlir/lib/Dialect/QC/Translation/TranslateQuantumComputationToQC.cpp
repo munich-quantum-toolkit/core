@@ -60,17 +60,13 @@ using BitIndexVec = SmallVector<BitMemInfo>;
 } // namespace
 
 /**
- * @brief Allocates quantum registers using the QCProgramBuilder
+ * @brief Build and allocate MLIR qubit registers corresponding to all quantum and ancilla registers.
  *
- * @details
- * Processes all quantum and ancilla registers from the QuantumComputation,
- * sorting them by start index, and allocates them using the builder's
- * allocQubitRegister method which generates qc.alloc operations with
- * proper register metadata.
+ * Allocates a qubit register for each quantum and ancilla register in the given QuantumComputation, processing registers in order of their start index.
  *
- * @param builder The QCProgramBuilder used to create operations
- * @param quantumComputation The quantum computation to translate
- * @return Vector containing information about all quantum registers
+ * @param builder QCProgramBuilder used to create the qubit register allocations.
+ * @param quantumComputation Source quantum computation containing the registers to allocate.
+ * @return SmallVector<QregInfo> Entries mapping each source register to its allocated MLIR qubit values, ordered by register start index.
  */
 static SmallVector<QregInfo>
 allocateQregs(QCProgramBuilder& builder,

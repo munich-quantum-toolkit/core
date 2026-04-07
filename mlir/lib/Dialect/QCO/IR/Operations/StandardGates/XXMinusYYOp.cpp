@@ -41,6 +41,18 @@ namespace {
 struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
   using OpRewritePattern::OpRewritePattern;
 
+  /**
+   * @brief Merge a following XXMinusYYOp into this one when they act on the same qubits and share the same beta.
+   *
+   * If the immediate user of this operation's first output is another XXMinusYYOp that targets the same
+   * second qubit and has an equal `beta` (either numerically within TOLERANCE or identical operands), this
+   * pattern adds the two `theta` parameters and updates this operation to use the summed `theta`, then
+   * removes the successor by replacing it with this operation's results.
+   *
+   * @param op The XXMinusYYOp to match and potentially merge with its immediate successor.
+   * @param rewriter PatternRewriter used to create the add operation for theta and perform the replacement.
+   * @return LogicalResult `success()` if a merge occurred, `failure()` otherwise.
+   */
   LogicalResult matchAndRewrite(XXMinusYYOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the successor is the same operation
@@ -77,7 +89,18 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
   }
 };
 
-} // namespace
+} /**
+ * @brief Builder overload that accepts `theta` and `beta` as either a `double` constant or an IR `Value`.
+ *
+ * Converts `theta` and `beta` variants to MLIR `Value`s and forwards them, along with the input qubits, to the standard builder.
+ *
+ * @param odsBuilder Builder used to create IR values.
+ * @param odsState OperationState to populate.
+ * @param qubit0In First input qubit value.
+ * @param qubit1In Second input qubit value.
+ * @param theta Rotation angle either as a `double` or as an existing IR `Value`.
+ * @param beta Phase parameter either as a `double` or as an existing IR `Value`.
+ */
 
 void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                         Value qubit0In, Value qubit1In,
@@ -89,6 +112,18 @@ void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
+/**
+ * @brief Folds the operation into its input qubits when the rotation is negligible.
+ *
+ * If `theta` is a compile-time constant and its absolute value is less than or
+ * equal to TOLERANCE, the operation is removed and its results are replaced by
+ * its two input qubits.
+ *
+ * @param results Vector to which replacement OpFoldResults are appended on
+ *                successful folding; on success this will receive the two input
+ *                qubits (input qubit 0 then input qubit 1).
+ * @return LogicalResult `success()` if folding occurred, `failure()` otherwise.
+ */
 LogicalResult XXMinusYYOp::fold(FoldAdaptor /*adaptor*/,
                                 SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
@@ -100,11 +135,35 @@ LogicalResult XXMinusYYOp::fold(FoldAdaptor /*adaptor*/,
   return failure();
 }
 
+/**
+ * @brief Registers canonicalization patterns for XXMinusYYOp.
+ *
+ * Adds the MergeSubsequentXXMinusYY rewrite pattern into the provided pattern
+ * set so that adjacent XXMinusYYOp instances acting on the same qubits can
+ * be merged.
+ *
+ * @param results Pattern set to which canonicalization patterns will be added.
+ * @param context MLIR context used to construct the patterns.
+ */
 void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                               MLIRContext* context) {
   results.add<MergeSubsequentXXMinusYY>(context);
 }
 
+/**
+ * @brief Computes the 4x4 unitary matrix for this XX-YY operation when `theta` and `beta` are available as doubles.
+ *
+ * If either `theta` or `beta` cannot be converted to a double, the function returns `std::nullopt`.
+ *
+ * @return std::optional<Eigen::Matrix4cd> The unitary matrix with rows:
+ * Row 0: {mc, 0, 0, msm}
+ * Row 1: {0, 1, 0, 0}
+ * Row 2: {0, 0, 1, 0}
+ * Row 3: {msp, 0, 0, mc}
+ *
+ * where mc = cos(theta/2), s = sin(theta/2),
+ * msp = polar(s, beta - pi/2), and msm = polar(s, -beta - pi/2).
+ */
 std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 

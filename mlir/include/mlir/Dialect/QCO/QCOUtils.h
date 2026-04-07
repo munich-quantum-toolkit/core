@@ -217,7 +217,20 @@ mlir::LogicalResult mergeTwoTargetOneParameter(OpType op,
  * @return LogicalResult Success or failure of the merge.
  */
 template <typename OpType>
-mlir::LogicalResult
+mlir::/**
+ * Merge two consecutive two-target, one-parameter operations when the second
+ * operation consumes the targets in swapped order by summing their parameters
+ * and rewiring outputs accordingly.
+ *
+ * @param op The first operation in the pair to merge. Must expose two input/output
+ *           qubits and a floating-point parameter operand at index 2.
+ * @param rewriter PatternRewriter used to create the new parameter op and
+ *                 perform operation replacements.
+ * @returns `success()` if the successor was the same operation type with swapped
+ *          targets and the merge (parameter addition and rewiring) was performed;
+ *          `failure()` otherwise.
+ */
+LogicalResult
 mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
                                              PatternRewriter& rewriter) {
   // Check if the successor is the same operation

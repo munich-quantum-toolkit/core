@@ -51,13 +51,34 @@ struct MergeSubsequentRZZ final : OpRewritePattern<RZZOp> {
 struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
   using OpRewritePattern::OpRewritePattern;
 
+  /**
+   * @brief Try to canonicalize by merging this `RZZOp` with a subsequent `RZZOp`
+   * that has the same parameter but swapped target qubits.
+   *
+   * Attempts to combine the two operations into a single `RZZOp` (adjusting the
+   * parameter as needed) by delegating to the merge helper.
+   *
+   * @param op The `RZZOp` to match and rewrite.
+   * @param rewriter Pattern rewriter used to perform the transformation.
+   * @return LogicalResult `success()` if the two `RZZOp` instances were merged,
+   * `failure()` otherwise.
+   */
   LogicalResult matchAndRewrite(RZZOp op,
                                 PatternRewriter& rewriter) const override {
     return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
   }
 };
 
-} // namespace
+} /**
+ * @brief Builds an RZZOp where `theta` may be provided as either a `double` or an SSA `Value`.
+ *
+ * Converts the `theta` variant to an MLIR `Value` and constructs the operation using
+ * the standard `Value`-based builder overload.
+ *
+ * @param qubit0In First qubit operand.
+ * @param qubit1In Second qubit operand.
+ * @param theta Angle parameter supplied either as a `double` (constant) or as an SSA `Value`.
+ */
 
 void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   Value qubit0In, Value qubit1In,
@@ -67,6 +88,20 @@ void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 
+/**
+ * Fold the RZZ operation when its rotation angle is effectively zero.
+ *
+ * If the operation's `theta` is a compile-time constant whose absolute value
+ * is less than or equal to TOLERANCE, the op is folded by returning its two
+ * input qubit operands as replacement values.
+ *
+ * @param results Container to which replacement operands are appended on
+ *                successful folding; the two input qubits are pushed when
+ *                folding occurs.
+ * @return LogicalResult `success()` if `theta` is a known constant with
+ *         absolute value <= TOLERANCE (and the two input qubits were appended
+ *         to `results`), `failure()` otherwise.
+ */
 LogicalResult RZZOp::fold(FoldAdaptor /*adaptor*/,
                           SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
@@ -78,11 +113,27 @@ LogicalResult RZZOp::fold(FoldAdaptor /*adaptor*/,
   return failure();
 }
 
+/**
+ * @brief Registers canonicalization patterns for RZZOp.
+ *
+ * Adds rewrite patterns that merge consecutive RZZ operations acting on the same
+ * qubits and those with swapped target qubits.
+ *
+ * @param results Pattern list to which the canonicalization patterns are added.
+ * @param context MLIR context used to construct the patterns.
+ */
 void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ>(context);
 }
 
+/**
+ * @brief Compute the 4×4 unitary matrix implemented by this RZZ operation when the rotation angle is available.
+ *
+ * The matrix is diagonal with entries [e^{-i theta/2}, e^{i theta/2}, e^{i theta/2}, e^{-i theta/2}].
+ *
+ * @return std::optional<Eigen::Matrix4cd> The 4×4 complex unitary matrix when `theta` can be resolved to a double; `std::nullopt` if `theta` is not available.
+ */
 std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 

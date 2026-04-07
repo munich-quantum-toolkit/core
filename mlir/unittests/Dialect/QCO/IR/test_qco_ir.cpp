@@ -56,6 +56,13 @@ class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  /**
+   * @brief Prepare the MLIRContext and register the dialects required by tests.
+   *
+   * Initializes a new MLIRContext, attaches a DialectRegistry containing
+   * QCO, Arith, Func, and QTensor dialects, and loads all available dialects
+   * into the context.
+   */
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
@@ -95,6 +102,17 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+/**
+ * @brief Verifies direct construction of an `IfOp` via the QCO builder API.
+ *
+ * Builds a QCO program that allocates a qubit tensor, extracts a qubit,
+ * applies `HOp`, measures it, creates an `IfOp` whose then-branch applies
+ * `XOp` to the qubit, reinserts the resulting qubit into the tensor, and
+ * deallocates the tensor. The test finalizes and canonicalizes the constructed
+ * module, builds a reference module using the named `simpleIf` builder,
+ * canonicalizes it, and asserts the two modules are equivalent up to allowed
+ * permutations.
+ */
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
   QCOProgramBuilder builder(context.get());

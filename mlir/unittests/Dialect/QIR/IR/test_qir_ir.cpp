@@ -59,7 +59,13 @@ protected:
   }
 };
 
-} // namespace
+} /**
+ * @brief Verifies that a generated QIR program and its reference produce equivalent modules.
+ *
+ * Builds the "original" and "reference" QIR modules from their builders, records their IR before
+ * and after running the QIR cleanup pipeline, verifies the modules at each stage, and asserts that
+ * the final canonicalized modules are equivalent up to allowed permutations.
+ */
 
 TEST_P(QIRTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();

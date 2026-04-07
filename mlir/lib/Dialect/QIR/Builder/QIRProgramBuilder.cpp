@@ -48,6 +48,21 @@ QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
   getContext()->loadDialect<LLVM::LLVMDialect>();
 }
 
+/**
+ * @brief Create and initialize the QIR program's main function and control-flow skeleton.
+ *
+ * Creates a top-level `main` function with signature `() -> i64`, marks it as an
+ * entry point via the `passthrough` attribute, and constructs the QIR Base Profile
+ * four-block structure: `entry`, `body`, `measurements`, and `output`.
+ *
+ * The method also:
+ * - inserts an `exitCode` i64 constant in the entry block,
+ * - emits a call to the QIR initialization function with a null pointer,
+ * - links the blocks with unconditional branches,
+ * - returns `exitCode` from the `output` block,
+ * - and sets the builder's insertion point to the start of the `body` block
+ *   for subsequent user-generated operations.
+ */
 void QIRProgramBuilder::initialize() {
   // Set insertion point to the module body
   setInsertionPointToStart(module.getBody());
@@ -106,6 +121,18 @@ Value QIRProgramBuilder::doubleConstant(double value) {
   return LLVM::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
 }
 
+/**
+ * @brief Retrieve or create a pointer Value for a statically-indexed qubit.
+ *
+ * Looks up a cached qubit pointer for the given zero-based index and returns it;
+ * if none exists, creates, caches, and returns a new qubit pointer. Also updates
+ * the builder metadata to ensure the recorded qubit count is at least index + 1.
+ *
+ * @param index Zero-based index of the static qubit.
+ * @return Value Pointer Value representing the qubit.
+ *
+ * @note If `index` is negative, this reports a fatal usage error.
+ */
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
   checkFinalized();
 
@@ -130,6 +157,19 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
+/**
+ * @brief Allocate a dynamic qubit register and return the per-slot qubit pointers.
+ *
+ * Allocates storage for a register of `size` qubits (emitting the allocation and associated
+ * QIR allocation call into the program's entry block), records the array for later cleanup,
+ * and materializes one qubit pointer value for each array element.
+ *
+ * @param size Number of qubits to allocate; must be greater than 0.
+ * @return SmallVector<Value> A vector containing a qubit pointer Value for each allocated slot.
+ *
+ * @note Sets the builder's dynamic-qubit flag and records the allocated array for finalization.
+ * @note Emits a fatal usage error if `size` is not positive or if the builder has been finalized.
+ */
 SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
 
@@ -172,6 +212,25 @@ SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   return qubits;
 }
 
+/**
+ * @brief Allocate a dynamic classical-bit register and record its storage.
+ *
+ * Allocates an array of result pointers sized `size` in the module entry block,
+ * initializes the array via the QIR result-array allocation runtime call, stores
+ * the array pointer under `name`, and materializes per-slot result pointers
+ * (stored in the builder's `loadedResults`) so individual bits can be measured
+ * into them. Marks the builder as using dynamic results.
+ *
+ * @param size Number of bits in the register; must be greater than zero.
+ * @param name Name for the register. Names beginning with "__unnamed__" are reserved
+ *             and duplicate names are rejected.
+ * @return ClassicalRegister Struct containing the provided `name` and `size`.
+ *
+ * Error conditions:
+ * - Reports a fatal usage error if `size <= 0`.
+ * - Reports a fatal usage error if `name` starts with "__unnamed__" or if a
+ *   register with `name` already exists.
+ */
 QIRProgramBuilder::ClassicalRegister
 QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
                                              const std::string& name) {
@@ -221,6 +280,22 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   return {.name = name, .size = size};
 }
 
+/**
+ * Measure the given qubit and record the outcome into a classical result slot.
+ *
+ * This emits a QIR measurement call that stores the measurement outcome into a
+ * result pointer associated with `resultIndex`. If a result pointer for the
+ * given index already exists, it is reused; otherwise a new result pointer is
+ * allocated and associated with that index.
+ *
+ * @param qubit LLVM value pointing to the qubit to measure.
+ * @param resultIndex Index of the classical result slot to store the outcome;
+ *        must be greater than or equal to zero.
+ * @return Value LLVM pointer to the classical result storage for the given
+ *         `resultIndex`.
+ *
+ * @throws FatalError if `resultIndex` is negative.
+ */
 Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   checkFinalized();
 
@@ -261,6 +336,17 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   return result;
 }
 
+/**
+ * @brief Measures a qubit and stores the outcome into the specified classical bit.
+ *
+ * Locates the result pointer previously materialized for `bit` and emits a call
+ * to the QIR `Measure` function in the measurements block with `(qubit, resultPointer)`.
+ * If `bit` does not belong to an allocated classical register a fatal usage error is reported.
+ *
+ * @param qubit Pointer value referencing the qubit to measure.
+ * @param bit Identifier of the target classical register bit.
+ * @return QIRProgramBuilder& Reference to this builder for call chaining.
+ */
 QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
 
@@ -286,6 +372,14 @@ QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   return *this;
 }
 
+/**
+ * @brief Emit a QIR reset operation for the specified qubit in the measurements block.
+ *
+ * Emits a call to the QIR reset function targeting the provided qubit pointer.
+ *
+ * @param qubit Pointer value representing the qubit to reset.
+ * @return QIRProgramBuilder& Reference to this builder for chaining.
+ */
 QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
   checkFinalized();
 
@@ -595,7 +689,11 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMINUSYY, xx_minus_yy, theta, beta)
 
 //===----------------------------------------------------------------------===//
 // Finalization
-//===----------------------------------------------------------------------===//
+/**
+ * @brief Validates that the builder has not been finalized.
+ *
+ * If the builder has already been finalized, reports a fatal usage error.
+ */
 
 void QIRProgramBuilder::checkFinalized() const {
   if (isFinalized) {
@@ -604,6 +702,20 @@ void QIRProgramBuilder::checkFinalized() const {
   }
 }
 
+/**
+ * @brief Emit QIR calls that record measurement outputs into the module's output block.
+ *
+ * If there are recorded individual result pointers or allocated result arrays, this
+ * method inserts calls before the function return to emit output records for each:
+ * - Individual result pointers are processed in ascending index order and recorded
+ *   with labels of the form `__unnamed__<index>` via `QIR_RECORD_OUTPUT(ptr, label)`.
+ * - Result arrays are processed in ascending register-name order; each array's size is
+ *   obtained from its defining `LLVM::AllocaOp` and recorded via
+ *   `QIR_ARRAY_RECORD_OUTPUT(size, arrayPtr, label)` where the label is created from
+ *   the register name.
+ *
+ * If neither `resultPtrs` nor `resultArrays` contain entries, the method does nothing.
+ */
 void QIRProgramBuilder::generateOutputRecording() {
   if (resultArrays.empty() && resultPtrs.empty()) {
     return; // No measurements to record
@@ -661,6 +773,15 @@ void QIRProgramBuilder::generateOutputRecording() {
   }
 }
 
+/**
+ * @brief Finalize the QIR program builder and produce the constructed MLIR module.
+ *
+ * Finalizes the builder state by emitting resource-release and output-recording calls
+ * into the module, attaching QIR metadata attributes to the `main` function, and
+ * marking the builder as finalized so no further IR may be added.
+ *
+ * @return OwningOpRef<ModuleOp> The owned MLIR module containing the generated QIR.
+ */
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   checkFinalized();
 

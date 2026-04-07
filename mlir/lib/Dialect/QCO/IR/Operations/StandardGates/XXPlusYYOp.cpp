@@ -40,6 +40,20 @@ namespace {
 struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
   using OpRewritePattern::OpRewritePattern;
 
+  /**
+   * @brief Attempts to merge an adjacent XXPlusYYOp into the provided operation.
+   *
+   * Matches when the single user of `op`'s output qubit 0 is another `XXPlusYYOp`
+   * that acts on the same qubits and has an equivalent `beta` (within `TOLERANCE`
+   * for numeric betas or exactly equal for non-constant betas). On success, it
+   * replaces the second operation by updating the first operation's `theta`
+   * operand (operand index 2) to the sum of both thetas and replaces the second
+   * operation with the first operation's results.
+   *
+   * @param op The first `XXPlusYYOp` to match and potentially merge.
+   * @param rewriter PatternRewriter used to create the new addition and perform replacements.
+   * @returns `success()` if the operations were merged and rewritten, `failure()` otherwise.
+   */
   LogicalResult matchAndRewrite(XXPlusYYOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the successor is the same operation
@@ -76,7 +90,20 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
   }
 };
 
-} // namespace
+} /**
+ * @brief Builds an XXPlusYYOp from qubit inputs and variant theta/beta operands.
+ *
+ * Converts `theta` and `beta` (each either a `double` or an MLIR `Value`) into
+ * operand `Value`s and forwards construction to the overload that accepts
+ * `Value`-typed `theta` and `beta`.
+ *
+ * @param odsBuilder Builder used to create intermediate values and operations.
+ * @param odsState Operation state being populated.
+ * @param qubit0In First input qubit value (input/target for the gate).
+ * @param qubit1In Second input qubit value (input/target for the gate).
+ * @param theta Either a `double` rotation angle or an MLIR `Value` representing theta.
+ * @param beta Either a `double` phase parameter or an MLIR `Value` representing beta.
+ */
 
 void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                        Value qubit0In, Value qubit1In,
@@ -88,6 +115,16 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
+/**
+ * @brief Replaces the operation with its two input qubits when `theta` is a constant approximately zero.
+ *
+ * If `theta` can be converted to a double and its absolute value is less than or equal to
+ * TOLERANCE, appends the two input-qubit values to `results` and returns success(); otherwise
+ * leaves `results` unchanged and returns failure().
+ *
+ * @param results Container to receive fold results; on success it will contain the two input qubits.
+ * @return LogicalResult `success()` if the operation was folded (results populated), `failure()` otherwise.
+ */
 LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
                                SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
@@ -99,11 +136,32 @@ LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
   return failure();
 }
 
+/**
+ * @brief Registers canonicalization rewrite patterns for XXPlusYYOp.
+ *
+ * Adds patterns to `results` that the canonicalizer will apply to simplify or
+ * merge adjacent `XXPlusYYOp` operations.
+ *
+ * @param results Pattern set to which canonicalization patterns will be added.
+ * @param context MLIR context used when constructing the rewrite patterns.
+ */
 void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                              MLIRContext* context) {
   results.add<MergeSubsequentXXPlusYY>(context);
 }
 
+/**
+ * @brief Computes the 4×4 unitary matrix of the XX+YY gate from the operation's `theta` and `beta` operands.
+ *
+ * If both `theta` and `beta` can be converted to concrete doubles, returns the complex 4×4 matrix
+ * corresponding to the gate:
+ *   [ [1, 0, 0, 0],
+ *     [0, cos(theta/2), e^{i(beta - pi/2)} sin(theta/2), 0],
+ *     [0, e^{-i(beta + pi/2)} sin(theta/2), cos(theta/2), 0],
+ *     [0, 0, 0, 1] ]
+ *
+ * @return std::optional<Eigen::Matrix4cd> The unitary matrix when `theta` and `beta` are constants; `std::nullopt` if either value cannot be converted to a double.
+ */
 std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
