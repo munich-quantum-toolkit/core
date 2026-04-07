@@ -34,13 +34,17 @@ static bool isRemovableExtractInsertPair(InsertOp insertOp,
 }
 
 /**
- * @brief Find a matching `qtensor.extract` for an insert index in a tensor
- * chain by traversing nested scalar tensor ops.
+ * @brief Finds the `qtensor.extract` operation corresponding to a given
+ * `qtensor.insert` operation.
+ *
+ * @details The function traverses the tensor chain of the `qtensor.insert`
+ * operation until it finds the matching `qtensor.extract` operation.
  */
-static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
-  auto current = tensor;
+static ExtractOp findMatchingExtractInTensorChain(InsertOp insertOp) {
+  auto current = insertOp.getDest();
+  auto insertIndex = insertOp.getIndex();
 
-  if (!getConstantIntValue(index)) {
+  if (!getConstantIntValue(insertIndex)) {
     return nullptr;
   }
 
@@ -51,7 +55,7 @@ static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
         return nullptr;
       }
       // A more recent write to the same index shadows all older extracts
-      if (areEquivalentIndices(nestedInsertIndex, index)) {
+      if (areEquivalentIndices(nestedInsertIndex, insertIndex)) {
         return nullptr;
       }
       current = nestedInsertOp.getDest();
@@ -62,7 +66,7 @@ static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
       if (!getConstantIntValue(extractIndex)) {
         return nullptr;
       }
-      if (areEquivalentIndices(extractIndex, index)) {
+      if (areEquivalentIndices(extractIndex, insertIndex)) {
         return extractOp;
       }
       current = extractOp.getTensor();
@@ -76,15 +80,14 @@ static ExtractOp findMatchingExtractInTensorChain(Value tensor, Value index) {
 namespace {
 
 /**
- * @brief Remove matching `qtensor.insert`-`qtensor.extract` pairs.
+ * @brief Remove matching extract-insert pairs.
  */
 struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InsertOp op,
                                 PatternRewriter& rewriter) const override {
-    auto extractOp =
-        findMatchingExtractInTensorChain(op.getDest(), op.getIndex());
+    auto extractOp = findMatchingExtractInTensorChain(op);
     if (!extractOp) {
       return failure();
     }
