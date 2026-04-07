@@ -39,34 +39,6 @@ LogicalResult ExtractOp::verify() {
   return success();
 }
 
-/**
- * @brief Check if a `qtensor.extract` operation reads from a `qtensor.insert`
- * operation.
- */
-static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
-  auto insertOp = extractOp.getTensor().getDefiningOp<InsertOp>();
-  if (!insertOp) {
-    return nullptr;
-  }
-
-  if (!areEquivalentIndices(insertOp.getIndex(), extractOp.getIndex())) {
-    return nullptr;
-  }
-
-  return insertOp;
-}
-
-LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,
-                              SmallVectorImpl<OpFoldResult>& results) {
-  if (auto insertOp = foldExtractAfterInsert(*this)) {
-    results.emplace_back(insertOp.getDest());
-    results.emplace_back(insertOp.getScalar());
-    return success();
-  }
-
-  return failure();
-}
-
 namespace {
 
 /**

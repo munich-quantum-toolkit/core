@@ -135,7 +135,6 @@ def ExtractOp
   let assemblyFormat = "$tensor `[` $index `]` attr-dict `:` type($tensor)";
 
   let hasCanonicalizer = 1;
-  let hasFolder = 1;
   let hasVerifier = 1;
 }
 
@@ -168,7 +167,6 @@ def InsertOp
     }];
 
   let hasCanonicalizer = 1;
-  let hasFolder = 1;
   let hasVerifier = 1;
 }
 

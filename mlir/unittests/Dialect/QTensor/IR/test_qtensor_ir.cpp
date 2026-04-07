@@ -230,36 +230,6 @@ TEST_F(QTensorTest, ExtractOpIndexAtDimFailsVerification) {
   EXPECT_TRUE(verify(*module).failed());
 }
 
-// foldExtractAfterInsert: Fold if index is equivalent
-TEST_F(QTensorTest, ExtractOpFoldExtractAfterInsertSameIndex) {
-  auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
-    auto tensor0 = b.qtensorAlloc(3);
-    auto [tensor1, q0] = b.qtensorExtract(tensor0, 0);
-    auto q1 = b.h(q0);
-    auto tensor2 = b.qtensorInsert(q1, tensor1, 0);
-    b.qtensorExtract(tensor2, 0);
-  });
-  ASSERT_TRUE(canonicalized);
-  EXPECT_TRUE(verify(*canonicalized).succeeded());
-  EXPECT_EQ(countOps<ExtractOp>(*canonicalized), 1U);
-  EXPECT_EQ(countOps<InsertOp>(*canonicalized), 1U);
-}
-
-// foldExtractAfterInsert: Do not fold if index is different
-TEST_F(QTensorTest, ExtractOpFoldExtractAfterInsertDifferentIndex) {
-  auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
-    auto tensor0 = b.qtensorAlloc(3);
-    auto [tensor1, q0] = b.qtensorExtract(tensor0, 0);
-    auto q1 = b.h(q0);
-    auto tensor2 = b.qtensorInsert(q1, tensor1, 0);
-    b.qtensorExtract(tensor2, 1);
-  });
-  ASSERT_TRUE(canonicalized);
-  EXPECT_TRUE(verify(*canonicalized).succeeded());
-  EXPECT_EQ(countOps<ExtractOp>(*canonicalized), 1U);
-  EXPECT_EQ(countOps<InsertOp>(*canonicalized), 1U);
-}
-
 // ============================================================================
 // InsertOp
 // ============================================================================

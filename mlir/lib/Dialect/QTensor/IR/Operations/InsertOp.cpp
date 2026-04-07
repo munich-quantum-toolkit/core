@@ -34,34 +34,6 @@ static bool isRemovableExtractInsertPair(InsertOp insertOp,
 }
 
 /**
- * @brief Fold the direct pattern
- * `insert(extract(tensor, idx).qubit, extract(tensor, idx).out, idx)`.
- */
-static Value foldInsertAfterExtract(InsertOp insertOp) {
-  auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
-  if (!extractOp) {
-    return nullptr;
-  }
-
-  if (insertOp.getDest() != extractOp.getOutTensor()) {
-    return nullptr;
-  }
-
-  if (!isRemovableExtractInsertPair(insertOp, extractOp)) {
-    return nullptr;
-  }
-
-  return extractOp.getTensor();
-}
-
-OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
-  if (auto result = foldInsertAfterExtract(*this)) {
-    return result;
-  }
-  return {};
-}
-
-/**
  * @brief Find a matching `qtensor.extract` for an insert index in a tensor
  * chain by traversing nested scalar tensor ops.
  */
