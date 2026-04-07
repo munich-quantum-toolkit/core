@@ -72,7 +72,9 @@ protected:
     if (!module) {
       return {};
     }
-    EXPECT_TRUE(runQCOCleanupPipeline(module.get()).succeeded());
+    if (runQCOCleanupPipeline(module.get()).failed()) {
+      return {};
+    }
     return module;
   }
 
