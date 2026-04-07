@@ -42,6 +42,7 @@
 using namespace mlir;
 
 namespace {
+
 /// Compute a structural hash for an operation (excluding SSA value identities).
 /// This hash is based on operation name, types, and attributes only.
 struct OperationStructuralHash {
@@ -130,26 +131,33 @@ struct InsertChainSummary {
   Value finalTensor;
   llvm::SmallVector<InsertWrite> writes;
 };
+
 } // namespace
-static bool areValuesEquivalent(Value lhsValue, Value rhsValue,
+
+static bool areValuesEquivalent(Value lhs, Value rhs,
                                 ValueEquivalenceMap& valueMap) {
-  if (auto it = valueMap.find(lhsValue); it != valueMap.end()) {
-    return it->second == rhsValue;
+  if (auto it = valueMap.find(lhs); it != valueMap.end()) {
+    return it->second == rhs;
   }
-  valueMap[lhsValue] = rhsValue;
+  valueMap[lhs] = rhs;
   return true;
 }
 
-static bool areEquivalentIndices(Value lhsValue, Value rhsValue) {
-  return getAsOpFoldResult(lhsValue) == getAsOpFoldResult(rhsValue);
+static bool areEquivalentIndices(Value lhs, Value rhs) {
+  auto lhsValue = getConstantIntValue(lhs);
+  auto rhsValue = getConstantIntValue(rhs);
+  if (!lhsValue || !rhsValue) {
+    return lhs == rhs;
+  }
+  return *lhsValue == *rhsValue;
 }
 
-static bool areIndexValuesEquivalent(Value lhsValue, Value rhsValue,
+static bool areIndexValuesEquivalent(Value lhs, Value rhs,
                                      ValueEquivalenceMap& valueMap) {
-  if (areEquivalentIndices(lhsValue, rhsValue)) {
+  if (areEquivalentIndices(lhs, rhs)) {
     return true;
   }
-  return areValuesEquivalent(lhsValue, rhsValue, valueMap);
+  return areValuesEquivalent(lhs, rhs, valueMap);
 }
 
 static bool isQTensorInsertOp(Operation* op) {

@@ -22,7 +22,12 @@ namespace mlir::qtensor {
  * @brief Checks whether two index values are equivalent for matching.
  */
 inline bool areEquivalentIndices(Value lhs, Value rhs) {
-  return getAsOpFoldResult(lhs) == getAsOpFoldResult(rhs);
+  auto lhsValue = getConstantIntValue(lhs);
+  auto rhsValue = getConstantIntValue(rhs);
+  if (!lhsValue || !rhsValue) {
+    return lhs == rhs;
+  }
+  return *lhsValue == *rhsValue;
 }
 
 /**
