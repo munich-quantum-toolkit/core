@@ -10,6 +10,8 @@
 
 #include "mlir/Support/IRVerification.h"
 
+#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
+
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
@@ -143,27 +145,9 @@ static bool areValuesEquivalent(Value lhs, Value rhs,
   return true;
 }
 
-/**
- * @brief Checks whether two index values are equivalent.
- *
- * @details This is a conservative check that returns true if both indices are
- * constant integers with the same value. It returns false if either index is
- * non-constant or if they have different constant values. Note that this means
- * that some equivalent indices may be considered non-equivalent by this
- * function, but no non-equivalent indices will be considered equivalent.
- */
-static bool areEquivalentIndices(Value lhs, Value rhs) {
-  auto lhsValue = getConstantIntValue(lhs);
-  auto rhsValue = getConstantIntValue(rhs);
-  if (!lhsValue || !rhsValue) {
-    return false;
-  }
-  return *lhsValue == *rhsValue;
-}
-
 static bool areIndexValuesEquivalent(Value lhs, Value rhs,
                                      ValueEquivalenceMap& valueMap) {
-  if (areEquivalentIndices(lhs, rhs)) {
+  if (qtensor::areEquivalentIndices(lhs, rhs)) {
     return true;
   }
   return areValuesEquivalent(lhs, rhs, valueMap);
@@ -252,7 +236,7 @@ summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
     llvm::SmallVector<Value> seenIndices;
     for (const auto& write : chain.writes) {
       if (llvm::any_of(seenIndices, [&](Value seenIndex) {
-            return areEquivalentIndices(seenIndex, write.index);
+            return qtensor::areEquivalentIndices(seenIndex, write.index);
           })) {
         return false;
       }

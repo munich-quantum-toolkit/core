@@ -67,23 +67,14 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  /// Build a module using the QCOProgramBuilder and run a lightweight cleanup
-  /// pipeline (canonicalizer + CSE + symbol DCE + canonicalizer).
+  /// Build a module using the QCOProgramBuilder and run the cleanup pipeline.
   [[nodiscard]] OwningOpRef<ModuleOp>
   buildAndCanonicalize(void (*buildFn)(QCOProgramBuilder&)) const {
     auto module = QCOProgramBuilder::build(context.get(), buildFn);
     if (!module) {
       return {};
     }
-
-    PassManager pm(context.get());
-    pm.addPass(createCanonicalizerPass());
-    pm.addPass(createCSEPass());
-    pm.addPass(createSymbolDCEPass());
-    pm.addPass(createCanonicalizerPass());
-    if (pm.run(*module).failed()) {
-      return {};
-    }
+    EXPECT_TRUE(runQCOCleanupPipeline(module.get()).succeeded());
     return module;
   }
 

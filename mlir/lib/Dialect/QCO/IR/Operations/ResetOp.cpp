@@ -45,6 +45,13 @@ static bool originatesFromQTensorAlloc(qtensor::ExtractOp extractOp) {
     }
 
     if (auto nestedExtractOp = llvm::dyn_cast<qtensor::ExtractOp>(definingOp)) {
+      auto nestedExtractIndex = nestedExtractOp.getIndex();
+      if (!getConstantIntValue(nestedExtractIndex)) {
+        return false;
+      }
+      if (qtensor::areEquivalentIndices(extractIndex, nestedExtractIndex)) {
+        return false;
+      }
       current = nestedExtractOp.getTensor();
       continue;
     }
