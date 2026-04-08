@@ -46,6 +46,7 @@
 #include <limits>
 #include <numbers>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 namespace mlir {
@@ -1119,13 +1120,16 @@ public:
 
 template <auto...> struct AlwaysFalse : std::false_type {};
 
+} // namespace
+
 template <::mlir::mqt::gates::JeffKind Kind, std::size_t Targets,
           std::size_t Params, typename QCOOpType, typename JeffOpType,
           bool JeffBaseAdjoint>
-void addQCOToJeffGatePattern(RewritePatternSet& patterns,
-                             TypeConverter& typeConverter, MLIRContext* context,
-                             LoweringState& state, StringRef customName,
-                             const ::mlir::mqt::gates::PPRPaulis& ppr) {
+static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
+                                    TypeConverter& typeConverter,
+                                    MLIRContext* context, LoweringState& state,
+                                    StringRef customName,
+                                    const ::mlir::mqt::gates::PPRPaulis& ppr) {
   if constexpr (Kind == ::mlir::mqt::gates::JeffKind::Native) {
     if constexpr (Targets == 1 && Params == 0) {
       patterns.add<ConvertQCOOneTargetZeroParameterToJeff<QCOOpType, JeffOpType,
@@ -1161,6 +1165,8 @@ void addQCOToJeffGatePattern(RewritePatternSet& patterns,
                   "MQT_ADD_QCO_TO_JEFF_GATE: unhandled JeffKind");
   }
 }
+
+namespace {
 
 /**
  * @brief Pass for converting QCO operations to Jeff operations
