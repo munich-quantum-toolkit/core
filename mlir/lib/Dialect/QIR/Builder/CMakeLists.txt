@@ -12,7 +12,7 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MLIRLLVMDialect
-        MLIRMemRefDialect
+  MLIRMemRefDialect
   MLIRQIRUtils
   MLIRIR
   MLIRSupport)
