@@ -142,14 +142,16 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
           pm.addPass(qco::createHadamardLifting());
         }
         populateQCOCleanupPipeline(pm);
-      })))
-    if (record != nullptr && config_.recordIntermediates) {
-      record->afterOptimization = captureIR(module);
-      if (config_.printIRAfterAllStages) {
-        prettyPrintStage(module, "Optimization Passes", ++currentStage,
-                         totalStages);
-      }
+      }))) {
+    return failure();
+  }
+  if (record != nullptr && config_.recordIntermediates) {
+    record->afterOptimization = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "Optimization Passes", ++currentStage,
+                       totalStages);
     }
+  }
   // Stage 6: QCO cleanup
   if (failed(
           runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
