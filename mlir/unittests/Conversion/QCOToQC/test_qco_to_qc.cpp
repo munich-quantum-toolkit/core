@@ -610,7 +610,10 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements)}));
+            MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements)},
+        QCOToQCTestCase{"MeasurementWithoutRegisters",
+                        MQT_NAMED_BUILDER(qco::measurementWithoutRegisters),
+                        MQT_NAMED_BUILDER(qc::measurementWithoutRegisters)}));
 /// @}
 
 /// \name QCOToQC/Operations/ResetOp.cpp

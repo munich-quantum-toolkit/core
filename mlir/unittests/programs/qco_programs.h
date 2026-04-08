@@ -65,6 +65,10 @@ void repeatedMeasurementToDifferentBits(QCOProgramBuilder& b);
 /// Measures multiple qubits into multiple classical bits.
 void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b);
 
+/// Measures a single qubit into a single classical bit, without explicitly
+/// allocating a quantum or classical register.
+void measurementWithoutRegisters(QCOProgramBuilder& b);
+
 // --- ResetOp -------------------------------------------------------------- //
 
 /// Resets a single qubit without any operations being applied.

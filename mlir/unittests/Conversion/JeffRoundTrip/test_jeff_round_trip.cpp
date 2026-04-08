@@ -608,8 +608,11 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(
-                qco::multipleClassicalRegistersAndMeasurements)}));
+            MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
+        JeffRoundTripTestCase{
+            "MeasurementWithoutRegisters",
+            MQT_NAMED_BUILDER(qco::measurementWithoutRegisters),
+            MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/ResetOp.cpp

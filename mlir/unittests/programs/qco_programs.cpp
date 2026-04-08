@@ -107,6 +107,11 @@ void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
   b.measure(q[2], c1[1]);
 }
 
+void measurementWithoutRegisters(QCOProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.measure(q);
+}
+
 void resetQubitWithoutOp(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   q = b.reset(q);

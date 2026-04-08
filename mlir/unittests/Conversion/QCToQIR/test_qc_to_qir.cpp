@@ -580,8 +580,10 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(
-                qir::multipleClassicalRegistersAndMeasurements)}));
+            MQT_NAMED_BUILDER(qir::multipleClassicalRegistersAndMeasurements)},
+        QCToQIRTestCase{"MeasurementWithoutRegisters",
+                        MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
+                        MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
 /// @}
 
 /// \name QCToQIR/Operations/ResetOp.cpp

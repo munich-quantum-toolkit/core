@@ -118,6 +118,11 @@ void multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   b.measure(q[2], c1[1]);
 }
 
+void measurementWithoutRegisters(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.measure(q, 0);
+}
+
 void resetQubitWithoutOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
