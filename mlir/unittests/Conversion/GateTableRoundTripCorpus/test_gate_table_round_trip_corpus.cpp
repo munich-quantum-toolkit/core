@@ -813,7 +813,7 @@ static OwningOpRef<ModuleOp> buildMalformedJeffCustom(MLIRContext* ctx,
   b.setInsertionPointToStart(&entryBlock);
 
   // Create all SSA values inside the module.
-  SmallVector<Value> targets;
+  llvm::SmallVector<Value> targets;
   targets.reserve(numTargets);
 
   if (numTargets > 0) {
@@ -829,7 +829,7 @@ static OwningOpRef<ModuleOp> buildMalformedJeffCustom(MLIRContext* ctx,
     }
   }
 
-  SmallVector<Value> params;
+  llvm::SmallVector<Value> params;
   params.reserve(numParams);
   for (size_t i = 0; i < numParams; ++i) {
     const auto v = std::get<double>(paramValue(i));
