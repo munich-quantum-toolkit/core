@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <iterator>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -397,8 +398,8 @@ protected:
         return;
       }
 
-      // Create trials. Currently this includes `ntrials` many random layouts.
-
+      // Create trials for initial layout refining. Currently this includes
+      // `ntrials` many random layouts.
       SmallVector<Trial> trials;
       trials.reserve(ntrials);
       for (std::size_t i = 0; i < ntrials; ++i) {
@@ -406,8 +407,7 @@ protected:
       }
 
       // Execute each of the trials (possibly in parallel). Collect the results
-      // and find the one with the fewest SWAPs.
-
+      // and find the one with the fewest SWAPs on the final backwards pass.
       parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
         refineLayout(func, arch, trial);
       });
@@ -419,6 +419,7 @@ protected:
         return;
       }
 
+      // Perform placement and hot routing.
       place(func, best->layout, rewriter);
       if (failed(route(func, arch, best->layout, rewriter))) {
         func.emitError() << "failed to map the function";
@@ -530,10 +531,10 @@ private:
       wires.emplace_back(op.getResult());
     }
 
-    DenseMap<WireIterator*, std::size_t> enumeration;
+    SmallVector<std::size_t> enumeration;
     enumeration.reserve(wires.size());
-    for (const auto& [index, it] : enumerate(wires)) {
-      enumeration.try_emplace(&it, index);
+    for (std::size_t i = 0; i < wires.size(); ++i) {
+      enumeration.emplace_back(i);
     }
 
     for (std::size_t i = 0; i < niterations; ++i) {
@@ -649,30 +650,75 @@ private:
     return failure();
   }
 
-  FailureOr<SmallVector<IndexGate>>
-  routeWindow(const Window& window, const Architecture& arch, Layout& layout) {
-    const auto swaps = search(window, layout, arch);
-    if (failed(swaps)) {
-      return failure();
-    }
+  /**
+   * @brief Recompute window of layers into @p window.
+   * @details
+   * Traverses the circuit-layers until the desired window sizes is reached.
+   * The callback function determines the index of the two-qubit gates inside
+   * the layers:
+   *    (std::size_t) -> (std::size_t)
+   * For cold routing, we can simply use the enumeration (i->i)
+   * because the enumeration is the program index assignment.
+   * For hot routing, we lookup the program index of the hardware index
+   * (provided by the enumeration) via the layout object.
+   *
+   * The size of the window is 1 + nlookahead.
+   */
+  template <class Fn>
+  void rebuildWindow(ArrayRef<WireIterator> base,
+                     ArrayRef<std::size_t> enumeration, WalkDirection direction,
+                     Window& window, Fn&& fn) {
+    assert(base.size() == enumeration.size());
 
-    for (const auto& [hw0, hw1] : swaps.value()) {
-      layout.swap(hw0, hw1);
-    }
+    window.clear();                        // Clear window.
+    SmallVector<WireIterator> wires(base); // Work on local copy.
 
-    return swaps.value();
+    std::ignore = walkCircuitGraph(
+        wires, direction,
+        [&](FrontArrayRef front, ReleasedIterators& released) {
+          // Construct layer from wire iterators.
+          SmallVector<IndexGate, 0> layer;
+          for (ArrayRef<WireIterator*> its : front) {
+            assert(its.size() == 2);
+
+            WireIterator& first = *its[0];
+            WireIterator& second = *its[1];
+
+            assert(first.operation() == second.operation());
+
+            const auto idxFirst = std::distance(wires.data(), &first);
+            const auto idxSecond = std::distance(wires.data(), &second);
+
+            layer.emplace_back(fn(enumeration[idxFirst]),
+                               fn(enumeration[idxSecond]));
+
+            walkQubitBlock(first, second, direction);
+
+            released.append(its.begin(), its.end());
+          }
+
+          // Append layer.
+          window.emplace_back(layer);
+
+          // Stop, if the desired window size is reached.
+          if (window.size() == 1 + nlookahead) {
+            return WalkResult::interrupt();
+          }
+
+          return WalkResult::advance();
+        });
   }
 
   /**
    * @brief "Cold" routing.
-   * @details Iterates over a sliding window of layers and uses A* search
-   * to find a sequence of SWAPs that makes that layer executable.
+   * @details Iterates over a dynamically computed window of layers and uses A*
+   * search to find a sequence of SWAPs that makes that layer executable.
    * Instead of inserting these SWAPs into the IR, this function only updates
    * (and hence modifies) the layout.
    * @returns failure() if A* search isn't able to find a solution.
    */
   LogicalResult layoutRoute(MutableArrayRef<WireIterator> wires,
-                            DenseMap<WireIterator*, std::size_t>& enumeration,
+                            ArrayRef<std::size_t> enumeration,
                             const WalkDirection& direction,
                             const Architecture& arch, Trial& trial) {
     Window window;
@@ -680,47 +726,51 @@ private:
 
     trial.nswaps = 0; // Reset the SWAP count.
 
-    const auto fn = [&](ArrayRef<ArrayRef<WireIterator*>> front,
-                        ReleasedIterators& released) {
-      if (front.empty()) {
-        return WalkResult::advance();
-      }
+    return walkCircuitGraph(
+        wires, direction,
+        [&](FrontArrayRef front, ReleasedIterators& released) {
+          if (front.empty()) {
+            return WalkResult::advance();
+          }
 
-      window.clear();
+          // Recompute window of layers.
+          rebuildWindow(wires, enumeration, direction, window,
+                        [](std::size_t i) { return i; });
 
-      SmallVector<IndexGate, 0> layer;
-      for (ArrayRef<WireIterator*> its : front) {
-        assert(its.size() == 2);
-        assert(its[0]->operation() == its[1]->operation());
+          // Perform A* search.
+          const auto swaps = search(window, trial.layout, arch);
+          if (failed(swaps)) {
+            return WalkResult::interrupt();
+          }
 
-        layer.emplace_back(enumeration[its[0]], enumeration[its[1]]);
-        // walkQubitBlock(*its[0], *its[1], direction);
-        released.append(its.begin(), its.end());
-      }
-      window.emplace_back(layer);
+          // Collect trial statistics.
+          trial.nswaps += swaps->size();
 
-      const auto swaps = routeWindow(window, arch, trial.layout);
-      if (failed(swaps)) {
-        return WalkResult::interrupt();
-      }
+          // Apply SWAPS.
+          for (const auto& [hw0, hw1] : swaps.value()) {
+            trial.layout.swap(hw0, hw1);
+          }
 
-      trial.nswaps += swaps->size();
+          // Skip two-qubit blocks and release iterators.
+          for (ArrayRef<WireIterator*> its : front) {
+            walkQubitBlock(*its[0], *its[1], direction);
+            released.append(its.begin(), its.end());
+          }
 
-      return WalkResult::advance();
-    };
-
-    return walkCircuitGraph(wires, direction, fn);
+          return WalkResult::advance();
+        });
   }
 
   /**
-  * @brief "Hot" routing.
-  * @details Iterates over a sliding window of layers and uses A* search
-  * to finds and inserts a sequence of SWAPs that makes that layer
-  executable.
-  * @returns failure() if A* search isn't able to find a solution.
-  */
+   * @brief "Hot" routing.
+   * @details Iterates over a dynamically computed window of layers and uses A*
+   * search to find a sequence of SWAPs that makes that layer executable.
+   * @returns failure() if A* search isn't able to find a solution.
+   */
   LogicalResult route(func::FuncOp func, const Architecture& arch,
                       Layout& layout, IRRewriter& rewriter) {
+    constexpr auto direction = WalkDirection::Forward;
+
     Window window;
     window.reserve(1 + nlookahead);
 
@@ -730,65 +780,68 @@ private:
       wires.emplace_back(op.getQubit());
     }
 
-    DenseMap<WireIterator*, std::size_t> enumeration;
-    DenseMap<std::size_t, WireIterator*> revEnumeration;
-    for (auto& it : wires) {
+    SmallVector<std::size_t> enumeration;
+    for (const auto& it : wires) {
       StaticOp op = cast<StaticOp>(it.operation());
-      enumeration[&it] = op.getIndex();
-      revEnumeration[op.getIndex()] = &it;
+      enumeration.emplace_back(op.getIndex());
+    }
+
+    SmallVector<std::size_t> revEnumeration(enumeration.size());
+    for (std::size_t i = 0; i < enumeration.size(); ++i) {
+      revEnumeration[enumeration[i]] = i;
     }
 
     DenseSet<Operation*> frontSet;
     frontSet.reserve((wires.size() + 1) / 2);
 
-    const auto fn = [&](ArrayRef<ArrayRef<WireIterator*>> front,
-                        ReleasedIterators& released) {
+    DenseMap<Operation*, SmallVector<WireIterator*, 2>> others;
+    others.reserve((wires.size() + 1) / 2);
+
+    const auto fn = [&](FrontArrayRef front, ReleasedIterators& released) {
       if (front.empty()) {
         return WalkResult::advance();
       }
 
-      SmallVector<IndexGate, 0> layer;
-      for (ArrayRef<WireIterator*> its : front) {
-        assert(its.size() == 2);
-        assert(its[0]->operation() == its[1]->operation());
+      // Recompute window of layers.
+      rebuildWindow(wires, enumeration, direction, window,
+                    [&](std::size_t i) { return layout.getProgramIndex(i); });
 
-        const auto hw0 = enumeration[its[0]];
-        const auto hw1 = enumeration[its[1]];
-
-        layer.emplace_back(layout.getProgramIndex(hw0),
-                           layout.getProgramIndex(hw1));
-
-        frontSet.insert(its[0]->operation());
-      }
-
-      window.emplace_back(layer);
-
-      // Each wire iterator points at a two-qubit operation of the current or
-      // next layers. Consequently, the wire iterator also points to the qubit
-      // SSA value the respective two-qubit operations produce. To point at the
-      // operation which produces the inputs of the two-qubit operations,
-      // decrement each of the wire iterators. Because sinks don't produce
-      // values, decrement a second time.
-
-      for (auto& it : wires) {
-        --it;
-        if (isa<SinkOp>(it.operation())) {
-          --it;
-        }
-      }
-
-      const auto swaps = routeWindow(window, arch, layout);
+      // Perform A* search.
+      const auto swaps = search(window, layout, arch);
       if (failed(swaps)) {
         return WalkResult::interrupt();
       }
 
-      numSwaps += swaps->size();
-      for (const auto& [hw0, hw1] : swaps.value()) {
-        assert(revEnumeration.contains(hw0));
-        assert(revEnumeration.contains(hw1));
+      frontSet.clear();
+      for (ArrayRef<WireIterator*> its : front) {
+        assert(its.size() == 2);
+        assert(its[0]->operation() == its[1]->operation());
+        frontSet.insert(its[0]->operation());
+      }
 
-        WireIterator& first = *revEnumeration[hw0];
-        WireIterator& second = *revEnumeration[hw1];
+      // Prepare insertion points: Each wire iterator points at a two-qubit
+      // operation of the current or next layers. Consequently, the wire
+      // iterator also points to the qubit SSA value the respective two-qubit
+      // operations produce. To point at the operation which produces the inputs
+      // of the two-qubit operations, decrement each of the wire iterators.
+      // Because sinks don't produce values, decrement a second time.
+
+      for (auto& it : wires) {
+        std::ranges::advance(it, -1);
+        if (isa<SinkOp>(it.operation())) {
+          std::ranges::advance(it, -1);
+        }
+      }
+
+      // Collect pass statistics.
+      numSwaps += swaps->size();
+
+      // Apply and insert SWAPs.
+      for (const auto& [hw0, hw1] : swaps.value()) {
+        layout.swap(hw0, hw1);
+
+        WireIterator& first = wires[revEnumeration[hw0]];
+        WireIterator& second = wires[revEnumeration[hw1]];
 
         assert(!isa<SinkOp>(first.operation()));
         assert(!isa<SinkOp>(second.operation()));
@@ -796,8 +849,8 @@ private:
         const auto in0 = first.qubit();
         const auto in1 = second.qubit();
 
-        auto swapOp =
-            SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
+        rewriter.setInsertionPointAfter(in0.getDefiningOp());
+        auto swapOp = SWAPOp::create(rewriter, in0.getLoc(), in0, in1);
 
         const auto out0 = swapOp.getQubit0Out();
         const auto out1 = swapOp.getQubit1Out();
@@ -812,25 +865,34 @@ private:
         assert(isa<SWAPOp>(second.operation()));
       }
 
-      // Finally, undo the previous increments and release the correct (!) wire
-      // iterators for the next iteration.
+      // Find the iterators of the front gates after SWAP insertion. This is
+      // required because the replaceAllUsesExcept swaps wire iterators values.
 
+      others.clear();
       for (auto& it : wires) {
-        ++it;
+        std::ranges::advance(it, 1);
+
         if (frontSet.contains(it.operation())) {
-          released.emplace_back(&it);
+          const auto [mapIt, inserted] =
+              others.try_emplace(it.operation(), SmallVector{&it});
+          if (!inserted) {
+            mapIt->second.emplace_back(&it);
+          }
         }
       }
 
-      // Prepare data structures for next iteration (next layer).
-
-      window.clear();
-      frontSet.clear();
+      // Skip two-qubit blocks and release iterators.
+      for (ArrayRef<WireIterator*> its : others.values()) {
+        assert(its.size() == 2);
+        assert(its[0]->operation() == its[1]->operation());
+        walkQubitBlock(*its[0], *its[1], direction);
+        released.append(its.begin(), its.end());
+      }
 
       return WalkResult::advance();
     };
 
-    const auto res = walkCircuitGraph(wires, WalkDirection::Forward, fn);
+    const auto res = walkCircuitGraph(wires, direction, fn);
     if (failed(res)) {
       return failure();
     }

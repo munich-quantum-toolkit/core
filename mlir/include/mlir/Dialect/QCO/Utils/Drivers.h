@@ -33,8 +33,9 @@ namespace mlir::qco {
 enum class WalkDirection : bool { Forward, Backward };
 
 using ReleasedIterators = SmallVector<WireIterator*, 8>;
-using WalkCircuitGraphFn = function_ref<WalkResult(
-    ArrayRef<ArrayRef<WireIterator*>>, ReleasedIterators&)>;
+using FrontArrayRef = ArrayRef<ArrayRef<WireIterator*>>;
+using WalkCircuitGraphFn =
+    function_ref<WalkResult(FrontArrayRef, ReleasedIterators&)>;
 
 class Qubits {
 public:
@@ -101,8 +102,6 @@ void walkUnit(Region& region, WalkUnitFn fn);
  * @details
  * Advances each of the two wire iterators until a two-qubit op is
  * found. If the ops match, repeat this process. Otherwise, stop.
- *
- * @todo may be generalized to more than two qubits.
  */
 void walkQubitBlock(WireIterator& first, WireIterator& second,
                     WalkDirection direction);
@@ -119,7 +118,7 @@ void walkQubitBlock(WireIterator& first, WireIterator& second,
  *
  * The signature of the callback function is:
  *
- *     (ArrayRef<ArrayRef<WireIterator*>>, ReleasedIterator&) -> WalkResult
+ *     (FrontArrayRef, ReleasedIterator&) -> WalkResult
  *
  * The wire iterators inserted into the parameter "released" determine which
  * two-qubit gates are released in next iteration.

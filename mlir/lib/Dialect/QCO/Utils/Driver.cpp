@@ -17,6 +17,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Debug.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <cassert>
 #include <cstddef>
@@ -137,35 +138,28 @@ void walkUnit(Region& region, WalkUnitFn fn) {
 
 void walkQubitBlock(WireIterator& first, WireIterator& second,
                     WalkDirection direction) {
-  const auto step = direction == WalkDirection::Forward ? 1 : -1;
-
-  const auto advanceUntilTwoQubitOp = [&](WireIterator& it) {
-    while (proceedOnWire(it, direction)) {
-      if (auto op = dyn_cast<UnitaryOpInterface>(it.operation())) {
-        if (op.getNumQubits() > 1) {
-          break;
+  SmallVector<WireIterator, 2> wires{first, second};
+  std::ignore = walkCircuitGraph(
+      wires, direction, [&](FrontArrayRef front, ReleasedIterators& released) {
+        if (front.empty()) {
+          return WalkResult::interrupt();
         }
-      }
 
-      std::ranges::advance(it, step);
-    }
-  };
+        assert(front.size() == 1);
+        const auto its = front.front();
+        assert(its.size() == 2);
 
-  while (true) {
-    advanceUntilTwoQubitOp(first);
-    advanceUntilTwoQubitOp(second);
+        if (its[0]->operation() != its[1]->operation()) {
+          return WalkResult::interrupt();
+        }
 
-    if (!proceedOnWire(first, direction) || !proceedOnWire(second, direction)) {
-      break;
-    }
+        first = *its[0];
+        second = *its[1];
 
-    if (first.operation() != second.operation()) {
-      break;
-    }
+        released.append(its.begin(), its.end());
 
-    std::ranges::advance(first, step);
-    std::ranges::advance(second, step);
-  }
+        return WalkResult::advance();
+      });
 }
 
 LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
