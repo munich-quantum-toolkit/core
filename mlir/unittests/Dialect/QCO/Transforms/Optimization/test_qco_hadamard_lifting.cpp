@@ -23,6 +23,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cassert>
 #include <cmath>
@@ -94,7 +95,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGate) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -125,7 +126,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftPauliOverHadamardGate) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -168,7 +169,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultiplePauliGate) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -202,7 +203,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPrecedingPauliGate) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -234,7 +235,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -262,7 +263,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfDifferentControls) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -288,7 +289,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfGateBetweenControls) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -318,7 +319,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfSomeDifferentControls) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -384,7 +385,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -420,7 +421,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -456,7 +457,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
@@ -496,7 +497,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   PassManager pm(reference->getContext());
-  pm.addPass(createHadamardLifting());
+  pm.addPass(createCanonicalizerPass());
   EXPECT_TRUE(pm.run(*reference).succeeded());
 
   EXPECT_TRUE(
