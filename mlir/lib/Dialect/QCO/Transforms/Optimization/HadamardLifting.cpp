@@ -192,7 +192,10 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
  * - Y - H - = - H - Y -
  * - Z - H - = - H - X -
  * This is applied to uncontrolled gates and controlled ones, if the controls
- * are applied to the same qubits for both gates.
+ * are applied to the same qubits for both gates and the Pauli gates are X or Y.
+ * In case of Pauli Y, the routine is only applied to uncontrolled gates, as
+ * HY = -YH, which leads to a relative phase if the Hadamard and Pauli gate are
+ * controlled.
  */
 struct LiftHadamardsAbovePauliGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
@@ -225,19 +228,24 @@ struct LiftHadamardsAbovePauliGatesPattern final
    * - X - H - = - H - Z -
    * - Y - H - = - H - Y -
    * - Z - H - = - H - X -
+   * A Pauli Y gate is only swapped with the Hadamard gate if they are
+   * uncontrolled.
    *
    * @param gate The Pauli gate.
    * @param hadamardGate The Hadamard gate.
+   * @param controlled Whether the gates are controlled or not.
    * @param rewriter The used rewriter.
    * @return success() if circuit was changed, failure() otherwise
    */
   static LogicalResult swapPauliWithHadamard(UnitaryOpInterface gate,
                                              UnitaryOpInterface hadamardGate,
+                                             const bool controlled,
                                              PatternRewriter& rewriter) {
     const auto gateName = gate->getName().stripDialect().str();
     const auto hadamardName = hadamardGate->getName().stripDialect().str();
     if (hadamardName != "h" ||
-        (gateName != "x" && gateName != "y" && gateName != "z")) {
+        (gateName != "x" && gateName != "y" && gateName != "z") ||
+        (gateName == "y" && controlled)) {
       return failure();
     }
     rewriter.setInsertionPoint(gate);
@@ -276,7 +284,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
       return failure();
     }
     return swapPauliWithHadamard(firstGate.getBodyUnitary(),
-                                 secondGate.getBodyUnitary(), rewriter);
+                                 secondGate.getBodyUnitary(), true, rewriter);
   }
 
   /**
@@ -318,7 +326,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
       return failure();
     }
 
-    return swapPauliWithHadamard(op, hadamardGate, rewriter);
+    return swapPauliWithHadamard(op, hadamardGate, false, rewriter);
   }
 };
 
