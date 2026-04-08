@@ -97,8 +97,11 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
     Hadamard lifting is only applied to lift Hadamard gates further in front in the circuit, not the other way around.
 
     If the Hadamard and Pauli gates are controlled, they are only lifted if both gates are controlled by exactly the
-    same qubits. One exception to this is the controlled Pauli Z gate. For these gates, controls and targets are
-    interchangeable. Therefore, transformation routines as follows are possible and applied:
+    same qubits and the Pauli gate is not a Pauli Y gate. In that case, the swap of the Pauli Y gate and the Hadamard
+    gate introduces a phase (YH = -HY) which leads to a non-global phase for controlled gates.
+
+    In the case of the controlled Pauli Z gate, controls and targets are interchangeable. Therefore, transformation
+    routines as follows are possible and applied:
         ┌───┐
         ┤ Z ├──■──    ──■────■──    ──■────■──
         └─┬─┘┌─┴─┐ => ┌─┴─┐┌─┴─┐ => ┌─┴─┐┌─┴─┐

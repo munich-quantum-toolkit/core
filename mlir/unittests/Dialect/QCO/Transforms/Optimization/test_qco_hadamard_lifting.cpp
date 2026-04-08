@@ -243,6 +243,34 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
 }
 
 /**
+ * @brief Test: Checks that Hadamard gates are not lifted if they are controlled
+ * and the Pauli gate is a Pauli Y gate.
+ */
+TEST_F(QCOHadamardLiftingTest, doNotliftHadamardOverPauliYGateIfControlled) {
+  auto q = programBuilder.allocQubitRegister(2);
+  q[0] = programBuilder.y(q[0]);
+  auto qubitPair = programBuilder.cy(q[1], q[0]);
+  qubitPair = programBuilder.ch(qubitPair.first, qubitPair.second);
+  programBuilder.cy(qubitPair.first, qubitPair.second);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  qRef[0] = referenceBuilder.y(qRef[0]);
+  auto qubitPairRef = referenceBuilder.cy(qRef[1], qRef[0]);
+  qubitPairRef = referenceBuilder.ch(qubitPairRef.first, qubitPairRef.second);
+  referenceBuilder.cy(qubitPairRef.first, qubitPairRef.second);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
+  PassManager pm(reference->getContext());
+  pm.addPass(createCanonicalizerPass());
+  EXPECT_TRUE(pm.run(*reference).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
  * @brief Test: Checks that a hadamard gate is not lifted if they are controlled
  * by a different qubit than the one lifted gate is.
  */
