@@ -63,6 +63,15 @@ protected:
     pm.addPass(createHadamardLifting());
     return pm.run(module);
   }
+
+  /**
+   * @brief Adds the canonicalizerPass to the current context and runs it.
+   */
+  static LogicalResult runCanonicalizerPass(ModuleOp module) {
+    PassManager pm(module.getContext());
+    pm.addPass(createCanonicalizerPass());
+    return pm.run(module);
+  }
 };
 
 } // namespace
@@ -94,9 +103,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGate) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -125,9 +132,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftPauliOverHadamardGate) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -168,9 +173,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultiplePauliGate) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -202,9 +205,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPrecedingPauliGate) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -234,9 +235,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -262,9 +261,7 @@ TEST_F(QCOHadamardLiftingTest, doNotliftHadamardOverPauliYGateIfControlled) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -290,9 +287,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfDifferentControls) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -316,9 +311,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfGateBetweenControls) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -346,9 +339,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfSomeDifferentControls) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -412,9 +403,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -448,9 +437,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -484,9 +471,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -524,9 +509,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  PassManager pm(reference->getContext());
-  pm.addPass(createCanonicalizerPass());
-  EXPECT_TRUE(pm.run(*reference).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
