@@ -765,7 +765,7 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
   }
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto* operation = op.getOperation();

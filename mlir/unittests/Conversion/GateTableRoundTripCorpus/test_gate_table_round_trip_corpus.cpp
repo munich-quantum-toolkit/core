@@ -26,31 +26,35 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
-#include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/QC/IR/QCDialect.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 using namespace mlir;
-
-namespace {
 
 enum class CorpusVariant : uint8_t {
   Base,
@@ -68,7 +72,7 @@ struct GateCase {
   CorpusVariant variant = CorpusVariant::Base;
 };
 
-std::string toString(const GateCase& c) {
+static std::string toString(const GateCase& c) {
   std::string s = c.key != nullptr ? c.key : "<null>";
   s += "_t" + std::to_string(c.numTargets);
   s += "_p" + std::to_string(c.numParams);
@@ -90,37 +94,37 @@ std::string toString(const GateCase& c) {
   return s + "unknown";
 }
 
-LogicalResult convertQCOToJeff(ModuleOp module) {
+static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToJeff());
   return pm.run(module);
 }
 
-LogicalResult convertJeffToQCO(ModuleOp module) {
+static LogicalResult convertJeffToQCO(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createJeffToQCO());
   return pm.run(module);
 }
 
-LogicalResult convertQCToQCO(ModuleOp module) {
+static LogicalResult convertQCToQCO(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQCO());
   return pm.run(module);
 }
 
-LogicalResult convertQCOToQC(ModuleOp module) {
+static LogicalResult convertQCOToQC(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(module);
 }
 
-LogicalResult convertQCToQIR(ModuleOp module) {
+static LogicalResult convertQCToQIR(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQIR());
   return pm.run(module);
 }
 
-func::FuncOp createMainFunc(OpBuilder& b, ModuleOp module) {
+static func::FuncOp createMainFunc(OpBuilder& b, ModuleOp module) {
   auto funcType = b.getFunctionType({}, {b.getI64Type()});
   auto mainFunc = func::FuncOp::create(b.getUnknownLoc(), "main", funcType);
   auto entryPointAttr = b.getStringAttr("entry_point");
@@ -131,17 +135,17 @@ func::FuncOp createMainFunc(OpBuilder& b, ModuleOp module) {
   return mainFunc;
 }
 
-std::variant<double, Value> paramValue(size_t i) {
+static std::variant<double, Value> paramValue(size_t i) {
   // Deterministic, distinct values; avoids special angles like 0 or pi.
   return 0.123 + (static_cast<double>(i) * 0.456);
 }
 
 template <typename QCOOpType, size_t NumTargets, size_t NumParams,
           size_t... TargetI, size_t... ParamI>
-llvm::SmallVector<Value> emitGateImpl(OpBuilder& b, Location loc,
-                                      llvm::ArrayRef<Value> targets,
-                                      std::index_sequence<TargetI...> /*tgt*/,
-                                      std::index_sequence<ParamI...> /*par*/) {
+static llvm::SmallVector<Value>
+emitGateImpl(OpBuilder& b, Location loc, llvm::ArrayRef<Value> targets,
+             std::index_sequence<TargetI...> /*tgt*/,
+             std::index_sequence<ParamI...> /*par*/) {
   auto gate =
       QCOOpType::create(b, loc, targets[TargetI]..., paramValue(ParamI)...);
   llvm::SmallVector<Value> out;
@@ -153,15 +157,15 @@ llvm::SmallVector<Value> emitGateImpl(OpBuilder& b, Location loc,
 }
 
 template <typename QCOOpType, size_t NumTargets, size_t NumParams>
-llvm::SmallVector<Value> emitGate(OpBuilder& b, Location loc,
-                                  llvm::ArrayRef<Value> targets) {
+static llvm::SmallVector<Value> emitGate(OpBuilder& b, Location loc,
+                                         llvm::ArrayRef<Value> targets) {
   return emitGateImpl<QCOOpType, NumTargets, NumParams>(
       b, loc, targets, std::make_index_sequence<NumTargets>{},
       std::make_index_sequence<NumParams>{});
 }
 
 template <typename QCOOpType, size_t NumTargets, size_t NumParams>
-void buildGateCaseBody(OpBuilder& b, Location loc, const GateCase& tc) {
+static void buildGateCaseBody(OpBuilder& b, Location loc, const GateCase& tc) {
   constexpr size_t maxCtrls = 2;
   llvm::SmallVector<Value> controls;
   llvm::SmallVector<Value> targets;
@@ -172,7 +176,7 @@ void buildGateCaseBody(OpBuilder& b, Location loc, const GateCase& tc) {
       static_cast<int64_t>(maxCtrls) + static_cast<int64_t>(NumTargets);
   for (int64_t i = 0; i < totalQubits; ++i) {
     auto q = qco::AllocOp::create(b, loc).getResult();
-    if (i < static_cast<int64_t>(maxCtrls)) {
+    if (std::cmp_less(i, maxCtrls)) {
       controls.push_back(q);
     } else {
       targets.push_back(q);
@@ -245,20 +249,22 @@ void buildGateCaseBody(OpBuilder& b, Location loc, const GateCase& tc) {
 }
 
 template <typename QCOOpType, size_t NumTargets, size_t NumParams>
-OwningOpRef<ModuleOp> buildGateCase(MLIRContext* ctx, const GateCase& tc) {
+static OwningOpRef<ModuleOp> buildGateCase(MLIRContext* ctx,
+                                           const GateCase& tc) {
   OpBuilder b(ctx);
   auto loc = FileLineColLoc::get(ctx, "<gate-table-round-trip-corpus>", 1, 1);
   auto module = ModuleOp::create(loc);
   (void)createMainFunc(b, module);
   buildGateCaseBody<QCOOpType, NumTargets, NumParams>(b, loc, tc);
-  return OwningOpRef<ModuleOp>(module);
+  return {module};
 }
 
 template <typename QCOpType, size_t NumTargets, size_t NumParams,
           size_t... TargetI, size_t... ParamI>
-void emitQCGateImpl(OpBuilder& b, Location loc, llvm::ArrayRef<Value> targets,
-                    std::index_sequence<TargetI...> /*tgt*/,
-                    std::index_sequence<ParamI...> /*par*/) {
+static void emitQCGateImpl(OpBuilder& b, Location loc,
+                           llvm::ArrayRef<Value> targets,
+                           std::index_sequence<TargetI...> /*tgt*/,
+                           std::index_sequence<ParamI...> /*par*/) {
   if constexpr (std::is_same_v<QCOpType, qc::U2Op>) {
     static_assert(NumTargets == 1);
     static_assert(NumParams == 2);
@@ -271,14 +277,16 @@ void emitQCGateImpl(OpBuilder& b, Location loc, llvm::ArrayRef<Value> targets,
 }
 
 template <typename QCOpType, size_t NumTargets, size_t NumParams>
-void emitQCGate(OpBuilder& b, Location loc, llvm::ArrayRef<Value> targets) {
+static void emitQCGate(OpBuilder& b, Location loc,
+                       llvm::ArrayRef<Value> targets) {
   emitQCGateImpl<QCOpType, NumTargets, NumParams>(
       b, loc, targets, std::make_index_sequence<NumTargets>{},
       std::make_index_sequence<NumParams>{});
 }
 
 template <typename QCOpType, size_t NumTargets, size_t NumParams>
-OwningOpRef<ModuleOp> buildQCGateCase(MLIRContext* ctx, const GateCase& tc) {
+static OwningOpRef<ModuleOp> buildQCGateCase(MLIRContext* ctx,
+                                             const GateCase& tc) {
   qc::QCProgramBuilder builder(ctx);
   builder.initialize();
 
@@ -339,7 +347,7 @@ OwningOpRef<ModuleOp> buildQCGateCase(MLIRContext* ctx, const GateCase& tc) {
   return builder.finalize();
 }
 
-std::vector<GateCase> makeCases() {
+static std::vector<GateCase> makeCases() {
   std::vector<GateCase> cases;
 
 #define MQT_ADD_CASES(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP, \
@@ -364,7 +372,7 @@ std::vector<GateCase> makeCases() {
 }
 
 template <typename QCOOpType, size_t Targets, size_t Params>
-void runGateCase(MLIRContext* ctx, const GateCase& tc) {
+static void runGateCase(MLIRContext* ctx, const GateCase& tc) {
   ::mqt::test::DeferredPrinter printer;
   auto program = buildGateCase<QCOOpType, Targets, Params>(ctx, tc);
   ASSERT_TRUE(program);
@@ -403,7 +411,8 @@ void runGateCase(MLIRContext* ctx, const GateCase& tc) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-template <typename CtxT> bool dispatchGateCase(CtxT* ctx, const GateCase& tc) {
+template <typename CtxT>
+static bool dispatchGateCase(CtxT* ctx, const GateCase& tc) {
 #define MQT_DISPATCH(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP,  \
                      JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND,  \
                      QIR_FN)                                                   \
@@ -437,7 +446,7 @@ TEST(GateTableRoundTripCorpus, QCOJeffQCORoundTripAllGates) {
 }
 
 template <typename QCOpType, size_t Targets, size_t Params>
-void runGateCaseQCChain(MLIRContext* ctx, const GateCase& tc) {
+static void runGateCaseQCChain(MLIRContext* ctx, const GateCase& tc) {
   ::mqt::test::DeferredPrinter printer;
   auto program = buildQCGateCase<QCOpType, Targets, Params>(ctx, tc);
   ASSERT_TRUE(program);
@@ -480,7 +489,7 @@ void runGateCaseQCChain(MLIRContext* ctx, const GateCase& tc) {
 }
 
 template <typename CtxT>
-bool dispatchGateCaseQCChain(CtxT* ctx, const GateCase& tc) {
+static bool dispatchGateCaseQCChain(CtxT* ctx, const GateCase& tc) {
 #define MQT_DISPATCH_QC(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND,        \
                         JEFF_OP, JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME,          \
                         JEFF_PPR, QIR_KIND, QIR_FN)                            \
@@ -515,8 +524,8 @@ TEST(GateTableRoundTripCorpus, QCQCOJeffQCOQCRoundTripAllGates) {
 }
 
 template <typename QCOpType, size_t Targets, size_t Params>
-OwningOpRef<ModuleOp> buildQCGateCaseForQIR(MLIRContext* ctx,
-                                            const GateCase& tc) {
+static OwningOpRef<ModuleOp> buildQCGateCaseForQIR(MLIRContext* ctx,
+                                                   const GateCase& tc) {
   qc::QCProgramBuilder builder(ctx);
   builder.initialize();
 
@@ -525,8 +534,8 @@ OwningOpRef<ModuleOp> buildQCGateCaseForQIR(MLIRContext* ctx,
       static_cast<int64_t>(maxCtrls) + static_cast<int64_t>(Targets);
   auto qubits = builder.allocQubitRegister(totalQubits);
 
-  SmallVector<Value> controls;
-  SmallVector<Value> targets;
+  llvm::SmallVector<Value> controls;
+  llvm::SmallVector<Value> targets;
   controls.reserve(maxCtrls);
   targets.reserve(Targets);
   for (size_t i = 0; i < maxCtrls; ++i) {
@@ -575,7 +584,7 @@ OwningOpRef<ModuleOp> buildQCGateCaseForQIR(MLIRContext* ctx,
 
 template <typename QCOpType, size_t Targets, size_t Params,
           mlir::mqt::gates::QIRKind QIRKindValue, auto QIRFnNameSelector>
-void runGateCaseQCToQIR(MLIRContext* ctx, const GateCase& tc) {
+static void runGateCaseQCToQIR(MLIRContext* ctx, const GateCase& tc) {
   if constexpr (QIRKindValue != mlir::mqt::gates::QIRKind::Unitary) {
     return;
   } else {
@@ -625,7 +634,7 @@ void runGateCaseQCToQIR(MLIRContext* ctx, const GateCase& tc) {
 }
 
 template <typename CtxT>
-bool dispatchGateCaseQCToQIR(CtxT* ctx, const GateCase& tc) {
+static bool dispatchGateCaseQCToQIR(CtxT* ctx, const GateCase& tc) {
 #define MQT_DISPATCH_QC_TO_QIR(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, \
                                JEFF_OP, JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME,   \
                                JEFF_PPR, QIR_KIND, QIR_FN)                     \
@@ -658,5 +667,3 @@ TEST(GateTableRoundTripCorpus, QCToQIRGateTableUnitaryGates) {
     ASSERT_TRUE(dispatchGateCaseQCToQIR(ctx.get(), tc));
   }
 }
-
-} // namespace

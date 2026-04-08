@@ -20,7 +20,6 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>

@@ -34,6 +34,7 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -239,7 +240,7 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   }
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     const auto qcOperands = adaptor.getOperands();
     assert(qcOperands.size() == (NumTargets + NumParams) &&

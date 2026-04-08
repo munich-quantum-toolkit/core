@@ -40,6 +40,7 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <limits>
@@ -688,7 +689,7 @@ struct ConvertQCOCustomGateToJeff final
         name_(name), baseIsAdjoint_(baseIsAdjoint) {}
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
@@ -720,7 +721,7 @@ struct ConvertQCOPPRGateToJeff final : StatefulOpConversionPattern<QCOOpType> {
         p0_(p0), p1_(p1) {}
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 

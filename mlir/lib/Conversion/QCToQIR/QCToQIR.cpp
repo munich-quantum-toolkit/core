@@ -280,13 +280,14 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
  * @tparam NumParams Number of floating-point parameters for this operation
  * @tparam GetFnName Function that maps numCtrls -> QIR function name
  */
+namespace {
 template <typename OpType, std::size_t NumTargets, std::size_t NumParams,
           auto GetFnName>
 struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
   using StatefulOpConversionPattern<OpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(OpType op, typename OpType::Adaptor adaptor,
+  matchAndRewrite(OpType op, OpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     const auto inCtrlOp = state.inCtrlOp;
@@ -296,8 +297,6 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
                                   state, fnName, NumTargets, NumParams);
   }
 };
-
-namespace {
 
 /**
  * @brief Type converter for lowering QC dialect types to LLVM types
