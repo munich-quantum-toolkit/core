@@ -18,7 +18,6 @@ target_link_libraries(
           MLIRSupportMQT
           MLIRQTensorDialect
           MLIRQCOUtils
-          MLIRParser
           MLIRIR
           MLIRPass
           MLIRSupport
