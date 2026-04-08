@@ -715,12 +715,11 @@ protected:
     target.addLegalDialect<QCDialect, memref::MemRefDialect>();
 
     // Register operation conversion patterns that do not need state tracking
-    patterns
-        .add<ConvertQTensorAllocOp, ConvertQTensorExtractOp,
-             ConvertQTensorInsertOp, ConvertQTensorDeallocOp, ConvertQCOMeasureOp,
-             ConvertQCOResetOp,
-             ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
-            typeConverter, context);
+    patterns.add<
+        ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+        ConvertQTensorDeallocOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
+        ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
+        typeConverter, context);
 
 #define MQT_ADD_QCO_TO_QC_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, \
                                JEFF_OP, JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME,   \

@@ -1271,11 +1271,12 @@ protected:
     });
 
     // Register operation conversion patterns with state tracking.
-    patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
-                 ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
-                 ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCBarrierOp,
-                 ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
-        typeConverter, context, &state);
+    patterns
+        .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
+             ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
+             ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCBarrierOp,
+             ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
+            typeConverter, context, &state);
 
     // Not part of the central gate table (no Jeff/QIR lowering).
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
