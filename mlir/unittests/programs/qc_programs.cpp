@@ -371,6 +371,11 @@ void inverseMultipleControlledH(QCProgramBuilder& b) {
   b.inv([&]() { b.mch({q[0], q[1]}, q[2]); });
 }
 
+void hWithoutRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+}
+
 void s(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.s(q[0]);

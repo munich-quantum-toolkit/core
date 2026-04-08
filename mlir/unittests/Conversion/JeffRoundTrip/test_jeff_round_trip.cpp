@@ -218,7 +218,10 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::singleControlledH)},
         JeffRoundTripTestCase{"MultipleControlledH",
                               MQT_NAMED_BUILDER(qco::multipleControlledH),
-                              MQT_NAMED_BUILDER(qco::multipleControlledH)}));
+                              MQT_NAMED_BUILDER(qco::multipleControlledH)},
+        JeffRoundTripTestCase{"HWithoutRegister",
+                              MQT_NAMED_BUILDER(qco::hWithoutRegister),
+                              MQT_NAMED_BUILDER(qco::hWithoutRegister)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/IswapOp.cpp

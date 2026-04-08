@@ -235,6 +235,11 @@ void multipleControlledH(QIRProgramBuilder& b) {
   b.mch({q[0], q[1]}, q[2]);
 }
 
+void hWithoutRegister(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+}
+
 void s(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.s(q[0]);

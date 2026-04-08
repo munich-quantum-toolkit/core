@@ -149,6 +149,9 @@ void singleControlledH(QIRProgramBuilder& b);
 /// Creates a circuit with a multi-controlled H gate.
 void multipleControlledH(QIRProgramBuilder& b);
 
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QIRProgramBuilder& b);
+
 // --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.

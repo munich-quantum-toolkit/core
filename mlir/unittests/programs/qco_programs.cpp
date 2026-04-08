@@ -445,6 +445,11 @@ void twoH(QCOProgramBuilder& b) {
   q[0] = b.h(q[0]);
 }
 
+void hWithoutRegister(QCOProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+}
+
 void s(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.s(q[0]);

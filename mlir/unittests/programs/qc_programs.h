@@ -232,6 +232,9 @@ void inverseH(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled H gate.
 void inverseMultipleControlledH(QCProgramBuilder& b);
 
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QCProgramBuilder& b);
+
 // --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.

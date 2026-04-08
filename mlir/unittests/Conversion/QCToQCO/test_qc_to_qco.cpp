@@ -221,7 +221,10 @@ INSTANTIATE_TEST_SUITE_P(
                     QCToQCOTestCase{
                         "MultipleControlledH",
                         MQT_NAMED_BUILDER(qc::multipleControlledH),
-                        MQT_NAMED_BUILDER(qco::multipleControlledH)}));
+                        MQT_NAMED_BUILDER(qco::multipleControlledH)},
+                    QCToQCOTestCase{"HWithoutRegister",
+                                    MQT_NAMED_BUILDER(qc::hWithoutRegister),
+                                    MQT_NAMED_BUILDER(qco::hWithoutRegister)}));
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/IdOp.cpp

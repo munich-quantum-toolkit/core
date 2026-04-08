@@ -231,6 +231,9 @@ void inverseMultipleControlledH(QCOProgramBuilder& b);
 /// Creates a circuit with two H gates in a row.
 void twoH(QCOProgramBuilder& b);
 
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QCOProgramBuilder& b);
+
 // --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.
