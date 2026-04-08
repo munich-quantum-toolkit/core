@@ -19,7 +19,7 @@ add_mlir_conversion_library(
   MLIRQTensorDialect
   MLIRArithDialect
   MLIRFuncDialect
-        MLIRMemRefDialect
+  MLIRMemRefDialect
   MLIRTransforms
   MLIRFuncTransforms)
 

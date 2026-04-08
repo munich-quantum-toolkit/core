@@ -9,32 +9,32 @@
 file(GLOB_RECURSE PASSES_SOURCES *.cpp)
 
 add_mlir_library(
-        MLIRQTensorTransforms
-        ${PASSES_SOURCES}
-        LINK_LIBS
-        PRIVATE
-        MLIRQTensorDialect
-        DEPENDS
-        MLIRQTensorTransformsIncGen)
+  MLIRQTensorTransforms
+  ${PASSES_SOURCES}
+  LINK_LIBS
+  PRIVATE
+  MLIRQTensorDialect
+  DEPENDS
+  MLIRQTensorTransformsIncGen)
 
 # collect header files
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
-        ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QTensor/Transforms/*.h)
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QTensor/Transforms/*.h)
 file(GLOB_RECURSE PASSES_HEADERS_BUILD
-        ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QTensor/Transforms/*.inc)
+     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QTensor/Transforms/*.inc)
 
 # add public headers using file sets
 target_sources(
-        MLIRQTensorTransforms
-        PUBLIC FILE_SET
-        HEADERS
-        BASE_DIRS
-        ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-        FILES
-        ${PASSES_HEADERS_SOURCE}
-        FILE_SET
-        HEADERS
-        BASE_DIRS
-        ${MQT_MLIR_BUILD_INCLUDE_DIR}
-        FILES
-        ${PASSES_HEADERS_BUILD})
+  MLIRQTensorTransforms
+  PUBLIC FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+         FILES
+         ${PASSES_HEADERS_SOURCE}
+         FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${MQT_MLIR_BUILD_INCLUDE_DIR}
+         FILES
+         ${PASSES_HEADERS_BUILD})
