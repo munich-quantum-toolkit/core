@@ -230,6 +230,30 @@ template <typename QCOOpType, typename QCOpType, std::size_t NumTargets,
 struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
+  /**
+   * @brief Generic QCO gate lowering helper (value semantics -> reference).
+   *
+   * @details
+   * This helper relies on a strict operand ordering contract provided by the
+   * dialect conversion framework:
+   * - `adaptor.getOperands()` is expected to be ordered as
+   *   `targets...` followed by `parameters...`.
+   * - The first @p NumTargets operands are the (type-converted) QC target
+   * qubits.
+   * - The remaining @p NumParams operands are the gate parameters.
+   *
+   * `createGate` forwards the extracted targets and parameters to
+   * `QCOpType::create(...)`. `matchAndRewrite` then replaces the original QCO
+   * op with the created QC targets via `rewriter.replaceOp(op, qcTargets)`.
+   *
+   * The values of @p NumTargets and @p NumParams are compile-time constants and
+   * define this contract for each instantiation.
+   *
+   * @see ConvertQCOGateToQC
+   * @see createGate
+   * @see matchAndRewrite
+   * @see addGatePattern
+   */
   template <std::size_t... TargetIndices, std::size_t... ParamIndices>
   static void createGate(ConversionPatternRewriter& rewriter, Location loc,
                          ValueRange qcOperands, QCOOpType op,

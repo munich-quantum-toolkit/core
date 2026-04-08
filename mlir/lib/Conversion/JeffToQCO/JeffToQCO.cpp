@@ -115,7 +115,7 @@ static void createModified(
  */
 template <typename QCOOpType, typename JeffOpType, std::size_t... TargetIndices,
           std::size_t... ParamIndices, typename ResultExtractor>
-static void
+static LogicalResult
 createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
                    const llvm::SmallVector<Value>& controls,
                    const llvm::SmallVector<Value>& targets,
@@ -126,7 +126,7 @@ createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[TargetIndices]...,
                                            parameters[ParamIndices]...);
-    return;
+    return success();
   }
 
   auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
@@ -140,17 +140,27 @@ createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
       {targets
            [TargetIndices]...}, // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
       lambda);
+  return success();
 }
 
 template <typename QCOOpType, typename JeffOpType, std::size_t NumTargets,
           std::size_t NumParams>
-static void
+static LogicalResult
 createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
                         const llvm::SmallVector<Value>& controls,
                         const llvm::SmallVector<Value>& targets,
                         const llvm::SmallVector<Value>& parameters) {
   static_assert((NumTargets == 1) || (NumTargets == 2),
                 "Only 1- and 2-target gates are supported here");
+
+  if (targets.size() != NumTargets) {
+    return rewriter.notifyMatchFailure(
+        op, "Unexpected number of target qubits for Jeff-to-QCO conversion");
+  }
+  if (parameters.size() != NumParams) {
+    return rewriter.notifyMatchFailure(
+        op, "Unexpected number of parameters for Jeff-to-QCO conversion");
+  }
 
   auto extractResults = [&](auto qcoOp) -> llvm::SmallVector<Value> {
     if constexpr (NumTargets == 1) {
@@ -160,7 +170,7 @@ createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
     }
   };
 
-  createGateFromJeff<QCOOpType, JeffOpType>(
+  return createGateFromJeff<QCOOpType, JeffOpType>(
       op, rewriter, controls, targets, parameters,
       std::make_index_sequence<NumTargets>{},
       std::make_index_sequence<NumParams>{}, extractResults);
@@ -706,10 +716,9 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
         return rewriter.notifyMatchFailure(
             op, "Custom SX operations must have exactly one target qubit");
       }
-      createGateFromJeffArity<qco::SXOp, jeff::CustomOp, 1, 0>(
+      return createGateFromJeffArity<qco::SXOp, jeff::CustomOp, 1, 0>(
           op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
           {});
-      return success();
     }
 
     if (op.getName() == "barrier") {
@@ -724,34 +733,27 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
     if constexpr ((JEFF_KIND) == ::mlir::mqt::gates::JeffKind::Custom &&       \
                   !(JEFF_BASE_ADJOINT)) {                                      \
       if (op.getName() == #JEFF_CUSTOM_NAME) {                                 \
+        if (op.getInTargetQubits().size() != (TARGETS) ||                      \
+            op.getParams().size() != (PARAMS)) {                               \
+          return rewriter.notifyMatchFailure(                                  \
+              op, "Custom operation arity does not match gate table entry");   \
+        }                                                                      \
         if constexpr ((TARGETS) == 1 && (PARAMS) == 0) {                       \
-          if (op.getInTargetQubits().size() != 1) {                            \
-            return rewriter.notifyMatchFailure(                                \
-                op, "Custom operations must have exactly one target qubit");   \
-          }                                                                    \
-          createGateFromJeffArity<QCO_OP, jeff::CustomOp, 1, 0>(               \
+          return createGateFromJeffArity<QCO_OP, jeff::CustomOp, 1, 0>(        \
               op, rewriter, adaptor.getInCtrlQubits(),                         \
               {adaptor.getInTargetQubits()[0]}, {});                           \
-          return success();                                                    \
         } else if constexpr ((TARGETS) == 1 && (PARAMS) == 2) {                \
-          if (op.getInTargetQubits().size() != 1) {                            \
-            return rewriter.notifyMatchFailure(                                \
-                op, "Custom operations must have exactly one target qubit");   \
-          }                                                                    \
-          createGateFromJeffArity<QCO_OP, jeff::CustomOp, 1, 2>(               \
+          return createGateFromJeffArity<QCO_OP, jeff::CustomOp, 1, 2>(        \
               op, rewriter, adaptor.getInCtrlQubits(),                         \
               {adaptor.getInTargetQubits()[0]}, op.getParams());               \
-          return success();                                                    \
         } else if constexpr ((TARGETS) == 2 && (PARAMS) == 0) {                \
-          createGateFromJeffArity<QCO_OP, jeff::CustomOp, 2, 0>(               \
+          return createGateFromJeffArity<QCO_OP, jeff::CustomOp, 2, 0>(        \
               op, rewriter, adaptor.getInCtrlQubits(),                         \
               adaptor.getInTargetQubits(), {});                                \
-          return success();                                                    \
         } else if constexpr ((TARGETS) == 2 && (PARAMS) == 2) {                \
-          createGateFromJeffArity<QCO_OP, jeff::CustomOp, 2, 2>(               \
+          return createGateFromJeffArity<QCO_OP, jeff::CustomOp, 2, 2>(        \
               op, rewriter, adaptor.getInCtrlQubits(),                         \
               adaptor.getInTargetQubits(), op.getParams());                    \
-          return success();                                                    \
         }                                                                      \
       }                                                                        \
     }                                                                          \

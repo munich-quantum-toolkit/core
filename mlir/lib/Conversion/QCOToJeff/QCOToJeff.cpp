@@ -265,30 +265,6 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 /**
- * @brief Creates a jeff.custom operation (without handling results).
- *
- * @details
- * Useful when conversions use the generic `convertGate` helper.
- */
-static jeff::CustomOp createCustomOp(ConversionPatternRewriter& rewriter,
-                                     Location loc, LoweringState& state,
-                                     ValueRange targets, ValueRange params,
-                                     const bool isAdjoint, StringRef name) {
-  auto* const it = llvm::find(state.strings, name);
-  if (it == state.strings.end()) {
-    state.strings.emplace_back(name);
-  }
-
-  return jeff::CustomOp::create(
-      rewriter, loc, targets,
-      /*in_ctrl_qubits=*/state.controlsIn, /*params=*/params,
-      /*num_ctrls=*/state.controlsIn.size(),
-      /*is_adjoint=*/state.inInvOp ^ isAdjoint,
-      /*power=*/1, /*name=*/name, /*num_targets=*/targets.size(),
-      /*num_params=*/params.size());
-}
-
-/**
  * @brief Converts a compatible QCO operation to a jeff.ppr operation
  *
  * @tparam QCOOpType The operation type of the QCO operation
@@ -316,20 +292,6 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 
   handleResult(op, rewriter, state, jeffOp.getOutQubits(),
                jeffOp.getOutCtrlQubits());
-}
-
-static jeff::PPROp createPPROp(ConversionPatternRewriter& rewriter,
-                               Location loc, LoweringState& state,
-                               ValueRange targets, Value rotation,
-                               const llvm::SmallVector<int32_t>& pauliGates) {
-  auto pauliGatesAttr =
-      DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
-  return jeff::PPROp::create(rewriter, loc, targets,
-                             /*in_ctrl_qubits=*/state.controlsIn,
-                             /*rotation=*/rotation,
-                             /*num_ctrls=*/state.controlsIn.size(),
-                             /*is_adjoint=*/state.inInvOp,
-                             /*power=*/1, /*pauli_gates=*/pauliGatesAttr);
 }
 
 /**
@@ -1155,6 +1117,51 @@ public:
   }
 };
 
+template <auto...> struct AlwaysFalse : std::false_type {};
+
+template <::mlir::mqt::gates::JeffKind Kind, std::size_t Targets,
+          std::size_t Params, typename QCOOpType, typename JeffOpType,
+          bool JeffBaseAdjoint>
+void addQCOToJeffGatePattern(RewritePatternSet& patterns,
+                             TypeConverter& typeConverter, MLIRContext* context,
+                             LoweringState& state, StringRef customName,
+                             const ::mlir::mqt::gates::PPRPaulis& ppr) {
+  if constexpr (Kind == ::mlir::mqt::gates::JeffKind::Native) {
+    if constexpr (Targets == 1 && Params == 0) {
+      patterns.add<ConvertQCOOneTargetZeroParameterToJeff<QCOOpType, JeffOpType,
+                                                          JeffBaseAdjoint>>(
+          typeConverter, context, &state);
+    } else if constexpr (Targets == 1 && Params == 1) {
+      patterns
+          .add<ConvertQCOOneTargetOneParameterToJeff<QCOOpType, JeffOpType>>(
+              typeConverter, context, &state);
+    } else if constexpr (Targets == 1 && Params == 3) {
+      patterns
+          .add<ConvertQCOOneTargetThreeParameterToJeff<QCOOpType, JeffOpType>>(
+              typeConverter, context, &state);
+    } else if constexpr (Targets == 2 && Params == 0) {
+      patterns
+          .add<ConvertQCOTwoTargetZeroParameterToJeff<QCOOpType, JeffOpType>>(
+              typeConverter, context, &state);
+    } else {
+      static_assert(AlwaysFalse<Kind, Targets, Params>::value,
+                    "MQT_ADD_QCO_TO_JEFF_GATE: unhandled JeffKind::Native "
+                    "arity/params");
+    }
+  } else if constexpr (Kind == ::mlir::mqt::gates::JeffKind::Custom) {
+    patterns.add<ConvertQCOCustomGateToJeff<QCOOpType, Targets, Params>>(
+        typeConverter, context, &state, customName, JeffBaseAdjoint);
+  } else if constexpr (Kind == ::mlir::mqt::gates::JeffKind::PPR) {
+    patterns.add<ConvertQCOPPRGateToJeff<QCOOpType>>(typeConverter, context,
+                                                     &state, ppr.p0, ppr.p1);
+  } else if constexpr (Kind == ::mlir::mqt::gates::JeffKind::SpecialU2ToU) {
+    patterns.add<ConvertQCOU2OpToJeff>(typeConverter, context, &state);
+  } else {
+    static_assert(AlwaysFalse<Kind, Targets, Params>::value,
+                  "MQT_ADD_QCO_TO_JEFF_GATE: unhandled JeffKind");
+  }
+}
+
 /**
  * @brief Pass for converting QCO operations to Jeff operations
  */
@@ -1197,34 +1204,10 @@ protected:
                                  JEFF_KIND, JEFF_OP, JEFF_BASE_ADJOINT,        \
                                  JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND, QIR_FN) \
   do {                                                                         \
-    if constexpr ((JEFF_KIND) == ::mlir::mqt::gates::JeffKind::Native) {       \
-      if constexpr ((TARGETS) == 1 && (PARAMS) == 0) {                         \
-        patterns.add<ConvertQCOOneTargetZeroParameterToJeff<                   \
-            QCO_OP, JEFF_OP, JEFF_BASE_ADJOINT>>(typeConverter, context,       \
-                                                 &state);                      \
-      } else if constexpr ((TARGETS) == 1 && (PARAMS) == 1) {                  \
-        patterns.add<ConvertQCOOneTargetOneParameterToJeff<QCO_OP, JEFF_OP>>(  \
-            typeConverter, context, &state);                                   \
-      } else if constexpr ((TARGETS) == 1 && (PARAMS) == 3) {                  \
-        patterns                                                               \
-            .add<ConvertQCOOneTargetThreeParameterToJeff<QCO_OP, JEFF_OP>>(    \
-                typeConverter, context, &state);                               \
-      } else if constexpr ((TARGETS) == 2 && (PARAMS) == 0) {                  \
-        patterns.add<ConvertQCOTwoTargetZeroParameterToJeff<QCO_OP, JEFF_OP>>( \
-            typeConverter, context, &state);                                   \
-      }                                                                        \
-    } else if constexpr ((JEFF_KIND) ==                                        \
-                         ::mlir::mqt::gates::JeffKind::Custom) {               \
-      patterns.add<ConvertQCOCustomGateToJeff<QCO_OP, (TARGETS), (PARAMS)>>(   \
-          typeConverter, context, &state, #JEFF_CUSTOM_NAME,                   \
-          JEFF_BASE_ADJOINT);                                                  \
-    } else if constexpr ((JEFF_KIND) == ::mlir::mqt::gates::JeffKind::PPR) {   \
-      patterns.add<ConvertQCOPPRGateToJeff<QCO_OP>>(                           \
-          typeConverter, context, &state, (JEFF_PPR).p0, (JEFF_PPR).p1);       \
-    } else if constexpr ((JEFF_KIND) ==                                        \
-                         ::mlir::mqt::gates::JeffKind::SpecialU2ToU) {         \
-      patterns.add<ConvertQCOU2OpToJeff>(typeConverter, context, &state);      \
-    }                                                                          \
+    addQCOToJeffGatePattern<(JEFF_KIND), (TARGETS), (PARAMS), QCO_OP, JEFF_OP, \
+                            (JEFF_BASE_ADJOINT)>(                              \
+        patterns, typeConverter, context, state, #JEFF_CUSTOM_NAME,            \
+        (JEFF_PPR));                                                           \
   } while (false);
     // NOLINTEND(bugprone-macro-parentheses)
 

@@ -26,6 +26,7 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -47,6 +48,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -272,9 +274,24 @@ static void emitQCGateImpl(OpBuilder& b, Location loc,
   if constexpr (std::is_same_v<QCOpType, qc::U2Op>) {
     static_assert(NumTargets == 1);
     static_assert(NumParams == 2);
+    qc::U2Op::create(b, loc, targets[0], paramValue(0), paramValue(1));
+  } else {
+    QCOpType::create(b, loc, targets[TargetI]..., paramValue(ParamI)...);
+  }
+}
+
+template <typename QCOpType, size_t NumTargets, size_t NumParams,
+          size_t... TargetI, size_t... ParamI>
+static void emitQCGateImplReference(OpBuilder& b, Location loc,
+                                    llvm::ArrayRef<Value> targets,
+                                    std::index_sequence<TargetI...> /*tgt*/,
+                                    std::index_sequence<ParamI...> /*par*/) {
+  if constexpr (std::is_same_v<QCOpType, qc::U2Op>) {
+    static_assert(NumTargets == 1);
+    static_assert(NumParams == 2);
     constexpr double piOver2 = 1.5707963267948966;
-    // QC→QCO→Jeff lowering encodes U2 as U(π/2, λ, φ).
-    qc::UOp::create(b, loc, targets[0], piOver2, paramValue(1), paramValue(0));
+    // QC→QCO→Jeff lowering encodes U2 as U(π/2, φ, λ).
+    qc::UOp::create(b, loc, targets[0], piOver2, paramValue(0), paramValue(1));
   } else {
     QCOpType::create(b, loc, targets[TargetI]..., paramValue(ParamI)...);
   }
@@ -284,6 +301,14 @@ template <typename QCOpType, size_t NumTargets, size_t NumParams>
 static void emitQCGate(OpBuilder& b, Location loc,
                        llvm::ArrayRef<Value> targets) {
   emitQCGateImpl<QCOpType, NumTargets, NumParams>(
+      b, loc, targets, std::make_index_sequence<NumTargets>{},
+      std::make_index_sequence<NumParams>{});
+}
+
+template <typename QCOpType, size_t NumTargets, size_t NumParams>
+static void emitQCGateReference(OpBuilder& b, Location loc,
+                                llvm::ArrayRef<Value> targets) {
+  emitQCGateImplReference<QCOpType, NumTargets, NumParams>(
       b, loc, targets, std::make_index_sequence<NumTargets>{},
       std::make_index_sequence<NumParams>{});
 }
@@ -317,6 +342,95 @@ static OwningOpRef<ModuleOp> buildQCGateCase(MLIRContext* ctx,
     emitQCGate<QCOpType, NumTargets, NumParams>(b, loc, targets);
   };
   auto applyInv = [&]() { builder.inv([&]() { applyBase(); }); };
+  auto applyCtrl = [&](size_t nCtrls, bool inverted) {
+    builder.ctrl(ValueRange(controls).take_front(nCtrls), [&]() {
+      if (inverted) {
+        applyInv();
+      } else {
+        applyBase();
+      }
+    });
+  };
+
+  switch (tc.variant) {
+  case CorpusVariant::Base:
+    applyBase();
+    break;
+  case CorpusVariant::Inverted:
+    applyInv();
+    break;
+  case CorpusVariant::Ctrl1:
+    applyCtrl(1, false);
+    break;
+  case CorpusVariant::Ctrl2:
+    applyCtrl(2, false);
+    break;
+  case CorpusVariant::Ctrl1Inverted:
+    applyCtrl(1, true);
+    break;
+  case CorpusVariant::Ctrl2Inverted:
+    applyCtrl(2, true);
+    break;
+  }
+
+  return builder.finalize();
+}
+
+template <typename QCOpType, size_t NumTargets, size_t NumParams>
+static OwningOpRef<ModuleOp> buildQCGateCaseReference(MLIRContext* ctx,
+                                                      const GateCase& tc) {
+  qc::QCProgramBuilder builder(ctx);
+  builder.initialize();
+
+  constexpr size_t maxCtrls = 2;
+  const int64_t totalQubits =
+      static_cast<int64_t>(maxCtrls) + static_cast<int64_t>(NumTargets);
+  auto qubits = builder.allocQubitRegister(totalQubits);
+
+  llvm::SmallVector<Value> controls;
+  llvm::SmallVector<Value> targets;
+  controls.reserve(maxCtrls);
+  targets.reserve(NumTargets);
+  for (size_t i = 0; i < maxCtrls; ++i) {
+    controls.push_back(qubits[i]);
+  }
+  for (size_t i = 0; i < NumTargets; ++i) {
+    targets.push_back(qubits[maxCtrls + i]);
+  }
+
+  auto& b = static_cast<OpBuilder&>(builder);
+  auto loc = builder.getLoc();
+
+  auto applyBase = [&]() {
+    if constexpr (std::is_same_v<QCOpType, qc::U2Op>) {
+      static_assert(NumTargets == 1);
+      static_assert(NumParams == 2);
+      constexpr double pi = std::numbers::pi;
+      constexpr double piOver2 = 1.5707963267948966;
+      const auto phi = std::get<double>(paramValue(0));
+      const auto lambda = std::get<double>(paramValue(1));
+      // QC→QCO→Jeff lowering encodes U2 as U(π/2, φ, λ).
+      qc::UOp::create(b, loc, targets[0], piOver2, phi, lambda);
+    } else {
+      emitQCGateReference<QCOpType, NumTargets, NumParams>(b, loc, targets);
+    }
+  };
+
+  auto applyInv = [&]() {
+    if constexpr (std::is_same_v<QCOpType, qc::U2Op>) {
+      static_assert(NumTargets == 1);
+      static_assert(NumParams == 2);
+      constexpr double pi = std::numbers::pi;
+      constexpr double piOver2 = 1.5707963267948966;
+      const auto phi = std::get<double>(paramValue(0));
+      const auto lambda = std::get<double>(paramValue(1));
+      // Match the canonical form produced by the QC↔QCO↔Jeff round-trip for
+      // `qc.inv { qc.u2(phi, lambda) }`.
+      qc::UOp::create(b, loc, targets[0], piOver2, -(pi + lambda), (pi - phi));
+    } else {
+      builder.inv([&]() { applyBase(); });
+    }
+  };
   auto applyCtrl = [&](size_t nCtrls, bool inverted) {
     builder.ctrl(ValueRange(controls).take_front(nCtrls), [&]() {
       if (inverted) {
@@ -482,7 +596,12 @@ static void runGateCaseQCChain(MLIRContext* ctx, const GateCase& tc) {
                  "Canonicalized Converted QC IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
-  auto reference = buildQCGateCase<QCOpType, Targets, Params>(ctx, tc);
+  OwningOpRef<ModuleOp> reference;
+  if constexpr (std::is_same_v<QCOpType, qc::U2Op>) {
+    reference = buildQCGateCaseReference<QCOpType, Targets, Params>(ctx, tc);
+  } else {
+    reference = buildQCGateCase<QCOpType, Targets, Params>(ctx, tc);
+  }
   ASSERT_TRUE(reference);
   ASSERT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Reference QC IR (" + toString(tc) + ")");
@@ -670,4 +789,108 @@ TEST(GateTableRoundTripCorpus, QCToQIRGateTableUnitaryGates) {
     SCOPED_TRACE(toString(tc));
     ASSERT_TRUE(dispatchGateCaseQCToQIR(ctx.get(), tc));
   }
+}
+
+static OwningOpRef<ModuleOp> buildMalformedJeffCustom(MLIRContext* ctx,
+                                                      StringRef name,
+                                                      ValueRange targets,
+                                                      ValueRange params) {
+  OpBuilder b(ctx);
+  auto loc = b.getUnknownLoc();
+  auto module = ModuleOp::create(loc);
+
+  // JeffToQCO expects certain Jeff module-level attributes.
+  auto ui16 = b.getIntegerType(16, /*isSigned=*/false);
+  module->setAttr("jeff.entrypoint", b.getIntegerAttr(ui16, 0));
+  module->setAttr("jeff.strings", b.getArrayAttr({b.getStringAttr("main")}));
+  module->setAttr("jeff.tool", b.getStringAttr("mqt-core-tests"));
+  module->setAttr("jeff.toolVersion", b.getStringAttr("0"));
+  module->setAttr("jeff.version", b.getIntegerAttr(ui16, 0));
+  module->setAttr("jeff.versionMinor", b.getIntegerAttr(ui16, 0));
+  module->setAttr("jeff.versionPatch", b.getIntegerAttr(ui16, 0));
+  auto func = func::FuncOp::create(loc, "main", b.getFunctionType({}, {}));
+  auto& entryBlock = *func.addEntryBlock();
+  b.setInsertionPointToStart(&entryBlock);
+
+  // Create a custom op with no controls, power=1.
+  (void)jeff::CustomOp::create(
+      b, loc, /*in_target_qubits=*/targets, /*in_ctrl_qubits=*/ValueRange{},
+      /*params=*/params,
+      /*num_ctrls=*/0,
+      /*is_adjoint=*/false,
+      /*power=*/1,
+      /*name=*/name,
+      /*num_targets=*/static_cast<int32_t>(targets.size()),
+      /*num_params=*/static_cast<int32_t>(params.size()));
+
+  func::ReturnOp::create(b, loc);
+  module.push_back(func);
+  return {module};
+}
+
+TEST(GateTableRoundTripCorpus, JeffToQCORejectsMalformedCustomArity) {
+  DialectRegistry registry;
+  registry.insert<func::FuncDialect, jeff::JeffDialect, qco::QCODialect>();
+  auto ctx = std::make_unique<MLIRContext>();
+  ctx->appendDialectRegistry(registry);
+  ctx->loadAllAvailableDialects();
+
+  OpBuilder b(ctx.get());
+  auto loc = b.getUnknownLoc();
+
+  auto c2 = b.create<jeff::IntConst32Op>(loc, 2);
+  auto qureg = b.create<jeff::QuregAllocOp>(loc, c2.getResult());
+  auto idx0 = b.create<jeff::IntConst32Op>(loc, 0);
+  auto idx1 = b.create<jeff::IntConst32Op>(loc, 1);
+  auto ex0 = b.create<jeff::QuregExtractIndexOp>(loc, idx0.getResult(), qureg);
+  auto ex1 = b.create<jeff::QuregExtractIndexOp>(loc, idx1.getResult(),
+                                                 ex0.getOutQreg());
+
+  auto target0 = ex0.getOutQubit();
+  auto target1 = ex1.getOutQubit();
+
+  auto p0 =
+      b.create<jeff::FloatConst64Op>(loc, b.getF64FloatAttr(0.123)).getResult();
+  auto p1 =
+      b.create<jeff::FloatConst64Op>(loc, b.getF64FloatAttr(0.579)).getResult();
+
+  // "r" expects (TARGETS=1, PARAMS=2) in the gate table.
+  {
+    auto module =
+        buildMalformedJeffCustom(ctx.get(), "r",
+                                 /*targets=*/ValueRange{target0, target1},
+                                 /*params=*/ValueRange{p0, p1});
+    ASSERT_TRUE(module);
+    EXPECT_TRUE(failed(convertJeffToQCO(*module)));
+  }
+  {
+    auto module = buildMalformedJeffCustom(ctx.get(), "r",
+                                           /*targets=*/ValueRange{target0},
+                                           /*params=*/ValueRange{p0});
+    ASSERT_TRUE(module);
+    EXPECT_TRUE(failed(convertJeffToQCO(*module)));
+  }
+}
+
+TEST(GateTableRoundTripCorpus, JeffToQCORejectsUnknownCustomGateName) {
+  DialectRegistry registry;
+  registry.insert<func::FuncDialect, jeff::JeffDialect, qco::QCODialect>();
+  auto ctx = std::make_unique<MLIRContext>();
+  ctx->appendDialectRegistry(registry);
+  ctx->loadAllAvailableDialects();
+
+  OpBuilder b(ctx.get());
+  auto loc = b.getUnknownLoc();
+  auto c1 = b.create<jeff::IntConst32Op>(loc, 1);
+  auto qureg = b.create<jeff::QuregAllocOp>(loc, c1.getResult());
+  auto idx0 = b.create<jeff::IntConst32Op>(loc, 0);
+  auto ex0 = b.create<jeff::QuregExtractIndexOp>(loc, idx0.getResult(), qureg);
+  auto target0 = ex0.getOutQubit();
+
+  auto module =
+      buildMalformedJeffCustom(ctx.get(), "definitely_unsupported_gate",
+                               /*targets=*/ValueRange{target0},
+                               /*params=*/ValueRange{});
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(failed(convertJeffToQCO(*module)));
 }

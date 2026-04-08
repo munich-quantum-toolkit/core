@@ -1165,8 +1165,13 @@ static void populateQCToQIRPatterns(RewritePatternSet& patterns,
 #define MQT_ADD_QC_TO_QIR_UNITARY(                                             \
     KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP,                   \
     JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND, QIR_FN)           \
-  patterns.add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
-      typeConverter, ctx, &state);
+  do {                                                                         \
+    if constexpr ((QIR_KIND) == ::mlir::mqt::gates::QIRKind::Unitary) {        \
+      patterns                                                                 \
+          .add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
+              typeConverter, ctx, &state);                                     \
+    }                                                                          \
+  } while (false);
   MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
 #undef MQT_ADD_QC_TO_QIR_UNITARY
 
