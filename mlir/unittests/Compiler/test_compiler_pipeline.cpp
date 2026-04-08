@@ -262,6 +262,11 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(
                 mlir::qir::multipleClassicalRegistersAndMeasurements)},
         CompilerPipelineTestCase{
+            "MeasurementWithoutRegisters", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
+            MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
+            MQT_NAMED_BUILDER(mlir::qir::measurementWithoutRegisters), false},
+        CompilerPipelineTestCase{
             "ResetQubitAfterSingleOp",
             MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::resetQubitAfterSingleOp),
@@ -337,6 +342,11 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledH", MQT_NAMED_BUILDER(qc::multipleControlledH),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledH),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledH)},
+        CompilerPipelineTestCase{"HWithoutRegister", nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
+                                 MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
+                                 MQT_NAMED_BUILDER(mlir::qir::hWithoutRegister),
+                                 false},
         CompilerPipelineTestCase{"S", MQT_NAMED_BUILDER(qc::s), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::s),
                                  MQT_NAMED_BUILDER(mlir::qir::s)},

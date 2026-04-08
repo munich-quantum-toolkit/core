@@ -69,6 +69,10 @@ void repeatedMeasurementToDifferentBits(QIRProgramBuilder& b);
 /// Measures multiple qubits into multiple classical bits.
 void multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b);
 
+/// Measures a single qubit into a single classical bit, without explicitly
+/// allocating a quantum or classical register.
+void measurementWithoutRegisters(QIRProgramBuilder& b);
+
 // --- ResetOp -------------------------------------------------------------- //
 
 /// Resets a single qubit without any operations being applied.
@@ -148,6 +152,9 @@ void singleControlledH(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled H gate.
 void multipleControlledH(QIRProgramBuilder& b);
+
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QIRProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 

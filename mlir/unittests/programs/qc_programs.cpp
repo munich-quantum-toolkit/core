@@ -125,6 +125,11 @@ void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   b.measure(q[2], c1[1]);
 }
 
+void measurementWithoutRegisters(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.measure(q);
+}
+
 void resetQubitWithoutOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
@@ -369,6 +374,11 @@ void inverseH(QCProgramBuilder& b) {
 void inverseMultipleControlledH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mch({q[0], q[1]}, q[2]); });
+}
+
+void hWithoutRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
 }
 
 void s(QCProgramBuilder& b) {
