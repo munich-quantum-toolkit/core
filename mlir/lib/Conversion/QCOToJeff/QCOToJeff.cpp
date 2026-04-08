@@ -1156,9 +1156,14 @@ static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
     patterns.add<ConvertQCOCustomGateToJeff<QCOOpType, Targets, Params>>(
         typeConverter, context, &state, customName, JeffBaseAdjoint);
   } else if constexpr (Kind == ::mlir::mqt::gates::JeffKind::PPR) {
+    static_assert(Targets == 2 && Params == 1,
+                  "JeffKind::PPR gates must have (Targets=2, Params=1)");
     patterns.add<ConvertQCOPPRGateToJeff<QCOOpType>>(typeConverter, context,
                                                      &state, ppr.p0, ppr.p1);
   } else if constexpr (Kind == ::mlir::mqt::gates::JeffKind::SpecialU2ToU) {
+    static_assert(
+        Targets == 1 && Params == 2,
+        "JeffKind::SpecialU2ToU gates must have (Targets=1, Params=2)");
     patterns.add<ConvertQCOU2OpToJeff>(typeConverter, context, &state);
   } else {
     static_assert(AlwaysFalse<Kind, Targets, Params>::value,

@@ -718,10 +718,14 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
       }
       return createGateFromJeffArity<qco::SXOp, jeff::CustomOp, 1, 0>(
           op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
-          {});
+          op.getParams());
     }
 
     if (op.getName() == "barrier") {
+      if (!op.getParams().empty()) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom barrier operations must not have parameters");
+      }
       createBarrierOp(op, adaptor, rewriter);
       return success();
     }

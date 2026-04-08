@@ -793,8 +793,8 @@ TEST(GateTableRoundTripCorpus, QCToQIRGateTableUnitaryGates) {
 
 static OwningOpRef<ModuleOp> buildMalformedJeffCustom(MLIRContext* ctx,
                                                       StringRef name,
-                                                      ValueRange targets,
-                                                      ValueRange params) {
+                                                      size_t numTargets,
+                                                      size_t numParams) {
   OpBuilder b(ctx);
   auto loc = b.getUnknownLoc();
   auto module = ModuleOp::create(loc);
@@ -811,6 +811,31 @@ static OwningOpRef<ModuleOp> buildMalformedJeffCustom(MLIRContext* ctx,
   auto func = func::FuncOp::create(loc, "main", b.getFunctionType({}, {}));
   auto& entryBlock = *func.addEntryBlock();
   b.setInsertionPointToStart(&entryBlock);
+
+  // Create all SSA values inside the module.
+  SmallVector<Value> targets;
+  targets.reserve(numTargets);
+
+  if (numTargets > 0) {
+    auto n =
+        b.create<jeff::IntConst32Op>(loc, static_cast<int32_t>(numTargets));
+    auto qureg = b.create<jeff::QuregAllocOp>(loc, n.getResult()).getResult();
+    for (size_t i = 0; i < numTargets; ++i) {
+      auto idx = b.create<jeff::IntConst32Op>(loc, static_cast<int32_t>(i));
+      auto ex =
+          b.create<jeff::QuregExtractIndexOp>(loc, idx.getResult(), qureg);
+      targets.push_back(ex.getOutQubit());
+      qureg = ex.getOutQreg();
+    }
+  }
+
+  SmallVector<Value> params;
+  params.reserve(numParams);
+  for (size_t i = 0; i < numParams; ++i) {
+    const auto v = std::get<double>(paramValue(i));
+    params.push_back(
+        b.create<jeff::FloatConst64Op>(loc, b.getF64FloatAttr(v)).getResult());
+  }
 
   // Create a custom op with no controls, power=1.
   (void)jeff::CustomOp::create(
@@ -830,43 +855,22 @@ static OwningOpRef<ModuleOp> buildMalformedJeffCustom(MLIRContext* ctx,
 
 TEST(GateTableRoundTripCorpus, JeffToQCORejectsMalformedCustomArity) {
   DialectRegistry registry;
-  registry.insert<func::FuncDialect, jeff::JeffDialect, qco::QCODialect>();
+  registry.insert<func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
+                  qtensor::QTensorDialect>();
   auto ctx = std::make_unique<MLIRContext>();
   ctx->appendDialectRegistry(registry);
   ctx->loadAllAvailableDialects();
 
-  OpBuilder b(ctx.get());
-  auto loc = b.getUnknownLoc();
-
-  auto c2 = b.create<jeff::IntConst32Op>(loc, 2);
-  auto qureg = b.create<jeff::QuregAllocOp>(loc, c2.getResult());
-  auto idx0 = b.create<jeff::IntConst32Op>(loc, 0);
-  auto idx1 = b.create<jeff::IntConst32Op>(loc, 1);
-  auto ex0 = b.create<jeff::QuregExtractIndexOp>(loc, idx0.getResult(), qureg);
-  auto ex1 = b.create<jeff::QuregExtractIndexOp>(loc, idx1.getResult(),
-                                                 ex0.getOutQreg());
-
-  auto target0 = ex0.getOutQubit();
-  auto target1 = ex1.getOutQubit();
-
-  auto p0 =
-      b.create<jeff::FloatConst64Op>(loc, b.getF64FloatAttr(0.123)).getResult();
-  auto p1 =
-      b.create<jeff::FloatConst64Op>(loc, b.getF64FloatAttr(0.579)).getResult();
-
   // "r" expects (TARGETS=1, PARAMS=2) in the gate table.
   {
-    auto module =
-        buildMalformedJeffCustom(ctx.get(), "r",
-                                 /*targets=*/ValueRange{target0, target1},
-                                 /*params=*/ValueRange{p0, p1});
+    auto module = buildMalformedJeffCustom(ctx.get(), "r", /*numTargets=*/2,
+                                           /*numParams=*/2);
     ASSERT_TRUE(module);
     EXPECT_TRUE(failed(convertJeffToQCO(*module)));
   }
   {
-    auto module = buildMalformedJeffCustom(ctx.get(), "r",
-                                           /*targets=*/ValueRange{target0},
-                                           /*params=*/ValueRange{p0});
+    auto module = buildMalformedJeffCustom(ctx.get(), "r", /*numTargets=*/1,
+                                           /*numParams=*/1);
     ASSERT_TRUE(module);
     EXPECT_TRUE(failed(convertJeffToQCO(*module)));
   }
@@ -874,23 +878,15 @@ TEST(GateTableRoundTripCorpus, JeffToQCORejectsMalformedCustomArity) {
 
 TEST(GateTableRoundTripCorpus, JeffToQCORejectsUnknownCustomGateName) {
   DialectRegistry registry;
-  registry.insert<func::FuncDialect, jeff::JeffDialect, qco::QCODialect>();
+  registry.insert<func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
+                  qtensor::QTensorDialect>();
   auto ctx = std::make_unique<MLIRContext>();
   ctx->appendDialectRegistry(registry);
   ctx->loadAllAvailableDialects();
 
-  OpBuilder b(ctx.get());
-  auto loc = b.getUnknownLoc();
-  auto c1 = b.create<jeff::IntConst32Op>(loc, 1);
-  auto qureg = b.create<jeff::QuregAllocOp>(loc, c1.getResult());
-  auto idx0 = b.create<jeff::IntConst32Op>(loc, 0);
-  auto ex0 = b.create<jeff::QuregExtractIndexOp>(loc, idx0.getResult(), qureg);
-  auto target0 = ex0.getOutQubit();
-
   auto module =
       buildMalformedJeffCustom(ctx.get(), "definitely_unsupported_gate",
-                               /*targets=*/ValueRange{target0},
-                               /*params=*/ValueRange{});
+                               /*numTargets=*/1, /*numParams=*/0);
   ASSERT_TRUE(module);
   EXPECT_TRUE(failed(convertJeffToQCO(*module)));
 }
