@@ -255,13 +255,17 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   }
 };
 
+} // namespace
+
 template <typename QCOOp, typename QCOp, std::size_t Targets,
           std::size_t Params>
-void addGatePattern(RewritePatternSet& patterns, TypeConverter& typeConverter,
-                    MLIRContext* context) {
+static void addGatePattern(RewritePatternSet& patterns,
+                           TypeConverter& typeConverter, MLIRContext* context) {
   patterns.add<ConvertQCOGateToQC<QCOOp, QCOp, Targets, Params>>(typeConverter,
                                                                  context);
 }
+
+namespace {
 
 /**
  * @brief Converts qco.alloc to qc.alloc

@@ -1146,9 +1146,11 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
  * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
  * list of unitary gates below.
  */
-void populateQCToQIRPatterns(RewritePatternSet& patterns,
-                             QCToQIRTypeConverter& typeConverter,
-                             MLIRContext* ctx, LoweringState& state) {
+} // namespace
+
+static void populateQCToQIRPatterns(RewritePatternSet& patterns,
+                                    QCToQIRTypeConverter& typeConverter,
+                                    MLIRContext* ctx, LoweringState& state) {
   patterns
       .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp>(
           typeConverter, ctx, &state);
@@ -1171,6 +1173,8 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
   patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp>(
       typeConverter, ctx, &state);
 }
+
+namespace {
 
 /**
  * @brief Pass for converting QC dialect operations to QIR

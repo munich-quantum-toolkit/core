@@ -56,6 +56,8 @@
 
 using namespace mlir;
 
+namespace {
+
 enum class CorpusVariant : uint8_t {
   Base,
   Inverted,
@@ -71,6 +73,8 @@ struct GateCase {
   size_t numParams = 0;
   CorpusVariant variant = CorpusVariant::Base;
 };
+
+} // namespace
 
 static std::string toString(const GateCase& c) {
   std::string s = c.key != nullptr ? c.key : "<null>";
