@@ -289,11 +289,11 @@ struct ConvertMemRefAllocOp final
  *
  * @par Example:
  * ```mlir
- * %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
+ * %q = memref.load %memref[%c1] : memref<3x!qc.qubit>
  * ```
  * is converted to
  * ```mlir
- * %ptr = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr, !llvm.ptr
+ * %ptr = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr
  * %q = llvm.load %ptr : !llvm.ptr -> !llvm.ptr
  * ```
  */

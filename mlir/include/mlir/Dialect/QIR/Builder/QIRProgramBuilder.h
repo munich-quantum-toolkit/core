@@ -147,7 +147,9 @@ public:
    * auto q = builder.allocQubit();
    * ```
    * ```mlir
-   * TODO
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
+   * !llvm.ptr
    * ```
    */
   Value allocQubit();
@@ -178,7 +180,15 @@ public:
    * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * TODO
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
+   * llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
+   * (i64, !llvm.ptr, !llvm.ptr) -> ()
+   * %q0 = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
+   * %ptr1 = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr
+   * %q1 = llvm.load %ptr1 : !llvm.ptr -> !llvm.ptr
+   * %ptr2 = llvm.getelementptr %alloca[2] : !llvm.ptr -> !llvm.ptr
+   * %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
    * ```
    */
   llvm::SmallVector<Value> allocQubitRegister(int64_t size);
