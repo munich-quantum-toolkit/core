@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Debug.h>
@@ -22,6 +23,43 @@
 #include <iterator>
 
 namespace mlir::qco {
+
+using namespace mlir::qtensor;
+
+namespace {
+
+using PendingWiresMap =
+    DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
+
+/**
+ * @brief Insert the unitary and the associated wire iterator into the pending
+ * map.
+ */
+void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire) {
+  auto [it, inserted] = map.try_emplace(op);
+  auto& wires = it->second;
+
+  if (inserted) {
+    wires.reserve(op.getNumQubits());
+  }
+
+  wires.emplace_back(wire);
+}
+
+/**
+ * @returns true if the wire iterator has not reached the end (Forward) or the
+ * start (Backward) of the wire.
+ */
+bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
+  if (direction == WalkDirection::Forward) {
+    return it != std::default_sentinel;
+  }
+
+  return !isa<AllocOp>(it.operation()) && !isa<StaticOp>(it.operation()) &&
+         !isa<ExtractOp>(it.operation());
+}
+} // namespace
+
 void Qubits::add(TypedValue<QubitType> q) { add(q, indexToValue_.size()); }
 
 void Qubits::add(TypedValue<QubitType> q, std::size_t index) {
@@ -69,49 +107,40 @@ std::size_t Qubits::getIndex(TypedValue<QubitType> q) const {
   return valueToIndex_.lookup(q);
 }
 
-namespace {
+void walkUnit(Region& region, WalkUnitFn fn) {
+  Qubits qubits;
+  for (Operation& curr : region.getOps()) {
+    if (fn(&curr, qubits).wasInterrupted()) {
+      break;
+    };
 
-using PendingWiresMap =
-    DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
-
-/**
- * @brief Insert the unitary and the associated wire iterator into the pending
- * map.
- */
-void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire) {
-  auto [it, inserted] = map.try_emplace(op);
-  auto& wires = it->second;
-
-  if (inserted) {
-    wires.reserve(op.getNumQubits());
+    TypeSwitch<Operation*>(&curr)
+        .Case<StaticOp>(
+            [&](StaticOp op) { qubits.add(op.getQubit(), op.getIndex()); })
+        .Case<AllocOp>([&](AllocOp op) { qubits.add(op.getResult()); })
+        .Case<ExtractOp>([&](ExtractOp op) { qubits.add(op.getResult()); })
+        .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+          qubits.remap(op, WalkDirection::Forward);
+        })
+        .Case<ResetOp>([&](ResetOp op) {
+          qubits.remap(op.getQubitIn(), op.getQubitOut(),
+                       WalkDirection::Forward);
+        })
+        .Case<MeasureOp>([&](MeasureOp op) {
+          qubits.remap(op.getQubitIn(), op.getQubitOut(),
+                       WalkDirection::Forward);
+        })
+        .Case<InsertOp>([&](InsertOp op) { qubits.remove(op.getScalar()); })
+        .Case<SinkOp>([&](SinkOp op) { qubits.remove(op.getQubit()); });
   }
-
-  wires.emplace_back(wire);
 }
 
-/**
- * @returns true if the wire iterator has not reached the end (Forward) or the
- * start (Backward) of the wire.
- */
-bool proceedOnWire(const WireIterator& it, const WalkDirection& direction) {
-  if (direction == WalkDirection::Forward) {
-    return it != std::default_sentinel;
-  }
-
-  return !isa<AllocOp>(it.operation()) && !isa<StaticOp>(it.operation());
-}
-
-/**
- * @brief Skip the next two-qubit block of two wires.
- * @details Advances each of the two wire iterators until a two-qubit op is
- * found. If the ops match, repeat this process. Otherwise, stop.
- */
-template <WalkDirection d>
-void skipTwoQubitBlock(WireIterator& first, WireIterator& second) {
-  constexpr auto step = d == WalkDirection::Forward ? 1 : -1;
+void walkQubitBlock(WireIterator& first, WireIterator& second,
+                    WalkDirection direction) {
+  const auto step = direction == WalkDirection::Forward ? 1 : -1;
 
   const auto advanceUntilTwoQubitOp = [&](WireIterator& it) {
-    while (proceedOnWire<d>(it)) {
+    while (proceedOnWire(it, direction)) {
       if (auto op = dyn_cast<UnitaryOpInterface>(it.operation())) {
         if (op.getNumQubits() > 1) {
           break;
@@ -126,7 +155,7 @@ void skipTwoQubitBlock(WireIterator& first, WireIterator& second) {
     advanceUntilTwoQubitOp(first);
     advanceUntilTwoQubitOp(second);
 
-    if (!proceedOnWire<d>(first) || !proceedOnWire<d>(second)) {
+    if (!proceedOnWire(first, direction) || !proceedOnWire(second, direction)) {
       break;
     }
 
@@ -138,10 +167,9 @@ void skipTwoQubitBlock(WireIterator& first, WireIterator& second) {
     std::ranges::advance(second, step);
   }
 }
-} // namespace
 
 LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
-                               WalkDirection direction, walkCircuitGraphFn fn) {
+                               WalkDirection direction, WalkCircuitGraphFn fn) {
   const auto step = direction == WalkDirection::Forward ? 1 : -1;
 
   ReleasedIterators released;
@@ -156,7 +184,7 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
       while (proceedOnWire(it, direction)) {
         const auto res =
             TypeSwitch<Operation*, WalkResult>(it.operation())
-                .template Case<BarrierOp>([&](BarrierOp op) {
+                .Case<BarrierOp>([&](BarrierOp op) {
                   insert(pending, op, &it);
 
                   // Release barrier directly.
@@ -169,7 +197,7 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
 
                   return WalkResult::interrupt();
                 })
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+                .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
                   assert(op.getNumQubits() > 0 && op.getNumQubits() <= 2);
 
                   if (op.getNumQubits() == 1) {
@@ -184,11 +212,11 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
 
                   return WalkResult::interrupt(); // Stop at two-qubit gate.
                 })
-                .template Case<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp>(
-                    [&](auto) {
-                      std::ranges::advance(it, step);
-                      return WalkResult::advance();
-                    })
+                .Case<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp, ExtractOp,
+                      InsertOp>([&](auto) {
+                  std::ranges::advance(it, step);
+                  return WalkResult::advance();
+                })
                 .Default([&](Operation* op) {
                   const auto name = op->getName().getStringRef();
                   report_fatal_error("unknown op encountered: " + name);

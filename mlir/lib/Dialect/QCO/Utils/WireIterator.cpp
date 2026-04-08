@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -23,9 +24,9 @@
 #include <iterator>
 
 namespace mlir::qco {
-mlir::Value WireIterator::qubit() const {
-  // A sink/deallocation doesn't have an OpResult.
-  if (op_ != nullptr && mlir::isa<SinkOp>(op_)) {
+Value WireIterator::qubit() const {
+  // A sink/deallocation/insert doesn't have an OpResult.
+  if (op_ != nullptr && isa<SinkOp>(op_) && isa<qtensor::InsertOp>(op_)) {
     return nullptr;
   }
   return qubit_;
@@ -41,21 +42,21 @@ void WireIterator::forward() {
   assert(qubit_.getNumUses() == 1 && "expected linear typing");
   op_ = *(qubit_.getUsers().begin());
 
-  // A sink op defines the end of the qubit wire (dynamic and static).
-  if (mlir::isa<SinkOp>(op_)) {
+  // A sink/insert defines the end of the qubit wire (dynamic and static).
+  if (isa<SinkOp>(op_) || isa<qtensor::InsertOp>(op_)) {
     isSentinel_ = true;
     return;
   }
 
-  if (!(mlir::isa<AllocOp, StaticOp>(op_))) {
+  if (!(isa<AllocOp, StaticOp, qtensor::ExtractOp>(op_))) {
     // Find the output from the input qubit SSA value.
-    mlir::TypeSwitch<mlir::Operation*>(op_)
+    TypeSwitch<Operation*>(op_)
         .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
           qubit_ = op.getOutputForInput(qubit_);
         })
         .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
         .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
-        .Default([&](mlir::Operation* op) {
+        .Default([&](Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
                              op->getName().getStringRef());
         });
@@ -69,26 +70,26 @@ void WireIterator::backward() {
     return;
   }
 
-  // For sinks/deallocations, qubit_ is an OpOperand. Hence, only get the
-  // def-op.
-  if (mlir::isa<SinkOp>(op_)) {
+  // For sinks/deallocations/inserts, qubit_ is an OpOperand. Hence, only get
+  // the def-op.
+  if (isa<SinkOp>(op_) || isa<qtensor::InsertOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     return;
   }
 
   // Allocations or static definitions define the start of the qubit wire.
   // Consequently, stop and early exit.
-  if (mlir::isa<AllocOp, StaticOp>(op_)) {
+  if (isa<AllocOp, StaticOp, qtensor::ExtractOp>(op_)) {
     return;
   }
 
   // Find the input from the output qubit SSA value.
-  mlir::TypeSwitch<mlir::Operation*>(op_)
+  TypeSwitch<Operation*>(op_)
       .Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface op) { qubit_ = op.getInputForOutput(qubit_); })
       .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
       .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
-      .Default([&](mlir::Operation* op) {
+      .Default([&](Operation* op) {
         report_fatal_error("unknown op in def-use chain: " +
                            op->getName().getStringRef());
       });

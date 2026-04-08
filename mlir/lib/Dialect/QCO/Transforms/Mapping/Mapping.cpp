@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
@@ -47,6 +48,7 @@
 #include <numeric>
 #include <optional>
 #include <random>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -56,6 +58,8 @@
 #define DEBUG_TYPE "mapping-pass"
 
 namespace mlir::qco {
+
+using namespace mlir::qtensor;
 
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
@@ -420,6 +424,7 @@ protected:
         func.emitError() << "failed to map the function";
         signalPassFailure();
       }
+
       assert(isExecutable(func.getFunctionBody(), arch).succeeded());
     }
   }
@@ -432,21 +437,57 @@ private:
    */
   static void place(func::FuncOp func, const Layout& layout,
                     IRRewriter& rewriter) {
-    // 0. Materialize allocs to avoid iterator invalidation after replacement.
-    const auto allocations = to_vector(func.getOps<AllocOp>());
+    // 0. Materialize to avoid iterator invalidation after replacement.
+    const auto qubitAllocs = to_vector(func.getOps<AllocOp>());
+
+    const auto tensorAllocs = to_vector(func.getOps<qtensor::AllocOp>());
+    const auto tensorDeallocs = to_vector(func.getOps<qtensor::DeallocOp>());
+    auto tensorExtracts = to_vector(func.getOps<ExtractOp>());
+    const auto tensorInserts = to_vector(func.getOps<InsertOp>());
+
+    const auto nprograms = qubitAllocs.size() + tensorExtracts.size();
 
     // 1. Replace existing dynamic allocations with mapped static ones.
-    for (const auto [p, op] : enumerate(allocations)) {
+    std::size_t p = 0;
+    for (AllocOp op : qubitAllocs) {
       const auto hw = layout.getHardwareIndex(p);
       rewriter.setInsertionPoint(op);
       rewriter.replaceOpWithNewOp<StaticOp>(op, hw);
+      ++p;
+    }
+
+    // 1.1 Handle tensors.
+    for (qtensor::DeallocOp op : tensorDeallocs) {
+      rewriter.eraseOp(op);
+    }
+
+    for (InsertOp op : reverse(tensorInserts)) {
+      rewriter.setInsertionPoint(op);
+      rewriter.create<SinkOp>(op.getLoc(), op.getScalar());
+      rewriter.eraseOp(op);
+    }
+
+    for (auto [i, extractOp] : enumerate(reverse(tensorExtracts))) {
+      const auto hw =
+          layout.getHardwareIndex(p + tensorExtracts.size() - 1 - i);
+      rewriter.setInsertionPoint(extractOp);
+      auto op = StaticOp::create(rewriter, extractOp.getLoc(), hw);
+      rewriter.replaceAllUsesWith(extractOp.getResult(), op.getQubit());
+      rewriter.eraseOp(extractOp);
+    }
+
+    p += tensorExtracts.size();
+
+    for (qtensor::AllocOp op : tensorAllocs) {
+      rewriter.eraseOp(op);
     }
 
     // 2. Create static qubits for the remaining (unused) hardware indices.
-    for (std::size_t p = allocations.size(); p < layout.nqubits(); ++p) {
+    const auto location = rewriter.getInsertionPoint()->getLoc();
+    for (; p < layout.nqubits(); ++p) {
       rewriter.setInsertionPointToStart(&func.getFunctionBody().front());
       const auto hw = layout.getHardwareIndex(p);
-      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
+      auto op = StaticOp::create(rewriter, location, hw);
       rewriter.setInsertionPoint(func.getFunctionBody().back().getTerminator());
       SinkOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
     }
@@ -480,10 +521,12 @@ private:
    * @returns failure() if routing fails.
    */
   void refineLayout(func::FuncOp func, const Architecture& arch, Trial& trial) {
-
     SmallVector<WireIterator> wires;
+    for (auto op : func.getOps<AllocOp>()) {
+      wires.emplace_back(op.getResult());
+    }
 
-    for (AllocOp op : func.getOps<AllocOp>()) {
+    for (auto op : func.getOps<ExtractOp>()) {
       wires.emplace_back(op.getResult());
     }
 
@@ -651,6 +694,7 @@ private:
         assert(its[0]->operation() == its[1]->operation());
 
         layer.emplace_back(enumeration[its[0]], enumeration[its[1]]);
+        // walkQubitBlock(*its[0], *its[1], direction);
         released.append(its.begin(), its.end());
       }
       window.emplace_back(layer);
@@ -743,14 +787,14 @@ private:
         assert(revEnumeration.contains(hw0));
         assert(revEnumeration.contains(hw1));
 
-        WireIterator& it0 = *revEnumeration[hw0];
-        WireIterator& it1 = *revEnumeration[hw1];
+        WireIterator& first = *revEnumeration[hw0];
+        WireIterator& second = *revEnumeration[hw1];
 
-        assert(!isa<SinkOp>(it0.operation()));
-        assert(!isa<SinkOp>(it1.operation()));
+        assert(!isa<SinkOp>(first.operation()));
+        assert(!isa<SinkOp>(second.operation()));
 
-        const auto in0 = it0.qubit();
-        const auto in1 = it1.qubit();
+        const auto in0 = first.qubit();
+        const auto in1 = second.qubit();
 
         auto swapOp =
             SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
@@ -761,11 +805,11 @@ private:
         rewriter.replaceAllUsesExcept(in0, out1, swapOp);
         rewriter.replaceAllUsesExcept(in1, out0, swapOp);
 
-        ++it0;
-        ++it1;
+        ++first;
+        ++second;
 
-        assert(isa<SWAPOp>(it0.operation()));
-        assert(isa<SWAPOp>(it1.operation()));
+        assert(isa<SWAPOp>(first.operation()));
+        assert(isa<SWAPOp>(second.operation()));
       }
 
       // Finally, undo the previous increments and release the correct (!) wire
