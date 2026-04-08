@@ -568,17 +568,13 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto* operation = op.getOperation();
     auto qcQubit = op.getResult();
 
     // Create the qco.alloc operation
     auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(op);
 
     auto qcoQubit = qcoOp.getResult();
-
-    // Establish initial mapping: this QC qubit reference now corresponds
-    // to this QCO SSA value
-    assignMappedQubit(state, operation, qcQubit, qcoQubit);
+    assignMappedQubit(state, qcoOp, qcQubit, qcoQubit);
 
     return success();
   }
