@@ -552,19 +552,13 @@ struct ConvertMemRefDeallocOp final
 /**
  * @brief Converts qc.alloc to qco.alloc
  *
- * @details
- * Allocates a new qubit and establishes the initial mapping in the state.
- * Both dialects initialize qubits to the |0⟩ state.
- *
- * Register metadata (name, size, index) is preserved during conversion,
- * allowing the QCO representation to maintain register information for
- * debugging and visualization.
- *
- * Example transformation:
+ * @par Example:
  * ```mlir
- * %q = qc.alloc("q", 3, 0) : !qc.qubit
- * // becomes:
- * %q0 = qco.alloc("q", 3, 0) : !qco.qubit
+ * %q = qc.alloc : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q = qco.alloc : !qco.qubit
  * ```
  */
 struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
@@ -574,19 +568,13 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto* operation = op.getOperation();
     auto qcQubit = op.getResult();
 
-    // Create the qco.alloc operation with preserved register metadata
-    auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(
-        op, op.getRegisterNameAttr(), op.getRegisterSizeAttr(),
-        op.getRegisterIndexAttr());
+    // Create the qco.alloc operation
+    auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(op);
 
     auto qcoQubit = qcoOp.getResult();
-
-    // Establish initial mapping: this QC qubit reference now corresponds
-    // to this QCO SSA value
-    assignMappedQubit(state, operation, qcQubit, qcoQubit);
+    assignMappedQubit(state, qcoOp, qcQubit, qcoQubit);
 
     return success();
   }

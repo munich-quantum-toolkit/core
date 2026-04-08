@@ -226,19 +226,13 @@ struct ConvertQTensorDeallocOp final : OpConversionPattern<qtensor::DeallocOp> {
 /**
  * @brief Converts qco.alloc to qc.alloc
  *
- * @details
- * Allocates a new qubit initialized to the |0⟩ state. Register metadata
- * (name, size, index) is preserved during conversion.
- *
- * The conversion is straightforward: the QCO allocation produces an SSA
- * value, while the QC allocation produces a reference. MLIR's type
- * conversion system automatically handles the semantic shift.
- *
- * Example transformation:
+ * @par Example:
  * ```mlir
- * %q0 = qco.alloc("q", 3, 0) : !qco.qubit
- * // becomes:
- * %q = qc.alloc("q", 3, 0) : !qc.qubit
+ * %q = qco.alloc : !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q = qc.alloc : !qc.qubit
  * ```
  */
 struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
@@ -254,10 +248,8 @@ struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
     assert(qubitMode != QubitAddressingMode::Static &&
            "Static qubits cannot be mixed with dynamic qubits");
 
-    // Create qc.alloc with preserved register metadata
-    rewriter.replaceOpWithNewOp<qc::AllocOp>(op, op.getRegisterNameAttr(),
-                                             op.getRegisterSizeAttr(),
-                                             op.getRegisterIndexAttr());
+    // Create qc.alloc
+    rewriter.replaceOpWithNewOp<qc::AllocOp>(op);
 
     return success();
   }
