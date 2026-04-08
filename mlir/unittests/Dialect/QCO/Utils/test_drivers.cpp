@@ -72,8 +72,8 @@ TEST_F(DriversTest, FullWalk) {
 
   qco::walkUnit(func.getBody(), [&](Operation* op, qco::Qubits& qubits) {
     if (op == q03.getDefiningOp()) {
-      ex0 = qubits.getProgramQubit(0);
-      ex1 = qubits.getProgramQubit(1);
+      ex0 = qubits.getQubit(0);
+      ex1 = qubits.getQubit(1);
       ex2 = qubits.getHardwareQubit(0);
       ex3 = qubits.getHardwareQubit(1);
       return WalkResult::interrupt();

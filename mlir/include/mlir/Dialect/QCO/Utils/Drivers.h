@@ -25,41 +25,41 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <cstddef>
-#include <iterator>
 #include <utility>
 
 namespace mlir::qco {
+
 /**
  * @brief Specifies the layering direction.
  */
-enum class WalkDirection : std::uint8_t { Forward, Backward };
+enum class WalkDirection : bool { Forward, Backward };
+
+using ReleasedIterators = SmallVector<WireIterator*, 8>;
+using walkCircuitGraphFn = function_ref<WalkResult(
+    ArrayRef<ArrayRef<WireIterator*>>, ReleasedIterators&)>;
 
 class Qubits {
-  /**
-   * @brief Specifies the qubit "location" (hardware or program).
-   */
-  enum class QubitLocation : std::uint8_t { Hardware, Program };
-
 public:
   /**
-   * @brief Add qubit with automatically assigned dynamic index.
+   * @brief Add qubit with automatically assigned index.
    */
-  [[maybe_unused]] void add(TypedValue<QubitType> q);
+  void add(TypedValue<QubitType> q);
 
   /**
-   * @brief Add qubit with static index.
+   * @brief Add qubit with index.
    */
-  void add(TypedValue<QubitType> q, std::size_t hw);
+  void add(TypedValue<QubitType> q, std::size_t index);
 
   /**
    * @brief Remap the qubit value from prev to next.
    */
-  void remap(TypedValue<QubitType> prev, TypedValue<QubitType> next);
+  void remap(TypedValue<QubitType> prev, TypedValue<QubitType> next,
+             const WalkDirection& direction);
 
   /**
    * @brief Remap all input qubits of the unitary to its outputs.
    */
-  void remap(UnitaryOpInterface op);
+  void remap(UnitaryOpInterface op, const WalkDirection& direction);
 
   /**
    * @brief Remove the qubit value.
@@ -67,31 +67,19 @@ public:
   void remove(TypedValue<QubitType> q);
 
   /**
-   * @returns the qubit value assigned to a program index.
+   * @returns the qubit value assigned to a index.
    */
   [[maybe_unused]] [[nodiscard]] TypedValue<QubitType>
-  getProgramQubit(std::size_t index) const;
+  getQubit(std::size_t index) const;
 
   /**
-   * @returns the qubit value assigned to a hardware index.
+   * @returns the index assigned to the given qubit value.
    */
-  [[nodiscard]] TypedValue<QubitType> getHardwareQubit(std::size_t index) const;
-
-  /**
-   * @returns the hardware index assigned to the given qubit value.
-   */
-  [[nodiscard]] std::size_t getHardwareIndex(TypedValue<QubitType> q) const;
-
-  /**
-   * @returns the program index assigned to the given qubit value.
-   */
-  [[nodiscard]] std::size_t getProgramIndex(TypedValue<QubitType> q) const;
+  [[nodiscard]] std::size_t getIndex(TypedValue<QubitType> q) const;
 
 private:
-  DenseMap<std::size_t, TypedValue<QubitType>> programToValue_;
-  DenseMap<std::size_t, TypedValue<QubitType>> hardwareToValue_;
-  DenseMap<TypedValue<QubitType>, std::pair<QubitLocation, std::size_t>>
-      valueToIndex_;
+  DenseMap<std::size_t, TypedValue<QubitType>> indexToValue_;
+  DenseMap<TypedValue<QubitType>, std::size_t> valueToIndex_;
 };
 
 /**
@@ -118,83 +106,24 @@ template <typename Fn> void walkUnit(Region& region, Fn&& fn) {
         .template Case<StaticOp>(
             [&](StaticOp op) { qubits.add(op.getQubit(), op.getIndex()); })
         .template Case<AllocOp>([&](AllocOp op) { qubits.add(op.getResult()); })
-        .template Case<UnitaryOpInterface>(
-            [&](UnitaryOpInterface op) { qubits.remap(op); })
+        .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+          qubits.remap(op, WalkDirection::Forward);
+        })
         .template Case<ResetOp>([&](ResetOp op) {
-          qubits.remap(op.getQubitIn(), op.getQubitOut());
+          qubits.remap(op.getQubitIn(), op.getQubitOut(),
+                       WalkDirection::Forward);
         })
         .template Case<MeasureOp>([&](MeasureOp op) {
-          qubits.remap(op.getQubitIn(), op.getQubitOut());
+          qubits.remap(op.getQubitIn(), op.getQubitOut(),
+                       WalkDirection::Forward);
         })
         .template Case<SinkOp>(
             [&](SinkOp op) { qubits.remove(op.getQubit()); });
   }
 }
 
-namespace impl {
 /**
- * @returns true if the wire iterator has not reached the end (Forward) or the
- * start (Backward) of the wire.
- */
-template <WalkDirection d> static bool proceedOnWire(const WireIterator& it) {
-  if constexpr (d == WalkDirection::Forward) {
-    return it != std::default_sentinel;
-  } else {
-    return !isa<AllocOp>(it.operation()) && !isa<StaticOp>(it.operation());
-  }
-}
-
-/**
- * @brief Skip the next two-qubit block of two wires.
- * @details Advances each of the two wire iterators until a two-qubit op is
- * found. If the ops match, repeat this process. Otherwise, stop.
- */
-template <WalkDirection d>
-static void skipTwoQubitBlock(WireIterator& first, WireIterator& second) {
-  constexpr auto step = d == WalkDirection::Forward ? 1 : -1;
-
-  const auto advanceUntilTwoQubitOp = [&](WireIterator& it) {
-    while (proceedOnWire<d>(it)) {
-      if (auto op = dyn_cast<UnitaryOpInterface>(it.operation())) {
-        if (op.getNumQubits() > 1) {
-          break;
-        }
-      }
-
-      std::ranges::advance(it, step);
-    }
-  };
-
-  while (true) {
-    advanceUntilTwoQubitOp(first);
-    advanceUntilTwoQubitOp(second);
-
-    if (!proceedOnWire<d>(first) || !proceedOnWire<d>(second)) {
-      break;
-    }
-
-    if (first.operation() != second.operation()) {
-      break;
-    }
-
-    std::ranges::advance(first, step);
-    std::ranges::advance(second, step);
-  }
-}
-
-using PendingWiresMap =
-    DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
-
-void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire);
-}; // namespace impl
-
-using ReleasedOps = SmallVector<UnitaryOpInterface, 8>;
-using WalkLayersCallback = function_ref<LogicalResult(
-    ArrayRef<UnitaryOpInterface>, const Qubits&, ReleasedOps&)>;
-/**
- * TODO: Update description
- * @brief Collect the layers of independently executable two-qubit gates of a
- * circuit.
+ * @brief Walk the graph-like circuit IR of QCO dialect programs.
  * @details Depending on the template parameter, the function collects the
  * layers in forward or backward direction, respectively. Towards that end,
  * the function traverses the def-use chain of each qubit until a two-qubit
@@ -205,130 +134,7 @@ using WalkLayersCallback = function_ref<LogicalResult(
  * released in next iteration.
  * @returns failure() if the callback returns failure(), success() otherwise.
  */
-template <WalkDirection d>
-LogicalResult walkLayers(Region& region, WalkLayersCallback onLayer) {
-  constexpr auto step = d == WalkDirection::Forward ? 1 : -1;
-
-  Qubits qubits;
-  ReleasedOps released;
-  impl::PendingWiresMap pending;
-  SmallVector<UnitaryOpInterface> front;
-  SmallVector<WireIterator> wires;
-
-  // Collect the qubits.
-  const auto dynamicOps = region.getOps<AllocOp>();
-  const auto staticOps = region.getOps<StaticOp>();
-
-  if (!staticOps.empty()) { // Static Addressing.
-    assert(dynamicOps.empty() && "Mixing addressing modes is invalid.");
-    wires.reserve(range_size(staticOps));
-    for_each(staticOps,
-             [&](StaticOp op) { wires.emplace_back(op.getQubit()); });
-  } else { // Dynamic Addressing.
-    assert(staticOps.empty() && "Mixing addressing modes is invalid.");
-    wires.reserve(range_size(dynamicOps));
-    for_each(dynamicOps,
-             [&](AllocOp op) { wires.emplace_back(op.getResult()); });
-  }
-
-  pending.reserve(wires.size());
-  front.reserve((wires.size() + 1) / 2);
-
-  while (true) {
-    for (WireIterator& it : wires) {
-      while (impl::proceedOnWire<d>(it)) {
-        const auto res =
-            TypeSwitch<Operation*, WalkResult>(it.operation())
-                .template Case<BarrierOp>([&](BarrierOp op) {
-                  impl::insert(pending, op, &it);
-                  // Release barrier directly.
-                  if (pending[op].size() == op.getNumQubits()) {
-                    for (WireIterator* wire : pending[op]) {
-                      std::ranges::advance(*wire, step);
-                    }
-                    qubits.remap(op);
-                    return WalkResult::advance();
-                  }
-
-                  return WalkResult::interrupt();
-                })
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-                  assert(op.getNumQubits() > 0 && op.getNumQubits() <= 2);
-
-                  if (op.getNumQubits() == 1) {
-                    qubits.remap(op);
-                    std::ranges::advance(it, step);
-                    return WalkResult::advance();
-                  }
-
-                  impl::insert(pending, op, &it);
-                  if (pending[op].size() == op.getNumQubits()) {
-                    front.emplace_back(op);
-                  }
-
-                  return WalkResult::interrupt(); // Stop at two-qubit gate.
-                })
-                .template Case<AllocOp>([&](AllocOp op) {
-                  qubits.add(op.getResult());
-                  std::ranges::advance(it, step);
-                  return WalkResult::advance();
-                })
-                .template Case<StaticOp>([&](StaticOp op) {
-                  qubits.add(op.getQubit(), op.getIndex());
-                  std::ranges::advance(it, step);
-                  return WalkResult::advance();
-                })
-                .template Case<ResetOp>([&](ResetOp op) {
-                  qubits.remap(op.getQubitIn(), op.getQubitOut());
-                  std::ranges::advance(it, step);
-                  return WalkResult::advance();
-                })
-                .template Case<MeasureOp>([&](MeasureOp op) {
-                  qubits.remap(op.getQubitIn(), op.getQubitOut());
-                  std::ranges::advance(it, step);
-                  return WalkResult::advance();
-                })
-                .template Case<SinkOp>([&](SinkOp op) {
-                  qubits.remove(op.getQubit());
-                  std::ranges::advance(it, step);
-                  return WalkResult::advance();
-                })
-                .Default([&](Operation* op) {
-                  const auto name = op->getName().getStringRef();
-                  report_fatal_error("unknown op encountered: " + name);
-                  return WalkResult::interrupt();
-                });
-
-        if (res.wasInterrupted()) {
-          break;
-        }
-      }
-    }
-
-    if (front.empty()) {
-      break;
-    }
-
-    released.clear();
-    if (failed(std::invoke(onLayer, front, qubits, released))) {
-      return failure();
-    }
-
-    if (released.empty()) {
-      break;
-    }
-
-    for (UnitaryOpInterface op : released) {
-      for (WireIterator* it : pending.at(op)) {
-        std::ranges::advance(*it, step);
-      }
-      qubits.remap(op);
-    }
-
-    front.clear();
-    pending.clear();
-  }
-
-  return success();
-}
+LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator>,
+                               const WalkDirection& direction,
+                               walkCircuitGraphFn fn);
 } // namespace mlir::qco

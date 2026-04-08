@@ -167,7 +167,6 @@ TEST_P(MappingPassTest, Sabre) {
   const qco::MappingPassOptions options{.nlookahead = 1,
                                         .alpha = 1,
                                         .lambda = 0.85,
-                                        .fullLayers = true,
                                         .niterations = 2,
                                         .ntrials = 4,
                                         .seed = 42};
