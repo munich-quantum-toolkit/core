@@ -139,6 +139,20 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Allocate a qubit
+   * @return An LLVM pointer representing the qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto q = builder.allocQubit();
+   * ```
+   * ```mlir
+   * TODO
+   * ```
+   */
+  Value allocQubit();
+
+  /**
    * @brief Get a static qubit by index
    * @param index The qubit index (must be non-negative)
    * @return An LLVM pointer representing the qubit
@@ -155,7 +169,7 @@ public:
   Value staticQubit(int64_t index);
 
   /**
-   * @brief Allocate an array of (static) qubits
+   * @brief Allocate an array of qubits
    * @param size Number of qubits (must be positive)
    * @return Vector of LLVM pointers representing the qubits
    *
@@ -164,12 +178,7 @@ public:
    * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %c0 = llvm.mlir.constant(0 : i64) : i64
-   * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
-   * %c1 = llvm.mlir.constant(1 : i64) : i64
-   * %q1 = llvm.inttoptr %c1 : i64 to !llvm.ptr
-   * %c2 = llvm.mlir.constant(2 : i64) : i64
-   * %q2 = llvm.inttoptr %c2 : i64 to !llvm.ptr
+   * TODO
    * ```
    */
   llvm::SmallVector<Value> allocQubitRegister(int64_t size);
@@ -892,6 +901,9 @@ private:
 
   /// Cache static qubit pointers for reuse
   llvm::DenseMap<int64_t, Value> staticQubits;
+
+  /// Set of qubit pointers
+  llvm::DenseSet<Value> qubits;
 
   /// Set of qubit-array pointers
   llvm::DenseSet<Value> qubitArrays;
