@@ -19,6 +19,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
 #include <complex>
 #include <optional>
 #include <variant>
@@ -42,18 +43,6 @@ struct MergeSubsequentP final : OpRewritePattern<POp> {
   }
 };
 
-/**
- * @brief Remove trivial P operations.
- */
-struct RemoveTrivialP final : OpRewritePattern<POp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(POp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTrivialOneTargetOneParameter(op, rewriter);
-  }
-};
-
 } // namespace
 
 void POp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -63,9 +52,17 @@ void POp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
+OpFoldResult POp::fold(FoldAdaptor /*adaptor*/) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    return getInputQubit(0);
+  }
+  return {};
+}
+
 void POp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<MergeSubsequentP, RemoveTrivialP>(context);
+  results.add<MergeSubsequentP>(context);
 }
 
 std::optional<Eigen::Matrix2cd> POp::getUnitaryMatrix() {

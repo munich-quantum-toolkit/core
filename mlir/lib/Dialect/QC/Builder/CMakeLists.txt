@@ -13,7 +13,7 @@ add_mlir_library(
   PUBLIC
   MLIRArithDialect
   MLIRFuncDialect
-  MLIRSCFDialect
+        MLIRMemRefDialect
   MLIRQCDialect)
 
 mqt_mlir_target_use_project_options(MLIRQCProgramBuilder)

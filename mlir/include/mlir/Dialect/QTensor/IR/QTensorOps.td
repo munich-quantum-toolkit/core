@@ -134,48 +134,6 @@ def ExtractOp
   let results = (outs 1DTensorOf<[QubitType]>:$out_tensor, QubitType:$result);
   let assemblyFormat = "$tensor `[` $index `]` attr-dict `:` type($tensor)";
 
-  let hasFolder = 1;
-  let hasVerifier = 1;
-}
-
-def ExtractSliceOp
-    : QTensorOp<"extract_slice",
-                [Pure,
-                 TypesMatchWith<"returned tensor type matches input tensor",
-                                "tensor", "out_tensor", "$_self">]> {
-  let summary = "Extract slice from tensor";
-  let description = [{
-        The `qtensor.extract_slice` operation is the modified version of the standard `tensor.extract_slice`
-        operation of the tensor dialect. It reads a one-dimensional qubit tensor and returns the extracted tensor of qubits specified by the
-        offset and size argument. In addition, it also returns the updated input tensor as result.
-
-        The extract_slice operation supports the following arguments:
-
-        - tensor: the "base" tensor from which to extract a slice.
-        - offset: the starting position in the base tensor from which the slice is
-                  extracted.
-        - size: the length of the slice to extract from the base tensor.
-
-        Example:
-        ```mlir
-        %outTensor, %extractedSlice = qtensor.extract_slice %tensor[%c0][%c2] : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
-        ```
-    }];
-
-  let arguments = (ins 1DTensorOf<[QubitType]>:$tensor, Index:$offset,
-      Index:$size);
-  let results = (outs 1DTensorOf<[QubitType]>:$out_tensor,
-      1DTensorOf<[QubitType]>:$result);
-
-  let assemblyFormat = [{
-        $tensor `[`$offset `]` `[`$size`]`
-        attr-dict `:` type($tensor) `to` type($result)
-    }];
-
-  let builders = [OpBuilder<(ins "Value":$tensor, "Value":$offset,
-      "Value":$size, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>];
-
-  let hasFolder = 1;
   let hasVerifier = 1;
 }
 
@@ -207,42 +165,7 @@ def InsertOp
         $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
 
-  let hasFolder = 1;
-  let hasVerifier = 1;
-}
-
-def InsertSliceOp
-    : QTensorOp<"insert_slice",
-                [Pure, TypesMatchWith<"expected result type to match dest type",
-                                      "dest", "result", "$_self">]> {
-  let summary = "Insert slice into tensor";
-  let description = [{
-        The `qtensor.insert_slice` operation is a modified version of the `tensor.insert_slice` operation
-        of the tensor dialect. The operation inserts a tensor `source` into another tensor `dest` as specified by the
-        operation's offset and size arguments. This insertion consumes the `source` tensor of qubits.
-
-        The insert_slice operation supports the following arguments:
-
-          - source: the tensor that is inserted. The source is consumed after the insertion.
-          - dest: the tensor into which the source tensor is inserted.
-          - offset: the starting index in the `dest` tensor where the slice is inserted.
-          - size: the number of elements in the slice, which must match the size of the
-                  source tensor type.
-
-        Example:
-        ```mlir
-        %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2] : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
-        ```
-    }];
-
-  let arguments = (ins 1DTensorOf<[QubitType]>:$source,
-      1DTensorOf<[QubitType]>:$dest, Index:$offset, Index:$size);
-  let results = (outs 1DTensorOf<[QubitType]>:$result);
-  let assemblyFormat = [{
-        $source `into` $dest `[`$offset `]` `[`$size`]`
-        attr-dict `:` type($source) `into` type($dest)
-    }];
-
+  let hasCanonicalizer = 1;
   let hasFolder = 1;
   let hasVerifier = 1;
 }
