@@ -40,12 +40,8 @@ namespace mlir::qco {
  */
 static bool containRangesOfSameElements(const std::vector<Value>& range1,
                                         const std::vector<Value>& range2) {
-  bool result = true;
-  result &= range1.size() == range2.size();
-  for (auto element : range1) {
-    result &= std::ranges::find(range2, element) != range2.end();
-  }
-  return result;
+  return range1.size() == range2.size() &&
+         std::ranges::is_permutation(range1, range2);
 }
 
 namespace {
