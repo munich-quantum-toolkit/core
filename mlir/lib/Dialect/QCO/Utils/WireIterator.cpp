@@ -26,7 +26,7 @@
 namespace mlir::qco {
 Value WireIterator::qubit() const {
   // A sink/deallocation/insert doesn't have an OpResult.
-  if (op_ != nullptr && isa<SinkOp>(op_) && isa<qtensor::InsertOp>(op_)) {
+  if (op_ != nullptr && (isa<SinkOp>(op_) || isa<qtensor::InsertOp>(op_))) {
     return nullptr;
   }
   return qubit_;
