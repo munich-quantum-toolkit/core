@@ -141,8 +141,7 @@ void skipTwoQubitBlock(WireIterator& first, WireIterator& second) {
 } // namespace
 
 LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
-                               const WalkDirection& direction,
-                               walkCircuitGraphFn fn) {
+                               WalkDirection direction, walkCircuitGraphFn fn) {
   const auto step = direction == WalkDirection::Forward ? 1 : -1;
 
   ReleasedIterators released;
@@ -211,7 +210,7 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
     released.clear();
     const auto res = std::invoke(fn, front, released);
     if (res.wasInterrupted() || res.wasSkipped()) {
-      break;
+      return failure();
     }
 
     for (WireIterator* it : released) {

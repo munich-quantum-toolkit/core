@@ -41,6 +41,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <memory>
 #include <numeric>
@@ -274,17 +275,8 @@ private:
    * @brief Parameters influencing the behavior of the A* search algorithm.
    */
   struct [[nodiscard]] Parameters {
-    Parameters(const float alpha, const float lambda,
-               const std::size_t nlookahead)
-        : alpha(alpha), decay(1 + nlookahead) {
-      decay[0] = 1.;
-      for (std::size_t i = 1; i < decay.size(); ++i) {
-        decay[i] = decay[i - 1] * lambda;
-      }
-    }
-
     float alpha;
-    SmallVector<float> decay;
+    float lambda;
   };
 
   /**
@@ -357,12 +349,15 @@ private:
     [[nodiscard]] float h(const Window& layers, const Architecture& arch,
                           const Parameters& params) const {
       float costs{0};
-      for (const auto& [decay, layer] : zip(params.decay, layers)) {
+      float decay{1.};
+
+      for (const auto& [i, layer] : enumerate(layers)) {
         for (const auto& [prog0, prog1] : layer) {
           const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
           const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
           costs += decay * static_cast<float>(nswaps);
         }
+        decay *= params.lambda;
       }
       return costs;
     }
@@ -380,10 +375,9 @@ protected:
   using MappingPassBase::MappingPassBase;
 
   void runOnOperation() override {
-    std::mt19937_64 rng{this->seed};
+    std::mt19937_64 rng{seed};
     IRRewriter rewriter(&getContext());
 
-    Parameters params(this->alpha, this->lambda, this->nlookahead);
     // TODO: Hardcoded architecture.
     Architecture arch("RigettiNovera", 9,
                       {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
@@ -412,17 +406,21 @@ protected:
       // and find the one with the fewest SWAPs.
 
       parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-        refineLayout(func, arch, params, trial);
+        refineLayout(func, arch, trial);
       });
 
       Trial* best = findBestTrial(trials);
       if (best == nullptr) {
+        func.emitError() << "failed to find a best initial layout trial";
         signalPassFailure();
         return;
       }
 
       place(func, best->layout, rewriter);
-      route(func, arch, params, best->layout, rewriter);
+      if (failed(route(func, arch, best->layout, rewriter))) {
+        func.emitError() << "failed to map the function";
+        signalPassFailure();
+      }
       assert(isExecutable(func.getFunctionBody(), arch).succeeded());
     }
   }
@@ -482,8 +480,7 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns failure() if routing fails.
    */
-  void refineLayout(func::FuncOp func, const Architecture& arch,
-                    const Parameters& params, Trial& trial) {
+  void refineLayout(func::FuncOp func, const Architecture& arch, Trial& trial) {
 
     SmallVector<WireIterator> wires;
 
@@ -497,13 +494,13 @@ private:
       enumeration.try_emplace(&it, index);
     }
 
-    for (std::size_t i = 0; i < this->niterations; ++i) {
+    for (std::size_t i = 0; i < niterations; ++i) {
       if (failed(layoutRoute(wires, enumeration, WalkDirection::Forward, arch,
-                             params, trial))) {
+                             trial))) {
         return;
       }
       if (failed(layoutRoute(wires, enumeration, WalkDirection::Backward, arch,
-                             params, trial))) {
+                             trial))) {
         return;
       }
     }
@@ -528,12 +525,13 @@ private:
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
-  [[nodiscard]] static FailureOr<SmallVector<IndexGate>>
-  search(Window layers, const Layout& layout, const Architecture& arch,
-         const Parameters& params) {
+  [[nodiscard]] FailureOr<SmallVector<IndexGate>>
+  search(const Window& layers, const Layout& layout, const Architecture& arch) {
     constexpr std::size_t cap = 25'000'000UL;
     const std::size_t b = arch.maxDegree() * ((arch.nqubits() + 1) / 2);
     const std::size_t budget = std::min(b * b * b, cap);
+
+    const Parameters params{.alpha = alpha, .lambda = lambda};
 
     llvm::SpecificBumpPtrAllocator<Node> arena;
     std::priority_queue<Node*, std::vector<Node*>, Node::ComparePointer>
@@ -609,11 +607,9 @@ private:
     return failure();
   }
 
-  static FailureOr<SmallVector<IndexGate>> routeWindow(const Window& window,
-                                                       const Architecture& arch,
-                                                       const Parameters& params,
-                                                       Layout& layout) {
-    const auto swaps = search(window, layout, arch, params);
+  FailureOr<SmallVector<IndexGate>>
+  routeWindow(const Window& window, const Architecture& arch, Layout& layout) {
+    const auto swaps = search(window, layout, arch);
     if (failed(swaps)) {
       return failure();
     }
@@ -636,43 +632,41 @@ private:
   LogicalResult layoutRoute(MutableArrayRef<WireIterator> wires,
                             DenseMap<WireIterator*, std::size_t>& enumeration,
                             const WalkDirection& direction,
-                            const Architecture& arch, const Parameters& params,
-                            Trial& trial) {
+                            const Architecture& arch, Trial& trial) {
     Window window;
     window.reserve(1 + nlookahead);
+
     trial.nswaps = 0; // Reset the SWAP count.
 
-    walkCircuitGraph(
-        wires, direction,
-        [&](ArrayRef<ArrayRef<WireIterator*>> front,
-            ReleasedIterators& released) {
-          if (front.empty()) {
-            return WalkResult::advance();
-          }
+    const auto fn = [&](ArrayRef<ArrayRef<WireIterator*>> front,
+                        ReleasedIterators& released) {
+      if (front.empty()) {
+        return WalkResult::advance();
+      }
 
-          window.clear();
+      window.clear();
 
-          SmallVector<IndexGate, 0> layer;
-          for (ArrayRef<WireIterator*> its : front) {
-            assert(its.size() == 2);
-            assert(its[0]->operation() == its[1]->operation());
+      SmallVector<IndexGate, 0> layer;
+      for (ArrayRef<WireIterator*> its : front) {
+        assert(its.size() == 2);
+        assert(its[0]->operation() == its[1]->operation());
 
-            layer.emplace_back(enumeration[its[0]], enumeration[its[1]]);
-            released.append(its.begin(), its.end());
-          }
-          window.emplace_back(layer);
+        layer.emplace_back(enumeration[its[0]], enumeration[its[1]]);
+        released.append(its.begin(), its.end());
+      }
+      window.emplace_back(layer);
 
-          const auto swaps = routeWindow(window, arch, params, trial.layout);
-          if (failed(swaps)) {
-            return WalkResult::interrupt();
-          }
+      const auto swaps = routeWindow(window, arch, trial.layout);
+      if (failed(swaps)) {
+        return WalkResult::interrupt();
+      }
 
-          trial.nswaps += swaps->size();
+      trial.nswaps += swaps->size();
 
-          return WalkResult::advance();
-        });
+      return WalkResult::advance();
+    };
 
-    return success();
+    return walkCircuitGraph(wires, direction, fn);
   }
 
   /**
@@ -683,12 +677,12 @@ private:
   * @returns failure() if A* search isn't able to find a solution.
   */
   LogicalResult route(func::FuncOp func, const Architecture& arch,
-                      const Parameters& params, Layout& layout,
-                      IRRewriter& rewriter) {
+                      Layout& layout, IRRewriter& rewriter) {
     Window window;
     window.reserve(1 + nlookahead);
 
     SmallVector<WireIterator> wires;
+    wires.reserve(range_size(func.getOps<StaticOp>()));
     for (StaticOp op : func.getOps<StaticOp>()) {
       wires.emplace_back(op.getQubit());
     }
@@ -704,106 +698,99 @@ private:
     DenseSet<Operation*> frontSet;
     frontSet.reserve((wires.size() + 1) / 2);
 
-    walkCircuitGraph(wires, WalkDirection::Forward,
-                     [&](ArrayRef<ArrayRef<WireIterator*>> front,
-                         ReleasedIterators& released) {
-                       if (front.empty()) {
-                         return WalkResult::advance();
-                       }
+    const auto fn = [&](ArrayRef<ArrayRef<WireIterator*>> front,
+                        ReleasedIterators& released) {
+      if (front.empty()) {
+        return WalkResult::advance();
+      }
 
-                       SmallVector<IndexGate, 0> layer;
-                       for (ArrayRef<WireIterator*> its : front) {
-                         assert(its.size() == 2);
-                         assert(its[0]->operation() == its[1]->operation());
+      SmallVector<IndexGate, 0> layer;
+      for (ArrayRef<WireIterator*> its : front) {
+        assert(its.size() == 2);
+        assert(its[0]->operation() == its[1]->operation());
 
-                         const auto hw0 = enumeration[its[0]];
-                         const auto hw1 = enumeration[its[1]];
+        const auto hw0 = enumeration[its[0]];
+        const auto hw1 = enumeration[its[1]];
 
-                         layer.emplace_back(layout.getProgramIndex(hw0),
-                                            layout.getProgramIndex(hw1));
+        layer.emplace_back(layout.getProgramIndex(hw0),
+                           layout.getProgramIndex(hw1));
 
-                         frontSet.insert(its[0]->operation());
-                       }
+        frontSet.insert(its[0]->operation());
+      }
 
-                       // for (const auto& [i0, i1] : layer) {
-                       //   llvm::dbgs() << "(" << i0 << ", " << i1 << ") ";
-                       // }
-                       // llvm::dbgs() << "\n";
+      window.emplace_back(layer);
 
-                       window.emplace_back(layer);
+      // Each wire iterator points at a two-qubit operation of the current or
+      // next layers. Consequently, the wire iterator also points to the qubit
+      // SSA value the respective two-qubit operations produce. To point at the
+      // operation which produces the inputs of the two-qubit operations,
+      // decrement each of the wire iterators. Because sinks don't produce
+      // values, decrement a second time.
 
-                       // Each wire iterator points at a two-qubit operation of
-                       // the current or next layers. Consequently, the wire
-                       // iterator also points to the qubit SSA value the
-                       // respective two-qubit operations produce. To point at
-                       // the operation which produces the inputs of the
-                       // two-qubit operations, decrement each of the wire
-                       // iterators.
+      for (auto& it : wires) {
+        --it;
+        if (isa<SinkOp>(it.operation())) {
+          --it;
+        }
+      }
 
-                       // for_each(wires, [](auto& it) { --it; });
-                       for (auto& it : wires) {
-                         --it;
-                         if (isa<SinkOp>(it.operation())) {
-                           --it;
-                         }
-                       }
+      const auto swaps = routeWindow(window, arch, layout);
+      if (failed(swaps)) {
+        return WalkResult::interrupt();
+      }
 
-                       const auto swaps =
-                           routeWindow(window, arch, params, layout);
-                       if (failed(swaps)) {
-                         return WalkResult::interrupt();
-                       }
+      numSwaps += swaps->size();
+      for (const auto& [hw0, hw1] : swaps.value()) {
+        assert(revEnumeration.contains(hw0));
+        assert(revEnumeration.contains(hw1));
 
-                       numSwaps += swaps->size();
-                       for (const auto& [hw0, hw1] : swaps.value()) {
-                         assert(revEnumeration.contains(hw0));
-                         assert(revEnumeration.contains(hw1));
+        WireIterator& it0 = *revEnumeration[hw0];
+        WireIterator& it1 = *revEnumeration[hw1];
 
-                         WireIterator& it0 = *revEnumeration[hw0];
-                         WireIterator& it1 = *revEnumeration[hw1];
+        assert(!isa<SinkOp>(it0.operation()));
+        assert(!isa<SinkOp>(it1.operation()));
 
-                         assert(!isa<SinkOp>(it0.operation()));
-                         assert(!isa<SinkOp>(it1.operation()));
+        const auto in0 = it0.qubit();
+        const auto in1 = it1.qubit();
 
-                         const auto in0 = it0.qubit();
-                         const auto in1 = it1.qubit();
+        auto swapOp =
+            SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
 
-                         auto swapOp = SWAPOp::create(
-                             rewriter, rewriter.getUnknownLoc(), in0, in1);
+        const auto out0 = swapOp.getQubit0Out();
+        const auto out1 = swapOp.getQubit1Out();
 
-                         const auto out0 = swapOp.getQubit0Out();
-                         const auto out1 = swapOp.getQubit1Out();
+        rewriter.replaceAllUsesExcept(in0, out1, swapOp);
+        rewriter.replaceAllUsesExcept(in1, out0, swapOp);
 
-                         rewriter.replaceAllUsesExcept(in0, out1, swapOp);
-                         rewriter.replaceAllUsesExcept(in1, out0, swapOp);
+        ++it0;
+        ++it1;
 
-                         ++it0;
-                         ++it1;
+        assert(isa<SWAPOp>(it0.operation()));
+        assert(isa<SWAPOp>(it1.operation()));
+      }
 
-                         assert(isa<SWAPOp>(it0.operation()));
-                         assert(isa<SWAPOp>(it1.operation()));
-                       }
+      // Finally, undo the previous increments and release the correct (!) wire
+      // iterators for the next iteration.
 
-                       // Finally, we must ensure that the wire iterators point
-                       // to all the two-qubit operations of the current layer
-                       // again. Thus increment each of the (possibly) modified
-                       // wires.
+      for (auto& it : wires) {
+        ++it;
+        if (frontSet.contains(it.operation())) {
+          released.emplace_back(&it);
+        }
+      }
 
-                       for (auto& it : wires) {
-                         ++it;
-                         if (frontSet.contains(it.operation())) {
-                           released.emplace_back(&it);
-                         }
-                       }
+      // Prepare data structures for next iteration (next layer).
 
-                       // Prepare data structures for next iteration (next
-                       // layer).
+      window.clear();
+      frontSet.clear();
 
-                       window.clear();
-                       frontSet.clear();
+      return WalkResult::advance();
+    };
 
-                       return WalkResult::advance();
-                     });
+    const auto res = walkCircuitGraph(wires, WalkDirection::Forward, fn);
+    if (failed(res)) {
+      return failure();
+    }
 
     for_each(func.getFunctionBody().getBlocks(),
              [](Block& b) { sortTopologically(&b); });

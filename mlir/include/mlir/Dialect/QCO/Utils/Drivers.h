@@ -69,8 +69,7 @@ public:
   /**
    * @returns the qubit value assigned to a index.
    */
-  [[maybe_unused]] [[nodiscard]] TypedValue<QubitType>
-  getQubit(std::size_t index) const;
+  [[nodiscard]] TypedValue<QubitType> getQubit(std::size_t index) const;
 
   /**
    * @returns the index assigned to the given qubit value.
@@ -85,11 +84,13 @@ private:
 /**
  * @brief Perform top-down non-recursive walk of all operations within a
  * region and apply callback function.
+ *
  * @details The signature of the callback function is:
  *
  *     (Operation*, Qubits& q) -> WalkResult
  *
  * where the Qubits object tracks the front of qubit SSA values.
+ *
  * @param region The targeted region.
  * @param fn The callback function.
  */
@@ -130,11 +131,25 @@ template <typename Fn> void walkUnit(Region& region, Fn&& fn) {
  * gate is found. If a two-qubit gate is visited twice, it is considered ready
  * and inserted into the layer. This process is repeated until no more
  * two-qubit are found anymore.
- * The return value of the callback determines which two-qubit gates are to be
- * released in next iteration.
- * @returns failure() if the callback returns failure(), success() otherwise.
+ *
+ * The signature of the callback function is:
+ *
+ *     (ArrayRef<ArrayRef<WireIterator*>>, ReleasedIterator&) -> WalkResult
+ *
+ * The wire iterators inserted into the parameter "released" determine which
+ * two-qubit gates are released in next iteration.
+ *
+ * The driver always skips two-qubit blocks.
+ *
+ * @param wires A mutable array-ref of circuit wires (wire iterators).
+ * @param direction The traversal direction.
+ * @param fn The callback function.
+ *
+ * @returns
+ *     failure() if the callback returns WalkResult::interrupt()
+ *     failure() if the callback returns WalkResult::skipped()
+ *     success() otherwise.
  */
-LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator>,
-                               const WalkDirection& direction,
-                               walkCircuitGraphFn fn);
+LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
+                               WalkDirection direction, walkCircuitGraphFn fn);
 } // namespace mlir::qco
