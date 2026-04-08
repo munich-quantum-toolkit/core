@@ -26,9 +26,6 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cassert>
-#include <cmath>
-
 namespace {
 
 using namespace mlir;
@@ -242,7 +239,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
  * @brief Test: Checks that Hadamard gates are not lifted if they are controlled
  * and the Pauli gate is a Pauli Y gate.
  */
-TEST_F(QCOHadamardLiftingTest, doNotliftHadamardOverPauliYGateIfControlled) {
+TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverPauliYGateIfControlled) {
   auto q = programBuilder.allocQubitRegister(2);
   q[0] = programBuilder.y(q[0]);
   auto qubitPair = programBuilder.cy(q[1], q[0]);
