@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
+#include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -41,12 +42,10 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <memory>
 #include <numeric>
 #include <optional>
-#include <queue>
 #include <random>
 #include <string>
 #include <string_view>
@@ -534,7 +533,7 @@ private:
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
     llvm::SpecificBumpPtrAllocator<Node> arena;
-    std::priority_queue<Node*, std::vector<Node*>, Node::ComparePointer>
+    llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
         frontier;
 
     Node* root = std::construct_at(arena.Allocate(), layout);
