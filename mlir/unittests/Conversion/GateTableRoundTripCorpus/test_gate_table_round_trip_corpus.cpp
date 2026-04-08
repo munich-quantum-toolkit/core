@@ -31,6 +31,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -169,18 +170,13 @@ void buildGateCaseBody(OpBuilder& b, Location loc, const GateCase& tc) {
 
   const int64_t totalQubits =
       static_cast<int64_t>(maxCtrls) + static_cast<int64_t>(NumTargets);
-  auto regName = b.getStringAttr("q");
-  auto regSize = b.getI64IntegerAttr(totalQubits);
-
-  for (int64_t i = 0; i < static_cast<int64_t>(maxCtrls); ++i) {
-    auto idx = b.getI64IntegerAttr(i);
-    controls.push_back(
-        qco::AllocOp::create(b, loc, regName, regSize, idx).getResult());
-  }
-  for (int64_t i = 0; i < static_cast<int64_t>(NumTargets); ++i) {
-    auto idx = b.getI64IntegerAttr(static_cast<int64_t>(maxCtrls) + i);
-    targets.push_back(
-        qco::AllocOp::create(b, loc, regName, regSize, idx).getResult());
+  for (int64_t i = 0; i < totalQubits; ++i) {
+    auto q = qco::AllocOp::create(b, loc).getResult();
+    if (i < static_cast<int64_t>(maxCtrls)) {
+      controls.push_back(q);
+    } else {
+      targets.push_back(q);
+    }
   }
 
   auto applyBase = [&](ValueRange inTargets) -> llvm::SmallVector<Value> {
@@ -289,7 +285,7 @@ OwningOpRef<ModuleOp> buildQCGateCase(MLIRContext* ctx, const GateCase& tc) {
   constexpr size_t maxCtrls = 2;
   const int64_t totalQubits =
       static_cast<int64_t>(maxCtrls) + static_cast<int64_t>(NumTargets);
-  auto qubits = builder.allocQubitRegister(totalQubits, "q");
+  auto qubits = builder.allocQubitRegister(totalQubits);
 
   llvm::SmallVector<Value> controls;
   llvm::SmallVector<Value> targets;
@@ -375,7 +371,7 @@ void runGateCase(MLIRContext* ctx, const GateCase& tc) {
   printer.record(program.get(), "Original QCO IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
@@ -383,7 +379,7 @@ void runGateCase(MLIRContext* ctx, const GateCase& tc) {
   printer.record(program.get(), "Converted Jeff IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(),
                  "Canonicalized Converted Jeff IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
@@ -392,14 +388,14 @@ void runGateCase(MLIRContext* ctx, const GateCase& tc) {
   printer.record(program.get(), "Converted QCO IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(),
                  "Canonicalized Converted QCO IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
   auto reference = buildGateCase<QCOOpType, Targets, Params>(ctx, tc);
   ASSERT_TRUE(reference);
-  runCanonicalizationPasses(reference.get());
+  ASSERT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Reference QCO IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*reference).succeeded());
 
@@ -448,7 +444,7 @@ void runGateCaseQCChain(MLIRContext* ctx, const GateCase& tc) {
   printer.record(program.get(), "Original QC IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
@@ -468,14 +464,14 @@ void runGateCaseQCChain(MLIRContext* ctx, const GateCase& tc) {
   printer.record(program.get(), "Converted QC IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(),
                  "Canonicalized Converted QC IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*program).succeeded());
 
   auto reference = buildQCGateCase<QCOpType, Targets, Params>(ctx, tc);
   ASSERT_TRUE(reference);
-  runCanonicalizationPasses(reference.get());
+  ASSERT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Reference QC IR (" + toString(tc) + ")");
   ASSERT_TRUE(verify(*reference).succeeded());
 
@@ -505,7 +501,8 @@ bool dispatchGateCaseQCChain(CtxT* ctx, const GateCase& tc) {
 TEST(GateTableRoundTripCorpus, QCQCOJeffQCOQCRoundTripAllGates) {
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                  qco::QCODialect, qc::QCDialect, qtensor::QTensorDialect>();
+                  memref::MemRefDialect, qco::QCODialect, qc::QCDialect,
+                  qtensor::QTensorDialect>();
   auto ctx = std::make_unique<MLIRContext>();
   ctx->appendDialectRegistry(registry);
   ctx->loadAllAvailableDialects();
@@ -526,7 +523,7 @@ OwningOpRef<ModuleOp> buildQCGateCaseForQIR(MLIRContext* ctx,
   constexpr size_t maxCtrls = 2;
   const int64_t totalQubits =
       static_cast<int64_t>(maxCtrls) + static_cast<int64_t>(Targets);
-  auto qubits = builder.allocQubitRegister(totalQubits, "q");
+  auto qubits = builder.allocQubitRegister(totalQubits);
 
   SmallVector<Value> controls;
   SmallVector<Value> targets;
@@ -650,7 +647,7 @@ bool dispatchGateCaseQCToQIR(CtxT* ctx, const GateCase& tc) {
 TEST(GateTableRoundTripCorpus, QCToQIRGateTableUnitaryGates) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, LLVM::LLVMDialect, arith::ArithDialect,
-                  func::FuncDialect>();
+                  func::FuncDialect, memref::MemRefDialect>();
   auto ctx = std::make_unique<MLIRContext>();
   ctx->appendDialectRegistry(registry);
   ctx->loadAllAvailableDialects();

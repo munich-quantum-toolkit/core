@@ -1150,12 +1150,15 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {
-  patterns.add<ConvertQCAllocQIR>(typeConverter, ctx, &state);
-  patterns.add<ConvertQCDeallocQIR>(typeConverter, ctx);
-  patterns.add<ConvertQCStaticQIR>(typeConverter, ctx, &state);
-  patterns.add<ConvertQCMeasureQIR>(typeConverter, ctx, &state);
-  patterns.add<ConvertQCResetQIR>(typeConverter, ctx);
-  patterns.add<ConvertQCGPhaseOpQIR>(typeConverter, ctx, &state);
+  patterns
+      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp>(
+          typeConverter, ctx, &state);
+  patterns.add<ConvertQCAllocOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCDeallocOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCStaticOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCMeasureOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCResetOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCGPhaseOp>(typeConverter, ctx, &state);
 
   // Note: `MQT_GATE_TABLE` is defined in `mlir/Conversion/GateTable.h`.
 #define MQT_ADD_QC_TO_QIR_UNITARY(                                             \
@@ -1166,7 +1169,7 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
   MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
 #undef MQT_ADD_QC_TO_QIR_UNITARY
 
-  patterns.add<ConvertQCBarrierQIR, ConvertQCCtrlQIR, ConvertQCYieldQIR>(
+  patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp>(
       typeConverter, ctx, &state);
 }
 
@@ -1479,7 +1482,7 @@ protected:
     {
       RewritePatternSet patterns(ctx);
       target.addIllegalDialect<QCDialect, memref::MemRefDialect>();
- 
+
       populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
 
       if (applyPartialConversion(moduleOp, target, std::move(patterns))
