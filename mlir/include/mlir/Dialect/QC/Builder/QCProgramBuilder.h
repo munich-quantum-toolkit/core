@@ -126,21 +126,20 @@ public:
   /**
    * @brief Allocate a qubit register
    * @param size Number of qubits (must be positive)
-   * @param name Register name (default: "q")
    * @return Vector of qubit references
    *
    * @par Example:
    * ```c++
-   * auto q = builder.allocQubitRegister(3, "q");
+   * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %q0 = qc.alloc("q", 3, 0) : !qc.qubit
-   * %q1 = qc.alloc("q", 3, 1) : !qc.qubit
-   * %q2 = qc.alloc("q", 3, 2) : !qc.qubit
+   * %memref = memref.alloc() : memref<3x!qc.qubit>
+   * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
+   * %q1 = memref.load %memref[%c1] : memref<3x!qc.qubit>
+   * %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
    * ```
    */
-  llvm::SmallVector<Value> allocQubitRegister(int64_t size,
-                                              const std::string& name = "q");
+  llvm::SmallVector<Value> allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -941,6 +940,9 @@ private:
 
   /// Track allocated qubits for automatic deallocation
   llvm::DenseSet<Value> allocatedQubits;
+
+  /// Track allocated MemRefs for automatic deallocation
+  llvm::DenseSet<Value> allocatedMemrefs;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

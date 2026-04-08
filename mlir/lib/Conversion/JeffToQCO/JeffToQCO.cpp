@@ -12,6 +12,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <jeff/Conversion/JeffToNative/JeffToNative.h>
 #include <jeff/IR/JeffDialect.h>
@@ -380,6 +382,111 @@ static LogicalResult cleanUp(Operation* op) {
 }
 
 namespace {
+
+/**
+ * @brief Converts jeff.qureg_alloc to qtensor.alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %qureg = jeff.qureg_alloc(%c3) : !jeff.qureg
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+ * ```
+ */
+struct ConvertJeffQuregAllocOpToQCO final
+    : OpConversionPattern<jeff::QuregAllocOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QuregAllocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto size = arith::IndexCastOp::create(
+        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getNumQubits());
+    rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.qureg_extract_index to qtensor.extract
+ *
+ * @par Example:
+ * ```mlir
+ * %qureg_out, %q = jeff.qureg_extract_index(%c0) %qureg_in : !jeff.qureg,
+ * !jeff.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
+ * ```
+ */
+struct ConvertJeffQuregExtractIndexOpToQCO final
+    : OpConversionPattern<jeff::QuregExtractIndexOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QuregExtractIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto index = arith::IndexCastOp::create(
+        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    rewriter.replaceOpWithNewOp<qtensor::ExtractOp>(op, adaptor.getInQreg(),
+                                                    index.getResult());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.qureg_insert_index to qtensor.insert
+ *
+ * @par Example:
+ * ```mlir
+ * %qureg_out = jeff.qureg_insert_index(%c0) %qureg_in %q : !jeff.qureg
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor_out = qtensor.insert %q into %tensor_in[%c0] : tensor<3x!qco.qubit>
+ * ```
+ */
+struct ConvertJeffQuregInsertIndexOpToQCO final
+    : OpConversionPattern<jeff::QuregInsertIndexOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QuregInsertIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto index = arith::IndexCastOp::create(
+        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    rewriter.replaceOpWithNewOp<qtensor::InsertOp>(
+        op, adaptor.getInQubit(), adaptor.getInQreg(), index.getResult());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.qureg_free_zero to qtensor.dealloc
+ *
+ * @par Example:
+ * ```mlir
+ * jeff.qureg_free_zero %qureg : !jeff.qureg
+ * ```
+ * is converted to
+ * ```mlir
+ * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
+ * ```
+ */
+struct ConvertJeffQuregFreeZeroOpToQCO final
+    : OpConversionPattern<jeff::QuregFreeZeroOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QuregFreeZeroOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, adaptor.getQreg());
+    return success();
+  }
+};
 
 /**
  * @brief Converts jeff.qubit_alloc to qco.alloc
@@ -893,7 +1000,8 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
  * @brief Type converter for Jeff-to-QCO conversion
  *
  * @details
- * Converts `!jeff.qubit` to `!qco.qubit`.
+ * Converts `!jeff.qubit` to `!qco.qubit` and `!jeff.qureg` to
+ * `!tensor<?x!qco.qubit>`.
  */
 class JeffToQCOTypeConverter final : public TypeConverter {
 public:
@@ -903,6 +1011,11 @@ public:
 
     addConversion([ctx](jeff::QubitType /*type*/) -> Type {
       return qco::QubitType::get(ctx);
+    });
+
+    addConversion([ctx](jeff::QuregType /*type*/) -> Type {
+      return RankedTensorType::get({ShapedType::kDynamic},
+                                   qco::QubitType::get(ctx));
     });
   }
 };
@@ -924,7 +1037,8 @@ protected:
 
     // Configure conversion target
     target.addIllegalDialect<jeff::JeffDialect>();
-    target.addLegalDialect<QCODialect, arith::ArithDialect, math::MathDialect,
+    target.addLegalDialect<QCODialect, qtensor::QTensorDialect,
+                           arith::ArithDialect, math::MathDialect,
                            tensor::TensorDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
@@ -936,6 +1050,8 @@ protected:
     // Register operation conversion patterns
     jeff::populateJeffToNativeConversionPatterns(patterns);
     patterns.add<
+        ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
+        ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,
         ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
         ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
         ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,

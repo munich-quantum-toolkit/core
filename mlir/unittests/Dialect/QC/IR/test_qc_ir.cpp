@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -60,7 +61,8 @@ protected:
 void QCTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
-  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect>();
+  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
@@ -76,7 +78,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -85,7 +87,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -914,6 +916,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"StaticQubitsWithInv",
                    MQT_NAMED_BUILDER(staticQubitsWithInv),
                    MQT_NAMED_BUILDER(staticQubitsWithInv)},
+        QCTestCase{"StaticQubitsWithDuplicates",
+                   MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
+                   MQT_NAMED_BUILDER(staticQubitsCanonical)},
         QCTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                    MQT_NAMED_BUILDER(emptyQC)}));
 /// @}

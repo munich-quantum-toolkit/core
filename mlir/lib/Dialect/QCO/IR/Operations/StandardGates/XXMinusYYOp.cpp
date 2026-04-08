@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
@@ -20,6 +19,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
@@ -77,18 +77,6 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
   }
 };
 
-/**
- * @brief Remove trivial XXMinusYY operations.
- */
-struct RemoveTrivialXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(XXMinusYYOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTrivialTwoTargetOneParameter(op, rewriter);
-  }
-};
-
 } // namespace
 
 void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -101,9 +89,20 @@ void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
+LogicalResult XXMinusYYOp::fold(FoldAdaptor /*adaptor*/,
+                                SmallVectorImpl<OpFoldResult>& results) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    results.emplace_back(getInputQubit(0));
+    results.emplace_back(getInputQubit(1));
+    return success();
+  }
+  return failure();
+}
+
 void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                               MLIRContext* context) {
-  results.add<MergeSubsequentXXMinusYY, RemoveTrivialXXMinusYY>(context);
+  results.add<MergeSubsequentXXMinusYY>(context);
 }
 
 std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
