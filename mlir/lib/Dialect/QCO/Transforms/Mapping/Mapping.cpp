@@ -97,10 +97,8 @@ struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using QubitValue = TypedValue<QubitType>;
   using IndexType = std::size_t;
-  using IndexGate = std::pair<IndexType, IndexType>;
-  using Window = SmallVector<SmallVector<IndexGate, 0>, 0>;
-
-  class LayoutInfo;
+  using IndexPairType = std::pair<IndexType, IndexType>;
+  using Window = SmallVector<SmallVector<IndexPairType, 0>, 0>;
 
   /**
    * @brief A qubit layout that maps program and hardware indices without
@@ -223,6 +221,13 @@ private:
       return programToHardware_.size();
     }
 
+    /**
+     * @returns the program to hardware mapping.
+     */
+    [[nodiscard]] ArrayRef<IndexType> getProgramToHardware() const {
+      return programToHardware_;
+    }
+
   protected:
     /**
      * @brief Maps a program qubit index to its hardware index.
@@ -235,41 +240,8 @@ private:
     SmallVector<IndexType> hardwareToProgram_;
 
   private:
-    friend class MappingPass::LayoutInfo;
-
-    Layout() = default;
     explicit Layout(const std::size_t nqubits)
         : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
-  };
-
-  /**
-   * @brief Required to use Layout as a key for LLVM maps and sets.
-   */
-  class [[nodiscard]] LayoutInfo {
-    using Info = DenseMapInfo<SmallVector<IndexType>>;
-
-  public:
-    static Layout getEmptyKey() {
-      Layout l;
-      l.programToHardware_ = Info::getEmptyKey();
-      l.hardwareToProgram_ = Info::getEmptyKey();
-      return l;
-    }
-
-    static Layout getTombstoneKey() {
-      Layout l;
-      l.programToHardware_ = Info::getTombstoneKey();
-      l.hardwareToProgram_ = Info::getTombstoneKey();
-      return l;
-    }
-
-    static unsigned getHashValue(const Layout& l) {
-      return Info::getHashValue(l.programToHardware_);
-    }
-
-    static bool isEqual(const Layout& a, const Layout& b) {
-      return Info::isEqual(a.programToHardware_, b.programToHardware_);
-    }
   };
 
   /**
@@ -291,7 +263,7 @@ private:
     };
 
     Layout layout;
-    IndexGate swap;
+    IndexPairType swap;
     Node* parent;
     std::size_t depth;
     float f;
@@ -307,7 +279,7 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node.
      */
-    Node(Node* parent, const IndexGate& swap, const Window& layers,
+    Node(Node* parent, const IndexPairType& swap, const Window& layers,
          const Architecture& arch, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
@@ -319,9 +291,9 @@ private:
      * @returns true if the current sequence of SWAPs makes all gates
      * executable.
      */
-    [[nodiscard]] bool isGoal(ArrayRef<IndexGate> front,
+    [[nodiscard]] bool isGoal(ArrayRef<IndexPairType> front,
                               const Architecture& arch) const {
-      return all_of(front, [&](const IndexGate& gate) {
+      return all_of(front, [&](const IndexPairType& gate) {
         return arch.areAdjacent(layout.getHardwareIndex(gate.first),
                                 layout.getHardwareIndex(gate.second));
       });
@@ -571,7 +543,7 @@ private:
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
-  [[nodiscard]] FailureOr<SmallVector<IndexGate>>
+  [[nodiscard]] FailureOr<SmallVector<IndexPairType>>
   search(const Window& layers, const Layout& layout, const Architecture& arch) {
     constexpr std::size_t cap = 25'000'000UL;
     const std::size_t b = arch.maxDegree() * ((arch.nqubits() + 1) / 2);
@@ -585,12 +557,12 @@ private:
 
     Node* root = std::construct_at(arena.Allocate(), layout);
     if (root->isGoal(layers.front(), arch)) {
-      return SmallVector<IndexGate>{};
+      return SmallVector<IndexPairType>{};
     }
     frontier.emplace(root);
 
-    DenseMap<Layout, std::size_t, LayoutInfo> bestDepth;
-    DenseSet<IndexGate> expansionSet;
+    DenseMap<ArrayRef<IndexType>, std::size_t> bestDepth;
+    DenseSet<IndexPairType> expansionSet;
 
     std::size_t i = 0;
     while (!frontier.empty() && i < budget) {
@@ -602,8 +574,8 @@ private:
       // already at a lower depth don't reexpand the current node (and hence
       // recreate the same child nodes).
 
-      const auto [it, inserted] =
-          bestDepth.try_emplace(curr->layout, curr->depth);
+      const auto [it, inserted] = bestDepth.try_emplace(
+          curr->layout.getProgramToHardware(), curr->depth);
       if (!inserted) {
         const auto otherDepth = it->getSecond();
         if (curr->depth >= otherDepth) {
@@ -618,7 +590,7 @@ private:
       // of SWAPs from this node to the root.
 
       if (curr->isGoal(layers.front(), arch)) {
-        SmallVector<IndexGate> seq(curr->depth);
+        SmallVector<IndexPairType> seq(curr->depth);
         std::size_t j = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
           seq[j] = n->swap;
@@ -636,7 +608,7 @@ private:
           for (const auto hw0 = curr->layout.getHardwareIndex(prog);
                const auto hw1 : arch.neighboursOf(hw0)) {
             // Ensure consistent hashing/comparison.
-            const IndexGate swap = std::minmax(hw0, hw1);
+            const IndexPairType swap = std::minmax(hw0, hw1);
             if (!expansionSet.insert(swap).second) {
               continue;
             }
@@ -686,7 +658,7 @@ private:
           }
 
           // Construct layer from wire iterators.
-          SmallVector<IndexGate, 0> layer;
+          SmallVector<IndexPairType, 0> layer;
           for (ArrayRef<WireIterator*> its : front) {
             assert(its.size() == 2);
             assert(its[0] != nullptr && its[1] != nullptr);
