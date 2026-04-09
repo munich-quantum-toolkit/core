@@ -29,7 +29,6 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
@@ -45,7 +44,6 @@
 #include <iterator>
 #include <memory>
 #include <numeric>
-#include <optional>
 #include <random>
 #include <ranges>
 #include <string>
