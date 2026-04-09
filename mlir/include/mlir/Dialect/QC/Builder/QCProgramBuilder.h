@@ -94,10 +94,20 @@ public:
   // Memory Management
   //===--------------------------------------------------------------------===//
 
+  /**
+   * @brief Represents a qubit register with its qubits.
+   */
   struct QubitRegister {
+    /// The MemRef value representing the qubit register
     Value value;
+    /// The allocated qubit values
     SmallVector<Value> qubits;
 
+    /**
+     * @brief Access a specific qubit in the register
+     * @param index The index of the qubit to access
+     * @return The specified qubit value
+     */
     Value operator[](size_t index) const {
       if (index >= qubits.size()) {
         llvm::report_fatal_error("Qubit index out of bounds");
@@ -140,7 +150,7 @@ public:
   /**
    * @brief Allocate a qubit register
    * @param size Number of qubits (must be positive)
-   * @return A QubitRegister structure
+   * @return A `QubitRegister` structure
    *
    * @par Example:
    * ```c++
@@ -198,7 +208,7 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A ClassicalRegister structure
+   * @return A `ClassicalRegister` structure
    *
    * @par Example:
    * ```c++
