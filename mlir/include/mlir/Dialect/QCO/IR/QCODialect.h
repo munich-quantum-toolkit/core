@@ -15,6 +15,8 @@
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Visitors.h>
 
+#include <cassert>
+
 #define DIALECT_NAME_QCO "qco"
 
 //===----------------------------------------------------------------------===//
@@ -64,12 +66,7 @@ inline ::mlir::LogicalResult verifyNoMixedQubitAddressingModes(
     const char* thisSpelling, const char* oppositeSpelling) {
   ::mlir::Operation* scope =
       op->template getParentWithTrait<::mlir::OpTrait::IsIsolatedFromAbove>();
-  if (scope == nullptr) {
-    scope = op->getParentOp();
-  }
-  if (scope == nullptr) {
-    scope = op.getOperation();
-  }
+  assert(scope != nullptr && "expected operation to have an isolated parent");
 
   bool foundOpposite = false;
   (void)scope->walk([&](OppositeOp) {
