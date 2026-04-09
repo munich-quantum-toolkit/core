@@ -221,7 +221,10 @@ INSTANTIATE_TEST_SUITE_P(
                     QCToQCOTestCase{
                         "MultipleControlledH",
                         MQT_NAMED_BUILDER(qc::multipleControlledH),
-                        MQT_NAMED_BUILDER(qco::multipleControlledH)}));
+                        MQT_NAMED_BUILDER(qco::multipleControlledH)},
+                    QCToQCOTestCase{"HWithoutRegister",
+                                    MQT_NAMED_BUILDER(qc::hWithoutRegister),
+                                    MQT_NAMED_BUILDER(qco::hWithoutRegister)}));
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/IdOp.cpp
@@ -610,8 +613,10 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(
-                qco::multipleClassicalRegistersAndMeasurements)}));
+            MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
+        QCToQCOTestCase{"MeasurementWithoutRegisters",
+                        MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
+                        MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
 /// @}
 
 /// \name QCToQCO/Operations/ResetOp.cpp

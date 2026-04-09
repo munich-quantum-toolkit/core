@@ -106,6 +106,29 @@ Value QIRProgramBuilder::doubleConstant(double value) {
   return LLVM::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
 }
 
+Value QIRProgramBuilder::allocQubit() {
+  checkFinalized();
+
+  metadata_.useDynamicQubit = true;
+
+  // Save current insertion point
+  const InsertionGuard guard(*this);
+
+  // Insert allocations and constants in entry block
+  setInsertionPoint(entryBlock->getTerminator());
+
+  auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+  auto fnDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_ALLOC, fnSig);
+
+  auto zero = LLVM::ZeroOp::create(*this, ptrType);
+  auto qubit = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
+
+  qubits.insert(qubit);
+
+  return qubit;
+}
+
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
   checkFinalized();
 
@@ -197,16 +220,16 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  auto allocFnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(getContext()), {getI64Type(), ptrType, ptrType});
-  auto allocFnDecl = getOrCreateFunctionDeclaration(
-      *this, module, QIR_RESULT_ARRAY_ALLOC, allocFnSignature);
+  auto fnSig =
+      LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
+  auto fnDec = getOrCreateFunctionDeclaration(*this, module,
+                                              QIR_RESULT_ARRAY_ALLOC, fnSig);
 
   auto array =
       LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
   auto zero = LLVM::ZeroOp::create(*this, ptrType);
   LLVM::CallOp::create(
-      *this, allocFnDecl,
+      *this, fnDec,
       ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
   resultArrays.try_emplace(name, array.getResult());
@@ -669,6 +692,13 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
   // Release resources in output block
   setInsertionPoint(outputBlock->getTerminator());
+
+  for (auto qubit : qubits) {
+    auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
+    auto dec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_RELEASE, sig);
+    LLVM::CallOp::create(*this, dec, ValueRange{qubit});
+  }
 
   for (auto array : qubitArrays) {
     auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
