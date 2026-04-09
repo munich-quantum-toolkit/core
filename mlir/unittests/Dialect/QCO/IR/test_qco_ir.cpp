@@ -95,6 +95,20 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QCOTest, VerifierRejectsMixedQubitAddressingModes) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  // Mixing `qco.alloc` (dynamic) and `qco.static` (static) in the same function
+  // must be rejected by the dialect verifier.
+  (void)builder.allocQubit();
+  (void)builder.staticQubit(0);
+
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(verify(*module).failed());
+}
+
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
   QCOProgramBuilder builder(context.get());

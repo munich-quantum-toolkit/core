@@ -95,6 +95,20 @@ TEST_P(QCTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QCTest, VerifierRejectsMixedQubitAddressingModes) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+
+  // Mixing `qc.alloc` (dynamic) and `qc.static` (static) in the same function
+  // must be rejected by the dialect verifier.
+  (void)builder.allocQubit();
+  (void)builder.staticQubit(0);
+
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(verify(*module).failed());
+}
+
 /// \name QC/Modifiers/CtrlOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

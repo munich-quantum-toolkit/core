@@ -50,6 +50,16 @@ def AllocOp : QCOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let builders = [OpBuilder<(ins), [{
             build($_builder, $_state, QubitType::get($_builder.getContext()));
         }]>];
+
+  let hasVerifier = 1;
+
+  let extraClassDefinition = [{
+        ::mlir::LogicalResult $cppClass::verify() {
+          return ::mlir::qc::verifyNoMixedQubitAddressingModes<::mlir::qc::StaticOp>(
+              *this, "dynamically allocated", "statically addressed",
+              "`qc.alloc`", "`qc.static`");
+        }
+    }];
 }
 
 def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree]>]> {
@@ -89,6 +99,16 @@ def StaticOp : QCOp<"static", [Pure]> {
   let builders = [OpBuilder<(ins "uint64_t":$index), [{
           build($_builder, $_state, QubitType::get($_builder.getContext()), index);
       }]>];
+
+  let hasVerifier = 1;
+
+  let extraClassDefinition = [{
+        ::mlir::LogicalResult $cppClass::verify() {
+          return ::mlir::qc::verifyNoMixedQubitAddressingModes<::mlir::qc::AllocOp>(
+              *this, "statically addressed", "dynamically allocated",
+              "`qc.static`", "`qc.alloc`");
+        }
+    }];
 }
 
 //===----------------------------------------------------------------------===//
