@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Visitors.h>
@@ -68,9 +69,16 @@ inline ::mlir::LogicalResult verifyNoMixedQubitAddressingModes(
   assert(scope != nullptr && "expected operation to have an isolated parent");
 
   bool foundOpposite = false;
-  (void)scope->walk([&](OppositeOp) {
-    foundOpposite = true;
-    return ::mlir::WalkResult::interrupt();
+  (void)scope->walk([&](::mlir::Operation* nestedOp) -> ::mlir::WalkResult {
+    if (nestedOp != scope &&
+        nestedOp->hasTrait<::mlir::OpTrait::IsIsolatedFromAbove>()) {
+      return ::mlir::WalkResult::skip();
+    }
+    if (::mlir::isa<OppositeOp>(nestedOp)) {
+      foundOpposite = true;
+      return ::mlir::WalkResult::interrupt();
+    }
+    return ::mlir::WalkResult::advance();
   });
   if (foundOpposite) {
     return op.emitOpError()

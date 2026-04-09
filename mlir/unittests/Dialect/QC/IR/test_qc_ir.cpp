@@ -16,9 +16,11 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -106,7 +108,20 @@ TEST_F(QCTest, VerifierRejectsMixedQubitAddressingModes) {
 
   auto module = builder.finalize();
   ASSERT_TRUE(module);
-  EXPECT_TRUE(verify(*module).failed());
+
+  std::string diagnostics;
+  ::mlir::ScopedDiagnosticHandler handler(
+      context.get(), [&](::mlir::Diagnostic& diag) -> ::mlir::LogicalResult {
+        llvm::raw_string_ostream os(diagnostics);
+        diag.print(os);
+        os << '\n';
+        return ::mlir::success();
+      });
+
+  const auto result = verify(*module);
+  EXPECT_TRUE(result.failed());
+  EXPECT_NE(diagnostics.find("qc.alloc"), std::string::npos);
+  EXPECT_NE(diagnostics.find("qc.static"), std::string::npos);
 }
 
 /// \name QC/Modifiers/CtrlOp.cpp
