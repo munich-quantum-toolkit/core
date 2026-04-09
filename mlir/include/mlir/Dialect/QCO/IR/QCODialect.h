@@ -67,7 +67,10 @@ inline ::mlir::LogicalResult verifyNoMixedQubitAddressingModes(
     const char* thisSpelling, const char* oppositeSpelling) {
   ::mlir::Operation* scope =
       op->template getParentWithTrait<::mlir::OpTrait::IsIsolatedFromAbove>();
-  assert(scope != nullptr && "expected operation to have an isolated parent");
+  if (scope == nullptr) {
+    (void)op.emitOpError("expected operation to have an isolated parent");
+    return ::mlir::failure();
+  }
 
   bool foundOpposite = false;
   (void)scope->walk([&](::mlir::Operation* nestedOp) -> ::mlir::WalkResult {
