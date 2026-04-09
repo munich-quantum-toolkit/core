@@ -124,7 +124,11 @@ public:
       return qubits[index];
     }
 
-    operator Value() const { return value; }
+    /**
+     * @brief Conversion to the backing QTensor value
+     * @return The QTensor value representing the qubit register
+     */
+    explicit operator Value() const { return value; }
   };
 
   /**

@@ -114,7 +114,7 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
     qubits.emplace_back(qubit);
   }
 
-  return {.value = qtensor, .qubits = qubits};
+  return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
 QCOProgramBuilder::ClassicalRegister

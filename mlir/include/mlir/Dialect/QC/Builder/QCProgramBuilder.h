@@ -115,7 +115,11 @@ public:
       return qubits[index];
     }
 
-    operator Value() const { return value; }
+    /**
+     * @brief Conversion to the backing MemRef value
+     * @return The MemRef value representing the qubit register
+     */
+    explicit operator Value() const { return value; }
   };
 
   /**

@@ -108,7 +108,7 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
     allocatedQubits.insert(qubit);
   }
 
-  return {.value = memref, .qubits = qubits};
+  return {.value = memref, .qubits = std::move(qubits)};
 }
 
 QCProgramBuilder::ClassicalRegister
