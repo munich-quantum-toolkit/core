@@ -13,6 +13,7 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
@@ -137,8 +138,11 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   // Stage 5: Optimization passes
   // TODO: Add optimization passes
-  if (failed(
-          runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
+  if (failed(runStage([&](PassManager& pm) {
+        pm.addPass(
+            qco::createMappingPass({.niterations = 1, .nlookahead = 15}));
+        populateQCOCleanupPipeline(pm);
+      }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {

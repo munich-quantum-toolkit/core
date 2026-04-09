@@ -22,11 +22,8 @@
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <llvm/ADT/simple_ilist.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/Debug.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -449,8 +446,6 @@ private:
     auto tensorExtracts = to_vector(func.getOps<ExtractOp>());
     const auto tensorInserts = to_vector(func.getOps<InsertOp>());
 
-    const auto nprograms = qubitAllocs.size() + tensorExtracts.size();
-
     // 1. Replace existing dynamic allocations with mapped static ones.
     std::size_t p = 0;
     for (AllocOp op : qubitAllocs) {
@@ -678,6 +673,8 @@ private:
                      Window& window, Fn&& fn) {
     assert(base.size() == enumeration.size());
 
+    const auto lookup = std::forward<Fn>(fn);
+
     window.clear();                        // Clear window.
     SmallVector<WireIterator> wires(base); // Work on local copy.
 
@@ -702,8 +699,8 @@ private:
             const auto idxFirst = std::distance(wires.data(), &first);
             const auto idxSecond = std::distance(wires.data(), &second);
 
-            layer.emplace_back(fn(enumeration[idxFirst]),
-                               fn(enumeration[idxSecond]));
+            layer.emplace_back(lookup(enumeration[idxFirst]),
+                               lookup(enumeration[idxSecond]));
 
             SmallVector<WireIterator, 2> pair{first, second};
             walkQubitPairBlock(

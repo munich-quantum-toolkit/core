@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>

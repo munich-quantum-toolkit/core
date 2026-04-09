@@ -16,19 +16,21 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Debug.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <iterator>
+#include <utility>
 
 namespace mlir::qco {
 
 using namespace mlir::qtensor;
-
-namespace {
 
 using PendingWiresMap =
     DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
@@ -37,7 +39,8 @@ using PendingWiresMap =
  * @brief Insert the unitary and the associated wire iterator into the pending
  * map.
  */
-void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire) {
+static void insert(PendingWiresMap& map, UnitaryOpInterface op,
+                   WireIterator* wire) {
   auto [it, inserted] = map.try_emplace(op);
   auto& wires = it->second;
 
@@ -52,7 +55,7 @@ void insert(PendingWiresMap& map, UnitaryOpInterface op, WireIterator* wire) {
  * @returns true if the wire iterator has not reached the end (Forward) or the
  * start (Backward) of the wire.
  */
-bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
+static bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
   if (direction == WalkDirection::Forward) {
     return it != std::default_sentinel;
   }
@@ -64,7 +67,6 @@ bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
   return !isa<qco::AllocOp>(it.operation()) && !isa<StaticOp>(it.operation()) &&
          !isa<qtensor::ExtractOp>(it.operation());
 }
-} // namespace
 
 void Qubits::add(TypedValue<QubitType> q) { add(q, indexToValue_.size()); }
 

@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <gtest/gtest.h>
-#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
