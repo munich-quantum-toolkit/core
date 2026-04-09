@@ -16,8 +16,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
