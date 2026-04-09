@@ -107,7 +107,8 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
     const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
   }
-  return {memref, qubits};
+
+  return {.value = memref, .qubits = qubits};
 }
 
 QCProgramBuilder::ClassicalRegister
