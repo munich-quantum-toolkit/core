@@ -10,10 +10,14 @@
 
 #pragma once
 
+#include "mlir/Dialect/QC/IR/QCDialect.h"
+
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
@@ -194,6 +198,56 @@ public:
   [[nodiscard]] ClassicalRegister
   allocClassicalBitRegister(int64_t size, std::string name = "c") const;
 
+  struct QuantumRegister {
+    QCProgramBuilder* builder;
+    int64_t size;
+    llvm::DenseMap<int64_t, Value> constMap;
+    llvm::DenseMap<Value, Value> dynMap;
+    Value memref;
+
+    explicit QuantumRegister(QCProgramBuilder& builder, int64_t size)
+        : builder(&builder), size(size) {
+      memref =
+          memref::AllocOp::create(
+              builder,
+              MemRefType::get({size}, QubitType::get(builder.getContext())))
+              .getResult();
+    };
+
+    Value operator[](int64_t index) {
+      if (index < 0 || index >= size) {
+        llvm::reportFatalUsageError("Error");
+      }
+      if (constMap.contains(index)) {
+        return constMap[index];
+      }
+
+      auto indexValue =
+          arith::ConstantIndexOp::create(*builder, index).getResult();
+      auto result =
+          memref::LoadOp::create(*builder, memref, indexValue).getResult();
+      constMap[index] = result;
+      return result;
+    }
+
+    Value operator[](Value index) {
+      if (auto indexValue = getConstantIntValue(index)) {
+        return (*this)[*indexValue];
+      }
+
+      if (dynMap.contains(index)) {
+        return dynMap[index];
+      }
+      auto result = memref::LoadOp::create(*builder, memref, index).getResult();
+      dynMap[index] = result;
+      return result;
+    }
+
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    operator Value() const { return memref; }
+  };
+
+  [[nodiscard]] QuantumRegister allocQuantumRegister(int64_t size);
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
   //===--------------------------------------------------------------------===//

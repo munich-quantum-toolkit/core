@@ -123,6 +123,12 @@ QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
   return {.name = std::move(name), .size = size};
 }
 
+QCProgramBuilder::QuantumRegister
+QCProgramBuilder::allocQuantumRegister(int64_t size) {
+  QCProgramBuilder::QuantumRegister reg{*this, size};
+  allocatedMemrefs.insert(reg.memref);
+  return reg;
+}
 //===----------------------------------------------------------------------===//
 // Measurement and Reset
 //===----------------------------------------------------------------------===//
