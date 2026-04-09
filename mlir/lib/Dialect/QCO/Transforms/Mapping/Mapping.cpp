@@ -29,6 +29,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
@@ -98,7 +99,14 @@ private:
   using QubitValue = TypedValue<QubitType>;
   using IndexType = std::size_t;
   using IndexPairType = std::pair<IndexType, IndexType>;
-  using Window = SmallVector<SmallVector<IndexPairType, 0>, 0>;
+
+  struct LayerItem {
+    Operation* op;
+    IndexPairType progs;
+  };
+
+  using Layer = SmallVector<LayerItem>;
+  using Window = SmallVector<Layer, 0>;
 
   /**
    * @brief A qubit layout that maps program and hardware indices without
@@ -244,6 +252,14 @@ private:
         : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
   };
 
+  struct [[nodiscard]] Trial {
+    explicit Trial(Layout layout) : layout(std::move(layout)) {}
+
+    Layout layout;
+    std::size_t nswaps{};
+    bool success{false};
+  };
+
   /**
    * @brief Parameters influencing the behavior of the A* search algorithm.
    */
@@ -279,24 +295,54 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node.
      */
-    Node(Node* parent, const IndexPairType& swap, const Window& layers,
+    Node(Node* parent, const IndexPairType& swap, const Window& window,
          const Architecture& arch, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
       layout.swap(swap.first, swap.second);
-      f = g(params.alpha) + h(layers, arch, params); // NOLINT
+      f = g(params.alpha) + h(window, arch, params); // NOLINT
+    }
+
+    /**
+     * @returns true if the current sequence of SWAPs makes some gates
+     * executable.
+     */
+    [[nodiscard]] bool isPartialGoal(ArrayRef<LayerItem> front,
+                                     const Architecture& arch) const {
+      return any_of(front, [&](const LayerItem& item) {
+        const auto& [prog0, prog1] = item.progs;
+        return arch.areAdjacent(layout.getHardwareIndex(prog0),
+                                layout.getHardwareIndex(prog1));
+      });
     }
 
     /**
      * @returns true if the current sequence of SWAPs makes all gates
      * executable.
      */
-    [[nodiscard]] bool isGoal(ArrayRef<IndexPairType> front,
+    [[nodiscard]] bool isGoal(ArrayRef<LayerItem> front,
                               const Architecture& arch) const {
-      return all_of(front, [&](const IndexPairType& gate) {
-        return arch.areAdjacent(layout.getHardwareIndex(gate.first),
-                                layout.getHardwareIndex(gate.second));
+      return all_of(front, [&](const LayerItem& item) {
+        const auto& [prog0, prog1] = item.progs;
+        return arch.areAdjacent(layout.getHardwareIndex(prog0),
+                                layout.getHardwareIndex(prog1));
       });
+    }
+
+    /**
+     * @returns a vector of "ready" two-qubit ops.
+     */
+    [[nodiscard]] DenseSet<Operation*>
+    getReadyOps(ArrayRef<LayerItem> front, const Architecture& arch) const {
+      DenseSet<Operation*> ops;
+      for (const auto& item : front) {
+        const auto& [prog0, prog1] = item.progs;
+        if (arch.areAdjacent(layout.getHardwareIndex(prog0),
+                             layout.getHardwareIndex(prog1))) {
+          ops.insert(item.op);
+        }
+      }
+      return ops;
     }
 
   private:
@@ -319,13 +365,14 @@ private:
      * that a naive router would insert to route the layers (with a constant
      * layout).
      */
-    [[nodiscard]] float h(const Window& layers, const Architecture& arch,
+    [[nodiscard]] float h(const Window& window, const Architecture& arch,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
 
-      for (const auto& [i, layer] : enumerate(layers)) {
-        for (const auto& [prog0, prog1] : layer) {
+      for (const auto& [i, layer] : enumerate(window)) {
+        for (const auto& [_, progs] : layer) {
+          const auto [prog0, prog1] = progs;
           const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
           const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
           costs += decay * static_cast<float>(nswaps);
@@ -334,14 +381,6 @@ private:
       }
       return costs;
     }
-  };
-
-  struct [[nodiscard]] Trial {
-    explicit Trial(Layout layout) : layout(std::move(layout)) {}
-
-    Layout layout;
-    std::size_t nswaps{};
-    bool success{false};
   };
 
 protected:
@@ -543,8 +582,9 @@ private:
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
-  [[nodiscard]] FailureOr<SmallVector<IndexPairType>>
-  search(const Window& layers, const Layout& layout, const Architecture& arch) {
+  [[nodiscard]] FailureOr<
+      std::pair<DenseSet<Operation*>, SmallVector<IndexPairType>>>
+  search(const Window& window, const Layout& layout, const Architecture& arch) {
     constexpr std::size_t cap = 25'000'000UL;
     const std::size_t b = arch.maxDegree() * ((arch.nqubits() + 1) / 2);
     const std::size_t budget = std::min(b * b * b, cap);
@@ -556,8 +596,9 @@ private:
         frontier;
 
     Node* root = std::construct_at(arena.Allocate(), layout);
-    if (root->isGoal(layers.front(), arch)) {
-      return SmallVector<IndexPairType>{};
+    if (root->isGoal(window.front(), arch)) {
+      return std::make_pair(root->getReadyOps(window.front(), arch),
+                            SmallVector<IndexPairType>{});
     }
     frontier.emplace(root);
 
@@ -589,21 +630,25 @@ private:
       // If the currently visited node is a goal node, reconstruct the sequence
       // of SWAPs from this node to the root.
 
-      if (curr->isGoal(layers.front(), arch)) {
+      if (curr->isPartialGoal(window.front(), arch)) {
+        const auto ready = curr->getReadyOps(window.front(), arch);
+
         SmallVector<IndexPairType> seq(curr->depth);
         std::size_t j = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
           seq[j] = n->swap;
           --j;
         }
-        return seq;
+
+        return std::make_pair(ready, seq);
       }
 
       // Given a layout, create child-nodes for each possible SWAP
       // between two neighbouring hardware qubits.
 
       expansionSet.clear();
-      for (const auto& [q0, q1] : layers.front()) {
+      for (const auto& [_, progs] : window.front()) {
+        const auto& [q0, q1] = progs;
         for (const auto prog : {q0, q1}) {
           for (const auto hw0 = curr->layout.getHardwareIndex(prog);
                const auto hw1 : arch.neighboursOf(hw0)) {
@@ -614,7 +659,7 @@ private:
             }
 
             frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
-                                               layers, arch, params));
+                                               window, arch, params));
           }
         }
       }
@@ -658,7 +703,7 @@ private:
           }
 
           // Construct layer from wire iterators.
-          SmallVector<IndexPairType, 0> layer;
+          SmallVector<LayerItem> layer;
           for (ArrayRef<WireIterator*> its : front) {
             assert(its.size() == 2);
             assert(its[0] != nullptr && its[1] != nullptr);
@@ -671,8 +716,9 @@ private:
             const auto idxFirst = std::distance(wires.data(), &first);
             const auto idxSecond = std::distance(wires.data(), &second);
 
-            layer.emplace_back(lookup(enumeration[idxFirst]),
-                               lookup(enumeration[idxSecond]));
+            layer.emplace_back(first.operation(),
+                               std::make_pair(lookup(enumeration[idxFirst]),
+                                              lookup(enumeration[idxSecond])));
 
             SmallVector<WireIterator, 2> pair{first, second};
             walkQubitPairBlock(
@@ -699,8 +745,9 @@ private:
     LLVM_DEBUG({
       llvm::dbgs() << "----- window start -----\n";
       for (const auto& layer : window) {
-        for (const auto& [i0, i1] : layer) {
-          llvm::dbgs() << "(" << i0 << ", " << i1 << ") ";
+        for (const auto& [op, progs] : layer) {
+          const auto& [i0, i1] = progs;
+          llvm::dbgs() << op->getName() << "=(" << i0 << ", " << i1 << ") ";
         }
         llvm::dbgs() << '\n';
       }
@@ -737,16 +784,19 @@ private:
                         [](std::size_t i) { return i; });
 
           // Perform A* search.
-          const auto swaps = search(window, trial.layout, arch);
-          if (failed(swaps)) {
+          const auto searchResult = search(window, trial.layout, arch);
+          if (failed(searchResult)) {
             return WalkResult::interrupt();
           }
 
+          const auto& [readyOps, swaps] = searchResult.value();
+          // assert(readyOps.size() == front.size());
+
           // Collect trial statistics.
-          trial.nswaps += swaps->size();
+          trial.nswaps += swaps.size();
 
           // Apply SWAPS.
-          for (const auto& [hw0, hw1] : swaps.value()) {
+          for (const auto& [hw0, hw1] : swaps) {
             trial.layout.swap(hw0, hw1);
           }
 
@@ -755,15 +805,17 @@ private:
             WireIterator& first = *its[0];
             WireIterator& second = *its[1];
 
-            SmallVector<WireIterator, 2> pair{first, second};
-            walkQubitPairBlock(
-                pair, direction,
-                [&](const WireIterator& a, const WireIterator& b) {
-                  first = a;
-                  second = b;
-                });
+            if (readyOps.contains(first.operation())) {
+              SmallVector<WireIterator, 2> pair{first, second};
+              walkQubitPairBlock(
+                  pair, direction,
+                  [&](const WireIterator& a, const WireIterator& b) {
+                    first = a;
+                    second = b;
+                  });
 
-            released.append(its.begin(), its.end());
+              released.append(its.begin(), its.end());
+            }
           }
 
           return WalkResult::advance();
@@ -816,10 +868,13 @@ private:
                     [&](std::size_t i) { return layout.getProgramIndex(i); });
 
       // Perform A* search.
-      const auto swaps = search(window, layout, arch);
-      if (failed(swaps)) {
+      const auto searchResult = search(window, layout, arch);
+      if (failed(searchResult)) {
         return WalkResult::interrupt();
       }
+
+      const auto& [readyOps, swaps] = searchResult.value();
+      // assert(readyOps.size() == front.size());
 
       frontSet.clear();
       for (ArrayRef<WireIterator*> its : front) {
@@ -843,10 +898,10 @@ private:
       }
 
       // Collect pass statistics.
-      numSwaps += swaps->size();
+      numSwaps += swaps.size();
 
       // Apply and insert SWAPs.
-      for (const auto& [hw0, hw1] : swaps.value()) {
+      for (const auto& [hw0, hw1] : swaps) {
         layout.swap(hw0, hw1);
 
         WireIterator& first = wires[revEnumeration[hw0]];
@@ -895,14 +950,16 @@ private:
         WireIterator& first = *its[0];
         WireIterator& second = *its[1];
 
-        SmallVector<WireIterator, 2> pair{first, second};
-        walkQubitPairBlock(pair, direction,
-                           [&](const WireIterator& a, const WireIterator& b) {
-                             first = a;
-                             second = b;
-                           });
+        if (readyOps.contains(first.operation())) {
+          SmallVector<WireIterator, 2> pair{first, second};
+          walkQubitPairBlock(pair, direction,
+                             [&](const WireIterator& a, const WireIterator& b) {
+                               first = a;
+                               second = b;
+                             });
 
-        released.append(its.begin(), its.end());
+          released.append(its.begin(), its.end());
+        }
       }
 
       return WalkResult::advance();
