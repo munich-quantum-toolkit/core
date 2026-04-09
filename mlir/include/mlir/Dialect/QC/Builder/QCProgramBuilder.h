@@ -12,7 +12,6 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -20,6 +19,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
@@ -94,6 +94,20 @@ public:
   // Memory Management
   //===--------------------------------------------------------------------===//
 
+  struct QubitRegister {
+    Value value;
+    SmallVector<Value> qubits;
+
+    Value operator[](size_t index) const {
+      if (index >= qubits.size()) {
+        llvm::report_fatal_error("Qubit index out of bounds");
+      }
+      return qubits[index];
+    }
+
+    operator Value() const { return value; }
+  };
+
   /**
    * @brief Allocate a single qubit initialized to |0⟩
    * @return A qubit reference
@@ -126,7 +140,7 @@ public:
   /**
    * @brief Allocate a qubit register
    * @param size Number of qubits (must be positive)
-   * @return Vector of qubit references
+   * @return A QubitRegister structure
    *
    * @par Example:
    * ```c++
@@ -139,7 +153,7 @@ public:
    * %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
    * ```
    */
-  llvm::SmallVector<Value> allocQubitRegister(int64_t size);
+  QubitRegister allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
