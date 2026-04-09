@@ -138,11 +138,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   // Stage 5: Optimization passes
   // TODO: Add optimization passes
-  if (failed(runStage([&](PassManager& pm) {
-        pm.addPass(
-            qco::createMappingPass({.niterations = 1, .nlookahead = 15}));
-        populateQCOCleanupPipeline(pm);
-      }))) {
+  if (failed(
+          runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
