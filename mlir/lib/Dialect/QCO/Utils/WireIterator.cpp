@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
@@ -26,7 +27,7 @@
 namespace mlir::qco {
 Value WireIterator::qubit() const {
   // A sink/deallocation/insert doesn't have an OpResult.
-  if (op_ != nullptr && (isa<SinkOp>(op_) || isa<qtensor::InsertOp>(op_))) {
+  if (op_ != nullptr && (isa<SinkOp, qtensor::InsertOp>(op_))) {
     return nullptr;
   }
   return qubit_;
@@ -43,7 +44,7 @@ void WireIterator::forward() {
   op_ = *(qubit_.getUsers().begin());
 
   // A sink/insert defines the end of the qubit wire (dynamic and static).
-  if (isa<SinkOp>(op_) || isa<qtensor::InsertOp>(op_)) {
+  if (isa<SinkOp, qtensor::InsertOp>(op_)) {
     isSentinel_ = true;
     return;
   }
@@ -72,7 +73,7 @@ void WireIterator::backward() {
 
   // For sinks/deallocations/inserts, qubit_ is an OpOperand. Hence, only get
   // the def-op.
-  if (isa<SinkOp>(op_) || isa<qtensor::InsertOp>(op_)) {
+  if (isa<SinkOp, qtensor::InsertOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     return;
   }
@@ -95,11 +96,9 @@ void WireIterator::backward() {
       });
 
   // Get the operation that produces the qubit value.
-  // If the current qubit SSA value is a BlockArgument (no defining op), stop.
+  // If the current qubit SSA value is a BlockArgument (no defining op), the
+  // operation will be a nullptr.
   op_ = qubit_.getDefiningOp();
-  if (op_ == nullptr) {
-    return;
-  }
 }
 
 static_assert(std::bidirectional_iterator<WireIterator>);

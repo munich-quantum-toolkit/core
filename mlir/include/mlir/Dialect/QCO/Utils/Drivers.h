@@ -24,6 +24,7 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <cstddef>
+#include <utility>
 
 namespace mlir::qco {
 
@@ -31,11 +32,6 @@ namespace mlir::qco {
  * @brief Specifies the layering direction.
  */
 enum class WalkDirection : bool { Forward, Backward };
-
-using ReleasedIterators = SmallVector<WireIterator*, 8>;
-using FrontArrayRef = ArrayRef<ArrayRef<WireIterator*>>;
-using WalkCircuitGraphFn =
-    function_ref<WalkResult(FrontArrayRef, ReleasedIterators&)>;
 
 class Qubits {
 public:
@@ -97,14 +93,24 @@ using WalkUnitFn = function_ref<WalkResult(Operation*, const Qubits&)>;
  */
 void walkUnit(Region& region, WalkUnitFn fn);
 
+using WalkQubitPairBlockFn =
+    function_ref<void(const WireIterator&, const WireIterator&)>;
+
 /**
- * @brief Walk the two-qubit block spanned by the wires @p first and @p second.
+ * @brief Walk the block spanned by a pair of qubit wires.
  * @details
  * Advances each of the two wire iterators until a two-qubit op is
  * found. If the ops match, repeat this process. Otherwise, stop.
+ *
+ * Expects wires.size() == 2.
  */
-void walkQubitBlock(WireIterator& first, WireIterator& second,
-                    WalkDirection direction);
+void walkQubitPairBlock(MutableArrayRef<WireIterator> wires,
+                        WalkDirection direction, WalkQubitPairBlockFn fn);
+
+using ReleasedIterators = SmallVector<WireIterator*, 8>;
+using FrontArrayRef = ArrayRef<SmallVector<WireIterator*>>;
+using WalkCircuitGraphFn =
+    function_ref<WalkResult(FrontArrayRef, ReleasedIterators&)>;
 
 /**
  * @brief Walk the graph-like circuit IR of QCO dialect programs.

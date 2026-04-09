@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
@@ -56,8 +57,12 @@ bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
     return it != std::default_sentinel;
   }
 
-  return !isa<AllocOp>(it.operation()) && !isa<StaticOp>(it.operation()) &&
-         !isa<ExtractOp>(it.operation());
+  if (it.operation() == nullptr) {
+    return false;
+  }
+
+  return !isa<qco::AllocOp>(it.operation()) && !isa<StaticOp>(it.operation()) &&
+         !isa<qtensor::ExtractOp>(it.operation());
 }
 } // namespace
 
@@ -136,9 +141,9 @@ void walkUnit(Region& region, WalkUnitFn fn) {
   }
 }
 
-void walkQubitBlock(WireIterator& first, WireIterator& second,
-                    WalkDirection direction) {
-  SmallVector<WireIterator, 2> wires{first, second};
+void walkQubitPairBlock(MutableArrayRef<WireIterator> wires,
+                        WalkDirection direction, WalkQubitPairBlockFn fn) {
+  assert(wires.size() == 2);
   std::ignore = walkCircuitGraph(
       wires, direction, [&](FrontArrayRef front, ReleasedIterators& released) {
         if (front.empty()) {
@@ -146,15 +151,12 @@ void walkQubitBlock(WireIterator& first, WireIterator& second,
         }
 
         assert(front.size() == 1);
-        const auto its = front.front();
-        assert(its.size() == 2);
+        assert(front.front().size() == 2);
 
-        if (its[0]->operation() != its[1]->operation()) {
-          return WalkResult::interrupt();
-        }
+        const auto& its = front.front();
+        assert(its[0]->operation() == its[1]->operation());
 
-        first = *its[0];
-        second = *its[1];
+        fn(*its[0], *its[1]);
 
         released.append(its.begin(), its.end());
 
@@ -168,7 +170,8 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
 
   ReleasedIterators released;
   PendingWiresMap pending;
-  SmallVector<ArrayRef<WireIterator*>> front;
+
+  SmallVector<SmallVector<WireIterator*>> front;
 
   pending.reserve(wires.size());
   front.reserve((wires.size() + 1) / 2);
@@ -179,13 +182,20 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
         const auto res =
             TypeSwitch<Operation*, WalkResult>(it.operation())
                 .Case<BarrierOp>([&](BarrierOp op) {
-                  insert(pending, op, &it);
+                  // If there are fewer wires than the qubit requires inputs,
+                  // it's impossible to release the operation. Hence, fail.
+                  if (op.getNumQubits() > wires.size()) {
+                    return WalkResult::skip();
+                  }
 
+                  // Insert the barrier to the pending map.
                   // Release barrier directly.
+                  insert(pending, op, &it);
                   if (pending[op].size() == op.getNumQubits()) {
                     for (WireIterator* wire : pending[op]) {
                       std::ranges::advance(*wire, step);
                     }
+                    pending.erase(op);
                     return WalkResult::advance();
                   }
 
@@ -194,19 +204,30 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
                 .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
                   assert(op.getNumQubits() > 0 && op.getNumQubits() <= 2);
 
+                  // If there are fewer wires than the qubit requires inputs,
+                  // it's impossible to release the operation. Hence, fail.
+                  if (op.getNumQubits() > wires.size()) {
+                    return WalkResult::skip();
+                  }
+
                   if (op.getNumQubits() == 1) {
                     std::ranges::advance(it, step);
                     return WalkResult::advance();
                   }
 
+                  // Insert the unitary to the pending map.
+                  // The caller decides if this op should be released.
                   insert(pending, op, &it);
                   if (pending[op].size() == op.getNumQubits()) {
-                    front.emplace_back(pending[op]);
+                    // Because pending may grow in size and invalidate keys
+                    // and values, we need to copy pending here.
+                    front.emplace_back(SmallVector(pending[op]));
+                    pending.erase(op);
                   }
 
                   return WalkResult::interrupt(); // Stop at two-qubit gate.
                 })
-                .Case<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp, ExtractOp,
+                .Case<AllocOp, StaticOp, ExtractOp, ResetOp, MeasureOp, SinkOp,
                       InsertOp>([&](auto) {
                   std::ranges::advance(it, step);
                   return WalkResult::advance();
@@ -219,6 +240,10 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
 
         if (res.wasInterrupted()) {
           break;
+        }
+
+        if (res.wasSkipped()) {
+          return failure();
         }
       }
     }
@@ -236,6 +261,9 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
     }
 
     for (WireIterator* it : released) {
+      assert(isa<UnitaryOpInterface>(it->operation()));
+      assert(!isa<BarrierOp>(it->operation()));
+
       std::ranges::advance(*it, step);
     }
 
