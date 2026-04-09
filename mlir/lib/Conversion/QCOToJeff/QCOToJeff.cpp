@@ -842,8 +842,6 @@ struct ConvertQCOTwoTargetZeroParameterToJeff final
 
     return convertTwoTargetZeroParamJeffGate<QCOOpType, JeffOpType>(
         op, adaptor, rewriter, state);
-
-    return success();
   }
 };
 

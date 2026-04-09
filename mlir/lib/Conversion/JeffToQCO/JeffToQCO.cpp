@@ -578,10 +578,8 @@ struct ConvertJeffOneTargetZeroParameterToQCO final
           op, "Operations with power != 1 are not yet supported");
     }
 
-    createGateFromJeffArity<QCOOpType, JeffOpType, 1, 0>(
+    return createGateFromJeffArity<QCOOpType, JeffOpType, 1, 0>(
         op, rewriter, adaptor.getInCtrlQubits(), {adaptor.getInQubit()}, {});
-
-    return success();
   }
 };
 
@@ -614,11 +612,9 @@ struct ConvertJeffOneTargetOneParameterToQCO final
           op, "Operations with power != 1 are not yet supported");
     }
 
-    createGateFromJeffArity<QCOOpType, JeffOpType, 1, 1>(
+    return createGateFromJeffArity<QCOOpType, JeffOpType, 1, 1>(
         op, rewriter, adaptor.getInCtrlQubits(), {adaptor.getInQubit()},
         {op.getRotation()});
-
-    return success();
   }
 };
 
@@ -646,11 +642,9 @@ struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    createGateFromJeffArity<qco::UOp, jeff::UOp, 1, 3>(
+    return createGateFromJeffArity<qco::UOp, jeff::UOp, 1, 3>(
         op, rewriter, adaptor.getInCtrlQubits(), {adaptor.getInQubit()},
         {op.getTheta(), op.getPhi(), op.getLambda()});
-
-    return success();
   }
 };
 
@@ -678,11 +672,9 @@ struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    createGateFromJeffArity<qco::SWAPOp, jeff::SwapOp, 2, 0>(
+    return createGateFromJeffArity<qco::SWAPOp, jeff::SwapOp, 2, 0>(
         op, rewriter, adaptor.getInCtrlQubits(),
         {adaptor.getInQubitOne(), adaptor.getInQubitTwo()}, {});
-
-    return success();
   }
 };
 
@@ -811,9 +803,8 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
   do {                                                                         \
     if constexpr ((JEFF_KIND) == ::mlir::mqt::gates::JeffKind::PPR) {          \
       if (pauliGates[0] == (JEFF_PPR).p0 && pauliGates[1] == (JEFF_PPR).p1) {  \
-        createGateFromJeffArity<QCO_OP, jeff::PPROp, 2, 1>(                    \
+        return createGateFromJeffArity<QCO_OP, jeff::PPROp, 2, 1>(             \
             op, rewriter, controls, targets, {op.getRotation()});              \
-        return success();                                                      \
       }                                                                        \
     }                                                                          \
   } while (false);

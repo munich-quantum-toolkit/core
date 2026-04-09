@@ -855,8 +855,8 @@ static OwningOpRef<ModuleOp> buildMalformedJeffCustom(MLIRContext* ctx,
 
 TEST(GateTableRoundTripCorpus, JeffToQCORejectsMalformedCustomArity) {
   DialectRegistry registry;
-  registry.insert<func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
-                  qtensor::QTensorDialect>();
+  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
+                  qco::QCODialect, qtensor::QTensorDialect>();
   auto ctx = std::make_unique<MLIRContext>();
   ctx->appendDialectRegistry(registry);
   ctx->loadAllAvailableDialects();
@@ -878,8 +878,8 @@ TEST(GateTableRoundTripCorpus, JeffToQCORejectsMalformedCustomArity) {
 
 TEST(GateTableRoundTripCorpus, JeffToQCORejectsUnknownCustomGateName) {
   DialectRegistry registry;
-  registry.insert<func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
-                  qtensor::QTensorDialect>();
+  registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
+                  qco::QCODialect, qtensor::QTensorDialect>();
   auto ctx = std::make_unique<MLIRContext>();
   ctx->appendDialectRegistry(registry);
   ctx->loadAllAvailableDialects();
