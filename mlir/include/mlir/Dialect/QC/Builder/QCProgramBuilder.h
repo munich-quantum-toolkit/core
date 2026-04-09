@@ -905,6 +905,112 @@ public:
   QCProgramBuilder& dealloc(Value qubit);
 
   //===--------------------------------------------------------------------===//
+  // SCF operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Construct a scf.for operation without iter args
+   *
+   * @param lowerbound Lowerbound of the loop
+   * @param upperbound Upperbound of the loop
+   * @param step Stepsize of the loop
+   * @param body Function that builds the body of the for operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfFor(lb, ub, step, [&](Value iv) { builder.x(q0); });
+   * ```
+   * ```mlir
+   * scf.for %iv = %lb to %ub step %step {
+   *   qc.x %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
+                           const std::variant<int64_t, Value>& upperbound,
+                           const std::variant<int64_t, Value>& step,
+                           const std::function<void(Value)>& body);
+
+  /**
+   * @brief Construct a scf.while operation without return values
+   *
+   * @param beforeBody Function that builds the before body of the while
+   * operation
+   * @param afterBody Function that builds the after body of the while operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfWhile([&] {
+   *   builder.h(q0);
+   *   auto res = builder.measure(q0);
+   *   builder.scfCondition(res);
+   * }, [&] {
+   *   builder.x(q0);
+   * });
+   * ```
+   * ```mlir
+   * scf.while : () -> () {
+   *   qc.h %q0 : !qc.qubit
+   *   %res = qc.measure %q0 : !qc.qubit -> i1
+   *   scf.condition(%res)
+   * } do {
+   *   qc.x %q0 : !qc.qubit
+   *   scf.yield
+   * }
+   * ```
+   */
+  QCProgramBuilder& scfWhile(const std::function<void()>& beforeBody,
+                             const std::function<void()>& afterBody);
+
+  /**
+   * @brief Construct a scf.if operation without return values
+   *
+   * @param condition Condition for the if operation
+   * @param thenBody Function that builds the then body of the if
+   * operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfIf(condition, [&] {
+   *   builder.h(q0);
+   * }, [&] {
+   *   builder.x(q0);
+   * });
+   * ```
+   * ```mlir
+   * scf.if %condition {
+   *   qc.h %q0 : !qc.qubit
+   * } else {
+   *   qc.x %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder&
+  scfIf(const std::variant<bool, Value>& condition,
+        const std::function<void()>& thenBody,
+        std::optional<std::function<void()>> elseBody = std::nullopt);
+
+  /**
+   * @brief Construct a scf.condition operation without yielded values
+   *
+   * @param condition Condition for condition operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfCondition(condition);
+   * ```
+   * ```mlir
+   * scf.condition(%condition)
+   * ```
+   */
+  QCProgramBuilder& scfCondition(Value condition);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 

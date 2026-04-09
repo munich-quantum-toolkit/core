@@ -21,6 +21,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -436,6 +437,96 @@ QCProgramBuilder&
 QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
   checkFinalized();
   InvOp::create(*this, body);
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder&
+QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
+                         const std::variant<int64_t, Value>& upperbound,
+                         const std::variant<int64_t, Value>& step,
+                         const std::function<void(Value)>& body) {
+  checkFinalized();
+
+  const auto loc = getLoc();
+  const auto lb = utils::variantToValue(*this, loc, lowerbound);
+  const auto ub = utils::variantToValue(*this, loc, upperbound);
+  const auto stepSize = utils::variantToValue(*this, loc, step);
+
+  scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
+                     [&](OpBuilder& b, Location, Value iv, ValueRange) {
+                       const OpBuilder::InsertionGuard guard(*this);
+                       setInsertionPointToStart(b.getInsertionBlock());
+                       body(iv);
+                       scf::YieldOp::create(b, loc);
+                     });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
+                           const std::function<void()>& afterBody) {
+  checkFinalized();
+
+  scf::WhileOp::create(
+      *this, TypeRange{}, ValueRange{},
+      [&](OpBuilder& b, Location, ValueRange) {
+        const OpBuilder::InsertionGuard guard(*this);
+        setInsertionPointToStart(b.getInsertionBlock());
+        beforeBody();
+      },
+      [&](OpBuilder& b, Location loc, ValueRange) {
+        const OpBuilder::InsertionGuard guard(*this);
+        setInsertionPointToStart(b.getInsertionBlock());
+        afterBody();
+        scf::YieldOp::create(b, loc);
+      });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
+                        const std::function<void()>& thenBody,
+                        std::optional<std::function<void()>> elseBody) {
+  checkFinalized();
+
+  const auto condition = utils::variantToValue(*this, getLoc(), cond);
+
+  if (!elseBody) {
+    scf::IfOp::create(*this, condition, [&](OpBuilder& b, Location loc) {
+      const OpBuilder::InsertionGuard guard(*this);
+      setInsertionPointToStart(b.getInsertionBlock());
+      thenBody();
+      scf::YieldOp::create(b, loc);
+    });
+  } else {
+    scf::IfOp::create(
+        *this, condition,
+        [&](OpBuilder& b, Location loc) {
+          const OpBuilder::InsertionGuard guard(*this);
+          setInsertionPointToStart(b.getInsertionBlock());
+          thenBody();
+          scf::YieldOp::create(b, loc);
+        },
+        [&](OpBuilder& b, Location loc) {
+          const OpBuilder::InsertionGuard guard(*this);
+          setInsertionPointToStart(b.getInsertionBlock());
+          (*elseBody)();
+          scf::YieldOp::create(b, loc);
+        });
+  }
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
+  checkFinalized();
+
+  scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
 }
 

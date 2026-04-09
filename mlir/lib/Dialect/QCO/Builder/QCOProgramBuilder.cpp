@@ -26,6 +26,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -796,6 +797,111 @@ QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
 // SCF Operations
 //===----------------------------------------------------------------------===//
 
+ValueRange QCOProgramBuilder::scfFor(
+    const std::variant<int64_t, Value>& lowerbound,
+    const std::variant<int64_t, Value>& upperbound,
+    const std::variant<int64_t, Value>& step, ValueRange initArgs,
+    llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body) {
+  checkFinalized();
+
+  const auto loc = getLoc();
+  const auto lb = utils::variantToValue(*this, loc, lowerbound);
+  const auto ub = utils::variantToValue(*this, loc, upperbound);
+  const auto stepSize = utils::variantToValue(*this, loc, step);
+
+  // Create the empty for operation
+  auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, initArgs);
+  auto* forBody = forOp.getBody();
+  const auto iv = forBody->getArgument(0);
+  const auto loopArgs = forBody->getArguments().drop_front();
+
+  // Set the insertionpoint
+  const OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToStart(forBody);
+
+  // Add the iterArgs to the validQubits
+  auto* bodyRegion = forBody->getParent();
+  for (const auto& arg : loopArgs) {
+    validQubits.try_emplace(arg, QubitInfo{});
+  }
+  // Build the body
+  const auto bodyResults = body(iv, loopArgs);
+  scf::YieldOp::create(*this, bodyResults);
+
+  for (auto result : bodyResults) {
+    validQubits.erase(result);
+  }
+
+  // Update the qubit tracking
+  for (const auto& [initArg, result] :
+       llvm::zip_equal(initArgs, forOp.getResults())) {
+    if (!llvm::isa<TensorType>(initArg.getType())) {
+
+      updateQubitTracking(initArg, result);
+    }
+  }
+
+  return forOp->getResults();
+}
+
+ValueRange QCOProgramBuilder::scfWhile(
+    ValueRange initArgs,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody) {
+  checkFinalized();
+
+  // Create the empty while operation
+  auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), initArgs);
+  const SmallVector<Location> locs(initArgs.size(), getLoc());
+
+  const OpBuilder::InsertionGuard guard(*this);
+
+  // Construct the before block
+  auto* beforeBlock =
+      createBlock(&whileOp.getBefore(), {}, initArgs.getTypes(), locs);
+  auto beforeArgs = beforeBlock->getArguments();
+  auto* beforeRegion = beforeBlock->getParent();
+
+  // Set the insertionpoint
+  setInsertionPointToStart(beforeBlock);
+
+  // Add the beforeArgs to the validQubits
+  for (const auto& arg : beforeArgs) {
+    validQubits.try_emplace(arg, QubitInfo{});
+  }
+
+  beforeBody(beforeArgs);
+
+  // Construct the after block
+  auto* afterBlock =
+      createBlock(&whileOp.getAfter(), {}, initArgs.getTypes(), locs);
+  auto afterArgs = afterBlock->getArguments();
+  auto* afterRegion = afterBlock->getParent();
+
+  // Set the insertionpoint
+  setInsertionPointToStart(afterBlock);
+
+  // Add the afterArgs to the validQubits
+  for (const auto& arg : afterArgs) {
+    validQubits.try_emplace(arg, QubitInfo{});
+  }
+
+  const auto afterResults = afterBody(afterArgs);
+  scf::YieldOp::create(*this, afterResults);
+
+  for (auto result : afterResults) {
+    validQubits.erase(result);
+  }
+
+  // Update the qubit tracking
+  for (const auto& [arg, result] :
+       llvm::zip_equal(initArgs, whileOp.getResults())) {
+    updateQubitTracking(arg, result);
+  }
+
+  return whileOp->getResults();
+}
+
 ValueRange QCOProgramBuilder::qcoIf(
     const std::variant<bool, Value>& condition, ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
@@ -857,6 +963,16 @@ ValueRange QCOProgramBuilder::qcoIf(
   return ifResults;
 }
 
+QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
+                                                   ValueRange yieldedValues) {
+  checkFinalized();
+
+  scf::ConditionOp::create(*this, condition, yieldedValues);
+  for (auto yieldedValue : yieldedValues) {
+    validQubits.erase(yieldedValue);
+  }
+  return *this;
+}
 //===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//

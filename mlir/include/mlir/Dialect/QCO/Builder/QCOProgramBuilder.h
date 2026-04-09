@@ -1234,6 +1234,76 @@ public:
         llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody =
             nullptr);
 
+  /**
+   * @brief Construct a scf.for operation with iter args
+   *
+   * @param lowerbound Lowerbound of the loop
+   * @param upperbound Upperbound of the loop
+   * @param step Stepsize of the loop
+   * @param initArgs Initial arguments for the iter args
+   * @param body Function that builds the body of the for operation
+   * @return ValueRange of the results
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs)
+   * -> llvm::SmallVector<Value> { auto q1 = builder.x(iterArgs[0]);
+   *    return {q1};
+   * });
+   * ```
+   * ```mlir
+   * %q1 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0)
+   * -> !qco.qubit {
+   *   %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   scf.yield %q2 : !qco.qubit
+   * }
+   * ```
+   */
+  ValueRange
+  scfFor(const std::variant<int64_t, Value>& lowerbound,
+         const std::variant<int64_t, Value>& upperbound,
+         const std::variant<int64_t, Value>& step, ValueRange initArgs,
+         llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body);
+  /**
+   * @brief Construct a scf.while operation with return values
+   *
+   * @param args Arguments for the while loop
+   * @param beforeBody Function that builds the before body of the while
+   * operation
+   * @param afterBody Function that builds the after body of the while operation
+   * @return ValueRange of the results
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfWhile(args, [&](ValueRange iterArgs) -> llvm::SmallVector<Value>
+   * { auto q1 = builder.h(iterArgs[0]);
+   *   auto [q2, measureRes] = builder.measure(q1);
+   *   builder.scfCondition(measureRes, q2);
+   *   return {q2};
+   * }, [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
+   *   auto q1 = builder.x(iterArgs[0]);
+   *   return {q1};
+   * });
+   * ```
+   * ```mlir
+   * %q1 = scf.while (%arg0 = %q0): (!qco.qubit) -> (!qco.qubit) {
+   *   %q2 = qco.h(%arg0)
+   *   %q3, %result = qco.measure %q2 : !qco.qubit
+   *   scf.condition(%result) %q3 : !qco.qubit
+   * } do {
+   * ^bb0(%arg0 : !qco.qubit):
+   *   %q4 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   scf.yield %q4 : !qco.qubit
+   * }
+   * ```
+   */
+  ValueRange
+  scfWhile(ValueRange args,
+           llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
+           llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody);
+
+  QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
+
   //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
