@@ -405,7 +405,6 @@ static OwningOpRef<ModuleOp> buildQCGateCaseReference(MLIRContext* ctx,
     if constexpr (std::is_same_v<QCOpType, qc::U2Op>) {
       static_assert(NumTargets == 1);
       static_assert(NumParams == 2);
-      constexpr double pi = std::numbers::pi;
       constexpr double piOver2 = 1.5707963267948966;
       const auto phi = std::get<double>(paramValue(0));
       const auto lambda = std::get<double>(paramValue(1));
