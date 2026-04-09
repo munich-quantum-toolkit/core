@@ -68,8 +68,8 @@ inline ::mlir::LogicalResult verifyNoMixedQubitAddressingModes(
   ::mlir::Operation* scope =
       op->template getParentWithTrait<::mlir::OpTrait::IsIsolatedFromAbove>();
   if (scope == nullptr) {
-    (void)op.emitOpError("expected operation to have an isolated parent");
-    return ::mlir::failure();
+    return op.emitOpError(
+        "must be nested within an operation with IsIsolatedFromAbove");
   }
 
   bool foundOpposite = false;
