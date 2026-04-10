@@ -395,6 +395,37 @@ struct ConvertQCOAllocOpToJeff final
 };
 
 /**
+ * @brief Converts qco.static to jeff.qubit_alloc
+ *
+ * @details
+ * The Jeff dialect does not model hardware-mapped or fixed-index static
+ * qubits yet. As a temporary workaround (see discussion on #1626), this
+ * lowers `qco.static` to the same `jeff.qubit_alloc` operation used for
+ * `qco.alloc`. The static index is not represented in Jeff IR; if Jeff gains
+ * static qubit support, this conversion should be revisited.
+ *
+ * @par Example:
+ * ```mlir
+ * %q = qco.static 0 : !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q = jeff.qubit_alloc : !jeff.qubit
+ * ```
+ */
+struct ConvertQCOStaticOpToJeff final
+    : StatefulOpConversionPattern<qco::StaticOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
+    return success();
+  }
+};
+
+/**
  * @brief Converts qco.sink to jeff.qubit_free_zero
  *
  * @par Example:
@@ -1500,8 +1531,9 @@ protected:
     patterns.add<
         ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
         ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
-        ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
-        ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff,
+        ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
+        ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
+        ConvertQCOGPhaseOpToJeff,
         ConvertQCOOneTargetZeroParameterToJeff<qco::IdOp, jeff::IOp, false>,
         ConvertQCOOneTargetZeroParameterToJeff<qco::XOp, jeff::XOp, false>,
         ConvertQCOOneTargetZeroParameterToJeff<qco::YOp, jeff::YOp, false>,
