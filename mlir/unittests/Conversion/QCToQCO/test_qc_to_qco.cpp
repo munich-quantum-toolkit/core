@@ -129,6 +129,30 @@ TEST_F(QCToQCOTest, RejectsMixedStaticAndDynamicQubitAddressing) {
   EXPECT_TRUE(failed(runQCToQCOConversion(program.get())));
   printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
 }
+
+TEST_F(QCToQCOTest, RejectsDynamicAllocAfterStaticQubit) {
+  const auto* const name = " (RejectsDynamicAllocAfterStaticQubit)";
+  mqt::test::DeferredPrinter printer;
+  auto program = parseSourceString<ModuleOp>(
+      qc::staticThenDynamicAllocQubitAddressingModuleMlir(), context.get());
+  ASSERT_TRUE(program);
+  printer.record(program.get(), std::string("Original QC IR") + name);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(failed(runQCToQCOConversion(program.get())));
+  printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
+}
+
+TEST_F(QCToQCOTest, RejectsOneDimQubitMemRefAfterStaticQubit) {
+  const auto* const name = " (RejectsOneDimQubitMemRefAfterStaticQubit)";
+  mqt::test::DeferredPrinter printer;
+  auto program = parseSourceString<ModuleOp>(
+      qc::staticThenOneDimQubitMemRefModuleMlir(), context.get());
+  ASSERT_TRUE(program);
+  printer.record(program.get(), std::string("Original QC IR") + name);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(failed(runQCToQCOConversion(program.get())));
+  printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
+}
 /// @}
 
 /// \name QCToQCO/QubitManagement/StaticOp.cpp

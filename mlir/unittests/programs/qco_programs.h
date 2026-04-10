@@ -53,19 +53,22 @@ void allocSinkPair(QCOProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
-/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
-/// error (static qubit then dynamic allocation).
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
 void mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
 
-/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
-/// error (dynamic multi-qubit allocation then static qubit). Implemented with
-/// `qtensorAlloc` as the QCO bulk-allocation path (analogous to register
-/// allocation in QC / QIR builders).
+/// @pre `builder.initialize()`. Fatal mixed addressing: `qtensor` alloc then
+/// static.
 void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
 
-/// MLIR module (`func.func @main`) that mixes `qco.static` and `qco.alloc` for
-/// conversion tests that must reject the IR.
+/// Mixed `qco.static` and `qco.alloc`; `qco-to-qc` rejection tests.
 [[nodiscard]] const char* mixedStaticDynamicQubitAddressingModuleMlir();
+
+/// `qco.static` then `qco.alloc`; `qco-to-qc` rejection tests.
+[[nodiscard]] const char* staticThenDynamicAllocQubitAddressingModuleMlir();
+
+/// `qco.static` then `qtensor.alloc`; `qco-to-qc` rejection tests.
+[[nodiscard]] const char* staticThenQTensorAllocQubitAddressingModuleMlir();
 
 // --- MeasureOp ------------------------------------------------------------ //
 

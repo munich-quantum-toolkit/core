@@ -57,12 +57,12 @@ void staticQubitsCanonical(QIRProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
-/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
-/// error (static qubit then dynamic allocation).
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
 void mixedStaticThenDynamicQubit(QIRProgramBuilder& b);
 
-/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
-/// error (dynamic register then static qubit).
+/// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
+/// static.
 void mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //

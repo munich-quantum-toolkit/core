@@ -101,6 +101,37 @@ module {
 )mlir";
 }
 
+const char* staticThenDynamicAllocQubitAddressingModuleMlir() {
+  return R"mlir(
+module {
+  func.func @main() {
+    %s = qco.static 0 : !qco.qubit
+    %s1 = qco.barrier %s : !qco.qubit -> !qco.qubit
+    %q = qco.alloc : !qco.qubit
+    qco.sink %s1 : !qco.qubit
+    qco.sink %q : !qco.qubit
+    return
+  }
+}
+)mlir";
+}
+
+const char* staticThenQTensorAllocQubitAddressingModuleMlir() {
+  return R"mlir(
+module {
+  func.func @main() {
+    %s = qco.static 0 : !qco.qubit
+    %s1 = qco.barrier %s : !qco.qubit -> !qco.qubit
+    %c2 = arith.constant 2 : index
+    %t = qtensor.alloc(%c2) : tensor<?x!qco.qubit>
+    qco.sink %s1 : !qco.qubit
+    qtensor.dealloc %t : tensor<?x!qco.qubit>
+    return
+  }
+}
+)mlir";
+}
+
 void singleMeasurementToSingleBit(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);

@@ -60,22 +60,33 @@ void allocDeallocPair(QCProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
-/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
-/// error (static qubit then dynamic allocation).
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
 void mixedStaticThenDynamicQubit(QCProgramBuilder& b);
 
-/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
-/// error (dynamic register then static qubit).
+/// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
+/// static.
 void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
 
-/// MLIR module (`func.func @main`) that mixes `qc.static` and `qc.alloc` for
-/// conversion tests that must reject the IR.
+/// Mixed dynamic `qc.alloc` and `qc.static`; `qc-to-qco` rejection tests.
 [[nodiscard]] const char* mixedStaticDynamicQubitAddressingModuleMlir();
 
-/// MLIR module with QIR-style `llvm.func @main` mixing static and dynamic QC
-/// qubits (`qc-to-qir` must reject).
+/// `qc.static` then `qc.alloc`; `qc-to-qco` rejection tests.
+[[nodiscard]] const char* staticThenDynamicAllocQubitAddressingModuleMlir();
+
+/// `qc.static` then 1-D `memref` of `!qc.qubit`; `qc-to-qco` rejection tests.
+[[nodiscard]] const char* staticThenOneDimQubitMemRefModuleMlir();
+
+/// Mixed dynamic `qc.alloc` and `qc.static`; LLVM `@main` (`qc-to-qir`).
 [[nodiscard]] const char*
 mixedStaticDynamicQubitAddressingLLVMEntryModuleMlir();
+
+/// `qc.static` then `qc.alloc`; LLVM `@main` (`qc-to-qir`).
+[[nodiscard]] const char*
+staticThenDynamicAllocQubitAddressingLLVMEntryModuleMlir();
+
+/// `qc.static` then 1-D `memref` of `!qc.qubit`; LLVM `@main` (`qc-to-qir`).
+[[nodiscard]] const char* staticThenOneDimQubitMemRefLLVMEntryModuleMlir();
 
 // --- MeasureOp ------------------------------------------------------------ //
 

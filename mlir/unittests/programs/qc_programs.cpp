@@ -118,6 +118,34 @@ module {
 )mlir";
 }
 
+const char* staticThenDynamicAllocQubitAddressingModuleMlir() {
+  return R"mlir(
+module {
+  func.func @main() {
+    %s = qc.static 0 : !qc.qubit
+    %q = qc.alloc : !qc.qubit
+    qc.measure %s : !qc.qubit -> i1
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir";
+}
+
+const char* staticThenOneDimQubitMemRefModuleMlir() {
+  return R"mlir(
+module {
+  func.func @main() {
+    %s = qc.static 0 : !qc.qubit
+    %m = memref.alloc() : memref<2x!qc.qubit>
+    qc.measure %s : !qc.qubit -> i1
+    memref.dealloc %m : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+}
+
 const char* mixedStaticDynamicQubitAddressingLLVMEntryModuleMlir() {
   return R"mlir(
 module {
@@ -126,6 +154,34 @@ module {
     qc.dealloc %q : !qc.qubit
     %s = qc.static 0 : !qc.qubit
     qc.measure %s : !qc.qubit -> i1
+    llvm.return
+  }
+}
+)mlir";
+}
+
+const char* staticThenDynamicAllocQubitAddressingLLVMEntryModuleMlir() {
+  return R"mlir(
+module {
+  llvm.func @main() attributes {entry_point, llvm.emit_c_interface} {
+    %s = qc.static 0 : !qc.qubit
+    %q = qc.alloc : !qc.qubit
+    qc.measure %s : !qc.qubit -> i1
+    qc.dealloc %q : !qc.qubit
+    llvm.return
+  }
+}
+)mlir";
+}
+
+const char* staticThenOneDimQubitMemRefLLVMEntryModuleMlir() {
+  return R"mlir(
+module {
+  llvm.func @main() attributes {entry_point, llvm.emit_c_interface} {
+    %s = qc.static 0 : !qc.qubit
+    %m = memref.alloc() : memref<2x!qc.qubit>
+    qc.measure %s : !qc.qubit -> i1
+    memref.dealloc %m : memref<2x!qc.qubit>
     llvm.return
   }
 }

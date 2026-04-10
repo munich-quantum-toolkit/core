@@ -128,6 +128,31 @@ TEST_F(QCToQIRTest, RejectsMixedStaticAndDynamicQubitAddressing) {
   EXPECT_TRUE(failed(runQCToQIRConversion(program.get())));
   printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
 }
+
+TEST_F(QCToQIRTest, RejectsDynamicAllocAfterStaticQubit) {
+  const auto* const name = " (RejectsDynamicAllocAfterStaticQubit)";
+  mqt::test::DeferredPrinter printer;
+  auto program = parseSourceString<ModuleOp>(
+      qc::staticThenDynamicAllocQubitAddressingLLVMEntryModuleMlir(),
+      context.get());
+  ASSERT_TRUE(program);
+  printer.record(program.get(), std::string("Original QC IR") + name);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(failed(runQCToQIRConversion(program.get())));
+  printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
+}
+
+TEST_F(QCToQIRTest, RejectsOneDimQubitMemRefAfterStaticQubit) {
+  const auto* const name = " (RejectsOneDimQubitMemRefAfterStaticQubit)";
+  mqt::test::DeferredPrinter printer;
+  auto program = parseSourceString<ModuleOp>(
+      qc::staticThenOneDimQubitMemRefLLVMEntryModuleMlir(), context.get());
+  ASSERT_TRUE(program);
+  printer.record(program.get(), std::string("Original QC IR") + name);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(failed(runQCToQIRConversion(program.get())));
+  printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
+}
 /// @}
 
 /// \name QCToQIR/Operations/StandardGates/BarrierOp.cpp
