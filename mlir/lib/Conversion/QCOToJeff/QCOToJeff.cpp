@@ -55,6 +55,13 @@ using namespace qco;
 
 namespace {
 
+/** @brief Qubit addressing mode */
+enum class QubitAddressingMode : std::uint8_t {
+  Unknown, //!< The addressing mode is not known.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic  //!< The module uses dynamic qubit allocation.
+};
+
 /**
  * @brief State object for tracking modifier information
  */
@@ -74,6 +81,23 @@ struct LoweringState {
   // Module information
   llvm::SmallVector<std::string> strings;
   std::string entryPointName;
+
+  /// The qubit addressing mode used in the module
+  QubitAddressingMode mode = QubitAddressingMode::Unknown;
+
+  /// Sets or validates the addressing mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult
+  ensureAddressingMode(QubitAddressingMode requestedMode, Operation* op) {
+    if (mode == QubitAddressingMode::Unknown) {
+      mode = requestedMode;
+      return success();
+    }
+    if (mode == requestedMode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in conversion");
+  }
 };
 
 /**
@@ -266,6 +290,15 @@ struct ConvertQTensorAllocOp final
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    const auto tensorType = llvm::dyn_cast<RankedTensorType>(op.getType());
+    if (!tensorType ||
+        !llvm::isa<qco::QubitType>(tensorType.getElementType())) {
+      return failure();
+    }
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
     // TODO: Why is this not happening in native conversion?
     auto sizeValue = getConstantIntValue(adaptor.getSize());
     Value size;
@@ -389,6 +422,10 @@ struct ConvertQCOAllocOpToJeff final
   LogicalResult
   matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
     rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
     return success();
   }
@@ -420,6 +457,10 @@ struct ConvertQCOStaticOpToJeff final
   LogicalResult
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Static,
+                                               op.getOperation()))) {
+      return failure();
+    }
     rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
     return success();
   }
