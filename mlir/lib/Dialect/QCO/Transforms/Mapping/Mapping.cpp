@@ -543,19 +543,11 @@ private:
       wires.emplace_back(op.getResult());
     }
 
-    SmallVector<std::size_t> enumeration;
-    enumeration.reserve(wires.size());
-    for (std::size_t i = 0; i < wires.size(); ++i) {
-      enumeration.emplace_back(i);
-    }
-
     for (std::size_t i = 0; i < niterations; ++i) {
-      if (failed(layoutRoute(wires, enumeration, WalkDirection::Forward, arch,
-                             trial))) {
+      if (failed(layoutRoute(wires, WalkDirection::Forward, arch, trial))) {
         return;
       }
-      if (failed(layoutRoute(wires, enumeration, WalkDirection::Backward, arch,
-                             trial))) {
+      if (failed(layoutRoute(wires, WalkDirection::Backward, arch, trial))) {
         return;
       }
     }
@@ -668,6 +660,8 @@ private:
     return failure();
   }
 
+  using RebuildWindowLookupFn = function_ref<std::size_t(std::size_t)>;
+
   /**
    * @brief Recompute window of layers into @p window.
    * @details
@@ -682,14 +676,8 @@ private:
    *
    * The size of the window is 1 + nlookahead.
    */
-  template <class Fn>
-  void rebuildWindow(ArrayRef<WireIterator> base,
-                     ArrayRef<std::size_t> enumeration, WalkDirection direction,
-                     Window& window, Fn&& fn) {
-    assert(base.size() == enumeration.size());
-
-    const auto lookup = std::forward<Fn>(fn);
-
+  void rebuildWindow(ArrayRef<WireIterator> base, WalkDirection direction,
+                     Window& window, RebuildWindowLookupFn lookup) {
     window.clear();                        // Clear window.
     SmallVector<WireIterator> wires(base); // Work on local copy.
 
@@ -711,12 +699,11 @@ private:
 
             assert(first.operation() == second.operation());
 
-            const auto idxFirst = std::distance(wires.data(), &first);
-            const auto idxSecond = std::distance(wires.data(), &second);
+            const auto i0 = std::distance(wires.data(), &first);
+            const auto i1 = std::distance(wires.data(), &second);
 
             layer.emplace_back(first.operation(),
-                               std::make_pair(lookup(enumeration[idxFirst]),
-                                              lookup(enumeration[idxSecond])));
+                               std::make_pair(lookup(i0), lookup(i1)));
 
             SmallVector<WireIterator, 2> pair{first, second};
             walkQubitPairBlock(
@@ -762,9 +749,10 @@ private:
    * @returns failure() if A* search isn't able to find a solution.
    */
   LogicalResult layoutRoute(MutableArrayRef<WireIterator> wires,
-                            ArrayRef<std::size_t> enumeration,
                             const WalkDirection& direction,
                             const Architecture& arch, Trial& trial) {
+    const auto lookup = [](const std::size_t i) { return i; };
+
     Window window;
     window.reserve(1 + nlookahead);
 
@@ -778,8 +766,7 @@ private:
           }
 
           // Recompute window of layers.
-          rebuildWindow(wires, enumeration, direction, window,
-                        [](std::size_t i) { return i; });
+          rebuildWindow(wires, direction, window, lookup);
 
           // Perform A* search.
           const auto searchResult = search(window, trial.layout, arch);
@@ -788,7 +775,6 @@ private:
           }
 
           const auto& [readyOps, swaps] = searchResult.value();
-          // assert(readyOps.size() == front.size());
 
           // Collect trial statistics.
           trial.nswaps += swaps.size();
@@ -829,25 +815,17 @@ private:
   LogicalResult route(func::FuncOp func, const Architecture& arch,
                       Layout& layout, IRRewriter& rewriter) {
     constexpr auto direction = WalkDirection::Forward;
+    const auto lookup = [&](const std::size_t i) {
+      return layout.getProgramIndex(i);
+    };
 
     Window window;
     window.reserve(1 + nlookahead);
 
-    SmallVector<WireIterator> wires;
-    wires.reserve(range_size(func.getOps<StaticOp>()));
+    // The i-th wire stores the static qubit with hardware index i.
+    SmallVector<WireIterator> wires(range_size(func.getOps<StaticOp>()));
     for (StaticOp op : func.getOps<StaticOp>()) {
-      wires.emplace_back(op.getQubit());
-    }
-
-    SmallVector<std::size_t> enumeration;
-    for (const auto& it : wires) {
-      StaticOp op = cast<StaticOp>(it.operation());
-      enumeration.emplace_back(op.getIndex());
-    }
-
-    SmallVector<std::size_t> revEnumeration(enumeration.size());
-    for (std::size_t i = 0; i < enumeration.size(); ++i) {
-      revEnumeration[enumeration[i]] = i;
+      wires[op.getIndex()] = WireIterator(op.getQubit());
     }
 
     DenseSet<Operation*> frontSet;
@@ -862,8 +840,7 @@ private:
       }
 
       // Recompute window of layers.
-      rebuildWindow(wires, enumeration, direction, window,
-                    [&](std::size_t i) { return layout.getProgramIndex(i); });
+      rebuildWindow(wires, direction, window, lookup);
 
       // Perform A* search.
       const auto searchResult = search(window, layout, arch);
@@ -872,7 +849,6 @@ private:
       }
 
       const auto& [readyOps, swaps] = searchResult.value();
-      // assert(readyOps.size() == front.size());
 
       frontSet.clear();
       for (ArrayRef<WireIterator*> its : front) {
@@ -902,8 +878,8 @@ private:
       for (const auto& [hw0, hw1] : swaps) {
         layout.swap(hw0, hw1);
 
-        WireIterator& first = wires[revEnumeration[hw0]];
-        WireIterator& second = wires[revEnumeration[hw1]];
+        WireIterator& first = wires[hw0];
+        WireIterator& second = wires[hw1];
 
         assert(!isa<SinkOp>(first.operation()));
         assert(!isa<SinkOp>(second.operation()));
