@@ -1144,12 +1144,15 @@ struct PPRPaulis {
   std::int32_t p1;
 };
 
+} // namespace
+
 template <JeffKind Kind, std::size_t Targets, std::size_t Params,
           typename QCOOpType, typename JeffOpType, bool JeffBaseAdjoint>
-void addQCOToJeffGatePattern(RewritePatternSet& patterns,
-                             TypeConverter& typeConverter, MLIRContext* context,
-                             LoweringState& state, StringRef customName,
-                             const PPRPaulis& ppr) {
+static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
+                                    TypeConverter& typeConverter,
+                                    MLIRContext* context, LoweringState& state,
+                                    StringRef customName,
+                                    const PPRPaulis& ppr) {
   if constexpr (Kind == JeffKind::WellKnown) {
     if constexpr (Targets == 1 && Params == 0) {
       patterns.add<ConvertQCOOneTargetZeroParameterToJeff<QCOOpType, JeffOpType,
@@ -1191,6 +1194,8 @@ void addQCOToJeffGatePattern(RewritePatternSet& patterns,
                   "MQT_ADD_QCO_TO_JEFF_GATE: unhandled JeffKind");
   }
 }
+
+namespace {
 
 /**
  * @brief Pass for converting QCO operations to Jeff operations
