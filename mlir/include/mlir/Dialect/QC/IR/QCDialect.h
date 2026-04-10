@@ -10,10 +10,8 @@
 
 #pragma once
 
-#include <llvm/Support/Casting.h>
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/Visitors.h>
 
 #define DIALECT_NAME_QC "qc"
 
