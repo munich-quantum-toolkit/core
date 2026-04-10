@@ -208,6 +208,17 @@ static LogicalResult convertOneTargetJeffGate(
   return success();
 }
 
+/**
+ * @brief Lowers a two-target, zero-parameter QCO gate to a matching Jeff gate.
+ *
+ * @tparam QCOOpType QCO operation type (two qubit operands, no parameters).
+ * @tparam JeffOpType Jeff operation type produced by `JeffOpType::create`.
+ * @param op The QCO operation to convert.
+ * @param adaptor Operand adaptor for the QCO operation.
+ * @param rewriter Pattern rewriter used to create the Jeff operation.
+ * @param state Shared lowering state (modifiers, controls, etc.).
+ * @return `success()` after replacing or erasing `op` via `handleResult`.
+ */
 template <typename QCOOpType, typename JeffOpType>
 static LogicalResult convertTwoTargetZeroParamJeffGate(
     QCOOpType op, typename QCOOpType::Adaptor adaptor,
@@ -641,6 +652,18 @@ struct ConvertQCOOneTargetZeroParameterToJeff final
   }
 };
 
+/**
+ * @brief Conversion pattern that lowers a QCO gate to `jeff.custom`.
+ *
+ * @tparam QCOOpType QCO operation type to match.
+ * @tparam NumTargets Number of target qubit operands (compile-time).
+ * @tparam NumParams Number of real parameters taken from the QCO op
+ * (compile-time).
+ *
+ * @details Validates operand count when not inside a modifier, collects targets
+ * and parameters, then dispatches to `createCustomOp` with the configured
+ * custom gate name and base adjoint flag.
+ */
 template <typename QCOOpType, std::size_t NumTargets, std::size_t NumParams>
 struct ConvertQCOCustomGateToJeff final
     : StatefulOpConversionPattern<QCOOpType> {
@@ -685,6 +708,15 @@ private:
   bool baseIsAdjoint_;
 };
 
+/**
+ * @brief Conversion pattern that lowers a QCO gate to `jeff.ppr`.
+ *
+ * @tparam QCOOpType QCO operation type (expected: two targets, one rotation
+ * param).
+ *
+ * @details Selects two target operands (respecting modifier state) and builds
+ * the Pauli tuple from the constructor-supplied encodings `p0_` and `p1_`.
+ */
 template <typename QCOOpType>
 struct ConvertQCOPPRGateToJeff final : StatefulOpConversionPattern<QCOOpType> {
   ConvertQCOPPRGateToJeff(TypeConverter& typeConverter, MLIRContext* context,
@@ -1126,6 +1158,13 @@ public:
   }
 };
 
+/**
+ * @brief Helper for `static_assert` fallbacks in constexpr dispatch (always
+ * false).
+ *
+ * @details The non-type template parameter pack exists only so failed branches
+ * can use a dependent `false` value inside `static_assert`.
+ */
 template <auto...> struct AlwaysFalse : std::false_type {};
 
 /** @brief QCO→Jeff gate lowering category. */
@@ -1146,6 +1185,31 @@ struct PPRPaulis {
 
 } // namespace
 
+/**
+ * @brief Registers one QCO→Jeff rewrite pattern for a gate described at compile
+ * time.
+ *
+ * @tparam Kind How to lower: well-known Jeff op, `jeff.custom`, `jeff.ppr`, or
+ *        special-case `qco.u2` → `jeff.u`.
+ * @tparam Targets Number of target qubits for the QCO op.
+ * @tparam Params Number of real parameters on the QCO op.
+ * @tparam QCOOpType MLIR QCO operation type.
+ * @tparam JeffOpType Jeff operation type for `JeffKind::WellKnown` (or `void`
+ * for custom/PPR paths that do not use it).
+ * @tparam JeffBaseAdjoint For well-known ops: whether the Jeff op represents
+ * the adjoint of the QCO base gate (e.g. S† as `jeff.s` with adjoint set).
+ * @param patterns Pattern set to add to.
+ * @param typeConverter QCO→Jeff type converter passed to patterns.
+ * @param context MLIR context.
+ * @param state Shared lowering state pointer target (patterns store `&state`).
+ * @param customName Custom gate name when `Kind` is `JeffKind::Custom` (ignored
+ *        otherwise).
+ * @param ppr Pauli indices when `Kind` is `JeffKind::PPR` (ignored otherwise).
+ *
+ * @details Dispatches at compile time to the appropriate `ConvertQCO*ToJeff`
+ * pattern registration. Ill-formed combinations trigger `static_assert` with a
+ * message referencing this function.
+ */
 template <JeffKind Kind, std::size_t Targets, std::size_t Params,
           typename QCOOpType, typename JeffOpType, bool JeffBaseAdjoint>
 static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
@@ -1172,7 +1236,7 @@ static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
               typeConverter, context, &state);
     } else {
       static_assert(AlwaysFalse<Kind, Targets, Params>::value,
-                    "MQT_ADD_QCO_TO_JEFF_GATE: unhandled JeffKind::WellKnown "
+                    "addQCOToJeffGatePattern: unhandled JeffKind::WellKnown "
                     "arity/params");
     }
   } else if constexpr (Kind == JeffKind::Custom) {
@@ -1191,7 +1255,7 @@ static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
     patterns.add<ConvertQCOU2OpToJeff>(typeConverter, context, &state);
   } else {
     static_assert(AlwaysFalse<Kind, Targets, Params>::value,
-                  "MQT_ADD_QCO_TO_JEFF_GATE: unhandled JeffKind");
+                  "addQCOToJeffGatePattern: unhandled JeffKind");
   }
 }
 
