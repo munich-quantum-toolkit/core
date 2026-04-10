@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Support/IRVerification.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 
@@ -93,6 +94,24 @@ TEST_P(QCTest, ProgramEquivalence) {
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedStaticThenDynamicQubit(builder);
+      },
+      "Cannot mix static and dynamic qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedDynamicRegisterThenStaticQubit(builder);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
 }
 
 /// \name QC/Modifiers/CtrlOp.cpp

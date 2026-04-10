@@ -36,6 +36,11 @@ namespace mlir::qc {
  * place without producing new SSA values, providing a natural mapping to
  * hardware execution models.
  *
+ * @par Qubit addressing:
+ * A program must use either static qubits (`staticQubit`) or dynamic allocation
+ * (`allocQubit` / qubit registers), never both. The builder terminates with a
+ * usage error if the modes are mixed.
+ *
  * @par Example Usage:
  * ```c++
  * QCProgramBuilder builder(context);
@@ -935,6 +940,8 @@ public:
         const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc);
 
 private:
+  enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
+
   MLIRContext* ctx{};
   ModuleOp module;
 
@@ -946,5 +953,12 @@ private:
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
+
+  /// Track whether static or dynamic qubit allocation is used.
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Ensure static and dynamic allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode,
+                            const char* requestedName);
 };
 } // namespace mlir::qc

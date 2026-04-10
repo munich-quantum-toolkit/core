@@ -45,8 +45,8 @@ TEST_F(DriversTest, FullWalk) {
   builder.initialize();
   const auto q00 = builder.allocQubit();
   const auto q10 = builder.allocQubit();
-  const auto q20 = builder.staticQubit(0);
-  const auto q30 = builder.staticQubit(1);
+  const auto q20 = builder.allocQubit();
+  const auto q30 = builder.allocQubit();
 
   const auto q01 = builder.h(q00);
   const auto [q02, q11] = builder.cx(q01, q10);
@@ -74,8 +74,8 @@ TEST_F(DriversTest, FullWalk) {
     if (op == q03.getDefiningOp()) {
       ex0 = qubits.getProgramQubit(0);
       ex1 = qubits.getProgramQubit(1);
-      ex2 = qubits.getHardwareQubit(0);
-      ex3 = qubits.getHardwareQubit(1);
+      ex2 = qubits.getProgramQubit(2);
+      ex3 = qubits.getProgramQubit(3);
       return WalkResult::interrupt();
     }
     return WalkResult::advance();

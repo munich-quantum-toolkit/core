@@ -44,6 +44,11 @@ namespace mlir::qco {
  * (e.g., reset, measure), the old SSA value is invalidated. This prevents
  * use-after-consume errors and mirrors quantum computing's no-cloning theorem.
  *
+ * @par Qubit addressing:
+ * A program must use either static qubits (`staticQubit`) or dynamic allocation
+ * (`allocQubit`, `allocQubitRegister`, or `qtensorAlloc`), never both. The
+ * builder terminates with a usage error if the modes are mixed.
+ *
  * @par Example Usage:
  * ```c++
  * QCOProgramBuilder builder(context);
@@ -1265,6 +1270,8 @@ public:
         const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc);
 
 private:
+  enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
+
   MLIRContext* ctx{};
   ModuleOp module;
 
@@ -1337,5 +1344,12 @@ private:
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseMap<Value, TensorInfo> validTensors;
+
+  /// Track whether static or dynamic qubit allocation is used.
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Ensure static and dynamic allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode,
+                            const char* requestedName);
 };
 } // namespace mlir::qco

@@ -18,6 +18,7 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -108,6 +109,7 @@ Value QIRProgramBuilder::doubleConstant(double value) {
 
 Value QIRProgramBuilder::allocQubit() {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
 
   metadata_.useDynamicQubit = true;
 
@@ -131,6 +133,7 @@ Value QIRProgramBuilder::allocQubit() {
 
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Static, "static");
 
   if (index < 0) {
     llvm::reportFatalUsageError("Index must be non-negative");
@@ -155,6 +158,7 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
 
 SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
@@ -625,6 +629,26 @@ void QIRProgramBuilder::checkFinalized() const {
     llvm::reportFatalUsageError(
         "QIRProgramBuilder instance has been finalized");
   }
+}
+
+void QIRProgramBuilder::ensureAllocationMode(const AllocationMode requestedMode,
+                                             const char* requestedName) {
+  if (allocationMode == AllocationMode::Unset) {
+    allocationMode = requestedMode;
+    return;
+  }
+  if (allocationMode == requestedMode) {
+    return;
+  }
+
+  const char* const existingName =
+      allocationMode == AllocationMode::Static ? "static" : "dynamic";
+  const auto message =
+      llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
+                    "QIRProgramBuilder",
+                    existingName, requestedName)
+          .str();
+  llvm::reportFatalUsageError(message.c_str());
 }
 
 void QIRProgramBuilder::generateOutputRecording() {

@@ -18,6 +18,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -69,6 +70,7 @@ Value QCProgramBuilder::intConstant(const int64_t value) {
 
 Value QCProgramBuilder::allocQubit() {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
 
   // Create the AllocOp without register metadata
   auto allocOp = AllocOp::create(*this);
@@ -82,6 +84,7 @@ Value QCProgramBuilder::allocQubit() {
 
 Value QCProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Static, "static");
 
   auto staticOp = StaticOp::create(*this, index);
   return staticOp.getQubit();
@@ -90,6 +93,7 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
 llvm::SmallVector<Value>
 QCProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
@@ -470,6 +474,26 @@ void QCProgramBuilder::checkFinalized() const {
   if (ctx == nullptr) {
     llvm::reportFatalUsageError("QCProgramBuilder instance has been finalized");
   }
+}
+
+void QCProgramBuilder::ensureAllocationMode(const AllocationMode requestedMode,
+                                            const char* requestedName) {
+  if (allocationMode == AllocationMode::Unset) {
+    allocationMode = requestedMode;
+    return;
+  }
+  if (allocationMode == requestedMode) {
+    return;
+  }
+
+  const char* const existingName =
+      allocationMode == AllocationMode::Static ? "static" : "dynamic";
+  const auto message =
+      llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
+                    "QCProgramBuilder",
+                    existingName, requestedName)
+          .str();
+  llvm::reportFatalUsageError(message.c_str());
 }
 
 OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {

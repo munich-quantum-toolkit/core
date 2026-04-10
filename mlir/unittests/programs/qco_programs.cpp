@@ -76,6 +76,16 @@ void allocSinkPair(QCOProgramBuilder& b) {
   b.sink(q);
 }
 
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b) {
+  b.qtensorAlloc(2);
+  b.staticQubit(0);
+}
+
 void singleMeasurementToSingleBit(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);

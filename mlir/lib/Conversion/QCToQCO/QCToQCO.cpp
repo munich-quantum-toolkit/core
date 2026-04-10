@@ -40,6 +40,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 
 namespace mlir {
@@ -91,6 +92,12 @@ struct QubitInfo {
  * - %q2 after the X gate
  */
 struct LoweringState {
+  enum class AllocationMode : std::uint8_t {
+    Unset,
+    Static,
+    Dynamic,
+  };
+
   struct ModifierFrame {
     /// QC qubits yielded from the current modifier region, in yield order.
     SmallVector<Value> yieldOrder;
@@ -116,6 +123,22 @@ struct LoweringState {
 
   /// Stack of active modifier regions
   SmallVector<ModifierFrame> modifierFrames;
+
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode mode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = mode;
+      return success();
+    }
+    if (allocationMode == mode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in conversion");
+  }
 };
 
 /**
@@ -407,6 +430,10 @@ struct ConvertMemRefAllocOp final
     if (shape.size() != 1) {
       return failure();
     }
+    if (failed(getState().ensureAllocationMode(
+            LoweringState::AllocationMode::Dynamic, op.getOperation()))) {
+      return failure();
+    }
 
     Value qtensor;
     if (shape[0] == ShapedType::kDynamic) {
@@ -568,6 +595,10 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    if (failed(state.ensureAllocationMode(
+            LoweringState::AllocationMode::Dynamic, op.getOperation()))) {
+      return failure();
+    }
     auto qcQubit = op.getResult();
 
     // Create the qco.alloc operation
@@ -640,6 +671,10 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   matchAndRewrite(qc::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    if (failed(state.ensureAllocationMode(LoweringState::AllocationMode::Static,
+                                          op.getOperation()))) {
+      return failure();
+    }
     auto qcQubit = op.getQubit();
 
     auto qcoOp = rewriter.replaceOpWithNewOp<qco::StaticOp>(op, op.getIndex());

@@ -61,6 +61,20 @@ enum class QubitAddressingMode : std::uint8_t {
 struct LoweringState {
   /// The qubit addressing mode used in the module
   QubitAddressingMode mode = QubitAddressingMode::Unknown;
+
+  /// Sets or validates the addressing mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult
+  ensureAddressingMode(QubitAddressingMode requestedMode, Operation* op) {
+    if (mode == QubitAddressingMode::Unknown) {
+      mode = requestedMode;
+      return success();
+    }
+    if (mode == requestedMode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in conversion");
+  }
 };
 
 /**
@@ -139,12 +153,17 @@ public:
  * %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
  * ```
  */
-struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQTensorAllocOp final
+    : StatefulOpConversionPattern<qtensor::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
     auto qubitType = qc::QubitType::get(op.getContext());
     auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
@@ -241,12 +260,10 @@ struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
   LogicalResult
   matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMode = getState().mode;
-    if (qubitMode == QubitAddressingMode::Unknown) {
-      qubitMode = QubitAddressingMode::Dynamic;
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
     }
-    assert(qubitMode != QubitAddressingMode::Static &&
-           "Static qubits cannot be mixed with dynamic qubits");
 
     // Create qc.alloc
     rewriter.replaceOpWithNewOp<qc::AllocOp>(op);
@@ -282,8 +299,9 @@ struct ConvertQCOSinkOp final : StatefulOpConversionPattern<SinkOp> {
   matchAndRewrite(SinkOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     const auto mode = getState().mode;
-    assert(mode != QubitAddressingMode::Unknown &&
-           "Sinks cannot exist without allocations");
+    if (mode == QubitAddressingMode::Unknown) {
+      return op.emitOpError("cannot exist without qubit allocation");
+    }
 
     if (mode == QubitAddressingMode::Static) {
       rewriter.eraseOp(op);
@@ -315,12 +333,10 @@ struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
   LogicalResult
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMode = getState().mode;
-    if (qubitMode == QubitAddressingMode::Unknown) {
-      qubitMode = QubitAddressingMode::Static;
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Static,
+                                               op.getOperation()))) {
+      return failure();
     }
-    assert(qubitMode != QubitAddressingMode::Dynamic &&
-           "Dynamic qubits cannot be mixed with static qubits");
 
     // Create qc.static with the same index
     rewriter.replaceOpWithNewOp<qc::StaticOp>(op, op.getIndex());
@@ -939,7 +955,7 @@ protected:
 
     // Register operation conversion patterns that do not need state tracking
     patterns.add<
-        ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+        ConvertQTensorExtractOp, ConvertQTensorInsertOp,
         ConvertQTensorDeallocOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
         ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::XOp, qc::XOp>,
@@ -973,8 +989,8 @@ protected:
         ConvertQCOYieldOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
-        typeConverter, context, &state);
+    patterns.add<ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
+                 ConvertQCOSinkOp>(typeConverter, context, &state);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes

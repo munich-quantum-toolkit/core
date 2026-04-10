@@ -68,6 +68,12 @@ namespace {
  * @brief State object for tracking lowering information during QIR conversion
  */
 struct LoweringState : QIRMetadata {
+  enum class AllocationMode : std::uint8_t {
+    Unset,
+    Static,
+    Dynamic,
+  };
+
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
@@ -95,6 +101,22 @@ struct LoweringState : QIRMetadata {
   Block* entryBlock{};
   Block* measurementsBlock{};
   Block* outputBlock{};
+
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode mode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = mode;
+      return success();
+    }
+    if (allocationMode == mode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in conversion");
+  }
 };
 
 /**
@@ -248,6 +270,10 @@ struct ConvertMemRefAllocOp final
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
+    if (failed(getState().ensureAllocationMode(
+            LoweringState::AllocationMode::Dynamic, op.getOperation()))) {
+      return failure();
+    }
 
     auto& state = getState();
     state.useDynamicQubit = true;
@@ -400,6 +426,10 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    if (failed(state.ensureAllocationMode(
+            LoweringState::AllocationMode::Dynamic, op.getOperation()))) {
+      return failure();
+    }
     state.useDynamicQubit = true;
 
     auto* ctx = getContext();
@@ -482,6 +512,10 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const auto index = static_cast<int64_t>(op.getIndex());
     auto& state = getState();
+    if (failed(state.ensureAllocationMode(LoweringState::AllocationMode::Static,
+                                          op.getOperation()))) {
+      return failure();
+    }
 
     // Get or create a pointer to the qubit
     Value qubit;
