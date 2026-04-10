@@ -61,15 +61,6 @@ void mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
 /// static.
 void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
 
-/// Mixed `qco.static` and `qco.alloc`; `qco-to-qc` rejection tests.
-[[nodiscard]] const char* mixedStaticDynamicQubitAddressingModuleMlir();
-
-/// `qco.static` then `qco.alloc`; `qco-to-qc` rejection tests.
-[[nodiscard]] const char* staticThenDynamicAllocQubitAddressingModuleMlir();
-
-/// `qco.static` then `qtensor.alloc`; `qco-to-qc` rejection tests.
-[[nodiscard]] const char* staticThenQTensorAllocQubitAddressingModuleMlir();
-
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.

@@ -68,26 +68,6 @@ void mixedStaticThenDynamicQubit(QCProgramBuilder& b);
 /// static.
 void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
 
-/// Mixed dynamic `qc.alloc` and `qc.static`; `qc-to-qco` rejection tests.
-[[nodiscard]] const char* mixedStaticDynamicQubitAddressingModuleMlir();
-
-/// `qc.static` then `qc.alloc`; `qc-to-qco` rejection tests.
-[[nodiscard]] const char* staticThenDynamicAllocQubitAddressingModuleMlir();
-
-/// `qc.static` then 1-D `memref` of `!qc.qubit`; `qc-to-qco` rejection tests.
-[[nodiscard]] const char* staticThenOneDimQubitMemRefModuleMlir();
-
-/// Mixed dynamic `qc.alloc` and `qc.static`; LLVM `@main` (`qc-to-qir`).
-[[nodiscard]] const char*
-mixedStaticDynamicQubitAddressingLLVMEntryModuleMlir();
-
-/// `qc.static` then `qc.alloc`; LLVM `@main` (`qc-to-qir`).
-[[nodiscard]] const char*
-staticThenDynamicAllocQubitAddressingLLVMEntryModuleMlir();
-
-/// `qc.static` then 1-D `memref` of `!qc.qubit`; LLVM `@main` (`qc-to-qir`).
-[[nodiscard]] const char* staticThenOneDimQubitMemRefLLVMEntryModuleMlir();
-
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.

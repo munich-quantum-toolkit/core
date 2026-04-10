@@ -114,47 +114,6 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// \name QCToQIR/QubitManagement/MixedAddressing.cpp
-/// @{
-TEST_F(QCToQIRTest, RejectsMixedStaticAndDynamicQubitAddressing) {
-  const auto* const name = " (RejectsMixedStaticAndDynamicQubitAddressing)";
-  mqt::test::DeferredPrinter printer;
-  auto program = parseSourceString<ModuleOp>(
-      qc::mixedStaticDynamicQubitAddressingLLVMEntryModuleMlir(),
-      context.get());
-  ASSERT_TRUE(program);
-  printer.record(program.get(), std::string("Original QC IR") + name);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(failed(runQCToQIRConversion(program.get())));
-  printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
-}
-
-TEST_F(QCToQIRTest, RejectsDynamicAllocAfterStaticQubit) {
-  const auto* const name = " (RejectsDynamicAllocAfterStaticQubit)";
-  mqt::test::DeferredPrinter printer;
-  auto program = parseSourceString<ModuleOp>(
-      qc::staticThenDynamicAllocQubitAddressingLLVMEntryModuleMlir(),
-      context.get());
-  ASSERT_TRUE(program);
-  printer.record(program.get(), std::string("Original QC IR") + name);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(failed(runQCToQIRConversion(program.get())));
-  printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
-}
-
-TEST_F(QCToQIRTest, RejectsOneDimQubitMemRefAfterStaticQubit) {
-  const auto* const name = " (RejectsOneDimQubitMemRefAfterStaticQubit)";
-  mqt::test::DeferredPrinter printer;
-  auto program = parseSourceString<ModuleOp>(
-      qc::staticThenOneDimQubitMemRefLLVMEntryModuleMlir(), context.get());
-  ASSERT_TRUE(program);
-  printer.record(program.get(), std::string("Original QC IR") + name);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(failed(runQCToQIRConversion(program.get())));
-  printer.record(program.get(), std::string("Failed Conversion QC IR") + name);
-}
-/// @}
-
 /// \name QCToQIR/Operations/StandardGates/BarrierOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

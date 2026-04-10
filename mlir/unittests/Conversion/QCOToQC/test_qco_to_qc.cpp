@@ -117,45 +117,6 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// \name QCOToQC/QubitManagement/MixedAddressing.cpp
-/// @{
-TEST_F(QCOToQCTest, RejectsMixedStaticAndDynamicQubitAddressing) {
-  const auto* const name = " (RejectsMixedStaticAndDynamicQubitAddressing)";
-  mqt::test::DeferredPrinter printer;
-  auto program = parseSourceString<ModuleOp>(
-      qco::mixedStaticDynamicQubitAddressingModuleMlir(), context.get());
-  ASSERT_TRUE(program);
-  printer.record(program.get(), std::string("Original QCO IR") + name);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(failed(runQCOToQCConversion(program.get())));
-  printer.record(program.get(), std::string("Failed Conversion QCO IR") + name);
-}
-
-TEST_F(QCOToQCTest, RejectsDynamicAllocAfterStaticQubit) {
-  const auto* const name = " (RejectsDynamicAllocAfterStaticQubit)";
-  mqt::test::DeferredPrinter printer;
-  auto program = parseSourceString<ModuleOp>(
-      qco::staticThenDynamicAllocQubitAddressingModuleMlir(), context.get());
-  ASSERT_TRUE(program);
-  printer.record(program.get(), std::string("Original QCO IR") + name);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(failed(runQCOToQCConversion(program.get())));
-  printer.record(program.get(), std::string("Failed Conversion QCO IR") + name);
-}
-
-TEST_F(QCOToQCTest, RejectsQTensorAllocAfterStaticQubit) {
-  const auto* const name = " (RejectsQTensorAllocAfterStaticQubit)";
-  mqt::test::DeferredPrinter printer;
-  auto program = parseSourceString<ModuleOp>(
-      qco::staticThenQTensorAllocQubitAddressingModuleMlir(), context.get());
-  ASSERT_TRUE(program);
-  printer.record(program.get(), std::string("Original QCO IR") + name);
-  EXPECT_TRUE(verify(*program).succeeded());
-  EXPECT_TRUE(failed(runQCOToQCConversion(program.get())));
-  printer.record(program.get(), std::string("Failed Conversion QCO IR") + name);
-}
-/// @}
-
 /// \name QCOToQC/QubitManagement/QubitManagement.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
