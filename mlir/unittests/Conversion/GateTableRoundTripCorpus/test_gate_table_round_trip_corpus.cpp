@@ -467,9 +467,7 @@ static OwningOpRef<ModuleOp> buildQCGateCaseReference(MLIRContext* ctx,
 static std::vector<GateCase> makeCases() {
   std::vector<GateCase> cases;
 
-#define MQT_ADD_CASES(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP, \
-                      JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND, \
-                      QIR_FN)                                                  \
+#define MQT_ADD_CASES(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_KIND, QIR_FN)   \
   do {                                                                         \
     constexpr size_t t = (TARGETS);                                            \
     constexpr size_t p = (PARAMS);                                             \
@@ -530,9 +528,7 @@ static void runGateCase(MLIRContext* ctx, const GateCase& tc) {
 
 template <typename CtxT>
 static bool dispatchGateCase(CtxT* ctx, const GateCase& tc) {
-#define MQT_DISPATCH(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP,  \
-                     JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND,  \
-                     QIR_FN)                                                   \
+#define MQT_DISPATCH(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_KIND, QIR_FN)    \
   do {                                                                         \
     if (tc.numTargets == (TARGETS) && tc.numParams == (PARAMS) &&              \
         std::string_view(tc.key) == std::string_view(#KEY)) {                  \
@@ -612,9 +608,7 @@ static void runGateCaseQCChain(MLIRContext* ctx, const GateCase& tc) {
 
 template <typename CtxT>
 static bool dispatchGateCaseQCChain(CtxT* ctx, const GateCase& tc) {
-#define MQT_DISPATCH_QC(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND,        \
-                        JEFF_OP, JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME,          \
-                        JEFF_PPR, QIR_KIND, QIR_FN)                            \
+#define MQT_DISPATCH_QC(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_KIND, QIR_FN) \
   do {                                                                         \
     if (tc.numTargets == (TARGETS) && tc.numParams == (PARAMS) &&              \
         std::string_view(tc.key) == std::string_view(#KEY)) {                  \
@@ -757,9 +751,8 @@ static void runGateCaseQCToQIR(MLIRContext* ctx, const GateCase& tc) {
 
 template <typename CtxT>
 static bool dispatchGateCaseQCToQIR(CtxT* ctx, const GateCase& tc) {
-#define MQT_DISPATCH_QC_TO_QIR(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, \
-                               JEFF_OP, JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME,   \
-                               JEFF_PPR, QIR_KIND, QIR_FN)                     \
+#define MQT_DISPATCH_QC_TO_QIR(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_KIND,  \
+                               QIR_FN)                                         \
   do {                                                                         \
     if (tc.numTargets == (TARGETS) && tc.numParams == (PARAMS) &&              \
         std::string_view(tc.key) == std::string_view(#KEY)) {                  \

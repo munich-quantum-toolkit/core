@@ -10,7 +10,6 @@
 
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 
-#include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -704,9 +703,9 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
     }
 
     if (op.getName() == "sx") {
-      if (op.getInTargetQubits().size() != 1) {
+      if (op.getInTargetQubits().size() != 1 || op.getParams().size() != 0) {
         return rewriter.notifyMatchFailure(
-            op, "Custom SX operations must have exactly one target qubit");
+            op, "Custom sx/sxdg expects one target qubit and no parameters");
       }
       return createGateFromJeffArity<qco::SXOp, jeff::CustomOp, 1, 0>(
           op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
@@ -722,42 +721,60 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
       return success();
     }
 
-#define MQT_HANDLE_JEFF_CUSTOM_TO_QCO(                                         \
-    KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP,                   \
-    JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND, QIR_FN)           \
-  do {                                                                         \
-    if constexpr ((JEFF_KIND) == ::mlir::mqt::gates::JeffKind::Custom &&       \
-                  !(JEFF_BASE_ADJOINT)) {                                      \
-      if (op.getName() == #JEFF_CUSTOM_NAME) {                                 \
-        if (op.getInTargetQubits().size() != (TARGETS) ||                      \
-            op.getParams().size() != (PARAMS)) {                               \
-          return rewriter.notifyMatchFailure(                                  \
-              op, "Custom operation arity does not match gate table entry");   \
-        }                                                                      \
-        if constexpr ((TARGETS) == 1 && (PARAMS) == 0) {                       \
-          return createGateFromJeffArity<QCO_OP, jeff::CustomOp, 1, 0>(        \
-              op, rewriter, adaptor.getInCtrlQubits(),                         \
-              {adaptor.getInTargetQubits()[0]}, {});                           \
-        } else if constexpr ((TARGETS) == 1 && (PARAMS) == 2) {                \
-          return createGateFromJeffArity<QCO_OP, jeff::CustomOp, 1, 2>(        \
-              op, rewriter, adaptor.getInCtrlQubits(),                         \
-              {adaptor.getInTargetQubits()[0]}, op.getParams());               \
-        } else if constexpr ((TARGETS) == 2 && (PARAMS) == 0) {                \
-          return createGateFromJeffArity<QCO_OP, jeff::CustomOp, 2, 0>(        \
-              op, rewriter, adaptor.getInCtrlQubits(),                         \
-              adaptor.getInTargetQubits(), {});                                \
-        } else if constexpr ((TARGETS) == 2 && (PARAMS) == 2) {                \
-          return createGateFromJeffArity<QCO_OP, jeff::CustomOp, 2, 2>(        \
-              op, rewriter, adaptor.getInCtrlQubits(),                         \
-              adaptor.getInTargetQubits(), op.getParams());                    \
-        }                                                                      \
-      }                                                                        \
-    }                                                                          \
-  } while (false);
-
-    MQT_GATE_TABLE(MQT_HANDLE_JEFF_CUSTOM_TO_QCO)
-
-#undef MQT_HANDLE_JEFF_CUSTOM_TO_QCO
+    if (op.getName() == "r") {
+      if (op.getInTargetQubits().size() != 1 || op.getParams().size() != 2) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom r expects one target and two parameters");
+      }
+      return createGateFromJeffArity<qco::ROp, jeff::CustomOp, 1, 2>(
+          op, rewriter, adaptor.getInCtrlQubits(),
+          {adaptor.getInTargetQubits()[0]}, op.getParams());
+    }
+    if (op.getName() == "iswap") {
+      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 0) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom iswap expects two targets and no parameters");
+      }
+      return createGateFromJeffArity<qco::iSWAPOp, jeff::CustomOp, 2, 0>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          {});
+    }
+    if (op.getName() == "dcx") {
+      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 0) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom dcx expects two targets and no parameters");
+      }
+      return createGateFromJeffArity<qco::DCXOp, jeff::CustomOp, 2, 0>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          {});
+    }
+    if (op.getName() == "ecr") {
+      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 0) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom ecr expects two targets and no parameters");
+      }
+      return createGateFromJeffArity<qco::ECROp, jeff::CustomOp, 2, 0>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          {});
+    }
+    if (op.getName() == "xx_plus_yy") {
+      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 2) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom xx_plus_yy expects two targets and two parameters");
+      }
+      return createGateFromJeffArity<qco::XXPlusYYOp, jeff::CustomOp, 2, 2>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          op.getParams());
+    }
+    if (op.getName() == "xx_minus_yy") {
+      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 2) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom xx_minus_yy expects two targets and two parameters");
+      }
+      return createGateFromJeffArity<qco::XXMinusYYOp, jeff::CustomOp, 2, 2>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          op.getParams());
+    }
 
     return rewriter.notifyMatchFailure(op, "Unsupported custom operation: " +
                                                op.getName());
@@ -797,25 +814,24 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
           op, "Only PPR operations with exactly 2 Pauli gates are supported");
     }
 
-#define MQT_HANDLE_JEFF_PPR_TO_QCO(                                            \
-    KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, JEFF_OP,                   \
-    JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME, JEFF_PPR, QIR_KIND, QIR_FN)           \
-  do {                                                                         \
-    if constexpr ((JEFF_KIND) == ::mlir::mqt::gates::JeffKind::PPR) {          \
-      if (pauliGates[0] == (JEFF_PPR).p0 && pauliGates[1] == (JEFF_PPR).p1) {  \
-        return createGateFromJeffArity<QCO_OP, jeff::PPROp, 2, 1>(             \
-            op, rewriter, controls, targets, {op.getRotation()});              \
-      }                                                                        \
-    }                                                                          \
-  } while (false);
-
-    MQT_GATE_TABLE(MQT_HANDLE_JEFF_PPR_TO_QCO)
-
-#undef MQT_HANDLE_JEFF_PPR_TO_QCO
+    if (pauliGates[0] == 1 && pauliGates[1] == 1) {
+      return createGateFromJeffArity<qco::RXXOp, jeff::PPROp, 2, 1>(
+          op, rewriter, controls, targets, {op.getRotation()});
+    }
+    if (pauliGates[0] == 2 && pauliGates[1] == 2) {
+      return createGateFromJeffArity<qco::RYYOp, jeff::PPROp, 2, 1>(
+          op, rewriter, controls, targets, {op.getRotation()});
+    }
+    if (pauliGates[0] == 3 && pauliGates[1] == 1) {
+      return createGateFromJeffArity<qco::RZXOp, jeff::PPROp, 2, 1>(
+          op, rewriter, controls, targets, {op.getRotation()});
+    }
+    if (pauliGates[0] == 3 && pauliGates[1] == 3) {
+      return createGateFromJeffArity<qco::RZZOp, jeff::PPROp, 2, 1>(
+          op, rewriter, controls, targets, {op.getRotation()});
+    }
 
     return rewriter.notifyMatchFailure(op, "Unsupported PPR operation");
-
-    return success();
   }
 };
 

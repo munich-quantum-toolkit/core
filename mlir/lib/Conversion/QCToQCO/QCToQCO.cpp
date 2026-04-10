@@ -1034,9 +1034,8 @@ protected:
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
         typeConverter, context, &state);
 
-#define MQT_ADD_QC_TO_QCO_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, \
-                               JEFF_OP, JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME,   \
-                               JEFF_PPR, QIR_KIND, QIR_FN)                     \
+#define MQT_ADD_QC_TO_QCO_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_KIND,  \
+                               QIR_FN)                                         \
   patterns.add<ConvertQCGateToQCO<QC_OP, QCO_OP, (TARGETS), (PARAMS)>>(        \
       typeConverter, context, &state);
     MQT_GATE_TABLE(MQT_ADD_QC_TO_QCO_GATE)

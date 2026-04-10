@@ -266,10 +266,10 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   LogicalResult
   matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto qcOperands = adaptor.getOperands();
+    auto qcOperands = adaptor.getOperands();
     assert(qcOperands.size() == (NumTargets + NumParams) &&
            "Unexpected number of operands for QCO->QC gate conversion");
-    const auto qcTargets = qcOperands.take_front(NumTargets);
+    auto qcTargets = qcOperands.take_front(NumTargets);
 
     createGate(rewriter, op.getLoc(), qcTargets, op,
                std::make_index_sequence<NumTargets>{},
@@ -750,9 +750,8 @@ protected:
         ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
         typeConverter, context);
 
-#define MQT_ADD_QCO_TO_QC_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, JEFF_KIND, \
-                               JEFF_OP, JEFF_BASE_ADJOINT, JEFF_CUSTOM_NAME,   \
-                               JEFF_PPR, QIR_KIND, QIR_FN)                     \
+#define MQT_ADD_QCO_TO_QC_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_KIND,  \
+                               QIR_FN)                                         \
   addGatePattern<QCO_OP, QC_OP, (TARGETS), (PARAMS)>(patterns, typeConverter,  \
                                                      context);
     MQT_GATE_TABLE(MQT_ADD_QCO_TO_QC_GATE)
