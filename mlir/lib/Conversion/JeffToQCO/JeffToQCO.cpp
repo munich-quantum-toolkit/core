@@ -38,6 +38,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <cstddef>
 #include <utility>
 
 namespace mlir {
@@ -91,218 +92,87 @@ static void createModified(
 }
 
 /**
- * @brief Creates a one-target, zero-parameter QCO operation from a Jeff
- * operation
+ * @brief Creates a (potentially modified) QCO operation from a Jeff operation.
  *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
+ * @details
+ * This helper centralizes the "direct vs. ctrl/inv-wrapped" decision and uses
+ * index sequences to forward the desired number of targets and parameters into
+ * the QCO op builder.
+ *
+ * @tparam QCOOpType The QCO operation type to create
+ * @tparam JeffOpType The Jeff operation type to convert from
+ * @tparam TargetIndices Indices of target operands to forward
+ * @tparam ParamIndices Indices of parameters to forward
+ * @tparam ResultExtractor Callable returning QCO results as SmallVector<Value>
+ *
  * @param op The Jeff operation instance to convert
  * @param rewriter The pattern rewriter
- * @param controls The control qubits of the operation
- * @param target The target qubit of the operation
- */
-template <typename QCOOpType, typename JeffOpType>
-static void createOneTargetZeroParameter(
-    JeffOpType& op, ConversionPatternRewriter& rewriter,
-    const llvm::SmallVector<Value>& controls, Value target) {
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, target);
-  } else {
-    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0]);
-      return {qcoOp.getQubitOut()};
-    };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, {target},
-                                          lambda);
-  }
-}
-
-/**
- * @brief Creates a one-target, one-parameter QCO operation from a Jeff
- * operation
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
- * @param op The Jeff operation instance to convert
- * @param rewriter The pattern rewriter
- * @param target The target qubit of the operation
- * @param parameter The parameter of the operation
- * @param controls The control qubits of the operation
- */
-template <typename QCOOpType, typename JeffOpType>
-static void createOneTargetOneParameter(
-    JeffOpType& op, ConversionPatternRewriter& rewriter, Value parameter,
-    const llvm::SmallVector<Value>& controls, Value target) {
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameter);
-  } else {
-    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp =
-          QCOOpType::create(rewriter, op.getLoc(), innerTargets[0], parameter);
-      return {qcoOp.getQubitOut()};
-    };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, {target},
-                                          lambda);
-  }
-}
-
-/**
- * @brief Creates a one-target, two-parameter QCO operation from a Jeff
- * operation
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
- * @param op The Jeff operation instance to convert
- * @param rewriter The pattern rewriter
- * @param target The target qubit of the operation
+ * @param controls The control qubits (type-converted) of the operation
+ * @param targets The target qubits (type-converted) of the operation
  * @param parameters The parameters of the operation
- * @param controls The control qubits of the operation
+ * @param extractResults Callable extracting the QCO op results for region-yield
  */
-template <typename QCOOpType, typename JeffOpType>
-static void
-createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
-                            const llvm::SmallVector<Value>& parameters,
-                            const llvm::SmallVector<Value>& controls,
-                            Value target) {
+template <typename QCOOpType, typename JeffOpType, std::size_t... TargetIndices,
+          std::size_t... ParamIndices, typename ResultExtractor>
+static LogicalResult
+createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
+                   const llvm::SmallVector<Value>& controls,
+                   const llvm::SmallVector<Value>& targets,
+                   const llvm::SmallVector<Value>& parameters,
+                   std::index_sequence<TargetIndices...> /*targetIndices*/,
+                   std::index_sequence<ParamIndices...> /*paramIndices*/,
+                   const ResultExtractor& extractResults) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameters[0],
-                                           parameters[1]);
-  } else {
-    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
-                                     parameters[0], parameters[1]);
+    rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[TargetIndices]...,
+                                           parameters[ParamIndices]...);
+    return success();
+  }
+
+  auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
+    auto qcoOp =
+        QCOOpType::create(rewriter, op.getLoc(), innerTargets[TargetIndices]...,
+                          parameters[ParamIndices]...);
+    return extractResults(qcoOp);
+  };
+  createModified<QCOOpType, JeffOpType>(
+      op, rewriter, controls,
+      {targets
+           [TargetIndices]...}, // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+      lambda);
+  return success();
+}
+
+template <typename QCOOpType, typename JeffOpType, std::size_t NumTargets,
+          std::size_t NumParams>
+static LogicalResult
+createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
+                        const llvm::SmallVector<Value>& controls,
+                        const llvm::SmallVector<Value>& targets,
+                        const llvm::SmallVector<Value>& parameters) {
+  static_assert((NumTargets == 1) || (NumTargets == 2),
+                "Only 1- and 2-target gates are supported here");
+
+  if (targets.size() != NumTargets) {
+    return rewriter.notifyMatchFailure(
+        op, "Unexpected number of target qubits for Jeff-to-QCO conversion");
+  }
+  if (parameters.size() != NumParams) {
+    return rewriter.notifyMatchFailure(
+        op, "Unexpected number of parameters for Jeff-to-QCO conversion");
+  }
+
+  auto extractResults = [&](auto qcoOp) -> llvm::SmallVector<Value> {
+    if constexpr (NumTargets == 1) {
       return {qcoOp.getQubitOut()};
-    };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, {target},
-                                          lambda);
-  }
-}
-
-/**
- * @brief Creates a one-target, three-parameter QCO operation from a Jeff
- * operation
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
- * @param op The Jeff operation instance to convert
- * @param rewriter The pattern rewriter
- * @param target The target qubit of the operation
- * @param parameters The parameters of the operation
- * @param controls The control qubits of the operation
- */
-template <typename QCOOpType, typename JeffOpType>
-static void createOneTargetThreeParameter(
-    JeffOpType& op, ConversionPatternRewriter& rewriter,
-    const llvm::SmallVector<Value>& parameters,
-    const llvm::SmallVector<Value>& controls, Value target) {
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameters[0],
-                                           parameters[1], parameters[2]);
-  } else {
-    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp =
-          QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
-                            parameters[0], parameters[1], parameters[2]);
-      return {qcoOp.getQubitOut()};
-    };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, {target},
-                                          lambda);
-  }
-}
-
-/**
- * @brief Creates a two-target, zero-parameter QCO operation from a Jeff
- * operation
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
- * @param op The Jeff operation instance to convert
- * @param rewriter The pattern rewriter
- * @param controls The control qubits of the operation
- * @param targets The target qubits of the operation
- */
-template <typename QCOOpType, typename JeffOpType>
-static void
-createTwoTargetZeroParameter(JeffOpType& op,
-                             ConversionPatternRewriter& rewriter,
-                             const llvm::SmallVector<Value>& controls,
-                             const llvm::SmallVector<Value>& targets) {
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1]);
-  } else {
-    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
-                                     innerTargets[1]);
+    } else {
       return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
-    };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, targets,
-                                          lambda);
-  }
-}
+    }
+  };
 
-/**
- * @brief Creates a two-target, one-parameter QCO operation from a Jeff
- * operation
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
- * @param op The Jeff operation instance to convert
- * @param rewriter The pattern rewriter
- * @param targets The target qubits of the operation
- * @param parameter The parameter of the operation
- * @param controls The control qubits of the operation
- */
-template <typename QCOOpType, typename JeffOpType>
-static void
-createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
-                            Value parameter,
-                            const llvm::SmallVector<Value>& controls,
-                            const llvm::SmallVector<Value>& targets) {
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1],
-                                           parameter);
-  } else {
-    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
-                                     innerTargets[1], parameter);
-      return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
-    };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, targets,
-                                          lambda);
-  }
-}
-
-/**
- * @brief Creates a two-target, two-parameter QCO operation from a Jeff
- * operation
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
- * @param op The Jeff operation instance to convert
- * @param rewriter The pattern rewriter
- * @param targets The target qubits of the operation
- * @param parameters The parameters of the operation
- * @param controls The control qubits of the operation
- */
-template <typename QCOOpType, typename JeffOpType>
-static void
-createTwoTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
-                            const llvm::SmallVector<Value>& parameters,
-                            const llvm::SmallVector<Value>& controls,
-                            const llvm::SmallVector<Value>& targets) {
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1],
-                                           parameters[0], parameters[1]);
-  } else {
-    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp =
-          QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
-                            innerTargets[1], parameters[0], parameters[1]);
-      return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
-    };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, targets,
-                                          lambda);
-  }
+  return createGateFromJeff<QCOOpType, JeffOpType>(
+      op, rewriter, controls, targets, parameters,
+      std::make_index_sequence<NumTargets>{},
+      std::make_index_sequence<NumParams>{}, extractResults);
 }
 
 /**
@@ -707,10 +577,8 @@ struct ConvertJeffOneTargetZeroParameterToQCO final
           op, "Operations with power != 1 are not yet supported");
     }
 
-    createOneTargetZeroParameter<QCOOpType>(
-        op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit());
-
-    return success();
+    return createGateFromJeffArity<QCOOpType, JeffOpType, 1, 0>(
+        op, rewriter, adaptor.getInCtrlQubits(), {adaptor.getInQubit()}, {});
   }
 };
 
@@ -743,11 +611,9 @@ struct ConvertJeffOneTargetOneParameterToQCO final
           op, "Operations with power != 1 are not yet supported");
     }
 
-    createOneTargetOneParameter<QCOOpType>(op, rewriter, op.getRotation(),
-                                           adaptor.getInCtrlQubits(),
-                                           adaptor.getInQubit());
-
-    return success();
+    return createGateFromJeffArity<QCOOpType, JeffOpType, 1, 1>(
+        op, rewriter, adaptor.getInCtrlQubits(), {adaptor.getInQubit()},
+        {op.getRotation()});
   }
 };
 
@@ -775,11 +641,9 @@ struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    createOneTargetThreeParameter<qco::UOp>(
-        op, rewriter, {op.getTheta(), op.getPhi(), op.getLambda()},
-        adaptor.getInCtrlQubits(), adaptor.getInQubit());
-
-    return success();
+    return createGateFromJeffArity<qco::UOp, jeff::UOp, 1, 3>(
+        op, rewriter, adaptor.getInCtrlQubits(), {adaptor.getInQubit()},
+        {op.getTheta(), op.getPhi(), op.getLambda()});
   }
 };
 
@@ -807,11 +671,9 @@ struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    createTwoTargetZeroParameter<qco::SWAPOp>(
+    return createGateFromJeffArity<qco::SWAPOp, jeff::SwapOp, 2, 0>(
         op, rewriter, adaptor.getInCtrlQubits(),
-        {adaptor.getInQubitOne(), adaptor.getInQubitTwo()});
-
-    return success();
+        {adaptor.getInQubitOne(), adaptor.getInQubitTwo()}, {});
   }
 };
 
@@ -840,48 +702,82 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    auto name = op.getName();
-    if (name == "sx") {
+    if (op.getName() == "sx") {
       if (op.getInTargetQubits().size() != 1) {
         return rewriter.notifyMatchFailure(
             op, "Custom SX operations must have exactly one target qubit");
       }
-      createOneTargetZeroParameter<qco::SXOp>(op, rewriter,
-                                              adaptor.getInCtrlQubits(),
-                                              adaptor.getInTargetQubits()[0]);
-    } else if (name == "r") {
-      if (op.getInTargetQubits().size() != 1) {
-        return rewriter.notifyMatchFailure(
-            op, "Custom R operations must have exactly one target qubit");
-      }
-      createOneTargetTwoParameter<qco::ROp>(op, rewriter, op.getParams(),
-                                            adaptor.getInCtrlQubits(),
-                                            adaptor.getInTargetQubits()[0]);
-    } else if (name == "iswap") {
-      createTwoTargetZeroParameter<qco::iSWAPOp>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits());
-    } else if (name == "dcx") {
-      createTwoTargetZeroParameter<qco::DCXOp>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits());
-    } else if (name == "ecr") {
-      createTwoTargetZeroParameter<qco::ECROp>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits());
-    } else if (name == "xx_minus_yy") {
-      createTwoTargetTwoParameter<qco::XXMinusYYOp>(
-          op, rewriter, op.getParams(), adaptor.getInCtrlQubits(),
-          adaptor.getInTargetQubits());
-    } else if (name == "xx_plus_yy") {
-      createTwoTargetTwoParameter<qco::XXPlusYYOp>(op, rewriter, op.getParams(),
-                                                   adaptor.getInCtrlQubits(),
-                                                   adaptor.getInTargetQubits());
-    } else if (name == "barrier") {
-      createBarrierOp(op, adaptor, rewriter);
-    } else {
-      return rewriter.notifyMatchFailure(op, "Unsupported custom operation: " +
-                                                 name);
+      return createGateFromJeffArity<qco::SXOp, jeff::CustomOp, 1, 0>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          op.getParams());
     }
 
-    return success();
+    if (op.getName() == "barrier") {
+      if (!op.getParams().empty()) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom barrier operations must not have parameters");
+      }
+      createBarrierOp(op, adaptor, rewriter);
+      return success();
+    }
+
+    if (op.getName() == "r") {
+      if (op.getInTargetQubits().size() != 1 || op.getParams().size() != 2) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom r expects one target and two parameters");
+      }
+      return createGateFromJeffArity<qco::ROp, jeff::CustomOp, 1, 2>(
+          op, rewriter, adaptor.getInCtrlQubits(),
+          {adaptor.getInTargetQubits()[0]}, op.getParams());
+    }
+    if (op.getName() == "iswap") {
+      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom iswap expects two targets and no parameters");
+      }
+      return createGateFromJeffArity<qco::iSWAPOp, jeff::CustomOp, 2, 0>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          {});
+    }
+    if (op.getName() == "dcx") {
+      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom dcx expects two targets and no parameters");
+      }
+      return createGateFromJeffArity<qco::DCXOp, jeff::CustomOp, 2, 0>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          {});
+    }
+    if (op.getName() == "ecr") {
+      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom ecr expects two targets and no parameters");
+      }
+      return createGateFromJeffArity<qco::ECROp, jeff::CustomOp, 2, 0>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          {});
+    }
+    if (op.getName() == "xx_plus_yy") {
+      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 2) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom xx_plus_yy expects two targets and two parameters");
+      }
+      return createGateFromJeffArity<qco::XXPlusYYOp, jeff::CustomOp, 2, 2>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          op.getParams());
+    }
+    if (op.getName() == "xx_minus_yy") {
+      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 2) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom xx_minus_yy expects two targets and two parameters");
+      }
+      return createGateFromJeffArity<qco::XXMinusYYOp, jeff::CustomOp, 2, 2>(
+          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+          op.getParams());
+    }
+
+    return rewriter.notifyMatchFailure(op, "Unsupported custom operation: " +
+                                               op.getName());
   }
 };
 
@@ -917,23 +813,25 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
       return rewriter.notifyMatchFailure(
           op, "Only PPR operations with exactly 2 Pauli gates are supported");
     }
+
     if (pauliGates[0] == 1 && pauliGates[1] == 1) {
-      createTwoTargetOneParameter<qco::RXXOp>(op, rewriter, op.getRotation(),
-                                              controls, targets);
-    } else if (pauliGates[0] == 2 && pauliGates[1] == 2) {
-      createTwoTargetOneParameter<qco::RYYOp>(op, rewriter, op.getRotation(),
-                                              controls, targets);
-    } else if (pauliGates[0] == 3 && pauliGates[1] == 1) {
-      createTwoTargetOneParameter<qco::RZXOp>(op, rewriter, op.getRotation(),
-                                              controls, targets);
-    } else if (pauliGates[0] == 3 && pauliGates[1] == 3) {
-      createTwoTargetOneParameter<qco::RZZOp>(op, rewriter, op.getRotation(),
-                                              controls, targets);
-    } else {
-      return rewriter.notifyMatchFailure(op, "Unsupported PPR operation");
+      return createGateFromJeffArity<qco::RXXOp, jeff::PPROp, 2, 1>(
+          op, rewriter, controls, targets, {op.getRotation()});
+    }
+    if (pauliGates[0] == 2 && pauliGates[1] == 2) {
+      return createGateFromJeffArity<qco::RYYOp, jeff::PPROp, 2, 1>(
+          op, rewriter, controls, targets, {op.getRotation()});
+    }
+    if (pauliGates[0] == 3 && pauliGates[1] == 1) {
+      return createGateFromJeffArity<qco::RZXOp, jeff::PPROp, 2, 1>(
+          op, rewriter, controls, targets, {op.getRotation()});
+    }
+    if (pauliGates[0] == 3 && pauliGates[1] == 3) {
+      return createGateFromJeffArity<qco::RZZOp, jeff::PPROp, 2, 1>(
+          op, rewriter, controls, targets, {op.getRotation()});
     }
 
-    return success();
+    return rewriter.notifyMatchFailure(op, "Unsupported PPR operation");
   }
 };
 
