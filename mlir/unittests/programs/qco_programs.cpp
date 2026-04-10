@@ -76,6 +76,31 @@ void allocSinkPair(QCOProgramBuilder& b) {
   b.sink(q);
 }
 
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b) {
+  b.qtensorAlloc(2);
+  b.staticQubit(0);
+}
+
+const char* mixedStaticDynamicQubitAddressingModuleMlir() {
+  return R"mlir(
+module {
+  func.func @main() {
+    %q = qco.alloc : !qco.qubit
+    qco.sink %q : !qco.qubit
+    %s = qco.static 0 : !qco.qubit
+    %s1 = qco.barrier %s : !qco.qubit -> !qco.qubit
+    qco.sink %s1 : !qco.qubit
+    return
+  }
+}
+)mlir";
+}
+
 void singleMeasurementToSingleBit(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);

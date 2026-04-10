@@ -94,6 +94,44 @@ void allocDeallocPair(QCProgramBuilder& b) {
   b.dealloc(q);
 }
 
+void mixedStaticThenDynamicQubit(QCProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b) {
+  b.allocQubitRegister(2);
+  b.staticQubit(0);
+}
+
+const char* mixedStaticDynamicQubitAddressingModuleMlir() {
+  return R"mlir(
+module {
+  func.func @main() {
+    %q = qc.alloc : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    %s = qc.static 0 : !qc.qubit
+    qc.measure %s : !qc.qubit -> i1
+    return
+  }
+}
+)mlir";
+}
+
+const char* mixedStaticDynamicQubitAddressingLLVMEntryModuleMlir() {
+  return R"mlir(
+module {
+  llvm.func @main() attributes {entry_point, llvm.emit_c_interface} {
+    %q = qc.alloc : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    %s = qc.static 0 : !qc.qubit
+    qc.measure %s : !qc.qubit -> i1
+    llvm.return
+  }
+}
+)mlir";
+}
+
 void singleMeasurementToSingleBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);

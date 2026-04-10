@@ -68,6 +68,12 @@ namespace {
  * @brief State object for tracking lowering information during QIR conversion
  */
 struct LoweringState : QIRMetadata {
+  enum class AllocationMode : std::uint8_t {
+    Unset,
+    Static,
+    Dynamic,
+  };
+
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
@@ -95,6 +101,8 @@ struct LoweringState : QIRMetadata {
   Block* entryBlock{};
   Block* measurementsBlock{};
   Block* outputBlock{};
+
+  AllocationMode allocationMode = AllocationMode::Unset;
 };
 
 /**
@@ -124,6 +132,20 @@ private:
 };
 
 } // namespace
+
+[[nodiscard]] static LogicalResult
+ensureAllocationMode(LoweringState& state, LoweringState::AllocationMode mode,
+                     Operation* op) {
+  if (state.allocationMode == LoweringState::AllocationMode::Unset) {
+    state.allocationMode = mode;
+    return success();
+  }
+  if (state.allocationMode == mode) {
+    return success();
+  }
+  return op->emitOpError(
+      "cannot mix static and dynamic qubit allocation modes in conversion");
+}
 
 /**
  * @brief Helper to convert a QC operation to a LLVM CallOp
@@ -247,6 +269,11 @@ struct ConvertMemRefAllocOp final
     if (shape.size() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
+    }
+    if (failed(ensureAllocationMode(getState(),
+                                    LoweringState::AllocationMode::Dynamic,
+                                    op.getOperation()))) {
+      return failure();
     }
 
     auto& state = getState();
@@ -400,6 +427,11 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    if (failed(ensureAllocationMode(state,
+                                    LoweringState::AllocationMode::Dynamic,
+                                    op.getOperation()))) {
+      return failure();
+    }
     state.useDynamicQubit = true;
 
     auto* ctx = getContext();
@@ -482,6 +514,10 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const auto index = static_cast<int64_t>(op.getIndex());
     auto& state = getState();
+    if (failed(ensureAllocationMode(
+            state, LoweringState::AllocationMode::Static, op.getOperation()))) {
+      return failure();
+    }
 
     // Get or create a pointer to the qubit
     Value qubit;

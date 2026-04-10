@@ -51,6 +51,22 @@ void staticQubitsWithInv(QCOProgramBuilder& b);
 /// Allocates and explicitly sinks a single qubit.
 void allocSinkPair(QCOProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
+/// error (static qubit then dynamic allocation).
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
+
+/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
+/// error (dynamic multi-qubit allocation then static qubit). Implemented with
+/// `qtensorAlloc` as the QCO bulk-allocation path (analogous to register
+/// allocation in QC / QIR builders).
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
+
+/// MLIR module (`func.func @main`) that mixes `qco.static` and `qco.alloc` for
+/// conversion tests that must reject the IR.
+[[nodiscard]] const char* mixedStaticDynamicQubitAddressingModuleMlir();
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.

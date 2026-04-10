@@ -55,6 +55,16 @@ void staticQubitsWithDuplicates(QIRProgramBuilder& b);
 /// retrievals.
 void staticQubitsCanonical(QIRProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
+/// error (static qubit then dynamic allocation).
+void mixedStaticThenDynamicQubit(QIRProgramBuilder& b);
+
+/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
+/// error (dynamic register then static qubit).
+void mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b);
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.

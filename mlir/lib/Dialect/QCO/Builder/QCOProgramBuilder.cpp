@@ -23,6 +23,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -74,6 +75,7 @@ Value QCOProgramBuilder::intConstant(const int64_t value) {
 
 Value QCOProgramBuilder::allocQubit() {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
 
   auto allocOp = AllocOp::create(*this);
   auto qubit = allocOp.getResult();
@@ -86,6 +88,7 @@ Value QCOProgramBuilder::allocQubit() {
 
 Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Static, "static");
 
   auto staticOp = StaticOp::create(*this, index);
   const auto qubit = staticOp.getQubit();
@@ -197,6 +200,7 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 Value QCOProgramBuilder::qtensorAlloc(
     const std::variant<int64_t, Value>& size) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
 
   auto sizeValue = variantToValue(*this, getLoc(), size);
   auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
@@ -866,6 +870,26 @@ void QCOProgramBuilder::checkFinalized() const {
     llvm::reportFatalUsageError(
         "QCOProgramBuilder instance has been finalized");
   }
+}
+
+void QCOProgramBuilder::ensureAllocationMode(const AllocationMode requestedMode,
+                                             const char* requestedName) {
+  if (allocationMode == AllocationMode::Unset) {
+    allocationMode = requestedMode;
+    return;
+  }
+  if (allocationMode == requestedMode) {
+    return;
+  }
+
+  const char* const existingName =
+      allocationMode == AllocationMode::Static ? "static" : "dynamic";
+  const auto message =
+      llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
+                    "QCOProgramBuilder",
+                    existingName, requestedName)
+          .str();
+  llvm::reportFatalUsageError(message.c_str());
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {

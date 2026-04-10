@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/Utils/QubitAddressingVerifier.h"
-
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/OpDefinition.h>
@@ -37,15 +35,6 @@
 //===----------------------------------------------------------------------===//
 
 namespace mlir::qc {
-
-/// Forward to the shared qubit-addressing verifier utility.
-template <typename OppositeOp, typename ThisOp>
-inline ::mlir::LogicalResult verifyNoMixedQubitAddressingModes(
-    ThisOp op, const char* thisMnemonic, const char* oppositeMnemonic,
-    const char* thisSpelling, const char* oppositeSpelling) {
-  return ::mlir::detail::verifyNoMixedQubitAddressingModes<OppositeOp>(
-      op, thisMnemonic, oppositeMnemonic, thisSpelling, oppositeSpelling);
-}
 
 /**
  * @brief Trait for operations with a fixed number of target qubits and

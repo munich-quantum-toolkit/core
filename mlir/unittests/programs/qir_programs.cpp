@@ -87,6 +87,16 @@ void staticQubitsCanonical(QIRProgramBuilder& b) {
   b.tdg(q0);
 }
 
+void mixedStaticThenDynamicQubit(QIRProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b) {
+  b.allocQubitRegister(2);
+  b.staticQubit(0);
+}
+
 void singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);

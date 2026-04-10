@@ -21,10 +21,8 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -98,31 +96,22 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-TEST_F(QCOTest, VerifierRejectsMixedQubitAddressingModes) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
+TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedStaticThenDynamicQubit(builder);
+      },
+      "Cannot mix static and dynamic qubit allocation modes");
 
-  // Mixing `qco.alloc` (dynamic) and `qco.static` (static) in the same function
-  // must be rejected by the dialect verifier.
-  (void)builder.allocQubit();
-  (void)builder.staticQubit(0);
-
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-
-  std::string diagnostics;
-  ::mlir::ScopedDiagnosticHandler handler(
-      context.get(), [&](::mlir::Diagnostic& diag) -> ::mlir::LogicalResult {
-        llvm::raw_string_ostream os(diagnostics);
-        diag.print(os);
-        os << '\n';
-        return ::mlir::success();
-      });
-
-  const auto result = verify(*module);
-  EXPECT_TRUE(result.failed());
-  EXPECT_NE(diagnostics.find("qco.alloc"), std::string::npos);
-  EXPECT_NE(diagnostics.find("qco.static"), std::string::npos);
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedDynamicRegisterThenStaticQubit(builder);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
 }
 
 TEST_F(QCOTest, DirectIfBuilder) {

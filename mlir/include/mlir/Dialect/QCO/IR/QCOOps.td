@@ -50,16 +50,6 @@ def AllocOp : QCOOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let builders = [OpBuilder<(ins), [{
             build($_builder, $_state, QubitType::get($_builder.getContext()));
         }]>];
-
-  let hasVerifier = 1;
-
-  let extraClassDefinition = [{
-        ::mlir::LogicalResult $cppClass::verify() {
-          return ::mlir::qco::verifyNoMixedQubitAddressingModes<::mlir::qco::StaticOp>(
-              *this, "dynamically allocated", "statically addressed",
-              "`qco.alloc`", "`qco.static`");
-        }
-    }];
 }
 
 def SinkOp : QCOOp<"sink", [MemoryEffects<[MemFree]>]> {
@@ -100,16 +90,6 @@ def StaticOp : QCOOp<"static", [Pure]> {
   let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
   let results = (outs QubitType:$qubit);
   let assemblyFormat = "$index attr-dict `:` type($qubit)";
-
-  let hasVerifier = 1;
-
-  let extraClassDefinition = [{
-        ::mlir::LogicalResult $cppClass::verify() {
-          return ::mlir::qco::verifyNoMixedQubitAddressingModes<::mlir::qco::AllocOp>(
-              *this, "statically addressed", "dynamically allocated",
-              "`qco.static`", "`qco.alloc`");
-        }
-    }];
 }
 
 //===----------------------------------------------------------------------===//

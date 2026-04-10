@@ -58,6 +58,25 @@ void staticQubitsCanonical(QCProgramBuilder& b);
 /// Allocates and explicitly deallocates a single qubit.
 void allocDeallocPair(QCProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
+/// error (static qubit then dynamic allocation).
+void mixedStaticThenDynamicQubit(QCProgramBuilder& b);
+
+/// @pre `builder.initialize()` was already called. Triggers a fatal mixed-mode
+/// error (dynamic register then static qubit).
+void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
+
+/// MLIR module (`func.func @main`) that mixes `qc.static` and `qc.alloc` for
+/// conversion tests that must reject the IR.
+[[nodiscard]] const char* mixedStaticDynamicQubitAddressingModuleMlir();
+
+/// MLIR module with QIR-style `llvm.func @main` mixing static and dynamic QC
+/// qubits (`qc-to-qir` must reject).
+[[nodiscard]] const char*
+mixedStaticDynamicQubitAddressingLLVMEntryModuleMlir();
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.

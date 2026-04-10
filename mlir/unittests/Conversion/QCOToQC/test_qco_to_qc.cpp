@@ -27,6 +27,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -115,6 +116,21 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
+
+/// \name QCOToQC/QubitManagement/MixedAddressing.cpp
+/// @{
+TEST_F(QCOToQCTest, RejectsMixedStaticAndDynamicQubitAddressing) {
+  const auto* const name = " (RejectsMixedStaticAndDynamicQubitAddressing)";
+  mqt::test::DeferredPrinter printer;
+  auto program = parseSourceString<ModuleOp>(
+      qco::mixedStaticDynamicQubitAddressingModuleMlir(), context.get());
+  ASSERT_TRUE(program);
+  printer.record(program.get(), std::string("Original QCO IR") + name);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(failed(runQCOToQCConversion(program.get())));
+  printer.record(program.get(), std::string("Failed Conversion QCO IR") + name);
+}
+/// @}
 
 /// \name QCOToQC/QubitManagement/QubitManagement.cpp
 /// @{
