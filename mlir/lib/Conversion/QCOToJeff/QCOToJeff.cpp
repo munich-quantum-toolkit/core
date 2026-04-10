@@ -1128,10 +1128,6 @@ public:
 
 template <auto...> struct AlwaysFalse : std::false_type {};
 
-} // namespace
-
-namespace mqt::gates {
-
 /** @brief QCO→Jeff gate lowering category. */
 enum class JeffKind : std::uint8_t {
   /// Lower to a Jeff gate from the standard `WellKnownGate` set (Jeff spec:
@@ -1148,17 +1144,13 @@ struct PPRPaulis {
   std::int32_t p1;
 };
 
-} // namespace mqt::gates
-
-template <::mlir::mqt::gates::JeffKind Kind, std::size_t Targets,
-          std::size_t Params, typename QCOOpType, typename JeffOpType,
-          bool JeffBaseAdjoint>
-static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
-                                    TypeConverter& typeConverter,
-                                    MLIRContext* context, LoweringState& state,
-                                    StringRef customName,
-                                    const ::mlir::mqt::gates::PPRPaulis& ppr) {
-  if constexpr (Kind == ::mlir::mqt::gates::JeffKind::WellKnown) {
+template <JeffKind Kind, std::size_t Targets, std::size_t Params,
+          typename QCOOpType, typename JeffOpType, bool JeffBaseAdjoint>
+void addQCOToJeffGatePattern(RewritePatternSet& patterns,
+                             TypeConverter& typeConverter, MLIRContext* context,
+                             LoweringState& state, StringRef customName,
+                             const PPRPaulis& ppr) {
+  if constexpr (Kind == JeffKind::WellKnown) {
     if constexpr (Targets == 1 && Params == 0) {
       patterns.add<ConvertQCOOneTargetZeroParameterToJeff<QCOOpType, JeffOpType,
                                                           JeffBaseAdjoint>>(
@@ -1180,16 +1172,16 @@ static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
                     "MQT_ADD_QCO_TO_JEFF_GATE: unhandled JeffKind::WellKnown "
                     "arity/params");
     }
-  } else if constexpr (Kind == ::mlir::mqt::gates::JeffKind::Custom) {
+  } else if constexpr (Kind == JeffKind::Custom) {
     patterns.add<ConvertQCOCustomGateToJeff<QCOOpType, Targets, Params>>(
         typeConverter, context, &state, customName, JeffBaseAdjoint);
-  } else if constexpr (Kind == ::mlir::mqt::gates::JeffKind::PPR) {
+  } else if constexpr (Kind == JeffKind::PPR) {
     static_assert(Targets == 2 && Params == 1,
                   "QCOToJeff PPR lowering expects exactly 2 targets and 1 "
                   "parameter");
     patterns.add<ConvertQCOPPRGateToJeff<QCOOpType>>(typeConverter, context,
                                                      &state, ppr.p0, ppr.p1);
-  } else if constexpr (Kind == ::mlir::mqt::gates::JeffKind::SpecialU2ToU) {
+  } else if constexpr (Kind == JeffKind::SpecialU2ToU) {
     static_assert(std::is_same_v<QCOOpType, qco::U2Op> && Targets == 1 &&
                       Params == 2,
                   "QCOToJeff SpecialU2ToU is only implemented for qco.u2");
@@ -1199,8 +1191,6 @@ static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
                   "MQT_ADD_QCO_TO_JEFF_GATE: unhandled JeffKind");
   }
 }
-
-namespace {
 
 /**
  * @brief Pass for converting QCO operations to Jeff operations
@@ -1237,8 +1227,8 @@ protected:
                  ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
                  ConvertQCOGPhaseOpToJeff>(typeConverter, context, &state);
 
-    using JK = ::mlir::mqt::gates::JeffKind;
-    using PP = ::mlir::mqt::gates::PPRPaulis;
+    using JK = JeffKind;
+    using PP = PPRPaulis;
 
     addQCOToJeffGatePattern<JK::WellKnown, 1, 0, qco::IdOp, jeff::IOp, false>(
         patterns, typeConverter, context, state, "_", {});
@@ -1287,13 +1277,13 @@ protected:
     addQCOToJeffGatePattern<JK::Custom, 2, 0, qco::ECROp, void, false>(
         patterns, typeConverter, context, state, "ecr", {});
     addQCOToJeffGatePattern<JK::PPR, 2, 1, qco::RXXOp, void, false>(
-        patterns, typeConverter, context, state, "_", PP{1, 1});
+        patterns, typeConverter, context, state, "_", PP{.p0 = 1, .p1 = 1});
     addQCOToJeffGatePattern<JK::PPR, 2, 1, qco::RYYOp, void, false>(
-        patterns, typeConverter, context, state, "_", PP{2, 2});
+        patterns, typeConverter, context, state, "_", PP{.p0 = 2, .p1 = 2});
     addQCOToJeffGatePattern<JK::PPR, 2, 1, qco::RZXOp, void, false>(
-        patterns, typeConverter, context, state, "_", PP{3, 1});
+        patterns, typeConverter, context, state, "_", PP{.p0 = 3, .p1 = 1});
     addQCOToJeffGatePattern<JK::PPR, 2, 1, qco::RZZOp, void, false>(
-        patterns, typeConverter, context, state, "_", PP{3, 3});
+        patterns, typeConverter, context, state, "_", PP{.p0 = 3, .p1 = 3});
     addQCOToJeffGatePattern<JK::Custom, 2, 2, qco::XXPlusYYOp, void, false>(
         patterns, typeConverter, context, state, "xx_plus_yy", {});
     addQCOToJeffGatePattern<JK::Custom, 2, 2, qco::XXMinusYYOp, void, false>(

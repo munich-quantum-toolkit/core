@@ -703,9 +703,9 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
     }
 
     if (op.getName() == "sx") {
-      if (op.getInTargetQubits().size() != 1 || op.getParams().size() != 0) {
+      if (op.getInTargetQubits().size() != 1) {
         return rewriter.notifyMatchFailure(
-            op, "Custom sx/sxdg expects one target qubit and no parameters");
+            op, "Custom SX operations must have exactly one target qubit");
       }
       return createGateFromJeffArity<qco::SXOp, jeff::CustomOp, 1, 0>(
           op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
@@ -731,7 +731,7 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
           {adaptor.getInTargetQubits()[0]}, op.getParams());
     }
     if (op.getName() == "iswap") {
-      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 0) {
+      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
         return rewriter.notifyMatchFailure(
             op, "Custom iswap expects two targets and no parameters");
       }
@@ -740,7 +740,7 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
           {});
     }
     if (op.getName() == "dcx") {
-      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 0) {
+      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
         return rewriter.notifyMatchFailure(
             op, "Custom dcx expects two targets and no parameters");
       }
@@ -749,7 +749,7 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
           {});
     }
     if (op.getName() == "ecr") {
-      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 0) {
+      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
         return rewriter.notifyMatchFailure(
             op, "Custom ecr expects two targets and no parameters");
       }
