@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
@@ -26,6 +27,8 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -95,9 +98,12 @@ struct LoweringState {
     /// QC qubits yielded from the current modifier region, in yield order.
     SmallVector<Value> yieldOrder;
 
+    SmallVector<Value> memrefs;
     /// Latest QCO SSA values for QC qubits that are remapped inside the
     /// modifier region.
     llvm::DenseMap<Value, Value> currentQubits;
+
+    llvm::DenseMap<Value, Value> currentRegisters;
   };
 
   /// Per-region map from original QC qubit reference to its latest QCO SSA
@@ -113,6 +119,13 @@ struct LoweringState {
   /// Per-region map from original QC qubit reference to its register
   /// information
   llvm::DenseMap<Region*, llvm::DenseMap<Value, QubitInfo>> qubitInfoMap;
+
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::SetVector<Value>>>
+      extractedQubits;
+
+  llvm::DenseMap<Region*, llvm::SetVector<Value>> regionQubitMap;
+
+  llvm::DenseMap<Region*, llvm::SetVector<Value>> regionRegisterMap;
 
   /// Stack of active modifier regions
   SmallVector<ModifierFrame> modifierFrames;
@@ -203,6 +216,14 @@ findRegionLocalMap(llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>>& map,
 /** @brief Resolves the latest QTensor SSA value for a QC register. */
 [[nodiscard]] static Value lookupMappedTensor(LoweringState& state,
                                               Operation* anchor, Value memref) {
+
+  if (isInsideModifier(state)) {
+    auto& frame = currentModifierFrame(state);
+    if (auto it = frame.currentRegisters.find(memref);
+        it != frame.currentRegisters.end()) {
+      return it->second;
+    }
+  }
   const auto& [tensorMap, tensorValue] =
       findRegionLocalMap(state.tensorMap, anchor, memref);
   assert(tensorMap != nullptr && tensorValue != nullptr &&
@@ -238,6 +259,15 @@ static void assignMappedQubit(LoweringState& state, Operation* anchor,
 /** @brief Updates the latest QTensor SSA value for a QC register. */
 static void assignMappedTensor(LoweringState& state, Operation* anchor,
                                Value memref, Value tensor) {
+  if (isInsideModifier(state)) {
+    auto& frame = currentModifierFrame(state);
+    if (auto it = frame.currentRegisters.find(memref);
+        it != frame.currentRegisters.end()) {
+      it->second = tensor;
+      return;
+    }
+  }
+
   auto [tensorMap, tensorValue] =
       findRegionLocalMap(state.tensorMap, anchor, memref);
 
@@ -262,6 +292,16 @@ resolveMappedQubits(LoweringState& state, Operation* anchor,
   }));
 }
 
+/** @brief Resolves a range of QC memrefs to their latest QCO tensor values. */
+template <typename Range>
+[[nodiscard]] static SmallVector<Value>
+resolveMappedTensors(LoweringState& state, Operation* anchor,
+                     const Range& memrefs) {
+  return llvm::to_vector(llvm::map_range(memrefs, [&](Value memref) {
+    return lookupMappedTensor(state, anchor, memref);
+  }));
+}
+
 /** @brief Updates mappings for matching QC and QCO qubit ranges. */
 template <typename QcRange, typename QcoRange>
 static void assignMappedQubits(LoweringState& state, Operation* anchor,
@@ -272,13 +312,40 @@ static void assignMappedQubits(LoweringState& state, Operation* anchor,
   }
 }
 
+/** @brief Updates mappings for matching QC memref and QCO tensor ranges. */
+template <typename QcRange, typename QcoRange>
+static void assignMappedTensors(LoweringState& state, Operation* anchor,
+                                const QcRange& memrefs,
+                                const QcoRange& tensors) {
+  for (auto [memref, tensor] : llvm::zip_equal(memrefs, tensors)) {
+    assignMappedTensor(state, anchor, memref, tensor);
+  }
+}
+
 /** @brief Pushes a new modifier frame seeded with aliased target values. */
 static void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
                               ValueRange qcoTargets) {
-  auto& [yieldOrder, currentQubits] = state.modifierFrames.emplace_back();
+  auto& [yieldOrder, registers, currentQubits, currentRegisters] =
+      state.modifierFrames.emplace_back();
   llvm::append_range(yieldOrder, qcTargets);
   for (auto [qcTarget, qcoTarget] : llvm::zip_equal(qcTargets, qcoTargets)) {
     currentQubits.try_emplace(qcTarget, qcoTarget);
+  }
+}
+
+/** @brief Pushes a new modifier frame seeded with aliased target values. */
+static void pushModifierFrameTemp(LoweringState& state, ValueRange qcTargets,
+                                  ValueRange memrefs, ValueRange qcoTargets,
+                                  ValueRange tensors) {
+  auto& [yieldOrder, registers, currentQubits, currentRegisters] =
+      state.modifierFrames.emplace_back();
+  llvm::append_range(yieldOrder, qcTargets);
+  for (auto [qcTarget, qcoTarget] : llvm::zip_equal(qcTargets, qcoTargets)) {
+    currentQubits.try_emplace(qcTarget, qcoTarget);
+  }
+  llvm::append_range(registers, memrefs);
+  for (auto [memref, tensor] : llvm::zip_equal(memrefs, tensors)) {
+    currentRegisters.try_emplace(memref, tensor);
   }
 }
 
@@ -304,16 +371,104 @@ template <typename OpType>
   return entryBlock.getArguments().take_back(numTargets);
 }
 
+/**
+ * @brief Helper function to check whether the type is a qc qubit type or a
+ * container that holds qc qubit types
+ *
+ * @param type The type that is checked
+ * @return Whether it is a qc type or not
+ */
+static bool isQCQubitType(Type type) {
+  if (llvm::isa<qc::QubitType>(type)) {
+    return true;
+  }
+  auto memref = dyn_cast<MemRefType>(type);
+  return memref && llvm::isa<qc::QubitType>(memref.getElementType());
+}
+
+/**
+ * @brief Recursively collects all the QC qubit references used by an
+ * operation and store them in map
+ *
+ * @param Operation The operation that is currently traversed
+ * @param state The lowering state
+ * @param ctx The MLIRContext of the current program
+ * @return llvm::Setvector<Value> The set of unique QC qubit references
+ */
+static llvm::SetVector<Value> collectUniqueQubits(Operation* op,
+                                                  LoweringState* state) {
+  // Get the regions of the current operation
+  const auto& regions = op->getRegions();
+  bool needChange = false;
+  SetVector<Value> uniqueQubits;
+
+  for (auto& region : regions) {
+    auto& regionQubitMap = state->regionQubitMap[&region];
+    auto& regionRegisterMap = state->regionRegisterMap[&region];
+    auto& qubitInfoMap = state->qubitInfoMap[&region];
+    // Skip empty regions e.g. empty else region of an If operation
+    if (region.empty()) {
+      continue;
+    }
+    // Check that the region has only one block
+    assert(region.hasOneBlock() && "Expected single-block region");
+
+    // Collect qubits from the blockarguments
+    for (auto arg : region.front().getArguments()) {
+      if (isQCQubitType(arg.getType())) {
+        // TODO
+        // uniqueQubits.insert(arg);
+      }
+    }
+    for (auto& operation : region.front().getOperations()) {
+      if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
+        llvm::outs() << "correct operation\n";
+
+        QubitInfo info{.reg = loadOp.getMemRef(),
+                       .index = loadOp.getIndices()[0]};
+        qubitInfoMap.try_emplace(loadOp.getResult(), info);
+        regionRegisterMap.insert(loadOp.getMemRef());
+        needChange = true;
+        continue;
+      }
+      if (operation.getNumRegions() > 0) {
+        collectUniqueQubits(&operation, state);
+        for (auto& innerRegion : operation.getRegions()) {
+          regionQubitMap.set_union(state->regionQubitMap[&innerRegion]);
+          regionRegisterMap.set_union(state->regionRegisterMap[&innerRegion]);
+        }
+      }
+      for (const auto& operand : operation.getOperands()) {
+        if (llvm::isa<qc::QubitType>(operand.getType())) {
+          if (!qubitInfoMap.contains(operand)) {
+            regionQubitMap.insert(operand);
+          }
+        }
+        if (auto memref = dyn_cast<MemRefType>(operand.getType())) {
+          if (llvm::isa<qc::QubitType>(memref.getElementType())) {
+            regionRegisterMap.insert(operand);
+          }
+        }
+      }
+    }
+    // Mark scf operations that need to be changed afterwards
+  }
+  if (needChange) {
+    op->setAttr("needChange", StringAttr::get(op->getContext(), "yes"));
+  }
+  return uniqueQubits;
+}
+
 namespace {
 
 /**
  * @brief Converts func.return and sinks remaining live qubits.
  *
  * @details
- * QC uses reference semantics and does not enforce linear typing for qubits.
- * After conversion, QCO requires that every qubit SSA value is consumed
- * exactly once. For allocations (including static qubits), the sink is
- * `qco.sink`. This pattern inserts `qco.sink` operations for all
+ * QC uses reference semantics and does not enforce linear typing for
+ * qubits. After conversion, QCO requires that every qubit SSA value is
+ * consumed exactly once. For allocations (including static qubits), the
+ * sink is `qco.sink`. This pattern inserts `qco.sink` operations for all
  * still-live qubits tracked in the lowering state right before the return.
  */
 struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
@@ -327,8 +482,8 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     auto& map = state.qubitMap[funcRegion];
 
     // Build return values from qubitMap and collect live qubit information.
-    // A qubit from the current scope is considered alive if it is returned from
-    // the function. Otherwise, it is considered dead.
+    // A qubit from the current scope is considered alive if it is returned
+    // from the function. Otherwise, it is considered dead.
     llvm::SmallVector<Value> returnValues;
     returnValues.reserve(op.getNumOperands());
     llvm::DenseSet<Value> liveQubits;
@@ -474,7 +629,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     } else {
       qubitInfoMap[parentRegion][qcQubit] = info;
     }
-
+    state.extractedQubits[parentRegion][memref].insert(qcQubit);
     rewriter.eraseOp(op);
 
     return success();
@@ -485,8 +640,8 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
  * @brief Converts memref.dealloc to qtensor.dealloc
  *
  * @details
- * Before deallocating the tensor, all qubits are inserted back into it at their
- * original location.
+ * Before deallocating the tensor, all qubits are inserted back into it at
+ * their original location.
  *
  * @par Example:
  * ```mlir
@@ -988,8 +1143,9 @@ struct ConvertQCTwoTargetZeroParameterToQCO final
  * ```
  * is converted to
  * ```mlir
- * %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
+ * %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit,
+ * !qco.qubit
+ * -> !qco.qubit, !qco.qubit
  * ```
  */
 template <typename QCOpType, typename QCOOpType>
@@ -1073,8 +1229,8 @@ struct ConvertQCTwoTargetTwoParameterToQCO final
  * ```
  * is converted to
  * ```mlir
- * %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit -> !qco.qubit,
- * !qco.qubit
+ * %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+ * !qco.qubit, !qco.qubit
  * ```
  */
 struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
@@ -1230,23 +1386,115 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
   }
 };
 
+struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto& frame = currentModifierFrame(state);
+    auto* operation = op.getOperation();
+    auto* region = op->getParentRegion();
+    auto& registerMap = state.regionRegisterMap[region];
+    auto& qubitMap = state.regionQubitMap[region];
+    auto& memrefs = frame.memrefs;
+
+    for (auto memref : memrefs) {
+      auto& extractedQubits =
+          state.extractedQubits[op->getParentRegion()][memref];
+      // Insert all extracted qubits before extracting
+      for (auto qubit : extractedQubits) {
+        llvm::outs() << "hi\n";
+        auto tensor = lookupMappedTensor(state, operation, memref);
+        auto qcoQubit = lookupMappedQubit(state, operation, qubit);
+        auto index = state.qubitInfoMap[op->getParentRegion()][qubit].index;
+        auto insertOp = qtensor::InsertOp::create(rewriter, op.getLoc(),
+                                                  qcoQubit, tensor, index);
+        assignMappedTensor(state, operation, memref, insertOp.getResult());
+      }
+    }
+    SmallVector<Value> targets;
+    targets.reserve(registerMap.size() + qubitMap.size());
+    targets.append(resolveMappedTensors(state, operation, frame.memrefs));
+    targets.append(resolveMappedQubits(state, operation, frame.yieldOrder));
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
+    popModifierFrame(state);
+
+    return success();
+  }
+};
+
+struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ForOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    auto& region = op.getRegion();
+    auto& registerMap = state.regionRegisterMap[&region];
+    auto& qubitMap = state.regionQubitMap[&region];
+
+    SmallVector<Value> qcTargets;
+    qcTargets.reserve(registerMap.size() + qubitMap.size());
+    qcTargets.append(registerMap.begin(), registerMap.end());
+    qcTargets.append(qubitMap.begin(), qubitMap.end());
+
+    auto tensors = resolveMappedTensors(state, op.getOperation(), registerMap);
+    auto qcoQubits = resolveMappedQubits(state, operation, qubitMap);
+
+    SmallVector<Value> qcoTargets;
+    qcoTargets.reserve(tensors.size() + qcoQubits.size());
+    qcoTargets.append(tensors.begin(), tensors.end());
+    qcoTargets.append(qcoQubits.begin(), qcoQubits.end());
+
+    auto newFor =
+        scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
+                           op.getUpperBound(), op.getStep(), qcoTargets);
+    assignMappedTensors(state, op.getOperation(), registerMap,
+                        newFor.getResults().take_front(tensors.size()));
+    assignMappedQubits(state, op.getOperation(), qubitMap,
+                       newFor->getResults().take_back(qcoQubits.size()));
+
+    auto& srcBlock = op.getRegion().front();
+    auto& dstBlock = newFor.getRegion().front();
+
+    dstBlock.getOperations().splice(dstBlock.end(), srcBlock.getOperations());
+    rewriter.replaceAllUsesWith(op.getInductionVar(), newFor.getInductionVar());
+
+    SmallVector<Value, 8> qubitVector(qubitMap.begin(), qubitMap.end());
+    SmallVector<Value, 8> registers(registerMap.begin(), registerMap.end());
+
+    pushModifierFrameTemp(state, qubitVector, registers, qcoQubits,
+                          dstBlock.getArguments().drop_front(1));
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
 /**
  * @brief Pass implementation for QC-to-QCO conversion
  *
  * @details
- * This pass converts QC dialect operations (reference semantics) to QCO dialect
- * operations (value semantics). The conversion is essential for enabling
- * optimization passes that rely on SSA form and explicit dataflow analysis.
+ * This pass converts QC dialect operations (reference semantics) to QCO
+ * dialect operations (value semantics). The conversion is essential for
+ * enabling optimization passes that rely on SSA form and explicit dataflow
+ * analysis.
  *
  * The pass operates in several phases:
  * 1. Type conversion: !qc.qubit -> !qco.qubit
  * 2. Operation conversion: Each QC op is converted to its QCO equivalent
  * 3. State tracking: A LoweringState maintains qubit value mappings
- * 4. Function/control-flow adaptation: Function signatures and control flow are
- * updated to use QCO types
+ * 4. Function/control-flow adaptation: Function signatures and control flow
+ * are updated to use QCO types
  *
  * The conversion maintains semantic equivalence while transforming the
- * representation from imperative (mutation-based) to functional (SSA-based).
+ * representation from imperative (mutation-based) to functional
+ * (SSA-based).
  */
 struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
   using QCToQCOBase::QCToQCOBase;
@@ -1258,7 +1506,7 @@ protected:
 
     // Create state object to track qubit value flow
     LoweringState state;
-
+    collectUniqueQubits(module, &state);
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
@@ -1276,12 +1524,18 @@ protected:
       return llvm::none_of(op->getOperandTypes(), isQubitMemref) &&
              llvm::none_of(op->getResultTypes(), isQubitMemref);
     });
-
+    //  target.addIllegalDialect<scf::SCFDialect>();
+    target.addDynamicallyLegalDialect<scf::SCFDialect>([](Operation* op) {
+      return !(op->getAttrOfType<StringAttr>("needChange"));
+    });
+    target.addDynamicallyLegalOp<scf::YieldOp>(
+        [](Operation* op) { return op->getNumOperands() != 0; });
     // Register operation conversion patterns with state tracking
     patterns.add<
-        ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
-        ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
-        ConvertQCMeasureOp, ConvertQCResetOp,
+        ConvertSCFForOp, ConvertSCFYieldOp, ConvertMemRefAllocOp,
+        ConvertMemRefLoadOp, ConvertMemRefDeallocOp, ConvertQCAllocOp,
+        ConvertQCDeallocOp, ConvertQCStaticOp, ConvertQCMeasureOp,
+        ConvertQCResetOp,
         ConvertQCZeroTargetOneParameterToQCO<qc::GPhaseOp, qco::GPhaseOp>,
         ConvertQCOneTargetZeroParameterToQCO<qc::IdOp, qco::IdOp>,
         ConvertQCOneTargetZeroParameterToQCO<qc::XOp, qco::XOp>,
@@ -1325,9 +1579,10 @@ protected:
 
     // Conversion of qc types in func.return
     //
-    // Note: `func.return` may already be type-legal even though we still need
-    // to insert sink operations (`qco.sink`) for dead qubit values. Therefore,
-    // we mark it illegal as long as the qubit map of the region is not empty.
+    // Note: `func.return` may already be type-legal even though we still
+    // need to insert sink operations (`qco.sink`) for dead qubit values.
+    // Therefore, we mark it illegal as long as the qubit map of the region
+    // is not empty.
     patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::ReturnOp>([&](const func::ReturnOp op) {
       if (!typeConverter.isLegal(op)) {
