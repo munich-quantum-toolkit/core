@@ -125,6 +125,20 @@ struct LoweringState {
   SmallVector<ModifierFrame> modifierFrames;
 
   AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode mode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = mode;
+      return success();
+    }
+    if (allocationMode == mode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in conversion");
+  }
 };
 
 /**
@@ -297,20 +311,6 @@ static void popModifierFrame(LoweringState& state) {
   state.modifierFrames.pop_back();
 }
 
-[[nodiscard]] static LogicalResult
-ensureAllocationMode(LoweringState& state, LoweringState::AllocationMode mode,
-                     Operation* op) {
-  if (state.allocationMode == LoweringState::AllocationMode::Unset) {
-    state.allocationMode = mode;
-    return success();
-  }
-  if (state.allocationMode == mode) {
-    return success();
-  }
-  return op->emitOpError(
-      "cannot mix static and dynamic qubit allocation modes in conversion");
-}
-
 /** @brief Adds entry block aliases for modifier target values. */
 template <typename OpType>
 [[nodiscard]] static ValueRange addModifierAliases(OpType op,
@@ -430,9 +430,8 @@ struct ConvertMemRefAllocOp final
     if (shape.size() != 1) {
       return failure();
     }
-    if (failed(ensureAllocationMode(getState(),
-                                    LoweringState::AllocationMode::Dynamic,
-                                    op.getOperation()))) {
+    if (failed(getState().ensureAllocationMode(
+            LoweringState::AllocationMode::Dynamic, op.getOperation()))) {
       return failure();
     }
 
@@ -596,9 +595,8 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (failed(ensureAllocationMode(state,
-                                    LoweringState::AllocationMode::Dynamic,
-                                    op.getOperation()))) {
+    if (failed(state.ensureAllocationMode(
+            LoweringState::AllocationMode::Dynamic, op.getOperation()))) {
       return failure();
     }
     auto qcQubit = op.getResult();
@@ -673,8 +671,8 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   matchAndRewrite(qc::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (failed(ensureAllocationMode(
-            state, LoweringState::AllocationMode::Static, op.getOperation()))) {
+    if (failed(state.ensureAllocationMode(LoweringState::AllocationMode::Static,
+                                          op.getOperation()))) {
       return failure();
     }
     auto qcQubit = op.getQubit();

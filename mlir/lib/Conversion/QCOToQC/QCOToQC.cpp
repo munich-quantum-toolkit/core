@@ -61,21 +61,21 @@ enum class QubitAddressingMode : std::uint8_t {
 struct LoweringState {
   /// The qubit addressing mode used in the module
   QubitAddressingMode mode = QubitAddressingMode::Unknown;
-};
 
-[[nodiscard]] LogicalResult
-ensureAddressingMode(LoweringState& state, QubitAddressingMode requestedMode,
-                     Operation* op) {
-  if (state.mode == QubitAddressingMode::Unknown) {
-    state.mode = requestedMode;
-    return success();
+  /// Sets or validates the addressing mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult
+  ensureAddressingMode(QubitAddressingMode requestedMode, Operation* op) {
+    if (mode == QubitAddressingMode::Unknown) {
+      mode = requestedMode;
+      return success();
+    }
+    if (mode == requestedMode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in conversion");
   }
-  if (state.mode == requestedMode) {
-    return success();
-  }
-  return op->emitOpError(
-      "cannot mix static and dynamic qubit allocation modes in conversion");
-}
+};
 
 /**
  * @brief Base class for conversion patterns that need access to lowering state
@@ -160,8 +160,8 @@ struct ConvertQTensorAllocOp final
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(ensureAddressingMode(getState(), QubitAddressingMode::Dynamic,
-                                    op.getOperation()))) {
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+                                               op.getOperation()))) {
       return failure();
     }
     auto qubitType = qc::QubitType::get(op.getContext());
@@ -260,8 +260,8 @@ struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
   LogicalResult
   matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(ensureAddressingMode(getState(), QubitAddressingMode::Dynamic,
-                                    op.getOperation()))) {
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+                                               op.getOperation()))) {
       return failure();
     }
 
@@ -333,8 +333,8 @@ struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
   LogicalResult
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(ensureAddressingMode(getState(), QubitAddressingMode::Static,
-                                    op.getOperation()))) {
+    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Static,
+                                               op.getOperation()))) {
       return failure();
     }
 
