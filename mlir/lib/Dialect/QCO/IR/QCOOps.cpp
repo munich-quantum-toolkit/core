@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
@@ -89,6 +90,108 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
   }
 
   return success();
+}
+
+ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
+                        ::mlir::OperationState& result) {
+  auto& builder = parser.getBuilder();
+  OpAsmParser::UnresolvedOperand cond;
+  Type i1Type = builder.getIntegerType(1);
+  if (parser.parseOperand(cond) ||
+      parser.resolveOperand(cond, i1Type, result.operands)) {
+    return failure();
+  }
+
+  SmallVector<OpAsmParser::Argument, 4> regionArgs;
+  SmallVector<OpAsmParser::Argument, 4> elseRegionArgs;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> operands;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> elseOperands;
+  bool hasIterArgs = succeeded(parser.parseOptionalKeyword("qubits"));
+
+  if (hasIterArgs) {
+    // Parse assignment list and results type list.
+    if (auto b = parser.parseAssignmentList(regionArgs, operands)) {
+      return failure();
+    }
+    if (parser.parseArrowTypeList(result.types)) {
+      return failure();
+    }
+    // Resolve input operands.
+    if (failed(parser.resolveOperands(operands, result.types,
+                                      parser.getCurrentLocation(),
+                                      result.operands))) {
+      return failure();
+    }
+
+    for (auto [iterArg, type] : llvm::zip_equal(regionArgs, result.types)) {
+      iterArg.type = type;
+    }
+    Region* body = result.addRegion();
+    if (parser.parseRegion(*body, regionArgs)) {
+      return failure();
+    }
+    if (parser.parseOptionalKeyword("else")) {
+
+      return failure();
+    }
+    if (parser.parseOptionalKeyword("qubits")) {
+
+      return failure();
+    }
+
+    if (auto b = parser.parseAssignmentList(elseRegionArgs, elseOperands)) {
+
+      return failure();
+    }
+
+    for (auto [iterArg, type] : llvm::zip_equal(elseRegionArgs, result.types)) {
+      iterArg.type = type;
+    }
+    Region* elseBody = result.addRegion();
+    if (parser.parseRegion(*elseBody, elseRegionArgs)) {
+      return failure();
+    };
+    if (parser.parseOptionalAttrDict(result.attributes)) {
+      return failure();
+    }
+    return success();
+  }
+}
+
+void IfOp::print(OpAsmPrinter& p) { // Print condition
+  p << " ";
+  p.printOperand(getCondition());
+
+  auto printQubitsBlock = [&](Region& region, OperandRange operands) {
+    p << " qubits(";
+    if (!region.empty()) {
+      Block& entry = region.front();
+      llvm::interleaveComma(
+          llvm::zip(entry.getArguments(), operands), p, [&](auto pair) {
+            p.printRegionArgument(std::get<0>(pair), /*attrs=*/{},
+                                  /*omitType=*/true);
+            p << " = ";
+            p.printOperand(std::get<1>(pair));
+          });
+    }
+    p << ") ";
+  };
+
+  printQubitsBlock(getThenRegion(), getQubits());
+  p << "-> (";
+  if (!getThenRegion().empty()) {
+    llvm::interleaveComma(getThenRegion().front().getArgumentTypes(), p,
+                          [&](Type t) { p.printType(t); });
+  }
+  p << ") ";
+  p.printRegion(getThenRegion(), /*printEntryBlockArgs=*/false);
+  if (!getElseRegion().empty()) {
+    p << " else";
+    printQubitsBlock(getElseRegion(), getQubits());
+    p.printRegion(getElseRegion(), /*printEntryBlockArgs=*/false);
+  }
+
+  p.printOptionalAttrDict((*this)->getAttrs());
 }
 
 static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,

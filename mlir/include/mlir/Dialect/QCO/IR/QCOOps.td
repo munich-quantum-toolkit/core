@@ -1231,15 +1231,7 @@ def IfOp
   let arguments = (ins I1:$condition, Variadic<QubitType>:$qubits);
   let results = (outs Variadic<QubitType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
-
-  let assemblyFormat = [{
-        $condition
-         custom<IfOpAliasing>($thenRegion, $elseRegion, $qubits)
-         attr-dict `:`
-        `{` type($condition) `,` type($qubits) `}`
-        `->`
-        `{` type($results) `}`
-    }];
+  let hasCustomAssemblyFormat = 1;
 
   let builders =
       [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
