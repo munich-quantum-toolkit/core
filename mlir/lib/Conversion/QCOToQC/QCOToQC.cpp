@@ -242,9 +242,11 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
    * qubits.
    * - The remaining @p NumParams operands are the gate parameters.
    *
-   * `createGate` forwards the extracted targets and parameters to
-   * `QCOpType::create(...)`. `matchAndRewrite` then replaces the original QCO
-   * op with the created QC targets via `rewriter.replaceOp(op, qcTargets)`.
+   * `matchAndRewrite` passes the full adapted operand list to `createGate`,
+   * which forwards the first @p NumTargets values (converted targets) and the
+   * following @p NumParams values (parameters, unchanged type through the
+   * converter) to `QCOpType::create(...)`. It then replaces the original QCO op
+   * with the created QC targets via `rewriter.replaceOp(op, qcTargets)`.
    *
    * The values of @p NumTargets and @p NumParams are compile-time constants and
    * define this contract for each instantiation.
@@ -256,11 +258,11 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
    */
   template <std::size_t... TargetIndices, std::size_t... ParamIndices>
   static void createGate(ConversionPatternRewriter& rewriter, Location loc,
-                         ValueRange qcOperands, QCOOpType op,
+                         ValueRange qcOperands,
                          std::index_sequence<TargetIndices...> /*tgt*/,
                          std::index_sequence<ParamIndices...> /*par*/) {
     QCOpType::create(rewriter, loc, qcOperands[TargetIndices]...,
-                     op.getParameter(ParamIndices)...);
+                     qcOperands[NumTargets + ParamIndices]...);
   }
 
   LogicalResult
@@ -271,7 +273,7 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
            "Unexpected number of operands for QCO->QC gate conversion");
     auto qcTargets = qcOperands.take_front(NumTargets);
 
-    createGate(rewriter, op.getLoc(), qcTargets, op,
+    createGate(rewriter, op.getLoc(), qcOperands,
                std::make_index_sequence<NumTargets>{},
                std::make_index_sequence<NumParams>{});
     rewriter.replaceOp(op, qcTargets);
