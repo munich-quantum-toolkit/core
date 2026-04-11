@@ -1426,7 +1426,12 @@ struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     targets.reserve(registerMap.size() + qubitMap.size());
     targets.append(resolveMappedTensors(state, operation, frame.memrefs));
     targets.append(resolveMappedQubits(state, operation, frame.yieldOrder));
-    rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
+    if (op->getParentOfType<qco::IfOp>()) {
+      rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
+    } else {
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
+    }
+
     popModifierFrame(state);
 
     return success();
@@ -1453,7 +1458,6 @@ struct ConvertSCFConditionOp final
           state.extractedQubits[op->getParentRegion()][memref];
       // Insert all extracted qubits before extracting
       for (auto qubit : extractedQubits) {
-        llvm::outs() << "hi\n";
         auto tensor = lookupMappedTensor(state, operation, memref);
         auto qcoQubit = lookupMappedQubit(state, operation, qubit);
         auto index = state.qubitInfoMap[op->getParentRegion()][qubit].index;
@@ -1588,6 +1592,74 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
   }
 };
 
+struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    auto& registerMap = state.regionRegisterMap[op];
+    auto& qubitMap = state.regionQubitMap[op];
+    SmallVector<Value, 8> qubitVector(qubitMap.begin(), qubitMap.end());
+    SmallVector<Value, 8> registers(registerMap.begin(), registerMap.end());
+
+    SmallVector<Value> qcTargets;
+    qcTargets.reserve(registerMap.size() + qubitMap.size());
+    qcTargets.append(registerMap.begin(), registerMap.end());
+    qcTargets.append(qubitMap.begin(), qubitMap.end());
+
+    auto tensors = resolveMappedTensors(state, operation, registerMap);
+    auto qcoQubits = resolveMappedQubits(state, operation, qubitMap);
+
+    SmallVector<Value> qcoTargets;
+    qcoTargets.reserve(tensors.size() + qcoQubits.size());
+    qcoTargets.append(tensors.begin(), tensors.end());
+    qcoTargets.append(qcoQubits.begin(), qcoQubits.end());
+    const SmallVector<Location> locs(qcoTargets.size(), op->getLoc());
+
+    auto ifOp = qco::IfOp::create(rewriter, op->getLoc(), op.getCondition(),
+                                  qcoTargets);
+
+    assignMappedTensors(state, op.getOperation(), registerMap,
+                        ifOp.getResults().take_front(tensors.size()));
+    assignMappedQubits(state, op.getOperation(), qubitMap,
+                       ifOp->getResults().take_back(qcoQubits.size()));
+
+    auto& thenRegion = ifOp.getThenRegion();
+    auto& elseRegion = ifOp.getElseRegion();
+    auto* thenBlock =
+        rewriter.createBlock(&thenRegion, {}, ifOp->getResultTypes(), locs);
+    auto* elseBlock =
+        rewriter.createBlock(&elseRegion, {}, ifOp->getResultTypes(), locs);
+
+    thenBlock->getOperations().splice(
+        thenBlock->end(), op.getThenRegion().front().getOperations());
+
+    if (!op.getElseRegion().empty()) {
+      elseBlock->getOperations().splice(
+          elseBlock->end(), op.getElseRegion().front().getOperations());
+      pushModifierFrameTemp(
+          state, qubitVector, registers,
+          elseRegion.getArguments().take_back(qcoQubits.size()),
+          elseRegion.getArguments().take_front(tensors.size()));
+
+    } else {
+      rewriter.setInsertionPointToEnd(elseBlock);
+      auto elseYield = qco::YieldOp::create(rewriter, op->getLoc(),
+                                            elseBlock->getArguments());
+    }
+
+    pushModifierFrameTemp(state, qubitVector, registers,
+                          thenRegion.getArguments().take_back(qcoQubits.size()),
+                          thenRegion.getArguments().take_front(tensors.size()));
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 /**
  * @brief Pass implementation for QC-to-QCO conversion
  *
@@ -1646,7 +1718,7 @@ protected:
         [](Operation* op) { return op->getNumOperands() > 1; });
     // Register operation conversion patterns with state tracking
     patterns.add<
-        ConvertSCFForOp, ConvertSCFYieldOp, ConvertSCFWhileOp,
+        ConvertSCFForOp, ConvertSCFYieldOp, ConvertSCFWhileOp, ConvertSCFIfOp,
         ConvertSCFConditionOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
         ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
         ConvertQCStaticOp, ConvertQCMeasureOp, ConvertQCResetOp,
