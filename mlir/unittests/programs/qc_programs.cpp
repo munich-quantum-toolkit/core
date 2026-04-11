@@ -201,6 +201,18 @@ void inverseMultipleControlledGlobalPhase(QCProgramBuilder& b) {
   b.inv([&]() { b.mcgphase(-0.123, {q[0], q[1], q[2]}); });
 }
 
+void powGphaseScaled(QCProgramBuilder& b) {
+  b.pow(3.0, [&] { b.gphase(0.123); });
+}
+
+void powGphaseScaledRef(QCProgramBuilder& b) { b.gphase(3.0 * 0.123); }
+
+void negPowGphase(QCProgramBuilder& b) {
+  b.pow(-3.0, [&] { b.gphase(0.123); });
+}
+
+void negPowGphaseRef(QCProgramBuilder& b) { b.gphase(-3.0 * 0.123); }
+
 void identity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.id(q[0]);
@@ -234,6 +246,11 @@ void inverseIdentity(QCProgramBuilder& b) {
 void inverseMultipleControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mcid({q[2], q[1]}, q[0]); });
+}
+
+void powId(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.id(q[0]); });
 }
 
 void x(QCProgramBuilder& b) {
@@ -271,6 +288,32 @@ void inverseMultipleControlledX(QCProgramBuilder& b) {
   b.inv([&]() { b.mcx({q[0], q[1]}, q[2]); });
 }
 
+void powHalfX(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, [&] { b.x(q[0]); });
+}
+
+void powHalfXRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.sx(q[0]);
+}
+
+void powNegHalfX(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(-0.5, [&] { b.x(q[0]); });
+}
+
+void powThirdX(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, [&] { b.x(q[0]); });
+}
+
+void powThirdXRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(-1.0 / 3.0 * std::numbers::pi / 2.0);
+  b.rx(1.0 / 3.0 * std::numbers::pi, q[0]);
+}
+
 void y(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.y(q[0]);
@@ -306,6 +349,17 @@ void inverseMultipleControlledY(QCProgramBuilder& b) {
   b.inv([&]() { b.mcy({q[0], q[1]}, q[2]); });
 }
 
+void powHalfY(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, [&] { b.y(q[0]); });
+}
+
+void powHalfYRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(-std::numbers::pi / 4.0);
+  b.ry(std::numbers::pi / 2.0, q[0]);
+}
+
 void z(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.z(q[0]);
@@ -339,6 +393,26 @@ void inverseZ(QCProgramBuilder& b) {
 void inverseMultipleControlledZ(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mcz({q[0], q[1]}, q[2]); });
+}
+
+void powHalfZ(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, [&] { b.z(q[0]); });
+}
+
+void powThreeHalvesZ(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.5, [&] { b.z(q[0]); });
+}
+
+void powThirdZ(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, [&] { b.z(q[0]); });
+}
+
+void powThirdZRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(1.0 / 3.0 * std::numbers::pi, q[0]);
 }
 
 void h(QCProgramBuilder& b) {
@@ -381,6 +455,16 @@ void hWithoutRegister(QCProgramBuilder& b) {
   b.h(q);
 }
 
+void powEvenH(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.h(q[0]); });
+}
+
+void powOddH(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(3.0, [&] { b.h(q[0]); });
+}
+
 void s(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.s(q[0]);
@@ -414,6 +498,31 @@ void inverseS(QCProgramBuilder& b) {
 void inverseMultipleControlledS(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mcs({q[0], q[1]}, q[2]); });
+}
+
+void powTwoS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.s(q[0]); });
+}
+
+void powFourS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(4.0, [&] { b.s(q[0]); });
+}
+
+void powHalfS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, [&] { b.s(q[0]); });
+}
+
+void powThirdS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, [&] { b.s(q[0]); });
+}
+
+void powThirdSRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
 }
 
 void sdg(QCProgramBuilder& b) {
@@ -451,6 +560,26 @@ void inverseMultipleControlledSdg(QCProgramBuilder& b) {
   b.inv([&]() { b.mcsdg({q[0], q[1]}, q[2]); });
 }
 
+void powTwoSdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.sdg(q[0]); });
+}
+
+void powHalfSdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, [&] { b.sdg(q[0]); });
+}
+
+void powThirdSdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, [&] { b.sdg(q[0]); });
+}
+
+void powThirdSdgRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(-1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
+}
+
 void t_(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.t(q[0]);
@@ -484,6 +613,21 @@ void inverseT(QCProgramBuilder& b) {
 void inverseMultipleControlledT(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mct({q[0], q[1]}, q[2]); });
+}
+
+void powTwoT(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.t(q[0]); });
+}
+
+void powThirdT(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, [&] { b.t(q[0]); });
+}
+
+void powThirdTRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(1.0 / 3.0 * std::numbers::pi / 4.0, q[0]);
 }
 
 void tdg(QCProgramBuilder& b) {
@@ -521,6 +665,21 @@ void inverseMultipleControlledTdg(QCProgramBuilder& b) {
   b.inv([&]() { b.mctdg({q[0], q[1]}, q[2]); });
 }
 
+void powTwoTdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.tdg(q[0]); });
+}
+
+void powThirdTdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, [&] { b.tdg(q[0]); });
+}
+
+void powThirdTdgRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(-1.0 / 3.0 * std::numbers::pi / 4.0, q[0]);
+}
+
 void sx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sx(q[0]);
@@ -554,6 +713,27 @@ void inverseSx(QCProgramBuilder& b) {
 void inverseMultipleControlledSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mcsx({q[0], q[1]}, q[2]); });
+}
+
+void powTwoSx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.sx(q[0]); });
+}
+
+void powTwoSxRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.x(q[0]);
+}
+
+void powThirdSx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, [&] { b.sx(q[0]); });
+}
+
+void powThirdSxRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(-1.0 / 3.0 * std::numbers::pi / 4.0);
+  b.rx(1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
 }
 
 void sxdg(QCProgramBuilder& b) {
@@ -591,6 +771,27 @@ void inverseMultipleControlledSxdg(QCProgramBuilder& b) {
   b.inv([&]() { b.mcsxdg({q[0], q[1]}, q[2]); });
 }
 
+void powTwoSxdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.sxdg(q[0]); });
+}
+
+void powTwoSxdgRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.x(q[0]);
+}
+
+void powThirdSxdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, [&] { b.sxdg(q[0]); });
+}
+
+void powThirdSxdgRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(1.0 / 3.0 * std::numbers::pi / 4.0);
+  b.rx(-1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
+}
+
 void rx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.rx(0.123, q[0]);
@@ -624,6 +825,16 @@ void inverseRx(QCProgramBuilder& b) {
 void inverseMultipleControlledRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mcrx(-0.123, {q[0], q[1]}, q[2]); });
+}
+
+void powRxScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.rx(0.123, q[0]); });
+}
+
+void rxScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.rx(0.246, q[0]);
 }
 
 void ry(QCProgramBuilder& b) {
@@ -766,6 +977,16 @@ void inverseMultipleControlledR(QCProgramBuilder& b) {
   b.inv([&]() { b.mcr(-0.123, 0.456, {q[0], q[1]}, q[2]); });
 }
 
+void powRScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(3.0, [&] { b.r(0.123, 0.456, q[0]); });
+}
+
+void powRScaledRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.r(3.0 * 0.123, 0.456, q[0]);
+}
+
 void u2(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u2(0.234, 0.567, q[0]);
@@ -873,6 +1094,16 @@ void inverseMultipleControlledSwap(QCProgramBuilder& b) {
   b.inv([&]() { b.mcswap({q[0], q[1]}, q[2], q[3]); });
 }
 
+void powEvenSwap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, [&] { b.swap(q[0], q[1]); });
+}
+
+void powOddSwap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(3.0, [&] { b.swap(q[0], q[1]); });
+}
+
 void iswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.iswap(q[0], q[1]);
@@ -906,6 +1137,16 @@ void inverseIswap(QCProgramBuilder& b) {
 void inverseMultipleControlledIswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv([&]() { b.mciswap({q[0], q[1]}, q[2], q[3]); });
+}
+
+void powHalfIswap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.5, [&] { b.iswap(q[0], q[1]); });
+}
+
+void powHalfIswapRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_plus_yy(-std::numbers::pi / 2.0, 0.0, q[0], q[1]);
 }
 
 void dcx(QCProgramBuilder& b) {
@@ -976,6 +1217,16 @@ void inverseEcr(QCProgramBuilder& b) {
 void inverseMultipleControlledEcr(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv([&]() { b.mcecr({q[0], q[1]}, q[2], q[3]); });
+}
+
+void powEvenEcr(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, [&] { b.ecr(q[0], q[1]); });
+}
+
+void powOddEcr(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(3.0, [&] { b.ecr(q[0], q[1]); });
 }
 
 void rxx(QCProgramBuilder& b) {
@@ -1162,6 +1413,16 @@ void inverseMultipleControlledXxPlusYY(QCProgramBuilder& b) {
   b.inv([&]() { b.mcxx_plus_yy(-0.123, 0.456, {q[0], q[1]}, q[2], q[3]); });
 }
 
+void powXxPlusYYScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(3.0, [&] { b.xx_plus_yy(0.123, 0.456, q[0], q[1]); });
+}
+
+void powXxPlusYYScaledRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_plus_yy(3.0 * 0.123, 0.456, q[0], q[1]);
+}
+
 void xxMinusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
@@ -1197,6 +1458,16 @@ void inverseMultipleControlledXxMinusYY(QCProgramBuilder& b) {
   b.inv([&]() { b.mcxx_minus_yy(-0.123, 0.456, {q[0], q[1]}, q[2], q[3]); });
 }
 
+void powXxMinusYYScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(3.0, [&] { b.xx_minus_yy(0.123, 0.456, q[0], q[1]); });
+}
+
+void powXxMinusYYScaledRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_minus_yy(3.0 * 0.123, 0.456, q[0], q[1]);
+}
+
 void barrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.barrier(q[0]);
@@ -1220,6 +1491,11 @@ void singleControlledBarrier(QCProgramBuilder& b) {
 void inverseBarrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv([&]() { b.barrier(q[0]); });
+}
+
+void powBarrier(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.barrier(q[0]); });
 }
 
 void trivialCtrl(QCProgramBuilder& b) {
@@ -1302,14 +1578,24 @@ void negPowRx(QCProgramBuilder& b) {
   b.pow(-2.0, [&] { b.rx(0.123, q[0]); });
 }
 
-void invPowRx(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv([&] { b.pow(2.0, [&] { b.rx(0.123, q[0]); }); });
-}
-
 void powRxNeg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.pow(2.0, [&] { b.rx(-0.123, q[0]); });
+}
+
+void negPowH(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(-0.5, [&] { b.h(q[0]); });
+}
+
+void negPowHRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, [&] { b.h(q[0]); });
+}
+
+void invPowRx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&] { b.pow(2.0, [&] { b.rx(0.123, q[0]); }); });
 }
 
 void powCtrlRx(QCProgramBuilder& b) {
@@ -1320,6 +1606,11 @@ void powCtrlRx(QCProgramBuilder& b) {
 void ctrlPowRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], [&] { b.pow(2.0, [&] { b.rx(0.123, q[1]); }); });
+}
+
+void ctrlPowSx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], [&] { b.pow(1.0 / 3.0, [&] { b.sx(q[1]); }); });
 }
 
 } // namespace mlir::qc
