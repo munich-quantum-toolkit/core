@@ -21,6 +21,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -86,6 +87,19 @@ private:
   LoweringState* state_;
 };
 } // namespace
+
+static void inlineRegion(Region& source, Region& target, unsigned int start,
+                         unsigned int numArgs, ValueRange replacementArgs,
+                         ConversionPatternRewriter& rewriter) {
+  rewriter.inlineRegionBefore(source, target, target.end());
+  auto& block = target.front();
+
+  for (auto [arg, operand] : llvm::zip_equal(
+           block.getArguments().drop_front(start), replacementArgs)) {
+    arg.replaceAllUsesWith(operand);
+  }
+  block.eraseArguments(start, numArgs);
+}
 
 #define GEN_PASS_DEF_QCOTOQC
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
@@ -770,34 +784,10 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     // Create qc.ctrl operation
     auto qcOp = qc::CtrlOp::create(rewriter, op.getLoc(), qcControls);
 
-    // Clone body region from QCO to QC
-    auto& dstRegion = qcOp.getRegion();
-    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
-
-    auto& entryBlock = dstRegion.front();
-    const auto numArgs = entryBlock.getNumArguments();
-    if (adaptor.getTargetsIn().size() != numArgs) {
-      return op.emitOpError() << "qco.ctrl: entry block args (" << numArgs
-                              << ") must match number of target operands ("
-                              << adaptor.getTargetsIn().size() << ")";
-    }
-
-    // Remove all block arguments in the cloned region
-    rewriter.modifyOpInPlace(qcOp, [&] {
-      // 1. Replace uses (Must be done BEFORE erasing)
-      // We iterate 0..N using indices since the block args are still stable
-      // here.
-      for (auto i = 0UL; i < numArgs; ++i) {
-        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getTargetsIn()[i]);
-      }
-
-      // 2. Erase all block arguments
-      // Now that they have no uses, we can safely wipe them.
-      // We use a bulk erase for efficiency (start index 0, count N).
-      if (numArgs > 0) {
-        entryBlock.eraseArguments(0, numArgs);
-      }
-    });
+    // Inline the region and replace the blockarguments
+    inlineRegion(op.getRegion(), qcOp.getRegion(), 0,
+                 adaptor.getTargetsIn().size(), adaptor.getTargetsIn(),
+                 rewriter);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());
@@ -832,34 +822,9 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
     // Create qc.inv operation
     auto qcOp = qc::InvOp::create(rewriter, op.getLoc());
 
-    // Clone body region from QCO to QC
-    auto& dstRegion = qcOp.getRegion();
-    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
-
-    auto& entryBlock = dstRegion.front();
-    const auto numArgs = entryBlock.getNumArguments();
-    if (adaptor.getQubitsIn().size() != numArgs) {
-      return op.emitOpError() << "qco.inv: entry block args (" << numArgs
-                              << ") must match number of target operands ("
-                              << adaptor.getQubitsIn().size() << ")";
-    }
-
-    // Remove all block arguments in the cloned region
-    rewriter.modifyOpInPlace(qcOp, [&] {
-      // 1. Replace uses (Must be done BEFORE erasing)
-      // We iterate 0..N using indices since the block args are still stable
-      // here.
-      for (auto i = 0UL; i < numArgs; ++i) {
-        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getQubitsIn()[i]);
-      }
-
-      // 2. Erase all block arguments
-      // Now that they have no uses, we can safely wipe them.
-      // We use a bulk erase for efficiency (start index 0, count N).
-      if (numArgs > 0) {
-        entryBlock.eraseArguments(0, numArgs);
-      }
-    });
+    // Inline the region and replace the blockarguments
+    inlineRegion(op.getRegion(), qcOp.getRegion(), 0,
+                 adaptor.getOperands().size(), adaptor.getQubitsIn(), rewriter);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());
@@ -886,7 +851,112 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   LogicalResult
   matchAndRewrite(qco::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
+    if (llvm::isa<scf::IfOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    } else {
+      rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
+    }
+
+    return success();
+  }
+};
+
+struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto newFor = scf::ForOp::create(
+        rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
+        adaptor.getStep(), ValueRange{});
+    // Erase default block
+    rewriter.eraseBlock(&newFor.getRegion().front());
+
+    // Inline the region and replace the blockarguments
+    inlineRegion(op.getRegion(), newFor.getRegion(), 1,
+                 adaptor.getInitArgs().size(), adaptor.getInitArgs(), rewriter);
+
+    rewriter.replaceOp(op, adaptor.getInitArgs());
+
+    return success();
+  }
+};
+
+struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto newWhileOp =
+        scf::WhileOp::create(rewriter, op->getLoc(), TypeRange{}, ValueRange{});
+
+    // Inline the regions and replace the blockarguments
+    inlineRegion(op.getBefore(), newWhileOp.getBefore(), 0,
+                 adaptor.getInits().size(), adaptor.getInits(), rewriter);
+    inlineRegion(op.getAfter(), newWhileOp.getAfter(), 0,
+                 adaptor.getInits().size(), adaptor.getInits(), rewriter);
+
+    rewriter.replaceOp(op, adaptor.getInits());
+
+    return success();
+  }
+};
+
+struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+                                                  ValueRange{});
+
+    return success();
+  }
+};
+
+struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    return success();
+  }
+};
+
+struct ConvertQCOIfOp final : OpConversionPattern<qco::IfOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::IfOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create the new if operation
+    auto newIf = scf::IfOp::create(rewriter, op.getLoc(), TypeRange{},
+                                   op.getCondition(), false);
+    auto& newThenRegion = newIf.getThenRegion();
+    auto& oldElseRegion = op.getElseRegion();
+    // Erase the default empty then block
+    rewriter.eraseBlock(&newThenRegion.front());
+
+    // Inline the region and replace the blockarguments
+    inlineRegion(op.getThenRegion(), newThenRegion, 0,
+                 adaptor.getOperands().size() - 1,
+                 adaptor.getOperands().drop_front(1), rewriter);
+
+    // Inline the else block if it has more than just the yield operation
+    if (oldElseRegion.front().getOperations().size() > 1) {
+      inlineRegion(oldElseRegion, newIf.getElseRegion(), 0,
+                   adaptor.getOperands().size() - 1,
+                   adaptor.getOperands().drop_front(1), rewriter);
+    }
+
+    // Replace the qco results with the input qc values except the condition
+    rewriter.replaceOp(op, adaptor.getOperands().drop_front(1));
+
     return success();
   }
 };
@@ -937,6 +1007,14 @@ protected:
     target.addIllegalDialect<QCODialect, qtensor::QTensorDialect>();
     target.addLegalDialect<QCDialect, memref::MemRefDialect>();
 
+    // Fix later
+    target.addDynamicallyLegalDialect<scf::SCFDialect>(
+        [](Operation* op) { return op->getResults().size() == 0; });
+    target.addDynamicallyLegalOp<scf::YieldOp>(
+        [&](Operation* op) { return op->getNumOperands() == 0; });
+    target.addDynamicallyLegalOp<scf::ConditionOp>(
+        [&](Operation* op) { return op->getNumOperands() == 1; });
+
     // Register operation conversion patterns that do not need state tracking
     patterns.add<
         ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
@@ -970,7 +1048,9 @@ protected:
         ConvertQCOTwoTargetTwoParameterToQC<qco::XXPlusYYOp, qc::XXPlusYYOp>,
         ConvertQCOTwoTargetTwoParameterToQC<qco::XXMinusYYOp, qc::XXMinusYYOp>,
         ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
-        ConvertQCOYieldOp>(typeConverter, context);
+        ConvertQCOYieldOp, ConvertQCOIfOp, ConvertQCOSCFWhileOp,
+        ConvertQCOSCFConditionOp, ConvertQCOSCFYieldOp, ConvertQCOSCFForOp>(
+        typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
     patterns.add<ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
