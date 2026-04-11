@@ -117,7 +117,7 @@ public:
      * @param index The index of the qubit to access
      * @return The specified qubit value
      */
-    Value operator[](size_t index) const {
+    Value& operator[](size_t index) {
       if (index >= qubits.size()) {
         llvm::reportFatalUsageError("Qubit index out of bounds");
       }
