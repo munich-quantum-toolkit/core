@@ -148,17 +148,10 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCOPowOpTest, QCOToQCTest,
     testing::Values(
-        QCOToQCTestCase{"PowSingleExponent",
-                        MQT_NAMED_BUILDER(qco::powSingleExponent),
-                        MQT_NAMED_BUILDER(qc::powSingleExponent)},
-        QCOToQCTestCase{"NestedPow", MQT_NAMED_BUILDER(qco::nestedPow),
-                        MQT_NAMED_BUILDER(qc::powSingleExponent)},
-        QCOToQCTestCase{"PowRxx", MQT_NAMED_BUILDER(qco::powRxx),
-                        MQT_NAMED_BUILDER(qc::powRxx)},
-        QCOToQCTestCase{"NegPowRx", MQT_NAMED_BUILDER(qco::negPowRx),
-                        MQT_NAMED_BUILDER(qc::negPowRx)},
-        QCOToQCTestCase{"InvPowRx", MQT_NAMED_BUILDER(qco::invPowRx),
-                        MQT_NAMED_BUILDER(qc::powRxNeg)}));
+        // pow(1/3){SX} inside ctrl: fold would emit gphase+rx (two ops,
+        // invalid in ctrl body) → pow survives and hits ConvertQCOPowOp
+        QCOToQCTestCase{"CtrlPowSx", MQT_NAMED_BUILDER(qco::ctrlPowSx),
+                        MQT_NAMED_BUILDER(qc::ctrlPowSx)}));
 /// @}
 
 /// \name QCOToQC/Modifiers/InvOp.cpp

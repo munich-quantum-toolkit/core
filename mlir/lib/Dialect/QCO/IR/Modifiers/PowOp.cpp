@@ -15,8 +15,6 @@
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
 #include <llvm/ADT/STLFunctionalExtras.h>
-
-#include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
@@ -33,6 +31,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <optional>
 

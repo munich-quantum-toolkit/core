@@ -15,8 +15,6 @@
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
-
-#include <cstdint>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -26,6 +24,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 
 using namespace mlir;
