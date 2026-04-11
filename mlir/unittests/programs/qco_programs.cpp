@@ -83,21 +83,19 @@ void singleMeasurementToSingleBit(QCOProgramBuilder& b) {
 }
 
 void repeatedMeasurementToSameBit(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
+  auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.measure(q0, c[0]);
-  q0 = b.measure(q0, c[0]);
-  q0 = b.measure(q0, c[0]);
+  q[0] = b.measure(q[0], c[0]);
+  q[0] = b.measure(q[0], c[0]);
+  q[0] = b.measure(q[0], c[0]);
 }
 
 void repeatedMeasurementToDifferentBits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(3);
-  auto q0 = q[0];
-  q0 = b.measure(q0, c[0]);
-  q0 = b.measure(q0, c[1]);
-  q0 = b.measure(q0, c[2]);
+  q[0] = b.measure(q[0], c[0]);
+  q[0] = b.measure(q[0], c[1]);
+  q[0] = b.measure(q[0], c[2]);
 }
 
 void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
@@ -120,9 +118,9 @@ void resetQubitWithoutOp(QCOProgramBuilder& b) {
 }
 
 void resetMultipleQubitsWithoutOp(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  b.reset(reg[0]);
-  b.reset(reg[1]);
+  auto q = b.allocQubitRegister(2);
+  q[0] = b.reset(q[0]);
+  q[1] = b.reset(q[1]);
 }
 
 void repeatedResetWithoutOp(QCOProgramBuilder& b) {
@@ -133,29 +131,25 @@ void repeatedResetWithoutOp(QCOProgramBuilder& b) {
 }
 
 void resetQubitAfterSingleOp(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.h(q0);
-  q0 = b.reset(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  q0 = b.h(q0);
-  q0 = b.reset(q0);
-  q1 = b.h(q1);
-  q1 = b.reset(q1);
+  auto q = b.allocQubitRegister(2);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
+  q[1] = b.h(q[1]);
+  q[1] = b.reset(q[1]);
 }
 
 void repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.h(q0);
-  q0 = b.reset(q0);
-  q0 = b.reset(q0);
-  q0 = b.reset(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void globalPhase(QCOProgramBuilder& b) { b.gphase(0.123); }
@@ -286,10 +280,9 @@ void inverseMultipleControlledX(QCOProgramBuilder& b) {
 }
 
 void twoX(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.x(q0);
-  q0 = b.x(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.x(q[0]);
+  q[0] = b.x(q[0]);
 }
 
 void y(QCOProgramBuilder& b) {
@@ -342,10 +335,9 @@ void inverseMultipleControlledY(QCOProgramBuilder& b) {
 }
 
 void twoY(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.y(q0);
-  q0 = b.y(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.y(q[0]);
+  q[0] = b.y(q[0]);
 }
 
 void z(QCOProgramBuilder& b) {
@@ -398,10 +390,9 @@ void inverseMultipleControlledZ(QCOProgramBuilder& b) {
 }
 
 void twoZ(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.z(q0);
-  q0 = b.z(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.z(q[0]);
+  q[0] = b.z(q[0]);
 }
 
 void h(QCOProgramBuilder& b) {
@@ -454,10 +445,9 @@ void inverseMultipleControlledH(QCOProgramBuilder& b) {
 }
 
 void twoH(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.h(q0);
-  q0 = b.h(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.h(q[0]);
 }
 
 void hWithoutRegister(QCOProgramBuilder& b) {
@@ -515,17 +505,15 @@ void inverseMultipleControlledS(QCOProgramBuilder& b) {
 }
 
 void sThenSdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.s(q0);
-  q0 = b.sdg(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.s(q[0]);
+  q[0] = b.sdg(q[0]);
 }
 
 void twoS(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.s(q0);
-  q0 = b.s(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.s(q[0]);
+  q[0] = b.s(q[0]);
 }
 
 void sdg(QCOProgramBuilder& b) {
@@ -578,17 +566,15 @@ void inverseMultipleControlledSdg(QCOProgramBuilder& b) {
 }
 
 void sdgThenS(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.sdg(q0);
-  q0 = b.s(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sdg(q[0]);
+  q[0] = b.s(q[0]);
 }
 
 void twoSdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.sdg(q0);
-  q0 = b.sdg(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sdg(q[0]);
+  q[0] = b.sdg(q[0]);
 }
 
 void t_(QCOProgramBuilder& b) {
@@ -641,17 +627,15 @@ void inverseMultipleControlledT(QCOProgramBuilder& b) {
 }
 
 void tThenTdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.t(q0);
-  q0 = b.tdg(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.t(q[0]);
+  q[0] = b.tdg(q[0]);
 }
 
 void twoT(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.t(q0);
-  q0 = b.t(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.t(q[0]);
+  q[0] = b.t(q[0]);
 }
 
 void tdg(QCOProgramBuilder& b) {
@@ -704,17 +688,15 @@ void inverseMultipleControlledTdg(QCOProgramBuilder& b) {
 }
 
 void tdgThenT(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.tdg(q0);
-  q0 = b.t(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.tdg(q[0]);
+  q[0] = b.t(q[0]);
 }
 
 void twoTdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.tdg(q0);
-  q0 = b.tdg(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.tdg(q[0]);
+  q[0] = b.tdg(q[0]);
 }
 
 void sx(QCOProgramBuilder& b) {
@@ -767,17 +749,15 @@ void inverseMultipleControlledSx(QCOProgramBuilder& b) {
 }
 
 void sxThenSxdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.sx(q0);
-  q0 = b.sxdg(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sx(q[0]);
+  q[0] = b.sxdg(q[0]);
 }
 
 void twoSx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.sx(q0);
-  q0 = b.sx(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sx(q[0]);
+  q[0] = b.sx(q[0]);
 }
 
 void sxdg(QCOProgramBuilder& b) {
@@ -830,17 +810,15 @@ void inverseMultipleControlledSxdg(QCOProgramBuilder& b) {
 }
 
 void sxdgThenSx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.sxdg(q0);
-  q0 = b.sx(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sxdg(q[0]);
+  q[0] = b.sx(q[0]);
 }
 
 void twoSxdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.sxdg(q0);
-  q0 = b.sxdg(q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sxdg(q[0]);
+  q[0] = b.sxdg(q[0]);
 }
 
 void rx(QCOProgramBuilder& b) {
@@ -893,10 +871,9 @@ void inverseMultipleControlledRx(QCOProgramBuilder& b) {
 }
 
 void twoRxOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.rx(0.123, q0);
-  q0 = b.rx(-0.123, q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.rx(0.123, q[0]);
+  q[0] = b.rx(-0.123, q[0]);
 }
 
 void rxPiOver2(QCOProgramBuilder& b) {
@@ -953,10 +930,9 @@ void inverseMultipleControlledRy(QCOProgramBuilder& b) {
   });
 }
 void twoRyOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.ry(0.456, q0);
-  q0 = b.ry(-0.456, q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.ry(0.456, q[0]);
+  q[0] = b.ry(-0.456, q[0]);
 }
 
 void ryPiOver2(QCOProgramBuilder& b) {
@@ -1014,10 +990,9 @@ void inverseMultipleControlledRz(QCOProgramBuilder& b) {
 }
 
 void twoRzOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.rz(0.789, q0);
-  q0 = b.rz(-0.789, q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.rz(0.789, q[0]);
+  q[0] = b.rz(-0.789, q[0]);
 }
 
 void p(QCOProgramBuilder& b) {
@@ -1070,10 +1045,9 @@ void inverseMultipleControlledP(QCOProgramBuilder& b) {
 }
 
 void twoPOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.p(0.123, q0);
-  q0 = b.p(-0.123, q0);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.p(0.123, q[0]);
+  q[0] = b.p(-0.123, q[0]);
 }
 
 void r(QCOProgramBuilder& b) {
@@ -1326,19 +1300,15 @@ void inverseMultipleControlledSwap(QCOProgramBuilder& b) {
 }
 
 void twoSwap(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.swap(q0, q1);
-  std::tie(q0, q1) = b.swap(q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
+  std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
 }
 
 void twoSwapSwappedTargets(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.swap(q0, q1);
-  std::tie(q1, q0) = b.swap(q1, q0);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
+  std::tie(q[1], q[0]) = b.swap(q[1], q[0]);
 }
 
 void iswap(QCOProgramBuilder& b) {
@@ -1448,19 +1418,15 @@ void inverseMultipleControlledDcx(QCOProgramBuilder& b) {
 }
 
 void twoDcx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.dcx(q0, q1);
-  std::tie(q0, q1) = b.dcx(q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
+  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
 }
 
 void twoDcxSwappedTargets(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.dcx(q0, q1);
-  std::tie(q1, q0) = b.dcx(q1, q0);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
+  std::tie(q[1], q[0]) = b.dcx(q[1], q[0]);
 }
 
 void ecr(QCOProgramBuilder& b) {
@@ -1517,11 +1483,9 @@ void inverseMultipleControlledEcr(QCOProgramBuilder& b) {
 }
 
 void twoEcr(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.ecr(q0, q1);
-  std::tie(q0, q1) = b.ecr(q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.ecr(q[0], q[1]);
+  std::tie(q[0], q[1]) = b.ecr(q[0], q[1]);
 }
 
 void rxx(QCOProgramBuilder& b) {
@@ -1588,37 +1552,29 @@ void fourControlledRxx(QCOProgramBuilder& b) {
 }
 
 void twoRxx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
+  auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
-  std::tie(q0, q1) = b.rxx(0.045, q0, q1);
-  std::tie(q0, q1) = b.rxx(0.078, q0, q1);
+  std::tie(q[0], q[1]) = b.rxx(0.045, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rxx(0.078, q[0], q[1]);
 }
 
 void twoRxxSwappedTargets(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
+  auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
-  std::tie(q0, q1) = b.rxx(0.045, q0, q1);
-  std::tie(q1, q0) = b.rxx(0.078, q1, q0);
+  std::tie(q[0], q[1]) = b.rxx(0.045, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.rxx(0.078, q[1], q[0]);
 }
 
 void twoRxxOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.rxx(0.123, q0, q1);
-  std::tie(q0, q1) = b.rxx(-0.123, q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rxx(-0.123, q[0], q[1]);
 }
 
 void twoRxxOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.rxx(0.123, q0, q1);
-  std::tie(q1, q0) = b.rxx(-0.123, q1, q0);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.rxx(-0.123, q[1], q[0]);
 }
 
 void ryy(QCOProgramBuilder& b) {
@@ -1675,37 +1631,29 @@ void inverseMultipleControlledRyy(QCOProgramBuilder& b) {
 }
 
 void twoRyy(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
+  auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
-  std::tie(q0, q1) = b.ryy(0.045, q0, q1);
-  std::tie(q0, q1) = b.ryy(0.078, q0, q1);
+  std::tie(q[0], q[1]) = b.ryy(0.045, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.ryy(0.078, q[0], q[1]);
 }
 
 void twoRyyOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.ryy(0.123, q0, q1);
-  std::tie(q1, q0) = b.ryy(-0.123, q1, q0);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.ryy(0.123, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.ryy(-0.123, q[1], q[0]);
 }
 
 void twoRyyOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.ryy(0.123, q0, q1);
-  std::tie(q0, q1) = b.ryy(-0.123, q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.ryy(0.123, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.ryy(-0.123, q[0], q[1]);
 }
 
 void twoRyySwappedTargets(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
+  auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
-  std::tie(q0, q1) = b.ryy(0.045, q0, q1);
-  std::tie(q1, q0) = b.ryy(0.078, q1, q0);
+  std::tie(q[0], q[1]) = b.ryy(0.045, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.ryy(0.078, q[1], q[0]);
 }
 
 void rzx(QCOProgramBuilder& b) {
@@ -1762,11 +1710,9 @@ void inverseMultipleControlledRzx(QCOProgramBuilder& b) {
 }
 
 void twoRzxOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.rzx(0.123, q0, q1);
-  std::tie(q0, q1) = b.rzx(-0.123, q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rzx(0.123, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rzx(-0.123, q[0], q[1]);
 }
 
 void rzz(QCOProgramBuilder& b) {
@@ -1823,37 +1769,29 @@ void inverseMultipleControlledRzz(QCOProgramBuilder& b) {
 }
 
 void twoRzz(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
+  auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
-  std::tie(q0, q1) = b.rzz(0.045, q0, q1);
-  std::tie(q0, q1) = b.rzz(0.078, q0, q1);
+  std::tie(q[0], q[1]) = b.rzz(0.045, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rzz(0.078, q[0], q[1]);
 }
 
 void twoRzzSwappedTargets(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
+  auto q = b.allocQubitRegister(2);
   // 0.045 + 0.078 = 0.123
-  std::tie(q0, q1) = b.rzz(0.045, q0, q1);
-  std::tie(q1, q0) = b.rzz(0.078, q1, q0);
+  std::tie(q[0], q[1]) = b.rzz(0.045, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.rzz(0.078, q[1], q[0]);
 }
 
 void twoRzzOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
-  std::tie(q0, q1) = b.rzz(-0.123, q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rzz(0.123, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rzz(-0.123, q[0], q[1]);
 }
 
 void twoRzzOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
-  std::tie(q1, q0) = b.rzz(-0.123, q1, q0);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rzz(0.123, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.rzz(-0.123, q[1], q[0]);
 }
 
 void xxPlusYY(QCOProgramBuilder& b) {
@@ -1911,11 +1849,9 @@ void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b) {
 }
 
 void twoXxPlusYYOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.xx_plus_yy(0.123, 0.456, q0, q1);
-  std::tie(q0, q1) = b.xx_plus_yy(-0.123, 0.456, q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_plus_yy(0.123, 0.456, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.xx_plus_yy(-0.123, 0.456, q[0], q[1]);
 }
 
 void xxMinusYY(QCOProgramBuilder& b) {
@@ -1973,11 +1909,9 @@ void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b) {
 }
 
 void twoXxMinusYYOppositePhase(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  std::tie(q0, q1) = b.xx_minus_yy(0.123, 0.456, q0, q1);
-  std::tie(q0, q1) = b.xx_minus_yy(-0.123, 0.456, q0, q1);
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.xx_minus_yy(-0.123, 0.456, q[0], q[1]);
 }
 
 void barrier(QCOProgramBuilder& b) {
@@ -2010,9 +1944,11 @@ void inverseBarrier(QCOProgramBuilder& b) {
 }
 
 void twoBarrier(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto b1 = b.barrier({reg[0], reg[1]});
-  b.barrier({b1[0], b1[1]});
+  auto q = b.allocQubitRegister(2);
+  auto b1 = b.barrier({q[0], q[1]});
+  q[0] = b1[0];
+  q[1] = b1[1];
+  b.barrier({q[0], q[1]});
 }
 
 void trivialCtrl(QCOProgramBuilder& b) {
@@ -2139,9 +2075,8 @@ void invCtrlSandwich(QCOProgramBuilder& b) {
 }
 
 void simpleIf(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.h(q0);
+  auto q = b.allocQubitRegister(1);
+  auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange qubits) {
     auto innerQubit = b.x(qubits[0]);
@@ -2150,12 +2085,10 @@ void simpleIf(QCOProgramBuilder& b) {
 }
 
 void ifTwoQubits(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
-  auto q0 = reg[0];
-  auto q1 = reg[1];
-  q0 = b.h(q0);
+  auto q = b.allocQubitRegister(2);
+  auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  b.qcoIf(measureResult, {measuredQubit, q1}, [&](mlir::ValueRange qubits) {
+  b.qcoIf(measureResult, {measuredQubit, q[1]}, [&](mlir::ValueRange qubits) {
     auto innerQubit0 = b.x(qubits[0]);
     auto innerQubit1 = b.x(qubits[1]);
     return llvm::SmallVector<mlir::Value>{innerQubit0, innerQubit1};
@@ -2163,9 +2096,8 @@ void ifTwoQubits(QCOProgramBuilder& b) {
 }
 
 void ifElse(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.h(q0);
+  auto q = b.allocQubitRegister(1);
+  auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
       measureResult, {measuredQubit},
@@ -2180,9 +2112,9 @@ void ifElse(QCOProgramBuilder& b) {
 }
 
 void constantTrueIf(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
+  auto q = b.allocQubitRegister(1);
   b.qcoIf(
-      true, reg.qubits,
+      true, q.qubits,
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
@@ -2194,9 +2126,9 @@ void constantTrueIf(QCOProgramBuilder& b) {
 }
 
 void constantFalseIf(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
+  auto q = b.allocQubitRegister(1);
   b.qcoIf(
-      false, reg.qubits,
+      false, q.qubits,
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
@@ -2208,9 +2140,8 @@ void constantFalseIf(QCOProgramBuilder& b) {
 }
 
 void nestedTrueIf(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(1);
-  auto q0 = reg[0];
-  q0 = b.h(q0);
+  auto q = b.allocQubitRegister(1);
+  auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange outerQubits) {
     auto innerResult =
