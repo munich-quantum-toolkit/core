@@ -1442,6 +1442,15 @@ private:
    */
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
+  void
+  insertAllQubits(SmallVector<Value>& updatedArgs,
+                  DenseMap<unsigned int, SmallVector<Value>>& insertedQubits,
+                  ValueRange initArgs);
+
+  void
+  updateTracking(DenseMap<unsigned int, SmallVector<Value>>& insertedQubits,
+                 ValueRange oldValues, ValueRange newValues);
+
   /**
    * @brief Information about a tensor
    */
