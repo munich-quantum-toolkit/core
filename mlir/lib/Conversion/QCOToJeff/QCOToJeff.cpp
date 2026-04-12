@@ -290,11 +290,6 @@ struct ConvertQTensorAllocOp final
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto tensorType = llvm::dyn_cast<RankedTensorType>(op.getType());
-    if (!tensorType ||
-        !llvm::isa<qco::QubitType>(tensorType.getElementType())) {
-      return failure();
-    }
     if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
                                                op.getOperation()))) {
       return failure();
