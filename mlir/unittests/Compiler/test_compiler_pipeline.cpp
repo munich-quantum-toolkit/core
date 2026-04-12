@@ -117,9 +117,11 @@ protected:
   }
 
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
+                          const bool hadamardLifting,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
+    config.hadamardLifting = hadamardLifting;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 
@@ -163,7 +165,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   EXPECT_TRUE(mlir::verify(*module).succeeded());
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), testCase.convertToQIR, record);
+  runPipeline(module.get(), testCase.convertToQIR, false, record);
 
   ASSERT_TRUE(testCase.qcReferenceBuilder);
   auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
@@ -187,6 +189,29 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
     ASSERT_TRUE(finalQIR);
     printer.record(finalQIR.get(), "Final QIR IR" + name);
   }
+}
+
+/**
+ * @brief Test: Hadamard lifting pass is invoked during the optimization stage
+ *
+ * We run the pipeline with enabled Hadamard lifting and check whether the
+ * outputs differ, i.e. that the pipeline ran and changed the IR.
+ * Correctness of the pass is tested in a dedicated test.
+ */
+TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), [&](mlir::qc::QCProgramBuilder& b) {
+        auto q = b.allocQubit();
+        b.x(q);
+        b.h(q);
+      });
+  ASSERT_TRUE(module);
+
+  mlir::CompilationRecord record;
+  runPipeline(module.get(), false, true, record);
+
+  // The outputs must differ, proving the pass ran and transformed the IR
+  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
 }
 
 INSTANTIATE_TEST_SUITE_P(
