@@ -16,11 +16,9 @@ def ShrinkQubitRegistersPass
   let dependentDialects = ["mlir::qc::QCDialect", "mlir::arith::ArithDialect",
                            "mlir::memref::MemRefDialect"];
   let summary =
-      "Shrink static qc::QubitType memref registers to accessed indices.";
+      "Shrink static `qc::QubitType` MemRef registers to accessed indices.";
   let description = [{
-    Shrinks one-dimensional static memref registers with element type
-    `!qc.qubit` by removing never-read indices and remapping `memref.load`
-    users accordingly.
+    Shrinks one-dimensional static MemRef registers with element type `!qc.qubit` by removing never-read indices and remapping `memref.load` users accordingly.
   }];
 }
 
