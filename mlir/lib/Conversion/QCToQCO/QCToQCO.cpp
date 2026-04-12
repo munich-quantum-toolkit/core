@@ -96,13 +96,17 @@ struct QubitInfo {
 struct LoweringState {
   struct ModifierFrame {
     /// QC qubits yielded from the current modifier region, in yield order.
-    SmallVector<Value> yieldOrder;
+    SmallVector<Value> qcQubits;
 
+    /// QC memrefs yielded from the current modifier region, in yield order.
     SmallVector<Value> memrefs;
+
     /// Latest QCO SSA values for QC qubits that are remapped inside the
     /// modifier region.
     llvm::DenseMap<Value, Value> currentQubits;
 
+    /// Latest QCO SSA values for QC memrefs that are remapped inside the
+    /// modifier region.
     llvm::DenseMap<Value, Value> currentRegisters;
   };
 
@@ -120,11 +124,14 @@ struct LoweringState {
   /// information
   llvm::DenseMap<Region*, llvm::DenseMap<Value, QubitInfo>> qubitInfoMap;
 
+  /// Per-region map from original its QC register to its extracted QC qubits
   llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::SetVector<Value>>>
       extractedQubits;
 
+  /// Map from an operation to its used QC qubits inside its regions
   llvm::DenseMap<Operation*, llvm::SetVector<Value>> regionQubitMap;
 
+  /// Map from an operation to its used QC memrefs inside its regions
   llvm::DenseMap<Operation*, llvm::SetVector<Value>> regionRegisterMap;
 
   /// Stack of active modifier regions
@@ -441,7 +448,7 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
   if (isInsideModifier(state)) {
     auto& frame = currentModifierFrame(state);
     memrefs = frame.memrefs;
-    qcQubits = frame.yieldOrder;
+    qcQubits = frame.qcQubits;
 
   } else {
     llvm::append_range(memrefs, state.regionRegisterMap[anchor]);
@@ -1467,58 +1474,36 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
     auto& state = getState();
     auto* operation = op.getOperation();
     auto& frame = currentModifierFrame(state);
-    auto targets = resolveMappedQubits(state, operation, frame.yieldOrder);
+    auto targets = resolveMappedQubits(state, operation, frame.qcQubits);
     rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
     popModifierFrame(state);
     return success();
   }
 };
 
-struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto* operation = op.getOperation();
-
-    insertAllExtractedQubits(state, op.getOperation(), rewriter);
-    SmallVector<Value> targets = resolveAllValues(state, operation);
-
-    if (op->getParentOfType<qco::IfOp>()) {
-      rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
-    } else {
-      rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
-    }
-
-    popModifierFrame(state);
-
-    return success();
-  }
-};
-
-struct ConvertSCFConditionOp final
-    : StatefulOpConversionPattern<scf::ConditionOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto* operation = op.getOperation();
-
-    insertAllExtractedQubits(state, op.getOperation(), rewriter);
-
-    SmallVector<Value> targets = resolveAllValues(state, operation);
-    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
-                                                  targets);
-    popModifierFrame(state);
-
-    return success();
-  }
-};
-
+/**
+ * @brief Converts scf.for with memory semantics to scf.for with value
+ * semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * scf.for %iv = %lb to %ub step %step {
+ *   %q0 = qc.load %memref[%iv] : !memref<3x!qc.qubit>
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
+ * %qtensor) -> (tensor<3x!qco.qubit) {
+ *   %outTensor, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+ *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+ *   %insert = qtensor.insert %q1 into %outTensor[%iv] : tensor<3x!qco.qubit>
+ *   scf.yield %insert : tensor<3x!qco.qubit>
+ * }
+ * ```
+ */
 struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1574,6 +1559,32 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
   }
 };
 
+/**
+ * @brief Converts scf.while with memory semantics to scf.while with value
+ * semantics for qubit values.
+ *
+ * @par Example:
+ * ```mlir
+ * scf.while : () -> () {
+ *   %cond = qc.measure %q0 : !qc.qubit -> i1
+ *   scf.condition(%cond)
+ * } do {
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+ *   %q1 = qco.measure %arg0 : !qco.qubit
+ *   scf.condition(%cond) %q1 : !qco.qubit
+ * } do {
+ * ^bb0(%arg0: !qco.qubit):
+ *   %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q2 : !qco.qubit
+ * }
+ * ```
+ */
 struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1639,6 +1650,26 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
   }
 };
 
+/**
+ * @brief Converts scf.if with memory semantics to qco.if
+ *
+ * @par Example:
+ * ```mlir
+ * scf.if %cond {
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = qco.if %cond qubits(%arg0 = %q0) -> (!qco.qubit) {
+ *   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q1 : !qco.qubit
+ * } else {
+ *   qco.yield %arg0 : !qco.qubit
+ * }
+ * ```
+ */
 struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1707,6 +1738,77 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
                           thenRegion.getArguments().take_front(numRegisters));
 
     rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.yield with memory semantics to scf.yield with value
+ * semantics for qubit values or to qco.scf if the parentOp is a qco::IfOp
+ *
+ * @par Example:
+ * ```mlir
+ * scf.yield
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.yield %targets
+ * ```
+ */
+struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* operation = op.getOperation();
+
+    insertAllExtractedQubits(state, op.getOperation(), rewriter);
+    SmallVector<Value> targets = resolveAllValues(state, operation);
+
+    if (op->getParentOfType<qco::IfOp>()) {
+      rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
+    } else {
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
+    }
+
+    popModifierFrame(state);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.condition with memory semantics to scf.condition with
+ * value semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * scf.condition(%cond)
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.condition(%cond) %targets
+ * ```
+ */
+struct ConvertSCFConditionOp final
+    : StatefulOpConversionPattern<scf::ConditionOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* operation = op.getOperation();
+
+    insertAllExtractedQubits(state, op.getOperation(), rewriter);
+
+    SmallVector<Value> targets = resolveAllValues(state, operation);
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+                                                  targets);
+    popModifierFrame(state);
+
     return success();
   }
 };

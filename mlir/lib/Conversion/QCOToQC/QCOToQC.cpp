@@ -889,6 +889,29 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   }
 };
 
+/**
+ * @brief Converts scf.for with value semantics to scf.for with memory
+ * semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
+ * %qtensor) -> (tensor<3x!qco.qubit) {
+ *   %outTensor, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+ *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+ *   %insert = qtensor.insert %q1 into %outTensor[%iv] : tensor<3x!qco.qubit>
+ *   scf.yield %insert : tensor<3x!qco.qubit>
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.for %iv = %lb to %ub step %step {
+ *   %q0 = qc.load %memref[%iv] : !memref<3x!qc.qubit>
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ */
 struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -911,6 +934,33 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
   }
 };
 
+/**
+ * @brief Converts scf.while with value semantics to scf.while with memory
+ * semantics for qubit values. This currently assumes no mixed types as return
+ * values.
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+ *   %q1, %cond = qco.measure %arg0 : !qco.qubit
+ *   scf.condition(%cond) %q1 : !qco.qubit
+ * } do {
+ * ^bb0(%arg0: !qco.qubit):
+ *   %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q2 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.while : () -> () {
+ *   %cond = qc.measure %q0 : !qc.qubit -> i1
+ *   scf.condition(%cond)
+ * } do {
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ */
 struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -932,30 +982,27 @@ struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
   }
 };
 
-struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
-                                                  ValueRange{});
-
-    return success();
-  }
-};
-
-struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
-    return success();
-  }
-};
-
+/**
+ * @brief Converts qco.if to scf.if with memory semantics
+ * for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = qco.if %cond qubits(%arg0 = %q0) -> (!qco.qubit) {
+ *   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q1 : !qco.qubit
+ * } else {
+ *   qco.yield %arg0 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.if %cond {
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ */
 struct ConvertQCOIfOp final : OpConversionPattern<qco::IfOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -984,6 +1031,57 @@ struct ConvertQCOIfOp final : OpConversionPattern<qco::IfOp> {
 
     // Replace the qco results with the input qc values except the condition
     rewriter.replaceOp(op, adaptor.getOperands().drop_front(1));
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.yield with value semantics to scf.yield with memory
+ * semantics for qubit values. This currently assumes no mixed types as yielded
+ * values.
+ *
+ * @par Example:
+ * ```mlir
+ * scf.yield %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.yield
+ * ```
+ */
+struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.condition with value semantics to scf.condition with
+ * memory semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * scf.condition(%cond) %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.condition(%cond)
+ * ```
+ */
+struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+                                                  ValueRange{});
 
     return success();
   }

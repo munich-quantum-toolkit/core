@@ -963,7 +963,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Construct a scf.for operation without iter args
+   * @brief Construct a scf.for operation
    *
    * @param lowerbound Lowerbound of the loop
    * @param upperbound Upperbound of the loop
@@ -973,7 +973,8 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfFor(lb, ub, step, [&](Value iv) { builder.x(q0); });
+   * builder.scfFor(lb, ub, step, [&](Value iv) { builder.x(q0); }); //TODO
+   * replace with register
    * ```
    * ```mlir
    * scf.for %iv = %lb to %ub step %step {
@@ -987,7 +988,7 @@ public:
                            const std::function<void(Value)>& body);
 
   /**
-   * @brief Construct a scf.while operation without return values
+   * @brief Construct a scf.while operation
    *
    * @param beforeBody Function that builds the before body of the while
    * operation
@@ -997,20 +998,18 @@ public:
    * @par Example:
    * ```c++
    * builder.scfWhile([&] {
-   *   builder.h(q0);
    *   auto res = builder.measure(q0);
    *   builder.scfCondition(res);
    * }, [&] {
-   *   builder.x(q0);
+   *   builder.h(q0);
    * });
    * ```
    * ```mlir
    * scf.while : () -> () {
-   *   qc.h %q0 : !qc.qubit
    *   %res = qc.measure %q0 : !qc.qubit -> i1
    *   scf.condition(%res)
    * } do {
-   *   qc.x %q0 : !qc.qubit
+   *   qc.h %q0 : !qc.qubit
    *   scf.yield
    * }
    * ```
@@ -1019,7 +1018,7 @@ public:
                              const std::function<void()>& afterBody);
 
   /**
-   * @brief Construct a scf.if operation without return values
+   * @brief Construct a scf.if operation
    *
    * @param condition Condition for the if operation
    * @param thenBody Function that builds the then body of the if
@@ -1031,15 +1030,11 @@ public:
    * ```c++
    * builder.scfIf(condition, [&] {
    *   builder.h(q0);
-   * }, [&] {
-   *   builder.x(q0);
    * });
    * ```
    * ```mlir
    * scf.if %condition {
    *   qc.h %q0 : !qc.qubit
-   * } else {
-   *   qc.x %q0 : !qc.qubit
    * }
    * ```
    */
@@ -1049,7 +1044,7 @@ public:
         std::optional<std::function<void()>> elseBody = std::nullopt);
 
   /**
-   * @brief Construct a scf.condition operation without yielded values
+   * @brief Construct a scf.condition operation
    *
    * @param condition Condition for condition operation
    * @return Reference to this builder for method chaining

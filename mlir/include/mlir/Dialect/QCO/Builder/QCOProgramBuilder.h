@@ -272,7 +272,8 @@ public:
    * %outTensor, %q0 = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
    * ```
    */
-  std::pair<Value, Value> qtensorExtract(Value tensor, const int64_t index);
+  std::pair<Value, Value>
+  qtensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
 
   /**
    * @brief Insert a qubit into a tensor
@@ -1220,12 +1221,12 @@ public:
    *     });
    * ```
    * ```mlir
-   * %q2 = qco.if %condition qubits(%arg0 = %q0) {
+   * %q2 = qco.if %condition qubits(%arg0 = %q0) -> (!qco.qubit) {
    *      %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
    *      qco.yield %q1
    * } else qubits(%arg0 = %q0) {
    *      qco.yield %arg0
-   * } : {i1, !qco.qubit} -> {!qco.qubit}
+   * }
    * ```
    */
   ValueRange
@@ -1247,15 +1248,20 @@ public:
    * @par Example:
    * ```c++
    * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs)
-   * -> llvm::SmallVector<Value> { auto q1 = builder.x(iterArgs[0]);
-   *    return {q1};
+   * -> llvm::SmallVector<Value> {
+   *   auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+   *   auto q1 = b.h(q0);
+   *   auto insert = b.qtensorInsert(q1, t0, iv);
+   *   return {insert};
    * });
    * ```
    * ```mlir
    * %q1 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0)
-   * -> !qco.qubit {
-   *   %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-   *   scf.yield %q2 : !qco.qubit
+   * -> (tensor<3x!qco.qubit>) {
+   *   %outTensor, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+   *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+   *   %insert = qtensor.insert %q1 into %outTensor[%iv] : tensor<3x!qco.qubit>
+   *   scf.yield %insert : tensor<3x!qco.qubit>
    * }
    * ```
    */
@@ -1264,8 +1270,9 @@ public:
          const std::variant<int64_t, Value>& upperbound,
          const std::variant<int64_t, Value>& step, ValueRange initArgs,
          llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body);
+
   /**
-   * @brief Construct a scf.while operation with return values
+   * @brief Construct a scf.while operation with arguments
    *
    * @param args Arguments for the while loop
    * @param beforeBody Function that builds the before body of the while
@@ -1276,24 +1283,23 @@ public:
    * @par Example:
    * ```c++
    * builder.scfWhile(args, [&](ValueRange iterArgs) -> llvm::SmallVector<Value>
-   * { auto q1 = builder.h(iterArgs[0]);
-   *   auto [q2, measureRes] = builder.measure(q1);
-   *   builder.scfCondition(measureRes, q2);
-   *   return {q2};
+   * {
+   *   auto [q0, measureRes] = builder.measure(iterArgs[0]);
+   *   builder.scfCondition(measureRes, q0);
+   *   return {q0};
    * }, [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
-   *   auto q1 = builder.x(iterArgs[0]);
-   *   return {q1};
+   *   auto q0 = builder.h(iterArgs[0]);
+   *   return {q0};
    * });
    * ```
    * ```mlir
    * %q1 = scf.while (%arg0 = %q0): (!qco.qubit) -> (!qco.qubit) {
-   *   %q2 = qco.h(%arg0)
-   *   %q3, %result = qco.measure %q2 : !qco.qubit
-   *   scf.condition(%result) %q3 : !qco.qubit
+   *   %q1, %cond = qco.measure %arg0 : !qco.qubit
+   *   scf.condition(%cond) %q1 : !qco.qubit
    * } do {
    * ^bb0(%arg0 : !qco.qubit):
-   *   %q4 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-   *   scf.yield %q4 : !qco.qubit
+   *   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+   *   scf.yield %q1 : !qco.qubit
    * }
    * ```
    */
@@ -1302,6 +1308,21 @@ public:
            llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
            llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody);
 
+  /**
+   * @brief Construct a scf.condition operation with yielded values
+   *
+   * @param condition Condition for condition operation
+   * @param yieldedValues ValueRange of the yieldedValues
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfCondition(condition, yieldedValues);
+   * ```
+   * ```mlir
+   * scf.condition(%condition) %q0 : !qco.qubit
+   * ```
+   */
   QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
 
   //===--------------------------------------------------------------------===//
@@ -1369,7 +1390,7 @@ private:
     /// ID of the register the qubit belongs to
     int64_t regId = -1;
     /// Index of the qubit within its register
-    int64_t regIndex = -1;
+    Value regIndex;
   };
 
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
