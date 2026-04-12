@@ -491,11 +491,6 @@ struct ConvertJeffQuregFreeZeroOpToQCO final
 /**
  * @brief Converts jeff.qubit_alloc to qco.alloc
  *
- * @details
- * Jeff does not distinguish static qubits from heap allocation. Qubits that
- * were `qco.static` before `qco-to-jeff` therefore reappear as `qco.alloc`
- * after `jeff-to-qco`.
- *
  * @par Example:
  * ```mlir
  * %q = jeff.qubit_alloc : !jeff.qubit

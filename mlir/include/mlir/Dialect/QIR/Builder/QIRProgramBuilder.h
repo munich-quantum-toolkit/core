@@ -62,8 +62,7 @@ namespace mlir::qir {
  * @par Qubit addressing:
  * A program must use either static qubits (`staticQubit`) or dynamic allocation
  * (`allocQubit`, `allocQubitRegister`), never both. The builder terminates
- * with a usage error if the modes are mixed. Lowering to QIR likewise rejects
- * mixed-mode QC input.
+ * with a usage error if the modes are mixed.
  *
  * @par Example Usage:
  * ```c++

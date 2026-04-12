@@ -38,7 +38,7 @@ namespace mlir::qc {
  *
  * @par Qubit addressing:
  * A program must use either static qubits (`staticQubit`) or dynamic allocation
- * (`allocQubit` / qubit registers), never both. The builder terminates with a
+ * (`allocQubit` / `allocQubitRegister`), never both. The builder terminates with a
  * usage error if the modes are mixed.
  *
  * @par Example Usage:

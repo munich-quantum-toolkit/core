@@ -137,7 +137,7 @@ struct LoweringState {
       return success();
     }
     return op->emitOpError(
-        "cannot mix static and dynamic qubit allocation modes in conversion");
+        "cannot mix static and dynamic qubit allocation modes in QC program");
   }
 };
 

@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/IRVerification.h"
-#include "mlir/Support/LogicalResult.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
 
