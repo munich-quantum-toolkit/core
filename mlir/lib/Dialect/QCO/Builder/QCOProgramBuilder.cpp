@@ -75,7 +75,7 @@ Value QCOProgramBuilder::intConstant(const int64_t value) {
 
 Value QCOProgramBuilder::allocQubit() {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   auto allocOp = AllocOp::create(*this);
   auto qubit = allocOp.getResult();
@@ -88,7 +88,7 @@ Value QCOProgramBuilder::allocQubit() {
 
 Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Static, "static");
+  ensureAllocationMode(AllocationMode::Static);
 
   auto staticOp = StaticOp::create(*this, index);
   const auto qubit = staticOp.getQubit();
@@ -201,7 +201,7 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 Value QCOProgramBuilder::qtensorAlloc(
     const std::variant<int64_t, Value>& size) {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   auto sizeValue = variantToValue(*this, getLoc(), size);
   auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
@@ -873,8 +873,8 @@ void QCOProgramBuilder::checkFinalized() const {
   }
 }
 
-void QCOProgramBuilder::ensureAllocationMode(const AllocationMode requestedMode,
-                                             const char* requestedName) {
+void QCOProgramBuilder::ensureAllocationMode(
+    const AllocationMode requestedMode) {
   if (allocationMode == AllocationMode::Unset) {
     allocationMode = requestedMode;
     return;
@@ -885,7 +885,10 @@ void QCOProgramBuilder::ensureAllocationMode(const AllocationMode requestedMode,
 
   const char* const existingName =
       allocationMode == AllocationMode::Static ? "static" : "dynamic";
-  const auto message =
+  const char* const requestedName =
+      requestedMode == AllocationMode::Static ? "static" : "dynamic";
+
+  const std::string message =
       llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
                     "QCOProgramBuilder",
                     existingName, requestedName)

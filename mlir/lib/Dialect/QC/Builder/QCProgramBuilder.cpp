@@ -70,7 +70,7 @@ Value QCProgramBuilder::intConstant(const int64_t value) {
 
 Value QCProgramBuilder::allocQubit() {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   // Create the AllocOp without register metadata
   auto allocOp = AllocOp::create(*this);
@@ -84,7 +84,7 @@ Value QCProgramBuilder::allocQubit() {
 
 Value QCProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Static, "static");
+  ensureAllocationMode(AllocationMode::Static);
 
   auto staticOp = StaticOp::create(*this, index);
   return staticOp.getQubit();
@@ -93,7 +93,7 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
 QCProgramBuilder::QubitRegister
 QCProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic, "dynamic");
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
@@ -477,8 +477,8 @@ void QCProgramBuilder::checkFinalized() const {
   }
 }
 
-void QCProgramBuilder::ensureAllocationMode(const AllocationMode requestedMode,
-                                            const char* requestedName) {
+void QCProgramBuilder::ensureAllocationMode(
+    const AllocationMode requestedMode) {
   if (allocationMode == AllocationMode::Unset) {
     allocationMode = requestedMode;
     return;
@@ -489,7 +489,10 @@ void QCProgramBuilder::ensureAllocationMode(const AllocationMode requestedMode,
 
   const char* const existingName =
       allocationMode == AllocationMode::Static ? "static" : "dynamic";
-  const auto message =
+  const char* const requestedName =
+      requestedMode == AllocationMode::Static ? "static" : "dynamic";
+
+  const std::string message =
       llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
                     "QCProgramBuilder",
                     existingName, requestedName)

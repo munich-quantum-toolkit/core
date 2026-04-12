@@ -55,11 +55,11 @@ using namespace qco;
 
 namespace {
 
-/** @brief Qubit addressing mode */
-enum class QubitAddressingMode : std::uint8_t {
-  Unknown, //!< The addressing mode is not known.
-  Static,  //!< The module uses static qubit allocation.
-  Dynamic  //!< The module uses dynamic qubit allocation.
+/** @brief Qubit allocation mode */
+enum class AllocationMode : std::uint8_t {
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
 };
 
 /**
@@ -82,17 +82,17 @@ struct LoweringState {
   llvm::SmallVector<std::string> strings;
   std::string entryPointName;
 
-  /// The qubit addressing mode used in the module
-  QubitAddressingMode mode = QubitAddressingMode::Unknown;
+  /// The qubit allocation mode used in the module
+  AllocationMode allocationMode = AllocationMode::Unset;
 
-  /// Sets or validates the addressing mode, or emits an error if it conflicts.
-  [[nodiscard]] LogicalResult
-  ensureAddressingMode(QubitAddressingMode requestedMode, Operation* op) {
-    if (mode == QubitAddressingMode::Unknown) {
-      mode = requestedMode;
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = requestedMode;
       return success();
     }
-    if (mode == requestedMode) {
+    if (allocationMode == requestedMode) {
       return success();
     }
     return op->emitOpError(
@@ -295,7 +295,7 @@ struct ConvertQTensorAllocOp final
         !llvm::isa<qco::QubitType>(tensorType.getElementType())) {
       return failure();
     }
-    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
                                                op.getOperation()))) {
       return failure();
     }
@@ -422,7 +422,7 @@ struct ConvertQCOAllocOpToJeff final
   LogicalResult
   matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
                                                op.getOperation()))) {
       return failure();
     }
@@ -457,7 +457,7 @@ struct ConvertQCOStaticOpToJeff final
   LogicalResult
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Static,
+    if (failed(getState().ensureAllocationMode(AllocationMode::Static,
                                                op.getOperation()))) {
       return failure();
     }

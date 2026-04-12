@@ -1375,8 +1375,7 @@ private:
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
 
-  /// Ensure static and dynamic allocation modes are not mixed.
-  void ensureAllocationMode(AllocationMode requestedMode,
-                            const char* requestedName);
+  /// Ensure static and dynamic qubit allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode);
 };
 } // namespace mlir::qco

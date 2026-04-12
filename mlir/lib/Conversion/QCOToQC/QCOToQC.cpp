@@ -42,34 +42,35 @@ using namespace qco;
 using namespace qc;
 
 namespace {
-/** @brief Qubit addressing mode */
-enum class QubitAddressingMode : std::uint8_t {
-  Unknown, //!< The addressing mode is not known.
-  Static,  //!< The module uses static qubit allocation.
-  Dynamic  //!< The module uses dynamic qubit allocation.
+
+/** @brief Qubit allocation mode */
+enum class AllocationMode : std::uint8_t {
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
 };
 
 /**
- * @brief State object for tracking qubit addressing mode.
+ * @brief State object for tracking qubit allocation mode.
  *
  * @details
  * Used to track whether a function uses static or dynamic qubit allocation.
  * This is used to determine whether to convert `qco.sink` to `qc.dealloc` (for
  * dynamic qubits) or simply erase it (for static qubits). This is also used to
- * catch cases of mixed addressing being used, which is not supported.
+ * catch cases of mixed allocation modes being used, which is not supported.
  */
 struct LoweringState {
-  /// The qubit addressing mode used in the module
-  QubitAddressingMode mode = QubitAddressingMode::Unknown;
+  /// The qubit allocation mode used in the module
+  AllocationMode allocationMode = AllocationMode::Unset;
 
-  /// Sets or validates the addressing mode, or emits an error if it conflicts.
-  [[nodiscard]] LogicalResult
-  ensureAddressingMode(QubitAddressingMode requestedMode, Operation* op) {
-    if (mode == QubitAddressingMode::Unknown) {
-      mode = requestedMode;
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = requestedMode;
       return success();
     }
-    if (mode == requestedMode) {
+    if (allocationMode == requestedMode) {
       return success();
     }
     return op->emitOpError(
@@ -82,7 +83,7 @@ struct LoweringState {
  *
  * @details
  * Extends OpConversionPattern to provide access to a shared LoweringState
- * object, which is used to track the addressing mode of the module.
+ * object, which is used to track the allocation mode of the module.
  * @tparam OpType The QCO operation type to be converted.
  */
 template <typename OpType>
@@ -160,7 +161,7 @@ struct ConvertQTensorAllocOp final
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
                                                op.getOperation()))) {
       return failure();
     }
@@ -260,7 +261,7 @@ struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
   LogicalResult
   matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Dynamic,
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
                                                op.getOperation()))) {
       return failure();
     }
@@ -298,12 +299,13 @@ struct ConvertQCOSinkOp final : StatefulOpConversionPattern<SinkOp> {
   LogicalResult
   matchAndRewrite(SinkOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto mode = getState().mode;
-    if (mode == QubitAddressingMode::Unknown) {
-      return op.emitOpError("cannot exist without qubit allocation");
+    const auto allocationMode = getState().allocationMode;
+    if (allocationMode == AllocationMode::Unset) {
+      return op.emitOpError(
+          "cannot exist without an established qubit allocation mode");
     }
 
-    if (mode == QubitAddressingMode::Static) {
+    if (allocationMode == AllocationMode::Static) {
       rewriter.eraseOp(op);
       return success();
     }
@@ -333,7 +335,7 @@ struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
   LogicalResult
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(getState().ensureAddressingMode(QubitAddressingMode::Static,
+    if (failed(getState().ensureAllocationMode(AllocationMode::Static,
                                                op.getOperation()))) {
       return failure();
     }

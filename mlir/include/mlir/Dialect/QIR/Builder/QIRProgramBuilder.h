@@ -973,9 +973,8 @@ private:
   /// Check if the builder has been finalized
   void checkFinalized() const;
 
-  /// Ensure static and dynamic allocation modes are not mixed.
-  void ensureAllocationMode(AllocationMode requestedMode,
-                            const char* requestedName);
+  /// Ensure static and dynamic qubit allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode);
 };
 
 } // namespace mlir::qir
