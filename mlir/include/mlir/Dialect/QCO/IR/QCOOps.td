@@ -1051,8 +1051,8 @@ def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
         ```
     }];
 
-  let arguments = (ins Variadic<QubitType>:$targets);
-  let assemblyFormat = "$targets attr-dict";
+  let arguments = (ins Variadic<AnyType>:$targets);
+  let assemblyFormat = "attr-dict ($targets^ `:` type($targets))?";
 }
 
 def CtrlOp
@@ -1228,8 +1228,8 @@ def IfOp
         ```
     }];
 
-  let arguments = (ins I1:$condition, Variadic<QubitType>:$qubits);
-  let results = (outs Variadic<QubitType>:$results);
+  let arguments = (ins I1:$condition, Variadic<AnyType>:$qubits);
+  let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
   let hasCustomAssemblyFormat = 1;
 
