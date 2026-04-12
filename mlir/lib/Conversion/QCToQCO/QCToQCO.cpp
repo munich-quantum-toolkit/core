@@ -1767,7 +1767,7 @@ struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     insertAllExtractedQubits(state, op.getOperation(), rewriter);
     SmallVector<Value> targets = resolveAllValues(state, operation);
 
-    if (op->getParentOfType<qco::IfOp>()) {
+    if (llvm::isa<qco::IfOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
     } else {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
