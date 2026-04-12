@@ -24,6 +24,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -64,7 +65,7 @@ protected:
     DialectRegistry registry;
     registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
                     arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect>();
+                    memref::MemRefDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -634,4 +635,39 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"RepeatedResetAfterSingleOp",
                         MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp),
                         MQT_NAMED_BUILDER(qco::resetQubitAfterSingleOp)}));
+/// @}
+
+/// \name QCToQCO/Operations/ForOp.cpp //TODO Change name
+/// @{
+INSTANTIATE_TEST_SUITE_P(SCFForTest, QCToQCOTest,
+                         testing::Values(QCToQCOTestCase{
+                             "SimpleSCFForLoop",
+                             MQT_NAMED_BUILDER(qc::testSCFFor),
+                             MQT_NAMED_BUILDER(qco::testSCFFor)}));
+
+/// \name QCToQCO/Operations/WhileOp.cpp //TODO Change name
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    SCFWhileTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"SimpleWhile", MQT_NAMED_BUILDER(qc::simpleWhileReset),
+                        MQT_NAMED_BUILDER(qco::simpleWhileReset)},
+        QCToQCOTestCase{"SimpleDoWhile",
+                        MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
+                        MQT_NAMED_BUILDER(qco::simpleDoWhileReset)}));
+
+/// \name QCToQCO/Operations/IfOp.cpp //TODO Change name
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    SCFIfTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
+                        MQT_NAMED_BUILDER(qco::simpleIf)},
+        QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
+                        MQT_NAMED_BUILDER(qco::ifTwoQubits)},
+        QCToQCOTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
+                        MQT_NAMED_BUILDER(qco::ifElse)},
+        QCToQCOTestCase{"nestedIfOpForLoop",
+                        MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
+                        MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
 /// @}

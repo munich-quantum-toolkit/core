@@ -2233,32 +2233,63 @@ void qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   b.qtensorInsert(q2, extractOutTensor1, 0);
 }
 
-void testSCFWhile(QCOProgramBuilder& b) {
+void simpleWhileReset(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
-  auto scfWhileResult = b.scfWhile(
-      ValueRange{q0},
+  auto q1 = b.h(q0);
+  b.scfWhile(
+      ValueRange{q1},
       [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
-        auto [q1, measureResult] = b.measure(iterArgs[0]);
-        b.scfCondition(measureResult, q1);
-        return {q1};
+        auto [q2, measureResult] = b.measure(iterArgs[0]);
+        b.scfCondition(measureResult, q2);
+        return {q2};
       },
       [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
-        auto q1 = b.h(iterArgs[0]);
-        auto q2 = b.y(q1);
-        return {q2};
+        auto q3 = b.h(iterArgs[0]);
+        return {q3};
       });
-  b.h(scfWhileResult[0]);
+}
+
+void simpleDoWhileReset(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  b.scfWhile(
+      ValueRange{q0},
+      [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
+        auto q1 = b.h(iterArgs[0]);
+        auto [q2, measureResult] = b.measure(q1);
+        b.scfCondition(measureResult, q2);
+        return {q2};
+      },
+      [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
+        return iterArgs;
+      });
 }
 
 void testSCFFor(QCOProgramBuilder& b) {
-  auto reg = b.qtensorAlloc(2);
-  auto scfForRes =
-      b.scfFor(0, 2, 1, {reg},
-               [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
-                 auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-                 auto q1 = b.h(q0);
-                 auto insert = b.qtensorInsert(q1, t0, iv);
-                 return {insert};
-               });
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, {reg.value},
+           [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+             auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+             auto q1 = b.h(q0);
+             auto insert = b.qtensorInsert(q1, t0, iv);
+             return {insert};
+           });
 };
+
+void nestedIfOpForLoop(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  auto q1 = b.h(q0);
+  auto [q2, cond] = b.measure(q1);
+  b.qcoIf(cond, reg.value, [&](ValueRange args) -> llvm::SmallVector<Value> {
+    auto scfFor = b.scfFor(
+        0, 3, 1, args,
+        [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+          auto [t0, q3] = b.qtensorExtract(iterArgs[0], iv);
+          auto q4 = b.h(q3);
+          auto insert = b.qtensorInsert(q4, t0, iv);
+          return {insert};
+        });
+    return scfFor;
+  });
+}
 } // namespace mlir::qco

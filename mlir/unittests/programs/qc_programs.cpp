@@ -1269,31 +1269,71 @@ void invCtrlSandwich(QCProgramBuilder& b) {
     b.ctrl(q[0], [&]() { b.inv([&]() { b.rxx(0.123, q[1], q[2]); }); });
   });
 }
-void testSCFWhile(QCProgramBuilder& b) {
+
+void simpleWhileReset(QCProgramBuilder& b) {
   auto q = b.allocQubit();
-  auto reg = b.allocQuantumRegister(3);
+  b.h(q);
   b.scfWhile(
       [&] {
         auto measureResult = b.measure(q);
         b.scfCondition(measureResult);
       },
+      [&] { b.h(q); });
+}
+
+void simpleDoWhileReset(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.scfWhile(
       [&] {
-        b.scfFor(0, 2, 1, [&](Value iv) { b.h(reg[iv]); });
         b.h(q);
-      });
-  b.h(q);
+        auto measureResult = b.measure(q);
+        b.scfCondition(measureResult);
+      },
+      [&] {});
 }
 
 void testSCFFor(QCProgramBuilder& b) {
-  auto reg = b.allocQuantumRegister(2);
-  b.scfFor(0, 2, 1, [&](Value iv) { b.h(reg[iv]); });
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.memrefLoad(reg, iv);
+    b.h(q);
+  });
 };
-void testSCFIf(QCProgramBuilder& b) {
+
+void simpleIf(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0]);
+  b.scfIf(cond, [&] { b.x(q[0]); });
+}
+
+void ifTwoQubits(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  auto cond = b.measure(q[0]);
+  b.scfIf(cond, [&] {
+    b.x(q[0]);
+    b.x(q[1]);
+  });
+}
+
+void ifElse(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0]);
+  b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
+}
+
+void nestedIfOpForLoop(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
   auto q0 = b.allocQubit();
-  auto q1 = b.allocQubit();
-  // auto reg = b.allocQuantumRegister(2);
-  auto res = b.measure(q0);
-  b.scfIf(res, [&] { b.h(q0); }, [&] { b.h(q1); });
-  b.scfFor(0, 2, 1, [&](Value iv) { b.h(q0); });
+  b.h(q0);
+  auto cond = b.measure(q0);
+  b.scfIf(cond, [&] {
+    b.scfFor(0, 3, 1, [&](Value iv) {
+      auto q1 = b.memrefLoad(q, iv);
+      b.h(q1);
+    });
+  });
 }
 } // namespace mlir::qc
