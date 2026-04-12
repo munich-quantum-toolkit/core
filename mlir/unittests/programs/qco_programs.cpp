@@ -2233,4 +2233,32 @@ void qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   b.qtensorInsert(q2, extractOutTensor1, 0);
 }
 
+void testSCFWhile(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto scfWhileResult = b.scfWhile(
+      ValueRange{q0},
+      [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
+        auto [q1, measureResult] = b.measure(iterArgs[0]);
+        b.scfCondition(measureResult, q1);
+        return {q1};
+      },
+      [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
+        auto q1 = b.h(iterArgs[0]);
+        auto q2 = b.y(q1);
+        return {q2};
+      });
+  b.h(scfWhileResult[0]);
+}
+
+void testSCFFor(QCOProgramBuilder& b) {
+  auto reg = b.qtensorAlloc(2);
+  auto scfForRes =
+      b.scfFor(0, 2, 1, {reg},
+               [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+                 auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+                 auto q1 = b.h(q0);
+                 auto insert = b.qtensorInsert(q1, t0, iv);
+                 return {insert};
+               });
+};
 } // namespace mlir::qco

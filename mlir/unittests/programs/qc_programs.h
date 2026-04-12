@@ -823,4 +823,10 @@ void tripleNestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCProgramBuilder& b);
+
+void testSCFWhile(QCProgramBuilder& b);
+
+void testSCFFor(QCProgramBuilder& b);
+
+void testSCFIf(QCProgramBuilder& b);
 } // namespace mlir::qc

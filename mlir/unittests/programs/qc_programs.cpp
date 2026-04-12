@@ -1269,5 +1269,31 @@ void invCtrlSandwich(QCProgramBuilder& b) {
     b.ctrl(q[0], [&]() { b.inv([&]() { b.rxx(0.123, q[1], q[2]); }); });
   });
 }
+void testSCFWhile(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  auto reg = b.allocQuantumRegister(3);
+  b.scfWhile(
+      [&] {
+        auto measureResult = b.measure(q);
+        b.scfCondition(measureResult);
+      },
+      [&] {
+        b.scfFor(0, 2, 1, [&](Value iv) { b.h(reg[iv]); });
+        b.h(q);
+      });
+  b.h(q);
+}
 
+void testSCFFor(QCProgramBuilder& b) {
+  auto reg = b.allocQuantumRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) { b.h(reg[iv]); });
+};
+void testSCFIf(QCProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto q1 = b.allocQubit();
+  // auto reg = b.allocQuantumRegister(2);
+  auto res = b.measure(q0);
+  b.scfIf(res, [&] { b.h(q0); }, [&] { b.h(q1); });
+  b.scfFor(0, 2, 1, [&](Value iv) { b.h(q0); });
+}
 } // namespace mlir::qc
