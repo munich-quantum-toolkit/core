@@ -229,11 +229,12 @@ Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
   return result;
 }
 
-std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
-                                                          const int64_t index) {
+std::pair<Value, Value>
+QCOProgramBuilder::qtensorExtract(Value tensor,
+                                  const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
-  auto indexValue = arith::ConstantIndexOp::create(*this, index).getResult();
+  auto indexValue = variantToValue(*this, getLoc(), index);
   auto extractOp = qtensor::ExtractOp::create(*this, tensor, indexValue);
   auto qubit = extractOp.getResult();
   auto outTensor = extractOp.getOutTensor();
@@ -241,7 +242,8 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
   validateTensorValue(tensor);
   const auto regId = validTensors[tensor].regId;
 
-  validQubits.try_emplace(qubit, QubitInfo{.regId = regId, .regIndex = index});
+  validQubits.try_emplace(qubit,
+                          QubitInfo{.regId = regId, .regIndex = indexValue});
   updateTensorTracking(tensor, outTensor);
 
   return {outTensor, qubit};
@@ -820,16 +822,23 @@ ValueRange QCOProgramBuilder::scfFor(
   setInsertionPointToStart(forBody);
 
   // Add the iterArgs to the validQubits
-  auto* bodyRegion = forBody->getParent();
   for (const auto& arg : loopArgs) {
-    validQubits.try_emplace(arg, QubitInfo{});
+    if (llvm::isa<QubitType>(arg.getType())) {
+      validQubits.try_emplace(arg, QubitInfo{});
+    } else {
+      validTensors.try_emplace(arg, TensorInfo{});
+    }
   }
   // Build the body
   const auto bodyResults = body(iv, loopArgs);
   scf::YieldOp::create(*this, bodyResults);
 
   for (auto result : bodyResults) {
-    validQubits.erase(result);
+    if (llvm::isa<QubitType>(result.getType())) {
+      validQubits.erase(result);
+    } else {
+      validTensors.erase(result);
+    }
   }
 
   // Update the qubit tracking
@@ -838,6 +847,8 @@ ValueRange QCOProgramBuilder::scfFor(
     if (!llvm::isa<TensorType>(initArg.getType())) {
 
       updateQubitTracking(initArg, result);
+    } else {
+      updateTensorTracking(initArg, result);
     }
   }
 
@@ -1026,10 +1037,11 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     auto currentTensor = tensor;
     // Filter out qubits belonging to this tensor
     for (auto& [qubit, qubitInfo] : qubitsByRegister[tensorInfo.regId]) {
-      auto indexValue = constantFromScalar(*this, getLoc(), qubitInfo.regIndex);
-      currentTensor =
-          qtensor::InsertOp::create(*this, qubit, currentTensor, indexValue)
-              .getResult();
+      // auto indexValue = constantFromScalar(*this, getLoc(),
+      // qubitInfo.regIndex);
+      currentTensor = qtensor::InsertOp::create(*this, qubit, currentTensor,
+                                                qubitInfo.regIndex)
+                          .getResult();
     }
     // Deallocate tensor
     qtensor::DeallocOp::create(*this, currentTensor);
