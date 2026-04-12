@@ -112,6 +112,13 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   return {.value = memref, .qubits = std::move(qubits)};
 }
 
+Value QCProgramBuilder::memrefLoad(QubitRegister& memref,
+                                   const std::variant<int64_t, Value>& index) {
+  auto param = variantToValue(*this, getLoc(), index);
+  auto load = memref::LoadOp::create(*this, memref.value, param);
+  return load.getResult();
+}
+
 QCProgramBuilder::ClassicalRegister
 QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
                                             std::string name) const {

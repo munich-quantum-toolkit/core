@@ -174,6 +174,24 @@ public:
   QubitRegister allocQubitRegister(int64_t size);
 
   /**
+   * @brief Explicitly loads a qubit from a memref
+   *
+   * @param memref Source memref
+   * @param index The index from where the qubit is loaded
+   * @return The loaded qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto q0 = builder.memrefLoad(memref, index);
+   * ```
+   * ```mlir
+   * %q0 = memref.load %memref[%index] : memref<3x!qc.qubit>
+   * ```
+   */
+  Value memrefLoad(QubitRegister& memref,
+                   const std::variant<int64_t, Value>& index);
+
+  /**
    * @brief A small structure representing a single classical bit within a
    * classical register.
    */
