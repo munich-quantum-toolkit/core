@@ -120,6 +120,18 @@ void inverseGlobalPhase(QCProgramBuilder& b);
 /// phase gate.
 void inverseMultipleControlledGlobalPhase(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(3.0) wrapping a global-phase gate (scales θ).
+void powGphaseScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powGphaseScaled: gphase(3*0.123).
+void powGphaseScaledRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-3.0) wrapping gphase (negative exponent).
+void negPowGphase(QCProgramBuilder& b);
+
+/// Reference for negPowGphase: gphase(-3.0 * 0.123).
+void negPowGphaseRef(QCProgramBuilder& b);
+
 // --- IdOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an identity gate.
@@ -144,6 +156,9 @@ void inverseIdentity(QCProgramBuilder& b);
 /// gate.
 void inverseMultipleControlledIdentity(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(2.0) wrapping id (should pass through).
+void powId(QCProgramBuilder& b);
+
 // --- XOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an X gate.
@@ -166,6 +181,21 @@ void inverseX(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
 void inverseMultipleControlledX(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping an X gate (folds to gphase + RX).
+void powHalfX(QCProgramBuilder& b);
+
+/// Creates the reference for powHalfX: sx (X^(1/2) = SX exactly).
+void powHalfXRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-0.5) wrapping an X gate (r == -0.5 → sxdg).
+void powNegHalfX(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an X gate (general: gphase + rx).
+void powThirdX(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdX: gphase(-π/6) + rx(π/3).
+void powThirdXRef(QCProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
@@ -190,6 +220,12 @@ void inverseY(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled Y gate.
 void inverseMultipleControlledY(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(0.5) wrapping a Y gate (folds to gphase + RY).
+void powHalfY(QCProgramBuilder& b);
+
+/// Creates the reference for powHalfY: gphase(-π/4) followed by ry(π/2).
+void powHalfYRef(QCProgramBuilder& b);
+
 // --- ZOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Z gate.
@@ -212,6 +248,19 @@ void inverseZ(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Z gate.
 void inverseMultipleControlledZ(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping a Z gate (folds to P(π/2) = S).
+void powHalfZ(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1.5) wrapping a Z gate.
+/// Exercises normalizeAngle theta -= twoPi (1.5π normalises to -π/2 → sdg).
+void powThreeHalvesZ(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping a Z gate (falls through to P gate).
+void powThirdZ(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdZ: p(π/3).
+void powThirdZRef(QCProgramBuilder& b);
 
 // --- HOp ------------------------------------------------------------------ //
 
@@ -239,6 +288,12 @@ void inverseMultipleControlledH(QCProgramBuilder& b);
 /// Creates a circuit with just an H gate and no qubit register.
 void hWithoutRegister(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(2) wrapping an H gate (even hermitian → erase).
+void powEvenH(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3) wrapping an H gate (odd hermitian → H).
+void powOddH(QCProgramBuilder& b);
+
 // --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.
@@ -261,6 +316,23 @@ void inverseS(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled S gate.
 void inverseMultipleControlledS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an S gate (folds to P(π) = Z).
+void powTwoS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(4.0) wrapping an S gate.
+/// Exercises tryReplaceWithNamedPhaseGate erase path (angle=2π → identity).
+void powFourS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping an S gate.
+/// Exercises tryReplaceWithNamedPhaseGate TOp path (angle=π/4 → t).
+void powHalfS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an S gate (default: p(π/6)).
+void powThirdS(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdS: p(π/6).
+void powThirdSRef(QCProgramBuilder& b);
 
 // --- SdgOp ---------------------------------------------------------------- //
 
@@ -285,6 +357,19 @@ void inverseSdg(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled Sdg gate.
 void inverseMultipleControlledSdg(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(2) wrapping an Sdg gate (folds to P(-π) = Z).
+void powTwoSdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping an Sdg gate.
+/// Exercises tryReplaceWithNamedPhaseGate TdgOp path (angle=-π/4 → tdg).
+void powHalfSdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an Sdg gate (default: p(-π/6)).
+void powThirdSdg(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdSdg: p(-π/6).
+void powThirdSdgRef(QCProgramBuilder& b);
+
 // --- TOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a T gate.
@@ -307,6 +392,15 @@ void inverseT(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled T gate.
 void inverseMultipleControlledT(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping a T gate (folds to P(π/2) = S).
+void powTwoT(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping a T gate (default: p(π/12)).
+void powThirdT(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdT: p(π/12).
+void powThirdTRef(QCProgramBuilder& b);
 
 // --- TdgOp ---------------------------------------------------------------- //
 
@@ -331,6 +425,15 @@ void inverseTdg(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled Tdg gate.
 void inverseMultipleControlledTdg(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(2) wrapping a Tdg gate (folds to P(-π/2) = Sdg).
+void powTwoTdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping a Tdg gate (default: p(-π/12)).
+void powThirdTdg(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdTdg: p(-π/12).
+void powThirdTdgRef(QCProgramBuilder& b);
+
 // --- SXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an SX gate.
@@ -353,6 +456,18 @@ void inverseSx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SX gate.
 void inverseMultipleControlledSx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an SX gate (folds to X: SX^2 = X).
+void powTwoSx(QCProgramBuilder& b);
+
+/// Creates the reference for powTwoSx: x (SX^2 = X exactly).
+void powTwoSxRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an SX gate (default: gphase+rx).
+void powThirdSx(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdSx: gphase(-π/12) + rx(π/6).
+void powThirdSxRef(QCProgramBuilder& b);
 
 // --- SXdgOp --------------------------------------------------------------- //
 
@@ -378,6 +493,19 @@ void inverseSxdg(QCProgramBuilder& b);
 /// gate.
 void inverseMultipleControlledSxdg(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(2) wrapping an SXdg gate (folds to X: SXdg^2 =
+/// X).
+void powTwoSxdg(QCProgramBuilder& b);
+
+/// Creates the reference for powTwoSxdg: x (SXdg^2 = X exactly).
+void powTwoSxdgRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an SXdg gate (default: gphase+rx).
+void powThirdSxdg(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdSxdg: gphase(π/12) + rx(-π/6).
+void powThirdSxdgRef(QCProgramBuilder& b);
+
 // --- RXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RX gate.
@@ -400,6 +528,12 @@ void inverseRx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RX gate.
 void inverseMultipleControlledRx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping rx(0.123) (folds to rx(0.246)).
+void powRxScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powRxScaled: rx(0.246) directly.
+void rxScaled(QCProgramBuilder& b);
 
 // --- RYOp ----------------------------------------------------------------- //
 
@@ -493,6 +627,12 @@ void inverseR(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled R gate.
 void inverseMultipleControlledR(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(3.0) wrapping an R gate (scales θ, preserves φ).
+void powRScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powRScaled: r(3*0.123, 0.456).
+void powRScaledRef(QCProgramBuilder& b);
+
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.
@@ -563,6 +703,12 @@ void inverseSwap(QCProgramBuilder& b);
 /// gate.
 void inverseMultipleControlledSwap(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(2) wrapping a SWAP gate (even hermitian → erase).
+void powEvenSwap(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3) wrapping a SWAP gate (odd hermitian → SWAP).
+void powOddSwap(QCProgramBuilder& b);
+
 // --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.
@@ -586,6 +732,13 @@ void inverseIswap(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled iSWAP
 /// gate.
 void inverseMultipleControlledIswap(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping an iSWAP gate (folds to
+/// xx_plus_yy(-π/2, 0)).
+void powHalfIswap(QCProgramBuilder& b);
+
+/// Creates the reference for powHalfIswap: xx_plus_yy(-π/2, 0) directly.
+void powHalfIswapRef(QCProgramBuilder& b);
 
 // --- DCXOp ---------------------------------------------------------------- //
 
@@ -632,6 +785,12 @@ void inverseEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled ECR gate.
 void inverseMultipleControlledEcr(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an ECR gate (even hermitian → erase).
+void powEvenEcr(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3) wrapping an ECR gate (odd hermitian → ECR).
+void powOddEcr(QCProgramBuilder& b);
 
 // --- RXXOp ---------------------------------------------------------------- //
 
@@ -755,6 +914,12 @@ void inverseXxPlusYY(QCProgramBuilder& b);
 /// gate.
 void inverseMultipleControlledXxPlusYY(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(3.0) wrapping an XX+YY gate (scales θ).
+void powXxPlusYYScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powXxPlusYYScaled: xx_plus_yy(3*0.123, 0.456).
+void powXxPlusYYScaledRef(QCProgramBuilder& b);
+
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
@@ -779,6 +944,12 @@ void inverseXxMinusYY(QCProgramBuilder& b);
 /// gate.
 void inverseMultipleControlledXxMinusYY(QCProgramBuilder& b);
 
+/// Creates a circuit with pow(3.0) wrapping an XX-YY gate (scales θ).
+void powXxMinusYYScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powXxMinusYYScaled: xx_minus_yy(3*0.123, 0.456).
+void powXxMinusYYScaledRef(QCProgramBuilder& b);
+
 // --- BarrierOp ------------------------------------------------------------ //
 
 /// Creates a circuit with a barrier.
@@ -795,6 +966,9 @@ void singleControlledBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a barrier.
 void inverseBarrier(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping barrier (should pass through).
+void powBarrier(QCProgramBuilder& b);
 
 // --- CtrlOp --------------------------------------------------------------- //
 
@@ -823,4 +997,52 @@ void tripleNestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCProgramBuilder& b);
+
+// --- PowOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with pow(1.0) modifier (should inline to just the gate).
+void pow1Inline(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.0) modifier (should erase to identity).
+void pow0Erase(QCProgramBuilder& b);
+
+/// Creates a circuit with nested pow modifiers (should merge exponents).
+void nestedPow(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(6.0) as the merged reference for nestedPow.
+void powSingleExponent(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping a two-qubit RXX gate.
+void powRxx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-2.0) wrapping an RX gate (negative exponent).
+void negPowRx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping RX(-0.123) (reference for
+/// negPowRx and invPowRx — inv folds into angle negation).
+void powRxNeg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-0.5) wrapping H (negative non-integer exponent).
+void negPowH(QCProgramBuilder& b);
+
+/// Reference for negPowH: pow(0.5) wrapping H (NegPowToInvPow + inv{H}=H).
+void negPowHRef(QCProgramBuilder& b);
+
+/// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
+/// inv).
+void invPowRx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow wrapping ctrl wrapping RX (should move ctrl
+/// outside).
+void powCtrlRx(QCProgramBuilder& b);
+
+/// Creates a circuit with ctrl wrapping pow wrapping RX (reference for
+/// powCtrlRx).
+void ctrlPowRx(QCProgramBuilder& b);
+
+/// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX. The fold
+/// pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two ops),
+/// so the pow survives canonicalization and reaches ConvertQCPowOp.
+void ctrlPowSx(QCProgramBuilder& b);
+
 } // namespace mlir::qc
