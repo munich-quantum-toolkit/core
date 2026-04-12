@@ -99,7 +99,7 @@ Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   return qubit;
 }
 
-llvm::SmallVector<Value>
+QCOProgramBuilder::QubitRegister
 QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
 
@@ -116,7 +116,8 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
     qtensor = qtensorOut;
     qubits.emplace_back(qubit);
   }
-  return qubits;
+
+  return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
 QCOProgramBuilder::ClassicalRegister

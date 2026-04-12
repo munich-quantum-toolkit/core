@@ -2124,7 +2124,7 @@ void ifElse(QCOProgramBuilder& b) {
 void constantTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
-      true, q,
+      true, q.qubits,
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
@@ -2138,7 +2138,7 @@ void constantTrueIf(QCOProgramBuilder& b) {
 void constantFalseIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
-      false, q,
+      false, q.qubits,
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
