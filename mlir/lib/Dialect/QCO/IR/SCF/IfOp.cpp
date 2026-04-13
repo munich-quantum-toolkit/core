@@ -243,14 +243,6 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
 };
 } // namespace
 
-static bool isQCOValueType(Type type) {
-  if (llvm::isa<QubitType>(type)) {
-    return true;
-  }
-  auto tensor = dyn_cast<RankedTensorType>(type);
-  return tensor && llvm::isa<QubitType>(tensor.getElementType());
-}
-
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveStaticCondition, ConditionPropagation>(context);
@@ -264,11 +256,6 @@ LogicalResult IfOp::verify() {
   const auto& outputQubits = getResults();
   const auto numOutputQubits = outputQubits.size();
 
-  for (auto type : inputQubits.getTypes()) {
-    if (!isQCOValueType(type)) {
-      return emitOpError("Inputs must be qubit type!");
-    }
-  }
   const auto numThenArgs = thenBlock()->getNumArguments();
   const auto numElseArgs = elseBlock()->getNumArguments();
 
