@@ -2311,5 +2311,33 @@ void nestedIfOpForLoop(QCOProgramBuilder& b) {
     return scfFor;
   });
 }
+void nestedForLoopWhileOp(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto loopResult =
+      b.scfFor(0, 2, 1, {reg.value},
+               [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+                 auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+                 auto q1 = b.h(q0);
+                 auto insert = b.qtensorInsert(q1, t0, iv);
+                 return {insert};
+               });
+  b.scfFor(0, 2, 1, loopResult,
+           [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+             auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+             auto whileResult = b.scfWhile(
+                 q0,
+                 [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
+                   auto [q1, measureResult] = b.measure(iterArgs[0]);
+                   b.scfCondition(measureResult, q1);
+                   return {q1};
+                 },
+                 [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
+                   auto q2 = b.h(iterArgs[0]);
+                   return {q2};
+                 });
+             auto insert = b.qtensorInsert(whileResult[0], t0, iv);
+             return {insert};
+           });
+}
 
 } // namespace mlir::qco

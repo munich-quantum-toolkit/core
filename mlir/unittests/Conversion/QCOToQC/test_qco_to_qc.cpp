@@ -638,12 +638,15 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     SCFForTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"SimpleForLoop",
-                                    MQT_NAMED_BUILDER(qco::simpleForLoop),
-                                    MQT_NAMED_BUILDER(qc::simpleForLoop)},
-                    QCOToQCTestCase{"NestedForLoopIfOp",
-                                    MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
-                                    MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)}));
+    testing::Values(
+        QCOToQCTestCase{"SimpleForLoop", MQT_NAMED_BUILDER(qco::simpleForLoop),
+                        MQT_NAMED_BUILDER(qc::simpleForLoop)},
+        QCOToQCTestCase{"NestedForLoopIfOp",
+                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
+                        MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)},
+        QCOToQCTestCase{"NestedForLoopWhileOp",
+                        MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
+                        MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp)}));
 
 /// \name QCOToQC/Operations/WhileOp.cpp
 /// @{

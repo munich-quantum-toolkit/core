@@ -1018,6 +1018,10 @@ void simpleForLoop(QCOProgramBuilder& b);
 /// nested if operation.
 void nestedForLoopIfOp(QCOProgramBuilder& b);
 
+/// Creates a circuit with a for operation with a register and a nested while
+/// operation.
+void nestedForLoopWhileOp(QCOProgramBuilder& b);
+
 // --- QTensor Operations -------------------------------------------------- //
 
 /// Allocates a tensor of size `3`.

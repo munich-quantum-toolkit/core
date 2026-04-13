@@ -1312,6 +1312,22 @@ void nestedForLoopIfOp(QCProgramBuilder& b) {
     });
   });
 }
+void nestedForLoopWhileOp(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.memrefLoad(reg, iv);
+    b.h(q);
+  });
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.memrefLoad(reg, iv);
+    b.scfWhile(
+        [&] {
+          auto measureResult = b.measure(q);
+          b.scfCondition(measureResult);
+        },
+        [&] { b.h(q); });
+  });
+}
 
 void simpleIf(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
@@ -1349,4 +1365,5 @@ void nestedIfOpForLoop(QCProgramBuilder& b) {
     });
   });
 }
+
 } // namespace mlir::qc

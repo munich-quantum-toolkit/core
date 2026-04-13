@@ -856,4 +856,8 @@ void simpleForLoop(QCProgramBuilder& b);
 /// nested if operation.
 void nestedForLoopIfOp(QCProgramBuilder& b);
 
+/// Creates a circuit with a for operation with a register and a nested while
+/// operation.
+void nestedForLoopWhileOp(QCProgramBuilder& b);
+
 } // namespace mlir::qc
