@@ -634,35 +634,10 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp)}));
 /// @}
 
-/// \name QCOToQC/Operations/ForOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    SCFForTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"SimpleForLoop", MQT_NAMED_BUILDER(qco::simpleForLoop),
-                        MQT_NAMED_BUILDER(qc::simpleForLoop)},
-        QCOToQCTestCase{"NestedForLoopIfOp",
-                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
-                        MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)},
-        QCOToQCTestCase{"NestedForLoopWhileOp",
-                        MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
-                        MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp)}));
-
-/// \name QCOToQC/Operations/WhileOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    SCFWhileTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"SimpleWhile", MQT_NAMED_BUILDER(qco::simpleWhileReset),
-                        MQT_NAMED_BUILDER(qc::simpleWhileReset)},
-        QCOToQCTestCase{"SimpleDoWhile",
-                        MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
-                        MQT_NAMED_BUILDER(qc::simpleDoWhileReset)}));
-
 /// \name QCOToQC/Operations/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    SCFIfTest, QCOToQCTest,
+    QCOIfOpTest, QCOToQCTest,
     testing::Values(QCOToQCTestCase{"SimpleIfOp",
                                     MQT_NAMED_BUILDER(qco::simpleIf),
                                     MQT_NAMED_BUILDER(qc::simpleIf)},
@@ -675,3 +650,31 @@ INSTANTIATE_TEST_SUITE_P(
                                     MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
                                     MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
 /// @}
+
+/// \name QCOToQC/Operations/WhileOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    SCFWhileOpTest, QCOToQCTest,
+    testing::Values(
+        QCOToQCTestCase{"SimpleWhile", MQT_NAMED_BUILDER(qco::simpleWhileReset),
+                        MQT_NAMED_BUILDER(qc::simpleWhileReset)},
+        QCOToQCTestCase{"SimpleDoWhile",
+                        MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
+                        MQT_NAMED_BUILDER(qc::simpleDoWhileReset)}));
+
+/// \name QCOToQC/Operations/ForOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    SCFForOpTest, QCOToQCTest,
+    testing::Values(
+        QCOToQCTestCase{"SimpleForLoop", MQT_NAMED_BUILDER(qco::simpleForLoop),
+                        MQT_NAMED_BUILDER(qc::simpleForLoop)},
+        QCOToQCTestCase{"NestedForLoopIfOp",
+                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
+                        MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)},
+        QCOToQCTestCase{"NestedForLoopWhileOp",
+                        MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
+                        MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp)},
+        QCOToQCTestCase{"NestedForLoopCtrlOp",
+                        MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOp),
+                        MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOp)}));

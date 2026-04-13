@@ -2294,23 +2294,6 @@ void nestedForLoopIfOp(QCOProgramBuilder& b) {
            });
 }
 
-void nestedIfOpForLoop(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  auto q0 = b.allocQubit();
-  auto q1 = b.h(q0);
-  auto [q2, cond] = b.measure(q1);
-  b.qcoIf(cond, reg.value, [&](ValueRange args) -> llvm::SmallVector<Value> {
-    auto scfFor = b.scfFor(
-        0, 3, 1, args,
-        [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
-          auto [t0, q3] = b.qtensorExtract(iterArgs[0], iv);
-          auto q4 = b.h(q3);
-          auto insert = b.qtensorInsert(q4, t0, iv);
-          return {insert};
-        });
-    return scfFor;
-  });
-}
 void nestedForLoopWhileOp(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto loopResult =
@@ -2338,6 +2321,42 @@ void nestedForLoopWhileOp(QCOProgramBuilder& b) {
              auto insert = b.qtensorInsert(whileResult[0], t0, iv);
              return {insert};
            });
+}
+
+void nestedForLoopCtrlOp(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto control0 = b.allocQubit();
+  auto control1 = b.h(control0);
+  b.scfFor(0, 2, 1, {reg.value, control1},
+           [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+             auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+             auto [controls, targets] =
+                 b.ctrl(iterArgs[1], q0,
+                        [&](ValueRange args) -> llvm::SmallVector<Value> {
+                          auto q1 = b.h(args[0]);
+                          return {q1};
+                        });
+             auto insert = b.qtensorInsert(targets[0], t0, iv);
+             return {insert, controls[0]};
+           });
+}
+
+void nestedIfOpForLoop(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  auto q1 = b.h(q0);
+  auto [q2, cond] = b.measure(q1);
+  b.qcoIf(cond, reg.value, [&](ValueRange args) -> llvm::SmallVector<Value> {
+    auto scfFor = b.scfFor(
+        0, 3, 1, args,
+        [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+          auto [t0, q3] = b.qtensorExtract(iterArgs[0], iv);
+          auto q4 = b.h(q3);
+          auto insert = b.qtensorInsert(q4, t0, iv);
+          return {insert};
+        });
+    return scfFor;
+  });
 }
 
 } // namespace mlir::qco

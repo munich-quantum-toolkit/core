@@ -1022,6 +1022,10 @@ void nestedForLoopIfOp(QCOProgramBuilder& b);
 /// operation.
 void nestedForLoopWhileOp(QCOProgramBuilder& b);
 
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation.
+void nestedForLoopCtrlOp(QCOProgramBuilder& b);
+
 // --- QTensor Operations -------------------------------------------------- //
 
 /// Allocates a tensor of size `3`.
