@@ -634,15 +634,18 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp)}));
 /// @}
 
-/// \name QCOToQC/Operations/ForOp.cpp //TODO Change name
+/// \name QCOToQC/Operations/ForOp.cpp
 /// @{
-INSTANTIATE_TEST_SUITE_P(SCFForTest, QCOToQCTest,
-                         testing::Values(QCOToQCTestCase{
-                             "SimpleSCFForLoop",
-                             MQT_NAMED_BUILDER(qco::testSCFFor),
-                             MQT_NAMED_BUILDER(qc::testSCFFor)}));
+INSTANTIATE_TEST_SUITE_P(
+    SCFForTest, QCOToQCTest,
+    testing::Values(QCOToQCTestCase{"SimpleForLoop",
+                                    MQT_NAMED_BUILDER(qco::simpleForLoop),
+                                    MQT_NAMED_BUILDER(qc::simpleForLoop)},
+                    QCOToQCTestCase{"NestedForLoopIfOp",
+                                    MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
+                                    MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)}));
 
-/// \name QCOToQC/Operations/WhileOp.cpp //TODO Change name
+/// \name QCOToQC/Operations/WhileOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     SCFWhileTest, QCOToQCTest,
@@ -653,7 +656,7 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
                         MQT_NAMED_BUILDER(qc::simpleDoWhileReset)}));
 
-/// \name QCOToQC/Operations/IfOp.cpp //TODO Change name
+/// \name QCOToQC/Operations/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     SCFIfTest, QCOToQCTest,
@@ -664,5 +667,8 @@ INSTANTIATE_TEST_SUITE_P(
                                     MQT_NAMED_BUILDER(qco::ifTwoQubits),
                                     MQT_NAMED_BUILDER(qc::ifTwoQubits)},
                     QCOToQCTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
-                                    MQT_NAMED_BUILDER(qc::ifElse)}));
+                                    MQT_NAMED_BUILDER(qc::ifElse)},
+                    QCOToQCTestCase{"NestedIfOpForLoop",
+                                    MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
+                                    MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)}));
 /// @}

@@ -997,6 +997,27 @@ void nestedTrueIf(QCOProgramBuilder& b);
 /// the same condition.
 void nestedFalseIf(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+void nestedIfOpForLoop(QCOProgramBuilder& b);
+
+// --- WhileOp -------------------------------------------------------------- //
+
+/// Creates a circuit with a while operation using a while loop.
+void simpleWhileReset(QCOProgramBuilder& b);
+
+/// Creates a circuit with a while operation using a do-while loop.
+void simpleDoWhileReset(QCOProgramBuilder& b);
+
+// --- ForOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with a simple for operation with a register.
+void simpleForLoop(QCOProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested if operation.
+void nestedForLoopIfOp(QCOProgramBuilder& b);
+
 // --- QTensor Operations -------------------------------------------------- //
 
 /// Allocates a tensor of size `3`.
@@ -1027,13 +1048,5 @@ void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
 void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
-
-void simpleWhileReset(QCOProgramBuilder& b);
-
-void simpleDoWhileReset(QCOProgramBuilder& b);
-
-void testSCFFor(QCOProgramBuilder& b);
-
-void nestedIfOpForLoop(QCOProgramBuilder& b);
 
 } // namespace mlir::qco

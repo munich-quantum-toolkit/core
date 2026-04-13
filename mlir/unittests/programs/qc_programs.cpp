@@ -1292,13 +1292,26 @@ void simpleDoWhileReset(QCProgramBuilder& b) {
       [&] {});
 }
 
-void testSCFFor(QCProgramBuilder& b) {
+void simpleForLoop(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
     auto q = b.memrefLoad(reg, iv);
     b.h(q);
   });
 };
+
+void nestedForLoopIfOp(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto qTemp = b.allocQubit();
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    b.h(qTemp);
+    auto cond = b.measure(qTemp);
+    b.scfIf(cond, [&] {
+      auto q = b.memrefLoad(reg, iv);
+      b.h(q);
+    });
+  });
+}
 
 void simpleIf(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);

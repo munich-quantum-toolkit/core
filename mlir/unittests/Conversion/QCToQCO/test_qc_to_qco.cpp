@@ -637,15 +637,18 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::resetQubitAfterSingleOp)}));
 /// @}
 
-/// \name QCToQCO/Operations/ForOp.cpp //TODO Change name
+/// \name QCToQCO/Operations/ForOp.cpp
 /// @{
-INSTANTIATE_TEST_SUITE_P(SCFForTest, QCToQCOTest,
-                         testing::Values(QCToQCOTestCase{
-                             "SimpleSCFForLoop",
-                             MQT_NAMED_BUILDER(qc::testSCFFor),
-                             MQT_NAMED_BUILDER(qco::testSCFFor)}));
+INSTANTIATE_TEST_SUITE_P(
+    SCFForTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"SimpleForLoop", MQT_NAMED_BUILDER(qc::simpleForLoop),
+                        MQT_NAMED_BUILDER(qco::simpleForLoop)},
+        QCToQCOTestCase{"NestedForLoopIfOp",
+                        MQT_NAMED_BUILDER(qc::nestedForLoopIfOp),
+                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp)}));
 
-/// \name QCToQCO/Operations/WhileOp.cpp //TODO Change name
+/// \name QCToQCO/Operations/WhileOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     SCFWhileTest, QCToQCOTest,
@@ -656,7 +659,7 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
                         MQT_NAMED_BUILDER(qco::simpleDoWhileReset)}));
 
-/// \name QCToQCO/Operations/IfOp.cpp //TODO Change name
+/// \name QCToQCO/Operations/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     SCFIfTest, QCToQCOTest,
@@ -667,7 +670,7 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::ifTwoQubits)},
         QCToQCOTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
                         MQT_NAMED_BUILDER(qco::ifElse)},
-        QCToQCOTestCase{"nestedIfOpForLoop",
+        QCToQCOTestCase{"NestedIfOpForLoop",
                         MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
                         MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
 /// @}
