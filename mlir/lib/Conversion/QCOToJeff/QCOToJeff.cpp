@@ -128,23 +128,6 @@ static void handleResult(Operation* op, ConversionPatternRewriter& rewriter,
 }
 
 /**
- * @brief Collects gate parameters by index from a QCO op.
- *
- * @tparam OpType QCO operation type with `getParameter(size_t)`
- * @tparam Indices Parameter indices to collect
- * @param op QCO gate op
- * @return llvm::SmallVector<Value> Collected parameters in index order
- */
-template <typename OpType, std::size_t... Indices>
-static llvm::SmallVector<Value>
-collectParams(OpType op, std::index_sequence<Indices...> /*indices*/) {
-  llvm::SmallVector<Value> params;
-  params.reserve(sizeof...(Indices));
-  (params.push_back(op.getParameter(Indices)), ...);
-  return params;
-}
-
-/**
  * @brief Selects operands either from the OpAdaptor or from lowering state.
  *
  * @details
@@ -194,7 +177,7 @@ static LogicalResult convertOneTargetJeffGate(
   auto targets =
       selectOperands(adaptor.getOperands(), state.targetsIn, state.inModifier(),
                      std::make_index_sequence<1>{});
-  auto params = collectParams(op, std::index_sequence<ParamIndices...>{});
+  ValueRange params = op.getParameters();
 
   auto jeffOp = JeffOpType::create(rewriter, op.getLoc(), targets.front(),
                                    params[ParamIndices]...,
@@ -696,7 +679,7 @@ struct ConvertQCOCustomGateToJeff final
     llvm::SmallVector<Value> params;
     params.reserve(NumParams);
     if constexpr (NumParams != 0) {
-      params = collectParams(op, std::make_index_sequence<NumParams>{});
+      params.append(op.getParameters().begin(), op.getParameters().end());
     }
 
     createCustomOp(op, rewriter, state, targets, params, baseIsAdjoint_, name_);

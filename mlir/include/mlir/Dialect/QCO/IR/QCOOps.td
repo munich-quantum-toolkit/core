@@ -1024,6 +1024,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         Value getOutputForInput(Value input);
         static size_t getNumParams() { return 0; }
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
+        static ValueRange getParameters() { return {}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
@@ -1113,6 +1114,7 @@ def CtrlOp
         Value getOutputForInput(Value input);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
@@ -1179,6 +1181,7 @@ def InvOp
         Value getOutputForInput(Value input);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
