@@ -786,29 +786,27 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   template <std::size_t... TargetIndices, std::size_t... ParamIndices>
-  static auto createGate(ConversionPatternRewriter& rewriter, Location loc,
-                         ValueRange qcoTargets, QCOpType op,
-                         std::index_sequence<TargetIndices...> /*targets*/,
-                         std::index_sequence<ParamIndices...> /*params*/) {
+  auto createGate(ConversionPatternRewriter& rewriter, QCOpType op,
+                  std::index_sequence<TargetIndices...> /*targets*/,
+                  std::index_sequence<ParamIndices...> /*params*/) const {
     auto params = op.getParameters();
-    return QCOOpType::create(rewriter, loc, qcoTargets[TargetIndices]...,
-                             params[ParamIndices]...);
+    auto& state = this->getState();
+    return QCOOpType::create(
+        rewriter, op.getLoc(),
+        lookupMappedQubit(state, op, op.getTargets()[TargetIndices])...,
+        params[ParamIndices]...);
   }
 
   LogicalResult
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto* operation = op.getOperation();
-
     const auto qcTargets = op.getTargets();
-    auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
+    auto qcoOp =
+        createGate(rewriter, op, std::make_index_sequence<NumTargets>{},
+                   std::make_index_sequence<NumParams>{});
 
-    auto qcoOp = createGate(rewriter, op.getLoc(), qcoTargets, op,
-                            std::make_index_sequence<NumTargets>{},
-                            std::make_index_sequence<NumParams>{});
-
-    assignMappedQubits(state, operation, qcTargets, qcoOp.getOutputTargets());
+    assignMappedQubits(state, op, qcTargets, qcoOp.getOutputTargets());
 
     rewriter.eraseOp(op);
 
