@@ -750,21 +750,21 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
 
   template <std::size_t... ParamIndices>
   static auto createGate(ConversionPatternRewriter& rewriter, Location loc,
-                         const llvm::SmallVector<Value>& qcoTargets,
-                         QCOpType op,
+                         ValueRange qcoTargets, QCOpType op,
                          std::index_sequence<ParamIndices...> /*params*/) {
     static_assert(
         NumTargets <= 2,
         "createGate supports at most 2 targets; update QCOOpType::create "
         "or generalize createGate when extending MQT_GATE_TABLE");
+    auto params = op.getParameters();
     if constexpr (NumTargets == 0) {
-      return QCOOpType::create(rewriter, loc, op.getParameter(ParamIndices)...);
+      return QCOOpType::create(rewriter, loc, params[ParamIndices]...);
     } else if constexpr (NumTargets == 1) {
       return QCOOpType::create(rewriter, loc, qcoTargets[0],
-                               op.getParameter(ParamIndices)...);
+                               params[ParamIndices]...);
     } else {
       return QCOOpType::create(rewriter, loc, qcoTargets[0], qcoTargets[1],
-                               op.getParameter(ParamIndices)...);
+                               params[ParamIndices]...);
     }
   }
 
@@ -774,34 +774,13 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
     auto& state = this->getState();
     auto* operation = op.getOperation();
 
-    llvm::SmallVector<Value> qcTargets;
-    qcTargets.reserve(NumTargets);
-    if constexpr (NumTargets == 0) {
-      // No target qubits.
-    } else if constexpr (NumTargets == 1) {
-      qcTargets.push_back(op.getQubitIn());
-    } else {
-      qcTargets.push_back(op.getQubit0In());
-      qcTargets.push_back(op.getQubit1In());
-    }
-
-    llvm::SmallVector<Value> qcoTargets;
-    qcoTargets.reserve(NumTargets);
-    for (auto qcQubit : qcTargets) {
-      qcoTargets.push_back(lookupMappedQubit(state, operation, qcQubit));
-    }
+    const auto qcTargets = op.getTargets();
+    auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
 
     auto qcoOp = createGate(rewriter, op.getLoc(), qcoTargets, op,
                             std::make_index_sequence<NumParams>{});
 
-    if constexpr (NumTargets == 0) {
-      // No qubit mapping updates required.
-    } else if constexpr (NumTargets == 1) {
-      assignMappedQubit(state, operation, qcTargets[0], qcoOp.getQubitOut());
-    } else {
-      assignMappedQubit(state, operation, qcTargets[0], qcoOp.getQubit0Out());
-      assignMappedQubit(state, operation, qcTargets[1], qcoOp.getQubit1Out());
-    }
+    assignMappedQubits(state, operation, qcTargets, qcoOp.getOutputTargets());
 
     rewriter.eraseOp(op);
 
@@ -929,7 +908,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     // Create qco.inv
     auto qcoOp = qco::InvOp::create(rewriter, op.getLoc(), qcoTargets);
 
-    assignMappedQubits(state, operation, qcTargets, qcoOp.getQubitsOut());
+    assignMappedQubits(state, operation, qcTargets, qcoOp.getOutputTargets());
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
