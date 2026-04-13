@@ -790,7 +790,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
  * ```mlir
  * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
  *   %a_res = qco.x %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res
+ *   qco.yield %a_res : !qco.qubit
  * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
  * ```
  * is converted to
@@ -831,7 +831,7 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
  * ```mlir
  * %q0_out = qco.inv (%a_in = %q0_in) {
  *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res
+ *   qco.yield %a_res : !qco.qubit
  * } : {!qco.qubit} -> {!qco.qubit}
  * ```
  * is converted to
@@ -866,7 +866,7 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
  *
  * @par Example:
  * ```mlir
- * qco.yield %targets
+ * qco.yield %targets : !qco.qubit
  * ```
  * is converted to
  * ```mlir

@@ -1046,7 +1046,7 @@ def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
         ```mlir
         %res_ctrl, %res_tgt:2 = qco.ctrl(%ctrl) targets(%a0 = %q0, %a1 = %q1) {
             %a0_1, %a1_1 = qco.swap %a0, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-            qco.yield %a0_1, %a1_1
+            qco.yield %a0_1, %a1_1 : !qco.qubit, !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         ```
     }];
@@ -1075,7 +1075,7 @@ def CtrlOp
         ```mlir
         %res_ctrl, %res_tgt:2 = qco.ctrl(%ctrl) targets(%a0 = %q0, %a1 = %q1) {
             %a0_1, %a1_1 = qco.swap %a0, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-            qco.yield %a0_1, %a1_1
+            qco.yield %a0_1, %a1_1 : !qco.qubit, !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         ```
     }];
@@ -1144,7 +1144,7 @@ def InvOp
         ```mlir
         %q_out = qco.inv (%q = %q_in) {
             %q_1 = qco.s %q : !qco.qubit -> !qco.qubit
-            qco.yield %q_1
+            qco.yield %q_1 : !qco.qubit
         } : {!qco.qubit} -> {!qco.qubit}
         ```
     }];
@@ -1221,9 +1221,9 @@ def IfOp
         ```mlir
         %result = qco.if %condition qubits(%arg0 = %q0) {
             %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
-            qco.yield %q1
+            qco.yield %q1 : !qco.qubit
          } else qubits(%arg0 = %q0) {
-            qco.yield %arg0
+            qco.yield %arg0 : !qco.qubit
         } : {i1, !qco.qubit} -> {!qco.qubit}
         ```
     }];

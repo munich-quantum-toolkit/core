@@ -517,7 +517,7 @@ public:
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
    *   %q1_res = qco.OP_NAME %q1_in : !qco.qubit -> !qco.qubit                 \
-   *   qco.yield %q1_res                                                       \
+   *   qco.yield %q1_res : !qco.qubit                                          \
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})          \
    * ```                                                                       \
    */                                                                          \
@@ -540,7 +540,7 @@ public:
    * ```mlir                                                                   \
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
    *   %q2_res = qco.OP_NAME %q2_in : !qco.qubit -> !qco.qubit                 \
-   *   qco.yield %q2_res                                                       \
+   *   qco.yield %q2_res : !qco.qubit                                          \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit,             \
    * !qco.qubit}, {!qco.qubit})                                                \
    * ```                                                                       \
@@ -603,7 +603,7 @@ public:
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
    *   %q1_res = qco.OP_NAME(%PARAM) %q1_in : !qco.qubit -> !qco.qubit         \
-   *   qco.yield %q1_res                                                       \
+   *   qco.yield %q1_res : !qco.qubit                                          \
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})          \
    * ```                                                                       \
    */                                                                          \
@@ -629,7 +629,7 @@ public:
    * ```mlir                                                                   \
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
    *   %q2_res = qco.OP_NAME(%PARAM) %q2_in : !qco.qubit -> !qco.qubit         \
-   *   qco.yield %q2_res                                                       \
+   *   qco.yield %q2_res : !qco.qubit                                          \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit,             \
    * !qco.qubit}, {!qco.qubit})                                                \
    * ```                                                                       \
@@ -692,7 +692,7 @@ public:
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
    *   %q1_res = qco.OP_NAME(%PARAM1, %PARAM2) %q1_in : !qco.qubit ->          \
    * !qco.qubit                                                                \
-   *   qco.yield %q1_res                                                       \
+   *   qco.yield %q1_res : !qco.qubit                                          \
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})          \
    * ```                                                                       \
    */                                                                          \
@@ -722,7 +722,7 @@ public:
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
    *   %q2_res = qco.OP_NAME(%PARAM1, %PARAM2) %q2_in : !qco.qubit ->          \
    * !qco.qubit                                                                \
-   *   qco.yield %q2_res                                                       \
+   *   qco.yield %q2_res : !qco.qubit                                          \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit,             \
    * !qco.qubit}, {!qco.qubit})                                                \
    * ```                                                                       \
@@ -789,7 +789,7 @@ public:
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
    *   %q1_res = qco.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q1_in : !qco.qubit    \
    * -> !qco.qubit                                                             \
-   *   qco.yield %q1_res                                                       \
+   *   qco.yield %q1_res : !qco.qubit                                          \
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})          \
    * ```                                                                       \
    */                                                                          \
@@ -821,7 +821,7 @@ public:
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
    *   %q2_res = qco.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q2_in : !qco.qubit    \
    * -> !qco.qubit                                                             \
-   *   qco.yield %q2_res                                                       \
+   *   qco.yield %q2_res : !qco.qubit                                          \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit,             \
    * !qco.qubit}, {!qco.qubit})                                                \
    * ```                                                                       \
@@ -880,7 +880,7 @@ public:
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
    *   %q1_res, %q2_res = qco.OP_NAME %q1_in, %q2_in : !qco.qubit,             \
    * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   *   qco.yield %q1_res, %q2_res                                              \
+   *   qco.yield %q1_res, %q2_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit},            \
    * {!qco.qubit, !qco.qubit})                                                 \
    * ```                                                                       \
@@ -909,7 +909,7 @@ public:
    * %q3_in {                                                                  \
    *   %q2_res, %q3_res = qco.OP_NAME %q2_in, %q3_in : !qco.qubit,             \
    * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   *   qco.yield %q2_res, %q3_res                                              \
+   *   qco.yield %q2_res, %q3_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit}) ->               \
    * ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit})                      \
    * ```                                                                       \
@@ -973,7 +973,7 @@ public:
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
    *   %q1_res, %q2_res = qco.OP_NAME(%PARAM) %q1_in, %q2_in : !qco.qubit,     \
    * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   *   qco.yield %q1_res, %q2_res                                              \
+   *   qco.yield %q1_res, %q2_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit},            \
    * {!qco.qubit, !qco.qubit})                                                 \
    * ```                                                                       \
@@ -1004,7 +1004,7 @@ public:
    * %q3_in {                                                                  \
    *   %q2_res, %q3_res = qco.OP_NAME(%PARAM) %q2_in, %q3_in : !qco.qubit,     \
    * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   *   qco.yield %q2_res, %q3_res                                              \
+   *   qco.yield %q2_res, %q3_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit}) ->               \
    * ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit})                      \
    * ```                                                                       \
@@ -1071,7 +1071,7 @@ public:
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
    *   %q1_res, %q2_res = qco.OP_NAME(%PARAM1, %PARAM2) %q1_in, %q2_in :       \
    * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit                          \
-   *   qco.yield %q1_res, %q2_res                                              \
+   *   qco.yield %q1_res, %q2_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) ->                           \
    * ({!qco.qubit}, {!qco.qubit, !qco.qubit})                                  \
    * ```                                                                       \
@@ -1104,7 +1104,7 @@ public:
    * %q3_in {                                                                  \
    *   %q2_res, %q3_res = qco.OP_NAME(%PARAM1, %PARAM2) %q2_in, %q3_in :       \
    * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit                          \
-   *   qco.yield %q2_res, %q3_res                                              \
+   *   qco.yield %q2_res, %q3_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit}) ->               \
    * ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit})                      \
    * ```                                                                       \
@@ -1161,7 +1161,7 @@ public:
    * ```mlir
    * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%t = %q1_in) {
    *   %q1_res = qco.x %t : !qco.qubit -> !qco.qubit
-   *   qco.yield %q1_res
+   *   qco.yield %q1_res : !qco.qubit
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
    * ```
    */
@@ -1187,7 +1187,7 @@ public:
    * ```mlir
    * %qubits_out = qco.inv (%q = %q0_in) {
    *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
-   *   qco.yield %q_res
+   *   qco.yield %q_res : !qco.qubit
    * } : {!qco.qubit} -> {!qco.qubit}
    * ```
    */
@@ -1251,9 +1251,9 @@ public:
    * ```mlir
    * %q2 = qco.if %condition qubits(%arg0 = %q0) -> (!qco.qubit) {
    *      %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
-   *      qco.yield %q1
+   *      qco.yield %q1 : !qco.qubit
    * } else qubits(%arg0 = %q0) {
-   *      qco.yield %arg0
+   *      qco.yield %arg0 : !qco.qubit
    * }
    * ```
    */

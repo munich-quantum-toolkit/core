@@ -1341,7 +1341,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
  * ```mlir
  * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
  *   %a_res = qco.x %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res
+ *   qco.yield %a_res : !qco.qubit
  * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
  * ```
  */
@@ -1395,7 +1395,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
  * ```mlir
  * %q0_out = qco.inv (%a0_in = %q0_in) {
  *   %a0_res = qco.s %a0_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a0_res
+ *   qco.yield %a0_res : !qco.qubit
  * } : {!qco.qubit} -> {!qco.qubit}
  * ```
  */
@@ -1441,7 +1441,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
  * ```
  * is converted to
  * ```mlir
- * qco.yield %targets
+ * qco.yield %targets : !qco.qubit
  * ```
  */
 struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
