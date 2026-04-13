@@ -785,24 +785,14 @@ template <typename QCOpType, typename QCOOpType, std::size_t NumTargets,
 struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
-  template <std::size_t... ParamIndices>
+  template <std::size_t... TargetIndices, std::size_t... ParamIndices>
   static auto createGate(ConversionPatternRewriter& rewriter, Location loc,
                          ValueRange qcoTargets, QCOpType op,
+                         std::index_sequence<TargetIndices...> /*targets*/,
                          std::index_sequence<ParamIndices...> /*params*/) {
-    static_assert(
-        NumTargets <= 2,
-        "createGate supports at most 2 targets; update QCOOpType::create "
-        "or generalize createGate when extending MQT_GATE_TABLE");
     auto params = op.getParameters();
-    if constexpr (NumTargets == 0) {
-      return QCOOpType::create(rewriter, loc, params[ParamIndices]...);
-    } else if constexpr (NumTargets == 1) {
-      return QCOOpType::create(rewriter, loc, qcoTargets[0],
-                               params[ParamIndices]...);
-    } else {
-      return QCOOpType::create(rewriter, loc, qcoTargets[0], qcoTargets[1],
-                               params[ParamIndices]...);
-    }
+    return QCOOpType::create(rewriter, loc, qcoTargets[TargetIndices]...,
+                             params[ParamIndices]...);
   }
 
   LogicalResult
@@ -815,6 +805,7 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
     auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
 
     auto qcoOp = createGate(rewriter, op.getLoc(), qcoTargets, op,
+                            std::make_index_sequence<NumTargets>{},
                             std::make_index_sequence<NumParams>{});
 
     assignMappedQubits(state, operation, qcTargets, qcoOp.getOutputTargets());

@@ -1020,9 +1020,9 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
-        static OperandRange getInputControls() { return OperandRange{}; }
-static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
-        static ResultRange getOutputControls() { return ResultRange{}; }
+        OperandRange getInputControls() { return getInputQubits().slice(getNumTargets(), 0); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
+        ResultRange getOutputControls() { return getOutputQubits().slice(getNumTargets(), 0); }
         ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
@@ -1185,9 +1185,9 @@ def InvOp
         Value getInputTarget(size_t i) { return getInputQubit(i); }
         Value getOutputTarget(size_t i) { return getOutputQubit(i); }
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
-        static OperandRange getInputControls() { return OperandRange{}; }
-static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
-        static ResultRange getOutputControls() { return ResultRange{}; }
+        OperandRange getInputControls() { return getInputQubits().slice(getNumTargets(), 0); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        ResultRange getOutputControls() { return getOutputQubits().slice(getNumTargets(), 0); }
         ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);

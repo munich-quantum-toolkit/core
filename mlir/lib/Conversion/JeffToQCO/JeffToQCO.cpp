@@ -18,6 +18,7 @@
 #include <jeff/Conversion/JeffToNative/JeffToNative.h>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -62,9 +63,8 @@ using namespace qco;
  */
 template <typename QCOOpType, typename JeffOpType>
 static void createModified(
-    JeffOpType& op, ConversionPatternRewriter& rewriter,
-    const llvm::SmallVector<Value>& controls,
-    const llvm::SmallVector<Value>& targets,
+    JeffOpType& op, ConversionPatternRewriter& rewriter, ValueRange controls,
+    ValueRange targets,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> lambda) {
   auto loc = op.getLoc();
   if (op.getNumCtrls() != 0) {
@@ -116,9 +116,8 @@ template <typename QCOOpType, typename JeffOpType, std::size_t... TargetIndices,
           std::size_t... ParamIndices, typename ResultExtractor>
 static LogicalResult
 createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
-                   const llvm::SmallVector<Value>& controls,
-                   const llvm::SmallVector<Value>& targets,
-                   const llvm::SmallVector<Value>& parameters,
+                   ValueRange controls, ValueRange targets,
+                   ValueRange parameters,
                    std::index_sequence<TargetIndices...> /*targetIndices*/,
                    std::index_sequence<ParamIndices...> /*paramIndices*/,
                    const ResultExtractor& extractResults) {
@@ -134,11 +133,9 @@ createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
                           parameters[ParamIndices]...);
     return extractResults(qcoOp);
   };
-  createModified<QCOOpType, JeffOpType>(
-      op, rewriter, controls,
-      {targets
-           [TargetIndices]...}, // NOLINT(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-      lambda);
+  llvm::SmallVector<Value> selectedTargets{targets[TargetIndices]...};
+  createModified<QCOOpType, JeffOpType>(op, rewriter, controls, selectedTargets,
+                                        lambda);
   return success();
 }
 
@@ -146,12 +143,8 @@ template <typename QCOOpType, typename JeffOpType, std::size_t NumTargets,
           std::size_t NumParams>
 static LogicalResult
 createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
-                        const llvm::SmallVector<Value>& controls,
-                        const llvm::SmallVector<Value>& targets,
-                        const llvm::SmallVector<Value>& parameters) {
-  static_assert((NumTargets == 1) || (NumTargets == 2),
-                "Only 1- and 2-target gates are supported here");
-
+                        ValueRange controls, ValueRange targets,
+                        ValueRange parameters) {
   if (targets.size() != NumTargets) {
     return rewriter.notifyMatchFailure(
         op, "Unexpected number of target qubits for Jeff-to-QCO conversion");
@@ -162,11 +155,10 @@ createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
   }
 
   auto extractResults = [&](auto qcoOp) -> llvm::SmallVector<Value> {
-    if constexpr (NumTargets == 1) {
-      return {qcoOp.getQubitOut()};
-    } else {
-      return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
-    }
+    llvm::SmallVector<Value> out;
+    out.reserve(NumTargets);
+    llvm::append_range(out, qcoOp->getResults().take_front(NumTargets));
+    return out;
   };
 
   return createGateFromJeff<QCOOpType, JeffOpType>(
@@ -702,82 +694,77 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    if (op.getName() == "sx") {
-      if (op.getInTargetQubits().size() != 1) {
+    auto controls = adaptor.getInCtrlQubits();
+    auto targets = adaptor.getInTargetQubits();
+    auto params = op.getParams();
+    auto name = op.getName();
+
+    if (name == "sx") {
+      if (targets.size() != 1 || !params.empty()) {
         return rewriter.notifyMatchFailure(
-            op, "Custom SX operations must have exactly one target qubit");
+            op, "Custom sx expects exactly one target and no parameters");
       }
       return createGateFromJeffArity<qco::SXOp, jeff::CustomOp, 1, 0>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
-          op.getParams());
+          op, rewriter, controls, targets, params);
     }
-
-    if (op.getName() == "barrier") {
-      if (!op.getParams().empty()) {
+    if (name == "barrier") {
+      if (!params.empty()) {
         return rewriter.notifyMatchFailure(
             op, "Custom barrier operations must not have parameters");
       }
       createBarrierOp(op, adaptor, rewriter);
       return success();
     }
-
-    if (op.getName() == "r") {
-      if (op.getInTargetQubits().size() != 1 || op.getParams().size() != 2) {
+    if (name == "r") {
+      if (targets.size() != 1 || params.size() != 2) {
         return rewriter.notifyMatchFailure(
             op, "Custom r expects one target and two parameters");
       }
       return createGateFromJeffArity<qco::ROp, jeff::CustomOp, 1, 2>(
-          op, rewriter, adaptor.getInCtrlQubits(),
-          {adaptor.getInTargetQubits()[0]}, op.getParams());
+          op, rewriter, controls, targets, params);
     }
-    if (op.getName() == "iswap") {
-      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
+    if (name == "iswap") {
+      if (targets.size() != 2 || !params.empty()) {
         return rewriter.notifyMatchFailure(
             op, "Custom iswap expects two targets and no parameters");
       }
       return createGateFromJeffArity<qco::iSWAPOp, jeff::CustomOp, 2, 0>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
-          {});
+          op, rewriter, controls, targets, params);
     }
-    if (op.getName() == "dcx") {
-      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
+    if (name == "dcx") {
+      if (targets.size() != 2 || !params.empty()) {
         return rewriter.notifyMatchFailure(
             op, "Custom dcx expects two targets and no parameters");
       }
       return createGateFromJeffArity<qco::DCXOp, jeff::CustomOp, 2, 0>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
-          {});
+          op, rewriter, controls, targets, params);
     }
-    if (op.getName() == "ecr") {
-      if (op.getInTargetQubits().size() != 2 || !op.getParams().empty()) {
+    if (name == "ecr") {
+      if (targets.size() != 2 || !params.empty()) {
         return rewriter.notifyMatchFailure(
             op, "Custom ecr expects two targets and no parameters");
       }
       return createGateFromJeffArity<qco::ECROp, jeff::CustomOp, 2, 0>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
-          {});
+          op, rewriter, controls, targets, params);
     }
-    if (op.getName() == "xx_plus_yy") {
-      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 2) {
+    if (name == "xx_plus_yy") {
+      if (targets.size() != 2 || params.size() != 2) {
         return rewriter.notifyMatchFailure(
             op, "Custom xx_plus_yy expects two targets and two parameters");
       }
       return createGateFromJeffArity<qco::XXPlusYYOp, jeff::CustomOp, 2, 2>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
-          op.getParams());
+          op, rewriter, controls, targets, params);
     }
-    if (op.getName() == "xx_minus_yy") {
-      if (op.getInTargetQubits().size() != 2 || op.getParams().size() != 2) {
+    if (name == "xx_minus_yy") {
+      if (targets.size() != 2 || params.size() != 2) {
         return rewriter.notifyMatchFailure(
             op, "Custom xx_minus_yy expects two targets and two parameters");
       }
       return createGateFromJeffArity<qco::XXMinusYYOp, jeff::CustomOp, 2, 2>(
-          op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
-          op.getParams());
+          op, rewriter, controls, targets, params);
     }
-
-    return rewriter.notifyMatchFailure(op, "Unsupported custom operation: " +
-                                               op.getName());
+    return rewriter.notifyMatchFailure(op,
+                                       "Unsupported custom operation: " + name);
   }
 };
 

@@ -85,11 +85,15 @@ public:
     static Value getInputControl([[maybe_unused]] size_t i) {
       llvm::reportFatalUsageError("Operation does not have controls");
     }
-    static OperandRange getInputControls() { return OperandRange{}; }
+    OperandRange getInputControls() {
+      return this->getOperation()->getOperands().slice(T, 0);
+    }
     static Value getOutputControl([[maybe_unused]] size_t i) {
       llvm::reportFatalUsageError("Operation does not have controls");
     }
-    static ResultRange getOutputControls() { return ResultRange{}; }
+    ResultRange getOutputControls() {
+      return this->getOperation()->getResults().slice(T, 0);
+    }
 
     static size_t getNumParams() { return P; }
 

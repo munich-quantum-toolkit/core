@@ -17,7 +17,7 @@ def QCOToJeff : Pass<"qco-to-jeff"> {
 
     Note that this pass is still in development as QCO and Jeff do not have full feature parity yet.
 
-    `qco.static` is currently lowered to `jeff.qubit_alloc` because Jeff does not yet represent static (index-based) qubits; the index is not preserved in Jeff IR. Round-tripping through Jeff therefore maps static qubits to dynamic allocation on the QCO side.
+    `qco.static` is currently converted to `jeff.qubit_alloc` because Jeff does not yet represent static (index-based) qubits; the index is not preserved in Jeff IR. Round-tripping through Jeff therefore maps static qubits to dynamic allocation on the QCO side.
   }];
 
   let dependentDialects = ["mlir::jeff::JeffDialect"];
