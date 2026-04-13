@@ -752,8 +752,7 @@ protected:
         ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
         typeConverter, context);
 
-#define MQT_ADD_QCO_TO_QC_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_KIND,  \
-                               QIR_FN)                                         \
+#define MQT_ADD_QCO_TO_QC_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN)    \
   addGatePattern<QCO_OP, QC_OP, (TARGETS), (PARAMS)>(patterns, typeConverter,  \
                                                      context);
     MQT_GATE_TABLE(MQT_ADD_QCO_TO_QC_GATE)

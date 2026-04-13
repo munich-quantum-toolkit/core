@@ -880,15 +880,9 @@ static void populateQCToQIRPatterns(RewritePatternSet& patterns,
   patterns.add<ConvertQCGPhaseOp>(typeConverter, ctx, &state);
 
   // Note: `MQT_GATE_TABLE` is defined in `mlir/Conversion/GateTable.h`.
-#define MQT_ADD_QC_TO_QIR_UNITARY(KEY, TARGETS, PARAMS, QCO_OP, QC_OP,         \
-                                  QIR_KIND, QIR_FN)                            \
-  do {                                                                         \
-    if constexpr ((QIR_KIND) == ::mlir::mqt::gates::QIRKind::Unitary) {        \
-      patterns                                                                 \
-          .add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
-              typeConverter, ctx, &state);                                     \
-    }                                                                          \
-  } while (false);
+#define MQT_ADD_QC_TO_QIR_UNITARY(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN) \
+  patterns.add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
+      typeConverter, ctx, &state);
   MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
 #undef MQT_ADD_QC_TO_QIR_UNITARY
 
