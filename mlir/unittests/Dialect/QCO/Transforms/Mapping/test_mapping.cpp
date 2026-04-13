@@ -37,19 +37,26 @@ using namespace mlir::qco;
 namespace {
 struct ArchitectureParam {
   std::string name;
-  Architecture (*factory)();
+  std::shared_ptr<Architecture> (*factory)();
 };
+
+TEST(ArchitectureTest, EmptyArchitecture) {
+  const auto arch = getEmptyArchitecture();
+  EXPECT_TRUE(arch.name().empty());
+  EXPECT_EQ(arch.nqubits(), 0U);
+  EXPECT_EQ(arch.maxDegree(), 0U);
+}
 
 class MappingPassTest : public testing::Test,
                         public testing::WithParamInterface<ArchitectureParam> {
 public:
-  static Architecture getRigettiNovera() {
+  static std::shared_ptr<Architecture> getRigettiNovera() {
     // TODO: At some point this should be provided via QDMI.
     const static Architecture::CouplingSet COUPLING{
         {0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1}, {1, 2}, {2, 1},
         {2, 5}, {5, 2}, {3, 6}, {6, 3}, {3, 4}, {4, 3}, {4, 7}, {7, 4},
         {4, 5}, {5, 4}, {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
-    return Architecture("RigettiNovera", 9, COUPLING);
+    return std::make_shared<Architecture>("RigettiNovera", 9, COUPLING);
   }
 
 protected:
@@ -64,10 +71,11 @@ protected:
   }
 
   static void runHeuristicMapping(OwningOpRef<ModuleOp>& moduleOp,
+                                  std::shared_ptr<Architecture> arch,
                                   const qco::MappingPassOptions& options) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
-    pm.addPass(qco::createMappingPass(options));
+    pm.addPass(qco::createMappingPass(std::move(arch), options));
     auto res = pm.run(*moduleOp);
     ASSERT_TRUE(res.succeeded());
   }
@@ -102,9 +110,9 @@ TEST_P(MappingPassTest, GHZ) {
                                         .niterations = 2,
                                         .ntrials = 4,
                                         .seed = 1337};
-  runHeuristicMapping(moduleOp, options);
+  runHeuristicMapping(moduleOp, arch, options);
   auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
-  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), arch).succeeded());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), *arch).succeeded());
 }
 
 TEST_P(MappingPassTest, Sabre) {
@@ -170,9 +178,9 @@ TEST_P(MappingPassTest, Sabre) {
                                         .niterations = 2,
                                         .ntrials = 4,
                                         .seed = 42};
-  runHeuristicMapping(moduleOp, options);
+  runHeuristicMapping(moduleOp, arch, options);
   auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
-  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), arch).succeeded());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), *arch).succeeded());
 }
 
 INSTANTIATE_TEST_SUITE_P(

@@ -10,8 +10,13 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
+
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Region.h>
+#include <mlir/Pass/Pass.h>
+
+#include <memory>
 
 namespace mlir::qco {
 
@@ -24,4 +29,8 @@ class Architecture;
  * @returns llvm::success() if executable, llvm::failure() otherwise.
  */
 LogicalResult isExecutable(Region& region, const Architecture& arch);
+
+std::unique_ptr<Pass>
+createMappingPass(std::shared_ptr<Architecture> arch,
+                  MappingPassOptions options = MappingPassOptions{});
 } // namespace mlir::qco

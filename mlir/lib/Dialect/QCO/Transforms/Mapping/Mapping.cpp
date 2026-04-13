@@ -46,7 +46,6 @@
 #include <numeric>
 #include <random>
 #include <ranges>
-#include <string>
 #include <string_view>
 #include <tuple>
 #include <utility>
@@ -381,27 +380,30 @@ private:
     }
   };
 
-protected:
-  using MappingPassBase::MappingPassBase;
+public:
+  explicit MappingPass()
+      : arch(std::make_shared<Architecture>(getEmptyArchitecture())) {}
 
+  explicit MappingPass(MappingPassOptions options)
+      : arch(std::make_shared<Architecture>(getEmptyArchitecture())),
+        MappingPassBase<MappingPass>(options) {}
+
+  explicit MappingPass(std::shared_ptr<Architecture> arch,
+                       MappingPassOptions options)
+      : arch(std::move(arch)), MappingPassBase<MappingPass>(options) {}
+
+protected:
   void runOnOperation() override {
     std::mt19937_64 rng{seed};
     IRRewriter rewriter(&getContext());
-
-    // TODO: Hardcoded architecture.
-    Architecture arch("RigettiNovera", 9,
-                      {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
-                       {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
-                       {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
-                       {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}});
 
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       // TODO: 1) Not necessarily correct because deallocations could happen
       // in-between.
       // TODO: 2) Include QTensors.
-      if (range_size(func.getOps<AllocOp>()) > arch.nqubits()) {
+      if (range_size(func.getOps<AllocOp>()) > arch->nqubits()) {
         func.emitError() << "the targeted architecture supports "
-                         << arch.nqubits() << " qubits, got "
+                         << arch->nqubits() << " qubits, got "
                          << range_size(func.getOps<AllocOp>());
         signalPassFailure();
         return;
@@ -412,14 +414,13 @@ protected:
       SmallVector<Trial> trials;
       trials.reserve(ntrials);
       for (std::size_t i = 0; i < ntrials; ++i) {
-        trials.emplace_back(Layout::random(arch.nqubits(), rng()));
+        trials.emplace_back(Layout::random(arch->nqubits(), rng()));
       }
 
       // Execute each of the trials (possibly in parallel). Collect the results
       // and find the one with the fewest SWAPs on the final backwards pass.
-      parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-        refineLayout(func, arch, trial);
-      });
+      parallelForEach(&getContext(), trials,
+                      [&, this](Trial& trial) { refineLayout(func, trial); });
 
       Trial* best = findBestTrial(trials);
       if (best == nullptr) {
@@ -430,12 +431,12 @@ protected:
 
       // Perform placement and hot routing.
       place(func, best->layout, rewriter);
-      if (failed(route(func, arch, best->layout, rewriter))) {
+      if (failed(route(func, best->layout, rewriter))) {
         func.emitError() << "failed to map the function";
         signalPassFailure();
       }
 
-      assert(isExecutable(func.getFunctionBody(), arch).succeeded());
+      assert(isExecutable(func.getFunctionBody(), *arch).succeeded());
     }
   }
 
@@ -528,7 +529,7 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns failure() if routing fails.
    */
-  void refineLayout(func::FuncOp func, const Architecture& arch, Trial& trial) {
+  void refineLayout(func::FuncOp func, Trial& trial) {
     if (niterations == 0) {
       trial.success = true;
       return;
@@ -544,10 +545,10 @@ private:
     }
 
     for (std::size_t i = 0; i < niterations; ++i) {
-      if (failed(layoutRoute(wires, WalkDirection::Forward, arch, trial))) {
+      if (failed(layoutRoute(wires, WalkDirection::Forward, trial))) {
         return;
       }
-      if (failed(layoutRoute(wires, WalkDirection::Backward, arch, trial))) {
+      if (failed(layoutRoute(wires, WalkDirection::Backward, trial))) {
         return;
       }
     }
@@ -574,9 +575,9 @@ private:
    */
   [[nodiscard]] FailureOr<
       std::pair<DenseSet<Operation*>, SmallVector<IndexPairType>>>
-  search(const Window& window, const Layout& layout, const Architecture& arch) {
+  search(const Window& window, const Layout& layout) {
     constexpr std::size_t cap = 25'000'000UL;
-    const std::size_t b = arch.maxDegree() * ((arch.nqubits() + 1) / 2);
+    const std::size_t b = arch->maxDegree() * ((arch->nqubits() + 1) / 2);
     const std::size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
@@ -586,8 +587,8 @@ private:
         frontier;
 
     Node* root = std::construct_at(arena.Allocate(), layout);
-    if (root->isGoal(window.front(), arch)) {
-      return std::make_pair(root->getReadyOps(window.front(), arch),
+    if (root->isGoal(window.front(), *arch)) {
+      return std::make_pair(root->getReadyOps(window.front(), *arch),
                             SmallVector<IndexPairType>{});
     }
     frontier.emplace(root);
@@ -620,8 +621,8 @@ private:
       // If the currently visited node is a goal node, reconstruct the sequence
       // of SWAPs from this node to the root.
 
-      if (curr->isPartialGoal(window.front(), arch)) {
-        const auto ready = curr->getReadyOps(window.front(), arch);
+      if (curr->isPartialGoal(window.front(), *arch)) {
+        const auto ready = curr->getReadyOps(window.front(), *arch);
 
         SmallVector<IndexPairType> seq(curr->depth);
         std::size_t j = seq.size() - 1;
@@ -641,7 +642,7 @@ private:
         const auto& [q0, q1] = progs;
         for (const auto prog : {q0, q1}) {
           for (const auto hw0 = curr->layout.getHardwareIndex(prog);
-               const auto hw1 : arch.neighboursOf(hw0)) {
+               const auto hw1 : arch->neighboursOf(hw0)) {
             // Ensure consistent hashing/comparison.
             const IndexPairType swap = std::minmax(hw0, hw1);
             if (!expansionSet.insert(swap).second) {
@@ -649,7 +650,7 @@ private:
             }
 
             frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
-                                               window, arch, params));
+                                               window, *arch, params));
           }
         }
       }
@@ -749,8 +750,7 @@ private:
    * @returns failure() if A* search isn't able to find a solution.
    */
   LogicalResult layoutRoute(MutableArrayRef<WireIterator> wires,
-                            const WalkDirection& direction,
-                            const Architecture& arch, Trial& trial) {
+                            const WalkDirection& direction, Trial& trial) {
     const auto lookup = [](const std::size_t i) { return i; };
 
     Window window;
@@ -769,7 +769,7 @@ private:
           rebuildWindow(wires, direction, window, lookup);
 
           // Perform A* search.
-          const auto searchResult = search(window, trial.layout, arch);
+          const auto searchResult = search(window, trial.layout);
           if (failed(searchResult)) {
             return WalkResult::interrupt();
           }
@@ -812,8 +812,7 @@ private:
    * search to find a sequence of SWAPs that makes that layer executable.
    * @returns failure() if A* search isn't able to find a solution.
    */
-  LogicalResult route(func::FuncOp func, const Architecture& arch,
-                      Layout& layout, IRRewriter& rewriter) {
+  LogicalResult route(func::FuncOp func, Layout& layout, IRRewriter& rewriter) {
     constexpr auto direction = WalkDirection::Forward;
     const auto lookup = [&](const std::size_t i) {
       return layout.getProgramIndex(i);
@@ -843,7 +842,7 @@ private:
       rebuildWindow(wires, direction, window, lookup);
 
       // Perform A* search.
-      const auto searchResult = search(window, layout, arch);
+      const auto searchResult = search(window, layout);
       if (failed(searchResult)) {
         return WalkResult::interrupt();
       }
@@ -949,8 +948,15 @@ private:
 
     return success();
   }
+
+  std::shared_ptr<Architecture> arch;
 };
 
 } // namespace
+
+std::unique_ptr<Pass> createMappingPass(std::shared_ptr<Architecture> arch,
+                                        MappingPassOptions options) {
+  return std::make_unique<MappingPass>(std::move(arch), options);
+}
 
 } // namespace mlir::qco
