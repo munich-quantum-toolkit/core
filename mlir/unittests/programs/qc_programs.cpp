@@ -94,6 +94,16 @@ void allocDeallocPair(QCProgramBuilder& b) {
   b.dealloc(q);
 }
 
+void mixedStaticThenDynamicQubit(QCProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b) {
+  b.allocQubitRegister(2);
+  b.staticQubit(0);
+}
+
 void singleMeasurementToSingleBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);

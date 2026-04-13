@@ -51,6 +51,16 @@ void staticQubitsWithInv(QCOProgramBuilder& b);
 /// Allocates and explicitly sinks a single qubit.
 void allocSinkPair(QCOProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: `qtensor` alloc then
+/// static.
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.

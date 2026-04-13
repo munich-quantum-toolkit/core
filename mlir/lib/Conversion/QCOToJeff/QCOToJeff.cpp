@@ -55,6 +55,13 @@ using namespace qco;
 
 namespace {
 
+/** @brief Qubit allocation mode */
+enum class AllocationMode : std::uint8_t {
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
+};
+
 /**
  * @brief State object for tracking modifier information
  */
@@ -74,6 +81,23 @@ struct LoweringState {
   // Module information
   llvm::SmallVector<std::string> strings;
   std::string entryPointName;
+
+  /// The qubit allocation mode used in the module
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = requestedMode;
+      return success();
+    }
+    if (allocationMode == requestedMode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in QCO program");
+  }
 };
 
 /**
@@ -266,6 +290,10 @@ struct ConvertQTensorAllocOp final
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
     // TODO: Why is this not happening in native conversion?
     auto sizeValue = getConstantIntValue(adaptor.getSize());
     Value size;
@@ -389,6 +417,45 @@ struct ConvertQCOAllocOpToJeff final
   LogicalResult
   matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
+    rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qco.static to jeff.qubit_alloc
+ *
+ * @details
+ * The Jeff dialect does not model hardware-mapped or fixed-index static
+ * qubits yet. As a temporary workaround (see discussion on #1626), this
+ * lowers `qco.static` to the same `jeff.qubit_alloc` operation used for
+ * `qco.alloc`. The static index is not represented in Jeff IR; if Jeff gains
+ * static qubit support, this conversion should be revisited.
+ *
+ * @par Example:
+ * ```mlir
+ * %q = qco.static 0 : !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q = jeff.qubit_alloc : !jeff.qubit
+ * ```
+ */
+struct ConvertQCOStaticOpToJeff final
+    : StatefulOpConversionPattern<qco::StaticOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Static,
+                                               op.getOperation()))) {
+      return failure();
+    }
     rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
     return success();
   }
@@ -1500,8 +1567,9 @@ protected:
     patterns.add<
         ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
         ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
-        ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
-        ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff,
+        ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
+        ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
+        ConvertQCOGPhaseOpToJeff,
         ConvertQCOOneTargetZeroParameterToJeff<qco::IdOp, jeff::IOp, false>,
         ConvertQCOOneTargetZeroParameterToJeff<qco::XOp, jeff::XOp, false>,
         ConvertQCOOneTargetZeroParameterToJeff<qco::YOp, jeff::YOp, false>,
