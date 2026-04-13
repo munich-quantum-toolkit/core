@@ -24,7 +24,6 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <cstddef>
-#include <utility>
 
 namespace mlir::qco {
 
@@ -93,24 +92,16 @@ using WalkUnitFn = function_ref<WalkResult(Operation*, const Qubits&)>;
  */
 void walkUnit(Region& region, WalkUnitFn fn);
 
-using WalkQubitPairBlockFn =
-    function_ref<void(const WireIterator&, const WireIterator&)>;
-
-/**
- * @brief Walk the block spanned by a pair of qubit wires.
- * @details
- * Advances each of the two wire iterators until a two-qubit op is
- * found. If the ops match, repeat this process. Otherwise, stop.
- *
- * Expects wires.size() == 2.
- */
-void walkQubitPairBlock(MutableArrayRef<WireIterator> wires,
-                        WalkDirection direction, WalkQubitPairBlockFn fn);
-
 using ReleasedIterators = SmallVector<WireIterator*, 8>;
 using FrontArrayRef = ArrayRef<SmallVector<WireIterator*>>;
 using WalkCircuitGraphFn =
     function_ref<WalkResult(FrontArrayRef, ReleasedIterators&)>;
+
+/**
+ * @returns true if the wire iterator has not reached the end (Forward) or the
+ * start (Backward) of the wire.
+ */
+bool proceedOnWire(const WireIterator& it, WalkDirection direction);
 
 /**
  * @brief Walk the graph-like circuit IR of QCO dialect programs.

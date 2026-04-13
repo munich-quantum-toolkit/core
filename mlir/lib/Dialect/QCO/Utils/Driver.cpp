@@ -50,11 +50,7 @@ static void insert(PendingWiresMap& map, UnitaryOpInterface op,
   wires.emplace_back(wire);
 }
 
-/**
- * @returns true if the wire iterator has not reached the end (Forward) or the
- * start (Backward) of the wire.
- */
-static bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
+bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
   if (direction == WalkDirection::Forward) {
     return it != std::default_sentinel;
   }
@@ -140,29 +136,6 @@ void walkUnit(Region& region, WalkUnitFn fn) {
         .Case<InsertOp>([&](InsertOp op) { qubits.remove(op.getScalar()); })
         .Case<SinkOp>([&](SinkOp op) { qubits.remove(op.getQubit()); });
   }
-}
-
-void walkQubitPairBlock(MutableArrayRef<WireIterator> wires,
-                        WalkDirection direction, WalkQubitPairBlockFn fn) {
-  assert(wires.size() == 2);
-  std::ignore = walkCircuitGraph(
-      wires, direction, [&](FrontArrayRef front, ReleasedIterators& released) {
-        if (front.empty()) {
-          return WalkResult::interrupt();
-        }
-
-        assert(front.size() == 1);
-        assert(front.front().size() == 2);
-
-        const auto& its = front.front();
-        assert(its[0]->operation() == its[1]->operation());
-
-        fn(*its[0], *its[1]);
-
-        released.append(its.begin(), its.end());
-
-        return WalkResult::advance();
-      });
 }
 
 LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,

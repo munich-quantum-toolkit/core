@@ -30,6 +30,7 @@
 #include <cassert>
 #include <memory>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;

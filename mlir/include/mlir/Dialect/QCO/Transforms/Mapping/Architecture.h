@@ -63,7 +63,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] SmallVector<std::size_t, 4> neighboursOf(std::size_t u) const;
+  [[nodiscard]] ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the

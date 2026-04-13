@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
@@ -22,7 +23,7 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-Architecture mlir::qco::getEmptyArchitecture() { return Architecture(); }
+Architecture mlir::qco::getEmptyArchitecture() { return {}; }
 
 std::string_view Architecture::name() const { return name_; }
 
@@ -41,7 +42,7 @@ std::size_t Architecture::distanceBetween(std::size_t u, std::size_t v) const {
   return dist_[u][v];
 }
 
-SmallVector<std::size_t, 4> Architecture::neighboursOf(std::size_t u) const {
+ArrayRef<std::size_t> Architecture::neighboursOf(std::size_t u) const {
   return neighbours_[u];
 }
 

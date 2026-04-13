@@ -35,6 +35,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
@@ -706,14 +707,7 @@ private:
             layer.emplace_back(first.operation(),
                                std::make_pair(lookup(i0), lookup(i1)));
 
-            SmallVector<WireIterator, 2> pair{first, second};
-            walkQubitPairBlock(
-                pair, direction,
-                [&](const WireIterator& a, const WireIterator& b) {
-                  first = a;
-                  second = b;
-                });
-
+            skipQubitPairBlock(first, second, direction);
             released.append(its.begin(), its.end());
           }
 
@@ -739,6 +733,55 @@ private:
       }
       llvm::dbgs() << "----- window end -----\n";
     });
+  }
+
+  /**
+   * @brief Walk the block spanned by a pair of qubit wires.
+   * @details
+   * Advances each of the two wire iterators until a two-qubit op is
+   * found. If the ops match, repeat this process. Otherwise, stop.
+   */
+  static void skipQubitPairBlock(WireIterator& first, WireIterator& second,
+                                 WalkDirection direction) {
+    const auto step = direction == WalkDirection::Forward ? 1 : -1;
+    const auto findNext = [&](WireIterator& it) -> UnitaryOpInterface {
+      while (proceedOnWire(it, direction)) {
+        if (auto u = dyn_cast<UnitaryOpInterface>(it.operation())) {
+          if (u.getNumQubits() > 1) {
+            return u;
+          }
+        }
+        std::ranges::advance(it, step);
+      }
+
+      return nullptr;
+    };
+
+    WireIterator currFirst(first);
+    WireIterator currSecond(second);
+    while (true) {
+      auto u0 = findNext(currFirst);
+      if (u0 == nullptr) {
+        break;
+      }
+
+      auto u1 = findNext(currSecond);
+      if (u1 == nullptr) {
+        break;
+      }
+
+      if (u0.getOperation() != u1.getOperation()) {
+        break;
+      }
+
+      // If both wires point to the same multi-qubit operation, reset the result
+      // wire iterators.
+      first = currFirst;
+      second = currSecond;
+
+      std::ranges::advance(currFirst, step);
+      std::ranges::advance(currSecond, step);
+    }
   }
 
   /**
@@ -790,14 +833,7 @@ private:
             WireIterator& second = *its[1];
 
             if (readyOps.contains(first.operation())) {
-              SmallVector<WireIterator, 2> pair{first, second};
-              walkQubitPairBlock(
-                  pair, direction,
-                  [&](const WireIterator& a, const WireIterator& b) {
-                    first = a;
-                    second = b;
-                  });
-
+              skipQubitPairBlock(first, second, direction);
               released.append(its.begin(), its.end());
             }
           }
@@ -924,13 +960,7 @@ private:
         WireIterator& second = *its[1];
 
         if (readyOps.contains(first.operation())) {
-          SmallVector<WireIterator, 2> pair{first, second};
-          walkQubitPairBlock(pair, direction,
-                             [&](const WireIterator& a, const WireIterator& b) {
-                               first = a;
-                               second = b;
-                             });
-
+          skipQubitPairBlock(first, second, direction);
           released.append(its.begin(), its.end());
         }
       }
