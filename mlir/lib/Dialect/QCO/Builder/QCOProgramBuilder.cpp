@@ -192,10 +192,9 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validTensors.try_emplace(outputTensor, info);
 }
 
-void QCOProgramBuilder::insertExtractedQubits(
-    SmallVector<Value>& updatedArgs,
-    DenseMap<int64_t, SmallVector<Value>>& insertedQubits,
-    ValueRange initArgs) {
+SmallVector<Value>
+QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
+  SmallVector<Value> updatedArgs;
   updatedArgs.reserve(initArgs.size());
 
   // Iterate through the initial values and add the latest value to the updated
@@ -205,54 +204,29 @@ void QCOProgramBuilder::insertExtractedQubits(
       // Directly insert qubits
       updatedArgs.emplace_back(initArg);
     } else {
+      // For tensors check if you have to insert qubits first
       auto regId = validTensors[initArg].regId;
-      auto tensor = initArg;
+      auto currentTensor = initArg;
       // Iterate through the validQubits and find the qubits that were extracted
-      // from this register
+      // from this tensor
       for (auto [qubit, qubitInfo] : validQubits) {
         if (qubitInfo.regId == regId) {
           // Create an InsertOp for the qubit
-          auto insertOp = qtensor::InsertOp::create(*this, qubit, tensor,
-                                                    qubitInfo.regIndex)
-                              .getResult();
-          // Update the tensor tracking and add the extracted qubit to the
-          // vector of inserted qubits
-          updateTensorTracking(tensor, insertOp);
-          tensor = insertOp;
-          insertedQubits[regId].emplace_back(qubit);
+          auto newTensor = qtensor::InsertOp::create(
+                               *this, qubit, currentTensor, qubitInfo.regIndex)
+                               .getResult();
+          // Update the tensor tracking
+          validQubits.erase(qubit);
+          updateTensorTracking(currentTensor, newTensor);
+          currentTensor = newTensor;
         }
       }
       // Add the tensor after all qubits are inserted and the tensor tracking is
       // updated
-      updatedArgs.emplace_back(tensor);
+      updatedArgs.emplace_back(currentTensor);
     }
   }
-}
-
-void QCOProgramBuilder::extractInsertedQubits(
-    DenseMap<int64_t, SmallVector<Value>>& insertedQubits, ValueRange oldValues,
-    ValueRange newValues) {
-  // Iterate through all the values
-  for (auto [initArg, result] : llvm::zip_equal(oldValues, newValues)) {
-    if (llvm::isa<QubitType>(initArg.getType())) {
-      // Update the tracking for qubits
-      updateQubitTracking(initArg, result);
-    } else {
-      // Update the tracking for tensors
-      updateTensorTracking(initArg, result);
-
-      // Extract all the values that were previously inserted
-      auto& tensor = result;
-      for (auto qubit : insertedQubits[validTensors[tensor].regId]) {
-        auto extract = qtensor::ExtractOp::create(*this, tensor,
-                                                  validQubits[qubit].regIndex);
-        // Update the tensor and the qubit tracking again
-        updateQubitTracking(qubit, extract.getResult());
-        updateTensorTracking(tensor, extract.getOutTensor());
-        tensor = extract->getResult(0);
-      }
-    }
-  }
+  return updatedArgs;
 }
 
 /** @brief Helper function to check if every value is a qubit value*/
@@ -268,6 +242,7 @@ static void checkQubitType(ValueRange values) {
     }
   }
 }
+
 //===----------------------------------------------------------------------===//
 // QTensor Operations
 //===----------------------------------------------------------------------===//
@@ -888,14 +863,12 @@ ValueRange QCOProgramBuilder::scfFor(
   const auto lb = utils::variantToValue(*this, loc, lowerbound);
   const auto ub = utils::variantToValue(*this, loc, upperbound);
   const auto stepSize = utils::variantToValue(*this, loc, step);
-
   // Get the updated arguments after inserting the extracted qubits
-  DenseMap<int64_t, SmallVector<Value>> insertedQubits;
-  SmallVector<Value> updatedArgs;
-  insertExtractedQubits(updatedArgs, insertedQubits, initArgs);
+  auto updatedArgs = insertExtractedQubits(initArgs);
 
   // Create the empty for operation
   auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, updatedArgs);
+
   auto* forBody = forOp.getBody();
   const auto iv = forBody->getArgument(0);
   const auto loopArgs = forBody->getArguments().drop_front();
@@ -903,7 +876,7 @@ ValueRange QCOProgramBuilder::scfFor(
   const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToStart(forBody);
 
-  // Add the iterArgs to the validQubits
+  // Add the iterArgs as valid qubit values
   for (const auto& arg : loopArgs) {
     if (llvm::isa<QubitType>(arg.getType())) {
       validQubits.try_emplace(arg, QubitInfo{});
@@ -911,11 +884,12 @@ ValueRange QCOProgramBuilder::scfFor(
       validTensors.try_emplace(arg, TensorInfo{tensorCounter++});
     }
   }
+
   // Build the body
   const auto bodyResults = body(iv, loopArgs);
   scf::YieldOp::create(*this, bodyResults);
 
-  // Remove the iterArgs as valid qubit values
+  // Remove the bodyResults as valid qubit values
   for (auto result : bodyResults) {
     if (llvm::isa<QubitType>(result.getType())) {
       validQubits.erase(result);
@@ -924,9 +898,15 @@ ValueRange QCOProgramBuilder::scfFor(
     }
   }
 
-  // Update the qubit tracking and extract the inserted qubits again
-  setInsertionPointAfter(forOp);
-  extractInsertedQubits(insertedQubits, updatedArgs, forOp->getResults());
+  // Update the qubit tracking
+  for (const auto& [arg, result] :
+       llvm::zip_equal(updatedArgs, forOp->getResults())) {
+    if (llvm::isa<QubitType>(arg.getType())) {
+      updateQubitTracking(arg, result);
+    } else {
+      updateTensorTracking(arg, result);
+    }
+  }
 
   return forOp->getResults();
 }
@@ -939,10 +919,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   checkQubitType(initArgs);
 
   // Get the updated arguments after inserting the extracted qubits
-  DenseMap<int64_t, SmallVector<Value>> insertedQubits;
-  SmallVector<Value> updatedArgs;
-  insertExtractedQubits(updatedArgs, insertedQubits, initArgs);
-
+  auto updatedArgs = insertExtractedQubits(initArgs);
   // Create the empty while operation
   auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), updatedArgs);
   const SmallVector<Location> locs(initArgs.size(), getLoc());
@@ -978,7 +955,7 @@ ValueRange QCOProgramBuilder::scfWhile(
           scf::YieldOp::create(*this, results);
         }
 
-        // erase the args as valid qubit values
+        // Erase the args as valid qubit values
         for (auto result : results) {
           if (llvm::isa<QubitType>(result.getType())) {
             validQubits.erase(result);
@@ -991,8 +968,14 @@ ValueRange QCOProgramBuilder::scfWhile(
   createBody(afterBlock, afterBody, true);
 
   // Update the qubit tracking
-  setInsertionPointAfter(whileOp);
-  extractInsertedQubits(insertedQubits, updatedArgs, whileOp->getResults());
+  for (const auto& [arg, result] :
+       llvm::zip_equal(updatedArgs, whileOp->getResults())) {
+    if (llvm::isa<QubitType>(arg.getType())) {
+      updateQubitTracking(arg, result);
+    } else {
+      updateTensorTracking(arg, result);
+    }
+  }
 
   return whileOp->getResults();
 }
@@ -1005,11 +988,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   checkQubitType(initArgs);
 
   auto conditionValue = variantToValue(*this, getLoc(), condition);
-
-  DenseMap<int64_t, SmallVector<Value>> insertedQubits;
-  SmallVector<Value> updatedArgs;
-
-  insertExtractedQubits(updatedArgs, insertedQubits, initArgs);
+  auto updatedArgs = insertExtractedQubits(initArgs);
   auto ifOp = IfOp::create(*this, conditionValue, updatedArgs);
 
   // Create the then and else block
@@ -1052,8 +1031,14 @@ ValueRange QCOProgramBuilder::qcoIf(
         "number of input qubits!");
   }
 
-  setInsertionPointAfter(ifOp);
-  extractInsertedQubits(insertedQubits, updatedArgs, ifOp->getResults());
+  for (const auto& [arg, result] :
+       llvm::zip_equal(updatedArgs, ifOp->getResults())) {
+    if (llvm::isa<QubitType>(arg.getType())) {
+      updateQubitTracking(arg, result);
+    } else {
+      updateTensorTracking(arg, result);
+    }
+  }
 
   // Remove the inner qubit values as valid qubit values
   for (auto thenOut : thenResult) {

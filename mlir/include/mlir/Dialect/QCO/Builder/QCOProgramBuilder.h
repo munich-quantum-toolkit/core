@@ -1449,21 +1449,7 @@ private:
    * @param insertedQubits Map to store the inserted qubits
    * @param initArgs The initial values
    */
-  void
-  insertExtractedQubits(SmallVector<Value>& updatedArgs,
-                        DenseMap<int64_t, SmallVector<Value>>& insertedQubits,
-                        ValueRange initArgs);
-  /**
-   * @brief Updates the latest QCO values using the new values and after
-   * extracting all previously inserted qubits again.
-   * @param insertedQubits Map of the previously inserted qubits
-   * @param oldValues Old values being consumed
-   * @param newValues New values to update the old values
-   */
-
-  void
-  extractInsertedQubits(DenseMap<int64_t, SmallVector<Value>>& insertedQubits,
-                        ValueRange oldValues, ValueRange newValues);
+  SmallVector<Value> insertExtractedQubits(ValueRange initArgs);
 
   /**
    * @brief Information about a tensor
