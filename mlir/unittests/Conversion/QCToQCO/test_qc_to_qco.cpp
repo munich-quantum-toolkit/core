@@ -238,14 +238,12 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCToQCOTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
                         MQT_NAMED_BUILDER(qco::emptyQCO)},
-        QCToQCOTestCase{
-            "SingleControlledIdentity",
-            MQT_NAMED_BUILDER(qc::singleControlledIdentity),
-            MQT_NAMED_BUILDER(qco::emptyQCO)},
-        QCToQCOTestCase{
-            "MultipleControlledIdentity",
-            MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-            MQT_NAMED_BUILDER(qco::emptyQCO)}));
+        QCToQCOTestCase{"SingleControlledIdentity",
+                        MQT_NAMED_BUILDER(qc::singleControlledIdentity),
+                        MQT_NAMED_BUILDER(qco::emptyQCO)},
+        QCToQCOTestCase{"MultipleControlledIdentity",
+                        MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
+                        MQT_NAMED_BUILDER(qco::emptyQCO)}));
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/IswapOp.cpp

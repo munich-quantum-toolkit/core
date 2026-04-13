@@ -164,10 +164,9 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         JeffRoundTripTestCase{"Identity", MQT_NAMED_BUILDER(qco::identity),
                               MQT_NAMED_BUILDER(qco::identity)},
-        JeffRoundTripTestCase{
-            "SingleControlledIdentity",
-            MQT_NAMED_BUILDER(qco::singleControlledIdentity),
-            MQT_NAMED_BUILDER(qco::singleControlledIdentity)},
+        JeffRoundTripTestCase{"SingleControlledIdentity",
+                              MQT_NAMED_BUILDER(qco::singleControlledIdentity),
+                              MQT_NAMED_BUILDER(qco::singleControlledIdentity)},
         JeffRoundTripTestCase{
             "MultipleControlledIdentity",
             MQT_NAMED_BUILDER(qco::multipleControlledIdentity),

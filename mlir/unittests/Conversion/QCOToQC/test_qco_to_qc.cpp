@@ -187,14 +187,12 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCOToQCTestCase{"Identity", MQT_NAMED_BUILDER(qco::identity),
                         MQT_NAMED_BUILDER(qc::identity)},
-        QCOToQCTestCase{
-            "SingleControlledIdentity",
-            MQT_NAMED_BUILDER(qco::singleControlledIdentity),
-            MQT_NAMED_BUILDER(qc::singleControlledIdentity)},
-        QCOToQCTestCase{
-            "MultipleControlledIdentity",
-            MQT_NAMED_BUILDER(qco::multipleControlledIdentity),
-            MQT_NAMED_BUILDER(qc::multipleControlledIdentity)}));
+        QCOToQCTestCase{"SingleControlledIdentity",
+                        MQT_NAMED_BUILDER(qco::singleControlledIdentity),
+                        MQT_NAMED_BUILDER(qc::singleControlledIdentity)},
+        QCOToQCTestCase{"MultipleControlledIdentity",
+                        MQT_NAMED_BUILDER(qco::multipleControlledIdentity),
+                        MQT_NAMED_BUILDER(qc::multipleControlledIdentity)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/DcxOp.cpp

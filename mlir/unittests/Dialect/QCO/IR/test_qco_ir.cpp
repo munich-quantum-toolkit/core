@@ -1133,7 +1133,8 @@ protected:
 /// Verify that a one-target, zero-parameter op (XOp) exposes the correct
 /// ranges via the new interface methods.
 TEST_F(QCOUnitaryInterfaceTest, XOpRangeAccessors) {
-  auto program = QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(x).fn);
+  auto program =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(x).fn);
   ASSERT_TRUE(program);
 
   XOp foundX;
@@ -1155,7 +1156,8 @@ TEST_F(QCOUnitaryInterfaceTest, XOpRangeAccessors) {
 /// Verify that getInputTargets()[0] is the same Value as getInputTarget(0),
 /// and getOutputTargets()[0] is the same Value as getOutputTarget(0).
 TEST_F(QCOUnitaryInterfaceTest, XOpRangeIndexConsistency) {
-  auto program = QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(x).fn);
+  auto program =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(x).fn);
   ASSERT_TRUE(program);
 
   XOp foundX;
@@ -1173,7 +1175,8 @@ TEST_F(QCOUnitaryInterfaceTest, XOpRangeIndexConsistency) {
 /// Verify that a one-target, one-parameter op (RXOp) returns a Parameters
 /// range with exactly one element, consistent with getParameter(0).
 TEST_F(QCOUnitaryInterfaceTest, RXOpGetParameters) {
-  auto program = QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(rx).fn);
+  auto program =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(rx).fn);
   ASSERT_TRUE(program);
 
   RXOp foundRX;
@@ -1220,8 +1223,8 @@ TEST_F(QCOUnitaryInterfaceTest, SWAPOpTwoTargetRanges) {
 /// targets and controls.
 TEST_F(QCOUnitaryInterfaceTest, CtrlOpRangeAccessors) {
   // singleControlledX has exactly one control and one target
-  auto program = QCOProgramBuilder::build(context.get(),
-                                          MQT_NAMED_BUILDER(singleControlledX).fn);
+  auto program = QCOProgramBuilder::build(
+      context.get(), MQT_NAMED_BUILDER(singleControlledX).fn);
   ASSERT_TRUE(program);
 
   CtrlOp foundCtrl;
@@ -1243,8 +1246,8 @@ TEST_F(QCOUnitaryInterfaceTest, CtrlOpMultipleControlsRangeAccessors) {
   CtrlOp foundCtrl;
   program->walk([&](CtrlOp op) {
     // Pick the outermost CtrlOp (the one with the most controls)
-    if (!foundCtrl || op.getInputControls().size() >
-                          foundCtrl.getInputControls().size()) {
+    if (!foundCtrl ||
+        op.getInputControls().size() > foundCtrl.getInputControls().size()) {
       foundCtrl = op;
     }
   });
@@ -1259,8 +1262,8 @@ TEST_F(QCOUnitaryInterfaceTest, CtrlOpMultipleControlsRangeAccessors) {
 /// Verify CtrlOp.getParameters() delegates to the body unitary.
 TEST_F(QCOUnitaryInterfaceTest, CtrlOpParametersDelegateToBody) {
   // singleControlledRx wraps an RX gate which has 1 parameter
-  auto program = QCOProgramBuilder::build(context.get(),
-                                          MQT_NAMED_BUILDER(singleControlledRx).fn);
+  auto program = QCOProgramBuilder::build(
+      context.get(), MQT_NAMED_BUILDER(singleControlledRx).fn);
   ASSERT_TRUE(program);
 
   CtrlOp foundCtrl;
@@ -1318,8 +1321,8 @@ TEST_F(QCOUnitaryInterfaceTest, InvOpParametersDelegateToBody) {
 /// Verify that BarrierOp's new range accessors return correct qubit counts.
 TEST_F(QCOUnitaryInterfaceTest, BarrierOpRangeAccessors) {
   // barrierTwoQubits has two qubits
-  auto program = QCOProgramBuilder::build(context.get(),
-                                          MQT_NAMED_BUILDER(barrierTwoQubits).fn);
+  auto program = QCOProgramBuilder::build(
+      context.get(), MQT_NAMED_BUILDER(barrierTwoQubits).fn);
   ASSERT_TRUE(program);
 
   BarrierOp foundBarrier;
