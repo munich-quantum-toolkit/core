@@ -157,13 +157,17 @@ static void handleResult(Operation* op, ConversionPatternRewriter& rewriter,
  *
  * @param state Lowering state.
  * @param adaptor Operand adaptor for the matched op.
+ * @tparam NumParams Number of parameters to drop from the end of the operand
+ * list.
  * @tparam OpAdaptor Adaptor with `getOperands()`.
+ * @return ValueRange The target operands.
  */
-template <typename OpAdaptor>
+template <size_t NumParams, typename OpAdaptor>
 [[nodiscard]] static ValueRange getEffectiveTargetOperands(LoweringState& state,
                                                            OpAdaptor adaptor) {
-  return state.inModifier() ? ValueRange(state.targetsIn)
-                            : ValueRange(adaptor.getOperands());
+  return state.inModifier()
+             ? ValueRange(state.targetsIn)
+             : ValueRange(adaptor.getOperands().drop_back(NumParams));
 }
 
 /**
@@ -185,7 +189,8 @@ convertJeffGate(QCOOpType op, typename QCOOpType::Adaptor adaptor,
                 ConversionPatternRewriter& rewriter, LoweringState& state,
                 std::index_sequence<TargetIndices...> /*targetIndices*/,
                 std::index_sequence<ParamIndices...> /*paramIndices*/) {
-  ValueRange targets = getEffectiveTargetOperands(state, adaptor);
+  constexpr std::size_t numParams = sizeof...(ParamIndices);
+  ValueRange targets = getEffectiveTargetOperands<numParams>(state, adaptor);
   assert(targets.size() >= sizeof...(TargetIndices) &&
          "Not enough operands available for conversion");
   ValueRange params = op.getParameters();
@@ -731,7 +736,7 @@ struct ConvertQCOCustomGateToJeff final
       }
     }
 
-    ValueRange targets = getEffectiveTargetOperands(state, adaptor);
+    ValueRange targets = getEffectiveTargetOperands<NumParams>(state, adaptor);
     assert(targets.size() >= NumTargets &&
            "Not enough operands available for conversion");
 
@@ -767,7 +772,7 @@ struct ConvertQCOPPRGateToJeff final : StatefulOpConversionPattern<QCOOpType> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
-    ValueRange targets = getEffectiveTargetOperands(state, adaptor);
+    ValueRange targets = getEffectiveTargetOperands<1>(state, adaptor);
     assert(targets.size() >= 2 &&
            "Not enough operands available for conversion");
     createPPROp(op, rewriter, state, targets, {p0_, p1_});
@@ -801,7 +806,7 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    ValueRange targets = getEffectiveTargetOperands(state, adaptor);
+    ValueRange targets = getEffectiveTargetOperands<2>(state, adaptor);
     assert(!targets.empty() && "Not enough operands available for conversion");
     auto target = targets.front();
 
@@ -844,10 +849,9 @@ struct ConvertQCOBarrierOpToJeff final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    ValueRange targets = getEffectiveTargetOperands(state, adaptor);
+    ValueRange targets = getEffectiveTargetOperands<0>(state, adaptor);
 
-    createCustomOp(op, rewriter, state, targets,
-                   qco::BarrierOp::getParameters(), false, "barrier");
+    createCustomOp(op, rewriter, state, targets, {}, false, "barrier");
 
     return success();
   }
