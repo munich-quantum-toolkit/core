@@ -34,7 +34,8 @@ namespace mlir::qc {
 #include "mlir/Dialect/QC/Transforms/Passes.h.inc"
 
 /**
- * @brief Return the constant index of a one-dimensional memref load.
+ * @brief Return the constant index of a one-dimensional `memref.load`
+ * operation.
  */
 [[nodiscard]] static std::optional<int64_t>
 getLoadIndex(memref::LoadOp loadOp) {

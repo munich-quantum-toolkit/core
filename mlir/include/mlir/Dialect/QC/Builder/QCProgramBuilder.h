@@ -12,7 +12,6 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -20,6 +19,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
@@ -95,6 +95,34 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Represents a qubit register with its qubits.
+   */
+  struct QubitRegister {
+    /// The MemRef value representing the qubit register
+    Value value;
+    /// The allocated qubit values
+    SmallVector<Value> qubits;
+
+    /**
+     * @brief Access a specific qubit in the register
+     * @param index The index of the qubit to access
+     * @return The specified qubit value
+     */
+    Value operator[](size_t index) const {
+      if (index >= qubits.size()) {
+        llvm::report_fatal_error("Qubit index out of bounds");
+      }
+      return qubits[index];
+    }
+
+    /**
+     * @brief Conversion to the backing MemRef value
+     * @return The MemRef value representing the qubit register
+     */
+    explicit operator Value() const { return value; }
+  };
+
+  /**
    * @brief Allocate a single qubit initialized to |0⟩
    * @return A qubit reference
    *
@@ -126,7 +154,7 @@ public:
   /**
    * @brief Allocate a qubit register
    * @param size Number of qubits (must be positive)
-   * @return Vector of qubit references
+   * @return A `QubitRegister` structure
    *
    * @par Example:
    * ```c++
@@ -139,7 +167,7 @@ public:
    * %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
    * ```
    */
-  llvm::SmallVector<Value> allocQubitRegister(int64_t size);
+  QubitRegister allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -184,7 +212,7 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A ClassicalRegister structure
+   * @return A `ClassicalRegister` structure
    *
    * @par Example:
    * ```c++

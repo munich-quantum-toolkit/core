@@ -87,7 +87,7 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
   return staticOp.getQubit();
 }
 
-llvm::SmallVector<Value>
+QCProgramBuilder::QubitRegister
 QCProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
 
@@ -107,7 +107,8 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
     const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
   }
-  return qubits;
+
+  return {.value = memref, .qubits = std::move(qubits)};
 }
 
 QCProgramBuilder::ClassicalRegister
