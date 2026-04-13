@@ -344,9 +344,11 @@ static void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
 }
 
 /** @brief Pushes a new modifier frame seeded with aliased target values. */
-static void pushModifierFrameTemp(LoweringState& state, ValueRange qcTargets,
-                                  ValueRange memrefs, ValueRange qcoTargets,
-                                  ValueRange tensors) {
+static void pushModifierFrameWithRegisters(LoweringState& state,
+                                           ValueRange qcTargets,
+                                           ValueRange memrefs,
+                                           ValueRange qcoTargets,
+                                           ValueRange tensors) {
   auto& [yieldOrder, registers, currentQubits, currentRegisters] =
       state.modifierFrames.emplace_back();
   llvm::append_range(yieldOrder, qcTargets);
@@ -387,7 +389,7 @@ static void insertAllExtractedQubits(LoweringState& state, Operation* target,
   auto* region = target->getParentRegion();
   Operation* anchor = nullptr;
   SmallVector<Value> memrefs;
-  if (isInsideModifier(state)) {
+  if (isInsideModifier(state) && target->getNumRegions() == 0) {
     memrefs = currentModifierFrame(state).memrefs;
     anchor = target->getParentOp();
   } else {
@@ -417,7 +419,7 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
   auto* region = target->getParentRegion();
   Operation* anchor = nullptr;
   SmallVector<Value> memrefs;
-  if (isInsideModifier(state)) {
+  if (isInsideModifier(state) && target->getNumRegions() == 0) {
     memrefs = currentModifierFrame(state).memrefs;
     anchor = target->getParentOp();
   } else {
@@ -461,28 +463,13 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
   llvm::append_range(qcoTargets, resolveMappedQubits(state, anchor, qcQubits));
   return qcoTargets;
 }
-/**
- * @brief Helper function to check whether the type is a qc qubit type or a
- * container that holds qc qubit types
- *
- * @param type The type that is checked
- * @return Whether it is a qc type or not
- */
-static bool isQCQubitType(Type type) {
-  if (llvm::isa<qc::QubitType>(type)) {
-    return true;
-  }
-  auto memref = dyn_cast<MemRefType>(type);
-  return memref && llvm::isa<qc::QubitType>(memref.getElementType());
-}
 
 /**
- * @brief Recursively collects all the QC qubit references used by an
- * operation and store them in map
+ * @brief Recursively collects all the QC qubit and memref references used by an
+ * operation and store them in the maps
  *
- * @param Operation The operation that is currently traversed
+ * @param op The operation that is currently traversed
  * @param state The lowering state
- * @param ctx The MLIRContext of the current program
  * @return Pair of llvm::SetVector<Value> of unique QC qubits and memref
  * references
  */
@@ -505,38 +492,34 @@ collectUniqueQubits(Operation* op, LoweringState* state) {
     assert(region.hasOneBlock() && "Expected single-block region");
     // Iterate through all operations of the current region
     for (auto& operation : region.front().getOperations()) {
-      // Check that we are in a scf operation
-      if (op->getDialect()->getNamespace() == "scf") {
-        // recursively walk through nested region
-        if (operation.getNumRegions() > 0) {
-          auto [qubits, registers] = collectUniqueQubits(&operation, state);
-          regionQubitMap.set_union(qubits);
-          regionRegisterMap.set_union(registers);
-        }
-        // Track qubits from loadOp
-        if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
-          QubitInfo info{.reg = loadOp.getMemRef(),
-                         .index = loadOp.getIndices()[0]};
-          qubitInfoMap.try_emplace(loadOp.getResult(), info);
-          regionRegisterMap.insert(loadOp.getMemRef());
-          continue;
-        }
-        // Add the QC qubit and memref operands to the maps
-        for (const auto& operand : operation.getOperands()) {
-          if (llvm::isa<qc::QubitType>(operand.getType())) {
-            if (!qubitInfoMap.contains(operand)) {
-              regionQubitMap.insert(operand);
-            }
-          }
-          if (auto memref = dyn_cast<MemRefType>(operand.getType())) {
-            if (llvm::isa<qc::QubitType>(memref.getElementType())) {
-              regionRegisterMap.insert(operand);
-            }
+      // Recursively walk through nested regions
+      if (operation.getNumRegions() > 0) {
+        auto [qubits, registers] = collectUniqueQubits(&operation, state);
+        regionQubitMap.set_union(qubits);
+        // Remove duplicate qubits
+        regionQubitMap.remove_if(
+            [&](Value qubit) { return qubitInfoMap.contains(qubit); });
+        regionRegisterMap.set_union(registers);
+      }
+      // Track qubits from loadOp
+      if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
+        QubitInfo info{.reg = loadOp.getMemRef(),
+                       .index = loadOp.getIndices()[0]};
+        qubitInfoMap.try_emplace(loadOp.getResult(), info);
+        regionRegisterMap.insert(loadOp.getMemRef());
+        continue;
+      }
+      // Add the QC qubit and memref operands to the maps
+      for (const auto& operand : operation.getOperands()) {
+        if (llvm::isa<qc::QubitType>(operand.getType())) {
+          if (!qubitInfoMap.contains(operand)) {
+            regionQubitMap.insert(operand);
           }
         }
-      } else {
-        if (operation.getNumRegions() > 0) {
-          collectUniqueQubits(&operation, state);
+        if (auto memref = dyn_cast<MemRefType>(operand.getType())) {
+          if (llvm::isa<qc::QubitType>(memref.getElementType())) {
+            regionRegisterMap.insert(operand);
+          }
         }
       }
     }
@@ -1544,7 +1527,7 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
     SmallVector<Value, 8> registers(registerMap.begin(), registerMap.end());
 
     // Push a new frame to the stack
-    pushModifierFrameTemp(
+    pushModifierFrameWithRegisters(
         state, qubitVector, registers,
         dstBlock.getArguments().drop_front(1).take_back(numQubits),
         dstBlock.getArguments().drop_front(1).take_front(numRegisters));
@@ -1632,11 +1615,11 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
     SmallVector<Value, 8> registers(registerMap.begin(), registerMap.end());
 
     // Push the frames for the before and after region to the stack
-    pushModifierFrameTemp(
+    pushModifierFrameWithRegisters(
         state, qubitVector, registers,
         newAfterBlock->getArguments().take_back(numQubits),
         newAfterBlock->getArguments().take_front(numRegisters));
-    pushModifierFrameTemp(
+    pushModifierFrameWithRegisters(
         state, qubitVector, registers,
         newBeforeBlock->getArguments().take_back(numQubits),
         newBeforeBlock->getArguments().take_front(numRegisters));
@@ -1719,9 +1702,10 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     if (!op.getElseRegion().empty()) {
       elseBlock->getOperations().splice(
           elseBlock->end(), op.getElseRegion().front().getOperations());
-      pushModifierFrameTemp(state, qubitVector, registers,
-                            elseRegion.getArguments().take_back(numQubits),
-                            elseRegion.getArguments().take_front(numRegisters));
+      pushModifierFrameWithRegisters(
+          state, qubitVector, registers,
+          elseRegion.getArguments().take_back(numQubits),
+          elseRegion.getArguments().take_front(numRegisters));
 
     } else {
       rewriter.setInsertionPointToEnd(elseBlock);
@@ -1729,9 +1713,10 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
                                             elseBlock->getArguments());
     }
 
-    pushModifierFrameTemp(state, qubitVector, registers,
-                          thenRegion.getArguments().take_back(numQubits),
-                          thenRegion.getArguments().take_front(numRegisters));
+    pushModifierFrameWithRegisters(
+        state, qubitVector, registers,
+        thenRegion.getArguments().take_back(numQubits),
+        thenRegion.getArguments().take_front(numRegisters));
 
     rewriter.eraseOp(op);
     return success();
