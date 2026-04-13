@@ -395,10 +395,10 @@ static void insertAllExtractedQubits(LoweringState& state, Operation* target,
     anchor = target;
   }
 
-  // Iterate over all used memrefs in this frame
+  // Iterate over all used memrefs
   for (auto memref : memrefs) {
     auto& extractedQubits = state.extractedQubits[region][memref];
-    // Insert all extracted qubits in this frame
+    // Insert all extracted qubits
     for (auto qubit : extractedQubits) {
       auto tensor = lookupMappedTensor(state, anchor, memref);
       auto qcoQubit = lookupMappedQubit(state, anchor, qubit);
@@ -424,12 +424,12 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
     llvm::append_range(memrefs, state.regionRegisterMap[target]);
     anchor = target;
   }
-
-  for (auto memref : memrefs) {
+  // Iterate over all used memrefs
+  for (auto& memref : memrefs) {
     auto& extractedQubits = state.extractedQubits[region][memref];
+    // Extract all inserted qubits
     for (auto qubit : extractedQubits) {
       auto tensor = lookupMappedTensor(state, anchor, memref);
-      auto qcoQubit = lookupMappedQubit(state, anchor, qubit);
       auto index = state.qubitInfoMap[region][qubit].index;
       auto insertOp =
           qtensor::ExtractOp::create(rewriter, target->getLoc(), tensor, index);
@@ -440,16 +440,16 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
 }
 
 /** @brief Resolves all QC qubit and memref values to their
- * latest QCO values. */
+ * latest QCO values.
+ **/
 [[nodiscard]] static SmallVector<Value> resolveAllValues(LoweringState& state,
                                                          Operation* anchor) {
   SmallVector<Value> memrefs;
   SmallVector<Value> qcQubits;
-  if (isInsideModifier(state)) {
+  if (isInsideModifier(state) && anchor->getNumRegions() == 0) {
     auto& frame = currentModifierFrame(state);
     memrefs = frame.memrefs;
     qcQubits = frame.qcQubits;
-
   } else {
     llvm::append_range(memrefs, state.regionRegisterMap[anchor]);
     llvm::append_range(qcQubits, state.regionQubitMap[anchor]);
@@ -483,19 +483,19 @@ static bool isQCQubitType(Type type) {
  * @param Operation The operation that is currently traversed
  * @param state The lowering state
  * @param ctx The MLIRContext of the current program
- * @return llvm::Setvector<Value> The set of unique QC qubit references
+ * @return Pair of llvm::SetVector<Value> of unique QC qubits and memref
+ * references
  */
 static std::pair<llvm::SetVector<Value>, llvm::SetVector<Value>>
 collectUniqueQubits(Operation* op, LoweringState* state) {
   // Get the regions of the current operation
   const auto& regions = op->getRegions();
-  bool needChange = false;
   SetVector<Value> uniqueQubits;
   SetVector<Value> uniqueRegisters;
   auto& regionQubitMap = state->regionQubitMap[op];
   auto& regionRegisterMap = state->regionRegisterMap[op];
-  for (auto& region : regions) {
 
+  for (auto& region : regions) {
     auto& qubitInfoMap = state->qubitInfoMap[&region];
     // Skip empty regions e.g. empty else region of an If operation
     if (region.empty()) {
@@ -503,30 +503,25 @@ collectUniqueQubits(Operation* op, LoweringState* state) {
     }
     // Check that the region has only one block
     assert(region.hasOneBlock() && "Expected single-block region");
-
-    // Collect qubits from the blockarguments
-    for (auto arg : region.front().getArguments()) {
-      if (isQCQubitType(arg.getType())) {
-        // TODO
-        // uniqueQubits.insert(arg);
-      }
-    }
+    // Iterate through all operations of the current region
     for (auto& operation : region.front().getOperations()) {
+      // Check that we are in a scf operation
       if (op->getDialect()->getNamespace() == "scf") {
+        // recursively walk through nested region
         if (operation.getNumRegions() > 0) {
           auto [qubits, registers] = collectUniqueQubits(&operation, state);
           regionQubitMap.set_union(qubits);
           regionRegisterMap.set_union(registers);
         }
+        // Track qubits from loadOp
         if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
           QubitInfo info{.reg = loadOp.getMemRef(),
                          .index = loadOp.getIndices()[0]};
           qubitInfoMap.try_emplace(loadOp.getResult(), info);
           regionRegisterMap.insert(loadOp.getMemRef());
-          needChange = true;
           continue;
         }
-
+        // Add the QC qubit and memref operands to the maps
         for (const auto& operand : operation.getOperands()) {
           if (llvm::isa<qc::QubitType>(operand.getType())) {
             if (!qubitInfoMap.contains(operand)) {
@@ -545,9 +540,10 @@ collectUniqueQubits(Operation* op, LoweringState* state) {
         }
       }
     }
-    // Mark scf operations that need to be changed afterwards
   }
-  if (needChange || op->getDialect()->getNamespace() == "scf") {
+  // Mark scf operations that need to be changed afterwards
+  if ((!regionQubitMap.empty() || !regionRegisterMap.empty()) &&
+      op->getDialect()->getNamespace() == "scf") {
     op->setAttr("needChange", StringAttr::get(op->getContext(), "yes"));
   }
 
@@ -1861,14 +1857,29 @@ protected:
       return llvm::none_of(op->getOperandTypes(), isQubitMemref) &&
              llvm::none_of(op->getResultTypes(), isQubitMemref);
     });
-    //  target.addIllegalDialect<scf::SCFDialect>();
+
     target.addDynamicallyLegalDialect<scf::SCFDialect>([](Operation* op) {
       return !(op->getAttrOfType<StringAttr>("needChange"));
     });
-    target.addDynamicallyLegalOp<scf::YieldOp>(
-        [](Operation* op) { return op->getNumOperands() != 0; });
-    target.addDynamicallyLegalOp<scf::ConditionOp>(
-        [](Operation* op) { return op->getNumOperands() > 1; });
+    target.addDynamicallyLegalOp<scf::YieldOp, scf::ConditionOp>(
+        [](Operation* op) {
+          auto* parentOp = op->getParentOp();
+          auto isQCOType = [](Type t) {
+            if (llvm::isa<qco::QubitType>(t)) {
+              return true;
+            }
+            auto tensor = llvm::dyn_cast<RankedTensorType>(t);
+            return tensor && llvm::isa<qco::QubitType>(tensor.getElementType());
+          };
+
+          const auto parentHasQubitTypes =
+              llvm::any_of(parentOp->getOperandTypes(), isQCOType);
+          const auto terminatorHasQubitTypes =
+              llvm::any_of(op->getOperandTypes(), isQCOType);
+          return !parentHasQubitTypes ||
+                 (parentHasQubitTypes && terminatorHasQubitTypes);
+        });
+
     // Register operation conversion patterns with state tracking
     patterns.add<
         ConvertSCFForOp, ConvertSCFYieldOp, ConvertSCFWhileOp, ConvertSCFIfOp,
