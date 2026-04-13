@@ -136,7 +136,6 @@ QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
 
 void QCOProgramBuilder::validateQubitValue(Value qubit) const {
   if (!validQubits.contains(qubit)) {
-
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
@@ -193,6 +192,82 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validTensors.try_emplace(outputTensor, info);
 }
 
+void QCOProgramBuilder::insertExtractedQubits(
+    SmallVector<Value>& updatedArgs,
+    DenseMap<int64_t, SmallVector<Value>>& insertedQubits,
+    ValueRange initArgs) {
+  updatedArgs.reserve(initArgs.size());
+
+  // Iterate through the initial values and add the latest value to the updated
+  // arguments
+  for (auto initArg : initArgs) {
+    if (llvm::isa<QubitType>(initArg.getType())) {
+      // Directly insert qubits
+      updatedArgs.emplace_back(initArg);
+    } else {
+      auto regId = validTensors[initArg].regId;
+      auto tensor = initArg;
+      // Iterate through the validQubits and find the qubits that were extracted
+      // from this register
+      for (auto [qubit, qubitInfo] : validQubits) {
+        if (qubitInfo.regId == regId) {
+          // Create an InsertOp for the qubit
+          auto insertOp = qtensor::InsertOp::create(*this, qubit, tensor,
+                                                    qubitInfo.regIndex)
+                              .getResult();
+          // Update the tensor tracking and add the extracted qubit to the
+          // vector of inserted qubits
+          updateTensorTracking(tensor, insertOp);
+          tensor = insertOp;
+          insertedQubits[regId].emplace_back(qubit);
+        }
+      }
+      // Add the tensor after all qubits are inserted and the tensor tracking is
+      // updated
+      updatedArgs.emplace_back(tensor);
+    }
+  }
+}
+
+void QCOProgramBuilder::extractInsertedQubits(
+    DenseMap<int64_t, SmallVector<Value>>& insertedQubits, ValueRange oldValues,
+    ValueRange newValues) {
+  // Iterate through all the values
+  for (auto [initArg, result] : llvm::zip_equal(oldValues, newValues)) {
+    if (llvm::isa<QubitType>(initArg.getType())) {
+      // Update the tracking for qubits
+      updateQubitTracking(initArg, result);
+    } else {
+      // Update the tracking for tensors
+      updateTensorTracking(initArg, result);
+
+      // Extract all the values that were previously inserted
+      auto& tensor = result;
+      for (auto qubit : insertedQubits[validTensors[tensor].regId]) {
+        auto extract = qtensor::ExtractOp::create(*this, tensor,
+                                                  validQubits[qubit].regIndex);
+        // Update the tensor and the qubit tracking again
+        updateQubitTracking(qubit, extract.getResult());
+        updateTensorTracking(tensor, extract.getOutTensor());
+        tensor = extract->getResult(0);
+      }
+    }
+  }
+}
+
+/** @brief Helper function to check if every value is a qubit value*/
+static void checkQubitType(ValueRange values) {
+  for (auto type : values.getTypes()) {
+    if (!llvm::isa<QubitType>(type)) {
+      {
+        auto tensor = dyn_cast<RankedTensorType>(type);
+        if (!tensor || !llvm::isa<QubitType>(tensor.getElementType())) {
+          llvm::reportFatalUsageError("Elements must be qubit values");
+        }
+      }
+    }
+  }
+}
 //===----------------------------------------------------------------------===//
 // QTensor Operations
 //===----------------------------------------------------------------------===//
@@ -801,67 +876,23 @@ QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
 // SCF Operations
 //===----------------------------------------------------------------------===//
 
-void QCOProgramBuilder::insertAllQubits(
-    SmallVector<Value>& updatedArgs,
-    DenseMap<unsigned int, SmallVector<Value>>& insertedQubits,
-    ValueRange initArgs) {
-  updatedArgs.reserve(initArgs.size());
-  for (auto initArg : initArgs) {
-    if (llvm::isa<RankedTensorType>(initArg.getType())) {
-      auto regId = validTensors[initArg].regId;
-      auto tensor = initArg;
-      for (auto [qubit, qubitInfo] : validQubits) {
-        if (qubitInfo.regId == regId) {
-          auto insertOp = qtensor::InsertOp::create(*this, qubit, tensor,
-                                                    qubitInfo.regIndex)
-                              .getResult();
-          updateTensorTracking(tensor, insertOp);
-          tensor = insertOp;
-          insertedQubits[regId].emplace_back(qubit);
-        }
-      }
-      updatedArgs.emplace_back(tensor);
-    } else {
-      updatedArgs.emplace_back(initArg);
-    }
-  }
-}
-
-void QCOProgramBuilder::updateTracking(
-    DenseMap<unsigned int, SmallVector<Value>>& insertedQubits,
-    ValueRange oldValues, ValueRange newValues) {
-
-  for (auto [initArg, result] : llvm::zip_equal(oldValues, newValues)) {
-    if (!llvm::isa<TensorType>(initArg.getType())) {
-      updateQubitTracking(initArg, result);
-    } else {
-      updateTensorTracking(initArg, result);
-      auto& tensor = result;
-      for (auto qubit : insertedQubits[validTensors[tensor].regId]) {
-        auto extract = qtensor::ExtractOp::create(*this, tensor,
-                                                  validQubits[qubit].regIndex);
-        updateQubitTracking(qubit, extract.getResult());
-        updateTensorTracking(tensor, extract.getOutTensor());
-        tensor = extract->getResult(0);
-      }
-    }
-  }
-}
 ValueRange QCOProgramBuilder::scfFor(
     const std::variant<int64_t, Value>& lowerbound,
     const std::variant<int64_t, Value>& upperbound,
     const std::variant<int64_t, Value>& step, ValueRange initArgs,
     llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body) {
   checkFinalized();
+  checkQubitType(initArgs);
 
   const auto loc = getLoc();
   const auto lb = utils::variantToValue(*this, loc, lowerbound);
   const auto ub = utils::variantToValue(*this, loc, upperbound);
   const auto stepSize = utils::variantToValue(*this, loc, step);
 
-  DenseMap<unsigned int, SmallVector<Value>> insertedQubits;
+  // Get the updated arguments after inserting the extracted qubits
+  DenseMap<int64_t, SmallVector<Value>> insertedQubits;
   SmallVector<Value> updatedArgs;
-  insertAllQubits(updatedArgs, insertedQubits, initArgs);
+  insertExtractedQubits(updatedArgs, insertedQubits, initArgs);
 
   // Create the empty for operation
   auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, updatedArgs);
@@ -877,13 +908,14 @@ ValueRange QCOProgramBuilder::scfFor(
     if (llvm::isa<QubitType>(arg.getType())) {
       validQubits.try_emplace(arg, QubitInfo{});
     } else {
-      validTensors.try_emplace(arg, TensorInfo{});
+      validTensors.try_emplace(arg, TensorInfo{tensorCounter++});
     }
   }
   // Build the body
   const auto bodyResults = body(iv, loopArgs);
   scf::YieldOp::create(*this, bodyResults);
 
+  // Remove the iterArgs as valid qubit values
   for (auto result : bodyResults) {
     if (llvm::isa<QubitType>(result.getType())) {
       validQubits.erase(result);
@@ -891,9 +923,10 @@ ValueRange QCOProgramBuilder::scfFor(
       validTensors.erase(result);
     }
   }
+
+  // Update the qubit tracking and extract the inserted qubits again
   setInsertionPointAfter(forOp);
-  updateTracking(insertedQubits, updatedArgs, forOp->getResults());
-  // Update the qubit tracking
+  extractInsertedQubits(insertedQubits, updatedArgs, forOp->getResults());
 
   return forOp->getResults();
 }
@@ -903,10 +936,12 @@ ValueRange QCOProgramBuilder::scfWhile(
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody) {
   checkFinalized();
+  checkQubitType(initArgs);
 
-  DenseMap<unsigned int, SmallVector<Value>> insertedQubits;
+  // Get the updated arguments after inserting the extracted qubits
+  DenseMap<int64_t, SmallVector<Value>> insertedQubits;
   SmallVector<Value> updatedArgs;
-  insertAllQubits(updatedArgs, insertedQubits, initArgs);
+  insertExtractedQubits(updatedArgs, insertedQubits, initArgs);
 
   // Create the empty while operation
   auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), updatedArgs);
@@ -914,96 +949,83 @@ ValueRange QCOProgramBuilder::scfWhile(
 
   const OpBuilder::InsertionGuard guard(*this);
 
-  // Construct the before block
+  // Construct the blocks
   auto* beforeBlock =
       createBlock(&whileOp.getBefore(), {}, initArgs.getTypes(), locs);
-  auto beforeArgs = beforeBlock->getArguments();
-  auto* beforeRegion = beforeBlock->getParent();
-
-  // Set the insertionpoint
-  setInsertionPointToStart(beforeBlock);
-
-  // Add the beforeArgs to the validQubits
-  for (const auto& arg : beforeArgs) {
-    if (llvm::isa<QubitType>(arg.getType())) {
-      validQubits.try_emplace(arg, QubitInfo{});
-    } else {
-      validTensors.try_emplace(arg, tensorCounter++);
-    }
-  }
-
-  const auto& beforeResults = beforeBody(beforeArgs);
-  for (auto result : beforeResults) {
-    if (llvm::isa<QubitType>(result.getType())) {
-      validQubits.erase(result);
-    } else {
-      validTensors.erase(result);
-    }
-  }
-
-  // Construct the after block
   auto* afterBlock =
       createBlock(&whileOp.getAfter(), {}, initArgs.getTypes(), locs);
-  auto afterArgs = afterBlock->getArguments();
-  auto* afterRegion = afterBlock->getParent();
 
-  // Set the insertionpoint
-  setInsertionPointToStart(afterBlock);
+  // Create the body regions
+  auto createBody =
+      [&](Block* block,
+          llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body,
+          bool createYield) {
+        auto args = block->getArguments();
+        auto* region = block->getParent();
+        setInsertionPointToStart(block);
 
-  // Add the afterArgs to the validQubits
-  for (const auto& arg : afterArgs) {
-    if (llvm::isa<QubitType>(arg.getType())) {
-      validQubits.try_emplace(arg, QubitInfo{});
-    } else {
-      validTensors.try_emplace(arg, tensorCounter++);
-    }
-  }
+        // Add the args to the valid qubits/tensors
+        for (const auto& arg : args) {
+          if (llvm::isa<QubitType>(arg.getType())) {
+            validQubits.try_emplace(arg, QubitInfo{});
+          } else {
+            validTensors.try_emplace(arg, TensorInfo{tensorCounter++});
+          }
+        }
+        // Construct the body
+        const auto& results = body(args);
+        if (createYield) {
+          scf::YieldOp::create(*this, results);
+        }
 
-  const auto afterResults = afterBody(afterArgs);
-  scf::YieldOp::create(*this, afterResults);
-
-  for (auto result : afterResults) {
-    if (llvm::isa<QubitType>(result.getType())) {
-      validQubits.erase(result);
-    } else {
-      validTensors.erase(result);
-    }
-  }
+        // erase the args as valid qubit values
+        for (auto result : results) {
+          if (llvm::isa<QubitType>(result.getType())) {
+            validQubits.erase(result);
+          } else {
+            validTensors.erase(result);
+          }
+        }
+      };
+  createBody(beforeBlock, beforeBody, false);
+  createBody(afterBlock, afterBody, true);
 
   // Update the qubit tracking
   setInsertionPointAfter(whileOp);
-  updateTracking(insertedQubits, updatedArgs, whileOp->getResults());
+  extractInsertedQubits(insertedQubits, updatedArgs, whileOp->getResults());
 
   return whileOp->getResults();
 }
 
 ValueRange QCOProgramBuilder::qcoIf(
-    const std::variant<bool, Value>& condition, ValueRange qubits,
+    const std::variant<bool, Value>& condition, ValueRange initArgs,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
+  checkQubitType(initArgs);
 
   auto conditionValue = variantToValue(*this, getLoc(), condition);
 
-  DenseMap<unsigned int, SmallVector<Value>> insertedQubits;
+  DenseMap<int64_t, SmallVector<Value>> insertedQubits;
   SmallVector<Value> updatedArgs;
-  insertAllQubits(updatedArgs, insertedQubits, qubits);
 
+  insertExtractedQubits(updatedArgs, insertedQubits, initArgs);
   auto ifOp = IfOp::create(*this, conditionValue, updatedArgs);
+
   // Create the then and else block
   auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
   auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
 
   // Create the block arguments and add them as valid qubits
-  for (auto qubitType : qubits.getTypes()) {
+  for (auto qubitType : initArgs.getTypes()) {
     const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
     const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
     if (llvm::isa<QubitType>(qubitType)) {
       validQubits.try_emplace(thenArg, QubitInfo{});
       validQubits.try_emplace(elseArg, QubitInfo{});
     } else {
-      validTensors.try_emplace(thenArg, tensorCounter++);
-      validTensors.try_emplace(elseArg, tensorCounter++);
+      validTensors.try_emplace(thenArg, TensorInfo{tensorCounter++});
+      validTensors.try_emplace(elseArg, TensorInfo{tensorCounter++});
     }
   }
 
@@ -1023,7 +1045,7 @@ ValueRange QCOProgramBuilder::qcoIf(
     YieldOp::create(*this, elseBlock.getArguments());
   }
 
-  if (thenResult.size() != qubits.size() ||
+  if (thenResult.size() != initArgs.size() ||
       thenResult.size() != elseResult.size()) {
     llvm::reportFatalUsageError(
         "Then and else body must return the same amount of qubits as the "
@@ -1031,9 +1053,9 @@ ValueRange QCOProgramBuilder::qcoIf(
   }
 
   setInsertionPointAfter(ifOp);
-  updateTracking(insertedQubits, updatedArgs, ifOp->getResults());
+  extractInsertedQubits(insertedQubits, updatedArgs, ifOp->getResults());
 
-  // Remove the inner qubits as valid qubits
+  // Remove the inner qubit values as valid qubit values
   for (auto thenOut : thenResult) {
     if (llvm::isa<QubitType>(thenOut.getType())) {
       validQubits.erase(thenOut);
@@ -1055,6 +1077,7 @@ ValueRange QCOProgramBuilder::qcoIf(
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
                                                    ValueRange yieldedValues) {
   checkFinalized();
+  checkQubitType(yieldedValues);
 
   scf::ConditionOp::create(*this, condition, yieldedValues);
   for (auto yieldedValue : yieldedValues) {

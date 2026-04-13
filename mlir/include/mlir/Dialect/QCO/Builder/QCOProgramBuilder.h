@@ -1231,7 +1231,7 @@ public:
    * values are passed down as block arguments to each region.
    *
    * @param condition Bool condition
-   * @param qubits Input qubits
+   * @param initArgs Input qubit values
    * @param thenBody Function that builds the then body of the if
    * operation
    * @param elseBody Function that builds the else body of the if
@@ -1258,7 +1258,7 @@ public:
    * ```
    */
   ValueRange
-  qcoIf(const std::variant<bool, Value>& condition, ValueRange qubits,
+  qcoIf(const std::variant<bool, Value>& condition, ValueRange initArgs,
         llvm::function_ref<SmallVector<Value>(ValueRange)> thenBody,
         llvm::function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
@@ -1442,14 +1442,28 @@ private:
    */
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
+  /**
+   * @brief Updates the latest QCO values after inserting all extracted qubits
+   * back to the tensor. This also tracks which qubits were inserted
+   * @param updatedArgs Vector to store the updated arguments
+   * @param insertedQubits Map to store the inserted qubits
+   * @param initArgs The initial values
+   */
   void
-  insertAllQubits(SmallVector<Value>& updatedArgs,
-                  DenseMap<unsigned int, SmallVector<Value>>& insertedQubits,
-                  ValueRange initArgs);
+  insertExtractedQubits(SmallVector<Value>& updatedArgs,
+                        DenseMap<int64_t, SmallVector<Value>>& insertedQubits,
+                        ValueRange initArgs);
+  /**
+   * @brief Updates the latest QCO values using the new values and after
+   * extracting all previously inserted qubits again.
+   * @param insertedQubits Map of the previously inserted qubits
+   * @param oldValues Old values being consumed
+   * @param newValues New values to update the old values
+   */
 
   void
-  updateTracking(DenseMap<unsigned int, SmallVector<Value>>& insertedQubits,
-                 ValueRange oldValues, ValueRange newValues);
+  extractInsertedQubits(DenseMap<int64_t, SmallVector<Value>>& insertedQubits,
+                        ValueRange oldValues, ValueRange newValues);
 
   /**
    * @brief Information about a tensor
