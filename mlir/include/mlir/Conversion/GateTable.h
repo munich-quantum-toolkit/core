@@ -16,10 +16,7 @@
  *
  * @details
  * This header defines a single source of truth for the set of supported gates
- * shared by QCO↔QC lowering and QC→QIR lowering in `mlir/lib/Conversion/`.
- *
- * Jeff lowering (`QCOToJeff`, `JeffToQCO`) enumerates its supported gates
- * directly in those conversion implementations.
+ * shared by QCO↔QC conversion and QC→QIR lowering in `mlir/lib/Conversion/`.
  *
  * Each entry specifies:
  * - a canonical gate key (identifier),
@@ -27,9 +24,6 @@
  * - number of parameters,
  * - the corresponding QCO and QC op types,
  * - QIR lowering kind and function-name selector (for QC→QIR only).
- *
- * Conversions consume this table as an X-macro list without introducing ODR
- * issues across translation units.
  */
 
 #include <cstddef>
@@ -46,7 +40,7 @@ enum class QIRKind : std::uint8_t {
 } // namespace mlir::mqt::gates
 
 /**
- * @brief Central gate table (QC / QCO / QIR only).
+ * @brief Central gate table.
  *
  * Columns:
  * - KEY: canonical identifier

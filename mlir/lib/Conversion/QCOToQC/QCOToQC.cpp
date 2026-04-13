@@ -231,7 +231,7 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   /**
-   * @brief Generic QCO gate lowering helper (value semantics -> reference).
+   * @brief Generic QCO gate conversion helper (value semantics -> reference).
    *
    * @details
    * This helper relies on a strict operand ordering contract provided by the
