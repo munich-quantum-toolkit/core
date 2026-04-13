@@ -22,6 +22,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -115,6 +116,12 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 Value QCProgramBuilder::memrefLoad(QubitRegister& memref,
                                    const std::variant<int64_t, Value>& index) {
   auto param = variantToValue(*this, getLoc(), index);
+  auto intValue = getConstantIntValue(param);
+
+  if (intValue && *intValue >= memref.qubits.size()) {
+    llvm::reportFatalUsageError("Qubit index out of bounds");
+  }
+
   auto load = memref::LoadOp::create(*this, memref.value, param);
   return load.getResult();
 }
@@ -131,12 +138,6 @@ QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
   return {.name = std::move(name), .size = size};
 }
 
-QCProgramBuilder::QuantumRegister
-QCProgramBuilder::allocQuantumRegister(int64_t size) {
-  QCProgramBuilder::QuantumRegister reg{*this, size};
-  allocatedMemrefs.insert(reg.memref);
-  return reg;
-}
 //===----------------------------------------------------------------------===//
 // Measurement and Reset
 //===----------------------------------------------------------------------===//
