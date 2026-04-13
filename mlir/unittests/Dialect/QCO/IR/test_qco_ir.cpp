@@ -95,6 +95,24 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedStaticThenDynamicQubit(builder);
+      },
+      "Cannot mix static and dynamic qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedDynamicRegisterThenStaticQubit(builder);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
+}
+
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
   QCOProgramBuilder builder(context.get());

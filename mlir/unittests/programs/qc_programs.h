@@ -58,6 +58,16 @@ void staticQubitsCanonical(QCProgramBuilder& b);
 /// Allocates and explicitly deallocates a single qubit.
 void allocDeallocPair(QCProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
+void mixedStaticThenDynamicQubit(QCProgramBuilder& b);
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
+/// static.
+void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.

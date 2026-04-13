@@ -42,25 +42,40 @@ using namespace qco;
 using namespace qc;
 
 namespace {
-/** @brief Qubit addressing mode */
-enum class QubitAddressingMode : std::uint8_t {
-  Unknown, //!< The addressing mode is not known.
-  Static,  //!< The module uses static qubit allocation.
-  Dynamic  //!< The module uses dynamic qubit allocation.
+
+/** @brief Qubit allocation mode */
+enum class AllocationMode : std::uint8_t {
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
 };
 
 /**
- * @brief State object for tracking qubit addressing mode.
+ * @brief State object for tracking qubit allocation mode.
  *
  * @details
  * Used to track whether a function uses static or dynamic qubit allocation.
  * This is used to determine whether to convert `qco.sink` to `qc.dealloc` (for
  * dynamic qubits) or simply erase it (for static qubits). This is also used to
- * catch cases of mixed addressing being used, which is not supported.
+ * catch cases of mixed allocation modes being used, which is not supported.
  */
 struct LoweringState {
-  /// The qubit addressing mode used in the module
-  QubitAddressingMode mode = QubitAddressingMode::Unknown;
+  /// The qubit allocation mode used in the module
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = requestedMode;
+      return success();
+    }
+    if (allocationMode == requestedMode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in QCO program");
+  }
 };
 
 /**
@@ -68,7 +83,7 @@ struct LoweringState {
  *
  * @details
  * Extends OpConversionPattern to provide access to a shared LoweringState
- * object, which is used to track the addressing mode of the module.
+ * object, which is used to track the allocation mode of the module.
  * @tparam OpType The QCO operation type to be converted.
  */
 template <typename OpType>
@@ -139,12 +154,17 @@ public:
  * %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
  * ```
  */
-struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQTensorAllocOp final
+    : StatefulOpConversionPattern<qtensor::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
     auto qubitType = qc::QubitType::get(op.getContext());
     auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
@@ -241,12 +261,10 @@ struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
   LogicalResult
   matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMode = getState().mode;
-    if (qubitMode == QubitAddressingMode::Unknown) {
-      qubitMode = QubitAddressingMode::Dynamic;
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
     }
-    assert(qubitMode != QubitAddressingMode::Static &&
-           "Static qubits cannot be mixed with dynamic qubits");
 
     // Create qc.alloc
     rewriter.replaceOpWithNewOp<qc::AllocOp>(op);
@@ -281,11 +299,13 @@ struct ConvertQCOSinkOp final : StatefulOpConversionPattern<SinkOp> {
   LogicalResult
   matchAndRewrite(SinkOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto mode = getState().mode;
-    assert(mode != QubitAddressingMode::Unknown &&
-           "Sinks cannot exist without allocations");
+    const auto allocationMode = getState().allocationMode;
+    if (allocationMode == AllocationMode::Unset) {
+      return op.emitOpError(
+          "cannot exist without an established qubit allocation mode");
+    }
 
-    if (mode == QubitAddressingMode::Static) {
+    if (allocationMode == AllocationMode::Static) {
       rewriter.eraseOp(op);
       return success();
     }
@@ -315,12 +335,10 @@ struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
   LogicalResult
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMode = getState().mode;
-    if (qubitMode == QubitAddressingMode::Unknown) {
-      qubitMode = QubitAddressingMode::Static;
+    if (failed(getState().ensureAllocationMode(AllocationMode::Static,
+                                               op.getOperation()))) {
+      return failure();
     }
-    assert(qubitMode != QubitAddressingMode::Dynamic &&
-           "Dynamic qubits cannot be mixed with static qubits");
 
     // Create qc.static with the same index
     rewriter.replaceOpWithNewOp<qc::StaticOp>(op, op.getIndex());
@@ -939,7 +957,7 @@ protected:
 
     // Register operation conversion patterns that do not need state tracking
     patterns.add<
-        ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+        ConvertQTensorExtractOp, ConvertQTensorInsertOp,
         ConvertQTensorDeallocOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
         ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::XOp, qc::XOp>,
@@ -973,8 +991,8 @@ protected:
         ConvertQCOYieldOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
-        typeConverter, context, &state);
+    patterns.add<ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
+                 ConvertQCOSinkOp>(typeConverter, context, &state);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes
