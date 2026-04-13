@@ -59,6 +59,11 @@ namespace mlir::qir {
  * - Measurements block: Measurements, resets, deallocations
  * - Output block: Output recording calls (array-based, grouped by register)
  *
+ * @par Qubit addressing:
+ * A program must use either static qubits (`staticQubit`) or dynamic allocation
+ * (`allocQubit`, `allocQubitRegister`), never both. The builder terminates
+ * with a usage error if the modes are mixed.
+ *
  * @par Example Usage:
  * ```c++
  * QIRProgramBuilder builder(context);
@@ -887,6 +892,8 @@ public:
         const llvm::function_ref<void(QIRProgramBuilder&)>& buildFunc);
 
 private:
+  enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
+
   /// The main module
   ModuleOp module;
 
@@ -960,8 +967,14 @@ private:
 
   bool isFinalized = false;
 
+  /// Track whether static or dynamic qubit allocation is used.
+  AllocationMode allocationMode = AllocationMode::Unset;
+
   /// Check if the builder has been finalized
   void checkFinalized() const;
+
+  /// Ensure static and dynamic qubit allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode);
 };
 
 } // namespace mlir::qir
