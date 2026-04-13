@@ -897,8 +897,7 @@ struct ConvertQCOBarrierOpToJeff final
     if (state.inModifier()) {
       targets = state.targetsIn;
     } else {
-      targets.append(adaptor.getOperands().begin(),
-                     adaptor.getOperands().end());
+      llvm::append_range(targets, adaptor.getOperands());
     }
 
     createCustomOp(op, rewriter, state, targets, {}, false, "barrier");
