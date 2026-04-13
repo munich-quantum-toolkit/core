@@ -78,7 +78,10 @@ static void createModified(
             return invOp.getQubitsOut();
           });
     }
-    rewriter.replaceOp(op, ctrlOp.getOutputQubits());
+    llvm::SmallVector<Value> results;
+    llvm::append_range(results, ctrlOp.getTargetsOut());
+    llvm::append_range(results, ctrlOp.getControlsOut());
+    rewriter.replaceOp(op, results);
   } else if (op.getIsAdjoint()) {
     auto invOp = InvOp::create(rewriter, loc, targets, lambda);
     rewriter.replaceOp(op, invOp.getQubitsOut());
