@@ -969,12 +969,16 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfFor(lb, ub, step, [&](Value iv) { builder.x(q0); }); //TODO
-   * replace with register
+   * builder.scfFor(lb, ub, step, [&](Value iv) {
+   *   auto q0 = builder.memrefLoad(memref, iv);
+   *   b.h(q0);
+   * }
    * ```
    * ```mlir
    * scf.for %iv = %lb to %ub step %step {
-   *   qc.x %q0 : !qc.qubit
+   *   %q0 = memref.load %memref[%iv] : memref<3x!qc.qubit>
+   *   qc.h %q0 : !qc.qubit
+   *   scf.yield
    * }
    * ```
    */
