@@ -1,7 +1,7 @@
 # The MQT Compiler Collection
 
 The MQT Compiler Collection (`mqt-cc`) is a blueprint for a future-proof quantum-classical compilation framework built on the Multi-Level Intermediate Representation (MLIR).
-For an overview, see {cite:p}`compilerCollection`.
+For an overview, see {cite:p}`MQTCompilerCollection2026`.
 
 This page gives a technical introduction.
 It links to the API documentation for the MLIR infrastructure.
