@@ -734,7 +734,7 @@ struct ConvertQCOCustomGateToJeff final
         return op.emitOpError()
                << "expected " << expected
                << " operands (targets + parameters) for QCO→Jeff custom gate "
-                  "lowering, got "
+                  "conversion, got "
                << adaptor.getOperands().size();
       }
     }
