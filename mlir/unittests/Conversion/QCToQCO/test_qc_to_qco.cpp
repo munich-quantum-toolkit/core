@@ -229,10 +229,23 @@ INSTANTIATE_TEST_SUITE_P(
 
 /// \name QCToQCO/Operations/StandardGates/IdOp.cpp
 /// @{
-INSTANTIATE_TEST_SUITE_P(QCIDOpTest, QCToQCOTest,
-                         testing::Values(QCToQCOTestCase{
-                             "Identity", MQT_NAMED_BUILDER(qc::identity),
-                             MQT_NAMED_BUILDER(qco::emptyQCO)}));
+/// The QC identity gate converts to a qco.id, which then canonicalizes to
+/// emptyQCO.  Controlled variants are added here to ensure the conversion path
+/// through the refactored ConvertJeffOneTargetZeroParameterToQCO<jeff::IOp,
+/// IdOp> pattern (using createGateFromJeffArity<IdOp,...>) is exercised.
+INSTANTIATE_TEST_SUITE_P(
+    QCIDOpTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
+                        MQT_NAMED_BUILDER(qco::emptyQCO)},
+        QCToQCOTestCase{
+            "SingleControlledIdentity",
+            MQT_NAMED_BUILDER(qc::singleControlledIdentity),
+            MQT_NAMED_BUILDER(qco::emptyQCO)},
+        QCToQCOTestCase{
+            "MultipleControlledIdentity",
+            MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
+            MQT_NAMED_BUILDER(qco::emptyQCO)}));
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/IswapOp.cpp

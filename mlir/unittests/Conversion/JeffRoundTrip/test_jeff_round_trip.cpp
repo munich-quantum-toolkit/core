@@ -153,6 +153,27 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx)}));
 /// @}
 
+/// \name JeffRoundTrip/Operations/StandardGates/IdOp.cpp
+/// @{
+/// Test that qco.id survives a QCO→Jeff→QCO round-trip.
+/// The identity gate is registered in GateTable.h as the first entry and maps
+/// to jeff::IOp; this test verifies the full QCOToJeff + JeffToQCO path for
+/// the newly added gate-table entry.
+INSTANTIATE_TEST_SUITE_P(
+    QCOIDOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"Identity", MQT_NAMED_BUILDER(qco::identity),
+                              MQT_NAMED_BUILDER(qco::identity)},
+        JeffRoundTripTestCase{
+            "SingleControlledIdentity",
+            MQT_NAMED_BUILDER(qco::singleControlledIdentity),
+            MQT_NAMED_BUILDER(qco::singleControlledIdentity)},
+        JeffRoundTripTestCase{
+            "MultipleControlledIdentity",
+            MQT_NAMED_BUILDER(qco::multipleControlledIdentity),
+            MQT_NAMED_BUILDER(qco::multipleControlledIdentity)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/BarrierOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

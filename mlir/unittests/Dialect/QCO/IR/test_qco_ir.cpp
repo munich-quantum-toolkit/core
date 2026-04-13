@@ -1101,3 +1101,235 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
+
+// ============================================================================
+// Tests for new range accessor interface methods added in PR #1620
+// (getInputTargets, getOutputTargets, getInputControls, getOutputControls,
+//  getParameters)
+// ============================================================================
+
+/// @brief Fixture for direct interface-method tests on QCO operations.
+///
+/// Uses pre-built program helpers from qco_programs to construct programs,
+/// then walks ops without running the cleanup pipeline to inspect the newly
+/// added range-based accessors.
+class QCOUnitaryInterfaceTest : public testing::Test {
+protected:
+  std::unique_ptr<MLIRContext> context;
+
+  void SetUp() override {
+    DialectRegistry registry;
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    qtensor::QTensorDialect>();
+    context = std::make_unique<MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
+};
+
+/// \name QCO/UnitaryOpInterface/XOp_RangeAccessors
+/// @{
+
+/// Verify that a one-target, zero-parameter op (XOp) exposes the correct
+/// ranges via the new interface methods.
+TEST_F(QCOUnitaryInterfaceTest, XOpRangeAccessors) {
+  auto program = QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(x).fn);
+  ASSERT_TRUE(program);
+
+  XOp foundX;
+  program->walk([&](XOp op) { foundX = op; });
+  ASSERT_TRUE(foundX);
+
+  // Targets: exactly one input and one output qubit
+  EXPECT_EQ(foundX.getInputTargets().size(), 1U);
+  EXPECT_EQ(foundX.getOutputTargets().size(), 1U);
+
+  // Controls: none (empty ranges, not error)
+  EXPECT_TRUE(foundX.getInputControls().empty());
+  EXPECT_TRUE(foundX.getOutputControls().empty());
+
+  // Parameters: none
+  EXPECT_TRUE(foundX.getParameters().empty());
+}
+
+/// Verify that getInputTargets()[0] is the same Value as getInputTarget(0),
+/// and getOutputTargets()[0] is the same Value as getOutputTarget(0).
+TEST_F(QCOUnitaryInterfaceTest, XOpRangeIndexConsistency) {
+  auto program = QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(x).fn);
+  ASSERT_TRUE(program);
+
+  XOp foundX;
+  program->walk([&](XOp op) { foundX = op; });
+  ASSERT_TRUE(foundX);
+
+  EXPECT_EQ(foundX.getInputTargets()[0], foundX.getInputTarget(0));
+  EXPECT_EQ(foundX.getOutputTargets()[0], foundX.getOutputTarget(0));
+}
+/// @}
+
+/// \name QCO/UnitaryOpInterface/RXOp_Parameters
+/// @{
+
+/// Verify that a one-target, one-parameter op (RXOp) returns a Parameters
+/// range with exactly one element, consistent with getParameter(0).
+TEST_F(QCOUnitaryInterfaceTest, RXOpGetParameters) {
+  auto program = QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(rx).fn);
+  ASSERT_TRUE(program);
+
+  RXOp foundRX;
+  program->walk([&](RXOp op) { foundRX = op; });
+  ASSERT_TRUE(foundRX);
+
+  auto params = foundRX.getParameters();
+  EXPECT_EQ(params.size(), 1U);
+  EXPECT_EQ(params[0], foundRX.getParameter(0));
+
+  // Targets and controls
+  EXPECT_EQ(foundRX.getInputTargets().size(), 1U);
+  EXPECT_TRUE(foundRX.getInputControls().empty());
+  EXPECT_TRUE(foundRX.getOutputControls().empty());
+}
+/// @}
+
+/// \name QCO/UnitaryOpInterface/SWAPOp_TwoTargets
+/// @{
+
+/// Verify that a two-target, zero-parameter op (SWAPOp) returns two-element
+/// target ranges and empty parameter / control ranges.
+TEST_F(QCOUnitaryInterfaceTest, SWAPOpTwoTargetRanges) {
+  auto program =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(swap).fn);
+  ASSERT_TRUE(program);
+
+  SWAPOp foundSWAP;
+  program->walk([&](SWAPOp op) { foundSWAP = op; });
+  ASSERT_TRUE(foundSWAP);
+
+  EXPECT_EQ(foundSWAP.getInputTargets().size(), 2U);
+  EXPECT_EQ(foundSWAP.getOutputTargets().size(), 2U);
+  EXPECT_TRUE(foundSWAP.getInputControls().empty());
+  EXPECT_TRUE(foundSWAP.getOutputControls().empty());
+  EXPECT_TRUE(foundSWAP.getParameters().empty());
+}
+/// @}
+
+/// \name QCO/UnitaryOpInterface/CtrlOp_RangeAccessors
+/// @{
+
+/// Verify that CtrlOp's new range accessors return the correct numbers of
+/// targets and controls.
+TEST_F(QCOUnitaryInterfaceTest, CtrlOpRangeAccessors) {
+  // singleControlledX has exactly one control and one target
+  auto program = QCOProgramBuilder::build(context.get(),
+                                          MQT_NAMED_BUILDER(singleControlledX).fn);
+  ASSERT_TRUE(program);
+
+  CtrlOp foundCtrl;
+  program->walk([&](CtrlOp op) { foundCtrl = op; });
+  ASSERT_TRUE(foundCtrl);
+
+  EXPECT_EQ(foundCtrl.getInputTargets().size(), 1U);
+  EXPECT_EQ(foundCtrl.getOutputTargets().size(), 1U);
+  EXPECT_EQ(foundCtrl.getInputControls().size(), 1U);
+  EXPECT_EQ(foundCtrl.getOutputControls().size(), 1U);
+}
+
+/// Verify that CtrlOp with multiple controls returns the correct control count.
+TEST_F(QCOUnitaryInterfaceTest, CtrlOpMultipleControlsRangeAccessors) {
+  auto program = QCOProgramBuilder::build(
+      context.get(), MQT_NAMED_BUILDER(multipleControlledX).fn);
+  ASSERT_TRUE(program);
+
+  CtrlOp foundCtrl;
+  program->walk([&](CtrlOp op) {
+    // Pick the outermost CtrlOp (the one with the most controls)
+    if (!foundCtrl || op.getInputControls().size() >
+                          foundCtrl.getInputControls().size()) {
+      foundCtrl = op;
+    }
+  });
+  ASSERT_TRUE(foundCtrl);
+
+  // multipleControlledX uses 2 controls
+  EXPECT_GE(foundCtrl.getInputControls().size(), 2U);
+  EXPECT_EQ(foundCtrl.getInputControls().size(),
+            foundCtrl.getOutputControls().size());
+}
+
+/// Verify CtrlOp.getParameters() delegates to the body unitary.
+TEST_F(QCOUnitaryInterfaceTest, CtrlOpParametersDelegateToBody) {
+  // singleControlledRx wraps an RX gate which has 1 parameter
+  auto program = QCOProgramBuilder::build(context.get(),
+                                          MQT_NAMED_BUILDER(singleControlledRx).fn);
+  ASSERT_TRUE(program);
+
+  CtrlOp foundCtrl;
+  program->walk([&](CtrlOp op) { foundCtrl = op; });
+  ASSERT_TRUE(foundCtrl);
+
+  // CtrlOp wrapping RX should expose 1 parameter
+  EXPECT_EQ(foundCtrl.getParameters().size(), 1U);
+}
+/// @}
+
+/// \name QCO/UnitaryOpInterface/InvOp_RangeAccessors
+/// @{
+
+/// Verify that InvOp.getInputTargets() returns only qubits and not parameters
+/// (regression test for the PR #1620 fix: getInputQubits() changed from
+/// getOperands() to getQubitsIn()).
+TEST_F(QCOUnitaryInterfaceTest, InvOpInputTargetsExcludesParameters) {
+  // inverseRx is an InvOp wrapping RX; the InvOp operands include the qubit
+  // AND the angle parameter.  After the PR fix, getInputTargets() must return
+  // only the qubit (size 1), not both the qubit and the parameter (size 2).
+  auto program =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(inverseRx).fn);
+  ASSERT_TRUE(program);
+
+  InvOp foundInv;
+  program->walk([&](InvOp op) { foundInv = op; });
+  ASSERT_TRUE(foundInv);
+
+  // getInputTargets should return exactly the target qubits, not parameters
+  EXPECT_EQ(foundInv.getInputTargets().size(), 1U);
+  EXPECT_EQ(foundInv.getOutputTargets().size(), 1U);
+  EXPECT_TRUE(foundInv.getInputControls().empty());
+  EXPECT_TRUE(foundInv.getOutputControls().empty());
+}
+
+/// Verify InvOp.getParameters() delegates to the body unitary.
+TEST_F(QCOUnitaryInterfaceTest, InvOpParametersDelegateToBody) {
+  auto program =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(inverseRx).fn);
+  ASSERT_TRUE(program);
+
+  InvOp foundInv;
+  program->walk([&](InvOp op) { foundInv = op; });
+  ASSERT_TRUE(foundInv);
+
+  // InvOp wrapping RX should expose 1 parameter through getParameters()
+  EXPECT_EQ(foundInv.getParameters().size(), 1U);
+}
+/// @}
+
+/// \name QCO/UnitaryOpInterface/BarrierOp_RangeAccessors
+/// @{
+
+/// Verify that BarrierOp's new range accessors return correct qubit counts.
+TEST_F(QCOUnitaryInterfaceTest, BarrierOpRangeAccessors) {
+  // barrierTwoQubits has two qubits
+  auto program = QCOProgramBuilder::build(context.get(),
+                                          MQT_NAMED_BUILDER(barrierTwoQubits).fn);
+  ASSERT_TRUE(program);
+
+  BarrierOp foundBarrier;
+  program->walk([&](BarrierOp op) { foundBarrier = op; });
+  ASSERT_TRUE(foundBarrier);
+
+  EXPECT_EQ(foundBarrier.getInputTargets().size(), 2U);
+  EXPECT_EQ(foundBarrier.getOutputTargets().size(), 2U);
+  EXPECT_TRUE(foundBarrier.getInputControls().empty());
+  EXPECT_TRUE(foundBarrier.getOutputControls().empty());
+  EXPECT_TRUE(foundBarrier.getParameters().empty());
+}
+/// @}

@@ -177,6 +177,26 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::barrierMultipleQubits)}));
 /// @}
 
+/// \name QCOToQC/Operations/StandardGates/IdOp.cpp
+/// @{
+/// Test that qco.id (identity gate) is correctly lowered to the equivalent QC
+/// identity operation by the ConvertQCOGateToQC template instantiation added
+/// via the GateTable macro in this PR.
+INSTANTIATE_TEST_SUITE_P(
+    QCOIDOpTest, QCOToQCTest,
+    testing::Values(
+        QCOToQCTestCase{"Identity", MQT_NAMED_BUILDER(qco::identity),
+                        MQT_NAMED_BUILDER(qc::identity)},
+        QCOToQCTestCase{
+            "SingleControlledIdentity",
+            MQT_NAMED_BUILDER(qco::singleControlledIdentity),
+            MQT_NAMED_BUILDER(qc::singleControlledIdentity)},
+        QCOToQCTestCase{
+            "MultipleControlledIdentity",
+            MQT_NAMED_BUILDER(qco::multipleControlledIdentity),
+            MQT_NAMED_BUILDER(qc::multipleControlledIdentity)}));
+/// @}
+
 /// \name QCOToQC/Operations/StandardGates/DcxOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
