@@ -1341,9 +1341,10 @@ protected:
     jeff::populateNativeToJeffConversionPatterns(patterns);
     patterns.add<ConvertQTensorAllocOp, ConvertQTensorExtractOp,
                  ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
-                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
-                 ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
-                 ConvertQCOGPhaseOpToJeff>(typeConverter, context, &state);
+                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,
+                 ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
+                 ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff>(
+        typeConverter, context, &state);
 
     using JK = JeffKind;
     using PP = PPRPaulis;
