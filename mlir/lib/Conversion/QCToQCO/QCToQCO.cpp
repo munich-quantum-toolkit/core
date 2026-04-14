@@ -1277,12 +1277,12 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
     rewriter.setInsertionPointAfter(newForOp);
     extractAllInsertedQubits(state, operation, rewriter);
 
-    SmallVector<Value, 8> qubitVector(qubitMap.begin(), qubitMap.end());
-    SmallVector<Value, 8> registers(registerMap.begin(), registerMap.end());
+    auto qubits = qubitMap.getArrayRef();
+    auto registers = registerMap.getArrayRef();
 
     // Push a new frame to the stack
     pushModifierFrameWithRegisters(
-        state, qubitVector, registers,
+        state, qubits, registers,
         dstBlock.getArguments().drop_front(1).take_back(numQubits),
         dstBlock.getArguments().drop_front(1).take_front(numRegisters));
 
@@ -1364,16 +1364,16 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
     rewriter.setInsertionPointAfter(newWhileOp);
     extractAllInsertedQubits(state, operation, rewriter);
 
-    SmallVector<Value, 8> qubitVector(qubitMap.begin(), qubitMap.end());
-    SmallVector<Value, 8> registers(registerMap.begin(), registerMap.end());
+    auto qubits = qubitMap.getArrayRef();
+    auto registers = registerMap.getArrayRef();
 
     // Push the frames for the before and after region to the stack
     pushModifierFrameWithRegisters(
-        state, qubitVector, registers,
+        state, qubits, registers,
         newAfterBlock->getArguments().take_back(numQubits),
         newAfterBlock->getArguments().take_front(numRegisters));
     pushModifierFrameWithRegisters(
-        state, qubitVector, registers,
+        state, qubits, registers,
         newBeforeBlock->getArguments().take_back(numQubits),
         newBeforeBlock->getArguments().take_front(numRegisters));
 
@@ -1447,14 +1447,14 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     thenBlock->getOperations().splice(
         thenBlock->end(), op.getThenRegion().front().getOperations());
 
-    SmallVector<Value, 8> qubitVector(qubitMap.begin(), qubitMap.end());
-    SmallVector<Value, 8> registers(registerMap.begin(), registerMap.end());
+    auto qubits = qubitMap.getArrayRef();
+    auto registers = registerMap.getArrayRef();
 
     if (!op.getElseRegion().empty()) {
       elseBlock->getOperations().splice(
           elseBlock->end(), op.getElseRegion().front().getOperations());
       pushModifierFrameWithRegisters(
-          state, qubitVector, registers,
+          state, qubits, registers,
           elseRegion.getArguments().take_back(numQubits),
           elseRegion.getArguments().take_front(numRegisters));
 
@@ -1465,7 +1465,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     }
 
     pushModifierFrameWithRegisters(
-        state, qubitVector, registers,
+        state, qubits, registers,
         thenRegion.getArguments().take_back(numQubits),
         thenRegion.getArguments().take_front(numRegisters));
 
