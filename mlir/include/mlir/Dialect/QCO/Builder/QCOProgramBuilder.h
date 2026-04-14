@@ -1234,7 +1234,9 @@ public:
    * @details
    * Constructs an if operation that takes a bool Value and a range of qubit
    * values that are used in the then/else region of this operation. The qubit
-   * values are passed down as block arguments to each region.
+   * values are passed down as block arguments to each region. Qubits that were
+   * extracted from a tensor that is used as an argument for this operation are
+   * automatically inserted before the operation is constructed.
    *
    * @param condition Bool condition
    * @param initArgs Input qubit values
@@ -1271,6 +1273,12 @@ public:
   /**
    * @brief Construct a scf.for operation with iter args
    *
+   * @details
+   * Constructs a scf.for operation with the given loop boundaries and stepsize
+   * and a range of qubit values for its iter args. Qubits that were extracted
+   * from a tensor that is used as an argument for this operation are
+   * automatically inserted before the operation is constructed.
+   *
    * @param lowerbound Lowerbound of the loop
    * @param upperbound Upperbound of the loop
    * @param step Stepsize of the loop
@@ -1306,6 +1314,12 @@ public:
 
   /**
    * @brief Construct a scf.while operation with arguments
+   *
+   * @details
+   * Constructs a scf.while with a range of qubit values for its iter args.
+   * Qubits that were extracted from a tensor that is used as an argument for
+   * this operation are automatically inserted before the operation is
+   * constructed.
    *
    * @param args Arguments for the while loop
    * @param beforeBody Function that builds the before body of the while

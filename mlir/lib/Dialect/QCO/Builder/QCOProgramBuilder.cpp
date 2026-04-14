@@ -21,6 +21,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
@@ -203,35 +204,39 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
   // Iterate through the initial values and add the latest value to the updated
   // arguments
   for (auto initArg : initArgs) {
-    if (llvm::isa<QubitType>(initArg.getType())) {
-      // Directly insert qubits
-      updatedArgs.emplace_back(initArg);
-    } else {
-      validateTensorValue(initArg);
-      // For tensors check if you have to insert qubits first
-      const auto regId = validTensors[initArg].regId;
-      auto currentTensor = initArg;
-      // Iterate through the validQubits and find the qubits that were extracted
-      // from this tensor
-      for (auto it = validQubits.begin(); it != validQubits.end();) {
-        auto& [qubit, qubitInfo] = *it;
-        if (qubitInfo.regId == regId) {
-          // Create an InsertOp for the qubit
-          auto newTensor = qtensor::InsertOp::create(
-                               *this, qubit, currentTensor, qubitInfo.regIndex)
-                               .getResult();
-          // Update the tensor tracking
-          updateTensorTracking(currentTensor, newTensor);
-          currentTensor = newTensor;
-          validQubits.erase(it++);
-        } else {
-          ++it;
-        }
-      }
-      // Add the tensor after all qubits are inserted and the tensor tracking is
-      // updated
-      updatedArgs.emplace_back(currentTensor);
-    }
+    TypeSwitch<Type>(initArg.getType())
+        .Case<QubitType>([&](auto) {
+          // Directly insert qubits
+          updatedArgs.emplace_back(initArg);
+        })
+        .Case<RankedTensorType>([&](auto) {
+          validateTensorValue(initArg);
+          // For tensors check if you have to insert qubits first
+          const auto regId = validTensors[initArg].regId;
+          auto currentTensor = initArg;
+          // Iterate through the validQubits and find the qubits that were
+          // extracted from this tensor
+          for (auto it = validQubits.begin(); it != validQubits.end();) {
+            auto& [qubit, qubitInfo] = *it;
+            if (qubitInfo.regId == regId) {
+              // Create an InsertOp for the qubit
+              auto newTensor =
+                  qtensor::InsertOp::create(*this, qubit, currentTensor,
+                                            qubitInfo.regIndex)
+                      .getResult();
+              // Update the tensor tracking
+              updateTensorTracking(currentTensor, newTensor);
+              currentTensor = newTensor;
+              validQubits.erase(it++);
+            } else {
+              ++it;
+            }
+          }
+          updatedArgs.emplace_back(currentTensor);
+        })
+        .Default([&](auto) {
+          llvm::reportFatalUsageError("Elements must be qubit values");
+        });
   }
   return updatedArgs;
 }
@@ -251,15 +256,16 @@ void QCOProgramBuilder::removeQubitValueTracking(ValueRange values) {
 /** @brief Helper function to check if every value is a qubit value*/
 static void checkQubitType(ValueRange values) {
   for (Type type : values.getTypes()) {
-    if (llvm::isa<QubitType>(type)) {
-      continue;
-    }
-    if (auto tensor = llvm::dyn_cast<RankedTensorType>(type);
-        tensor && llvm::isa<QubitType>(tensor.getElementType())) {
-      continue;
-    }
+    auto isQubitType = TypeSwitch<Type, bool>(type)
+                           .Case<QubitType>([](auto) { return true; })
+                           .Case<RankedTensorType>([](RankedTensorType t) {
+                             return llvm::isa<QubitType>(t.getElementType());
+                           })
+                           .Default([](Type) { return false; });
 
-    llvm::reportFatalUsageError("Elements must be qubit values");
+    if (!isQubitType) {
+      llvm::reportFatalUsageError("Elements must be qubit values");
+    }
   }
 }
 

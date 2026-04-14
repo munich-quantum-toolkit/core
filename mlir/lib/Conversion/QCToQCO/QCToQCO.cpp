@@ -23,6 +23,7 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -1603,11 +1604,12 @@ protected:
         [](Operation* op) {
           auto* parentOp = op->getParentOp();
           auto isQCOType = [](Type t) {
-            if (llvm::isa<qco::QubitType>(t)) {
-              return true;
-            }
-            auto tensor = llvm::dyn_cast<RankedTensorType>(t);
-            return tensor && llvm::isa<qco::QubitType>(tensor.getElementType());
+            return TypeSwitch<Type, bool>(t)
+                .Case<qco::QubitType>([](auto) { return true; })
+                .Case<RankedTensorType>([](RankedTensorType t) {
+                  return llvm::isa<qco::QubitType>(t.getElementType());
+                })
+                .Default([](auto) { return false; });
           };
 
           const auto parentHasQubitTypes =

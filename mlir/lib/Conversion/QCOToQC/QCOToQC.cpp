@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -977,18 +978,17 @@ protected:
     target.addDynamicallyLegalDialect<scf::SCFDialect>([](Operation* op) {
       // Some types are not converted yet so QC and QCO types have to be checked
       auto isQubitType = [](Type t) {
-        if (llvm::isa<qc::QubitType>(t) || llvm::isa<qco::QubitType>(t)) {
-          return true;
-        }
-        auto memrefType = llvm::dyn_cast<MemRefType>(t);
-        auto tensorType = llvm::dyn_cast<RankedTensorType>(t);
-        auto qMemref =
-            memrefType && llvm::isa<qc::QubitType>(memrefType.getElementType());
-        auto qTensor = tensorType &&
-                       llvm::isa<qco::QubitType>(tensorType.getElementType());
-
-        return (memrefType && qMemref) || (tensorType && qTensor);
+        return TypeSwitch<Type, bool>(t)
+            .Case<qc::QubitType, qco::QubitType>([](auto) { return true; })
+            .Case<MemRefType>([](MemRefType t) {
+              return llvm::isa<qc::QubitType>(t.getElementType());
+            })
+            .Case<RankedTensorType>([](RankedTensorType t) {
+              return llvm::isa<qco::QubitType>(t.getElementType());
+            })
+            .Default([](auto) { return false; });
       };
+
       return !llvm::any_of(op->getOperandTypes(), isQubitType);
     });
 
