@@ -362,7 +362,9 @@ struct ConvertQTensorAllocOp final
     } else {
       size = adaptor.getSize();
     }
-    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, size);
+    auto qregType =
+        jeff::QuregType::get(rewriter.getContext(), op.getType().getShape()[0]);
+    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, qregType, size);
     return success();
   }
 };
@@ -395,8 +397,10 @@ struct ConvertQTensorExtractOp final
     } else {
       index = adaptor.getIndex();
     }
+    auto qregType = jeff::QuregType::get(
+        rewriter.getContext(), op.getTensor().getType().getShape()[0]);
     rewriter.replaceOpWithNewOp<jeff::QuregExtractIndexOp>(
-        op, adaptor.getTensor(), index);
+        op, qregType, adaptor.getTensor(), index);
     return success();
   }
 };
@@ -428,8 +432,10 @@ struct ConvertQTensorInsertOp final
     } else {
       index = adaptor.getIndex();
     }
+    auto qregType = jeff::QuregType::get(rewriter.getContext(),
+                                         op.getDest().getType().getShape()[0]);
     rewriter.replaceOpWithNewOp<jeff::QuregInsertIndexOp>(
-        op, adaptor.getDest(), index, adaptor.getScalar());
+        op, qregType, adaptor.getDest(), index, adaptor.getScalar());
     return success();
   }
 };
@@ -1069,7 +1075,7 @@ public:
 
     addConversion([ctx](RankedTensorType type) -> Type {
       if (llvm::isa<QubitType>(type.getElementType())) {
-        return jeff::QuregType::get(ctx);
+        return jeff::QuregType::get(ctx, type.getShape()[0]);
       }
       return type;
     });

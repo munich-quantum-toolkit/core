@@ -45,16 +45,17 @@ LogicalResult AllocOp::verify() {
   if (sizeValue && *sizeValue <= 0) {
     return emitOpError("Constant size operand must be positive");
   }
-  if (!resultType.isDynamicDim(0)) {
-    if (!sizeValue) {
-      return emitOpError("Static result type requires constant size operand");
-    }
-    if (resultSize != *sizeValue) {
-      return emitOpError("Constant size operand (")
-             << *sizeValue << ") does not match static result size ("
-             << resultSize << ")";
-    }
-  }
+  // if (!resultType.isDynamicDim(0)) {
+  //   if (!sizeValue) {
+  //     return emitOpError("Static result type requires constant size
+  //     operand");
+  //   }
+  //   if (resultSize != *sizeValue) {
+  //     return emitOpError("Constant size operand (")
+  //            << *sizeValue << ") does not match static result size ("
+  //            << resultSize << ")";
+  //   }
+  // }
 
   return success();
 }

@@ -250,7 +250,10 @@ struct ConvertJeffQuregAllocOpToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto size = arith::IndexCastOp::create(
         rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getNumQubits());
-    rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
+    auto tensorType = RankedTensorType::get(
+        {op.getType().getLength()}, QubitType::get(rewriter.getContext()));
+    rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, tensorType,
+                                                  size.getResult());
     return success();
   }
 };
@@ -879,8 +882,8 @@ public:
       return QubitType::get(ctx);
     });
 
-    addConversion([ctx](jeff::QuregType /*type*/) -> Type {
-      return RankedTensorType::get({ShapedType::kDynamic}, QubitType::get(ctx));
+    addConversion([ctx](jeff::QuregType type) -> Type {
+      return RankedTensorType::get({type.getLength()}, QubitType::get(ctx));
     });
   }
 };
