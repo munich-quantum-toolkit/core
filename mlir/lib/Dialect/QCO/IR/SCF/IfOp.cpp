@@ -266,18 +266,6 @@ LogicalResult IfOp::verify() {
     return emitOpError("Both regions must have the same number of qubits as "
                        "arguments as the number of input qubits");
   }
-  // Disable these for now, since the verifier is called during the conversion
-  // passes between scf.yield-qco.yield and this fails.
-  /*
-  if (numInputQubits != thenYield()->getNumOperands()) {
-    return emitOpError("Then region yield must return the same number of "
-                       "qubits as the number of input qubits.");
-  }
-  if (numInputQubits != elseYield()->getNumOperands()) {
-    return emitOpError("Else region yield must return the same number of "
-                       "qubits as the number of input qubits.");
-  }
-  */
   if (numInputQubits != numOutputQubits) {
     return emitOpError("Operation must return the same number of qubits as the "
                        "number of input qubits.");
