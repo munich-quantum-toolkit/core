@@ -597,8 +597,9 @@ private:
     // Early exit, if the root node is a goal node already.
     Node* root = std::construct_at(arena.Allocate(), layout);
     if (root->isGoal(window.front(), *arch)) {
-      return std::make_pair(root->getReadyOps(window.front(), *arch),
-                            SmallVector<IndexPairType>{});
+      const auto ready = root->getReadyOps(window.front(), *arch);
+      const auto seq = SmallVector<IndexPairType>{};
+      return std::make_pair(ready, seq);
     }
 
     frontier.emplace(root);
@@ -631,7 +632,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the sequence
       // of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), *arch, 1)) {
+      if (curr->isGoal(window.front(), *arch)) {
         const auto ready = curr->getReadyOps(window.front(), *arch);
 
         SmallVector<IndexPairType> seq(curr->depth);
@@ -719,7 +720,9 @@ private:
           }
 
           // Append layer.
-          window.emplace_back(layer);
+          if (!layer.empty()) {
+            window.emplace_back(layer);
+          }
 
           // Stop, if the desired window size is reached.
           if (window.size() == 1 + nlookahead) {
@@ -816,6 +819,9 @@ private:
 
           // Recompute window of layers.
           rebuildWindow(wires, direction, window, lookup);
+          if (window.empty()) {
+            return WalkResult::advance();
+          }
 
           // Perform A* search.
           const auto searchResult = search(window, trial.layout);
@@ -881,6 +887,9 @@ private:
 
       // Recompute window of layers.
       rebuildWindow(wires, direction, window, lookup);
+      if (window.empty()) {
+        return WalkResult::advance();
+      }
 
       // Perform A* search.
       const auto searchResult = search(window, layout);
