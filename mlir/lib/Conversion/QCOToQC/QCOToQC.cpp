@@ -878,7 +878,8 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
 };
 
 /**
- * @brief Converts qco.yield to qc.yield
+ * @brief Converts qco.yield to qc.yield or to scf.yield if the parent is a
+ * scf::IfOp
  *
  * @par Example:
  * ```mlir
@@ -907,7 +908,8 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
 
 /**
  * @brief Converts scf.for with value semantics to scf.for with memory
- * semantics for qubit values
+ * semantics for qubit values. This currently assumes only qubit types as return
+ * values.
  *
  * @par Example:
  * ```mlir
@@ -952,7 +954,7 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
 
 /**
  * @brief Converts scf.while with value semantics to scf.while with memory
- * semantics for qubit values. This currently assumes no mixed types as return
+ * semantics for qubit values. This currently assumes only qubit types as return
  * values.
  *
  * @par Example:
@@ -999,8 +1001,7 @@ struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
 };
 
 /**
- * @brief Converts qco.if to scf.if with memory semantics
- * for qubit values
+ * @brief Converts qco.if to scf.if
  *
  * @par Example:
  * ```mlir
