@@ -302,29 +302,34 @@ private:
     }
 
     /**
-     * @returns true if the current sequence of SWAPs makes some gates
+     * @returns true if the current SWAP sequence makes some @p min gates
      * executable.
      */
-    [[nodiscard]] bool isPartialGoal(ArrayRef<LayerItem> front,
-                                     const Architecture& arch) const {
-      return any_of(front, [&](const LayerItem& item) {
+    [[nodiscard]] bool isGoal(ArrayRef<LayerItem> front,
+                              const Architecture& arch,
+                              const std::size_t min) const {
+      std::size_t nready{0};
+      for (const auto& item : front) {
         const auto& [prog0, prog1] = item.progs;
-        return arch.areAdjacent(layout.getHardwareIndex(prog0),
-                                layout.getHardwareIndex(prog1));
-      });
+        if (arch.areAdjacent(layout.getHardwareIndex(prog0),
+                             layout.getHardwareIndex(prog1))) {
+
+          if ((++nready) == min) {
+            return true;
+          }
+        }
+      }
+
+      return false;
     }
 
     /**
-     * @returns true if the current sequence of SWAPs makes all gates
+     * @returns true if the current SWAP sequence makes all gates in the front
      * executable.
      */
     [[nodiscard]] bool isGoal(ArrayRef<LayerItem> front,
                               const Architecture& arch) const {
-      return all_of(front, [&](const LayerItem& item) {
-        const auto& [prog0, prog1] = item.progs;
-        return arch.areAdjacent(layout.getHardwareIndex(prog0),
-                                layout.getHardwareIndex(prog1));
-      });
+      return isGoal(front, arch, front.size());
     }
 
     /**
@@ -579,6 +584,7 @@ private:
       std::pair<DenseSet<Operation*>, SmallVector<IndexPairType>>>
   search(const Window& window, const Layout& layout) {
     constexpr std::size_t cap = 25'000'000UL;
+
     const std::size_t b = arch->maxDegree() * ((arch->nqubits() + 1) / 2);
     const std::size_t budget = std::min(b * b * b, cap);
 
@@ -588,11 +594,13 @@ private:
     llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
         frontier;
 
+    // Early exit, if the root node is a goal node already.
     Node* root = std::construct_at(arena.Allocate(), layout);
     if (root->isGoal(window.front(), *arch)) {
       return std::make_pair(root->getReadyOps(window.front(), *arch),
                             SmallVector<IndexPairType>{});
     }
+
     frontier.emplace(root);
 
     DenseMap<ArrayRef<IndexType>, std::size_t> bestDepth;
@@ -623,7 +631,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the sequence
       // of SWAPs from this node to the root.
 
-      if (curr->isPartialGoal(window.front(), *arch)) {
+      if (curr->isGoal(window.front(), *arch, 1)) {
         const auto ready = curr->getReadyOps(window.front(), *arch);
 
         SmallVector<IndexPairType> seq(curr->depth);
@@ -706,7 +714,7 @@ private:
 
             layer.emplace_back(op, std::make_pair(lookup(i0), lookup(i1)));
 
-            // skipQubitPairBlock(first, second, direction);
+            // TODO: Skip qubit block.
             released.emplace_back(op);
           }
 
@@ -833,7 +841,7 @@ private:
             }
 
             if (readyOps.contains(op)) {
-              // skipQubitPairBlock(first, second, direction);
+              // TODO: Skip qubit block.
               released.emplace_back(op);
             }
           }
@@ -944,6 +952,7 @@ private:
 
       // Skip two-qubit blocks and release iterators.
       for (Operation* ready : readyOps) {
+        // TODO: Skip qubit block.
         released.emplace_back(ready);
       }
 
