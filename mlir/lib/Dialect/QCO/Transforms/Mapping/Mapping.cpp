@@ -103,7 +103,7 @@ private:
     IndexPairType progs;
   };
 
-  using Layer = SmallVector<LayerItem>;
+  using Layer = SmallVector<LayerItem, 1>;
   using Window = SmallVector<Layer, 0>;
 
   /**
@@ -700,7 +700,6 @@ private:
           }
 
           // Construct layer from wire iterators.
-          SmallVector<LayerItem> layer;
           for (const auto& [op, its] : front) {
             if (isa<BarrierOp>(op)) {
               released.emplace_back(op);
@@ -713,20 +712,15 @@ private:
             const auto i0 = std::distance(wires.data(), &first);
             const auto i1 = std::distance(wires.data(), &second);
 
+            SmallVector<LayerItem, 1> layer;
             layer.emplace_back(op, std::make_pair(lookup(i0), lookup(i1)));
+            window.emplace_back(layer);
+            if (window.size() == 1 + nlookahead) {
+              return WalkResult::interrupt();
+            }
 
             // TODO: Skip qubit block.
             released.emplace_back(op);
-          }
-
-          // Append layer.
-          if (!layer.empty()) {
-            window.emplace_back(layer);
-          }
-
-          // Stop, if the desired window size is reached.
-          if (window.size() == 1 + nlookahead) {
-            return WalkResult::interrupt();
           }
 
           return WalkResult::advance();

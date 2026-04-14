@@ -173,7 +173,7 @@ TEST_P(MappingPassTest, Sabre) {
   builder.dealloc(q5);
 
   auto moduleOp = builder.finalize();
-  const qco::MappingPassOptions options{.nlookahead = 0,
+  const qco::MappingPassOptions options{.nlookahead = 1,
                                         .alpha = 1,
                                         .lambda = 0.85,
                                         .niterations = 2,
