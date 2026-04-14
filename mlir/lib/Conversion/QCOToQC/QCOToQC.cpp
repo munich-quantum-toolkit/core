@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -958,13 +959,23 @@ protected:
     target.addIllegalDialect<QCODialect, qtensor::QTensorDialect>();
     target.addLegalDialect<QCDialect, memref::MemRefDialect>();
 
-    // Fix later
-    target.addDynamicallyLegalDialect<scf::SCFDialect>(
-        [](Operation* op) { return op->getResults().size() == 0; });
-    target.addDynamicallyLegalOp<scf::YieldOp>(
-        [&](Operation* op) { return op->getNumOperands() == 0; });
-    target.addDynamicallyLegalOp<scf::ConditionOp>(
-        [&](Operation* op) { return op->getNumOperands() == 1; });
+    target.addDynamicallyLegalDialect<scf::SCFDialect>([](Operation* op) {
+      // Not sure why some types are already propagated while others are not
+      auto isQubitType = [](Type t) {
+        if (llvm::isa<qc::QubitType>(t) || llvm::isa<qco::QubitType>(t)) {
+          return true;
+        }
+        auto memrefType = llvm::dyn_cast<MemRefType>(t);
+        auto tensorType = llvm::dyn_cast<RankedTensorType>(t);
+        auto qMemref =
+            memrefType && llvm::isa<qc::QubitType>(memrefType.getElementType());
+        auto qTensor = tensorType &&
+                       llvm::isa<qco::QubitType>(tensorType.getElementType());
+
+        return (memrefType && qMemref) || (tensorType && qTensor);
+      };
+      return !llvm::any_of(op->getOperandTypes(), isQubitType);
+    });
 
     // Register operation conversion patterns that do not need state tracking
     patterns
