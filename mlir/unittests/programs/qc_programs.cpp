@@ -1305,13 +1305,13 @@ void ifTwoQubits(QCProgramBuilder& b) {
 }
 
 void nestedIfOpForLoop(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
+  auto reg = b.allocQubitRegister(3);
   auto q0 = b.allocQubit();
   b.h(q0);
   auto cond = b.measure(q0);
   b.scfIf(cond, [&] {
     b.scfFor(0, 3, 1, [&](Value iv) {
-      auto q1 = b.memrefLoad(q, iv);
+      auto q1 = b.memrefLoad(reg.value, iv);
       b.h(q1);
     });
   });
@@ -1342,7 +1342,7 @@ void simpleDoWhileReset(QCProgramBuilder& b) {
 void simpleForLoop(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg, iv);
+    auto q = b.memrefLoad(reg.value, iv);
     b.h(q);
   });
 };
@@ -1354,7 +1354,7 @@ void nestedForLoopIfOp(QCProgramBuilder& b) {
     b.h(qCond);
     auto cond = b.measure(qCond);
     b.scfIf(cond, [&] {
-      auto q = b.memrefLoad(reg, iv);
+      auto q = b.memrefLoad(reg.value, iv);
       b.h(q);
     });
   });
@@ -1363,11 +1363,11 @@ void nestedForLoopIfOp(QCProgramBuilder& b) {
 void nestedForLoopWhileOp(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg, iv);
+    auto q = b.memrefLoad(reg.value, iv);
     b.h(q);
   });
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg, iv);
+    auto q = b.memrefLoad(reg.value, iv);
     b.scfWhile(
         [&] {
           auto measureResult = b.measure(q);
@@ -1382,7 +1382,7 @@ void nestedForLoopCtrlOp(QCProgramBuilder& b) {
   auto control = b.allocQubit();
   b.h(control);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q0 = b.memrefLoad(reg, iv);
+    auto q0 = b.memrefLoad(reg.value, iv);
     b.ctrl(control, [&] { b.h(q0); });
   });
 }

@@ -302,7 +302,7 @@ static void assignMappedTensor(LoweringState& state, Operation* anchor,
       it->second = tensor;
       return;
     }
-    frame.currentQubits.try_emplace(memref, tensor);
+    frame.currentRegisters.try_emplace(memref, tensor);
     return;
   }
 

@@ -112,21 +112,19 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
     auto load = memref::LoadOp::create(*this, memref, index.getResult());
     const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
+    loadedQubits[memref].insert(index);
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
 }
 
-Value QCProgramBuilder::memrefLoad(QubitRegister& memref,
-                                   const std::variant<int64_t, Value>& index) {
-  auto param = variantToValue(*this, getLoc(), index);
-  auto constantIntValue = getConstantIntValue(param);
-
-  if (constantIntValue && *constantIntValue >= memref.qubits.size()) {
-    llvm::reportFatalUsageError("Qubit index out of bounds");
+Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
+  if (loadedQubits[memref].contains(index)) {
+    llvm::reportFatalUsageError("Qubit is already loaded");
   }
 
-  auto loadOp = memref::LoadOp::create(*this, memref.value, param);
+  auto loadOp = memref::LoadOp::create(*this, memref, index);
+  loadedQubits[memref].insert(index);
 
   return loadOp.getResult();
 }

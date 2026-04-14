@@ -207,12 +207,14 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
       // Directly insert qubits
       updatedArgs.emplace_back(initArg);
     } else {
+      validateTensorValue(initArg);
       // For tensors check if you have to insert qubits first
       const auto regId = validTensors[initArg].regId;
       auto currentTensor = initArg;
       // Iterate through the validQubits and find the qubits that were extracted
       // from this tensor
-      for (auto [qubit, qubitInfo] : validQubits) {
+      for (auto it = validQubits.begin(); it != validQubits.end();) {
+        auto& [qubit, qubitInfo] = *it;
         if (qubitInfo.regId == regId) {
           // Create an InsertOp for the qubit
           auto newTensor = qtensor::InsertOp::create(
@@ -222,6 +224,9 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
           validQubits.erase(qubit);
           updateTensorTracking(currentTensor, newTensor);
           currentTensor = newTensor;
+          validQubits.erase(it++);
+        } else {
+          ++it;
         }
       }
       // Add the tensor after all qubits are inserted and the tensor tracking is
@@ -230,6 +235,18 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
     }
   }
   return updatedArgs;
+}
+
+void QCOProgramBuilder::removeQubitValueTracking(ValueRange values) {
+  for (auto value : values) {
+    if (llvm::isa<QubitType>(value.getType())) {
+      validateQubitValue(value);
+      validQubits.erase(value);
+    } else {
+      validateTensorValue(value);
+      validTensors.erase(value);
+    }
+  }
 }
 
 /** @brief Helper function to check if every value is a qubit value*/
@@ -894,14 +911,13 @@ ValueRange QCOProgramBuilder::scfFor(
   const auto bodyResults = body(iv, loopArgs);
   scf::YieldOp::create(*this, bodyResults);
 
-  // Remove the bodyResults as valid qubit values
-  for (auto result : bodyResults) {
-    if (llvm::isa<QubitType>(result.getType())) {
-      validQubits.erase(result);
-    } else {
-      validTensors.erase(result);
-    }
+  if (bodyResults.size() != initArgs.size()) {
+    llvm::reportFatalUsageError(
+        "scf.for body must return exactly one value per iter arg");
   }
+
+  // Remove the bodyResults as valid qubit values
+  removeQubitValueTracking(bodyResults);
 
   // Update the qubit tracking
   for (auto [arg, result] : llvm::zip_equal(updatedArgs, forOp->getResults())) {
@@ -955,19 +971,20 @@ ValueRange QCOProgramBuilder::scfWhile(
         }
         // Construct the body
         const auto& results = body(args);
-        if (createYield) {
-          scf::YieldOp::create(*this, results);
+
+        if (results.size() != initArgs.size()) {
+          llvm::reportFatalUsageError(
+              "scf.while body must return exactly one value per iter arg");
         }
 
-        // Erase the args as valid qubit values
-        for (auto result : results) {
-          if (llvm::isa<QubitType>(result.getType())) {
-            validQubits.erase(result);
-          } else {
-            validTensors.erase(result);
-          }
+        // Create the terminator operation and erase the yielded values if
+        // required
+        if (createYield) {
+          scf::YieldOp::create(*this, results);
+          removeQubitValueTracking(results);
         }
       };
+
   createBody(beforeBlock, beforeBody, false);
   createBody(afterBlock, afterBody, true);
 
@@ -1044,20 +1061,8 @@ ValueRange QCOProgramBuilder::qcoIf(
   }
 
   // Remove the inner qubit values as valid qubit values
-  for (auto thenOut : thenResult) {
-    if (llvm::isa<QubitType>(thenOut.getType())) {
-      validQubits.erase(thenOut);
-    } else {
-      validTensors.erase(thenOut);
-    }
-  }
-  for (auto elseOut : elseResult) {
-    if (llvm::isa<QubitType>(elseOut.getType())) {
-      validQubits.erase(elseOut);
-    } else {
-      validTensors.erase(elseOut);
-    }
-  }
+  removeQubitValueTracking(thenResult);
+  removeQubitValueTracking(elseResult);
 
   return ifOp->getResults();
 }
@@ -1066,6 +1071,9 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
                                                    ValueRange yieldedValues) {
   checkFinalized();
   checkQubitType(yieldedValues);
+
+  // Erase the yieldedValues from tracking
+  removeQubitValueTracking(yieldedValues);
 
   scf::ConditionOp::create(*this, condition, yieldedValues);
 

@@ -180,7 +180,8 @@ public:
    * @brief Explicitly loads a qubit from a memref
    *
    * @param memref Source memref
-   * @param index The index from where the qubit is loaded
+   * @param index The index from where the qubit is loaded (index must not have
+   * been used yet and must be defined in the same region as the load operation)
    * @return The loaded qubit
    *
    * @par Example:
@@ -191,8 +192,7 @@ public:
    * %q0 = memref.load %memref[%index] : memref<3x!qc.qubit>
    * ```
    */
-  Value memrefLoad(QubitRegister& memref,
-                   const std::variant<int64_t, Value>& index);
+  Value memrefLoad(Value memref, Value index);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -1102,6 +1102,9 @@ private:
 
   /// Track allocated MemRefs for automatic deallocation
   llvm::DenseSet<Value> allocatedMemrefs;
+
+  /// Track the loaded indices of memrefs
+  llvm::DenseMap<Value, llvm::DenseSet<Value>> loadedQubits;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

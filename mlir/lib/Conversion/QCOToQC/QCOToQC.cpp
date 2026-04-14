@@ -67,8 +67,10 @@ struct LoweringState {
   /// Per-region map from from QC registers to its already extracted indices
   llvm::DenseMap<Region*, llvm::DenseMap<Value, SetVector<Value>>>
       extractedIndices;
-  /// Per-register map from QC qubit indices to its extracted QC qubits
-  llvm::DenseMap<Value, llvm::DenseMap<Value, Value>> qubitValues;
+  /// Per-region map from a register to its QC qubit indices and the qubit
+  /// values
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::DenseMap<Value, Value>>>
+      qubitValues;
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
 
@@ -245,7 +247,7 @@ struct ConvertQTensorExtractOp final
 
     // Reuse the already existing extracted qubit if it exists
     auto& extractedIndices = state.extractedIndices[region][memref];
-    auto& qubitValues = state.qubitValues[memref];
+    auto& qubitValues = state.qubitValues[region][memref];
     if (extractedIndices.contains(index)) {
       rewriter.replaceOp(op, {memref, qubitValues[index]});
       return success();
@@ -255,7 +257,7 @@ struct ConvertQTensorExtractOp final
                     .getResult();
     // Store the extracted qubit and index
     extractedIndices.insert(index);
-    qubitValues.try_emplace(index, load);
+    qubitValues[index] = load;
 
     rewriter.replaceOp(op, {memref, load});
     return success();

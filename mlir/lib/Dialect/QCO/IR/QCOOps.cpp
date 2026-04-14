@@ -144,6 +144,25 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   if (parser.parseAssignmentList(elseRegionArgs, elseOperands)) {
     return failure();
   }
+
+  SmallVector<Value> resolvedElseOperands;
+  // Also resolve the else operands to check if they are the same as the
+  // previous operands
+  if (failed(parser.resolveOperands(elseOperands, result.types,
+                                    parser.getCurrentLocation(),
+                                    resolvedElseOperands))) {
+    return failure();
+  }
+  for (auto [elseVal, thenVal] : llvm::zip_equal(
+           resolvedElseOperands, llvm::drop_begin(result.operands,
+                                                  1))) { // skip condition
+    if (elseVal != thenVal) {
+      return parser.emitError(
+          parser.getCurrentLocation(),
+          "else qubits must reference the same SSA values as then qubits");
+    }
+  }
+
   // Set the argument types
   for (auto [iterArg, type] : llvm::zip_equal(elseRegionArgs, result.types)) {
     iterArg.type = type;
@@ -158,6 +177,7 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   if (parser.parseOptionalAttrDict(result.attributes)) {
     return failure();
   }
+
   return success();
 }
 

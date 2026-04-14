@@ -1228,7 +1228,8 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Construct an if operation for qubits with linear typing
+   * @brief Construct an if operation for qubits or tensors of qubits with
+   * linear typing
    *
    * @details
    * Constructs an if operation that takes a bool Value and a range of qubit
@@ -1242,7 +1243,7 @@ public:
    * @param elseBody Function that builds the else body of the if
    * operation
    * @return ValueRange of the results (must be the same types as the input
-   * qubits)
+   * qubit types)
    *
    * @par Example:
    * ```c++
@@ -1457,6 +1458,12 @@ private:
    * to the tensors.
    */
   SmallVector<Value> insertExtractedQubits(ValueRange initArgs);
+
+  /**
+   * @brief Removes the given qubit values from the respective tracking
+   * @param values The values that are removed from tracking
+   */
+  void removeQubitValueTracking(ValueRange values);
 
   /**
    * @brief Information about a tensor
