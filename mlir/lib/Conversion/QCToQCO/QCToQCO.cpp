@@ -1455,8 +1455,8 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
           elseBlock->end(), op.getElseRegion().front().getOperations());
       pushModifierFrameWithRegisters(
           state, qubits, registers,
-          elseRegion.getArguments().take_back(numQubits),
-          elseRegion.getArguments().take_front(numRegisters));
+          elseBlock->getArguments().take_back(numQubits),
+          elseBlock->getArguments().take_front(numRegisters));
 
     } else {
       // If the else block is empty, just create the new qco::YieldOp
@@ -1466,8 +1466,8 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     pushModifierFrameWithRegisters(
         state, qubits, registers,
-        thenRegion.getArguments().take_back(numQubits),
-        thenRegion.getArguments().take_front(numRegisters));
+        thenBlock->getArguments().take_back(numQubits),
+        thenBlock->getArguments().take_front(numRegisters));
 
     rewriter.eraseOp(op);
     return success();

@@ -975,7 +975,7 @@ protected:
     target.addLegalDialect<QCDialect, memref::MemRefDialect>();
 
     target.addDynamicallyLegalDialect<scf::SCFDialect>([](Operation* op) {
-      // Not sure why some types are already propagated while others are not
+      // Some types are not converted yet so QC and QCO types have to be checked
       auto isQubitType = [](Type t) {
         if (llvm::isa<qc::QubitType>(t) || llvm::isa<qco::QubitType>(t)) {
           return true;

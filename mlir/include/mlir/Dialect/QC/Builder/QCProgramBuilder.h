@@ -974,8 +974,8 @@ public:
    * ```c++
    * builder.scfFor(lb, ub, step, [&](Value iv) {
    *   auto q0 = builder.memrefLoad(memref, iv);
-   *   b.h(q0);
-   * }
+   *   builder.h(q0);
+   * });
    * ```
    * ```mlir
    * scf.for %iv = %lb to %ub step %step {
