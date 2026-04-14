@@ -1461,8 +1461,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     } else {
       // If the else block is empty, just create the new qco::YieldOp
       rewriter.setInsertionPointToEnd(elseBlock);
-      auto elseYield = qco::YieldOp::create(rewriter, op->getLoc(),
-                                            elseBlock->getArguments());
+      qco::YieldOp::create(rewriter, op->getLoc(), elseBlock->getArguments());
     }
 
     pushModifierFrameWithRegisters(

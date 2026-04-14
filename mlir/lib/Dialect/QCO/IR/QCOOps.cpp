@@ -12,12 +12,12 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>

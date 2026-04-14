@@ -195,9 +195,9 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validTensors.try_emplace(outputTensor, info);
 }
 
-SmallVector<Value>
+llvm::SmallVector<Value>
 QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
-  SmallVector<Value> updatedArgs;
+  llvm::SmallVector<Value> updatedArgs;
   updatedArgs.reserve(initArgs.size());
 
   // Iterate through the initial values and add the latest value to the updated
