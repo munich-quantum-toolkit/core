@@ -397,10 +397,8 @@ struct ConvertQTensorExtractOp final
     } else {
       index = adaptor.getIndex();
     }
-    auto qregType = jeff::QuregType::get(
-        rewriter.getContext(), op.getTensor().getType().getShape()[0]);
     rewriter.replaceOpWithNewOp<jeff::QuregExtractIndexOp>(
-        op, qregType, adaptor.getTensor(), index);
+        op, adaptor.getTensor(), index);
     return success();
   }
 };
@@ -432,10 +430,8 @@ struct ConvertQTensorInsertOp final
     } else {
       index = adaptor.getIndex();
     }
-    auto qregType = jeff::QuregType::get(rewriter.getContext(),
-                                         op.getDest().getType().getShape()[0]);
     rewriter.replaceOpWithNewOp<jeff::QuregInsertIndexOp>(
-        op, qregType, adaptor.getDest(), index, adaptor.getScalar());
+        op, adaptor.getDest(), index, adaptor.getScalar());
     return success();
   }
 };
