@@ -250,17 +250,14 @@ struct ConvertJeffQuregAllocOpToQCO final
   matchAndRewrite(jeff::QuregAllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto sizeValue = getConstantIntValue(adaptor.getNumQubits());
-    Type tensorType;
+    auto tensorType = llvm::cast<RankedTensorType>(
+        getTypeConverter()->convertType(op.getType()));
     Value size;
     if (sizeValue.has_value()) {
-      tensorType = RankedTensorType::get({*sizeValue},
-                                         QubitType::get(rewriter.getContext()));
       size = arith::ConstantOp::create(rewriter, op.getLoc(),
                                        rewriter.getIndexAttr(*sizeValue))
                  .getResult();
     } else {
-      tensorType = RankedTensorType::get({ShapedType::kDynamic},
-                                         QubitType::get(rewriter.getContext()));
       size = arith::IndexCastOp::create(rewriter, op.getLoc(),
                                         rewriter.getIndexType(),
                                         adaptor.getNumQubits())
