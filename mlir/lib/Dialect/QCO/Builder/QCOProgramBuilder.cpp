@@ -208,7 +208,7 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
       updatedArgs.emplace_back(initArg);
     } else {
       // For tensors check if you have to insert qubits first
-      auto regId = validTensors[initArg].regId;
+      const auto regId = validTensors[initArg].regId;
       auto currentTensor = initArg;
       // Iterate through the validQubits and find the qubits that were extracted
       // from this tensor
@@ -875,8 +875,8 @@ ValueRange QCOProgramBuilder::scfFor(
   auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, updatedArgs);
 
   auto* forBody = forOp.getBody();
-  const auto iv = forBody->getArgument(0);
-  const auto loopArgs = forBody->getArguments().drop_front();
+  auto iv = forBody->getArgument(0);
+  auto loopArgs = forBody->getArguments().drop_front();
   // Set the insertionpoint
   const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToStart(forBody);
@@ -904,8 +904,7 @@ ValueRange QCOProgramBuilder::scfFor(
   }
 
   // Update the qubit tracking
-  for (const auto& [arg, result] :
-       llvm::zip_equal(updatedArgs, forOp->getResults())) {
+  for (auto [arg, result] : llvm::zip_equal(updatedArgs, forOp->getResults())) {
     if (llvm::isa<QubitType>(arg.getType())) {
       updateQubitTracking(arg, result);
     } else {
@@ -947,7 +946,7 @@ ValueRange QCOProgramBuilder::scfWhile(
         setInsertionPointToStart(block);
 
         // Add the args to the valid qubits/tensors
-        for (const auto& arg : args) {
+        for (auto arg : args) {
           if (llvm::isa<QubitType>(arg.getType())) {
             validQubits.try_emplace(arg, QubitInfo{});
           } else {
@@ -973,7 +972,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   createBody(afterBlock, afterBody, true);
 
   // Update the qubit tracking
-  for (const auto& [arg, result] :
+  for (auto [arg, result] :
        llvm::zip_equal(updatedArgs, whileOp->getResults())) {
     if (llvm::isa<QubitType>(arg.getType())) {
       updateQubitTracking(arg, result);
@@ -1002,8 +1001,8 @@ ValueRange QCOProgramBuilder::qcoIf(
 
   // Create the block arguments and add them as valid qubits
   for (auto qubitType : initArgs.getTypes()) {
-    const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
-    const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
+    auto thenArg = thenBlock.addArgument(qubitType, getLoc());
+    auto elseArg = elseBlock.addArgument(qubitType, getLoc());
     if (llvm::isa<QubitType>(qubitType)) {
       validQubits.try_emplace(thenArg, QubitInfo{});
       validQubits.try_emplace(elseArg, QubitInfo{});
@@ -1036,8 +1035,7 @@ ValueRange QCOProgramBuilder::qcoIf(
         "number of input qubits!");
   }
 
-  for (const auto& [arg, result] :
-       llvm::zip_equal(updatedArgs, ifOp->getResults())) {
+  for (auto [arg, result] : llvm::zip_equal(updatedArgs, ifOp->getResults())) {
     if (llvm::isa<QubitType>(arg.getType())) {
       updateQubitTracking(arg, result);
     } else {
