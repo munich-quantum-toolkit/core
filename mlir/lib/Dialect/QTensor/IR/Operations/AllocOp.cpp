@@ -38,9 +38,9 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, Value size) {
 }
 
 LogicalResult AllocOp::verify() {
-  auto resultType = cast<RankedTensorType>(getResult().getType());
+  // auto resultType = cast<RankedTensorType>(getResult().getType());
   auto sizeValue = getConstantIntValue(getSize());
-  auto resultSize = resultType.getShape()[0];
+  // auto resultSize = resultType.getShape()[0];
 
   if (sizeValue && *sizeValue <= 0) {
     return emitOpError("Constant size operand must be positive");
