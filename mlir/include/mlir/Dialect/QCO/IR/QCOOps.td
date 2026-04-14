@@ -1014,16 +1014,21 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         static size_t getNumControls() { return 0; }
         Value getInputQubit(size_t i) { return getInputTarget(i); }
         OperandRange getInputQubits() { return getQubitsIn(); }
+        OperandRange getInputTargets() { return getInputQubits(); }
         Value getOutputQubit(size_t i) { return getOutputTarget(i); }
         ResultRange getOutputQubits() { return getQubitsOut(); }
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
+        static OperandRange getInputControls() { return {nullptr, 0}; }
         static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
+        static ResultRange getOutputControls() { return {nullptr, 0}; }
+        ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
         static size_t getNumParams() { return 0; }
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
+        static ValueRange getParameters() { return {}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
@@ -1103,16 +1108,21 @@ def CtrlOp
         size_t getNumControls() { return getControlsIn().size(); }
         Value getInputQubit(size_t i);
         OperandRange getInputQubits() { return getOperands(); }
+        OperandRange getInputTargets() { return getTargetsIn(); }
         Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getResults(); }
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         Value getInputControl(size_t i);
+        OperandRange getInputControls() { return getControlsIn(); }
         Value getOutputControl(size_t i);
+        ResultRange getOutputTargets() { return getTargetsOut(); }
+        ResultRange getOutputControls() { return getControlsOut(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
@@ -1168,17 +1178,22 @@ def InvOp
         size_t getNumTargets() { return getQubitsIn().size(); }
         static size_t getNumControls() { return 0; }
         Value getInputQubit(size_t i);
-        OperandRange getInputQubits() { return getOperands(); }
+        OperandRange getInputQubits() { return getQubitsIn(); }
+        OperandRange getInputTargets() { return getInputQubits(); }
         Value getOutputQubit(size_t i);
-        ResultRange getOutputQubits() { return getResults(); }
+        ResultRange getOutputQubits() { return getQubitsOut(); }
         Value getInputTarget(size_t i) { return getInputQubit(i); }
         Value getOutputTarget(size_t i) { return getOutputQubit(i); }
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static OperandRange getInputControls() { return {nullptr, 0}; }
         static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static ResultRange getOutputControls() { return {nullptr, 0}; }
+        ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];

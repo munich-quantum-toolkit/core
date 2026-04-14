@@ -78,14 +78,18 @@ public:
     ResultRange getOutputQubits() { return this->getOperation()->getResults(); }
 
     Value getInputTarget(const size_t i) { return getInputQubit(i); }
+    OperandRange getInputTargets() { return getInputQubits(); }
     Value getOutputTarget(const size_t i) { return getOutputQubit(i); }
+    ResultRange getOutputTargets() { return getOutputQubits(); }
 
     static Value getInputControl([[maybe_unused]] size_t i) {
       llvm::reportFatalUsageError("Operation does not have controls");
     }
+    static OperandRange getInputControls() { return {nullptr, 0}; }
     static Value getOutputControl([[maybe_unused]] size_t i) {
       llvm::reportFatalUsageError("Operation does not have controls");
     }
+    static ResultRange getOutputControls() { return {nullptr, 0}; }
 
     static size_t getNumParams() { return P; }
 
@@ -94,6 +98,9 @@ public:
         llvm::reportFatalUsageError("Parameter index out of bounds");
       }
       return this->getOperation()->getOperand(T + i);
+    }
+    ValueRange getParameters() {
+      return this->getOperation()->getOperands().slice(T, P);
     }
 
     Value getInputForOutput(Value output) {
