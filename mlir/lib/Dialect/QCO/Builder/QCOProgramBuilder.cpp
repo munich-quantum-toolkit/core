@@ -927,7 +927,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   auto updatedArgs = insertExtractedQubits(initArgs);
   // Create the empty while operation
   auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), updatedArgs);
-  const SmallVector<Location> locs(initArgs.size(), getLoc());
+  const llvm::SmallVector<Location> locs(initArgs.size(), getLoc());
 
   const OpBuilder::InsertionGuard guard(*this);
 
