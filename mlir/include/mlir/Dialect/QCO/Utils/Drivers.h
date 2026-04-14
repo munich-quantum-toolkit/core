@@ -92,10 +92,22 @@ using WalkUnitFn = function_ref<WalkResult(Operation*, const Qubits&)>;
  */
 void walkUnit(Region& region, WalkUnitFn fn);
 
-using ReleasedIterators = SmallVector<WireIterator*, 8>;
-using FrontArrayRef = ArrayRef<SmallVector<WireIterator*>>;
+using ReleasedOps = SmallVector<UnitaryOpInterface, 8>;
+
+using PendingWiresMap =
+    DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
+
+struct IsReady {
+  bool operator()(PendingWiresMap::value_type& kv) const {
+    return kv.second.size() == kv.first.getNumQubits();
+  }
+};
+
+using ReadyRange =
+    decltype(make_filter_range(std::declval<PendingWiresMap&>(), IsReady{}));
+
 using WalkCircuitGraphFn =
-    function_ref<WalkResult(FrontArrayRef, ReleasedIterators&)>;
+    function_ref<WalkResult(const ReadyRange&, ReleasedOps&)>;
 
 /**
  * @returns true if the wire iterator has not reached the end (Forward) or the
@@ -115,7 +127,7 @@ bool proceedOnWire(const WireIterator& it, WalkDirection direction);
  *
  * The signature of the callback function is:
  *
- *     (FrontArrayRef, ReleasedIterator&) -> WalkResult
+ *     (FrontArrayRef, ReleasedOps&) -> WalkResult
  *
  * The wire iterators inserted into the parameter "released" determine which
  * two-qubit gates are released in next iteration.

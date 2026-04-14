@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -31,24 +32,7 @@ namespace mlir::qco {
 
 using namespace mlir::qtensor;
 
-using PendingWiresMap =
-    DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
-
-/**
- * @brief Insert the unitary and the associated wire iterator into the pending
- * map.
- */
-static void insert(PendingWiresMap& map, UnitaryOpInterface op,
-                   WireIterator* wire) {
-  auto [it, inserted] = map.try_emplace(op);
-  auto& wires = it->second;
-
-  if (inserted) {
-    wires.reserve(op.getNumQubits());
-  }
-
-  wires.emplace_back(wire);
-}
+enum class CircuitWalkResult : std::uint8_t { Advance, Hold, Fail };
 
 bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
   if (direction == WalkDirection::Forward) {
@@ -142,107 +126,94 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
                                WalkDirection direction, WalkCircuitGraphFn fn) {
   const auto step = direction == WalkDirection::Forward ? 1 : -1;
 
-  ReleasedIterators released;
+  ReleasedOps released;
+
   PendingWiresMap pending;
-
-  SmallVector<SmallVector<WireIterator*>> front;
-
   pending.reserve(wires.size());
-  front.reserve((wires.size() + 1) / 2);
 
-  while (true) {
-    for (WireIterator& it : wires) {
-      while (proceedOnWire(it, direction)) {
+  SmallVector<WireIterator*> curr;
+  curr.reserve(wires.size());
+  for (auto& it : wires) {
+    curr.emplace_back(&it);
+  }
+
+  SmallVector<WireIterator*> next;
+  next.reserve(wires.size());
+
+  while (!curr.empty()) {
+    for (WireIterator* itP : curr) {
+      while (proceedOnWire(*itP, direction)) {
         const auto res =
-            TypeSwitch<Operation*, WalkResult>(it.operation())
-                .Case<BarrierOp>([&](BarrierOp op) {
-                  // If there are fewer wires than the qubit requires inputs,
-                  // it's impossible to release the operation. Hence, fail.
-                  if (op.getNumQubits() > wires.size()) {
-                    return WalkResult::skip();
-                  }
-
-                  // Insert the barrier to the pending map.
-                  // Release barrier directly.
-                  insert(pending, op, &it);
-                  if (pending[op].size() == op.getNumQubits()) {
-                    for (WireIterator* wire : pending[op]) {
-                      std::ranges::advance(*wire, step);
-                    }
-                    pending.erase(op);
-                    return WalkResult::advance();
-                  }
-
-                  return WalkResult::interrupt();
-                })
+            TypeSwitch<Operation*, CircuitWalkResult>(itP->operation())
                 .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-                  assert(op.getNumQubits() > 0 && op.getNumQubits() <= 2);
-
                   // If there are fewer wires than the qubit requires inputs,
                   // it's impossible to release the operation. Hence, fail.
                   if (op.getNumQubits() > wires.size()) {
-                    return WalkResult::skip();
+                    return CircuitWalkResult::Fail;
                   }
 
                   if (op.getNumQubits() == 1) {
-                    std::ranges::advance(it, step);
-                    return WalkResult::advance();
+                    std::ranges::advance(*itP, step);
+                    return CircuitWalkResult::Advance;
                   }
 
                   // Insert the unitary to the pending map.
                   // The caller decides if this op should be released.
-                  insert(pending, op, &it);
-                  if (pending[op].size() == op.getNumQubits()) {
-                    // Because pending may grow in size and invalidate keys
-                    // and values, we need to copy pending here.
-                    front.emplace_back(SmallVector(pending[op]));
-                    pending.erase(op);
+                  const auto [it, inserted] = pending.try_emplace(op);
+                  auto& wires = it->second;
+
+                  if (inserted) {
+                    wires.reserve(op.getNumQubits());
                   }
 
-                  return WalkResult::interrupt(); // Stop at two-qubit gate.
+                  wires.emplace_back(itP);
+
+                  return CircuitWalkResult::Hold; // Stop at multi-qubit gate.
                 })
                 .Case<AllocOp, StaticOp, ExtractOp, ResetOp, MeasureOp, SinkOp,
                       InsertOp>([&](auto) {
-                  std::ranges::advance(it, step);
-                  return WalkResult::advance();
+                  std::ranges::advance(*itP, step);
+                  return CircuitWalkResult::Advance;
                 })
                 .Default([&](Operation* op) {
                   const auto name = op->getName().getStringRef();
                   report_fatal_error("unknown op encountered: " + name);
-                  return WalkResult::interrupt();
+                  return CircuitWalkResult::Fail;
                 });
 
-        if (res.wasInterrupted()) {
+        if (res == CircuitWalkResult::Hold) {
           break;
         }
 
-        if (res.wasSkipped()) {
+        if (res == CircuitWalkResult::Fail) {
           return failure();
         }
       }
     }
 
-    if (all_of(wires, [&](const WireIterator& it) {
-          return !proceedOnWire(it, direction);
-        })) {
-      break;
-    }
-
     released.clear();
-    const auto res = std::invoke(fn, front, released);
+    const auto ready = make_filter_range(pending, IsReady{});
+    const auto res = std::invoke(fn, ready, released);
     if (res.wasInterrupted() || res.wasSkipped()) {
       return failure();
     }
 
-    for (WireIterator* it : released) {
-      assert(isa<UnitaryOpInterface>(it->operation()));
-      assert(!isa<BarrierOp>(it->operation()));
+    for (UnitaryOpInterface op : released) {
+      const auto& mapIt = pending.find(op);
+      assert(mapIt != pending.end());
 
-      std::ranges::advance(*it, step);
+      for (auto& it : wires) {
+        if (it.operation() == op) {
+          std::ranges::advance(it, step);
+          next.emplace_back(&it);
+        }
+      }
+
+      pending.erase(mapIt);
     }
 
-    front.clear();
-    pending.clear();
+    curr = std::move(next);
+    next.clear();
   }
 
   return success();

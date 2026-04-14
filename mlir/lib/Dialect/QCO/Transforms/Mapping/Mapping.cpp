@@ -549,6 +549,7 @@ private:
       if (failed(layoutRoute(wires, WalkDirection::Forward, trial))) {
         return;
       }
+
       if (failed(layoutRoute(wires, WalkDirection::Backward, trial))) {
         return;
       }
@@ -684,31 +685,29 @@ private:
     SmallVector<WireIterator> wires(base); // Work on local copy.
 
     std::ignore = walkCircuitGraph(
-        wires, direction,
-        [&](FrontArrayRef front, ReleasedIterators& released) {
+        wires, direction, [&](const ReadyRange& front, ReleasedOps& released) {
           if (front.empty()) {
             return WalkResult::advance();
           }
 
           // Construct layer from wire iterators.
           SmallVector<LayerItem> layer;
-          for (ArrayRef<WireIterator*> its : front) {
-            assert(its.size() == 2);
-            assert(its[0] != nullptr && its[1] != nullptr);
+          for (const auto& [op, its] : front) {
+            if (isa<BarrierOp>(op)) {
+              released.emplace_back(op);
+              continue;
+            }
 
             WireIterator& first = *its[0];
             WireIterator& second = *its[1];
 
-            assert(first.operation() == second.operation());
-
             const auto i0 = std::distance(wires.data(), &first);
             const auto i1 = std::distance(wires.data(), &second);
 
-            layer.emplace_back(first.operation(),
-                               std::make_pair(lookup(i0), lookup(i1)));
+            layer.emplace_back(op, std::make_pair(lookup(i0), lookup(i1)));
 
-            skipQubitPairBlock(first, second, direction);
-            released.append(its.begin(), its.end());
+            // skipQubitPairBlock(first, second, direction);
+            released.emplace_back(op);
           }
 
           // Append layer.
@@ -727,7 +726,7 @@ private:
       for (const auto& layer : window) {
         for (const auto& [op, progs] : layer) {
           const auto& [i0, i1] = progs;
-          llvm::dbgs() << op->getName() << "=(" << i0 << ", " << i1 << ") ";
+          llvm::dbgs() << "(" << i0 << ", " << i1 << ") ";
         }
         llvm::dbgs() << '\n';
       }
@@ -802,9 +801,8 @@ private:
     trial.nswaps = 0; // Reset the SWAP count.
 
     return walkCircuitGraph(
-        wires, direction,
-        [&](FrontArrayRef front, ReleasedIterators& released) {
-          if (front.empty()) {
+        wires, direction, [&](const ReadyRange& ready, ReleasedOps& released) {
+          if (ready.empty()) {
             return WalkResult::advance();
           }
 
@@ -828,13 +826,15 @@ private:
           }
 
           // Skip two-qubit blocks and release iterators.
-          for (ArrayRef<WireIterator*> its : front) {
-            WireIterator& first = *its[0];
-            WireIterator& second = *its[1];
+          for (const auto& [op, its] : ready) {
+            if (isa<BarrierOp>(op)) {
+              released.emplace_back(op);
+              continue;
+            }
 
-            if (readyOps.contains(first.operation())) {
-              skipQubitPairBlock(first, second, direction);
-              released.append(its.begin(), its.end());
+            if (readyOps.contains(op)) {
+              // skipQubitPairBlock(first, second, direction);
+              released.emplace_back(op);
             }
           }
 
@@ -866,10 +866,7 @@ private:
     DenseSet<Operation*> frontSet;
     frontSet.reserve((wires.size() + 1) / 2);
 
-    DenseMap<Operation*, SmallVector<WireIterator*, 2>> others;
-    others.reserve((wires.size() + 1) / 2);
-
-    const auto fn = [&](FrontArrayRef front, ReleasedIterators& released) {
+    const auto fn = [&](const ReadyRange& front, ReleasedOps& released) {
       if (front.empty()) {
         return WalkResult::advance();
       }
@@ -886,10 +883,13 @@ private:
       const auto& [readyOps, swaps] = searchResult.value();
 
       frontSet.clear();
-      for (ArrayRef<WireIterator*> its : front) {
-        assert(its.size() == 2);
-        assert(its[0]->operation() == its[1]->operation());
-        frontSet.insert(its[0]->operation());
+
+      for (const auto& [op, its] : front) {
+        if (isa<BarrierOp>(op)) {
+          released.emplace_back(op);
+          continue;
+        }
+        frontSet.insert(op);
       }
 
       // Prepare insertion points: Each wire iterator points at a two-qubit
@@ -938,31 +938,13 @@ private:
         assert(isa<SWAPOp>(second.operation()));
       }
 
-      // Find the iterators of the front gates after SWAP insertion. This is
-      // required because the replaceAllUsesExcept swaps wire iterators values.
-
-      others.clear();
       for (auto& it : wires) {
         std::ranges::advance(it, 1);
-
-        if (frontSet.contains(it.operation())) {
-          const auto [mapIt, inserted] =
-              others.try_emplace(it.operation(), SmallVector{&it});
-          if (!inserted) {
-            mapIt->second.emplace_back(&it);
-          }
-        }
       }
 
       // Skip two-qubit blocks and release iterators.
-      for (const auto& its : others.values()) {
-        WireIterator& first = *its[0];
-        WireIterator& second = *its[1];
-
-        if (readyOps.contains(first.operation())) {
-          skipQubitPairBlock(first, second, direction);
-          released.append(its.begin(), its.end());
-        }
+      for (Operation* ready : readyOps) {
+        released.emplace_back(ready);
       }
 
       return WalkResult::advance();
