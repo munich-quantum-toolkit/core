@@ -302,6 +302,8 @@ static void assignMappedTensor(LoweringState& state, Operation* anchor,
       it->second = tensor;
       return;
     }
+    frame.currentQubits.try_emplace(memref, tensor);
+    return;
   }
 
   auto [tensorMap, tensorValue] =
@@ -369,7 +371,8 @@ static void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
   }
 }
 
-/** @brief Pushes a new modifier frame seeded with aliased target values. */
+/** @brief Pushes a new modifier frame seeded with aliased target values with
+ * registers */
 static void pushModifierFrameWithRegisters(LoweringState& state,
                                            ValueRange qcTargets,
                                            ValueRange memrefs,
@@ -491,7 +494,7 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
 }
 
 /**
- * @brief Recursively collects all the QC qubit and memref references used by an
+ * @brief Collects all the QC qubit and memref references used by an scf
  * operation and store them in the maps
  *
  * @param op The operation that is currently traversed
@@ -500,7 +503,7 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
  * references
  */
 static std::pair<llvm::SetVector<Value>, llvm::SetVector<Value>>
-collectUniqueQubits(Operation* op, LoweringState* state) {
+collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
   // Get the regions of the current operation
   const auto& regions = op->getRegions();
   SetVector<Value> uniqueQubits;
@@ -520,7 +523,8 @@ collectUniqueQubits(Operation* op, LoweringState* state) {
     for (auto& operation : region.front().getOperations()) {
       // Recursively walk through nested regions
       if (operation.getNumRegions() > 0) {
-        auto [qubits, registers] = collectUniqueQubits(&operation, state);
+        auto [qubits, registers] =
+            collectQubitValuesInsideSCFOps(&operation, state);
         regionQubitMap.set_union(qubits);
         // Remove duplicate qubits
         regionQubitMap.remove_if(
@@ -733,7 +737,9 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     } else {
       qubitInfoMap[parentRegion][qcQubit] = info;
     }
+
     state.extractedQubits[parentRegion][memref].insert(qcQubit);
+
     rewriter.eraseOp(op);
 
     return success();
@@ -1248,7 +1254,6 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
     // Insert the extracted qubits back to the registers that are used inside
     // the ForOp
     insertAllExtractedQubits(state, operation, rewriter);
-
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new ForOp
@@ -1329,7 +1334,6 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
     // Insert the extracted qubits back to the registers that are used inside
     // the WhileOp
     insertAllExtractedQubits(state, operation, rewriter);
-
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new WhileOp
@@ -1379,7 +1383,7 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
 };
 
 /**
- * @brief Converts scf.if with memory semantics to qco.if
+ * @brief Converts scf.if to qco.if
  *
  * @par Example:
  * ```mlir
@@ -1414,7 +1418,6 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     // Insert the extracted qubits back to the registers that are used inside
     // the IfOp
     insertAllExtractedQubits(state, operation, rewriter);
-
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new IfOp
@@ -1447,7 +1450,6 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     SmallVector<Value, 8> qubitVector(qubitMap.begin(), qubitMap.end());
     SmallVector<Value, 8> registers(registerMap.begin(), registerMap.end());
 
-    // If the else block is empty, just create the new qco::YieldOp
     if (!op.getElseRegion().empty()) {
       elseBlock->getOperations().splice(
           elseBlock->end(), op.getElseRegion().front().getOperations());
@@ -1457,6 +1459,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
           elseRegion.getArguments().take_front(numRegisters));
 
     } else {
+      // If the else block is empty, just create the new qco::YieldOp
       rewriter.setInsertionPointToEnd(elseBlock);
       auto elseYield = qco::YieldOp::create(rewriter, op->getLoc(),
                                             elseBlock->getArguments());
@@ -1533,8 +1536,8 @@ struct ConvertSCFConditionOp final
     auto* operation = op.getOperation();
 
     insertAllExtractedQubits(state, op.getOperation(), rewriter);
-
     SmallVector<Value> targets = resolveAllValues(state, operation);
+
     rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
                                                   targets);
     popModifierFrame(state);
@@ -1573,10 +1576,12 @@ protected:
 
     // Create state object to track qubit value flow
     LoweringState state;
-    collectUniqueQubits(module, &state);
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
+
+    // Get the qubit values inside the scf ops
+    collectQubitValuesInsideSCFOps(module, &state);
 
     // Configure conversion target
     target.addIllegalDialect<QCDialect>();

@@ -120,14 +120,15 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 Value QCProgramBuilder::memrefLoad(QubitRegister& memref,
                                    const std::variant<int64_t, Value>& index) {
   auto param = variantToValue(*this, getLoc(), index);
-  auto intValue = getConstantIntValue(param);
+  auto constantIntValue = getConstantIntValue(param);
 
-  if (intValue && *intValue >= memref.qubits.size()) {
+  if (constantIntValue && *constantIntValue >= memref.qubits.size()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");
   }
 
-  auto load = memref::LoadOp::create(*this, memref.value, param);
-  return load.getResult();
+  auto loadOp = memref::LoadOp::create(*this, memref.value, param);
+
+  return loadOp.getResult();
 }
 
 QCProgramBuilder::ClassicalRegister
@@ -467,7 +468,7 @@ QCProgramBuilder&
 QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
                          const std::variant<int64_t, Value>& upperbound,
                          const std::variant<int64_t, Value>& step,
-                         const std::function<void(Value)>& body) {
+                         const llvm::function_ref<void(Value)>& body) {
   checkFinalized();
 
   const auto loc = getLoc();
@@ -487,8 +488,8 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
 }
 
 QCProgramBuilder&
-QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
-                           const std::function<void()>& afterBody) {
+QCProgramBuilder::scfWhile(const llvm::function_ref<void()>& beforeBody,
+                           const llvm::function_ref<void()>& afterBody) {
   checkFinalized();
 
   scf::WhileOp::create(
@@ -510,8 +511,8 @@ QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
 
 QCProgramBuilder&
 QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
-                        const std::function<void()>& thenBody,
-                        std::optional<std::function<void()>> elseBody) {
+                        const llvm::function_ref<void()>& thenBody,
+                        const llvm::function_ref<void()>& elseBody) {
   checkFinalized();
 
   const auto condition = utils::variantToValue(*this, getLoc(), cond);
@@ -535,7 +536,7 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
         [&](OpBuilder& b, Location loc) {
           const OpBuilder::InsertionGuard guard(*this);
           setInsertionPointToStart(b.getInsertionBlock());
-          (*elseBody)();
+          elseBody();
           scf::YieldOp::create(b, loc);
         });
   }

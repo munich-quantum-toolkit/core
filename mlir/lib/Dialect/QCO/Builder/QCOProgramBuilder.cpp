@@ -234,15 +234,16 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
 
 /** @brief Helper function to check if every value is a qubit value*/
 static void checkQubitType(ValueRange values) {
-  for (auto type : values.getTypes()) {
-    if (!llvm::isa<QubitType>(type)) {
-      {
-        auto tensor = dyn_cast<RankedTensorType>(type);
-        if (!tensor || !llvm::isa<QubitType>(tensor.getElementType())) {
-          llvm::reportFatalUsageError("Elements must be qubit values");
-        }
-      }
+  for (Type type : values.getTypes()) {
+    if (llvm::isa<QubitType>(type)) {
+      continue;
     }
+    if (auto tensor = llvm::dyn_cast<RankedTensorType>(type);
+        tensor && llvm::isa<QubitType>(tensor.getElementType())) {
+      continue;
+    }
+
+    llvm::reportFatalUsageError("Elements must be qubit values");
   }
 }
 
@@ -1069,9 +1070,7 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
   checkQubitType(yieldedValues);
 
   scf::ConditionOp::create(*this, condition, yieldedValues);
-  for (auto yieldedValue : yieldedValues) {
-    validQubits.erase(yieldedValue);
-  }
+
   return *this;
 }
 //===----------------------------------------------------------------------===//
@@ -1150,8 +1149,6 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     auto currentTensor = tensor;
     // Filter out qubits belonging to this tensor
     for (auto& [qubit, qubitInfo] : qubitsByRegister[tensorInfo.regId]) {
-      // auto indexValue = constantFromScalar(*this, getLoc(),
-      // qubitInfo.regIndex);
       currentTensor = qtensor::InsertOp::create(*this, qubit, currentTensor,
                                                 qubitInfo.regIndex)
                           .getResult();

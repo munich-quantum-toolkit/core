@@ -1288,7 +1288,7 @@ public:
    * });
    * ```
    * ```mlir
-   * %q1 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0)
+   * %q2 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0)
    * -> (tensor<3x!qco.qubit>) {
    *   %outTensor, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
    *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
@@ -1316,8 +1316,8 @@ public:
    * ```c++
    * builder.scfWhile(args, [&](ValueRange iterArgs) -> llvm::SmallVector<Value>
    * {
-   *   auto [q0, measureRes] = builder.measure(iterArgs[0]);
-   *   builder.scfCondition(measureRes, q0);
+   *   auto [q0, cond] = builder.measure(iterArgs[0]);
+   *   builder.scfCondition(cond, q0);
    *   return {q0};
    * }, [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
    *   auto q0 = builder.h(iterArgs[0]);
@@ -1325,7 +1325,7 @@ public:
    * });
    * ```
    * ```mlir
-   * %q1 = scf.while (%arg0 = %q0): (!qco.qubit) -> (!qco.qubit) {
+   * %q2 = scf.while (%arg0 = %q0): (!qco.qubit) -> (!qco.qubit) {
    *   %q1, %cond = qco.measure %arg0 : !qco.qubit
    *   scf.condition(%cond) %q1 : !qco.qubit
    * } do {
@@ -1343,7 +1343,7 @@ public:
   /**
    * @brief Construct a scf.condition operation with yielded values
    *
-   * @param condition Condition for condition operation
+   * @param condition Condition for the condition operation
    * @param yieldedValues ValueRange of the yieldedValues
    * @return Reference to this builder for method chaining
    *
@@ -1450,11 +1450,11 @@ private:
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
   /**
-   * @brief Updates the latest QCO values after inserting all extracted qubits
-   * back to the tensor. This also tracks which qubits were inserted
-   * @param updatedArgs Vector to store the updated arguments
-   * @param insertedQubits Map to store the inserted qubits
-   * @param initArgs The initial values
+   * @brief Updates the latest QCO values of the initial values after inserting
+   * all extracted qubits back to the tensor.
+   * @param initArgs ValueRange of the initial QCO values
+   * @return SmallVector of the updated values after inserting the qubits back
+   * to the tensors.
    */
   SmallVector<Value> insertExtractedQubits(ValueRange initArgs);
 

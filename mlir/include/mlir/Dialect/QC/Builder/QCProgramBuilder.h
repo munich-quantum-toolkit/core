@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -990,7 +988,7 @@ public:
   QCProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
                            const std::variant<int64_t, Value>& upperbound,
                            const std::variant<int64_t, Value>& step,
-                           const std::function<void(Value)>& body);
+                           const llvm::function_ref<void(Value)>& body);
 
   /**
    * @brief Construct a scf.while operation
@@ -1019,8 +1017,8 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& scfWhile(const std::function<void()>& beforeBody,
-                             const std::function<void()>& afterBody);
+  QCProgramBuilder& scfWhile(const llvm::function_ref<void()>& beforeBody,
+                             const llvm::function_ref<void()>& afterBody);
 
   /**
    * @brief Construct a scf.if operation
@@ -1043,15 +1041,14 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder&
-  scfIf(const std::variant<bool, Value>& condition,
-        const std::function<void()>& thenBody,
-        std::optional<std::function<void()>> elseBody = std::nullopt);
+  QCProgramBuilder& scfIf(const std::variant<bool, Value>& condition,
+                          const llvm::function_ref<void()>& thenBody,
+                          const llvm::function_ref<void()>& elseBody = nullptr);
 
   /**
    * @brief Construct a scf.condition operation
    *
-   * @param condition Condition for condition operation
+   * @param condition Condition for the condition operation
    * @return Reference to this builder for method chaining
    *
    * @par Example:

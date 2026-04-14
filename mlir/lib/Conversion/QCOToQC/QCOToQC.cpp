@@ -64,10 +64,10 @@ enum class AllocationMode : std::uint8_t {
  * catch cases of mixed allocation modes being used, which is not supported.
  */
 struct LoweringState {
-  /// Per-region map from its QC register to its already extracted indices
+  /// Per-region map from from QC registers to its already extracted indices
   llvm::DenseMap<Region*, llvm::DenseMap<Value, SetVector<Value>>>
       extractedIndices;
-  /// Per-register map from its index to its extracted QC qubit
+  /// Per-register map from QC qubit indices to its extracted QC qubits
   llvm::DenseMap<Value, llvm::DenseMap<Value, Value>> qubitValues;
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -112,9 +112,19 @@ private:
 } // namespace
 
 /**
- * @brief Inline the block from one region into another and replace a number of
- * blockarguments with the replacement values at the given offset and remove
- * them from the block.
+ * @brief Moves the operations from one region into another.
+ *
+ * @details Moves the operations from the source region into the target region.
+ * The target region replaces the uses of the old blockarguments with the
+ * replacementValues and erases the unused blockarguments.
+ *
+ * @param sourceRegion Source region where the operations are moved from
+ * @param targetRegion Target region where the operations are moved to
+ * @param offset Offset to the arguments that are dropped
+ * @param numArgs Number of arguments that are dropped
+ * @param replacementValues Values to replace the uses of the arguments
+ * @param rewriter PatternRewriter of the current conversion pass
+ *
  */
 static void inlineRegion(Region& sourceRegion, Region& targetRegion,
                          unsigned int offset, unsigned int numArgs,
@@ -233,16 +243,19 @@ struct ConvertQTensorExtractOp final
     auto memref = adaptor.getTensor();
     auto index = adaptor.getIndex();
 
-    auto extractedIndices = state.extractedIndices[region][memref];
+    // Reuse the already existing extracted qubit if it exists
+    auto& extractedIndices = state.extractedIndices[region][memref];
+    auto& qubitValues = state.qubitValues[memref];
     if (extractedIndices.contains(index)) {
-      rewriter.replaceOp(op, {memref, state.qubitValues[memref][index]});
+      rewriter.replaceOp(op, {memref, qubitValues[index]});
       return success();
     }
 
     auto load = memref::LoadOp::create(rewriter, op.getLoc(), memref, index)
                     .getResult();
-    state.extractedIndices[region][memref].insert(index);
-    state.qubitValues[memref].try_emplace(index, load);
+    // Store the extracted qubit and index
+    extractedIndices.insert(index);
+    qubitValues.try_emplace(index, load);
 
     rewriter.replaceOp(op, {memref, load});
     return success();
