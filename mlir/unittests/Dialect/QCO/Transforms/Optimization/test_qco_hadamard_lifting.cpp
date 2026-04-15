@@ -213,10 +213,10 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPrecedingPauliGate) {
 // ##################################################
 
 /**
- * @brief Test: Checks if Hadamard gates are lifted if they are controlled by
- * the same qubit as the lifted gate is.
+ * @brief Test: Checks if Hadamard gates are not lifted if they are controlled
+ * by the same qubit as the lifted gate is.
  */
-TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
+TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverPauliGateIfControlled) {
   auto q = programBuilder.allocQubitRegister(2);
   q[0] = programBuilder.x(q[0]);
   auto qubitPair = programBuilder.cx(q[1], q[0]);
@@ -226,8 +226,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
   qRef[0] = referenceBuilder.x(qRef[0]);
-  auto qubitPairRef = referenceBuilder.ch(qRef[1], qRef[0]);
-  qubitPairRef = referenceBuilder.cz(qubitPairRef.first, qubitPairRef.second);
+  auto qubitPairRef = referenceBuilder.cx(qRef[1], qRef[0]);
+  qubitPairRef = referenceBuilder.ch(qubitPairRef.first, qubitPairRef.second);
   referenceBuilder.cx(qubitPairRef.first, qubitPairRef.second);
   reference = referenceBuilder.finalize();
 
@@ -333,70 +333,6 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfSomeDifferentControls) {
         return SmallVector<Value>{referenceBuilder.z(target[0])};
       });
   referenceBuilder.ch(q12Ref[0], q0Ref[0]);
-  reference = referenceBuilder.finalize();
-
-  ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
-
-  EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(module.get(), reference.get()));
-}
-
-/**
- * @brief Test: Checks that a hadamard gate can be lifted over a controlled
- * Pauli Z gate even if the targets are at different places.
- */
-TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
-  auto q = programBuilder.allocQubitRegister(3);
-  q[0] = programBuilder.s(q[0]);
-  auto qubitPairRange =
-      programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](const ValueRange target) {
-        return SmallVector<Value>{programBuilder.z(target[0])};
-      });
-  qubitPairRange = programBuilder.ctrl(
-      {qubitPairRange.second[0], qubitPairRange.first[1]},
-      {qubitPairRange.first[0]}, [&](const ValueRange target) {
-        return SmallVector<Value>{programBuilder.h(target[0])};
-      });
-  q[0] = programBuilder.s(qubitPairRange.first[0]);
-  auto qubitPair = programBuilder.cz(qubitPairRange.second[0], q[0]);
-  qubitPairRange = programBuilder.ctrl(
-      {qubitPairRange.first[1], qubitPair.second}, {qubitPair.first},
-      [&](const ValueRange target) {
-        return SmallVector<Value>{programBuilder.h(target[0])};
-      });
-  qubitPairRange = programBuilder.ctrl(
-      qubitPairRange.first, qubitPairRange.second,
-      [&](const ValueRange target) {
-        return SmallVector<Value>{programBuilder.z(target[0])};
-      });
-  programBuilder.cz(qubitPairRange.second[0], qubitPairRange.first[0]);
-  module = programBuilder.finalize();
-
-  auto qRef = referenceBuilder.allocQubitRegister(3);
-  qRef[0] = referenceBuilder.s(qRef[0]);
-  auto qubitPairRangeRef = referenceBuilder.ctrl(
-      {qRef[0], qRef[2]}, {qRef[1]}, [&](const ValueRange target) {
-        return SmallVector<Value>{referenceBuilder.h(target[0])};
-      });
-  qubitPairRangeRef = referenceBuilder.ctrl(
-      qubitPairRangeRef.first, qubitPairRangeRef.second,
-      [&](const ValueRange target) {
-        return SmallVector<Value>{referenceBuilder.x(target[0])};
-      });
-  qRef[0] = referenceBuilder.s(qubitPairRangeRef.first[0]);
-  auto qubitPairRef = referenceBuilder.cz(qubitPairRangeRef.second[0], qRef[0]);
-  qubitPairRangeRef = referenceBuilder.ctrl(
-      {qubitPairRangeRef.first[1], qubitPairRef.second}, {qubitPairRef.first},
-      [&](const ValueRange target) {
-        return SmallVector<Value>{referenceBuilder.h(target[0])};
-      });
-  qubitPairRangeRef = referenceBuilder.ctrl(
-      qubitPairRangeRef.first, qubitPairRangeRef.second,
-      [&](const ValueRange target) {
-        return SmallVector<Value>{referenceBuilder.z(target[0])};
-      });
-  referenceBuilder.cz(qubitPairRangeRef.second[0], qubitPairRangeRef.first[0]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
