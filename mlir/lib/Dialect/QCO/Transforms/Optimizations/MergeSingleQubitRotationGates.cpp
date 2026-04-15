@@ -112,8 +112,6 @@ struct MergeSingleQubitRotationGatesPattern final
    * @return A Constants struct with all pre-built constant ops
    */
   static Constants createConstants(Location loc, PatternRewriter& rewriter) {
-    // MLIR types are pointer-sized wrappers;
-    // slicing FloatType to Type is safe and intentional.
     return {
         .negOne = arith::ConstantFloatOp::create(
             rewriter, loc, rewriter.getF64Type(), APFloat(-1.0)),
