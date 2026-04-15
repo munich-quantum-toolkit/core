@@ -362,7 +362,9 @@ struct ConvertQTensorAllocOp final
     } else {
       size = adaptor.getSize();
     }
-    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, size);
+    auto qregType =
+        jeff::QuregType::get(rewriter.getContext(), op.getType().getShape()[0]);
+    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, qregType, size);
     return success();
   }
 };
@@ -1069,7 +1071,7 @@ public:
 
     addConversion([ctx](RankedTensorType type) -> Type {
       if (llvm::isa<QubitType>(type.getElementType())) {
-        return jeff::QuregType::get(ctx);
+        return jeff::QuregType::get(ctx, type.getShape()[0]);
       }
       return type;
     });
