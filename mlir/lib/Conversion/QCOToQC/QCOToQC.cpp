@@ -133,6 +133,9 @@ static void inlineRegion(Region& sourceRegion, Region& targetRegion,
                          unsigned int offset, unsigned int numArgs,
                          ValueRange replacementValues,
                          ConversionPatternRewriter& rewriter) {
+  assert(replacementValues.size() == numArgs &&
+         "replacementValues size must match numArgs");
+
   rewriter.inlineRegionBefore(sourceRegion, targetRegion, targetRegion.end());
   auto& block = targetRegion.front();
 

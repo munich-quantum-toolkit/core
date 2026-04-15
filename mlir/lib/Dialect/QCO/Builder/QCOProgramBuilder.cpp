@@ -198,6 +198,15 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 
 llvm::SmallVector<Value>
 QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
+  // Gather all used tensor ids first
+  llvm::DenseSet<int64_t> tensorRegIds;
+  for (auto initArg : initArgs) {
+    if (!llvm::isa<QubitType>(initArg.getType())) {
+      validateTensorValue(initArg);
+      tensorRegIds.insert(validTensors.find(initArg)->second.regId);
+    }
+  }
+
   llvm::SmallVector<Value> updatedArgs;
   updatedArgs.reserve(initArgs.size());
 
@@ -205,10 +214,17 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
   // arguments
   for (auto initArg : initArgs) {
     if (llvm::isa<QubitType>(initArg.getType())) {
+      // Check if the qubits are from one of the used tensors
+      auto it = validQubits.find(initArg);
+      if (it != validQubits.end() && it->second.regId != -1 &&
+          tensorRegIds.contains(it->second.regId)) {
+        llvm::reportFatalUsageError(
+            "Cannot pass a register and one of its extracted qubits "
+            "to the same region");
+      }
       // Directly insert qubits
       updatedArgs.emplace_back(initArg);
     } else {
-      validateTensorValue(initArg);
       // For tensors check if you have to insert qubits first
       const auto regId = validTensors[initArg].regId;
       auto currentTensor = initArg;
