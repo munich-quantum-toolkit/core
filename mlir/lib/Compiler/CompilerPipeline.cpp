@@ -141,7 +141,6 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
         if (config_.hadamardLifting) {
           pm.addPass(qco::createHadamardLifting());
         }
-        populateQCOCleanupPipeline(pm);
       }))) {
     return failure();
   }

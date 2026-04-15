@@ -79,7 +79,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "This pass attempts to move Hadamard gates as far away from "
-                "measurements as possible by flipping them "
+                "measurements as possible by commuting them "
                 "with Pauli gates. Additionally, it can change target and "
                 "control qubits from Pauli-Z gates to make "
                 "Hadamard lifting applicable. It also lifts Hadamard gates "

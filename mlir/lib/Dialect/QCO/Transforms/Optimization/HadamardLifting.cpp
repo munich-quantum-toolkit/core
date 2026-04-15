@@ -48,11 +48,11 @@ namespace {
 
 /**
  * @brief This pattern changes the target of a controlled Pauli Z gate if a
- * controlled hadamard gate is it successor.
+ * controlled Hadamard gate is it successor.
  * If all out qubits of Pauli Z are equal to all in qubits of Hadamard, we can
  * commute the gates and change Pauli Z to X. This is only possible if Hadamard
  * and Pauli act on the same qubit as target. If the target of the Pauli gate is
- * a ctrl at the hadamard and vice versa, we can change the target of Pauli Z to
+ * a control at the hadamard and vice versa, we can change the target of Pauli Z to
  * the Hadamard's. This is done in this pattern.
  */
 struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
@@ -130,20 +130,16 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
                                 PatternRewriter& rewriter) const override {
     // op needs to be a Pauli Z gate and controlled
     std::string opName = op.getBodyUnitary()->getName().stripDialect().str();
-    if (op.getNumTargets() != 1 || opName != "z") {
+    if (opName != "z") {
       return failure();
     }
 
     // op needs to be in front of a controlled hadamard gate
-    const auto& users = op->getUsers();
-    if (users.empty()) {
-      return failure();
-    }
-    auto* const user = *users.begin();
+    auto* const user = *op->getUsers().begin();
     if (user->getName().stripDialect().str() != "ctrl") {
       return failure();
     }
-    auto hadamardGate = llvm::dyn_cast<CtrlOp>(user);
+    auto hadamardGate = llvm::cast<CtrlOp>(user);
     if (hadamardGate.getNumTargets() != 1 ||
         hadamardGate.getBodyUnitary()->getName().stripDialect().str() != "h") {
       return failure();
@@ -192,7 +188,7 @@ struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
  * - Y - H - = - H - Y -
  * - Z - H - = - H - X -
  * This is applied to uncontrolled gates and controlled ones, if the controls
- * are applied to the same qubits for both gates and the Pauli gates are X or Y.
+ * are applied to the same qubits for both gates and the Pauli gates are X or Z.
  * In case of Pauli Y, the routine is only applied to uncontrolled gates, as
  * HY = -YH, which leads to a relative phase if the Hadamard and Pauli gate are
  * controlled.
@@ -203,7 +199,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
       : OpInterfaceRewritePattern(context) {}
 
   /**
-   * This method checks whether the first and second controls are controlled by
+   * This method checks whether the first and second operations are controlled by
    * the same qubits.
    *
    * @param firstCtrl The first (preceding) controlled gate.
@@ -238,7 +234,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
    * @return success() if circuit was changed, failure() otherwise
    */
   static LogicalResult swapPauliWithHadamard(UnitaryOpInterface gate,
-                                             UnitaryOpInterface hadamardGate,
+                                             HOp hadamardGate,
                                              const bool controlled,
                                              PatternRewriter& rewriter) {
     const auto gateName = gate->getName().stripDialect().str();
@@ -331,7 +327,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
 };
 
 /**
- * @brief This pattern remove an H gate between a CNOT and a measurement.
+ * @brief This pattern removes an H gate between a CNOT and a measurement.
  *
  * If there is a Hadamard gate between the target qubit of a CNOT and a
  * measurement, we flip the CNOT and apply a hadamard gate to the incoming and
@@ -339,7 +335,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
  * of a CNOT ctrl, which is beneficial for the qubit reuse routine.
  * The procedure also works if there are additional ctrls. Only the target
  * and ctrl involved in the transformation get hadamard gates assigned.
- * For now, the involved ctrl to be flipped with the target is chosen randomly.
+ * The involved ctrl to be flipped with the target is chosen randomly.
  */
 struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
 
