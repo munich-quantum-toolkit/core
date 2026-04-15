@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
 
+#include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
@@ -18,7 +19,10 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/Support/Allocator.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
@@ -30,13 +34,13 @@
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
@@ -45,9 +49,9 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <string>
 #include <utility>
 
@@ -61,31 +65,61 @@ using namespace qir;
 
 namespace {
 
+/** @brief Qubit allocation mode */
+enum class AllocationMode : std::uint8_t {
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
+};
+
 /**
  * @brief State object for tracking lowering information during QIR conversion
- *
- * @details
- * This struct maintains state during the conversion of QC dialect
- * operations to QIR (Quantum Intermediate Representation). It tracks:
- * - Qubit and result counts for QIR metadata
- * - Pointer value caching for reuse
- * - Whether dynamic memory management is needed
- * - Sequence of measurements for output recording
  */
 struct LoweringState : QIRMetadata {
-  /// Map from register name to register start index
-  DenseMap<StringRef, int64_t> registerStartIndexMap;
+  /// Cache static qubit pointers for reuse
+  DenseMap<int64_t, Value> staticQubits;
 
-  /// Map from index to pointer value for reuse
-  DenseMap<int64_t, Value> ptrMap;
+  /// Cache MemRef sizes for reuse
+  DenseMap<Value, Value> memrefSizes;
 
-  /// Map from (register_name, register_index) to result pointer
-  /// This allows caching result pointers for measurements with register info
-  DenseMap<std::pair<StringRef, int64_t>, Value> registerResultMap;
+  /// Map from register name to result-array pointer
+  llvm::StringMap<Value> resultArrays;
+
+  /// Map from (register name, index) to loaded result
+  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> loadedResults;
+
+  /// Map from index to result pointer for non-register results
+  DenseMap<int64_t, Value> resultPtrs;
 
   /// Modifier information
   int64_t inCtrlOp = 0;
   DenseMap<int64_t, SmallVector<Value>> controls;
+
+  /// Allocator and StringSaver for stable StringRefs
+  llvm::BumpPtrAllocator allocator;
+  llvm::StringSaver stringSaver{allocator};
+
+  /// Block information
+  Block* entryBlock{};
+  Block* measurementsBlock{};
+  Block* outputBlock{};
+
+  /// The qubit allocation mode used in the module
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = requestedMode;
+      return success();
+    }
+    if (allocationMode == requestedMode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in conversion");
+  }
 };
 
 /**
@@ -185,7 +219,108 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   return success();
 }
 
+/**
+ * @brief Generic converter for unitary QC ops to QIR calls.
+ *
+ * @details
+ * Many QC gates lower to a QIR runtime call where the callee name depends on
+ * the number of active controls. This helper factors out that boilerplate
+ * without relying on preprocessor macros.
+ *
+ * @par Examples
+ * The examples below illustrate the lowering shapes for unitary gates that
+ * are registered through `MQT_GATE_TABLE` in `populateQCToQIRPatterns`.
+ *
+ * @par One target, zero parameters
+ * ```mlir
+ * qc.x %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
+ * ```
+ *
+ * @par One target, one parameter
+ * ```mlir
+ * qc.rx(%theta) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+ * ```
+ *
+ * @par One target, two parameters
+ * ```mlir
+ * qc.r(%theta, %phi) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__r__body(%q, %theta, %phi) : (!llvm.ptr, f64, f64)
+ * -> ()
+ * ```
+ *
+ * @par One target, three parameters
+ * ```mlir
+ * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__u3__body(%q, %theta, %phi, %lambda)
+ *     : (!llvm.ptr, f64, f64, f64) -> ()
+ * ```
+ *
+ * @par Two targets, zero parameters
+ * ```mlir
+ * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
+ * ()
+ * ```
+ *
+ * @par Two targets, one parameter
+ * ```mlir
+ * qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__rxx__body(%q0, %q1, %theta)
+ *     : (!llvm.ptr, !llvm.ptr, f64) -> ()
+ * ```
+ *
+ * @par Two targets, two parameters
+ * ```mlir
+ * qc.xx_plus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__xx_plus_yy__body(%q0, %q1, %theta, %beta)
+ *     : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
+ * ```
+ *
+ * @tparam OpType The QC operation type to convert
+ * @tparam NumTargets Number of target qubits for this operation
+ * @tparam NumParams Number of floating-point parameters for this operation
+ * @tparam GetFnName Function that maps numCtrls -> QIR function name
+ */
 namespace {
+template <typename OpType, std::size_t NumTargets, std::size_t NumParams,
+          auto GetFnName>
+struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
+  using StatefulOpConversionPattern<OpType>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(OpType op, OpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    const auto inCtrlOp = state.inCtrlOp;
+    const size_t numCtrls = inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;
+    const auto fnName = GetFnName(numCtrls);
+    return convertUnitaryToCallOp(op, adaptor, rewriter, this->getContext(),
+                                  state, fnName, NumTargets, NumParams);
+  }
+};
 
 /**
  * @brief Type converter for lowering QC dialect types to LLVM types
@@ -195,25 +330,187 @@ namespace {
  *
  * Type conversions:
  * - `!qc.qubit` -> `!llvm.ptr` (opaque pointer to qubit in QIR)
+ * - `memref<?x!qc.qubit>` -> `!llvm.ptr` (opaque pointer to array in QIR)
  */
 struct QCToQIRTypeConverter final : LLVMTypeConverter {
   explicit QCToQIRTypeConverter(MLIRContext* ctx) : LLVMTypeConverter(ctx) {
     // Convert QubitType to LLVM pointer (QIR uses opaque pointers for qubits)
     addConversion(
         [ctx](QubitType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
+
+    addConversion([ctx](MemRefType type) -> Type {
+      if (llvm::isa<QubitType>(type.getElementType())) {
+        return LLVM::LLVMPointerType::get(ctx);
+      }
+      return type;
+    });
   }
 };
 
 /**
- * @brief Converts qc.alloc operation to static QIR qubit allocations
+ * @brief Converts memref.alloc to QIR qubit-array allocation
  *
- * @details
- * QIR 2.0 does not support dynamic qubit allocation. Therefore, qc.alloc
- * operations are converted to static qubit references using inttoptr with a
- * constant index.
+ * @par Example:
+ * ```mlir
+ * %memref = memref.alloc() : memref<3x!qc.qubit>
+ * ```
+ * becomes:
+ * ```mlir
+ * %zero = llvm.mlir.zero : !llvm.ptr
+ * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
+ * llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
+ * (i64, !llvm.ptr, !llvm.ptr) -> ()
+ * ```
+ */
+struct ConvertMemRefAllocOp final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto shape = op.getType().getShape();
+    if (shape.size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
+    }
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
+
+    auto& state = getState();
+    state.useDynamicQubit = true;
+
+    auto* ctx = getContext();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+
+    auto fnSig =
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
+                                    {rewriter.getI64Type(), ptrType, ptrType});
+    auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
+                                                QIR_QUBIT_ARRAY_ALLOC, fnSig);
+
+    Value size;
+    if (shape[0] == ShapedType::kDynamic) {
+      size = adaptor.getDynamicSizes()[0];
+    } else {
+      size = LLVM::ConstantOp::create(
+                 rewriter, op.getLoc(),
+                 rewriter.getI64IntegerAttr(static_cast<int64_t>(shape[0])))
+                 .getResult();
+    }
+    state.memrefSizes.try_emplace(op.getMemref(), size);
+
+    auto array =
+        LLVM::AllocaOp::create(rewriter, op.getLoc(), ptrType, ptrType, size);
+    auto zero = LLVM::ZeroOp::create(rewriter, op.getLoc(), ptrType);
+    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
+                         ValueRange{size, array.getResult(), zero.getResult()});
+
+    rewriter.replaceOp(op, array.getResult());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts memref.load to llvm.load
  *
- * Register metadata (register_name, register_size, register_index) is used to
- * provide a reasonable guess for a static qubit index that is still free.
+ * @par Example:
+ * ```mlir
+ * %q = memref.load %memref[%c1] : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %ptr = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr
+ * %q = llvm.load %ptr : !llvm.ptr -> !llvm.ptr
+ * ```
+ */
+struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto shape = op.getMemref().getType().getShape();
+    if (shape.size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
+    }
+
+    auto* ctx = getContext();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+
+    auto array = adaptor.getMemref();
+    auto index = adaptor.getIndices()[0];
+    auto gep = LLVM::GEPOp::create(rewriter, op.getLoc(), ptrType, ptrType,
+                                   array, index);
+    auto load =
+        LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType, gep.getResult());
+
+    rewriter.replaceOp(op, load.getResult());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts memref.dealloc to QIR qubit-array release
+ *
+ * @par Example:
+ * ```mlir
+ * memref.dealloc %memref : memref<3x!qc.qubit>
+ * ```
+ * becomes:
+ * ```mlir
+ * llvm.call @"@__quantum__rt__qubit_array_release"(%c3, %alloca) : (i64,
+ * !llvm.ptr) -> ()
+ * ```
+ */
+struct ConvertMemRefDeallocOp final
+    : StatefulOpConversionPattern<memref::DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto shape = op.getMemref().getType().getShape();
+    if (shape.size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
+    }
+
+    auto& state = getState();
+    auto* ctx = getContext();
+    auto i64Type = rewriter.getI64Type();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+
+    // Save current insertion point
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    // Release resources in output block
+    rewriter.setInsertionPoint(state.outputBlock->getTerminator());
+
+    auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
+                                             {i64Type, ptrType});
+    auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
+                                                QIR_QUBIT_ARRAY_RELEASE, fnSig);
+
+    auto size = state.memrefSizes.lookup(op.getMemref());
+    assert(size != nullptr && "Size not found");
+
+    // Create the release call
+    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
+                         ValueRange{size, adaptor.getMemref()});
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qc.alloc to QIR qubit allocation
  *
  * @par Example:
  * ```mlir
@@ -221,81 +518,40 @@ struct QCToQIRTypeConverter final : LLVMTypeConverter {
  * ```
  * becomes:
  * ```mlir
- * %c0 = llvm.mlir.constant(0 : i64) : i64
- * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+ * %zero = llvm.mlir.zero : !llvm.ptr
+ * %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
+ * !llvm.ptr
  * ```
  */
-struct ConvertQCAllocQIR final : StatefulOpConversionPattern<AllocOp> {
+struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    const auto numQubits = static_cast<int64_t>(state.numQubits);
-    auto& ptrMap = state.ptrMap;
-    auto& registerMap = state.registerStartIndexMap;
-
-    // Get or create pointer value
-    if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
-      const auto registerName = op.getRegisterName().value();
-      const auto registerSize =
-          static_cast<int64_t>(op.getRegisterSize().value());
-      const auto registerIndex =
-          static_cast<int64_t>(op.getRegisterIndex().value());
-
-      if (const auto it = registerMap.find(registerName);
-          it != registerMap.end()) {
-        // Register is already tracked
-        // The pointer was created by the step below
-        const auto globalIndex = it->second + registerIndex;
-        if (!ptrMap.contains(globalIndex)) {
-          return op.emitError("Pointer not found");
-        }
-        rewriter.replaceOp(op, ptrMap.at(globalIndex));
-        return success();
-      }
-
-      // Allocate the entire register as static qubits
-      registerMap[registerName] = numQubits;
-      SmallVector<Value> pointers;
-      pointers.reserve(registerSize);
-      for (int64_t i = 0; i < registerSize; ++i) {
-        Value val{};
-        if (const auto it = ptrMap.find(numQubits + i); it != ptrMap.end()) {
-          val = it->second;
-        } else {
-          val = createPointerFromIndex(rewriter, op.getLoc(), numQubits + i);
-          ptrMap[numQubits + i] = val;
-        }
-        pointers.push_back(val);
-      }
-      rewriter.replaceOp(op, pointers[registerIndex]);
-      state.numQubits += registerSize;
-      return success();
+    if (failed(state.ensureAllocationMode(AllocationMode::Dynamic,
+                                          op.getOperation()))) {
+      return failure();
     }
+    state.useDynamicQubit = true;
 
-    // no register info, check if ptr has already been allocated (as a Result)
-    Value val{};
-    if (const auto it = ptrMap.find(numQubits); it != ptrMap.end()) {
-      val = it->second;
-    } else {
-      val = createPointerFromIndex(rewriter, op.getLoc(), numQubits);
-      ptrMap[numQubits] = val;
-    }
-    rewriter.replaceOp(op, val);
-    state.numQubits++;
+    auto* ctx = getContext();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+
+    auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_QUBIT_ALLOC, fnSig);
+
+    auto zero = LLVM::ZeroOp::create(rewriter, op.getLoc(), ptrType);
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDec, zero.getResult());
+
     return success();
   }
 };
 
 /**
- * @brief Erases qc.dealloc operations
- *
- * @details
- * Since QIR 2.0 does not support dynamic qubit allocation, dynamic allocations
- * are converted to static allocations. Therefore, deallocation operations
- * become no-ops and are simply removed from the IR.
+ * @brief Converts qc.dealloc to QIR qubit release
  *
  * @par Example:
  * ```mlir
@@ -303,22 +559,39 @@ struct ConvertQCAllocQIR final : StatefulOpConversionPattern<AllocOp> {
  * ```
  * becomes:
  * ```mlir
- * // (removed)
+ * llvm.call @"@__quantum__rt__qubit_release"(%q) : !llvm.ptr -> ()
  * ```
  */
-struct ConvertQCDeallocQIR final : OpConversionPattern<DeallocOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(DeallocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* ctx = getContext();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+
+    // Save current insertion point
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    // Release resources in output block
+    rewriter.setInsertionPoint(state.outputBlock->getTerminator());
+
+    auto fnSig =
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), {ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_QUBIT_RELEASE, fnSig);
+
+    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec, adaptor.getQubit());
     rewriter.eraseOp(op);
+
     return success();
   }
 };
 
 /**
- * @brief Converts qc.static operation to QIR inttoptr
+ * @brief Converts qc.static to llvm.inttoptr
  *
  * @details
  * Converts a static qubit reference to an LLVM pointer by creating a constant
@@ -335,7 +608,7 @@ struct ConvertQCDeallocQIR final : OpConversionPattern<DeallocOp> {
  * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
  * ```
  */
-struct ConvertQCStaticQIR final : StatefulOpConversionPattern<StaticOp> {
+struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
@@ -343,17 +616,23 @@ struct ConvertQCStaticQIR final : StatefulOpConversionPattern<StaticOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const auto index = static_cast<int64_t>(op.getIndex());
     auto& state = getState();
+    if (failed(state.ensureAllocationMode(AllocationMode::Static,
+                                          op.getOperation()))) {
+      return failure();
+    }
+
     // Get or create a pointer to the qubit
-    Value val{};
-    if (const auto it = state.ptrMap.find(index); it != state.ptrMap.end()) {
+    Value qubit;
+    if (const auto it = state.staticQubits.find(index);
+        it != state.staticQubits.end()) {
       // Reuse existing pointer
-      val = it->second;
+      qubit = it->second;
     } else {
       // Create and cache for reuse
-      val = createPointerFromIndex(rewriter, op.getLoc(), index);
-      state.ptrMap.try_emplace(index, val);
+      qubit = createPointerFromIndex(rewriter, op.getLoc(), index);
+      state.staticQubits.try_emplace(index, qubit);
     }
-    rewriter.replaceOp(op, val);
+    rewriter.replaceOp(op, qubit);
 
     // Track maximum qubit index
     if (std::cmp_greater_equal(index, state.numQubits)) {
@@ -365,17 +644,14 @@ struct ConvertQCStaticQIR final : StatefulOpConversionPattern<StaticOp> {
 };
 
 /**
- * @brief Converts qc.measure operation to QIR measurement
+ * @brief Converts qc.measure to QIR measurement
  *
  * @details
- * Converts qubit measurement to a QIR call to `__quantum__qis__mz__body`.
- * Unlike the previous implementation, this does NOT immediately record output.
- * Instead, it tracks measurements in the lowering state for deferred output
- * recording in a separate output block, as required by the QIR Base Profile.
+ * For measurements with register information, a result array is allocated and
+ * all result pointers are loaded.
  *
- * For measurements with register information, the result pointer is mapped
- * to (register_name, register_index) for later retrieval. For measurements
- * without register information, a sequential result pointer is assigned.
+ * For measurements without register information, an individual result pointer
+ * is allocated.
  *
  * @par Example (with register):
  * ```mlir
@@ -383,83 +659,108 @@ struct ConvertQCStaticQIR final : StatefulOpConversionPattern<StaticOp> {
  * ```
  * becomes:
  * ```mlir
- * %c0_i64 = llvm.mlir.constant(0 : i64) : i64
- * %result_ptr = llvm.inttoptr %c0_i64 : i64 to !llvm.ptr
- * llvm.call @__quantum__qis__mz__body(%q, %result_ptr) : (!llvm.ptr, !llvm.ptr)
- * -> ()
+ * // In entry block:
+ * %zero = llvm.mlir.zero : !llvm.ptr
+ * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
+ * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
+ * (i64, !llvm.ptr, !llvm.ptr) -> ()
+ * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
+ *
+ * // In measurements block:
+ * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
  * ```
  */
-struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
+struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
-    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
     auto& state = getState();
-    const auto numResults = static_cast<int64_t>(state.numResults);
-    auto& ptrMap = state.ptrMap;
-    auto& registerResultMap = state.registerResultMap;
+    state.useDynamicResult = true;
 
-    // Get or create result pointer value
-    Value resultValue;
+    auto& resultArrays = state.resultArrays;
+    auto& loadedResults = state.loadedResults;
+    auto& resultPtrs = state.resultPtrs;
+
+    auto* ctx = getContext();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+
+    // Save current insertion point
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    // Insert allocations and constants in entry block
+    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+
+    // Get result pointer
+    Value result;
     if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
       const auto registerName = op.getRegisterName().value();
       const auto registerSize =
           static_cast<int64_t>(op.getRegisterSize().value());
       const auto registerIndex =
           static_cast<int64_t>(op.getRegisterIndex().value());
-      const auto key = std::make_pair(registerName, registerIndex);
 
-      if (const auto it = registerResultMap.find(key);
-          it != registerResultMap.end()) {
-        resultValue = it->second;
-      } else {
-        // Allocate the entire register as static results
+      // Create result register if it does not exist yet
+      if (!resultArrays.contains(registerName)) {
+        auto fnSig = LLVM::LLVMFunctionType::get(
+            LLVM::LLVMVoidType::get(ctx),
+            {rewriter.getI64Type(), ptrType, ptrType});
+        auto fnDec = getOrCreateFunctionDeclaration(
+            rewriter, op, QIR_RESULT_ARRAY_ALLOC, fnSig);
+
+        auto size =
+            LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                     rewriter.getI64IntegerAttr(registerSize))
+                .getResult();
+        auto array = LLVM::AllocaOp::create(rewriter, op.getLoc(), ptrType,
+                                            ptrType, size);
+        auto zero = LLVM::ZeroOp::create(rewriter, op.getLoc(), ptrType);
+        LLVM::CallOp::create(
+            rewriter, op.getLoc(), fnDec,
+            ValueRange{size, array.getResult(), zero.getResult()});
+        resultArrays.try_emplace(registerName, array.getResult());
+
         for (int64_t i = 0; i < registerSize; ++i) {
-          Value val{};
-          if (const auto ptrIt = ptrMap.find(numResults + i);
-              ptrIt != ptrMap.end()) {
-            val = ptrIt->second;
-          } else {
-            val = createPointerFromIndex(rewriter, op.getLoc(), numResults + i);
-            ptrMap[numResults + i] = val;
-          }
-          registerResultMap.try_emplace({registerName, i}, val);
+          auto gep = LLVM::GEPOp::create(
+              rewriter, op.getLoc(), ptrType, ptrType, array.getResult(),
+              ValueRange{LLVM::ConstantOp::create(
+                  rewriter, op.getLoc(), rewriter.getI64IntegerAttr(i))});
+          auto load = LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType,
+                                           gep.getResult());
+          loadedResults.try_emplace({state.stringSaver.save(registerName), i},
+                                    load.getResult());
         }
-        state.numResults += registerSize;
-        resultValue = registerResultMap.at(key);
       }
+
+      result = loadedResults.at({registerName, registerIndex});
     } else {
-      // Choose a safe default register name
-      StringRef defaultRegName = "c";
-      if (llvm::any_of(registerResultMap, [](const auto& entry) {
-            return entry.first.first == "c";
-          })) {
-        defaultRegName = "__unnamed__";
-      }
-      // No register info, check if ptr has already been allocated (as a Qubit)
-      if (const auto it = ptrMap.find(numResults); it != ptrMap.end()) {
-        resultValue = it->second;
-      } else {
-        resultValue = createPointerFromIndex(rewriter, op.getLoc(), numResults);
-        ptrMap[numResults] = resultValue;
-      }
-      registerResultMap.insert({{defaultRegName, numResults}, resultValue});
-      state.numResults++;
+      auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+      auto fnDec =
+          getOrCreateFunctionDeclaration(rewriter, op, QIR_RESULT_ALLOC, fnSig);
+
+      auto zero = LLVM::ZeroOp::create(rewriter, op.getLoc(), ptrType);
+      result =
+          LLVM::CallOp::create(rewriter, op.getLoc(), fnDec, zero.getResult())
+              .getResult();
+
+      resultPtrs.try_emplace(resultPtrs.size(), result);
     }
 
-    // Declare QIR function
-    const auto fnSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), {ptrType, ptrType});
-    const auto fnDecl =
-        getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSignature);
+    // Switch to measurements block
+    rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());
 
-    // Create CallOp and replace qc.measure with result pointer
-    LLVM::CallOp::create(rewriter, op.getLoc(), fnDecl,
-                         ValueRange{adaptor.getQubit(), resultValue});
-    rewriter.replaceOp(op, resultValue);
+    // Create measure call
+    auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
+                                             {ptrType, ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
+
+    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
+                         ValueRange{adaptor.getQubit(), result});
+
+    rewriter.replaceOp(op, result);
+
     return success();
   }
 };
@@ -477,16 +778,23 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
  * ```
  * becomes:
  * ```mlir
- * llvm.call @__quantum__qis__reset__body(%q) : (!llvm.ptr) -> ()
+ * llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
  * ```
  */
-struct ConvertQCResetQIR final : OpConversionPattern<ResetOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
     auto* ctx = getContext();
+
+    // Save current insertion point
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    // Switch to measurements block
+    rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());
 
     // Declare QIR function
     const auto fnSignature = LLVM::LLVMFunctionType::get(
@@ -515,7 +823,7 @@ struct ConvertQCResetQIR final : OpConversionPattern<ResetOp> {
  * llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
  * ```
  */
-struct ConvertQCGPhaseOpQIR final : StatefulOpConversionPattern<GPhaseOp> {
+struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
@@ -530,301 +838,12 @@ struct ConvertQCGPhaseOpQIR final : StatefulOpConversionPattern<GPhaseOp> {
   }
 };
 
-// OneTargetZeroParameter
-
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL, \
-                                         QIR_NAME)                             \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL %q : !qc.qubit                                           \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q) : (!llvm.ptr) -> ()         \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 1, 0);                      \
-    }                                                                          \
-  };
-
-DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, I, id, i)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, X, x, x)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, Y, y, y)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, Z, z, z)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, H, h, h)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, S, s, s)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, SDG, sdg, sdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, T, t, t)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, TDG, tdg, tdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, SX, sx, sx)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, SXDG, sxdg, sxdg)
-
-#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
-
-// OneTargetOneParameter
-
-#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
-                                        QIR_NAME, PARAM)                       \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM) %q : !qc.qubit                                   \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM) : (!llvm.ptr, f64)  \
-   * -> ()                                                                     \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 1, 1);                      \
-    }                                                                          \
-  };
-
-DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, RX, rx, rx, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, RY, ry, ry, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, RZ, rz, rz, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(POp, P, p, p, theta)
-
-#undef DEFINE_ONE_TARGET_ONE_PARAMETER
-
-// OneTargetTwoParameter
-
-#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
-                                        QIR_NAME, PARAM1, PARAM2)              \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM1, %PARAM2) %q : !qc.qubit                         \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM1, %PARAM2) :         \
-   * (!llvm.ptr, f64, f64) -> ()                                               \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 1, 2);                      \
-    }                                                                          \
-  };
-
-DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, R, r, r, theta, phi)
-DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, U2, u2, u2, phi, lambda)
-
-#undef DEFINE_ONE_TARGET_TWO_PARAMETER
-
-// OneTargetThreeParameter
-
-#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME_BIG,               \
-                                          OP_NAME_SMALL, QIR_NAME)             \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM1, %PARAM2, %PARAM3) %q : !qc.qubit                \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM1, %PARAM2, %PARAM3)  \
-   * : (!llvm.ptr, f64, f64, f64) -> ()                                        \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp<OP_CLASS>(                                 \
-          op, adaptor, rewriter, getContext(), state, fnName, 1, 3);           \
-    }                                                                          \
-  };
-
-DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, U, u, u3)
-
-#undef DEFINE_ONE_TARGET_THREE_PARAMETER
-
-// TwoTargetZeroParameter
-
-#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL, \
-                                         QIR_NAME)                             \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL %q1, %q2 : !qc.qubit, !qc.qubit                          \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q1, %q2) : (!llvm.ptr,         \
-   * !llvm.ptr) -> ()                                                          \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 2, 0);                      \
-    }                                                                          \
-  };
-
-DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, SWAP, swap, swap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, ISWAP, iswap, iswap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, DCX, dcx, dcx)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ECR, ecr, ecr)
-
-#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
-
-// TwoTargetOneParameter
-
-#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
-                                        QIR_NAME, PARAM)                       \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM) %q1, %q2 : !qc.qubit, !qc.qubit                  \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q1, %q2, %PARAM) :             \
-   * (!llvm.ptr, !llvm.ptr, f64) -> ()                                         \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 2, 1);                      \
-    }                                                                          \
-  };
-
-DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, RXX, rxx, rxx, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RYYOp, RYY, ryy, ryy, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RZXOp, RZX, rzx, rzx, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, RZZ, rzz, rzz, theta)
-
-#undef DEFINE_TWO_TARGET_ONE_PARAMETER
-
-// TwoTargetTwoParameter
-
-#define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
-                                        QIR_NAME, PARAM1, PARAM2)              \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME_SMALL operation to QIR QIR_NAME                \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME_SMALL(%PARAM1, %PARAM2) %q1, %q2 : !qc.qubit,                  \
-   * !qc.qubit                                                                 \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q1, %q2, %PARAM1, %PARAM2) :   \
-   * (!llvm.ptr, !llvm.ptr, f64, f64) -> ()                                    \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS##QIR final                                        \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 2, 2);                      \
-    }                                                                          \
-  };
-
-DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, XXPLUSYY, xx_plus_yy, xx_plus_yy,
-                                theta, beta)
-DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, XXMINUSYY, xx_minus_yy,
-                                xx_minus_yy, theta, beta)
-
-#undef DEFINE_TWO_TARGET_TWO_PARAMETER
-
 // BarrierOp
 
 /**
  * @brief Erases qc.barrier operation, as it is a no-op in QIR
  */
-struct ConvertQCBarrierQIR final : StatefulOpConversionPattern<BarrierOp> {
+struct ConvertQCBarrierOp final : StatefulOpConversionPattern<BarrierOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
@@ -838,7 +857,7 @@ struct ConvertQCBarrierQIR final : StatefulOpConversionPattern<BarrierOp> {
 /**
  * @brief Inlines qc.ctrl region removes the operation
  */
-struct ConvertQCCtrlQIR final : StatefulOpConversionPattern<CtrlOp> {
+struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
@@ -862,7 +881,7 @@ struct ConvertQCCtrlQIR final : StatefulOpConversionPattern<CtrlOp> {
 /**
  * @brief Erases qc.yield operation
  */
-struct ConvertQCYieldQIR final : StatefulOpConversionPattern<YieldOp> {
+struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
@@ -874,6 +893,42 @@ struct ConvertQCYieldQIR final : StatefulOpConversionPattern<YieldOp> {
 };
 
 /**
+ * @brief Populates conversion patterns for QC-to-QIR lowering.
+ *
+ * @details
+ * Centralizes pattern registration so adding a new QC gate typically only
+ * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
+ * list of unitary gates below.
+ */
+} // namespace
+
+static void populateQCToQIRPatterns(RewritePatternSet& patterns,
+                                    QCToQIRTypeConverter& typeConverter,
+                                    MLIRContext* ctx, LoweringState& state) {
+  patterns
+      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp>(
+          typeConverter, ctx, &state);
+  patterns.add<ConvertQCAllocOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCDeallocOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCStaticOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCMeasureOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCResetOp>(typeConverter, ctx, &state);
+  patterns.add<ConvertQCGPhaseOp>(typeConverter, ctx, &state);
+
+  // Note: `MQT_GATE_TABLE` is defined in `mlir/Conversion/GateTable.h`.
+#define MQT_ADD_QC_TO_QIR_UNITARY(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN) \
+  patterns.add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
+      typeConverter, ctx, &state);
+  MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
+#undef MQT_ADD_QC_TO_QIR_UNITARY
+
+  patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp>(
+      typeConverter, ctx, &state);
+}
+
+namespace {
+
+/**
  * @brief Pass for converting QC dialect operations to QIR
  *
  * @details
@@ -883,17 +938,17 @@ struct ConvertQCYieldQIR final : StatefulOpConversionPattern<YieldOp> {
  *
  * Conversion stages:
  * 1. Convert func dialect to LLVM
- * 2. Ensure proper block structure for QIR base profile and add
- * initialization
- * 3. Convert QC operations to QIR calls
- * 4. Set QIR metadata attributes
- * 5. Convert arith and cf dialects to LLVM
- * 6. Reconcile unrealized casts
+ * 2. Ensure proper block structure for QIR base profile
+ * 3. Add QIR initialization call
+ * 4. Convert QC operations to QIR calls
+ * 5. Set QIR metadata attributes
+ * 6. Convert arith and cf dialects to LLVM
+ * 7. Reconcile unrealized casts
  *
  * @pre
  * The input entry function must consist of a single block. The pass will
- * restructure it into four blocks. Multi-block input functions are currently
- * not supported.
+ * restructure it into four blocks. Multi-block input functions are
+ * currently not supported.
  */
 struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
   using QCToQIRBase::QCToQIRBase;
@@ -905,21 +960,19 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    * The QIR base profile requires a specific 4-block structure:
    * 1. **Entry block**: Contains constant operations and initialization
    * 2. **Body block**: Contains reversible quantum operations (gates)
-   * 3. **Measurements block**: Contains irreversible operations (measure,
-   *    reset, dealloc)
+   * 3. **Measurements block**: Contains irreversible operations (measure and
+   * reset)
    * 4. **Output block**: Contains output recording calls
    *
    * Blocks are connected with unconditional jumps (entry, body, measurements,
    * output). This structure ensures proper QIR Base Profile semantics.
    *
-   * If the function already has multiple blocks, this function does nothing.
-   *
    * @param main The main LLVM function to restructure
    */
-  static void ensureBlocks(LLVM::LLVMFuncOp& main) {
-    // Return if there are already multiple blocks
+  static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     if (main.getBlocks().size() > 1) {
-      return;
+      llvm::reportFatalInternalError(
+          "Modules with multiple blocks are not supported yet");
     }
 
     // Get the existing block
@@ -934,24 +987,23 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     Block* measurementsBlock = builder.createBlock(&main.getBody());
     Block* outputBlock = builder.createBlock(&main.getBody());
 
+    state.entryBlock = entryBlock;
+    state.measurementsBlock = measurementsBlock;
+    state.outputBlock = outputBlock;
+
     auto& bodyBlockOps = bodyBlock->getOperations();
     auto& outputBlockOps = outputBlock->getOperations();
-    auto& measurementsBlockOps = measurementsBlock->getOperations();
 
     // Move operations to appropriate blocks
     for (auto it = bodyBlock->begin(); it != bodyBlock->end();) {
       // Ensure iterator remains valid after potential move
-      if (auto& op = *it++;
-          isa<DeallocOp>(op) || isa<ResetOp>(op) || isa<MeasureOp>(op)) {
-        // Move irreversible quantum operations to measurements block
-        measurementsBlockOps.splice(measurementsBlock->end(), bodyBlockOps,
-                                    Block::iterator(op));
-      } else if (isa<LLVM::ReturnOp>(op)) {
+      if (auto& op = *it++; isa<LLVM::ReturnOp>(op)) {
         // Move return to output block
         outputBlockOps.splice(outputBlock->end(), bodyBlockOps,
                               Block::iterator(op));
-      } else if (op.hasTrait<OpTrait::ConstantLike>()) {
-        // Move constant like operations to the entry block
+      } else if (isa<memref::AllocOp>(op) || isa<memref::LoadOp>(op) ||
+                 isa<AllocOp>(op) || op.hasTrait<OpTrait::ConstantLike>()) {
+        // Move allocations and constant-like operations to entry block
         entryBlock->getOperations().splice(entryBlock->end(), bodyBlockOps,
                                            Block::iterator(op));
       }
@@ -973,44 +1025,25 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    * @brief Adds QIR initialization call to the entry block
    *
    * @details
-   * Inserts a call to `__quantum__rt__initialize` at the end of the entry
-   * block (before the jump to main block). This QIR runtime function
-   * initializes the quantum execution environment and takes a null pointer as
-   * argument.
+   * This QIR runtime function initializes the quantum execution environment.
    *
    * @param main The main LLVM function
    * @param ctx The MLIR context
+   * @param state The lowering state
    */
-  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx) {
-    auto moduleOp = main->getParentOfType<ModuleOp>();
-    auto& firstBlock = *(main.getBlocks().begin());
-    OpBuilder builder(main.getBody());
+  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
+                            LoweringState& state) {
+    OpBuilder builder(ctx);
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto voidType = LLVM::LLVMVoidType::get(ctx);
 
-    // Create a zero (null) pointer for the initialize call
-    builder.setInsertionPointToStart(&firstBlock);
-    auto zeroOp = LLVM::ZeroOp::create(builder, main->getLoc(),
-                                       LLVM::LLVMPointerType::get(ctx));
+    builder.setInsertionPointToStart(state.entryBlock);
 
-    // Insert the initialize call before the jump to main block
-    const auto insertPoint = std::prev(firstBlock.getOperations().end(), 1);
-    builder.setInsertionPoint(&*insertPoint);
-
-    // Get or create the initialize function declaration
-    auto* fnDecl = SymbolTable::lookupNearestSymbolFrom(
-        main, builder.getStringAttr(QIR_INITIALIZE));
-    if (fnDecl == nullptr) {
-      const PatternRewriter::InsertionGuard guard(builder);
-      builder.setInsertionPointToEnd(moduleOp.getBody());
-      auto fnSignature = LLVM::LLVMFunctionType::get(
-          LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-      fnDecl = LLVM::LLVMFuncOp::create(builder, main->getLoc(), QIR_INITIALIZE,
-                                        fnSignature);
-    }
-
-    // Create the initialization call
-    LLVM::CallOp::create(builder, main->getLoc(),
-                         cast<LLVM::LLVMFuncOp>(fnDecl),
-                         ValueRange{zeroOp->getResult(0)});
+    auto initSig = LLVM::LLVMFunctionType::get(voidType, ptrType);
+    auto initDec =
+        getOrCreateFunctionDeclaration(builder, main, QIR_INITIALIZE, initSig);
+    auto zero = LLVM::ZeroOp::create(builder, main->getLoc(), ptrType);
+    LLVM::CallOp::create(builder, main->getLoc(), initDec, zero.getResult());
   }
 
   /**
@@ -1021,29 +1054,12 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    * measurements tracked during conversion. Follows the QIR Base Profile
    * specification for labeled output schema.
    *
-   * For each classical register, creates:
-   * 1. An array_record_output call with the register size and label
-   * 2. Individual result_record_output calls for each measurement in the
-   * register
+   * Results that are part of registers are recorded via
+   * `__quantum__rt__result_array_record_output`.
    *
-   * Labels follow the format: "{registerName}{resultIndex}r"
-   * - registerName: Name of the classical register (e.g., "c")
-   * - resultIndex: Index within the array
-   * - 'r' suffix: Indicates this is a result record
-   *
-   * Example output:
-   * ```
-   * @0 = internal constant [3 x i8] c"c\00"
-   * @1 = internal constant [5 x i8] c"c0r\00"
-   * @2 = internal constant [5 x i8] c"c1r\00"
-   * call void @__quantum__rt__array_record_output(i64 2, ptr @0)
-   * call void @__quantum__rt__result_record_output(ptr %result0, ptr @1)
-   * call void @__quantum__rt__result_record_output(ptr %result1, ptr @2)
-   * ```
-   *
-   * Any output recording calls that are not part of registers (i.e.,
-   * measurements without register info) are grouped under a default label
-   * "c" and recorded similarly.
+   * Results that are not part of registers (i.e., measurements without register
+   * info) are grouped under a default `__unnamed__` label recorded via
+   * `__quantum__rt__result_record_output`.
    *
    * @param main The main LLVM function
    * @param ctx The MLIR context
@@ -1051,12 +1067,16 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    */
   static void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                                  LoweringState* state) {
-    if (state->registerResultMap.empty()) {
+    auto& resultArrays = state->resultArrays;
+    auto& resultPtrs = state->resultPtrs;
+
+    if (resultArrays.empty() && resultPtrs.empty()) {
       return; // No measurements to record
     }
 
     OpBuilder builder(ctx);
-    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto voidType = LLVM::LLVMVoidType::get(ctx);
 
     // Find the output block
     auto& outputBlock = main.getBlocks().back();
@@ -1064,60 +1084,83 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     // Insert before the branch to output block
     builder.setInsertionPoint(&outputBlock.back());
 
-    // Group measurements by register
-    llvm::StringMap<SmallVector<std::pair<int64_t, Value>>> registerGroups;
-    for (const auto& [key, resultPtr] : state->registerResultMap) {
-      const auto& [registerName, registerIndex] = key;
-      registerGroups[registerName].emplace_back(registerIndex, resultPtr);
-    }
-
-    // Sort registers by name for deterministic output
-    SmallVector<std::pair<StringRef, SmallVector<std::pair<int64_t, Value>>>>
-        sortedRegisters;
-    for (auto& [name, measurements] : registerGroups) {
-      sortedRegisters.emplace_back(name, std::move(measurements));
-    }
-    llvm::sort(sortedRegisters,
-               [](const auto& a, const auto& b) { return a.first < b.first; });
-
-    // create function declarations for output recording
-    const auto arrayRecordSig = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), {builder.getI64Type(), ptrType});
-    const auto arrayRecordDecl = getOrCreateFunctionDeclaration(
-        builder, main, QIR_ARRAY_RECORD_OUTPUT, arrayRecordSig);
-
-    const auto resultRecordSig = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), {ptrType, ptrType});
-    const auto resultRecordDecl = getOrCreateFunctionDeclaration(
-        builder, main, QIR_RECORD_OUTPUT, resultRecordSig);
-
-    // Generate output recording for each register
-    for (auto& [registerName, measurements] : sortedRegisters) {
-      // Sort measurements by register index
-      llvm::sort(measurements, [](const auto& a, const auto& b) {
+    if (!resultPtrs.empty()) {
+      // Sort result pointers for deterministic output
+      llvm::SmallVector<std::pair<int64_t, Value>> sortedPtrs;
+      for (const auto& [index, resultPtr] : resultPtrs) {
+        sortedPtrs.emplace_back(index, resultPtr);
+      }
+      llvm::sort(sortedPtrs, [](const auto& a, const auto& b) {
         return a.first < b.first;
       });
 
-      const auto arraySize = measurements.size();
-      auto arrayLabelOp = createResultLabel(builder, main, registerName);
-      auto arraySizeConst = LLVM::ConstantOp::create(
-          builder, main->getLoc(),
-          builder.getI64IntegerAttr(static_cast<int64_t>(arraySize)));
+      // Create output recording for each result pointer
+      auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+      auto fnDec = getOrCreateFunctionDeclaration(builder, main,
+                                                  QIR_RECORD_OUTPUT, fnSig);
 
-      LLVM::CallOp::create(
-          builder, main->getLoc(), arrayRecordDecl,
-          ValueRange{arraySizeConst.getResult(), arrayLabelOp.getResult()});
-
-      // Create result_record_output calls for each measurement
-      for (auto [regIdx, resultPtr] : measurements) {
-        // Create label for result: "{arrayCounter+1+i}_{registerName}{i}r"
-        const std::string resultLabel =
-            registerName.str() + std::to_string(regIdx) + "r";
-        auto resultLabelOp = createResultLabel(builder, main, resultLabel);
-
-        LLVM::CallOp::create(builder, main->getLoc(), resultRecordDecl,
-                             ValueRange{resultPtr, resultLabelOp.getResult()});
+      for (const auto& [index, ptr] : sortedPtrs) {
+        auto label = createResultLabel(builder, main,
+                                       "__unnamed__" + std::to_string(index))
+                         .getResult();
+        LLVM::CallOp::create(builder, main->getLoc(), fnDec,
+                             ValueRange{ptr, label});
       }
+    }
+
+    if (!resultArrays.empty()) {
+      // Sort registers by name for deterministic output
+      SmallVector<std::pair<StringRef, Value>> sortedRegisters;
+      for (auto& [name, results] : resultArrays) {
+        sortedRegisters.emplace_back(name, results);
+      }
+      llvm::sort(sortedRegisters, [](const auto& a, const auto& b) {
+        return a.first < b.first;
+      });
+
+      auto fnSig = LLVM::LLVMFunctionType::get(
+          voidType, {builder.getI64Type(), ptrType, ptrType});
+      auto fnDec = getOrCreateFunctionDeclaration(
+          builder, main, QIR_ARRAY_RECORD_OUTPUT, fnSig);
+
+      // Generate output recording for each register
+      for (auto& [name, results] : sortedRegisters) {
+        auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+        auto label = createResultLabel(builder, main, name).getResult();
+
+        LLVM::CallOp::create(builder, main->getLoc(), fnDec,
+                             ValueRange{size, results, label});
+      }
+    }
+  }
+
+  /**
+   * @brief Iterates through all result pointers and releases them
+   */
+  static void releaseResults(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
+                             LoweringState* state) {
+    OpBuilder builder(ctx);
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto voidType = LLVM::LLVMVoidType::get(ctx);
+
+    // Release resources in output block
+    builder.setInsertionPoint(state->outputBlock->getTerminator());
+
+    for (auto& [_, ptr] : state->resultPtrs) {
+      auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
+      auto dec = getOrCreateFunctionDeclaration(builder, main,
+                                                QIR_RESULT_RELEASE, sig);
+      LLVM::CallOp::create(builder, main->getLoc(), dec, ptr);
+    }
+
+    for (auto& [_, array] : state->resultArrays) {
+      auto sig = LLVM::LLVMFunctionType::get(voidType,
+                                             {builder.getI64Type(), ptrType});
+      auto dec = getOrCreateFunctionDeclaration(builder, main,
+                                                QIR_RESULT_ARRAY_RELEASE, sig);
+      auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+      LLVM::CallOp::create(builder, main->getLoc(), dec,
+                           ValueRange{size, array});
     }
   }
 
@@ -1126,32 +1169,33 @@ protected:
    * @brief Executes the QC to QIR conversion pass
    *
    * @details
-   * Performs the conversion in six stages:
+   * Performs the conversion in seven stages:
    *
    * **Stage 1: Func to LLVM**
    * Convert func dialect operations (main function) to LLVM dialect
    * equivalents.
    *
-   * **Stage 2: Block structure and initialization**
+   * **Stage 2: Block structure**
    * Create proper 4-block structure for QIR base profile (entry, main,
-   * irreversible, output) and insert the `__quantum__rt__initialize` call
-   * in the entry block.
+   * irreversible, output).
    *
-   * **Stage 3: QC to LLVM**
-   * Convert QC dialect operations to QIR calls and add output recording to
-   * the output block.
+   * **Stage 3: Initialization**
+   * Insert the `__quantum__rt__initialize` call.
    *
-   * **Stage 4: QIR attributes**
-   * Add QIR base profile metadata to the main function, including
-   * qubit/result counts and version information.
+   * **Stage 4: QC to LLVM**
+   * Convert QC dialect operations to QIR calls and add output recording to the
+   * output block.
    *
-   * **Stage 5: Standard dialects to LLVM**
+   * **Stage 5: QIR attributes**
+   * Add QIR base profile metadata to the main function, including qubit/result
+   * counts and version information.
+   *
+   * **Stage 6: Standard dialects to LLVM**
    * Convert arith and control flow dialects to LLVM (for index arithmetic and
    * function control flow).
    *
-   * **Stage 6: Reconcile casts**
-   * Clean up any unrealized cast operations introduced during type
-   * conversion.
+   * **Stage 7: Reconcile casts**
+   * Clean up any unrealized cast operations introduced during type conversion.
    */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
@@ -1174,7 +1218,6 @@ protected:
       }
     }
 
-    // Stage 2: Ensure proper block structure and add initialization
     auto main = getMainFunction(moduleOp);
     if (!main) {
       moduleOp->emitError("No main function with entry_point attribute found");
@@ -1182,68 +1225,36 @@ protected:
       return;
     }
 
-    ensureBlocks(main);
-    addInitialize(main, ctx);
-
     LoweringState state;
 
-    // Stage 3: Convert QC dialect to LLVM (QIR calls)
+    // Stage 2: Create block structure
+    ensureBlocks(main, state);
+
+    // Stage 3: Insert initialize call
+    addInitialize(main, ctx, state);
+
+    // Stage 4: Convert QC dialect to LLVM (QIR calls)
     {
-      RewritePatternSet qcPatterns(ctx);
-      target.addIllegalDialect<QCDialect>();
+      RewritePatternSet patterns(ctx);
+      target.addIllegalDialect<QCDialect, memref::MemRefDialect>();
 
-      // Add conversion patterns for QC operations
-      qcPatterns.add<ConvertQCAllocQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCDeallocQIR>(typeConverter, ctx);
-      qcPatterns.add<ConvertQCStaticQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCMeasureQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCResetQIR>(typeConverter, ctx);
-      qcPatterns.add<ConvertQCGPhaseOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCIdOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCZOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCHOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSdgOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCTOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCTdgOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSXdgOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRZOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCPOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCROpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCU2OpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCUOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCSWAPOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCiSWAPOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCDCXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCECROpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRXXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRYYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRZXOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCRZZOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCXXPlusYYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCXXMinusYYOpQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCBarrierQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCCtrlQIR>(typeConverter, ctx, &state);
-      qcPatterns.add<ConvertQCYieldQIR>(typeConverter, ctx, &state);
+      populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
 
-      if (applyPartialConversion(moduleOp, target, std::move(qcPatterns))
+      if (applyPartialConversion(moduleOp, target, std::move(patterns))
               .failed()) {
         signalPassFailure();
         return;
       }
 
       addOutputRecording(main, ctx, &state);
+
+      releaseResults(main, ctx, &state);
     }
 
-    // Stage 4: Set QIR metadata attributes
+    // Stage 5: Set QIR metadata attributes
     setQIRAttributes(main, state);
 
-    // Stage 5: Convert standard dialects to LLVM
+    // Stage 6: Convert standard dialects to LLVM
     {
       RewritePatternSet stdPatterns(ctx);
       target.addIllegalDialect<arith::ArithDialect>();
@@ -1260,7 +1271,7 @@ protected:
       }
     }
 
-    // Stage 6: Reconcile unrealized casts
+    // Stage 7: Reconcile unrealized casts
     PassManager passManager(ctx);
     passManager.addPass(createReconcileUnrealizedCastsPass());
     if (passManager.run(moduleOp).failed()) {

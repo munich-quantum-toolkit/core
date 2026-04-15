@@ -87,6 +87,16 @@ void staticQubitsCanonical(QIRProgramBuilder& b) {
   b.tdg(q0);
 }
 
+void mixedStaticThenDynamicQubit(QIRProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b) {
+  b.allocQubitRegister(2);
+  b.staticQubit(0);
+}
+
 void singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
@@ -116,6 +126,11 @@ void multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   b.measure(q[0], c0[0]);
   b.measure(q[1], c1[0]);
   b.measure(q[2], c1[1]);
+}
+
+void measurementWithoutRegisters(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.measure(q, 0);
 }
 
 void resetQubitWithoutOp(QIRProgramBuilder& b) {
@@ -233,6 +248,11 @@ void singleControlledH(QIRProgramBuilder& b) {
 void multipleControlledH(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mch({q[0], q[1]}, q[2]);
+}
+
+void hWithoutRegister(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
 }
 
 void s(QIRProgramBuilder& b) {

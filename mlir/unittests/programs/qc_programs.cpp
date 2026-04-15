@@ -23,8 +23,8 @@ void allocQubit(QCProgramBuilder& b) { b.allocQubit(); }
 void allocQubitRegister(QCProgramBuilder& b) { b.allocQubitRegister(2); }
 
 void allocMultipleQubitRegisters(QCProgramBuilder& b) {
-  b.allocQubitRegister(2, "reg0");
-  b.allocQubitRegister(3, "reg1");
+  b.allocQubitRegister(2);
+  b.allocQubitRegister(3);
 }
 
 void allocLargeRegister(QCProgramBuilder& b) { b.allocQubitRegister(100); }
@@ -94,6 +94,16 @@ void allocDeallocPair(QCProgramBuilder& b) {
   b.dealloc(q);
 }
 
+void mixedStaticThenDynamicQubit(QCProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b) {
+  b.allocQubitRegister(2);
+  b.staticQubit(0);
+}
+
 void singleMeasurementToSingleBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);
@@ -125,9 +135,14 @@ void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   b.measure(q[2], c1[1]);
 }
 
-void resetQubitWithoutOp(QCProgramBuilder& b) {
+void measurementWithoutRegisters(QCProgramBuilder& b) {
   auto q = b.allocQubit();
-  b.reset(q);
+  b.measure(q);
+}
+
+void resetQubitWithoutOp(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.reset(q[0]);
 }
 
 void resetMultipleQubitsWithoutOp(QCProgramBuilder& b) {
@@ -137,16 +152,16 @@ void resetMultipleQubitsWithoutOp(QCProgramBuilder& b) {
 }
 
 void repeatedResetWithoutOp(QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.reset(q);
-  b.reset(q);
-  b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  b.reset(q[0]);
+  b.reset(q[0]);
+  b.reset(q[0]);
 }
 
 void resetQubitAfterSingleOp(QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.h(q);
-  b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.reset(q[0]);
 }
 
 void resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
@@ -158,11 +173,11 @@ void resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
 }
 
 void repeatedResetAfterSingleOp(QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.h(q);
-  b.reset(q);
-  b.reset(q);
-  b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.reset(q[0]);
+  b.reset(q[0]);
+  b.reset(q[0]);
 }
 
 void globalPhase(QCProgramBuilder& b) { b.gphase(0.123); }
@@ -178,8 +193,8 @@ void multipleControlledGlobalPhase(QCProgramBuilder& b) {
 }
 
 void nestedControlledGlobalPhase(QCProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl(reg[0], [&] { b.cgphase(0.123, reg[1]); });
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[0], [&] { b.cgphase(0.123, q[1]); });
 }
 
 void trivialControlledGlobalPhase(QCProgramBuilder& b) {
@@ -212,8 +227,8 @@ void multipleControlledIdentity(QCProgramBuilder& b) {
 }
 
 void nestedControlledIdentity(QCProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl(reg[2], [&] { b.cid(reg[1], reg[0]); });
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[2], [&] { b.cid(q[1], q[0]); });
 }
 
 void trivialControlledIdentity(QCProgramBuilder& b) {
@@ -369,6 +384,11 @@ void inverseH(QCProgramBuilder& b) {
 void inverseMultipleControlledH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mch({q[0], q[1]}, q[2]); });
+}
+
+void hWithoutRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
 }
 
 void s(QCProgramBuilder& b) {

@@ -51,6 +51,16 @@ void staticQubitsWithInv(QCOProgramBuilder& b);
 /// Allocates and explicitly sinks a single qubit.
 void allocSinkPair(QCOProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: `qtensor` alloc then
+/// static.
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
@@ -64,6 +74,10 @@ void repeatedMeasurementToDifferentBits(QCOProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
 void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b);
+
+/// Measures a single qubit into a single classical bit, without explicitly
+/// allocating a quantum or classical register.
+void measurementWithoutRegisters(QCOProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
@@ -230,6 +244,9 @@ void inverseMultipleControlledH(QCOProgramBuilder& b);
 
 /// Creates a circuit with two H gates in a row.
 void twoH(QCOProgramBuilder& b);
+
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QCOProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 
@@ -1007,12 +1024,6 @@ void qtensorExtract(QCOProgramBuilder& b);
 /// Inserts a qubit into a tensor.
 void qtensorInsert(QCOProgramBuilder& b);
 
-/// Extracts a slice from a tensor.
-void qtensorExtractSlice(QCOProgramBuilder& b);
-
-/// Inserts a slice into a tensor.
-void qtensorInsertSlice(QCOProgramBuilder& b);
-
 /// Extracts a qubit from a tensor and inserts it immediately at a different
 /// index.
 void qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b);
@@ -1026,26 +1037,5 @@ void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
 void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
-
-/// Extracts a slice of qubits from a tensor and inserts it immediately at a
-/// different offset.
-void qtensorExtractSliceInsertSliceOffsetMismatch(QCOProgramBuilder& b);
-
-/// Extracts a slice of qubits from a tensor and inserts it immediately at the
-/// same offset.
-void qtensorExtractSliceInsertSliceSameOffset(QCOProgramBuilder& b);
-
-/// Inserts a slice of qubits into a tensor and extracts it immediately at a
-/// different offset.
-void qtensorInsertSliceExtractSliceOffsetMismatch(QCOProgramBuilder& b);
-
-/// Inserts a slice of qubits into a tensor and extracts it immediately at the
-/// same offset.
-void qtensorInsertSliceExtractSliceSameOffset(QCOProgramBuilder& b);
-
-/// Extracts a slice of qubits, extracts a qubit from the slice, inserts the
-/// qubit back into the slice, and inserts the slice back into the tensor
-/// immediately at the same index and offset.
-void qtensorExtractSliceExtractInsertInsertSlice(QCOProgramBuilder& b);
 
 } // namespace mlir::qco

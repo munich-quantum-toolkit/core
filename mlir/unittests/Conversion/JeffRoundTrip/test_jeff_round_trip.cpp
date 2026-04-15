@@ -27,6 +27,7 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <memory>
 #include <ostream>
@@ -93,7 +94,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -101,7 +102,12 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted Jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  PassManager pm(context.get());
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+  pm.addPass(createRemoveDeadValuesPass());
+  EXPECT_TRUE(pm.run(program.get()).succeeded());
+
   printer.record(program.get(), "Canonicalized Converted Jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -109,7 +115,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -119,7 +125,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -212,7 +218,10 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::singleControlledH)},
         JeffRoundTripTestCase{"MultipleControlledH",
                               MQT_NAMED_BUILDER(qco::multipleControlledH),
-                              MQT_NAMED_BUILDER(qco::multipleControlledH)}));
+                              MQT_NAMED_BUILDER(qco::multipleControlledH)},
+        JeffRoundTripTestCase{"HWithoutRegister",
+                              MQT_NAMED_BUILDER(qco::hWithoutRegister),
+                              MQT_NAMED_BUILDER(qco::hWithoutRegister)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/IswapOp.cpp
@@ -599,8 +608,11 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(
-                qco::multipleClassicalRegistersAndMeasurements)}));
+            MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
+        JeffRoundTripTestCase{
+            "MeasurementWithoutRegisters",
+            MQT_NAMED_BUILDER(qco::measurementWithoutRegisters),
+            MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/ResetOp.cpp

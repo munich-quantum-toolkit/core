@@ -12,7 +12,6 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -20,6 +19,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
@@ -35,6 +35,11 @@ namespace mlir::qc {
  * quantum circuits using reference semantics. Operations modify qubits in
  * place without producing new SSA values, providing a natural mapping to
  * hardware execution models.
+ *
+ * @par Qubit addressing:
+ * A program must use either static qubits (`staticQubit`) or dynamic allocation
+ * (`allocQubit` / `allocQubitRegister`), never both. The builder terminates
+ * with a usage error if the modes are mixed.
  *
  * @par Example Usage:
  * ```c++
@@ -95,6 +100,34 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Represents a qubit register with its qubits.
+   */
+  struct QubitRegister {
+    /// The MemRef value representing the qubit register
+    Value value;
+    /// The allocated qubit values
+    SmallVector<Value> qubits;
+
+    /**
+     * @brief Access a specific qubit in the register
+     * @param index The index of the qubit to access
+     * @return The specified qubit value
+     */
+    Value operator[](size_t index) const {
+      if (index >= qubits.size()) {
+        llvm::report_fatal_error("Qubit index out of bounds");
+      }
+      return qubits[index];
+    }
+
+    /**
+     * @brief Conversion to the backing MemRef value
+     * @return The MemRef value representing the qubit register
+     */
+    explicit operator Value() const { return value; }
+  };
+
+  /**
    * @brief Allocate a single qubit initialized to |0⟩
    * @return A qubit reference
    *
@@ -126,21 +159,20 @@ public:
   /**
    * @brief Allocate a qubit register
    * @param size Number of qubits (must be positive)
-   * @param name Register name (default: "q")
-   * @return Vector of qubit references
+   * @return A `QubitRegister` structure
    *
    * @par Example:
    * ```c++
-   * auto q = builder.allocQubitRegister(3, "q");
+   * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %q0 = qc.alloc("q", 3, 0) : !qc.qubit
-   * %q1 = qc.alloc("q", 3, 1) : !qc.qubit
-   * %q2 = qc.alloc("q", 3, 2) : !qc.qubit
+   * %memref = memref.alloc() : memref<3x!qc.qubit>
+   * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
+   * %q1 = memref.load %memref[%c1] : memref<3x!qc.qubit>
+   * %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
    * ```
    */
-  llvm::SmallVector<Value> allocQubitRegister(int64_t size,
-                                              const std::string& name = "q");
+  QubitRegister allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -185,7 +217,7 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A ClassicalRegister structure
+   * @return A `ClassicalRegister` structure
    *
    * @par Example:
    * ```c++
@@ -936,13 +968,24 @@ public:
         const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc);
 
 private:
+  enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
+
   MLIRContext* ctx{};
   ModuleOp module;
 
   /// Track allocated qubits for automatic deallocation
   llvm::DenseSet<Value> allocatedQubits;
 
+  /// Track allocated MemRefs for automatic deallocation
+  llvm::DenseSet<Value> allocatedMemrefs;
+
   /// Check if the builder has been finalized
   void checkFinalized() const;
+
+  /// Track whether static or dynamic qubit allocation is used.
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Ensure static and dynamic qubit allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode);
 };
 } // namespace mlir::qc

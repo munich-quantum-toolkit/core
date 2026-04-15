@@ -22,6 +22,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -61,7 +62,7 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<qc::QCDialect, LLVM::LLVMDialect, arith::ArithDialect,
-                    func::FuncDialect>();
+                    func::FuncDialect, memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -86,7 +87,7 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -94,7 +95,7 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQIRCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -104,7 +105,7 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQIRCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -180,7 +181,10 @@ INSTANTIATE_TEST_SUITE_P(
                     QCToQIRTestCase{
                         "MultipleControlledH",
                         MQT_NAMED_BUILDER(qc::multipleControlledH),
-                        MQT_NAMED_BUILDER(qir::multipleControlledH)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledH)},
+                    QCToQIRTestCase{"HWithoutRegister",
+                                    MQT_NAMED_BUILDER(qc::hWithoutRegister),
+                                    MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
 /// @}
 
 /// \name QCToQIR/Operations/StandardGates/IdOp.cpp
@@ -576,8 +580,10 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(
-                qir::multipleClassicalRegistersAndMeasurements)}));
+            MQT_NAMED_BUILDER(qir::multipleClassicalRegistersAndMeasurements)},
+        QCToQIRTestCase{"MeasurementWithoutRegisters",
+                        MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
+                        MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
 /// @}
 
 /// \name QCToQIR/Operations/ResetOp.cpp

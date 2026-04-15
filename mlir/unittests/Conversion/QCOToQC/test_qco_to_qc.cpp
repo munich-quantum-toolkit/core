@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -22,6 +23,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -60,8 +62,9 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
-                    func::FuncDialect>();
+    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                    arith::ArithDialect, func::FuncDialect,
+                    memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -87,7 +90,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -95,7 +98,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -105,7 +108,7 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -221,10 +224,12 @@ INSTANTIATE_TEST_SUITE_P(
                     QCOToQCTestCase{"SingleControlledH",
                                     MQT_NAMED_BUILDER(qco::singleControlledH),
                                     MQT_NAMED_BUILDER(qc::singleControlledH)},
-                    QCOToQCTestCase{
-                        "MultipleControlledH",
-                        MQT_NAMED_BUILDER(qco::multipleControlledH),
-                        MQT_NAMED_BUILDER(qc::multipleControlledH)}));
+                    QCOToQCTestCase{"MultipleControlledH",
+                                    MQT_NAMED_BUILDER(qco::multipleControlledH),
+                                    MQT_NAMED_BUILDER(qc::multipleControlledH)},
+                    QCOToQCTestCase{"HWithoutRegister",
+                                    MQT_NAMED_BUILDER(qco::hWithoutRegister),
+                                    MQT_NAMED_BUILDER(qc::hWithoutRegister)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/IswapOp.cpp
@@ -605,7 +610,10 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements)}));
+            MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements)},
+        QCOToQCTestCase{"MeasurementWithoutRegisters",
+                        MQT_NAMED_BUILDER(qco::measurementWithoutRegisters),
+                        MQT_NAMED_BUILDER(qc::measurementWithoutRegisters)}));
 /// @}
 
 /// \name QCOToQC/Operations/ResetOp.cpp

@@ -10,6 +10,8 @@
 
 #include "mlir/Support/IRVerification.h"
 
+#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
+
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
@@ -23,6 +25,8 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/QTensor/IR/QTensorOps.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -116,7 +120,260 @@ struct StructuralOperationKey {
 
 /// Map to track value equivalence between two modules.
 using ValueEquivalenceMap = llvm::DenseMap<mlir::Value, mlir::Value>;
+
+using OperationSet = llvm::DenseSet<Operation*>;
+
+struct InsertWrite {
+  Value scalar;
+  Value index;
+};
+
+struct InsertChainSummary {
+  Value baseTensor;
+  Value finalTensor;
+  llvm::SmallVector<InsertWrite> writes;
+};
+
 } // namespace
+
+static bool areValuesEquivalent(Value lhs, Value rhs,
+                                ValueEquivalenceMap& valueMap) {
+  if (auto it = valueMap.find(lhs); it != valueMap.end()) {
+    return it->second == rhs;
+  }
+  valueMap[lhs] = rhs;
+  return true;
+}
+
+static bool areIndexValuesEquivalent(Value lhs, Value rhs,
+                                     ValueEquivalenceMap& valueMap) {
+  if (qtensor::areEquivalentIndices(lhs, rhs)) {
+    return true;
+  }
+  return areValuesEquivalent(lhs, rhs, valueMap);
+}
+
+static bool isQTensorInsertOp(Operation* op) {
+  return llvm::isa<qtensor::InsertOp>(op);
+}
+
+static bool isCommutableQTensorInsertDependency(Operation* dependent,
+                                                Operation* dependency) {
+  auto dependentInsert = llvm::dyn_cast<qtensor::InsertOp>(dependent);
+  auto dependencyInsert = llvm::dyn_cast<qtensor::InsertOp>(dependency);
+  if (!dependentInsert || !dependencyInsert) {
+    return false;
+  }
+  if (dependentInsert.getDest() != dependencyInsert.getResult()) {
+    return false;
+  }
+  auto dependentIndex = dependentInsert.getIndex();
+  auto dependencyIndex = dependencyInsert.getIndex();
+  if (!getConstantIntValue(dependentIndex) ||
+      !getConstantIntValue(dependencyIndex)) {
+    return false;
+  }
+  return !qtensor::areEquivalentIndices(dependentIndex, dependencyIndex);
+}
+
+static Value getInsertChainBaseTensor(Value tensor, const OperationSet& group) {
+  auto current = tensor;
+  while (auto insertOp = current.getDefiningOp<qtensor::InsertOp>()) {
+    if (!group.contains(insertOp.getOperation())) {
+      break;
+    }
+    current = insertOp.getDest();
+  }
+  return current;
+}
+
+static bool
+summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
+                     llvm::SmallVectorImpl<InsertChainSummary>& chains) {
+  OperationSet groupOps;
+  for (Operation* op : ops) {
+    groupOps.insert(op);
+  }
+
+  llvm::DenseSet<Value> consumedInsertResults;
+  for (Operation* op : ops) {
+    auto insertOp = llvm::cast<qtensor::InsertOp>(op);
+    if (auto definingInsert =
+            insertOp.getDest().getDefiningOp<qtensor::InsertOp>()) {
+      if (groupOps.contains(definingInsert.getOperation())) {
+        consumedInsertResults.insert(insertOp.getDest());
+      }
+    }
+  }
+
+  llvm::DenseMap<Value, size_t> chainByBaseTensor;
+  for (Operation* op : ops) {
+    auto insertOp = llvm::cast<qtensor::InsertOp>(op);
+    const Value baseTensor =
+        getInsertChainBaseTensor(insertOp.getDest(), groupOps);
+
+    size_t chainIdx = 0;
+    if (auto it = chainByBaseTensor.find(baseTensor);
+        it != chainByBaseTensor.end()) {
+      chainIdx = it->second;
+    } else {
+      chainIdx = chains.size();
+      chainByBaseTensor[baseTensor] = chainIdx;
+      InsertChainSummary summary;
+      summary.baseTensor = baseTensor;
+      chains.emplace_back(std::move(summary));
+    }
+
+    auto& chain = chains[chainIdx];
+    chain.writes.push_back(InsertWrite{.scalar = insertOp.getScalar(),
+                                       .index = insertOp.getIndex()});
+
+    if (!consumedInsertResults.contains(insertOp.getResult())) {
+      if (chain.finalTensor) {
+        return false;
+      }
+      chain.finalTensor = insertOp.getResult();
+    }
+  }
+
+  for (const auto& chain : chains) {
+    if (!chain.finalTensor) {
+      return false;
+    }
+
+    // Reordering writes to the same index is not semantics-preserving.
+    llvm::SmallVector<Value> seenIndices;
+    for (const auto& write : chain.writes) {
+      if (llvm::any_of(seenIndices, [&](Value seenIndex) {
+            return qtensor::areEquivalentIndices(seenIndex, write.index);
+          })) {
+        return false;
+      }
+      seenIndices.push_back(write.index);
+    }
+  }
+
+  return true;
+}
+
+static bool areInsertWritesEquivalentRec(const size_t lhsIdx,
+                                         llvm::ArrayRef<InsertWrite> lhsWrites,
+                                         llvm::ArrayRef<InsertWrite> rhsWrites,
+                                         llvm::SmallVectorImpl<char>& rhsUsed,
+                                         ValueEquivalenceMap& valueMap) {
+  if (lhsIdx == lhsWrites.size()) {
+    return true;
+  }
+
+  for (size_t rhsIdx = 0; rhsIdx < rhsWrites.size(); ++rhsIdx) {
+    if (rhsUsed[rhsIdx] != 0) {
+      continue;
+    }
+
+    ValueEquivalenceMap tempMap = valueMap;
+    if (!areValuesEquivalent(lhsWrites[lhsIdx].scalar, rhsWrites[rhsIdx].scalar,
+                             tempMap) ||
+        !areIndexValuesEquivalent(lhsWrites[lhsIdx].index,
+                                  rhsWrites[rhsIdx].index, tempMap)) {
+      continue;
+    }
+
+    rhsUsed[rhsIdx] = 1;
+    if (areInsertWritesEquivalentRec(lhsIdx + 1, lhsWrites, rhsWrites, rhsUsed,
+                                     tempMap)) {
+      valueMap = std::move(tempMap);
+      return true;
+    }
+    rhsUsed[rhsIdx] = 0;
+  }
+
+  return false;
+}
+
+static bool areInsertWritesEquivalent(llvm::ArrayRef<InsertWrite> lhsWrites,
+                                      llvm::ArrayRef<InsertWrite> rhsWrites,
+                                      ValueEquivalenceMap& valueMap) {
+  if (lhsWrites.size() != rhsWrites.size()) {
+    return false;
+  }
+  llvm::SmallVector<char> rhsUsed(rhsWrites.size(), 0);
+  return areInsertWritesEquivalentRec(0, lhsWrites, rhsWrites, rhsUsed,
+                                      valueMap);
+}
+
+static bool areInsertChainsEquivalent(const InsertChainSummary& lhsChain,
+                                      const InsertChainSummary& rhsChain,
+                                      ValueEquivalenceMap& valueMap) {
+  ValueEquivalenceMap tempMap = valueMap;
+  if (!areValuesEquivalent(lhsChain.baseTensor, rhsChain.baseTensor, tempMap)) {
+    return false;
+  }
+
+  if (!areInsertWritesEquivalent(lhsChain.writes, rhsChain.writes, tempMap)) {
+    return false;
+  }
+
+  if (!areValuesEquivalent(lhsChain.finalTensor, rhsChain.finalTensor,
+                           tempMap)) {
+    return false;
+  }
+
+  valueMap = std::move(tempMap);
+  return true;
+}
+
+static bool areInsertGroupsEquivalentRec(
+    const size_t lhsChainIdx, llvm::ArrayRef<InsertChainSummary> lhsChains,
+    llvm::ArrayRef<InsertChainSummary> rhsChains,
+    llvm::SmallVectorImpl<char>& rhsChainUsed, ValueEquivalenceMap& valueMap) {
+  if (lhsChainIdx == lhsChains.size()) {
+    return true;
+  }
+
+  for (size_t rhsChainIdx = 0; rhsChainIdx < rhsChains.size(); ++rhsChainIdx) {
+    if (rhsChainUsed[rhsChainIdx] != 0) {
+      continue;
+    }
+
+    ValueEquivalenceMap tempMap = valueMap;
+    if (!areInsertChainsEquivalent(lhsChains[lhsChainIdx],
+                                   rhsChains[rhsChainIdx], tempMap)) {
+      continue;
+    }
+
+    rhsChainUsed[rhsChainIdx] = 1;
+    if (areInsertGroupsEquivalentRec(lhsChainIdx + 1, lhsChains, rhsChains,
+                                     rhsChainUsed, tempMap)) {
+      valueMap = std::move(tempMap);
+      return true;
+    }
+    rhsChainUsed[rhsChainIdx] = 0;
+  }
+
+  return false;
+}
+
+static bool areInsertGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
+                                      llvm::ArrayRef<Operation*> rhsOps,
+                                      ValueEquivalenceMap& valueMap) {
+  if (lhsOps.size() != rhsOps.size()) {
+    return false;
+  }
+
+  llvm::SmallVector<InsertChainSummary> lhsChains;
+  llvm::SmallVector<InsertChainSummary> rhsChains;
+  if (!summarizeInsertGroup(lhsOps, lhsChains) ||
+      !summarizeInsertGroup(rhsOps, rhsChains)) {
+    return false;
+  }
+  if (lhsChains.size() != rhsChains.size()) {
+    return false;
+  }
+
+  llvm::SmallVector<char> rhsChainUsed(rhsChains.size(), 0);
+  return areInsertGroupsEquivalentRec(0, lhsChains, rhsChains, rhsChainUsed,
+                                      valueMap);
+}
 
 /// DenseMapInfo specialization for StructuralOperationKey
 template <> struct llvm::DenseMapInfo<StructuralOperationKey> {
@@ -378,18 +635,21 @@ llvm::SmallVector<llvm::SmallVector<
   }
 
   auto dependsOn = buildDependenceGraph(ops);
-  const llvm::DenseSet<Operation*> processed;
   llvm::SmallVector<Operation*> currentGroup;
 
   for (auto* op : ops) {
     bool dependsOnCurrent = false;
 
     // Check if this operation depends on any operation in the current group
-    for (const auto* groupOp : currentGroup) {
-      if (dependsOn[op].contains(groupOp)) {
-        dependsOnCurrent = true;
-        break;
+    for (auto* groupOp : currentGroup) {
+      if (!dependsOn[op].contains(groupOp)) {
+        continue;
       }
+      if (isCommutableQTensorInsertDependency(op, groupOp)) {
+        continue;
+      }
+      dependsOnCurrent = true;
+      break;
     }
 
     // Check if this operation has ordering constraints
@@ -501,6 +761,18 @@ static bool areBlocksEquivalent(Block& lhs, Block& rhs,
   for (size_t groupIdx = 0; groupIdx < lhsGroups.size(); ++groupIdx) {
     auto& lhsGroup = lhsGroups[groupIdx];
     auto& rhsGroup = rhsGroups[groupIdx];
+
+    const bool lhsInsertGroup = llvm::all_of(lhsGroup, isQTensorInsertOp);
+    const bool rhsInsertGroup = llvm::all_of(rhsGroup, isQTensorInsertOp);
+    if (lhsInsertGroup || rhsInsertGroup) {
+      if (!lhsInsertGroup || !rhsInsertGroup) {
+        return false;
+      }
+      if (!areInsertGroupsEquivalent(lhsGroup, rhsGroup, valueMap)) {
+        return false;
+      }
+      continue;
+    }
 
     if (!areIndependentGroupsEquivalent(lhsGroup, rhsGroup)) {
       return false;

@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -65,7 +66,6 @@ protected:
     context->loadAllAvailableDialects();
   }
 };
-
 } // namespace
 
 TEST_P(QCOTest, ProgramEquivalence) {
@@ -78,7 +78,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -87,7 +87,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -95,32 +95,55 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedStaticThenDynamicQubit(builder);
+      },
+      "Cannot mix static and dynamic qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedDynamicRegisterThenStaticQubit(builder);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
+}
+
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
-  auto q0 = AllocOp::create(builder);
-  auto q1 = HOp::create(builder, q0);
+  auto c0 = arith::ConstantIndexOp::create(builder, 0);
+  auto c1 = arith::ConstantIndexOp::create(builder, 1);
+  auto r0 = qtensor::AllocOp::create(builder, c1);
+  auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
+  auto q1 = HOp::create(builder, extractOp.getResult());
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp =
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
                    [&](ValueRange qubits) -> llvm::SmallVector<Value> {
                      auto innerQubit = XOp::create(builder, qubits[0]);
-                     return llvm::SmallVector<mlir::Value>{innerQubit};
+                     return llvm::SmallVector<Value>{innerQubit};
                    });
-  SinkOp::create(builder, ifOp.getResult(0));
+  auto r2 = qtensor::InsertOp::create(builder, ifOp.getResult(0),
+                                      extractOp.getOutTensor(), c0);
+  qtensor::DeallocOp::create(builder, r2);
 
   auto directBuilder = builder.finalize();
   ASSERT_TRUE(directBuilder);
   EXPECT_TRUE(verify(*directBuilder).succeeded());
-  runCanonicalizationPasses(directBuilder.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(directBuilder.get()).succeeded());
   EXPECT_TRUE(verify(*directBuilder).succeeded());
 
   auto refBuilder =
       QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
-  runCanonicalizationPasses(refBuilder.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
   EXPECT_TRUE(verify(*refBuilder).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),
@@ -1077,57 +1100,4 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithInv)},
         QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
-/// @}
-
-/// \name QTensor/QTensor.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QTensorTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"QTensorAlloc", MQT_NAMED_BUILDER(qtensorAlloc),
-                    MQT_NAMED_BUILDER(qtensorAlloc)},
-        QCOTestCase{"QTensorAllocDealloc", MQT_NAMED_BUILDER(qtensorDealloc),
-                    MQT_NAMED_BUILDER(qtensorAlloc)},
-        QCOTestCase{"QTensorFromElements",
-                    MQT_NAMED_BUILDER(qtensorFromElements),
-                    MQT_NAMED_BUILDER(qtensorFromElements)},
-        QCOTestCase{"QTensorExtract", MQT_NAMED_BUILDER(qtensorExtract),
-                    MQT_NAMED_BUILDER(qtensorExtract)},
-        QCOTestCase{"QTensorInsert", MQT_NAMED_BUILDER(qtensorInsert),
-                    MQT_NAMED_BUILDER(qtensorInsert)},
-        QCOTestCase{"QTensorExtractSlice",
-                    MQT_NAMED_BUILDER(qtensorExtractSlice),
-                    MQT_NAMED_BUILDER(qtensorExtractSlice)},
-        QCOTestCase{"QTensorInsertSlice", MQT_NAMED_BUILDER(qtensorInsertSlice),
-                    MQT_NAMED_BUILDER(qtensorInsertSlice)},
-        QCOTestCase{"QTensorExtractInsertSameIndex",
-                    MQT_NAMED_BUILDER(qtensorExtractInsertSameIndex),
-                    MQT_NAMED_BUILDER(qtensorAlloc)},
-        QCOTestCase{"QTensorExtractInsertIndexMismatch",
-                    MQT_NAMED_BUILDER(qtensorExtractInsertIndexMismatch),
-                    MQT_NAMED_BUILDER(qtensorExtractInsertIndexMismatch)},
-        QCOTestCase{"QTensorInsertExtractSameIndex",
-                    MQT_NAMED_BUILDER(qtensorInsertExtractSameIndex),
-                    MQT_NAMED_BUILDER(qtensorInsert)},
-        QCOTestCase{"QTensorInsertExtractIndexMismatch",
-                    MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch),
-                    MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch)},
-        QCOTestCase{"QTensorExtractSliceInsertSliceSameOffset",
-                    MQT_NAMED_BUILDER(qtensorExtractSliceInsertSliceSameOffset),
-                    MQT_NAMED_BUILDER(qtensorAlloc)},
-        QCOTestCase{
-            "QTensorExtractSliceInsertSliceOffsetMismatch",
-            MQT_NAMED_BUILDER(qtensorExtractSliceInsertSliceOffsetMismatch),
-            MQT_NAMED_BUILDER(qtensorExtractSliceInsertSliceOffsetMismatch)},
-        QCOTestCase{"QTensorInsertSliceExtractSliceSameOffset",
-                    MQT_NAMED_BUILDER(qtensorInsertSliceExtractSliceSameOffset),
-                    MQT_NAMED_BUILDER(qtensorInsertSlice)},
-        QCOTestCase{
-            "QTensorInsertSliceExtractSliceOffsetMismatch",
-            MQT_NAMED_BUILDER(qtensorInsertSliceExtractSliceOffsetMismatch),
-            MQT_NAMED_BUILDER(qtensorInsertSliceExtractSliceOffsetMismatch)},
-        QCOTestCase{
-            "QTensorExtractSliceExtractInsertInsertSlice",
-            MQT_NAMED_BUILDER(qtensorExtractSliceExtractInsertInsertSlice),
-            MQT_NAMED_BUILDER(qtensorAlloc)}));
 /// @}

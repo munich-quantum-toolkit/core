@@ -10,20 +10,29 @@
 
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 
+#include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -32,6 +41,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 
 namespace mlir {
@@ -43,6 +53,24 @@ using namespace qc;
 #include "mlir/Conversion/QCToQCO/QCToQCO.h.inc"
 
 namespace {
+
+/**
+ * @brief Information about a qubit
+ */
+struct QubitInfo {
+  /// Register the qubit belongs to
+  Value reg;
+  /// Index of the qubit within its register
+  Value index;
+};
+
+/** @brief Qubit allocation mode */
+enum class AllocationMode : std::uint8_t {
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
+};
+
 /**
  * @brief State object for tracking qubit value flow during conversion
  *
@@ -81,14 +109,39 @@ struct LoweringState {
     llvm::DenseMap<Value, Value> currentQubits;
   };
 
-  /// Per-region map from QC qubit references to latest QCO SSA values.
+  /// Per-region map from original QC qubit reference to its latest QCO SSA
+  /// value.
   ///
   /// @details Keys are `Operation::getParentRegion()` for ops being converted
-  /// (typically a `func.func` body, or a `qc.ctrl` / `qc.inv` region).
+  /// (typically a `func.func` body or a modifier region).
   llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
 
-  /// Stack of active modifier regions (`qc.ctrl` / `qc.inv`).
+  /// Per-region map from original QC register to its latest QTensor SSA value
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> tensorMap;
+
+  /// Per-region map from original QC qubit reference to its register
+  /// information
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, QubitInfo>> qubitInfoMap;
+
+  /// Stack of active modifier regions
   SmallVector<ModifierFrame> modifierFrames;
+
+  /// The qubit allocation mode used in the module
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = requestedMode;
+      return success();
+    }
+    if (allocationMode == requestedMode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in QC program");
+  }
 };
 
 /**
@@ -122,23 +175,6 @@ private:
 };
 } // namespace
 
-/**
- * @brief Helper function to look up the latest QCO qubit value for a given QC
- * qubit reference
- *
- * @param qubitMap The mapping from QC qubits to QCO qubits for the current
- * region
- * @param qcQubit The QC qubit reference to look up
- * @return The latest QCO qubit value corresponding to the given QC qubit
- * reference
- */
-[[nodiscard]] static Value
-lookupMappedQubit(llvm::DenseMap<Value, Value>& qubitMap, Value qcQubit) {
-  auto it = qubitMap.find(qcQubit);
-  assert(it != qubitMap.end() && "QC qubit not found");
-  return it->second;
-}
-
 /** @brief Returns whether lowering currently processes a modifier body. */
 [[nodiscard]] static bool isInsideModifier(const LoweringState& state) {
   return !state.modifierFrames.empty();
@@ -151,17 +187,26 @@ currentModifierFrame(LoweringState& state) {
   return state.modifierFrames.back();
 }
 
-/** @brief Finds the nearest region-local qubit map containing @p qcQubit. */
-[[nodiscard]] static llvm::DenseMap<Value, Value>*
-findMappedQubitMap(LoweringState& state, Operation* anchor, Value qcQubit) {
-  for (Region* current = anchor->getParentRegion(); current != nullptr;
+/**
+ * @brief Finds the nearest region-local map containing @p reference and
+ * returns the pair containing the map and a mutable reference to the value in
+ * the map.
+ */
+[[nodiscard]] static std::pair<llvm::DenseMap<Value, Value>*, Value*>
+findRegionLocalMap(llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>>& map,
+                   Operation* anchor, Value reference) {
+  for (auto* current = anchor->getParentRegion(); current != nullptr;
        current = current->getParentRegion()) {
-    auto mapIt = state.qubitMap.find(current);
-    if (mapIt != state.qubitMap.end() && mapIt->second.contains(qcQubit)) {
-      return &mapIt->second;
+    if (auto it = map.find(current); it != map.end()) {
+      auto& regionMap = it->second;
+      if (auto valueIt = regionMap.find(reference);
+          valueIt != regionMap.end()) {
+        return {&regionMap, &valueIt->second};
+      }
+      return {&regionMap, nullptr};
     }
   }
-  return nullptr;
+  return {nullptr, nullptr};
 }
 
 /** @brief Resolves the latest QCO SSA value for a QC qubit reference. */
@@ -175,9 +220,20 @@ findMappedQubitMap(LoweringState& state, Operation* anchor, Value qcQubit) {
     }
   }
 
-  auto* qubitMap = findMappedQubitMap(state, anchor, qcQubit);
-  assert(qubitMap != nullptr && "QC qubit not found");
-  return lookupMappedQubit(*qubitMap, qcQubit);
+  const auto& [qubitMap, qubitValue] =
+      findRegionLocalMap(state.qubitMap, anchor, qcQubit);
+  assert(qubitMap != nullptr && qubitValue != nullptr && "QC qubit not found");
+  return *qubitValue;
+}
+
+/** @brief Resolves the latest QTensor SSA value for a QC register. */
+[[nodiscard]] static Value lookupMappedTensor(LoweringState& state,
+                                              Operation* anchor, Value memref) {
+  const auto& [tensorMap, tensorValue] =
+      findRegionLocalMap(state.tensorMap, anchor, memref);
+  assert(tensorMap != nullptr && tensorValue != nullptr &&
+         "QC register not found");
+  return *tensorValue;
 }
 
 /** @brief Updates the latest QCO SSA value for a QC qubit reference. */
@@ -192,12 +248,34 @@ static void assignMappedQubit(LoweringState& state, Operation* anchor,
     }
   }
 
-  if (auto* qubitMap = findMappedQubitMap(state, anchor, qcQubit)) {
+  auto [qubitMap, qubitValue] =
+      findRegionLocalMap(state.qubitMap, anchor, qcQubit);
+  if (qubitValue != nullptr) {
+    *qubitValue = qcoQubit;
+    return;
+  }
+  if (qubitMap != nullptr) {
     (*qubitMap)[qcQubit] = qcoQubit;
     return;
   }
-
   state.qubitMap[anchor->getParentRegion()][qcQubit] = qcoQubit;
+}
+
+/** @brief Updates the latest QTensor SSA value for a QC register. */
+static void assignMappedTensor(LoweringState& state, Operation* anchor,
+                               Value memref, Value tensor) {
+  auto [tensorMap, tensorValue] =
+      findRegionLocalMap(state.tensorMap, anchor, memref);
+
+  if (tensorValue != nullptr) {
+    *tensorValue = tensor;
+    return;
+  }
+  if (tensorMap != nullptr) {
+    (*tensorMap)[memref] = tensor;
+    return;
+  }
+  state.tensorMap[anchor->getParentRegion()][memref] = tensor;
 }
 
 /** @brief Resolves a range of QC qubits to their latest QCO values. */
@@ -271,7 +349,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
   matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    Region* funcRegion = op->getParentRegion();
+    auto* funcRegion = op->getParentRegion();
     auto& map = state.qubitMap[funcRegion];
 
     // Build return values from qubitMap and collect live qubit information.
@@ -292,7 +370,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     }
 
     // Deallocate dead qubit values
-    for (Value qcoQubit : llvm::make_second_range(map)) {
+    for (auto qcoQubit : llvm::make_second_range(map)) {
       if (!liveQubits.contains(qcoQubit)) {
         SinkOp::create(rewriter, op.getLoc(), qcoQubit);
       }
@@ -329,21 +407,188 @@ public:
 };
 
 /**
- * @brief Converts qc.alloc to qco.alloc
+ * @brief Converts memref.alloc to qtensor.alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+ * ```
+ */
+struct ConvertMemRefAllocOp final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (!llvm::isa<qc::QubitType>(op.getType().getElementType())) {
+      return failure();
+    }
+
+    auto shape = op.getType().getShape();
+    if (shape.size() != 1) {
+      return failure();
+    }
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
+
+    Value qtensor;
+    if (shape[0] == ShapedType::kDynamic) {
+      qtensor = rewriter.replaceOpWithNewOp<qtensor::AllocOp>(
+          op, adaptor.getDynamicSizes()[0]);
+    } else {
+      auto size =
+          arith::ConstantIndexOp::create(rewriter, op.getLoc(), shape[0]);
+      qtensor =
+          rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
+    }
+
+    auto& state = getState();
+    auto memref = op.getResult();
+    assignMappedTensor(state, qtensor.getDefiningOp(), memref, qtensor);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts memref.load to qtensor.extract
+ *
+ * @par Example:
+ * ```mlir
+ * %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
+ * ```
+ */
+struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto memref = op.getMemref();
+    if (!llvm::isa<qc::QubitType>(memref.getType().getElementType())) {
+      return failure();
+    }
+
+    auto& state = getState();
+    auto& qubitInfoMap = state.qubitInfoMap;
+    auto* operation = op.getOperation();
+
+    // Look up latest QTensor value for this QC register
+    auto qtensor = lookupMappedTensor(state, operation, memref);
+
+    auto index = adaptor.getIndices()[0];
+    auto extract =
+        qtensor::ExtractOp::create(rewriter, op.getLoc(), qtensor, index);
+
+    auto qcQubit = op.getResult();
+    auto qcoQubit = extract.getResult();
+
+    assignMappedQubit(state, operation, qcQubit, qcoQubit);
+    assignMappedTensor(state, operation, memref, extract.getOutTensor());
+
+    QubitInfo info{.reg = memref, .index = index};
+    auto* parentRegion = operation->getParentRegion();
+    if (auto it = qubitInfoMap.find(parentRegion); it != qubitInfoMap.end()) {
+      it->second[qcQubit] = info;
+    } else {
+      qubitInfoMap[parentRegion][qcQubit] = info;
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts memref.dealloc to qtensor.dealloc
  *
  * @details
- * Allocates a new qubit and establishes the initial mapping in the state.
- * Both dialects initialize qubits to the |0⟩ state.
+ * Before deallocating the tensor, all qubits are inserted back into it at their
+ * original location.
  *
- * Register metadata (name, size, index) is preserved during conversion,
- * allowing the QCO representation to maintain register information for
- * debugging and visualization.
- *
- * Example transformation:
+ * @par Example:
  * ```mlir
- * %q = qc.alloc("q", 3, 0) : !qc.qubit
- * // becomes:
- * %q0 = qco.alloc("q", 3, 0) : !qco.qubit
+ * memref.dealloc %memref : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %t1 = qtensor.insert %q0 into %t0[%c0] : tensor<3x!qco.qubit>
+ * %t2 = qtensor.insert %q1 into %t1[%c1] : tensor<3x!qco.qubit>
+ * %t3 = qtensor.insert %q2 into %t2[%c2] : tensor<3x!qco.qubit>
+ * qtensor.dealloc %t3 : tensor<3x!qco.qubit>
+ * ```
+ */
+struct ConvertMemRefDeallocOp final
+    : StatefulOpConversionPattern<memref::DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto memref = op.getMemref();
+    if (!llvm::isa<qc::QubitType>(memref.getType().getElementType())) {
+      return failure();
+    }
+
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
+    auto& tensorMap = state.tensorMap[op->getParentRegion()];
+    auto& qubitInfoMap = state.qubitInfoMap[op->getParentRegion()];
+
+    // Look up latest QTensor value for this QC register
+    auto qtensor = lookupMappedTensor(state, op.getOperation(), memref);
+
+    // Filter out qubits belonging to this tensor
+    for (auto it = qubitMap.begin(); it != qubitMap.end();) {
+      auto current = it++;
+      auto qcQubit = current->first;
+      auto qcoQubit = current->second;
+
+      auto infoIt = qubitInfoMap.find(qcQubit);
+      if (infoIt == qubitInfoMap.end()) {
+        continue;
+      }
+
+      auto& [reg, index] = infoIt->second;
+      if (reg != memref) {
+        continue;
+      }
+
+      qtensor = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
+                                          qtensor, index)
+                    .getResult();
+      qubitMap.erase(current);
+      qubitInfoMap.erase(infoIt);
+    }
+    tensorMap.erase(memref);
+
+    rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, qtensor);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qc.alloc to qco.alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %q = qc.alloc : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q = qco.alloc : !qco.qubit
  * ```
  */
 struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
@@ -353,19 +598,17 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto* operation = op.getOperation();
+    if (failed(state.ensureAllocationMode(AllocationMode::Dynamic,
+                                          op.getOperation()))) {
+      return failure();
+    }
     auto qcQubit = op.getResult();
 
-    // Create the qco.alloc operation with preserved register metadata
-    auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(
-        op, op.getRegisterNameAttr(), op.getRegisterSizeAttr(),
-        op.getRegisterIndexAttr());
+    // Create the qco.alloc operation
+    auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(op);
 
     auto qcoQubit = qcoOp.getResult();
-
-    // Establish initial mapping: this QC qubit reference now corresponds
-    // to this QCO SSA value
-    assignMappedQubit(state, operation, qcQubit, qcoQubit);
+    assignMappedQubit(state, qcoOp, qcQubit, qcoQubit);
 
     return success();
   }
@@ -393,11 +636,11 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
   matchAndRewrite(qc::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     auto* operation = op.getOperation();
-    auto* region = operation->getParentRegion();
-    auto& qubitMap = state.qubitMap[region];
-    Value qcQubit = op.getQubit();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+
+    auto qcQubit = op.getQubit();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create the sink operation
     rewriter.replaceOpWithNewOp<SinkOp>(op, qcoQubit);
@@ -431,11 +674,14 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   matchAndRewrite(qc::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto* operation = op.getOperation();
-    Value qcQubit = op.getQubit();
+    if (failed(state.ensureAllocationMode(AllocationMode::Static,
+                                          op.getOperation()))) {
+      return failure();
+    }
+    auto qcQubit = op.getQubit();
 
     auto qcoOp = rewriter.replaceOpWithNewOp<qco::StaticOp>(op, op.getIndex());
-    assignMappedQubit(state, operation, qcQubit, qcoOp.getQubit());
+    assignMappedQubit(state, qcoOp, qcQubit, qcoOp.getQubit());
 
     return success();
   }
@@ -472,8 +718,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubit();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto qcQubit = op.getQubit();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create qco.measure (returns both output qubit and bit result)
     auto qcoOp = qco::MeasureOp::create(
@@ -518,8 +764,8 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubit();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto qcQubit = op.getQubit();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create qco.reset (consumes input, produces output)
     auto qcoOp = qco::ResetOp::create(rewriter, op.getLoc(), qcoQubit);
@@ -534,321 +780,33 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
   }
 };
 
-/**
- * @brief Converts a zero-target, one-parameter QC gate to QCO
- *
- * @tparam QCOpType The operation type of the QC gate
- * @tparam QCOOpType The operation type of the QCO gate
- *
- * @par Example:
- * ```mlir
- * qc.gphase(%theta)
- * ```
- * is converted to
- * ```mlir
- * qco.gphase(%theta)
- * ```
- */
-template <typename QCOpType, typename QCOOpType>
-struct ConvertQCZeroTargetOneParameterToQCO final
-    : StatefulOpConversionPattern<QCOpType> {
+template <typename QCOpType, typename QCOOpType, std::size_t NumTargets,
+          std::size_t NumParams>
+struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
-  LogicalResult
-  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    QCOOpType::create(rewriter, op.getLoc(), op.getParameter(0));
-
-    rewriter.eraseOp(op);
-
-    return success();
+  template <std::size_t... TargetIndices, std::size_t... ParamIndices>
+  auto createGate(ConversionPatternRewriter& rewriter, QCOpType op,
+                  std::index_sequence<TargetIndices...> /*targets*/,
+                  std::index_sequence<ParamIndices...> /*params*/) const {
+    auto params = op.getParameters();
+    auto& state = this->getState();
+    return QCOOpType::create(
+        rewriter, op.getLoc(),
+        lookupMappedQubit(state, op, op.getTargets()[TargetIndices])...,
+        params[ParamIndices]...);
   }
-};
-
-/**
- * @brief Converts a one-target, zero-parameter QC gate to QCO
- *
- * @tparam QCOpType The operation type of the QC gate
- * @tparam QCOOpType The operation type of the QCO gate
- *
- * @par Example:
- * ```mlir
- * qc.x %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.x %q_in : !qco.qubit -> !qco.qubit
- * ```
- */
-template <typename QCOpType, typename QCOOpType>
-struct ConvertQCOneTargetZeroParameterToQCO final
-    : StatefulOpConversionPattern<QCOpType> {
-  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto* operation = op.getOperation();
-    Value qcQubit = op.getQubitIn();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
-
-    // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit);
-
-    assignMappedQubit(state, operation, qcQubit, qcoOp.getQubitOut());
-
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts a one-target, one-parameter QC gate to QCO
- *
- * @tparam QCOpType The operation type of the QC gate
- * @tparam QCOOpType The operation type of the QCO gate
- *
- * @par Example:
- * ```mlir
- * qc.rx(%theta) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.rx(%theta) %q_in : !qco.qubit -> !qco.qubit
- * ```
- */
-template <typename QCOpType, typename QCOOpType>
-struct ConvertQCOneTargetOneParameterToQCO final
-    : StatefulOpConversionPattern<QCOpType> {
-  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-    auto* operation = op.getOperation();
-    Value qcQubit = op.getQubitIn();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
-
-    // Create the QCO operation (consumes input, produces output)
+    const auto qcTargets = op.getTargets();
     auto qcoOp =
-        QCOOpType::create(rewriter, op.getLoc(), qcoQubit, op.getParameter(0));
+        createGate(rewriter, op, std::make_index_sequence<NumTargets>{},
+                   std::make_index_sequence<NumParams>{});
 
-    assignMappedQubit(state, operation, qcQubit, qcoOp.getQubitOut());
-
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts a one-target, two-parameter QC gate to QCO
- *
- * @tparam QCOpType The operation type of the QC gate
- * @tparam QCOOpType The operation type of the QCO gate
- *
- * @par Example:
- * ```mlir
- * qc.r(%theta, %phi) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.r(%theta, %phi) %q_in : !qco.qubit -> !qco.qubit
- * ```
- */
-template <typename QCOpType, typename QCOOpType>
-struct ConvertQCOneTargetTwoParameterToQCO final
-    : StatefulOpConversionPattern<QCOpType> {
-  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-    auto* operation = op.getOperation();
-    Value qcQubit = op.getQubitIn();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
-
-    // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit,
-                                   op.getParameter(0), op.getParameter(1));
-
-    assignMappedQubit(state, operation, qcQubit, qcoOp.getQubitOut());
-
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts a one-target, three-parameter QC gate to QCO
- *
- * @tparam QCOpType The operation type of the QC gate
- * @tparam QCOOpType The operation type of the QCO gate
- *
- * @par Example:
- * ```mlir
- * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit -> !qco.qubit
- * ```
- */
-template <typename QCOpType, typename QCOOpType>
-struct ConvertQCOneTargetThreeParameterToQCO final
-    : StatefulOpConversionPattern<QCOpType> {
-  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-    auto* operation = op.getOperation();
-    Value qcQubit = op.getQubitIn();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
-
-    // Create the QCO operation (consumes input, produces output)
-    auto qcoOp =
-        QCOOpType::create(rewriter, op.getLoc(), qcoQubit, op.getParameter(0),
-                          op.getParameter(1), op.getParameter(2));
-
-    assignMappedQubit(state, operation, qcQubit, qcoOp.getQubitOut());
-
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts a two-target, zero-parameter QC gate to QCO
- *
- * @tparam QCOpType The operation type of the QC gate
- * @tparam QCOOpType The operation type of the QCO gate
- *
- * @par Example:
- * ```mlir
- * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- */
-template <typename QCOpType, typename QCOOpType>
-struct ConvertQCTwoTargetZeroParameterToQCO final
-    : StatefulOpConversionPattern<QCOpType> {
-  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-    auto* operation = op.getOperation();
-    Value qcQubit0 = op.getQubit0In();
-    Value qcQubit1 = op.getQubit1In();
-    Value qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
-    Value qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
-
-    // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1);
-
-    assignMappedQubit(state, operation, qcQubit0, qcoOp.getQubit0Out());
-    assignMappedQubit(state, operation, qcQubit1, qcoOp.getQubit1Out());
-
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts a two-target, one-parameter QC gate to QCO
- *
- * @tparam QCOpType The operation type of the QC gate
- * @tparam QCOOpType The operation type of the QCO gate
- *
- * @par Example:
- * ```mlir
- * qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- */
-template <typename QCOpType, typename QCOOpType>
-struct ConvertQCTwoTargetOneParameterToQCO final
-    : StatefulOpConversionPattern<QCOpType> {
-  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-    auto* operation = op.getOperation();
-    Value qcQubit0 = op.getQubit0In();
-    Value qcQubit1 = op.getQubit1In();
-    Value qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
-    Value qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
-
-    // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1,
-                                   op.getParameter(0));
-
-    assignMappedQubit(state, operation, qcQubit0, qcoOp.getQubit0Out());
-    assignMappedQubit(state, operation, qcQubit1, qcoOp.getQubit1Out());
-
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts a two-target, two-parameter QC gate to QCO
- *
- * @tparam QCOpType The operation type of the QC gate
- * @tparam QCOOpType The operation type of the QCO gate
- *
- * @par Example:
- * ```mlir
- * qc.xx_minus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = qco.xx_minus_yy(%theta, %beta) %q0_in, %q1_in :
- * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
- * ```
- */
-template <typename QCOpType, typename QCOOpType>
-struct ConvertQCTwoTargetTwoParameterToQCO final
-    : StatefulOpConversionPattern<QCOpType> {
-  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-    auto* operation = op.getOperation();
-    Value qcQubit0 = op.getQubit0In();
-    Value qcQubit1 = op.getQubit1In();
-    Value qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
-    Value qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
-
-    // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1,
-                                   op.getParameter(0), op.getParameter(1));
-
-    assignMappedQubit(state, operation, qcQubit0, qcoOp.getQubit0Out());
-    assignMappedQubit(state, operation, qcQubit1, qcoOp.getQubit1Out());
+    assignMappedQubits(state, op, qcTargets, qcoOp.getOutputTargets());
 
     rewriter.eraseOp(op);
 
@@ -877,7 +835,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto qcQubits = llvm::to_vector(op.getQubits());
+    auto qcQubits = op.getQubits();
     auto qcoQubits = resolveMappedQubits(state, operation, qcQubits);
 
     // Create qco.barrier
@@ -976,7 +934,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     // Create qco.inv
     auto qcoOp = qco::InvOp::create(rewriter, op.getLoc(), qcoTargets);
 
-    assignMappedQubits(state, operation, qcTargets, qcoOp.getQubitsOut());
+    assignMappedQubits(state, operation, qcTargets, qcoOp.getOutputTargets());
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
@@ -1055,45 +1013,37 @@ protected:
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
 
-    // Configure conversion target: QC illegal, QCO legal
+    // Configure conversion target
     target.addIllegalDialect<QCDialect>();
-    target.addLegalDialect<QCODialect>();
+    target.addLegalDialect<QCODialect, arith::ArithDialect,
+                           qtensor::QTensorDialect>();
 
-    // Register operation conversion patterns with state tracking
-    patterns.add<
-        ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
-        ConvertQCMeasureOp, ConvertQCResetOp,
-        ConvertQCZeroTargetOneParameterToQCO<qc::GPhaseOp, qco::GPhaseOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::IdOp, qco::IdOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::XOp, qco::XOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::YOp, qco::YOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::ZOp, qco::ZOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::HOp, qco::HOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::SOp, qco::SOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::SdgOp, qco::SdgOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::TOp, qco::TOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::TdgOp, qco::TdgOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::SXOp, qco::SXOp>,
-        ConvertQCOneTargetZeroParameterToQCO<qc::SXdgOp, qco::SXdgOp>,
-        ConvertQCOneTargetOneParameterToQCO<qc::RXOp, qco::RXOp>,
-        ConvertQCOneTargetOneParameterToQCO<qc::RYOp, qco::RYOp>,
-        ConvertQCOneTargetOneParameterToQCO<qc::RZOp, qco::RZOp>,
-        ConvertQCOneTargetOneParameterToQCO<qc::POp, qco::POp>,
-        ConvertQCOneTargetTwoParameterToQCO<qc::ROp, qco::ROp>,
-        ConvertQCOneTargetTwoParameterToQCO<qc::U2Op, qco::U2Op>,
-        ConvertQCOneTargetThreeParameterToQCO<qc::UOp, qco::UOp>,
-        ConvertQCTwoTargetZeroParameterToQCO<qc::SWAPOp, qco::SWAPOp>,
-        ConvertQCTwoTargetZeroParameterToQCO<qc::iSWAPOp, qco::iSWAPOp>,
-        ConvertQCTwoTargetZeroParameterToQCO<qc::DCXOp, qco::DCXOp>,
-        ConvertQCTwoTargetZeroParameterToQCO<qc::ECROp, qco::ECROp>,
-        ConvertQCTwoTargetOneParameterToQCO<qc::RXXOp, qco::RXXOp>,
-        ConvertQCTwoTargetOneParameterToQCO<qc::RYYOp, qco::RYYOp>,
-        ConvertQCTwoTargetOneParameterToQCO<qc::RZXOp, qco::RZXOp>,
-        ConvertQCTwoTargetOneParameterToQCO<qc::RZZOp, qco::RZZOp>,
-        ConvertQCTwoTargetTwoParameterToQCO<qc::XXPlusYYOp, qco::XXPlusYYOp>,
-        ConvertQCTwoTargetTwoParameterToQCO<qc::XXMinusYYOp, qco::XXMinusYYOp>,
-        ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
+    target.addDynamicallyLegalDialect<memref::MemRefDialect>([](Operation* op) {
+      auto isQubitMemref = [](Type t) {
+        auto mt = llvm::dyn_cast<MemRefType>(t);
+        return mt && llvm::isa<qc::QubitType>(mt.getElementType());
+      };
+      return llvm::none_of(op->getOperandTypes(), isQubitMemref) &&
+             llvm::none_of(op->getResultTypes(), isQubitMemref);
+    });
+
+    // Register operation conversion patterns with state tracking.
+    patterns
+        .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
+             ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
+             ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCBarrierOp,
+             ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
+            typeConverter, context, &state);
+
+    // Not part of the central gate table (no Jeff/QIR lowering).
+    patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
         typeConverter, context, &state);
+
+#define MQT_ADD_QC_TO_QCO_GATE(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN)    \
+  patterns.add<ConvertQCGateToQCO<QC_OP, QCO_OP, (TARGETS), (PARAMS)>>(        \
+      typeConverter, context, &state);
+    MQT_GATE_TABLE(MQT_ADD_QC_TO_QCO_GATE)
+#undef MQT_ADD_QC_TO_QCO_GATE
 
     // Conversion of qc types in func.func signatures
     // Note: This currently has limitations with signature changes
