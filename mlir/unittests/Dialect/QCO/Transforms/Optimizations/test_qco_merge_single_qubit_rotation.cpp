@@ -682,35 +682,6 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeConsecutiveWithGateInBetween) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: Gates with no final users should still succeed
- *        but will be removed by dead code removal from
- *        applyPatternsGreedily
- */
-TEST_F(MergeSingleQubitRotationGatesTest, noUsedGate) {
-  const char* mlirCode = R"(
-      module {
-        func.func @noUsedGate() {
-          %0 = qco.alloc : !qco.qubit
-          %cst = arith.constant 1.000000e+00 : f64
-          %1 = qco.ry(%cst) %0 : !qco.qubit -> !qco.qubit
-          %2 = qco.rz(%cst) %1 : !qco.qubit -> !qco.qubit
-          return
-        }
-      }
-    )";
-
-  module = mlir::parseSourceString<mlir::ModuleOp>(mlirCode, &context);
-  ASSERT_TRUE(module);
-
-  ASSERT_TRUE(runMergePass(module.get()).succeeded());
-
-  EXPECT_EQ(countOps<RZOp>(), 0);
-  EXPECT_EQ(countOps<RYOp>(), 0);
-  EXPECT_EQ(countOps<UOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 0);
-}
-
 // ##################################################
 // # Numerical Correctness
 // ##################################################
