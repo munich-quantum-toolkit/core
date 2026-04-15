@@ -626,6 +626,9 @@ struct MergeSingleQubitRotationGatesPattern final
                                       rewriter, loc, *phaseAccum, *phase))
                                 : phase;
       }
+
+      // Bypass each tail operation
+      rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
     }
 
     // Extract Euler angles from merged quaternion
@@ -639,15 +642,14 @@ struct MergeSingleQubitRotationGatesPattern final
     auto phiPlusLambda = arith::AddFOp::create(rewriter, loc, phi, lambda);
     auto outPhase =
         arith::DivFOp::create(rewriter, loc, phiPlusLambda, constants.two);
-    Value inputPhase = phaseAccum.value_or(constants.zero);
+    auto inputPhase = phaseAccum.value_or(constants.zero);
     auto correction =
         arith::SubFOp::create(rewriter, loc, inputPhase, outPhase);
     GPhaseOp::create(rewriter, loc, correction.getResult());
 
-    // Replace the tail with the merged UOp;
-    // the rest of the chain is now unused and will be deleted by DCE
+    // Replace the head operation with the merged UOp
     rewriter.replaceOpWithNewOp<UOp>(
-        chain.back(), chain.front().getInputQubit(0), theta, phi, lambda);
+        chain.front(), chain.front().getInputQubit(0), theta, phi, lambda);
 
     return success();
   }
