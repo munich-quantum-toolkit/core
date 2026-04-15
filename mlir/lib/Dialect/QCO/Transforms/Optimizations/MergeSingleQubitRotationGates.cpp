@@ -255,8 +255,8 @@ struct MergeSingleQubitRotationGatesPattern final
   /**
    * @brief Converts a U2Op to quaternion representation.
    *
-   * U2(phi, lambda) = U(pi/2, phi, lambda), using ZYZ decomposition with
-   * theta fixed to pi/2.
+   * U2(phi, lambda) = U(pi / 2, phi, lambda), using ZYZ decomposition with
+   * theta = pi / 2.
    *
    * @note Global phase is discarded; see quaternionFromZYZ for details.
    *
@@ -279,7 +279,7 @@ struct MergeSingleQubitRotationGatesPattern final
    *
    * R(theta, phi) represents a rotation by theta around axis
    * (cos(phi), sin(phi), 0) in the XY plane:
-   * Q(cos(theta/2), sin(theta/2)*cos(phi), sin(theta/2)*sin(phi), 0)
+   * Q(cos(theta / 2), sin(theta / 2) * cos(phi), sin(theta / 2) * sin(phi), 0)
    *
    * @param op The ROp to convert
    * @param constants Pre-created arithmetic constants
@@ -310,7 +310,7 @@ struct MergeSingleQubitRotationGatesPattern final
    * @note Global phase is discarded; see quaternionFromZYZ for details.
    *
    * @param op The rotation gate to convert (RXOp, RYOp, RZOp, POp, ROp, U2Op,
-   *        UOp)
+   * UOp)
    * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the rotation gate
@@ -340,14 +340,14 @@ struct MergeSingleQubitRotationGatesPattern final
   /**
    * @brief Returns the global phase contribution of a rotation gate.
    *
-   * Rotation gates can be factored as U = e^{i*phase} * SU(2), where SU(2)
+   * Rotation gates can be factored as U = e^{i * phase} * SU(2), where SU(2)
    * is the quaternion-representable part and phase is the global phase. This
    * function returns the global phase for each gate type:
    *
-   *   RX, RY, RZ, R        -> none (already SU(2), no global phase)
-   *   P(theta)             -> theta / 2     (P = e^{i*theta/2} * RZ(theta))
-   *   U(theta, phi, lambda)   -> (phi + lambda) / 2
-   *   U2(phi, lambda)         -> (phi + lambda) / 2
+   * - RX, RY, RZ, R         -> none (already SU(2), no global phase)
+   * - P(theta)              -> theta / 2 (P = e^{i * theta / 2} * RZ(theta))
+   * - U(theta, phi, lambda) -> (phi + lambda) / 2
+   * - U2(phi, lambda)       -> (phi + lambda) / 2
    *
    * @param op The rotation gate to query
    * @param constants Pre-created arithmetic constants
@@ -484,10 +484,11 @@ struct MergeSingleQubitRotationGatesPattern final
   /**
    * @brief Extracts ZYZ Euler angles from a unit quaternion.
    *
-   * For unit quaternion q = w + x*i + y*j + z*k, extracts UOp parameters:
-   *   alpha = atan2(z, w) + atan2(-x, y)
-   *   beta  = acos(2 * (w^2 + z^2) - 1)
-   *   gamma = atan2(z, w) - atan2(-x, y)
+   * For unit quaternion q = w + x * i + y * j + z * k, extracts UOp parameters:
+   *
+   * - alpha = atan2(z, w) + atan2(-x, y)
+   * - beta  = acos(2 * (w^2 + z^2) - 1)
+   * - gamma = atan2(z, w) - atan2(-x, y)
    *
    * Based on Bernardes & Viollet (2022), simplified for unit quaternions and
    * proper ZYZ Euler angles (Chapter 3.3):
@@ -508,8 +509,7 @@ struct MergeSingleQubitRotationGatesPattern final
   static UOpAngles anglesFromQuaternion(Quaternion q, Location loc,
                                         const Constants& constants,
                                         PatternRewriter& rewriter) {
-
-    // calculate angle beta (for y-rotation)
+    // Calculate angle beta (for y-rotation)
     // beta = acos(2 * (w^2 + z^2) - 1)
     // NOTE: the term (2 * (w^2 + z^2) - 1) is clamped to [-1, 1],
     // otherwise acos could produce NaN.
@@ -634,7 +634,7 @@ struct MergeSingleQubitRotationGatesPattern final
 
     // Emit global phase correction:
     //   The synthesized UOp carries an intrinsic phase
-    //   outPhase = (phi+lambda)/2 that must always be compensated.
+    //   outPhase = (phi + lambda) / 2 that must always be compensated.
     //   correction = totalInputPhase - outPhase
     auto phiPlusLambda = arith::AddFOp::create(rewriter, loc, phi, lambda);
     auto outPhase =
