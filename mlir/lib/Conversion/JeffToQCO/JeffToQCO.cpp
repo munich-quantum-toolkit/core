@@ -26,6 +26,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -248,9 +249,21 @@ struct ConvertJeffQuregAllocOpToQCO final
   LogicalResult
   matchAndRewrite(jeff::QuregAllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto size = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getNumQubits());
-    rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
+    auto sizeValue = getConstantIntValue(adaptor.getNumQubits());
+    auto tensorType = llvm::cast<RankedTensorType>(
+        getTypeConverter()->convertType(op.getType()));
+    Value size;
+    if (sizeValue.has_value()) {
+      size = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                       rewriter.getIndexAttr(*sizeValue))
+                 .getResult();
+    } else {
+      size = arith::IndexCastOp::create(rewriter, op.getLoc(),
+                                        rewriter.getIndexType(),
+                                        adaptor.getNumQubits())
+                 .getResult();
+    }
+    rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, tensorType, size);
     return success();
   }
 };
@@ -879,8 +892,8 @@ public:
       return QubitType::get(ctx);
     });
 
-    addConversion([ctx](jeff::QuregType /*type*/) -> Type {
-      return RankedTensorType::get({ShapedType::kDynamic}, QubitType::get(ctx));
+    addConversion([ctx](jeff::QuregType type) -> Type {
+      return RankedTensorType::get({type.getLength()}, QubitType::get(ctx));
     });
   }
 };

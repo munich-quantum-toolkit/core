@@ -24,7 +24,4 @@ target_link_libraries(
 
 mqt_mlir_configure_unittest_target(${target_name})
 
-# TODO(https://github.com/unitaryfoundation/jeff/issues/46): Enable this again once static
-# information is preserved
-
-# gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
+gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
