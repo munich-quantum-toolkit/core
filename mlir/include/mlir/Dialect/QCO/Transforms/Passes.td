@@ -18,33 +18,25 @@ def MergeSingleQubitRotationGates
                            "::mlir::math::MathDialect"];
   let summary = "Merge rotation gates using quaternion-based fusion";
   let description = [{
-    Merges consecutive single-qubit rotation gates acting on the same qubit into
-    a single equivalent U gate, reducing circuit depth and gate count.
+    Merges consecutive single-qubit rotation gates acting on the same qubit into a single equivalent U gate, reducing circuit depth and gate count.
 
     Supported gate types: `rx`, `ry`, `rz`, `p`, `r`, `u2`, `u`.
 
-    The pass greedily collects the longest possible chain of consecutive
-    mergeable gates. Each gate is converted to a unit quaternion:
+    The pass greedily collects the longest possible chain of consecutive mergeable gates.
+    Each gate is converted to a unit quaternion:
 
     - `rx`, `ry`, `rz`, `p`: single-axis rotations via half-angle formulas.
     - `r(theta, phi)`: rotation by `theta` around axis `(cos(phi), sin(phi), 0)`.
-    - `u2(phi, lambda) = u(pi/2, phi, lambda)`.
-    - `u(theta, phi, lambda)`: ZYZ decomposition `rz(phi)*ry(theta)*rz(lambda)`,
-      each factor converted to a quaternion and merged via the Hamilton product.
+    - `u2(phi, lambda) = u(pi / 2, phi, lambda)`.
+    - `u(theta, phi, lambda)`: ZYZ decomposition `rz(phi) * ry(theta) * rz(lambda)`, each factor converted to a quaternion and merged via the Hamilton product.
 
-    The gates are then folded one by one via the Hamilton product into a single
-    quaternion, which is decomposed back into ZYZ Euler angles and emitted as a
-    single `UOp`, representing the same rotation as the chain of single gates.
+    The gates are then folded one by one via the Hamilton product into a single quaternion, which is decomposed back into ZYZ Euler angles and emitted as a single `UOp`, representing the same rotation as the chain of single gates.
     The global phase of each gate is tracked alongside and combined together.
 
-    The U gate which is emitted is defined as:
-    U = e^{i(phi+lambda)/2} RZ(phi) RY(theta) RZ(lambda)
-    Each merge emits a `GPhaseOp` carrying the accumulated input phase
-    of the chain. Because the synthesized `UOp`
-    introduces an additional intrinsic phase of (phi+lambda)/2, the `GPhaseOp`
-    must compensate for it. This applies even to chains composed entirely of
-    SU(2) gates (`rx`, `ry`, `rz`, `r`), because the synthesis into a `UOp`
-    still produces the intrinsic phase term.
+    The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
+    Each merge emits a `GPhaseOp` carrying the accumulated input phase of the chain.
+    Because the synthesized `UOp` introduces an additional intrinsic phase of $(\phi + \lambda) / 2$, the `GPhaseOp` must compensate for it.
+    This applies even to chains composed entirely of $\mathrm{SU} (2)$ gates (`rx`, `ry`, `rz`, `r`) because the synthesis into a `UOp` still produces the intrinsic phase term.
   }];
 }
 
