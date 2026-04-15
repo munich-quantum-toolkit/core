@@ -140,7 +140,6 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (failed(runStage([&](PassManager& pm) {
         if (!config_.disableMergeSingleQubitRotationGates) {
           pm.addPass(qco::createMergeSingleQubitRotationGates());
-          populateQCOCleanupPipeline(pm);
         }
       }))) {
     return failure();
