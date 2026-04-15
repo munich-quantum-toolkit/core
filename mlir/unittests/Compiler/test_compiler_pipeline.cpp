@@ -117,11 +117,11 @@ protected:
   }
 
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
-                          const bool hadamardLifting,
+                          const bool enableHadamardLifting,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
-    config.hadamardLifting = hadamardLifting;
+    config.enableHadamardLifting = enableHadamardLifting;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 

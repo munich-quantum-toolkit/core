@@ -138,7 +138,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   // Stage 5: Optimization passes
   if (failed(runStage([&](PassManager& pm) {
-        if (config_.hadamardLifting) {
+        if (config_.enableHadamardLifting) {
           pm.addPass(qco::createHadamardLifting());
         }
       }))) {
