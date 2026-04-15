@@ -78,56 +78,49 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
 def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "This pass attempts to move Hadamard gates as far away from "
-                "measurements as possible by commuting them "
-                "with Pauli gates. Additionally, it can change target and "
-                "control qubits from Pauli-Z gates to make "
-                "Hadamard lifting applicable. It also lifts Hadamard gates "
-                "over CNOT gates if that moves a measurement "
-                "directly after a control.";
+  let summary = "This pass attempts to move Hadamard gates as far away from measurements as possible by commuting them "
+  "with Pauli gates. This is done to in order to apply measurement lifting more efficiently, which is a sub-routine of "
+  "qubit resuse. Additionally, it can change target and control qubits from Pauli-Z gates to make Hadamard lifting "
+  "applicable. It also lifts Hadamard gates over CNOT gates if that moves a measurement directly after a control.";
   let description = [{
-    This pass lifts Hadamard gates away from the measurements in order to apply measurement lifting more effectively. It
-    uses the following commutation rules:
+    This pass lifts Hadamard gates away from the measurements in order to apply measurement lifting more effectively.
+    Measurement lifting is a subroutine of the qubit reuse routine. The goal is to measure qubits earlier in the
+    circuit to reuse them and to potentially remove some quantum gates.
+
+    Measurement lifting commutes measurements with Pauli and phase gates. However, the routine stops if a Hadmard gate
+    is applied before the measurement takes place. Hadamard lifting attempts to move Hadamards further in front of the
+    circuit, in order to improve the results provided by measurement lifting.
+
+    Hadamard lifting uses the following commutation rules:
          ┌───┐ ┌───┐      ┌───┐ ┌───┐
         ─┤ X ├─┤ H ├─ => ─┤ H ├─┤ Z ├─
          └───┘ └───┘      └───┘ └───┘
          ┌───┐ ┌───┐      ┌───┐ ┌───┐
         ─┤ Z ├─┤ H ├─ => ─┤ H ├─┤ X ├─
          └───┘ └───┘      └───┘ └───┘
-         ┌───┐ ┌───┐      ┌───┐ ┌───┐
-        ─┤ Y ├─┤ H ├─ => ─┤ H ├─┤ Y ├─
-         └───┘ └───┘      └───┘ └───┘
-    Hadamard lifting is only applied to lift Hadamard gates further in front in the circuit, not the other way around.
+         ┌───┐ ┌───┐      ┌───┐ ┌───┐ ┌───────┐
+        ─┤ Y ├─┤ H ├─ => ─┤ H ├─┤ Y ├─┤ G(pi) ├─
+         └───┘ └───┘      └───┘ └───┘ └───────┘
+    Hadamard lifting is only applied to commute Hadamard gates further in front in the circuit, not the other way
+    around. A global phase is added if the Hadamard gate is commuted with a Pauli-Y gate, as YH = -HY.
 
-    If the Hadamard and Pauli gates are controlled, they are only lifted if both gates are controlled by exactly the
-    same qubits and the Pauli gate is not a Pauli Y gate. In that case, the swap of the Pauli Y gate and the Hadamard
-    gate introduces a phase (YH = -HY) which leads to a non-global phase for controlled gates.
+    The routine is only applied to non-controlled Pauli- and Hadamard gates.
 
-    In the case of the controlled Pauli Z gate, controls and targets are interchangeable. Therefore, transformation
-    routines as follows are possible and applied:
-        ┌───┐
-        ┤ Z ├──■──    ──■────■──    ──■────■──
-        └─┬─┘┌─┴─┐ => ┌─┴─┐┌─┴─┐ => ┌─┴─┐┌─┴─┐
-        ──■──┤ H ├    ┤ Z ├┤ H ├    ┤ H ├┤ X ├
-             └───┘    └───┘└───┘    └───┘└───┘
-    The commutation of controlled gates is only done if there are no gates applied between the two controlled gates to
-    any of the qubits used on the controlled gates.
-
-    In order to reduce multi-qubit gates, a third transformation routine is applied. Using the commutation rule
+    In order to reduce multi-qubit gates, a second transformation routine is applied. Using the commutation rule
                  ┌───┐┌───┐┌───┐
         ──■──    ┤ H ├┤ X ├┤ H ├
         ┌─┴─┐ => │───│└─┬─┘│───│
         ┤ X ├    ┤ H ├──■──┤ H ├
         └───┘    └───┘     └───┘
     the following transformation is applied to circuits where a Hadamard gate follows a target gate of a controlled
-    Pauli X gate, which is followed by a measurement:
+    Pauli-X gate, which is followed by a measurement:
                               ┌───┐┌───┐┌───┐
         ──■─────────────      ┤ H ├┤ X ├┤ H ├──
         ┌─┴─┐┌───┐┌──────┐ => │───│└─┬─┘│───┘──┐
         ┤ X ├┤ H ├┤ Meas │    ┤ H ├──■──┤ Meas │
         └───┘└───┘└──────┘    └───┘     └──────┘
 
-     Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli X.
+     Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli-X.
 
   }];
 }
