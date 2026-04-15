@@ -1480,6 +1480,13 @@ private:
   void removeQubitValueTracking(ValueRange values);
 
   /**
+   * @brief Update the qubit tracking of the old values with the new values
+   * @param oldValues The old values to be replaced
+   * @param newValues The new values to be tracked
+   */
+  void updateQubitValueTracking(ValueRange oldValues, ValueRange newValues);
+
+  /**
    * @brief Information about a tensor
    */
   struct TensorInfo {

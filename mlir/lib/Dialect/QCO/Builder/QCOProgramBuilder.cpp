@@ -204,39 +204,35 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
   // Iterate through the initial values and add the latest value to the updated
   // arguments
   for (auto initArg : initArgs) {
-    TypeSwitch<Type>(initArg.getType())
-        .Case<QubitType>([&](auto) {
-          // Directly insert qubits
-          updatedArgs.emplace_back(initArg);
-        })
-        .Case<RankedTensorType>([&](auto) {
-          validateTensorValue(initArg);
-          // For tensors check if you have to insert qubits first
-          const auto regId = validTensors[initArg].regId;
-          auto currentTensor = initArg;
-          // Iterate through the validQubits and find the qubits that were
-          // extracted from this tensor
-          for (auto it = validQubits.begin(); it != validQubits.end();) {
-            auto& [qubit, qubitInfo] = *it;
-            if (qubitInfo.regId == regId) {
-              // Create an InsertOp for the qubit
-              auto newTensor =
-                  qtensor::InsertOp::create(*this, qubit, currentTensor,
-                                            qubitInfo.regIndex)
-                      .getResult();
-              // Update the tensor tracking
-              updateTensorTracking(currentTensor, newTensor);
-              currentTensor = newTensor;
-              validQubits.erase(it++);
-            } else {
-              ++it;
-            }
-          }
-          updatedArgs.emplace_back(currentTensor);
-        })
-        .Default([&](auto) {
-          llvm::reportFatalUsageError("Elements must be qubit values");
-        });
+    if (llvm::isa<QubitType>(initArg.getType())) {
+      // Directly insert qubits
+      updatedArgs.emplace_back(initArg);
+    } else {
+      validateTensorValue(initArg);
+      // For tensors check if you have to insert qubits first
+      const auto regId = validTensors[initArg].regId;
+      auto currentTensor = initArg;
+      // Iterate through the validQubits and find the qubits that were extracted
+      // from this tensor
+      for (auto it = validQubits.begin(); it != validQubits.end();) {
+        auto& [qubit, qubitInfo] = *it;
+        if (qubitInfo.regId == regId) {
+          // Create an InsertOp for the qubit
+          auto newTensor = qtensor::InsertOp::create(
+                               *this, qubit, currentTensor, qubitInfo.regIndex)
+                               .getResult();
+          // Update the tensor tracking
+          updateTensorTracking(currentTensor, newTensor);
+          currentTensor = newTensor;
+          validQubits.erase(it++);
+        } else {
+          ++it;
+        }
+      }
+      // Add the tensor after all qubits are inserted and the tensor tracking is
+      // updated
+      updatedArgs.emplace_back(currentTensor);
+    }
   }
   return updatedArgs;
 }
@@ -249,6 +245,20 @@ void QCOProgramBuilder::removeQubitValueTracking(ValueRange values) {
     } else {
       validateTensorValue(value);
       validTensors.erase(value);
+    }
+  }
+}
+
+void QCOProgramBuilder::updateQubitValueTracking(ValueRange oldValues,
+                                                 ValueRange newValues) {
+  for (auto [oldValue, newValue] : llvm::zip_equal(oldValues, newValues)) {
+    if (oldValue.getType() != newValue.getType()) {
+      llvm::reportFatalUsageError("Result types must match input types");
+    }
+    if (llvm::isa<QubitType>(oldValue.getType())) {
+      updateQubitTracking(oldValue, newValue);
+    } else {
+      updateTensorTracking(oldValue, newValue);
     }
   }
 }
@@ -914,27 +924,19 @@ ValueRange QCOProgramBuilder::scfFor(
 
   // Build the body
   const auto bodyResults = body(iv, loopArgs);
-  scf::YieldOp::create(*this, bodyResults);
 
   if (bodyResults.size() != initArgs.size()) {
     llvm::reportFatalUsageError(
         "scf.for body must return exactly one value per iter arg");
   }
 
+  scf::YieldOp::create(*this, bodyResults);
+
   // Remove the bodyResults as valid qubit values
   removeQubitValueTracking(bodyResults);
 
   // Update the qubit tracking
-  for (auto [arg, result] : llvm::zip_equal(updatedArgs, forOp->getResults())) {
-    if (arg.getType() != result.getType()) {
-      llvm::reportFatalUsageError("Result types must match input types");
-    }
-    if (llvm::isa<QubitType>(arg.getType())) {
-      updateQubitTracking(arg, result);
-    } else {
-      updateTensorTracking(arg, result);
-    }
-  }
+  updateQubitValueTracking(updatedArgs, forOp.getResults());
 
   return forOp->getResults();
 }
@@ -997,17 +999,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   createBody(afterBlock, afterBody, true);
 
   // Update the qubit tracking
-  for (auto [arg, result] :
-       llvm::zip_equal(updatedArgs, whileOp->getResults())) {
-    if (arg.getType() != result.getType()) {
-      llvm::reportFatalUsageError("Result types must match input types");
-    }
-    if (llvm::isa<QubitType>(arg.getType())) {
-      updateQubitTracking(arg, result);
-    } else {
-      updateTensorTracking(arg, result);
-    }
-  }
+  updateQubitValueTracking(updatedArgs, whileOp->getResults());
 
   return whileOp->getResults();
 }
@@ -1063,20 +1055,12 @@ ValueRange QCOProgramBuilder::qcoIf(
         "number of input qubits!");
   }
 
-  for (auto [arg, result] : llvm::zip_equal(updatedArgs, ifOp->getResults())) {
-    if (arg.getType() != result.getType()) {
-      llvm::reportFatalUsageError("Result types must match input types");
-    }
-    if (llvm::isa<QubitType>(arg.getType())) {
-      updateQubitTracking(arg, result);
-    } else {
-      updateTensorTracking(arg, result);
-    }
-  }
-
   // Remove the inner qubit values as valid qubit values
   removeQubitValueTracking(thenResult);
   removeQubitValueTracking(elseResult);
+
+  // Update the qubit tracking
+  updateQubitValueTracking(updatedArgs, ifOp->getResults());
 
   return ifOp->getResults();
 }
