@@ -52,8 +52,8 @@ namespace {
  * If all out qubits of Pauli Z are equal to all in qubits of Hadamard, we can
  * commute the gates and change Pauli Z to X. This is only possible if Hadamard
  * and Pauli act on the same qubit as target. If the target of the Pauli gate is
- * a control at the hadamard and vice versa, we can change the target of Pauli Z to
- * the Hadamard's. This is done in this pattern.
+ * a control at the hadamard and vice versa, we can change the target of Pauli Z
+ * to the Hadamard's. This is done in this pattern.
  */
 struct AdaptCtrldPauliZToLiftingPattern final : OpRewritePattern<CtrlOp> {
 
@@ -199,8 +199,8 @@ struct LiftHadamardsAbovePauliGatesPattern final
       : OpInterfaceRewritePattern(context) {}
 
   /**
-   * This method checks whether the first and second operations are controlled by
-   * the same qubits.
+   * This method checks whether the first and second operations are controlled
+   * by the same qubits.
    *
    * @param firstCtrl The first (preceding) controlled gate.
    * @param secondCtrl The second (succeeding) controlled gate.
@@ -238,9 +238,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
                                              const bool controlled,
                                              PatternRewriter& rewriter) {
     const auto gateName = gate->getName().stripDialect().str();
-    const auto hadamardName = hadamardGate->getName().stripDialect().str();
-    if (hadamardName != "h" ||
-        (gateName != "x" && gateName != "y" && gateName != "z") ||
+    if ((gateName != "x" && gateName != "y" && gateName != "z") ||
         (gateName == "y" && controlled)) {
       return failure();
     }
@@ -274,13 +272,16 @@ struct LiftHadamardsAbovePauliGatesPattern final
   static LogicalResult handleTwoSucceedingControls(CtrlOp firstGate,
                                                    CtrlOp secondGate,
                                                    PatternRewriter& rewriter) {
-    if (firstGate.getNumTargets() != 1 || secondGate.getNumTargets() != 1 ||
+    auto hadamardGate =
+        llvm::dyn_cast<HOp>(secondGate.getBodyUnitary().getOperation());
+    if (!hadamardGate || firstGate.getNumTargets() != 1 ||
+        secondGate.getNumTargets() != 1 ||
         firstGate.getOutputTarget(0) != secondGate.getInputTarget(0) ||
         !areControlsControlledBySameQubits(firstGate, secondGate)) {
       return failure();
     }
-    return swapPauliWithHadamard(firstGate.getBodyUnitary(),
-                                 secondGate.getBodyUnitary(), true, rewriter);
+    return swapPauliWithHadamard(firstGate.getBodyUnitary(), hadamardGate, true,
+                                 rewriter);
   }
 
   /**
@@ -314,10 +315,11 @@ struct LiftHadamardsAbovePauliGatesPattern final
       return failure();
     }
 
-    auto hadamardGate = llvm::dyn_cast<UnitaryOpInterface>(user);
+    auto hadamardGate = llvm::dyn_cast<HOp>(user);
 
-    if (op.getNumControls() > 0 || hadamardGate.getNumControls() > 0 ||
-        op.getNumTargets() != 1 || hadamardGate.getNumTargets() != 1 ||
+    if (!hadamardGate || op.getNumControls() > 0 ||
+        hadamardGate.getNumControls() > 0 || op.getNumTargets() != 1 ||
+        hadamardGate.getNumTargets() != 1 ||
         op.getOutputTarget(0) != hadamardGate.getInputTarget(0)) {
       return failure();
     }
