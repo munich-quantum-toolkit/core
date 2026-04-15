@@ -1474,12 +1474,6 @@ private:
   SmallVector<Value> insertExtractedQubits(ValueRange initArgs);
 
   /**
-   * @brief Removes the given qubit values from the respective tracking
-   * @param values The values that are removed from tracking
-   */
-  void removeQubitValueTracking(ValueRange values);
-
-  /**
    * @brief Update the qubit tracking of the old values with the new values
    * @param oldValues The old values to be replaced
    * @param newValues The new values to be tracked
