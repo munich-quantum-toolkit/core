@@ -1179,16 +1179,16 @@ def InvOp
         static size_t getNumControls() { return 0; }
         Value getInputQubit(size_t i);
         OperandRange getInputQubits() { return getQubitsIn(); }
-        OperandRange getInputTargets() { return getInputQubits(); }
         Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getQubitsOut(); }
         Value getInputTarget(size_t i) { return getInputQubit(i); }
+        OperandRange getInputTargets() { return getInputQubits(); }
         Value getOutputTarget(size_t i) { return getOutputQubit(i); }
+        ResultRange getOutputTargets() { return getOutputQubits(); }
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
         static OperandRange getInputControls() { return {nullptr, 0}; }
         static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
         static ResultRange getOutputControls() { return {nullptr, 0}; }
-        ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
@@ -1252,13 +1252,18 @@ def PowOp
         Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getResults(); }
         Value getInputTarget(size_t i) { return getInputQubit(i); }
+        OperandRange getInputTargets() { return getInputQubits(); }
         Value getOutputTarget(size_t i) { return getOutputQubit(i); }
+        ResultRange getOutputTargets() { return getOutputQubits(); }
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static OperandRange getInputControls() { return {nullptr, 0}; }
         static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static ResultRange getOutputControls() { return {nullptr, 0}; }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         double getExponentValue() { return getExponentAttr().getValueAsDouble(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
