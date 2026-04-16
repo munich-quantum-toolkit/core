@@ -78,7 +78,8 @@ protected:
 // ##################################################
 
 /**
- * @brief Test: Hadamards should be lifted over one Pauli gate.
+ * @brief Test: Hadamards should be lifted over one Pauli gate. A global phase
+ * should be added for the Pauli-Y gate.
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGate) {
   auto q = programBuilder.allocQubitRegister(3);
@@ -97,6 +98,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGate) {
   qRef[1] = referenceBuilder.x(qRef[1]);
   qRef[2] = referenceBuilder.h(qRef[2]);
   qRef[2] = referenceBuilder.y(qRef[2]);
+  referenceBuilder.gphase(M_PI);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
@@ -161,12 +163,14 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultiplePauliGate) {
   qRef[1] = referenceBuilder.h(qRef[1]);
   qRef[1] = referenceBuilder.z(qRef[1]);
   qRef[1] = referenceBuilder.y(qRef[1]);
+  referenceBuilder.gphase(M_PI);
   qRef[1] = referenceBuilder.x(qRef[1]);
   qRef[2] = referenceBuilder.x(qRef[2]);
   qRef[2] = referenceBuilder.s(qRef[2]);
   qRef[2] = referenceBuilder.h(qRef[2]);
   qRef[2] = referenceBuilder.z(qRef[2]);
   qRef[2] = referenceBuilder.y(qRef[2]);
+  referenceBuilder.gphase(M_PI);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
