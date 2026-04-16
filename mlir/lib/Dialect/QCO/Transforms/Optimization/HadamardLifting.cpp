@@ -23,29 +23,12 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <algorithm>
-#include <string>
 #include <utility>
-#include <vector>
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_HADAMARDLIFTING
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
-
-/**
- * @brief This method checks if two ranges contain of exactly the same
- * elements.
- *
- * This method checks if two ranges contain of exactly the same elements.
- *
- * @param range1 The first range.
- * @param range2 The second range.
- */
-static bool containRangesOfSameElements(const std::vector<Value>& range1,
-                                        const std::vector<Value>& range2) {
-  return range1.size() == range2.size() &&
-         std::ranges::is_permutation(range1, range2);
-}
 
 namespace {
 
@@ -121,7 +104,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
       return failure();
     }
 
-    // op needs to be in front of a hadamard gate
+    // op needs to be in front of a Hadamard gate
     const auto& users = op->getUsers();
     if (users.empty()) {
       return failure();
@@ -213,29 +196,29 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
   }
 
   /**
-   * @brief This method adds hadamrad gates before a given gate.
+   * @brief This method adds Hadamard gates before a given gate.
    *
-   * @param gate The gate before which hadamard gates should be applied.
-   * @param inputQubits The input qubits of gate before which hadamard gates
+   * @param gate The gate before which Hadamard gates should be applied.
+   * @param inputQubits The input qubits of gate before which Hadamard gates
    * should be applied.
    * @param rewriter The used rewriter.
-   * @returns One of the created hadamard gates.
+   * @returns One of the created Hadamard gates.
    */
   static HOp addHadamardGatesBeforeGate(const UnitaryOpInterface gate,
-                                        const std::vector<Value>& inputQubits,
+                                        const ValueRange inputQubits,
                                         PatternRewriter& rewriter) {
     HOp newHOp;
     for (const Value inputQubit : inputQubits) {
 
-      std::vector inQubits{inputQubit};
+      const ValueRange inQubits(inputQubit);
 
       newHOp = HOp::create(rewriter, gate->getLoc(), inQubits);
 
       rewriter.moveOpBefore(newHOp, gate);
 
-      rewriter.replaceUsesWithIf(
-          inputQubit, newHOp.getOutputTarget(0),
-          [&](const OpOperand& operand) { return operand.getOwner() == gate; });
+      rewriter.modifyOpInPlace(gate, [&] {
+        swapOperandsInOp(gate, inputQubit, newHOp.getOutputTarget(0));
+      });
     }
     return newHOp;
   }
@@ -247,16 +230,15 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
    * @param outputQubits The output qubits of gate after which Hadamard gates
    * should be applied.
    * @param rewriter The used rewriter.
-   * @returns One of the created hadamard gates.
+   * @returns One of the created Hadamard gates.
    */
   static HOp addHadamardGatesAfterGate(const UnitaryOpInterface gate,
-                                       const std::vector<Value>& outputQubits,
+                                       const ValueRange outputQubits,
                                        PatternRewriter& rewriter) {
     HOp newHOp;
     for (Value outputQubit : outputQubits) {
 
-      std::vector inQubit{outputQubit};
-      std::vector outQubit{outputQubit.getType()};
+      const ValueRange inQubit(outputQubit);
 
       newHOp = HOp::create(rewriter, gate->getLoc(), inQubit);
 
@@ -272,10 +254,12 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
   }
 
   /**
-   * @brief This pattern remove an H gate between a CNOT and a measurement.
+   * @brief This pattern removes an H gate between a CNOT and a measurement,
+   * flips the CNOT and adds Hadamard gates before and after the new target and
+   * before the new control.
    *
-   * @param op The operation to match (only uncontrolled Hadamard gates trigger
-   * the rewrite)
+   * @param op The operation to match (only measurements with an uncontrolled
+   * Hadamard gate before that trigger the rewrite)
    * @param rewriter Pattern rewriter for applying transformations
    * @return success() if circuit was changed, failure() otherwise
    */
@@ -284,9 +268,8 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     // A Hadamard gate needs to be in front of the measurement
     const auto qubitInMeasurement = op.getQubitIn();
     auto* predecessor = qubitInMeasurement.getDefiningOp();
-    auto hadamardGate = llvm::dyn_cast<UnitaryOpInterface>(predecessor);
-    if (!hadamardGate || hadamardGate.getNumTargets() != 1 ||
-        hadamardGate->getName().stripDialect().str() != "h") {
+    auto hadamardGate = llvm::dyn_cast<HOp>(predecessor);
+    if (!hadamardGate) {
       return failure();
     }
 
@@ -295,9 +278,23 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     predecessor = inQubitHadamard.getDefiningOp();
     auto cnotGate = llvm::dyn_cast<CtrlOp>(predecessor);
     if (!cnotGate || cnotGate.getNumTargets() != 1 ||
-        cnotGate.getBodyUnitary()->getName().stripDialect().str() != "x" ||
-        cnotGate.getOutputTarget(0) != inQubitHadamard) {
+        cnotGate.getOutputTarget(0) != inQubitHadamard ||
+        !llvm::dyn_cast<XOp>(cnotGate.getBodyUnitary())) {
       return failure();
+    }
+    // Determine the index of the control that will become the new target. The
+    // control must not be succeeded by a measurement.
+    unsigned int controlIndex = 0;
+    for (unsigned int i = 0; i < cnotGate.getNumControls(); i++) {
+      if (llvm::dyn_cast<MeasureOp>(
+              *cnotGate.getOutputControl(i).getUsers().begin())) {
+        if (i == cnotGate.getNumControls() - 1) {
+          return failure();
+        }
+      } else {
+        controlIndex = i;
+        break;
+      }
     }
 
     // Remove the Hadamard gate
@@ -307,19 +304,19 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     }
     rewriter.eraseOp(hadamardGate);
 
-    // Add Hadamard gates to the other in and output gates of cnot
-    const std::vector relevantInputQubitsForHadamard{
-        cnotGate.getInputTarget(0), cnotGate.getInputControl(0)};
+    // Add Hadamard gates to the other in- and output gates of CNOT
+    const ValueRange relevantInputQubitsForHadamard(
+        {cnotGate.getInputTarget(0), cnotGate.getInputControl(controlIndex)});
     addHadamardGatesBeforeGate(cnotGate, relevantInputQubitsForHadamard,
                                rewriter);
 
-    const std::vector relevantOutputQubitsForHadamard{
-        cnotGate.getOutputForInput(cnotGate.getInputControl(0))};
     const HOp newHOPAfterCtrl = addHadamardGatesAfterGate(
-        cnotGate, relevantOutputQubitsForHadamard, rewriter);
+        cnotGate,
+        cnotGate.getOutputForInput(cnotGate.getInputControl(controlIndex)),
+        rewriter);
 
     // Flip CNOT targets and ctrl
-    swapQubits(cnotGate, cnotGate.getInputControl(0),
+    swapQubits(cnotGate, cnotGate.getInputControl(controlIndex),
                cnotGate.getInputTarget(0), op, newHOPAfterCtrl, rewriter);
 
     return success();
