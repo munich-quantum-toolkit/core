@@ -180,9 +180,13 @@ public:
   /**
    * @brief Explicitly loads a qubit from a memref
    *
+   * @details Explicitly loads a qubit from a memref at the given index. This
+   * builder should only be called in a nested region inside the main function.
+   * The same index cannot be used to load a value multiple times in the same
+   * nested region.
+   *
    * @param memref Source memref
-   * @param index The index from where the qubit is loaded (index must not have
-   * been used yet and must be defined in the same region as the load operation)
+   * @param index The index from where the qubit is loaded
    * @return The loaded qubit
    *
    * @par Example:

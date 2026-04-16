@@ -121,6 +121,11 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 
 Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
   auto* region = getInsertionBlock()->getParent();
+
+  if (regionStack.size() == 1) {
+    llvm::reportFatalUsageError(
+        "Qubit cannot be loaded in the main function region");
+  }
   for (Region* curr : regionStack) {
     if (loadedQubits[curr][memref].contains(index)) {
       llvm::reportFatalUsageError("Qubit already loaded in enclosing region");
