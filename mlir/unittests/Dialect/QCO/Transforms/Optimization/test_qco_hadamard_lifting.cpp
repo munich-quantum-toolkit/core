@@ -451,3 +451,50 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
+
+/**
+ * @brief Test: Checks that a Hadamard gate is not lifted over a CNOT gate
+ * target if a measurement is following directly after the controls.
+ */
+TEST_F(QCOHadamardLiftingTest,
+       doNotLiftHadamardOverCNOTIfMeasurementsAfterControlsGate) {
+  auto q = programBuilder.allocQubitRegister(5);
+  const auto b = programBuilder.allocClassicalBitRegister(4);
+  auto [q1, q0] = programBuilder.cx(q[1], q[0]);
+  q[0] = programBuilder.h(q0);
+  programBuilder.measure(q[0], b[0]);
+  programBuilder.measure(q1, b[1]);
+  auto [q34, q2] =
+      programBuilder.ctrl({q[3], q[4]}, {q[2]}, [&](const ValueRange target) {
+        return SmallVector{programBuilder.x(target[0])};
+      });
+  q[2] = programBuilder.h(q2[0]);
+  programBuilder.measure(q[2], b[2]);
+  programBuilder.measure(q34[0], b[3]);
+  programBuilder.s(q34[1]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(5);
+  const auto bRef = referenceBuilder.allocClassicalBitRegister(4);
+  auto [qRef1, qRef0] = referenceBuilder.cx(qRef[1], qRef[0]);
+  qRef[0] = referenceBuilder.h(qRef0);
+  referenceBuilder.measure(qRef[0], bRef[0]);
+  referenceBuilder.measure(qRef1, bRef[1]);
+  qRef[2] = referenceBuilder.h(qRef[2]);
+  qRef[4] = referenceBuilder.h(qRef[4]);
+  auto [qRef32, qRef4] = referenceBuilder.ctrl(
+      {qRef[3], qRef[2]}, {qRef[4]}, [&](const ValueRange target) {
+        return SmallVector{referenceBuilder.x(target[0])};
+      });
+  qRef[4] = referenceBuilder.h(qRef4[0]);
+  referenceBuilder.measure(qRef32[1], bRef[2]);
+  referenceBuilder.measure(qRef32[0], bRef[3]);
+  referenceBuilder.s(qRef[4]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
