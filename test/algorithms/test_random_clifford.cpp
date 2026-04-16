@@ -14,18 +14,24 @@
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/QuantumComputation.hpp"
+
+#include <gtest/gtest.h>
 
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <sstream>
+
+namespace {
 
 class RandomClifford : public testing::TestWithParam<qc::Qubit> {
 protected:
   void TearDown() override {}
   void SetUp() override {}
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     RandomClifford, RandomClifford, testing::Range<qc::Qubit>(1U, 9U),

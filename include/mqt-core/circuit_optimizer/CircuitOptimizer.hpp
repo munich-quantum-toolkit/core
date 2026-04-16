@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 
@@ -21,6 +20,8 @@
 #include <vector>
 
 namespace qc {
+
+class QuantumComputation;
 
 class CircuitOptimizer {
 public:

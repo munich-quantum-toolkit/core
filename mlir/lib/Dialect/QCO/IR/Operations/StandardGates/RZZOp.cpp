@@ -8,17 +8,20 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
-#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cmath>
+#include <complex>
 #include <optional>
 #include <variant>
 
@@ -42,14 +45,15 @@ struct MergeSubsequentRZZ final : OpRewritePattern<RZZOp> {
 };
 
 /**
- * @brief Remove trivial RZZ operations.
+ * @brief Merge subsequent RZZ operations with swapped targets by adding their
+ * angles.
  */
-struct RemoveTrivialRZZ final : OpRewritePattern<RZZOp> {
+struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(RZZOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeTrivialTwoTargetOneParameter(op, rewriter);
+    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
   }
 };
 
@@ -63,9 +67,20 @@ void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 
+LogicalResult RZZOp::fold(FoldAdaptor /*adaptor*/,
+                          SmallVectorImpl<OpFoldResult>& results) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    results.emplace_back(getInputQubit(0));
+    results.emplace_back(getInputQubit(1));
+    return success();
+  }
+  return failure();
+}
+
 void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRZZ, RemoveTrivialRZZ>(context);
+  results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ>(context);
 }
 
 std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {

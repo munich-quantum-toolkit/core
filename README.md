@@ -138,6 +138,21 @@ When citing the software itself or results produced with it, cite the MQT Core p
 }
 ```
 
+### The MQT Compiler Collection
+
+When citing the compilation framework built on MLIR, cite the MQT Compiler Collection paper:
+
+```bibtex
+@article{MQTCompilerCollection2026,
+  title        = {The {{MQT Compiler Collection}}: {{A}} Blueprint for a Future-Proof Quantum-Classical Compilation Framework},
+  author       = {Burgholzer, Lukas and Haag, Daniel and Stade, Yannick and Rovara, Damian and Hopf, Patrick and Wille, Robert},
+  year         = {2026},
+  booktitle    = {Design, Automation and Test in Europe},
+  eprint       = {2604.08674},
+  eprinttype   = {arxiv},
+}
+```
+
 ### The Munich Quantum Toolkit (the project)
 
 When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:

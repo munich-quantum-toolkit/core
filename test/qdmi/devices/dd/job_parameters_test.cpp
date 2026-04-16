@@ -13,12 +13,13 @@
  */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
+#include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
+
+#include <gtest/gtest.h>
 
 #include <cstddef>
 #include <cstring>
-#include <gtest/gtest.h>
-#include <qdmi/constants.h>
 #include <string>
 
 TEST(JobParameters, SetAndQueryBasics) {

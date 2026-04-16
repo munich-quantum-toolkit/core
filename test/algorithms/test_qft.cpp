@@ -20,15 +20,19 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
+#include <numbers>
 #include <sstream>
+
+namespace {
 
 class QFT : public testing::TestWithParam<qc::Qubit> {
 protected:
@@ -46,6 +50,8 @@ protected:
   dd::MatrixDD func{};
 };
 
+} // namespace
+
 /// Findings from the QFT Benchmarks:
 /// The DDpackage has to be able to represent all 2^n different amplitudes in
 /// order to produce correct results The smallest entry seems to be closely
@@ -56,7 +62,6 @@ protected:
 ///		10e-13	..	23 qubits
 /// The accuracy of double floating points allows for a minimal CN::TOLERANCE
 /// value of 10e-15
-///	Utilizing more qubits requires the use of fp=long double
 constexpr qc::Qubit QFT_MAX_QUBITS = 17U;
 
 constexpr size_t INITIAL_COMPLEX_COUNT = dd::immortals::size();
@@ -95,22 +100,20 @@ TEST_P(QFT, Functionality) {
   ASSERT_EQ(dd->cn.realCount(),
             1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
-  // top edge weight should equal sqrt(0.5)^n
-  EXPECT_NEAR(dd::RealNumber::val(func.w.r),
-              static_cast<dd::fp>(std::pow(1.L / std::sqrt(2.L), nqubits)),
+  const auto expectedAmplitude =
+      static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits));
+
+  // top edge weight should equal (1/sqrt(2))^n
+  EXPECT_NEAR(dd::RealNumber::val(func.w.r), expectedAmplitude,
               dd::RealNumber::eps);
 
-  // first row and first column should consist only of (1/sqrt(2))**nqubits
+  // first row and first column should consist only of (1/sqrt(2))^n entries
   for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
     auto c = func.getValueByIndex(dd->qubits(), 0, i);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.L / std::sqrt(2.L), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
     c = func.getValueByIndex(dd->qubits(), i, 0);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.L / std::sqrt(2.L), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
   dd->decRef(func);
@@ -140,23 +143,20 @@ TEST_P(QFT, FunctionalityRecursive) {
   ASSERT_EQ(dd->cn.realCount(),
             1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
-  // top edge weight should equal sqrt(0.5)^n
-  EXPECT_NEAR(dd::RealNumber::val(func.w.r),
-              static_cast<dd::fp>(std::pow(1.L / std::sqrt(2.L), nqubits)),
+  const auto expectedAmplitude =
+      static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits));
+
+  // top edge weight should equal (1/sqrt(2))^n
+  EXPECT_NEAR(dd::RealNumber::val(func.w.r), expectedAmplitude,
               dd::RealNumber::eps);
 
-  // first row and first column should consist only of (1/sqrt(2))**nqubits
-  for (std::uint64_t i = 0; i < std::pow(static_cast<long double>(2), nqubits);
-       ++i) {
+  // first row and first column should consist only of (1/sqrt(2))^n entries
+  for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
     auto c = func.getValueByIndex(dd->qubits(), 0, i);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.L / std::sqrt(2.L), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
     c = func.getValueByIndex(dd->qubits(), i, 0);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.L / std::sqrt(2.L), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
   dd->decRef(func);
@@ -187,12 +187,13 @@ TEST_P(QFT, Simulation) {
   EXPECT_NEAR(dd::RealNumber::val(sim.w.r), 1, dd::RealNumber::eps);
   EXPECT_NEAR(dd::RealNumber::val(sim.w.i), 0, dd::RealNumber::eps);
 
-  // first column should consist only of sqrt(0.5)^n's
+  // first column should consist only of (1/sqrt(2))^n entries
   for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
     auto c = sim.getValueByIndex(i);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.L / std::sqrt(2.L), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(
+        c.real(),
+        static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits)),
+        dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
   dd->decRef(sim);

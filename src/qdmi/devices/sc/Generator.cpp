@@ -8,18 +8,19 @@
  * Licensed under the MIT License
  */
 
-/** @file
+/** @file Generator.cpp
  * @brief The MQT QDMI device generator for superconducting devices.
  */
 
 #include "qdmi/devices/sc/Generator.hpp"
 
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
+
 #include <cstdint>
 #include <fstream>
 #include <istream>
-#include <nlohmann/json.hpp>
 #include <ostream>
-#include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>

@@ -8,8 +8,8 @@
 
 file(GLOB CONVERSION_SOURCES *.cpp)
 
-add_mlir_library(
-  QCToQIR
+add_mlir_conversion_library(
+  MLIRQCToQIR
   ${CONVERSION_SOURCES}
   DEPENDS
   QCToQIRIncGen
@@ -21,5 +21,6 @@ add_mlir_library(
   MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM
-  MLIRReconcileUnrealizedCasts
-  DISABLE_INSTALL)
+  MLIRReconcileUnrealizedCasts)
+
+mqt_mlir_target_use_project_options(MLIRQCToQIR)

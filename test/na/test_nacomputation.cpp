@@ -22,6 +22,7 @@
 #include "na/operations/StoreOp.hpp"
 
 #include <gtest/gtest.h>
+
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -129,6 +130,8 @@ TEST(NAComputation, EmptyPrint) {
   EXPECT_EQ(ss.str(), "");
 }
 
+namespace {
+
 class NAComputationValidateAODConstraints : public ::testing::Test {
 protected:
   NAComputation qc;
@@ -148,6 +151,8 @@ protected:
     qc.emplaceInitialLocation(*atom3, 0, 2);
   }
 };
+
+} // namespace
 
 TEST_F(NAComputationValidateAODConstraints, AtomAlreadyLoaded) {
   qc.emplaceBack<LoadOp>(

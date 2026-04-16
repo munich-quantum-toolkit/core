@@ -10,13 +10,14 @@
 
 #include "qdmi/driver/Driver.hpp"
 
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
+#include <qdmi/client.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <qdmi/client.h>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -43,7 +44,11 @@ MATCHER_P2(IsBetween, a, b,
 // NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
 } // namespace
 } // namespace testing
+
 namespace qc {
+
+namespace {
+
 class DriverTest : public testing::TestWithParam<const char*> {
 protected:
   QDMI_Session session = nullptr;
@@ -125,6 +130,8 @@ protected:
     DriverTest::TearDown();
   }
 };
+
+} // namespace
 
 TEST_P(DriverTest, SessionSetParameter) {
   const std::string authFile = "authfile.txt";

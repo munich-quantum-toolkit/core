@@ -10,7 +10,6 @@
 
 #include "ir/operations/Expression.hpp"
 
-#include <cstddef>
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
@@ -18,6 +17,8 @@
 #include <nanobind/stl/unordered_map.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/unordered_set.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
+
+#include <cstddef>
 #include <sstream>
 #include <vector>
 

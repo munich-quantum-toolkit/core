@@ -16,12 +16,16 @@
 #include "ir/operations/SymbolicOperation.hpp"
 
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <stdexcept>
 #include <tuple>
 
 using namespace qc;
 using namespace sym;
+
+namespace {
+
 class SymbolicTest : public ::testing::Test {
 public:
   Variable x = Variable("x");
@@ -35,6 +39,8 @@ public:
   QuantumComputation symQc = QuantumComputation(4);
   QuantumComputation qc = QuantumComputation(4);
 };
+
+} // namespace
 
 TEST_F(SymbolicTest, Gates) {
   auto xVal = PI_4 / 2;

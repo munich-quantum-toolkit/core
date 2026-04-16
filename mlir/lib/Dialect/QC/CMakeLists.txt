@@ -9,3 +9,4 @@
 add_subdirectory(IR)
 add_subdirectory(Builder)
 add_subdirectory(Translation)
+add_subdirectory(Transforms)

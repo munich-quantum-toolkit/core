@@ -18,15 +18,18 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <bitset>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
+
+namespace {
 
 class DynamicCircuitEvalExactQPE : public testing::TestWithParam<qc::Qubit> {
 protected:
@@ -98,6 +101,8 @@ protected:
               << expectedResultRepresentation << ">.\n";
   }
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     Eval, DynamicCircuitEvalExactQPE, testing::Range<qc::Qubit>(1U, 64U, 5U),
@@ -182,6 +187,8 @@ TEST_P(DynamicCircuitEvalExactQPE, UnitaryTransformation) {
 
   EXPECT_TRUE(e.isIdentity());
 }
+
+namespace {
 
 class DynamicCircuitEvalInexactQPE : public testing::TestWithParam<qc::Qubit> {
 protected:
@@ -268,6 +275,8 @@ protected:
   }
 };
 
+} // namespace
+
 INSTANTIATE_TEST_SUITE_P(
     Eval, DynamicCircuitEvalInexactQPE, testing::Range<qc::Qubit>(1U, 15U, 3U),
     [](const testing::TestParamInfo<DynamicCircuitEvalInexactQPE::ParamType>&
@@ -352,6 +361,8 @@ TEST_P(DynamicCircuitEvalInexactQPE, UnitaryTransformation) {
   EXPECT_TRUE(e.isIdentity());
 }
 
+namespace {
+
 class DynamicCircuitEvalBV : public testing::TestWithParam<qc::Qubit> {
 protected:
   qc::Qubit bitwidth{};
@@ -381,6 +392,8 @@ protected:
               << " qubits)\n";
   }
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     Eval, DynamicCircuitEvalBV, testing::Range<qc::Qubit>(1U, 64U, 5U),
@@ -465,6 +478,8 @@ TEST_P(DynamicCircuitEvalBV, UnitaryTransformation) {
   EXPECT_TRUE(e.isIdentity());
 }
 
+namespace {
+
 class DynamicCircuitEvalQFT : public testing::TestWithParam<qc::Qubit> {
 protected:
   qc::Qubit precision{};
@@ -490,6 +505,8 @@ protected:
     dqftNgates = dqft.getNindividualOps();
   }
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     Eval, DynamicCircuitEvalQFT, testing::Range<qc::Qubit>(1U, 65U, 5U),

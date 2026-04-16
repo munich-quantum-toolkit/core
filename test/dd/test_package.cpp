@@ -23,6 +23,9 @@
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
+#include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
+
 #include <array>
 #include <cmath>
 #include <complex>
@@ -30,7 +33,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <gtest/gtest.h>
 #include <iomanip>
 #include <iostream>
 #include <limits>

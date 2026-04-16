@@ -8,18 +8,21 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
-#include <cmath>
-#include <complex>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cmath>
+#include <complex>
 #include <numbers>
 #include <optional>
 #include <variant>
@@ -39,36 +42,36 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
 
   LogicalResult matchAndRewrite(XXPlusYYOp op,
                                 PatternRewriter& rewriter) const override {
-    auto prevOp = op.getInputQubit(0).getDefiningOp<XXPlusYYOp>();
-    if (!prevOp) {
+    // Check if the successor is the same operation
+    auto nextOp =
+        llvm::dyn_cast<XXPlusYYOp>(*op.getOutputQubit(0).user_begin());
+    if (!nextOp) {
       return failure();
     }
 
-    // Confirm operations act on same qubits
-    if (op.getInputQubit(1) != prevOp.getOutputQubit(1)) {
+    // Confirm operations act on the same qubits
+    if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
       return failure();
     }
 
     // Confirm betas are equal
-    auto beta = valueToDouble(op.getBeta());
-    auto prevBeta = valueToDouble(prevOp.getBeta());
-    if (beta && prevBeta) {
-      if (std::abs(*beta - *prevBeta) > TOLERANCE) {
+    const auto beta = valueToDouble(op.getBeta());
+    const auto nextBeta = valueToDouble(nextOp.getBeta());
+    if (beta && nextBeta) {
+      if (std::abs(*beta - *nextBeta) > TOLERANCE) {
         return failure();
       }
-    } else if (op.getBeta() != prevOp.getBeta()) {
+    } else if (op.getBeta() != nextOp.getBeta()) {
       return failure();
     }
 
     // Compute and set new theta, which has index 2
-    auto newParameter = rewriter.create<arith::AddFOp>(
-        op.getLoc(), op.getOperand(2), prevOp.getOperand(2));
+    auto newParameter = arith::AddFOp::create(
+        rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
     op->setOperand(2, newParameter.getResult());
 
-    // Trivialize predecessor
-    rewriter.replaceOp(prevOp,
-                       {prevOp.getInputQubit(0), prevOp.getInputQubit(1)});
-
+    // Replace the second operation with the result of the first operation
+    rewriter.replaceOp(nextOp, op.getResults());
     return success();
   }
 };
@@ -83,6 +86,17 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
       variantToValue(odsBuilder, odsState.location, theta);
   const auto betaOperand = variantToValue(odsBuilder, odsState.location, beta);
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
+}
+
+LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
+                               SmallVectorImpl<OpFoldResult>& results) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    results.emplace_back(getInputQubit(0));
+    results.emplace_back(getInputQubit(1));
+    return success();
+  }
+  return failure();
 }
 
 void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -106,7 +120,7 @@ std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {
   const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
   const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
   return Eigen::Matrix4cd{{m1, m0, m0, m0},  // row 0
-                          {m0, mc, msm, m0}, // row 1
-                          {m0, msp, mc, m0}, // row 2
+                          {m0, mc, msp, m0}, // row 1
+                          {m0, msm, mc, m0}, // row 2
                           {m0, m0, m0, m1}}; // row 3
 }

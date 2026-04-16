@@ -8,17 +8,18 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
-#include <cmath>
-#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cmath>
+#include <complex>
 #include <numbers>
 #include <optional>
 #include <variant>
@@ -43,10 +44,7 @@ struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
         std::abs(*lambda - std::numbers::pi) > TOLERANCE) {
       return failure();
     }
-
-    auto hOp = rewriter.create<HOp>(op.getLoc(), op.getInputQubit(0));
-    rewriter.replaceOp(op, hOp.getResult());
-
+    rewriter.replaceOpWithNewOp<HOp>(op, op.getInputQubit(0));
     return success();
   }
 };
@@ -65,11 +63,8 @@ struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
         !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
-
-    auto rxOp = rewriter.create<RXOp>(op.getLoc(), op.getInputQubit(0),
+    rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputQubit(0),
                                       std::numbers::pi / 2.0);
-    rewriter.replaceOp(op, rxOp.getResult());
-
     return success();
   }
 };
@@ -88,11 +83,8 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
         std::abs(*lambda) > TOLERANCE) {
       return failure();
     }
-
-    auto ryOp = rewriter.create<RYOp>(op.getLoc(), op.getInputQubit(0),
+    rewriter.replaceOpWithNewOp<RYOp>(op, op.getInputQubit(0),
                                       std::numbers::pi / 2.0);
-    rewriter.replaceOp(op, ryOp.getResult());
-
     return success();
   }
 };

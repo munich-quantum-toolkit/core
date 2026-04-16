@@ -11,15 +11,17 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <cstdint>
-#include <functional>
-#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -27,6 +29,8 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>
@@ -59,8 +63,14 @@ void QCProgramBuilder::initialize() {
   setInsertionPointToStart(&entryBlock);
 }
 
+Value QCProgramBuilder::intConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
 Value QCProgramBuilder::allocQubit() {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   // Create the AllocOp without register metadata
   auto allocOp = AllocOp::create(*this);
@@ -72,44 +82,37 @@ Value QCProgramBuilder::allocQubit() {
   return qubit;
 }
 
-Value QCProgramBuilder::staticQubit(const int64_t index) {
+Value QCProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Static);
 
-  if (index < 0) {
-    llvm::reportFatalUsageError("Index must be non-negative");
-  }
-
-  // Create the StaticOp with the given index
-  auto indexAttr = getI64IntegerAttr(index);
-  auto staticOp = StaticOp::create(*this, indexAttr);
+  auto staticOp = StaticOp::create(*this, index);
   return staticOp.getQubit();
 }
 
-llvm::SmallVector<Value>
-QCProgramBuilder::allocQubitRegister(const int64_t size,
-                                     const std::string& name) {
+QCProgramBuilder::QubitRegister
+QCProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  // Allocate a sequence of qubits with register metadata
+  auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
+  auto memref = memref::AllocOp::create(*this, memrefType);
+  allocatedMemrefs.insert(memref);
+
   llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
-
-  auto nameAttr = getStringAttr(name);
-  auto sizeAttr = getI64IntegerAttr(size);
-
   for (int64_t i = 0; i < size; ++i) {
-    auto indexAttr = getI64IntegerAttr(i);
-    auto allocOp = AllocOp::create(*this, nameAttr, sizeAttr, indexAttr);
-    const auto& qubit = qubits.emplace_back(allocOp.getResult());
-    // Track the allocated qubit for automatic deallocation
+    auto index = arith::ConstantIndexOp::create(*this, i);
+    auto load = memref::LoadOp::create(*this, memref, index.getResult());
+    const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
   }
 
-  return qubits;
+  return {.value = memref, .qubits = std::move(qubits)};
 }
 
 QCProgramBuilder::ClassicalRegister
@@ -426,14 +429,16 @@ QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
-                                         const std::function<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::ctrl(ValueRange controls,
+                       const llvm::function_ref<void()>& body) {
   checkFinalized();
   CtrlOp::create(*this, controls, body);
   return *this;
 }
 
-QCProgramBuilder& QCProgramBuilder::inv(const std::function<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
   checkFinalized();
   InvOp::create(*this, body);
   return *this;
@@ -446,12 +451,14 @@ QCProgramBuilder& QCProgramBuilder::inv(const std::function<void()>& body) {
 QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   checkFinalized();
 
+  if (llvm::isa_and_nonnull<memref::LoadOp>(qubit.getDefiningOp())) {
+    llvm::reportFatalUsageError(
+        "Register-backed qubits cannot be deallocated manually");
+  }
+
   // Check if the qubit is in the tracking set
   if (!allocatedQubits.erase(qubit)) {
-    // Qubit was not found in the set - either never allocated or already
-    // deallocated
-    llvm::reportFatalUsageError(
-        "Double deallocation or invalid qubit deallocation");
+    llvm::reportFatalUsageError("Invalid qubit deallocation");
   }
 
   // Create the DeallocOp
@@ -468,6 +475,29 @@ void QCProgramBuilder::checkFinalized() const {
   if (ctx == nullptr) {
     llvm::reportFatalUsageError("QCProgramBuilder instance has been finalized");
   }
+}
+
+void QCProgramBuilder::ensureAllocationMode(
+    const AllocationMode requestedMode) {
+  if (allocationMode == AllocationMode::Unset) {
+    allocationMode = requestedMode;
+    return;
+  }
+  if (allocationMode == requestedMode) {
+    return;
+  }
+
+  const char* const existingName =
+      allocationMode == AllocationMode::Static ? "static" : "dynamic";
+  const char* const requestedName =
+      requestedMode == AllocationMode::Static ? "static" : "dynamic";
+
+  const std::string message =
+      llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
+                    "QCProgramBuilder",
+                    existingName, requestedName)
+          .str();
+  llvm::reportFatalUsageError(message.c_str());
 }
 
 OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
@@ -491,36 +521,38 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  // Automatically deallocate all still-allocated qubits
-  // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(allocatedQubits.begin(),
-                                        allocatedQubits.end());
-  llvm::sort(sortedQubits, [](Value a, Value b) {
-    auto* opA = a.getDefiningOp();
-    auto* opB = b.getDefiningOp();
-    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
+  for (auto qubit : allocatedQubits) {
+    if (!llvm::isa<memref::LoadOp>(qubit.getDefiningOp())) {
+      DeallocOp::create(*this, qubit);
     }
-    return opA->isBeforeInBlock(opB);
-  });
-  for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, qubit);
   }
-
-  // Clear the tracking set
   allocatedQubits.clear();
 
+  for (auto memref : allocatedMemrefs) {
+    memref::DeallocOp::create(*this, memref);
+  }
+  allocatedMemrefs.clear();
+
   // Create constant 0 for successful exit code
-  auto exitCode = arith::ConstantOp::create(*this, getI64IntegerAttr(0));
+  auto exitCode = intConstant(0);
 
   // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, ValueRange{exitCode});
+  func::ReturnOp::create(*this, exitCode);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
   // Transfer ownership to the caller
   return module;
+}
+
+OwningOpRef<ModuleOp> QCProgramBuilder::build(
+    MLIRContext* context,
+    const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc) {
+  QCProgramBuilder builder(context);
+  builder.initialize();
+  buildFunc(builder);
+  return builder.finalize();
 }
 
 } // namespace mlir::qc

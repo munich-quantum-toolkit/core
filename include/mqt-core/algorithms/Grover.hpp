@@ -11,12 +11,12 @@
 #pragma once
 
 #include "ir/Definitions.hpp"
-#include "ir/QuantumComputation.hpp"
 
 #include <bitset>
 #include <cstddef>
 
 namespace qc {
+class QuantumComputation;
 
 using GroverBitString = std::bitset<128>;
 auto appendGroverInitialization(QuantumComputation& qc) -> void;

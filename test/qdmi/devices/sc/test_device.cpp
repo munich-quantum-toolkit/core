@@ -10,16 +10,17 @@
 
 #include "mqt_sc_qdmi/device.h"
 
-#include <cstddef>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-// NOLINTNEXTLINE(misc-include-cleaner)
-#include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace {
+
 [[nodiscard]] auto querySites(MQT_SC_QDMI_Device_Session session)
     -> std::vector<MQT_SC_QDMI_Site> {
   size_t size = 0;
@@ -39,7 +40,6 @@ namespace {
   }
   return sites;
 }
-} // namespace
 
 class ScQDMISpecificationTest : public ::testing::Test {
 protected:
@@ -87,6 +87,8 @@ protected:
     ScQDMISpecificationTest::TearDown();
   }
 };
+
+} // namespace
 
 TEST_F(ScQDMISpecificationTest, SessionAlloc) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_alloc(nullptr),

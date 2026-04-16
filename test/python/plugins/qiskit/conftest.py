@@ -34,22 +34,21 @@ def _parse_num_clbits_from_qasm(program: str) -> int:
 
     Returns:
         The number of classical bits declared in the program.
-
-    Raises:
-        ValueError: If the number of classical bits cannot be determined.
     """
     # Look for "creg <name>[<size>];" pattern in QASM2
-    match = re.search(r"creg\s+\w+\[(\d+)]", program)
-    if match:
-        return int(match.group(1))
+    matches_qasm2 = re.findall(r"creg\s+\w+\[(\d+)]", program)
+    count_qasm2 = sum(int(m) for m in matches_qasm2)
 
     # Look for "bit[<size>] <name>;" pattern in QASM3
-    match = re.search(r"bit\[(\d+)]", program)
-    if match:
-        return int(match.group(1))
+    matches_qasm3_arrays = re.findall(r"\bbit\[(\d+)]\s+\w+\s*;", program)
+    count_qasm3_arrays = sum(int(m) for m in matches_qasm3_arrays)
 
-    msg = "Could not parse number of classical bits from QASM program."
-    raise ValueError(msg)
+    # Look for scalar-bit declarations in QASM3, including declarations with
+    # optional initializer expressions.
+    matches_qasm3_scalars = re.findall(r"\bbit(?!\s*\[)\s+\w+\s*(?:=\s*[^;]+)?;", program)
+    count_qasm3_scalars = len(matches_qasm3_scalars)
+
+    return count_qasm2 + count_qasm3_arrays + count_qasm3_scalars
 
 
 class MockQDMIDevice:
@@ -544,4 +543,4 @@ def backend_with_mock_jobs(primary_test_device: fomac.Device) -> QDMIBackend:
         QDMIBackend instance with mocked job execution.
     """
     wrapped_device = _DeviceWithMockedJobs(primary_test_device)
-    return QDMIBackend(device=wrapped_device)  # type: ignore[arg-type]
+    return QDMIBackend(device=wrapped_device)  # ty: ignore[invalid-argument-type]

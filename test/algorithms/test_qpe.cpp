@@ -17,12 +17,13 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <bitset>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -30,6 +31,8 @@
 #include <sstream>
 #include <string>
 #include <utility>
+
+namespace {
 
 class QPE : public testing::TestWithParam<std::pair<qc::fp, qc::Qubit>> {
 protected:
@@ -115,6 +118,8 @@ protected:
   }
 };
 
+} // namespace
+
 INSTANTIATE_TEST_SUITE_P(
     QPE, QPE,
     testing::Values(std::pair{1., 1U}, std::pair{0.5, 2U}, std::pair{0.25, 3U},
@@ -197,7 +202,7 @@ TEST_P(QPE, IQPETest) {
   } else {
     auto it = ordered.begin();
     std::advance(it, 1);
-    const auto& [secondMostLikelyResult, secondMostLikelyCount] = *(it);
+    const auto& [secondMostLikelyResult, secondMostLikelyCount] = *it;
     EXPECT_TRUE(
         (mostLikelyResult == expectedResultRepresentation &&
          secondMostLikelyResult == secondExpectedResultRepresentation) ||

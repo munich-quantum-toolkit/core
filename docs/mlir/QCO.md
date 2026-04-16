@@ -2,10 +2,16 @@
 tocdepth: 3
 ---
 
-```{include} Dialects/MLIRQCODialect.md
+```{include} Dialects/QCODialect.md
 
 ```
 
-```{include} Dialects/MLIRQCOInterfaces.md
+```{include} Dialects/QCOInterfaces.md
 :heading-offset: 1
+```
+
+## Passes
+
+```{include} Passes/QCOTransforms.md
+
 ```

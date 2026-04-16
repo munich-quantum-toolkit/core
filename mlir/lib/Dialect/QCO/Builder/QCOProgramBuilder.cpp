@@ -11,14 +11,19 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <cstddef>
-#include <cstdint>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -29,6 +34,8 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>
@@ -41,7 +48,7 @@ QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<QCODialect>();
+  ctx->loadDialect<QCODialect, qtensor::QTensorDialect>();
 }
 
 void QCOProgramBuilder::initialize() {
@@ -61,59 +68,56 @@ void QCOProgramBuilder::initialize() {
   setInsertionPointToStart(&entryBlock);
 }
 
+Value QCOProgramBuilder::intConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
 Value QCOProgramBuilder::allocQubit() {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   auto allocOp = AllocOp::create(*this);
-  const auto qubit = allocOp.getResult();
+  auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
-  validQubits.insert(qubit);
+  validQubits.try_emplace(qubit, QubitInfo{});
 
   return qubit;
 }
 
-Value QCOProgramBuilder::staticQubit(const int64_t index) {
+Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Static);
 
-  if (index < 0) {
-    llvm::reportFatalUsageError("Index must be non-negative");
-  }
-
-  auto indexAttr = getI64IntegerAttr(index);
-  auto staticOp = StaticOp::create(*this, indexAttr);
+  auto staticOp = StaticOp::create(*this, index);
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
-  validQubits.insert(qubit);
+  validQubits.try_emplace(qubit, QubitInfo{});
 
   return qubit;
 }
 
-llvm::SmallVector<Value>
-QCOProgramBuilder::allocQubitRegister(const int64_t size,
-                                      const std::string& name) {
+QCOProgramBuilder::QubitRegister
+QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
+  auto qtensor = qtensorAlloc(size);
+
   llvm::SmallVector<Value> qubits;
-  qubits.reserve(static_cast<size_t>(size));
-
-  auto nameAttr = getStringAttr(name);
-  auto sizeAttr = getI64IntegerAttr(size);
-
+  qubits.reserve(size);
   for (int64_t i = 0; i < size; ++i) {
-    const auto indexAttr = getI64IntegerAttr(i);
-    auto allocOp = AllocOp::create(*this, nameAttr, sizeAttr, indexAttr);
-    const auto& qubit = qubits.emplace_back(allocOp.getResult());
-    // Track the allocated qubit as valid
-    validQubits.insert(qubit);
+    auto [qtensorOut, qubit] = qtensorExtract(qtensor, i);
+    qtensor = qtensorOut;
+    qubits.emplace_back(qubit);
   }
 
-  return qubits;
+  return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
 QCOProgramBuilder::ClassicalRegister
@@ -147,11 +151,131 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
   // Validate the input qubit
   validateQubitValue(inputQubit);
 
+  auto it = validQubits.find(inputQubit);
+  auto info = it->second;
+
   // Remove the input (consumed) value from tracking
-  validQubits.erase(inputQubit);
+  validQubits.erase(it);
 
   // Add the output (new) value to tracking
-  validQubits.insert(outputQubit);
+  validQubits.try_emplace(outputQubit, info);
+}
+
+void QCOProgramBuilder::validateTensorValue(Value tensor) const {
+  if (!validTensors.contains(tensor)) {
+    llvm::errs() << "Attempting to use an invalid tensor SSA value. "
+                 << "The value may have been consumed by a previous operation "
+                 << "or was never created through this builder.\n";
+    llvm::reportFatalUsageError(
+        "Invalid tensor value used (either consumed or not tracked)");
+  }
+
+  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
+  if (!tensorType || tensorType.getRank() != 1) {
+    llvm::reportFatalUsageError("Tensor must be of 1-D RankedTensorType!");
+  }
+  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
+    llvm::reportFatalUsageError("Elements must be of QubitType!");
+  }
+}
+
+void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
+                                             Value outputTensor) {
+  // Validate the input tensor
+  validateTensorValue(inputTensor);
+
+  auto it = validTensors.find(inputTensor);
+  auto info = it->second;
+
+  // Remove the input (consumed) value from tracking
+  validTensors.erase(it);
+
+  // Add the output (new) value to tracking
+  validTensors.try_emplace(outputTensor, info);
+}
+
+//===----------------------------------------------------------------------===//
+// QTensor Operations
+//===----------------------------------------------------------------------===//
+
+Value QCOProgramBuilder::qtensorAlloc(
+    const std::variant<int64_t, Value>& size) {
+  checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
+
+  auto sizeValue = variantToValue(*this, getLoc(), size);
+  auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
+
+  auto result = allocOp.getResult();
+  validTensors.try_emplace(result, TensorInfo{tensorCounter++});
+
+  return result;
+}
+
+Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
+  checkFinalized();
+
+  if (elements.empty()) {
+    llvm::reportFatalUsageError("Elements must contain at least one qubit");
+  }
+
+  for (auto element : elements) {
+    if (!llvm::isa<QubitType>(element.getType())) {
+      llvm::reportFatalUsageError("Elements must be QubitType!");
+    }
+    validateQubitValue(element);
+    validQubits.erase(element);
+  }
+
+  auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
+  auto result = fromElementsOp.getResult();
+  validTensors.try_emplace(result, TensorInfo{tensorCounter++});
+  return result;
+}
+
+std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
+                                                          const int64_t index) {
+  checkFinalized();
+
+  auto indexValue = arith::ConstantIndexOp::create(*this, index).getResult();
+  auto extractOp = qtensor::ExtractOp::create(*this, tensor, indexValue);
+  auto qubit = extractOp.getResult();
+  auto outTensor = extractOp.getOutTensor();
+
+  validateTensorValue(tensor);
+  const auto regId = validTensors[tensor].regId;
+
+  validQubits.try_emplace(qubit, QubitInfo{.regId = regId, .regIndex = index});
+  updateTensorTracking(tensor, outTensor);
+
+  return {outTensor, qubit};
+}
+
+Value QCOProgramBuilder::qtensorInsert(
+    Value scalar, Value tensor, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  auto insertOp = qtensor::InsertOp::create(*this, scalar, tensor, indexValue);
+
+  auto outTensor = insertOp.getResult();
+
+  validateQubitValue(scalar);
+  validQubits.erase(scalar);
+  updateTensorTracking(tensor, outTensor);
+
+  return outTensor;
+}
+
+QCOProgramBuilder& QCOProgramBuilder::qtensorDealloc(Value tensor) {
+  checkFinalized();
+
+  validateTensorValue(tensor);
+  validTensors.erase(tensor);
+
+  qtensor::DeallocOp::create(*this, tensor);
+
+  return *this;
 }
 
 //===----------------------------------------------------------------------===//
@@ -179,7 +303,7 @@ Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
   auto indexAttr = getI64IntegerAttr(bit.registerIndex);
   auto measureOp =
       MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
-  const auto qubitOut = measureOp.getQubitOut();
+  auto qubitOut = measureOp.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -191,7 +315,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
   checkFinalized();
 
   auto resetOp = ResetOp::create(*this, qubit);
-  const auto qubitOut = resetOp.getQubitOut();
+  auto qubitOut = resetOp.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -247,7 +371,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   Value QCOProgramBuilder::OP_NAME(Value qubit) {                              \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit);                                  \
-    const auto& qubitOut = op.getQubitOut();                                   \
+    auto qubitOut = op.getQubitOut();                                          \
     updateQubitTracking(qubit, qubitOut);                                      \
     return qubitOut;                                                           \
   }                                                                            \
@@ -292,7 +416,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
                                    Value qubit) {                              \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM);                           \
-    const auto& qubitOut = op.getQubitOut();                                   \
+    auto qubitOut = op.getQubitOut();                                          \
     updateQubitTracking(qubit, qubitOut);                                      \
     return qubitOut;                                                           \
   }                                                                            \
@@ -335,7 +459,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
                                    Value qubit) {                              \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM1, PARAM2);                  \
-    const auto& qubitOut = op.getQubitOut();                                   \
+    auto qubitOut = op.getQubitOut();                                          \
     updateQubitTracking(qubit, qubitOut);                                      \
     return qubitOut;                                                           \
   }                                                                            \
@@ -382,7 +506,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
                                    Value qubit) {                              \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM1, PARAM2, PARAM3);          \
-    const auto& qubitOut = op.getQubitOut();                                   \
+    auto qubitOut = op.getQubitOut();                                          \
     updateQubitTracking(qubit, qubitOut);                                      \
     return qubitOut;                                                           \
   }                                                                            \
@@ -429,8 +553,8 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
                                                      Value qubit1) {           \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit0, qubit1);                         \
-    const auto& qubit0Out = op.getQubit0Out();                                 \
-    const auto& qubit1Out = op.getQubit1Out();                                 \
+    auto qubit0Out = op.getQubit0Out();                                        \
+    auto qubit1Out = op.getQubit1Out();                                        \
     updateQubitTracking(qubit0, qubit0Out);                                    \
     updateQubitTracking(qubit1, qubit1Out);                                    \
     return {qubit0Out, qubit1Out};                                             \
@@ -473,8 +597,8 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
       const std::variant<double, Value>&(PARAM), Value qubit0, Value qubit1) { \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit0, qubit1, PARAM);                  \
-    const auto& qubit0Out = op.getQubit0Out();                                 \
-    const auto& qubit1Out = op.getQubit1Out();                                 \
+    auto qubit0Out = op.getQubit0Out();                                        \
+    auto qubit1Out = op.getQubit1Out();                                        \
     updateQubitTracking(qubit0, qubit0Out);                                    \
     updateQubitTracking(qubit1, qubit1Out);                                    \
     return {qubit0Out, qubit1Out};                                             \
@@ -523,8 +647,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       Value qubit1) {                                                          \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit0, qubit1, PARAM1, PARAM2);         \
-    const auto& qubit0Out = op.getQubit0Out();                                 \
-    const auto& qubit1Out = op.getQubit1Out();                                 \
+    auto qubit0Out = op.getQubit0Out();                                        \
+    auto qubit1Out = op.getQubit1Out();                                        \
     updateQubitTracking(qubit0, qubit0Out);                                    \
     updateQubitTracking(qubit1, qubit1Out);                                    \
     return {qubit0Out, qubit1Out};                                             \
@@ -574,7 +698,7 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
   checkFinalized();
 
   auto op = BarrierOp::create(*this, qubits);
-  const auto& qubitsOut = op.getQubitsOut();
+  auto qubitsOut = op.getQubitsOut();
   for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
     updateQubitTracking(inputQubit, outputQubit);
   }
@@ -592,7 +716,7 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
+  auto qubitType = QubitType::get(getContext());
   for (const auto target : targets) {
     const auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(target, arg);
@@ -609,12 +733,13 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
-  for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
+  for (const auto& [control, controlOut] :
+       llvm::zip_equal(controls, controlsOut)) {
     updateQubitTracking(control, controlOut);
   }
   const auto& targetsOut = ctrlOp.getTargetsOut();
   for (const auto& [target, targetOut] :
-       llvm::zip(innerTargetsOut, targetsOut)) {
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 
@@ -630,8 +755,8 @@ ValueRange QCOProgramBuilder::inv(
 
   // Add block arguments for all qubits
   auto& block = invOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
-  for (const auto qubit : qubits) {
+  auto qubitType = QubitType::get(getContext());
+  for (auto qubit : qubits) {
     const auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(qubit, arg);
   }
@@ -650,7 +775,7 @@ ValueRange QCOProgramBuilder::inv(
   // Update tracking
   const auto& targetsOut = invOp.getQubitsOut();
   for (const auto& [target, targetOut] :
-       llvm::zip(innerTargetsOut, targetsOut)) {
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 
@@ -661,15 +786,80 @@ ValueRange QCOProgramBuilder::inv(
 // Deallocation
 //===----------------------------------------------------------------------===//
 
-QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
+QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
   checkFinalized();
 
   validateQubitValue(qubit);
   validQubits.erase(qubit);
 
-  DeallocOp::create(*this, qubit);
+  SinkOp::create(*this, qubit);
 
   return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF Operations
+//===----------------------------------------------------------------------===//
+
+ValueRange QCOProgramBuilder::qcoIf(
+    const std::variant<bool, Value>& condition, ValueRange qubits,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
+  checkFinalized();
+
+  auto conditionValue = variantToValue(*this, getLoc(), condition);
+
+  auto ifOp = IfOp::create(*this, conditionValue, qubits);
+  // Create the then and else block
+  auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
+  auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
+
+  // Create the block arguments and add them as valid qubits
+  for (auto qubitType : qubits.getTypes()) {
+    const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
+    const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
+    validQubits.try_emplace(thenArg, QubitInfo{});
+    validQubits.try_emplace(elseArg, QubitInfo{});
+  }
+
+  // Construct the bodies of the regions
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&thenBlock);
+  const auto thenResult = thenBody(thenBlock.getArguments());
+  YieldOp::create(*this, thenResult);
+  setInsertionPointToStart(&elseBlock);
+  llvm::SmallVector<Value> elseResult;
+  if (elseBody) {
+    elseResult = elseBody(elseBlock.getArguments());
+    YieldOp::create(*this, elseResult);
+  } else {
+    elseResult.assign(elseBlock.getArguments().begin(),
+                      elseBlock.getArguments().end());
+    YieldOp::create(*this, elseBlock.getArguments());
+  }
+
+  if (thenResult.size() != qubits.size() ||
+      thenResult.size() != elseResult.size()) {
+    llvm::reportFatalUsageError(
+        "Then and else body must return the same amount of qubits as the "
+        "number of input qubits!");
+  }
+
+  // Update qubit tracking
+  const auto& ifResults = ifOp->getResults();
+  for (auto [input, output] : llvm::zip_equal(qubits, ifResults)) {
+    updateQubitTracking(input, output);
+  }
+
+  // Remove the inner qubits as valid qubits
+  for (auto thenOut : thenResult) {
+    validQubits.erase(thenOut);
+  }
+  for (auto elseOut : elseResult) {
+    validQubits.erase(elseOut);
+  }
+
+  return ifResults;
 }
 
 //===----------------------------------------------------------------------===//
@@ -681,6 +871,29 @@ void QCOProgramBuilder::checkFinalized() const {
     llvm::reportFatalUsageError(
         "QCOProgramBuilder instance has been finalized");
   }
+}
+
+void QCOProgramBuilder::ensureAllocationMode(
+    const AllocationMode requestedMode) {
+  if (allocationMode == AllocationMode::Unset) {
+    allocationMode = requestedMode;
+    return;
+  }
+  if (allocationMode == requestedMode) {
+    return;
+  }
+
+  const char* const existingName =
+      allocationMode == AllocationMode::Static ? "static" : "dynamic";
+  const char* const requestedName =
+      requestedMode == AllocationMode::Static ? "static" : "dynamic";
+
+  const std::string message =
+      llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
+                    "QCOProgramBuilder",
+                    existingName, requestedName)
+          .str();
+  llvm::reportFatalUsageError(message.c_str());
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
@@ -704,33 +917,57 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  // Automatically deallocate all still-allocated qubits
-  // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
-  llvm::sort(sortedQubits, [](Value a, Value b) {
-    auto* opA = a.getDefiningOp();
-    auto* opB = b.getDefiningOp();
-    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
-    }
-    return opA->isBeforeInBlock(opB);
-  });
-  for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, qubit);
+  llvm::DenseSet<int64_t> validTensorIds;
+  for (const auto& [tensor, info] : validTensors) {
+    validTensorIds.insert(info.regId);
   }
 
+  llvm::DenseMap<int64_t, llvm::SmallVector<std::pair<Value, QubitInfo>>>
+      qubitsByRegister;
+  for (auto [qubit, info] : validQubits) {
+    if (info.regId == -1 || !validTensorIds.contains(info.regId)) {
+      // Automatically deallocate all still-allocated qubits
+      SinkOp::create(*this, qubit);
+    } else {
+      qubitsByRegister[info.regId].emplace_back(qubit, info);
+    }
+  }
+
+  // Automatically deallocate all still-allocated tensors
+  for (auto& [tensor, tensorInfo] : validTensors) {
+    auto currentTensor = tensor;
+    // Filter out qubits belonging to this tensor
+    for (auto& [qubit, qubitInfo] : qubitsByRegister[tensorInfo.regId]) {
+      auto indexValue = constantFromScalar(*this, getLoc(), qubitInfo.regIndex);
+      currentTensor =
+          qtensor::InsertOp::create(*this, qubit, currentTensor, indexValue)
+              .getResult();
+    }
+    // Deallocate tensor
+    qtensor::DeallocOp::create(*this, currentTensor);
+  }
   validQubits.clear();
+  validTensors.clear();
 
   // Create constant 0 for successful exit code
-  auto exitCode = arith::ConstantOp::create(*this, getI64IntegerAttr(0));
+  auto exitCode = intConstant(0);
 
   // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, ValueRange{exitCode});
+  func::ReturnOp::create(*this, exitCode);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
   return module;
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::build(
+    MLIRContext* context,
+    const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  buildFunc(builder);
+  return builder.finalize();
 }
 
 } // namespace mlir::qco

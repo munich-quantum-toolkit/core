@@ -18,12 +18,13 @@
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <iterator>
 #include <memory>
@@ -31,6 +32,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+namespace {
 
 class IO : public testing::Test {
 protected:
@@ -47,7 +50,6 @@ protected:
   qc::QuantumComputation qc;
 };
 
-namespace {
 void compareFiles(const std::string& file1, const std::string& file2) {
   std::ifstream fstream1(file1);
   std::string str1((std::istreambuf_iterator<char>(fstream1)),
@@ -59,6 +61,7 @@ void compareFiles(const std::string& file1, const std::string& file2) {
   std::erase_if(str2, isspace);
   ASSERT_EQ(str1, str2);
 }
+
 } // namespace
 
 TEST_F(IO, importAndDumpQASM) {

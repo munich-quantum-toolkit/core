@@ -8,7 +8,14 @@
  * Licensed under the MIT License
  */
 
+/**
+ * @file App.cpp
+ * @brief Implementation of the generator tool for neutral atom devices.
+ */
+
 #include "qdmi/devices/na/Generator.hpp"
+
+#include <spdlog/spdlog.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -16,7 +23,6 @@
 #include <iostream>
 #include <optional>
 #include <span>
-#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
 #include <tuple>

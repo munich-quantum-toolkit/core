@@ -22,11 +22,12 @@ add_mlir_dialect_library(
   MLIRQCOpsIncGen
   MLIRQCInterfacesIncGen
   LINK_LIBS
-  PUBLIC
+  PRIVATE
   MLIRIR
   MLIRInferTypeOpInterface
-  MLIRSideEffectInterfaces
-  DISABLE_INSTALL)
+  MLIRSideEffectInterfaces)
+
+mqt_mlir_target_use_project_options(MLIRQCDialect)
 
 # collect header files
 file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/IR/*.h")

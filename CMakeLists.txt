@@ -14,6 +14,12 @@ project(
   LANGUAGES C CXX
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
+if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
+  set(CMAKE_CXX_STANDARD
+      20
+      CACHE STRING "C++ standard to conform to" FORCE)
+endif()
+
 # Add path for custom modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -51,16 +57,8 @@ if(BUILD_MQT_CORE_BINDINGS)
                                                ${SKBUILD_SABI_COMPONENT})
 endif()
 
-# check if this is the master project or used via add_subdirectory
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-  set(MQT_CORE_MASTER_PROJECT ON)
-else()
-  set(MQT_CORE_MASTER_PROJECT OFF)
-endif()
-
-option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core"
-       ${MQT_CORE_MASTER_PROJECT})
-option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${MQT_CORE_MASTER_PROJECT})
+option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJECT_IS_TOP_LEVEL})
+option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
@@ -97,6 +95,12 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
+set(MQT_CORE_TARGET_NAME "mqt-core")
+
+if(BUILD_MQT_CORE_MLIR)
+  include(SetupMLIR)
+endif()
+
 include(cmake/ExternalDependencies.cmake)
 
 # set the include directory for the build tree
@@ -114,11 +118,6 @@ if(MQT_CORE_INSTALL)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
-set(MQT_CORE_TARGET_NAME "mqt-core")
-
-if(BUILD_MQT_CORE_MLIR)
-  include(SetupMLIR)
-endif()
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
 
@@ -155,10 +154,9 @@ if(BUILD_MQT_CORE_MLIR)
             ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
     COMMENT "Copying and cleaning up generated MLIR documentation"
     VERBATIM)
-
 endif()
 
-if(MQT_CORE_MASTER_PROJECT)
+if(PROJECT_IS_TOP_LEVEL)
   if(NOT TARGET mqt-core-uninstall)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in
                    ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)

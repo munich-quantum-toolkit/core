@@ -8,18 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
-#include <cmath>
-#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cmath>
+#include <complex>
 #include <optional>
 #include <variant>
 
@@ -42,18 +43,6 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
   }
 };
 
-/**
- * @brief Remove trivial RX operations.
- */
-struct RemoveTrivialRX final : OpRewritePattern<RXOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RXOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTrivialOneTargetOneParameter(op, rewriter);
-  }
-};
-
 } // namespace
 
 void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -63,9 +52,17 @@ void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
+OpFoldResult RXOp::fold(FoldAdaptor /*adaptor*/) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    return getInputQubit(0);
+  }
+  return {};
+}
+
 void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<MergeSubsequentRX, RemoveTrivialRX>(context);
+  results.add<MergeSubsequentRX>(context);
 }
 
 std::optional<Eigen::Matrix2cd> RXOp::getUnitaryMatrix() {

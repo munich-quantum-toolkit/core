@@ -15,7 +15,9 @@ add_mlir_library(
   MLIRFuncDialect
   MLIRSCFDialect
   MLIRQCODialect
-  DISABLE_INSTALL)
+  MLIRQTensorDialect)
+
+mqt_mlir_target_use_project_options(MLIRQCOProgramBuilder)
 
 # collect header files
 file(GLOB_RECURSE BUILDER_HEADERS_SOURCE

@@ -23,10 +23,11 @@
 #include "ir/operations/StandardOperation.hpp"
 #include "qasm3/Importer.hpp"
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -36,6 +37,8 @@
 
 using namespace qc;
 using namespace dd;
+
+namespace {
 
 class DDFunctionality : public testing::TestWithParam<OpType> {
 protected:
@@ -54,6 +57,8 @@ protected:
   std::mt19937_64 mt;
   std::uniform_real_distribution<fp> dist;
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     Parameters, DDFunctionality,

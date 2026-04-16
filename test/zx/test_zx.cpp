@@ -13,15 +13,19 @@
 #include "zx/ZXDefinitions.hpp"
 #include "zx/ZXDiagram.hpp"
 
+#include <gtest/gtest.h>
+
 #include <array>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <optional>
 #include <sstream>
 #include <utility>
 
 namespace zx {
+
+namespace {
+
 class ZXDiagramTest : public ::testing::Test {
 public:
   ZXDiagram diag;
@@ -51,6 +55,8 @@ protected:
     diag.addEdge(6, 3);
   }
 };
+
+} // namespace
 
 TEST_F(ZXDiagramTest, createDiagram) {
   EXPECT_EQ(diag.getNVertices(), 7);

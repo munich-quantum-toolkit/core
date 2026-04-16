@@ -10,7 +10,6 @@
 
 #include "qir/runtime/QIR.h"
 
-#include <cstdlib>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/CodeGen/CommandFlags.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
@@ -43,6 +42,8 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/TargetParser/Triple.h>
+
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <span>
@@ -52,32 +53,20 @@
 
 #define DEBUG_TYPE "mqt-core-qir-runner"
 
-namespace {
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables,readability-identifier-naming)
-llvm::codegen::RegisterCodeGenFlags CGF;
+static llvm::codegen::RegisterCodeGenFlags CGF;
 
-const llvm::cl::opt<std::string> INPUT_FILE(llvm::cl::desc("<input bitcode>"),
+static llvm::cl::opt<std::string> InputFile(llvm::cl::desc("<input bitcode>"),
                                             llvm::cl::Positional,
                                             llvm::cl::init("-"));
 
-const llvm::cl::list<std::string>
-    INPUT_ARGV(llvm::cl::ConsumeAfter,
-               llvm::cl::desc("<program arguments>..."));
+static llvm::cl::list<std::string>
+    InputArgv(llvm::cl::ConsumeAfter, llvm::cl::desc("<program arguments>..."));
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-llvm::ExitOnError exitOnErr;
+static llvm::ExitOnError ExitOnError;
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-std::vector<std::pair<std::string, void*>> manualSymbols;
+static void exitOnLazyCallThroughFailure() { exit(1); }
 
-#define REGISTER_SYMBOL(name)                                                  \
-  llvm::sys::DynamicLibrary::AddSymbol(#name,                                  \
-                                       reinterpret_cast<void*>(&(name)));      \
-  manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&(name)));
-
-void exitOnLazyCallThroughFailure() { exit(1); }
-
-llvm::Expected<llvm::orc::ThreadSafeModule>
+static llvm::Expected<llvm::orc::ThreadSafeModule>
 loadModule(const llvm::StringRef path, llvm::orc::ThreadSafeContext tsCtx) {
   llvm::SMDiagnostic err;
   auto m = tsCtx.withContextDo(
@@ -95,7 +84,7 @@ loadModule(const llvm::StringRef path, llvm::orc::ThreadSafeContext tsCtx) {
   return llvm::orc::ThreadSafeModule(std::move(m), std::move(tsCtx));
 }
 
-int mingwNoopMain() {
+static int mingwNoopMain() {
   // Cygwin and MinGW insert calls from the main function to the runtime
   // function __main. The __main function is responsible for setting up main's
   // environment (e.g. running static constructors), however this is not needed
@@ -108,7 +97,7 @@ int mingwNoopMain() {
 // Try to enable debugger support for the given instance.
 // This always returns success, but prints a warning if it's not able to enable
 // debugger support.
-llvm::Error tryEnableDebugSupport(llvm::orc::LLJIT& jit) {
+static llvm::Error tryEnableDebugSupport(llvm::orc::LLJIT& jit) {
   if (auto err = enableDebuggerSupport(jit)) {
     [[maybe_unused]] const std::string errMsg = toString(std::move(err));
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while)
@@ -117,13 +106,15 @@ llvm::Error tryEnableDebugSupport(llvm::orc::LLJIT& jit) {
   return llvm::Error::success();
 }
 
-int runOrcJIT() {
+static std::vector<std::pair<std::string, void*>> manualSymbols;
+
+static int runOrcJIT() {
   // Start setting up the JIT environment.
 
   // Parse the main module.
   const llvm::orc::ThreadSafeContext tsCtx(
       std::make_unique<llvm::LLVMContext>());
-  auto mainModule = exitOnErr(loadModule(INPUT_FILE, tsCtx));
+  auto mainModule = ExitOnError(loadModule(InputFile, tsCtx));
 
   // Get TargetTriple and DataLayout from the main module if they're explicitly
   // set.
@@ -142,7 +133,7 @@ int runOrcJIT() {
 
   builder.setJITTargetMachineBuilder(
       tt ? llvm::orc::JITTargetMachineBuilder(*tt)
-         : exitOnErr(llvm::orc::JITTargetMachineBuilder::detectHost()));
+         : ExitOnError(llvm::orc::JITTargetMachineBuilder::detectHost()));
 
   tt = builder.getJITTargetMachineBuilder()->getTargetTriple();
   if (dl) {
@@ -164,7 +155,7 @@ int runOrcJIT() {
   builder.setLinkProcessSymbolsByDefault(true);
 
   auto es = std::make_unique<llvm::orc::ExecutionSession>(
-      exitOnErr(llvm::orc::SelfExecutorProcessControl::Create()));
+      ExitOnError(llvm::orc::SelfExecutorProcessControl::Create()));
   builder.setLazyCallthroughManager(
       std::make_unique<llvm::orc::LazyCallThroughManager>(
           *es, llvm::orc::ExecutorAddr(), nullptr));
@@ -176,7 +167,7 @@ int runOrcJIT() {
   // Enable debugging of JIT'd code (only works on JITLink for ELF and MachO).
   builder.setPrePlatformSetup(tryEnableDebugSupport);
 
-  const auto jit = exitOnErr(builder.create());
+  const auto jit = ExitOnError(builder.create());
 
   auto& jd = jit->getMainJITDylib();
   llvm::orc::SymbolMap hostSymbols;
@@ -184,10 +175,10 @@ int runOrcJIT() {
     hostSymbols[jit->mangleAndIntern(name)] = {
         llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
   }
-  exitOnErr(jd.define(llvm::orc::absoluteSymbols(hostSymbols)));
+  ExitOnError(jd.define(llvm::orc::absoluteSymbols(hostSymbols)));
 
-  jit->getMainJITDylib().addGenerator(
-      exitOnErr(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+  jit->getMainJITDylib().addGenerator(ExitOnError(
+      llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
           jit->getDataLayout().getGlobalPrefix())));
 
   auto* objLayer = &jit->getObjLinkingLayer();
@@ -203,7 +194,7 @@ int runOrcJIT() {
     auto& workaroundJD = jit->getProcessSymbolsJITDylib()
                              ? *jit->getProcessSymbolsJITDylib()
                              : jit->getMainJITDylib();
-    exitOnErr(workaroundJD.define(llvm::orc::absoluteSymbols(
+    ExitOnError(workaroundJD.define(llvm::orc::absoluteSymbols(
         {{jit->mangleAndIntern("__main"),
           {llvm::orc::ExecutorAddr::fromPtr(mingwNoopMain),
            llvm::JITSymbolFlags::Exported}}})));
@@ -218,32 +209,36 @@ int runOrcJIT() {
   };
 
   // Add the main module.
-  exitOnErr(addModule(jit->getMainJITDylib(), std::move(mainModule)));
+  ExitOnError(addModule(jit->getMainJITDylib(), std::move(mainModule)));
 
   // Run any static constructors.
-  exitOnErr(jit->initialize(jit->getMainJITDylib()));
+  ExitOnError(jit->initialize(jit->getMainJITDylib()));
 
   // Resolve and run the main function.
-  const auto mainAddr = exitOnErr(jit->lookup("main"));
+  const auto mainAddr = ExitOnError(jit->lookup("main"));
 
   // Manual in-process execution with RuntimeDyld.
   using mainFnTy = int(int, char**);
   auto mainFn = mainAddr.toPtr<mainFnTy*>();
   const int result =
-      llvm::orc::runAsMain(mainFn, INPUT_ARGV, llvm::StringRef(INPUT_FILE));
+      llvm::orc::runAsMain(mainFn, InputArgv, llvm::StringRef(InputFile));
 
   // Run destructors.
-  exitOnErr(jit->deinitialize(jit->getMainJITDylib()));
+  ExitOnError(jit->deinitialize(jit->getMainJITDylib()));
 
   return result;
 }
-} // namespace
+
+#define REGISTER_SYMBOL(name)                                                  \
+  llvm::sys::DynamicLibrary::AddSymbol(#name,                                  \
+                                       reinterpret_cast<void*>(&(name)));      \
+  manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&(name)));
 
 auto main(int argc, char* argv[]) -> int {
   const llvm::InitLLVM session(argc, argv);
 
   if (const std::span args(argv, argc); args.size() > 1) {
-    exitOnErr.setBanner(std::string(args[0]) + ": ");
+    ExitOnError.setBanner(std::string(args[0]) + ": ");
   }
 
   // If we have a native target, initialize it to ensure it is linked in and
@@ -319,3 +314,5 @@ auto main(int argc, char* argv[]) -> int {
 
   return runOrcJIT();
 }
+
+#undef REGISTER_SYMBOL

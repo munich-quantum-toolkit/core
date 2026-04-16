@@ -15,11 +15,15 @@
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/QuantumComputation.hpp"
 
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <sstream>
 #include <string>
+
+namespace {
 
 class Entanglement : public testing::TestWithParam<qc::Qubit> {
 protected:
@@ -31,6 +35,8 @@ protected:
   qc::Qubit nq{};
   std::unique_ptr<dd::Package> dd;
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     Entanglement, Entanglement, testing::Range<qc::Qubit>(2U, 90U, 7U),

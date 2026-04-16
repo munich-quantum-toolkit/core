@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -21,8 +21,7 @@ using namespace mlir::qc;
 namespace {
 
 /**
- * @brief Remove matching allocation and deallocation pairs without operations
- * between them.
+ * @brief Remove matching allocation-deallocation pairs.
  */
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   using OpRewritePattern::OpRewritePattern;

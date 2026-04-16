@@ -19,6 +19,7 @@
 #include "dd/RealNumber.hpp"
 
 #include <nlohmann/json.hpp>
+
 #include <ostream>
 #include <string>
 
@@ -177,50 +178,46 @@ nlohmann::basic_json<> getDataStructureStatistics() {
   // For every entry, we store the size in bytes and the alignment in bytes
   auto& ctEntries = j["ComplexTableEntries"];
   auto& vectorAdd = ctEntries["vector_add"];
-  vectorAdd["size_B"] = sizeof(typename decltype(Package::vectorAdd)::Entry);
-  vectorAdd["alignment_B"] =
-      alignof(typename decltype(Package::vectorAdd)::Entry);
+  vectorAdd["size_B"] = sizeof(decltype(Package::vectorAdd)::Entry);
+  vectorAdd["alignment_B"] = alignof(decltype(Package::vectorAdd)::Entry);
 
   auto& matrixAdd = ctEntries["matrix_add"];
-  matrixAdd["size_B"] = sizeof(typename decltype(Package::matrixAdd)::Entry);
-  matrixAdd["alignment_B"] =
-      alignof(typename decltype(Package::matrixAdd)::Entry);
+  matrixAdd["size_B"] = sizeof(decltype(Package::matrixAdd)::Entry);
+  matrixAdd["alignment_B"] = alignof(decltype(Package::matrixAdd)::Entry);
 
   auto& conjugateMatrixTranspose = ctEntries["conjugate_matrix_transpose"];
   conjugateMatrixTranspose["size_B"] =
-      sizeof(typename decltype(Package::conjugateMatrixTranspose)::Entry);
+      sizeof(decltype(Package::conjugateMatrixTranspose)::Entry);
   conjugateMatrixTranspose["alignment_B"] =
-      alignof(typename decltype(Package::conjugateMatrixTranspose)::Entry);
+      alignof(decltype(Package::conjugateMatrixTranspose)::Entry);
 
   auto& matrixVectorMult = ctEntries["matrix_vector_mult"];
   matrixVectorMult["size_B"] =
-      sizeof(typename decltype(Package::matrixVectorMultiplication)::Entry);
+      sizeof(decltype(Package::matrixVectorMultiplication)::Entry);
   matrixVectorMult["alignment_B"] =
-      alignof(typename decltype(Package::matrixVectorMultiplication)::Entry);
+      alignof(decltype(Package::matrixVectorMultiplication)::Entry);
 
   auto& matrixMatrixMult = ctEntries["matrix_matrix_mult"];
   matrixMatrixMult["size_B"] =
-      sizeof(typename decltype(Package::matrixMatrixMultiplication)::Entry);
+      sizeof(decltype(Package::matrixMatrixMultiplication)::Entry);
   matrixMatrixMult["alignment_B"] =
-      alignof(typename decltype(Package::matrixMatrixMultiplication)::Entry);
+      alignof(decltype(Package::matrixMatrixMultiplication)::Entry);
 
   auto& vectorKronecker = ctEntries["vector_kronecker"];
-  vectorKronecker["size_B"] =
-      sizeof(typename decltype(Package::vectorKronecker)::Entry);
+  vectorKronecker["size_B"] = sizeof(decltype(Package::vectorKronecker)::Entry);
   vectorKronecker["alignment_B"] =
-      alignof(typename decltype(Package::vectorKronecker)::Entry);
+      alignof(decltype(Package::vectorKronecker)::Entry);
 
   auto& matrixKronecker = ctEntries["matrix_kronecker"];
-  matrixKronecker["size_B"] =
-      sizeof(typename decltype(Package::matrixKronecker)::Entry);
+  matrixKronecker["size_B"] = sizeof(decltype(Package::matrixKronecker)::Entry);
   matrixKronecker["alignment_B"] =
-      alignof(typename decltype(Package::matrixKronecker)::Entry);
+      alignof(decltype(Package::matrixKronecker)::Entry);
 
   auto& vectorInnerProduct = ctEntries["vector_inner_product"];
   vectorInnerProduct["size_B"] =
-      sizeof(typename decltype(Package::vectorInnerProduct)::Entry);
+      sizeof(decltype(Package::vectorInnerProduct)::Entry);
   vectorInnerProduct["alignment_B"] =
-      alignof(typename decltype(Package::vectorInnerProduct)::Entry);
+      alignof(decltype(Package::vectorInnerProduct)::Entry);
 
   return j;
 }

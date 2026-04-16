@@ -19,9 +19,10 @@
 #include "qasm3/Token.hpp"
 #include "qasm3/passes/ConstEvalPass.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <memory>
 #include <numbers>
 #include <sstream>
@@ -31,7 +32,11 @@
 
 using namespace qc;
 
+namespace {
+
 class Qasm3ParserTest : public testing::TestWithParam<std::size_t> {};
+
+} // namespace
 
 TEST_F(Qasm3ParserTest, ImportQasm3) {
   const std::string testfile = "OPENQASM 3.0;\n"

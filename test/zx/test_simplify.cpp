@@ -13,16 +13,18 @@
 #include "zx/ZXDefinitions.hpp"
 #include "zx/ZXDiagram.hpp"
 
-#include <cstddef>
 #include <gtest/gtest.h>
+
+#include <cstddef>
 #include <utility>
 #include <vector>
 
 namespace zx {
 
+namespace {
+
 class SimplifyTest : public ::testing::Test {};
 
-namespace {
 ZXDiagram makeIdentityDiagram(const std::size_t nqubits,
                               const std::size_t spidersPerQubit) {
   ZXDiagram diag(nqubits);
@@ -55,6 +57,7 @@ ZXDiagram makeEmptyDiagram(const std::size_t nqubits) {
   }
   return diag;
 }
+
 } // namespace
 
 TEST_F(SimplifyTest, idSimp) {

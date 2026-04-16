@@ -10,13 +10,10 @@
 
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <cstdint>
 #include <gtest/gtest.h>
-#include <limits>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -26,7 +23,13 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 
+#include <cstdint>
+#include <limits>
+#include <memory>
+
 using namespace mlir;
+
+namespace {
 
 class UtilsTest : public ::testing::Test {
 protected:
@@ -51,6 +54,8 @@ protected:
     return arith::AddFOp::create(*builder, firstOperand, secondOperand);
   }
 };
+
+} // namespace
 
 TEST_F(UtilsTest, valueToDouble) {
   constexpr double expectedValue = 1.234;

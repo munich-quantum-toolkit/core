@@ -6,9 +6,12 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-dialect-utils-test test_utils.cpp)
+add_executable(mqt-core-mlir-unittests-dialect-utils test_utils.cpp)
 
-target_link_libraries(mqt-core-mlir-dialect-utils-test PRIVATE GTest::gtest_main MLIRArithDialect
-                                                               MLIRIR MLIRSupport LLVMSupport)
+target_link_libraries(mqt-core-mlir-unittests-dialect-utils
+                      PRIVATE GTest::gtest_main MLIRArithDialect MLIRIR MLIRSupport LLVMSupport)
 
-gtest_discover_tests(mqt-core-mlir-dialect-utils-test)
+mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-dialect-utils)
+
+gtest_discover_tests(mqt-core-mlir-unittests-dialect-utils PROPERTIES LABELS mqt-mlir-unittests
+                                                                      DISCOVERY_TIMEOUT 60)

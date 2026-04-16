@@ -10,25 +10,8 @@
 
 #pragma once
 
-// Suppress warnings about ambiguous reversed operators in MLIR
-// (see https://github.com/llvm/llvm-project/issues/45853)
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
-#endif
-#include <mlir/Interfaces/InferTypeOpInterface.h>
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-
-#include <mlir/Bytecode/BytecodeOpInterface.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <optional>
-#include <string>
-#include <variant>
+#include <mlir/IR/Dialect.h>
+#include <mlir/IR/OpDefinition.h>
 
 #define DIALECT_NAME_QC "qc"
 
@@ -36,14 +19,14 @@
 // Dialect
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/QC/IR/QCOpsDialect.h.inc"
+#include "mlir/Dialect/QC/IR/QCOpsDialect.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/QC/IR/QCOpsTypes.h.inc"
+#include "mlir/Dialect/QC/IR/QCOpsTypes.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Interfaces
@@ -69,6 +52,7 @@ public:
     static size_t getNumQubits() { return T; }
     static size_t getNumTargets() { return T; }
     static size_t getNumControls() { return 0; }
+    static ValueRange getControls() { return {}; }
 
     Value getQubit(size_t i) {
       if constexpr (T == 0) {
@@ -88,6 +72,9 @@ public:
       }
       return this->getOperation()->getOperand(i);
     }
+    ValueRange getTargets() {
+      return this->getOperation()->getOperands().slice(0, T);
+    }
 
     static Value getControl([[maybe_unused]] size_t i) {
       llvm::reportFatalUsageError("Operation does not have controls");
@@ -101,16 +88,11 @@ public:
       }
       return this->getOperation()->getOperand(T + i);
     }
+
+    ValueRange getParameters() {
+      return this->getOperation()->getOperands().slice(T, P);
+    }
   };
 };
 
 } // namespace mlir::qc
-
-#include "mlir/Dialect/QC/IR/QCInterfaces.h.inc" // IWYU pragma: export
-
-//===----------------------------------------------------------------------===//
-// Operations
-//===----------------------------------------------------------------------===//
-
-#define GET_OP_CLASSES
-#include "mlir/Dialect/QC/IR/QCOps.h.inc" // IWYU pragma: export

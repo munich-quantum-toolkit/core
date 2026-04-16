@@ -14,10 +14,11 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <memory>
 #include <numbers>
 #include <stdexcept>
@@ -25,6 +26,8 @@
 #include <vector>
 
 constexpr double EPS = 1e-10;
+
+namespace {
 
 class StatePreparation
     : public testing::TestWithParam<std::vector<std::complex<double>>> {
@@ -34,6 +37,8 @@ protected:
   void TearDown() override {}
   void SetUp() override { amplitudes = GetParam(); }
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     StatePreparation, StatePreparation,

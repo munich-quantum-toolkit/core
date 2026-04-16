@@ -11,12 +11,20 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
+- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637]) ([**@denialhaag**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588]) ([**@MatthiasReumann**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
-  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475])
-  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**])
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
 
 ### Changed
 
+- 📦 Switch to component-based installation for the MQT Core Python package ([#1596]) ([**@burgholzer**])
+- ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1593]) ([**@burgholzer**])
+- ⬆️ Update `clang-tidy` to version 22 ([#1564]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Build on `macos-26`/`macos-26-intel` by default and `macos-15`/`macos-15-intel` for extensive tests ([#1571]) ([**@denialhaag**])
+- ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 
 ### Removed
@@ -30,7 +38,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ⬆️ Update `nanobind` to version 2.11.0 ([#1481]) ([**@denialhaag**])
 - ⬆️ Update Boost to version 1.89.0 ([#1453]) ([**@burgholzer**])
-- ⬆️ Update QDMI to latest version from stable v1.2.x branch ([#1453]) ([**@burgholzer**])
+- ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1453]) ([**@burgholzer**])
 - ⬆️ Update `spdlog` to version 1.17.0 ([#1453]) ([**@burgholzer**])
 - ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
 - ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
@@ -57,7 +65,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 📦🏁 Build Windows x86 wheels on windows-2025 runner for newer compiler ([#1415]) ([**@burgholzer**])
+- 📦🏁 Build Windows x86 wheels on `windows-2025` runner for newer compiler ([#1415]) ([**@burgholzer**])
 - 👷 Build on `macos-15`/`windows-2025` by default and `macos-14`/`windows-2022` for extensive tests ([#1414]) ([**@burgholzer**])
 - 📦🍎 Build macOS arm64 wheels on macos-15 runner for newer compiler ([#1413]) ([**@burgholzer**])
 - ⚡ Improve uv build caching by removing unconditional `reinstall-package` and configuring dedicated `cache-keys` ([#1412]) ([**@burgholzer**])
@@ -327,7 +335,43 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637
+[#1635]: https://github.com/munich-quantum-toolkit/core/pull/1635
+[#1627]: https://github.com/munich-quantum-toolkit/core/pull/1627
+[#1626]: https://github.com/munich-quantum-toolkit/core/pull/1626
+[#1624]: https://github.com/munich-quantum-toolkit/core/pull/1624
+[#1623]: https://github.com/munich-quantum-toolkit/core/pull/1623
+[#1620]: https://github.com/munich-quantum-toolkit/core/pull/1620
+[#1602]: https://github.com/munich-quantum-toolkit/core/pull/1602
+[#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
+[#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
+[#1588]: https://github.com/munich-quantum-toolkit/core/pull/1588
+[#1583]: https://github.com/munich-quantum-toolkit/core/pull/1583
+[#1581]: https://github.com/munich-quantum-toolkit/core/pull/1581
+[#1580]: https://github.com/munich-quantum-toolkit/core/pull/1580
+[#1573]: https://github.com/munich-quantum-toolkit/core/pull/1573
+[#1572]: https://github.com/munich-quantum-toolkit/core/pull/1572
+[#1571]: https://github.com/munich-quantum-toolkit/core/pull/1571
+[#1570]: https://github.com/munich-quantum-toolkit/core/pull/1570
+[#1569]: https://github.com/munich-quantum-toolkit/core/pull/1569
+[#1568]: https://github.com/munich-quantum-toolkit/core/pull/1568
+[#1567]: https://github.com/munich-quantum-toolkit/core/pull/1567
+[#1565]: https://github.com/munich-quantum-toolkit/core/pull/1565
+[#1564]: https://github.com/munich-quantum-toolkit/core/pull/1564
+[#1554]: https://github.com/munich-quantum-toolkit/core/pull/1554
+[#1550]: https://github.com/munich-quantum-toolkit/core/pull/1550
+[#1549]: https://github.com/munich-quantum-toolkit/core/pull/1549
+[#1548]: https://github.com/munich-quantum-toolkit/core/pull/1548
+[#1547]: https://github.com/munich-quantum-toolkit/core/pull/1547
+[#1542]: https://github.com/munich-quantum-toolkit/core/pull/1542
+[#1537]: https://github.com/munich-quantum-toolkit/core/pull/1537
+[#1521]: https://github.com/munich-quantum-toolkit/core/pull/1521
+[#1513]: https://github.com/munich-quantum-toolkit/core/pull/1513
+[#1510]: https://github.com/munich-quantum-toolkit/core/pull/1510
+[#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
+[#1506]: https://github.com/munich-quantum-toolkit/core/pull/1506
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
+[#1479]: https://github.com/munich-quantum-toolkit/core/pull/1479
 [#1475]: https://github.com/munich-quantum-toolkit/core/pull/1475
 [#1474]: https://github.com/munich-quantum-toolkit/core/pull/1474
 [#1472]: https://github.com/munich-quantum-toolkit/core/pull/1472
@@ -506,6 +550,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
 [**@Ectras**]: https://github.com/Ectras
+[**@simon1hofmann**]: https://github.com/simon1hofmann
 
 <!-- General links -->
 

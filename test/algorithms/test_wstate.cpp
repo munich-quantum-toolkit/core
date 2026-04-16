@@ -11,17 +11,20 @@
 #include "algorithms/WState.hpp"
 #include "dd/Simulation.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/QuantumComputation.hpp"
+
+#include <gtest/gtest.h>
 
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
+namespace {
+
 class WState : public testing::TestWithParam<qc::Qubit> {};
 
-namespace {
 std::vector<std::string> generateWStateStrings(const std::size_t length) {
   std::vector<std::string> result;
   result.reserve(length);
@@ -32,6 +35,7 @@ std::vector<std::string> generateWStateStrings(const std::size_t length) {
   }
   return result;
 }
+
 } // namespace
 
 INSTANTIATE_TEST_SUITE_P(
@@ -46,7 +50,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_P(WState, FunctionTest) {
   const auto nq = GetParam();
-  const auto qc = qc::createWState(nq);
+  const qc::QuantumComputation qc = qc::createWState(nq);
   constexpr std::size_t shots = 4096U;
   const auto measurements = dd::sample(qc, shots);
   for (const auto& result : generateWStateStrings(nq)) {

@@ -10,7 +10,8 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <cstdint>
+#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
+
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -24,6 +25,8 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstdint>
 #include <string>
 
 namespace mlir::qir {
@@ -54,6 +57,11 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
 }
 
 void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
+  if (metadata.useDynamicQubit && metadata.numQubits != 0) {
+    llvm::reportFatalUsageError(
+        "Cannot use dynamic qubit allocation if static qubits are allocated");
+  }
+
   OpBuilder builder(main.getBody());
   llvm::SmallVector<Attribute> attributes;
 
@@ -70,17 +78,26 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   attributes.emplace_back(builder.getStrArrayAttr(
       {"required_num_results", std::to_string(metadata.numResults)}));
 
-  // QIR version (Base Profile spec requires version 2.0)
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_major_version", "2"}));
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_minor_version", "0"}));
+  // Management model or resource requirements
+  if (metadata.useDynamicQubit) {
+    attributes.emplace_back(
+        builder.getStrArrayAttr({"dynamic_qubit_management", "true"}));
+  } else {
+    attributes.emplace_back(builder.getStrArrayAttr(
+        {"required_num_qubits", std::to_string(metadata.numQubits)}));
+  }
 
-  // Management model
-  attributes.emplace_back(
-      builder.getStrArrayAttr({"dynamic_qubit_management",
-                               metadata.useDynamicQubit ? "true" : "false"}));
-  attributes.emplace_back(
-      builder.getStrArrayAttr({"dynamic_result_management",
-                               metadata.useDynamicResult ? "true" : "false"}));
+  if (metadata.useDynamicResult) {
+    attributes.emplace_back(
+        builder.getStrArrayAttr({"dynamic_result_management", "true"}));
+  } else {
+    attributes.emplace_back(builder.getStrArrayAttr(
+        {"required_num_results", std::to_string(metadata.numResults)}));
+  }
+
+  // QIR version (Base Profile spec requires version 2.1)
+  attributes.emplace_back(builder.getStrArrayAttr({"qir_major_version", "2"}));
+  attributes.emplace_back(builder.getStrArrayAttr({"qir_minor_version", "1"}));
 
   main->setAttr("passthrough", builder.getArrayAttr(attributes));
 }
@@ -106,7 +123,7 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     }
     builder.setInsertionPointToEnd(module.getBody());
 
-    fnDecl = builder.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
+    fnDecl = LLVM::LLVMFuncOp::create(builder, op->getLoc(), fnName, fnType);
 
     // Add irreversible attribute to irreversible quantum operations
     if (fnName == QIR_MEASURE || fnName == QIR_RESET) {
@@ -142,8 +159,8 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
     // Create the declaration at the start of the module
     builder.setInsertionPointToStart(module.getBody());
 
-    const auto globalOp = builder.create<LLVM::GlobalOp>(
-        op->getLoc(), llvmArrayType, /*isConstant=*/true,
+    const auto globalOp = LLVM::GlobalOp::create(
+        builder, op->getLoc(), llvmArrayType, /*isConstant=*/true,
         LLVM::Linkage::Internal, symbolName, stringInitializer);
     globalOp->setAttr("addr_space", builder.getI32IntegerAttr(0));
     globalOp->setAttr("dso_local", builder.getUnitAttr());
@@ -158,8 +175,8 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   auto& firstBlock = *(main.getBlocks().begin());
   builder.setInsertionPointToStart(&firstBlock);
 
-  const auto addressOfOp = builder.create<LLVM::AddressOfOp>(
-      op->getLoc(), LLVM::LLVMPointerType::get(builder.getContext()),
+  const auto addressOfOp = LLVM::AddressOfOp::create(
+      builder, op->getLoc(), LLVM::LLVMPointerType::get(builder.getContext()),
       symbolName);
 
   return addressOfOp;
@@ -168,9 +185,9 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
 Value createPointerFromIndex(OpBuilder& builder, const Location loc,
                              const int64_t index) {
   auto constantOp =
-      builder.create<LLVM::ConstantOp>(loc, builder.getI64IntegerAttr(index));
-  auto intToPtrOp = builder.create<LLVM::IntToPtrOp>(
-      loc, LLVM::LLVMPointerType::get(builder.getContext()),
+      LLVM::ConstantOp::create(builder, loc, builder.getI64IntegerAttr(index));
+  auto intToPtrOp = LLVM::IntToPtrOp::create(
+      builder, loc, LLVM::LLVMPointerType::get(builder.getContext()),
       constantOp.getResult());
   return intToPtrOp.getResult();
 }

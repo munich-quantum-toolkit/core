@@ -8,11 +8,14 @@
  * Licensed under the MIT License
  */
 
-/** @file
+/** @file Generator.cpp
  * @brief The MQT QDMI device generator for neutral atom devices.
  */
 
 #include "qdmi/devices/na/Generator.hpp"
+
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cassert>
@@ -22,10 +25,8 @@
 #include <fstream>
 #include <functional>
 #include <istream>
-#include <nlohmann/json.hpp>
 #include <ostream>
 #include <ranges>
-#include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>

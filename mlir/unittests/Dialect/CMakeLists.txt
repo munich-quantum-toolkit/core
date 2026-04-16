@@ -6,5 +6,8 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(QC)
 add_subdirectory(QCO)
+add_subdirectory(QIR)
+add_subdirectory(QTensor)
 add_subdirectory(Utils)

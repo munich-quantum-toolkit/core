@@ -10,26 +10,34 @@
 
 #pragma once
 
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
-#include <cstdint>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>
+
+namespace mlir {
+class Block;
+class Operation;
+} // namespace mlir
 
 namespace mlir::qir {
 
@@ -50,6 +58,11 @@ namespace mlir::qir {
  * - Body block: Reversible quantum operations (gates)
  * - Measurements block: Measurements, resets, deallocations
  * - Output block: Output recording calls (array-based, grouped by register)
+ *
+ * @par Qubit addressing:
+ * A program must use either static qubits (`staticQubit`) or dynamic allocation
+ * (`allocQubit`, `allocQubitRegister`), never both. The builder terminates
+ * with a usage error if the modes are mixed.
  *
  * @par Example Usage:
  * ```c++
@@ -93,8 +106,58 @@ public:
   void initialize();
 
   //===--------------------------------------------------------------------===//
+  // Constants
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Create a constant integer value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.intConstant(1);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i64
+   * ```
+   */
+  Value intConstant(int64_t value);
+
+  /**
+   * @brief Create a constant double value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.doubleConstant(0.5);
+   * ```
+   * ```mlir
+   * %c = arith.constant 0.5 : f64
+   * ```
+   */
+  Value doubleConstant(double value);
+
+  //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Allocate a qubit
+   * @return An LLVM pointer representing the qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto q = builder.allocQubit();
+   * ```
+   * ```mlir
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
+   * !llvm.ptr
+   * ```
+   */
+  Value allocQubit();
 
   /**
    * @brief Get a static qubit by index
@@ -113,7 +176,7 @@ public:
   Value staticQubit(int64_t index);
 
   /**
-   * @brief Allocate an array of (static) qubits
+   * @brief Allocate an array of qubits
    * @param size Number of qubits (must be positive)
    * @return Vector of LLVM pointers representing the qubits
    *
@@ -122,12 +185,15 @@ public:
    * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %c0 = llvm.mlir.constant(0 : i64) : i64
-   * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
-   * %c1 = llvm.mlir.constant(1 : i64) : i64
-   * %q1 = llvm.inttoptr %c1 : i64 to !llvm.ptr
-   * %c2 = llvm.mlir.constant(2 : i64) : i64
-   * %q2 = llvm.inttoptr %c2 : i64 to !llvm.ptr
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
+   * llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
+   * (i64, !llvm.ptr, !llvm.ptr) -> ()
+   * %q0 = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
+   * %ptr1 = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr
+   * %q1 = llvm.load %ptr1 : !llvm.ptr -> !llvm.ptr
+   * %ptr2 = llvm.getelementptr %alloca[2] : !llvm.ptr -> !llvm.ptr
+   * %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
    * ```
    */
   llvm::SmallVector<Value> allocQubitRegister(int64_t size);
@@ -193,10 +259,10 @@ public:
    * @brief Measure a qubit and record the result (simple version)
    *
    * @details
-   * Performs a Z-basis measurement using __quantum__qis__mz__body. The
-   * result is tracked for deferred output recording in the output block.
-   * This version does NOT include register information, so output will
-   * not be grouped by register.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
+   *
+   * The output is recorded via `__quantum__rt__result_record_output` during
+   * `finalize()`.
    *
    * @param qubit The qubit to measure
    * @param resultIndex The classical bit index for result pointer
@@ -207,12 +273,17 @@ public:
    * auto result = builder.measure(q0, 0);
    * ```
    * ```mlir
+   * // In entry block:
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %r = llvm.call @"@__quantum__rt__result_allocate"(%zero) : !llvm.ptr ->
+   * !llvm.ptr
+   *
    * // In measurements block:
-   * %c0 = llvm.mlir.constant(0 : i64) : i64
-   * %r = llvm.inttoptr %c0 : i64 to !llvm.ptr
    * llvm.call @__quantum__qis__mz__body(%q0, %r) : (!llvm.ptr, !llvm.ptr) -> ()
    *
-   * // Output recording deferred to output block
+   * // In output block:
+   * llvm.call @__quantum__rt__result_record_output(%r, %label) : (!llvm.ptr,
+   * !llvm.ptr) -> ()
    * ```
    */
   Value measure(Value qubit, int64_t resultIndex);
@@ -221,12 +292,10 @@ public:
    * @brief Measure a qubit into a classical register
    *
    * @details
-   * Performs a Z-basis measurement using __quantum__qis__mz__body and tracks
-   * the measurement with register information for array-based output recording.
-   * Output recording is deferred to the output block during finalize(), where
-   * measurements are grouped by register and recorded using:
-   * 1. __quantum__rt__array_record_output for each register
-   * 2. __quantum__rt__result_record_output for each measurement in the register
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
+   *
+   * The output is recorded via `__quantum__rt__result_array_record_output`
+   * during `finalize()`.
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
@@ -236,21 +305,21 @@ public:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(2, "c");
    * builder.measure(q0, c[0]);
-   * builder.measure(q1, c[1]);
    * ```
    * ```mlir
-   * // In measurements block:
-   * llvm.call @__quantum__qis__mz__body(%q0, %r0) : (!llvm.ptr, !llvm.ptr) ->
-   * () llvm.call @__quantum__qis__mz__body(%q1, %r1) : (!llvm.ptr, !llvm.ptr)
-   * -> ()
+   * // In entry block:
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
+   * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
+   * (i64, !llvm.ptr, !llvm.ptr) -> ()
+   * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
    *
-   * // In output block (generated during finalize):
-   * @0 = internal constant [3 x i8] c"c\00"
-   * @1 = internal constant [5 x i8] c"c0r\00"
-   * @2 = internal constant [5 x i8] c"c1r\00"
-   * llvm.call @__quantum__rt__array_record_output(i64 2, ptr @0)
-   * llvm.call @__quantum__rt__result_record_output(ptr %r0, ptr @1)
-   * llvm.call @__quantum__rt__result_record_output(ptr %r1, ptr @2)
+   * // In measurements block:
+   * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+   *
+   * // In output block:
+   * llvm.call @__quantum__rt__result_array_record_output(%c2, %alloca, %label)
+   * : (i64, !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
   QIRProgramBuilder& measure(Value qubit, const Bit& bit);
@@ -269,7 +338,7 @@ public:
    * builder.reset(q);
    * ```
    * ```mlir
-   * llvm.call @__quantum__qis__reset__body(%q) : (!llvm.ptr) -> ()
+   * llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
    * ```
    */
   QIRProgramBuilder& reset(Value qubit);
@@ -310,7 +379,7 @@ public:
    * builder.OP_NAME(q);                                                       \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q) : (!llvm.ptr) -> ()     \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q) : !llvm.ptr -> ()       \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& OP_NAME(Value qubit);                                     \
@@ -800,22 +869,36 @@ public:
    * @brief Finalize the program and return the constructed module
    *
    * @details
-   * Automatically deallocates all remaining allocated qubits, generates
-   * array-based output recording in the output block (grouped by register),
-   * ensures proper QIR metadata attributes are set, and transfers ownership
-   * of the module to the caller. The builder should not be used after calling
-   * this method.
+   * Automatically deallocates all remaining allocated qubits and result
+   * pointers, generates output recording in the output block, ensures proper
+   * QIR metadata attributes are set, and transfers ownership of the module to
+   * the caller. The builder should not be used after calling this method.
    *
    * @return OwningOpRef containing the constructed QIR program module
    */
   OwningOpRef<ModuleOp> finalize();
 
+  /**
+   * @brief Convenience method for building quantum programs
+   * @param context The MLIR context to use for building the program
+   * @param buildFunc A function that takes a reference to a QIRProgramBuilder
+   * and uses it to build the desired quantum program. The builder will be
+   * properly initialized before calling this function, and the resulting module
+   * will be finalized and returned after this function completes.
+   * @return The module containing the quantum program built by buildFunc.
+   */
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const llvm::function_ref<void(QIRProgramBuilder&)>& buildFunc);
+
 private:
+  enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
+
   /// The main module
   ModuleOp module;
 
   /// The main function
-  LLVM::LLVMFuncOp mainFunc;
+  Operation* mainFunc{};
 
   /// Allocator and StringSaver for stable StringRefs
   llvm::BumpPtrAllocator allocator;
@@ -831,22 +914,34 @@ private:
   Block* outputBlock{};
 
   /// Exit code constant (created in entry block, used in output block)
-  LLVM::ConstantOp exitCode;
+  Value exitCode;
 
-  /// Cache static pointers for reuse
-  llvm::DenseMap<int64_t, Value> ptrCache;
+  /// Cache static qubit pointers for reuse
+  llvm::DenseMap<int64_t, Value> staticQubits;
 
-  /// Map from (register_name, register_index) to result pointer
-  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> registerResultMap;
+  /// Set of qubit pointers
+  llvm::DenseSet<Value> qubits;
+
+  /// Set of qubit-array pointers
+  llvm::DenseSet<Value> qubitArrays;
+
+  /// Map from register name to result-array pointer
+  llvm::StringMap<Value> resultArrays;
+
+  /// Map from (register name, index) to loaded result
+  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> loadedResults;
+
+  /// Map from result index to result pointer for non-register results
+  llvm::DenseMap<int64_t, Value> resultPtrs;
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
 
   /// Helper variable for storing the LLVM pointer type
-  LLVM::LLVMPointerType ptrType;
+  Type ptrType;
 
   /// Helper variable for storing the LLVM void type
-  LLVM::LLVMVoidType voidType;
+  Type voidType;
 
   /**
    * @brief Helper to create a LLVM CallOp
@@ -865,17 +960,21 @@ private:
    * @brief Generate array-based output recording in the output block
    *
    * @details
-   * Called by finalize() to generate output recording calls for all tracked
-   * measurements. Groups measurements by register and generates:
-   * 1. array_record_output for each register
-   * 2. result_record_output for each measurement in the register
+   * Called by `finalize()` to generate output recording calls for all tracked
+   * measurements.
    */
   void generateOutputRecording();
 
   bool isFinalized = false;
 
+  /// Track whether static or dynamic qubit allocation is used.
+  AllocationMode allocationMode = AllocationMode::Unset;
+
   /// Check if the builder has been finalized
   void checkFinalized() const;
+
+  /// Ensure static and dynamic qubit allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode);
 };
 
 } // namespace mlir::qir

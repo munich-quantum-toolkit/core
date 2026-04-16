@@ -10,13 +10,14 @@
 
 #include "helpers/test_utils.hpp"
 
+#include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
+
+#include <gtest/gtest.h>
 
 #include <cassert>
 #include <complex>
 #include <cstring>
-#include <gtest/gtest.h>
-#include <qdmi/constants.h>
 #include <sstream>
 #include <string>
 #include <string_view>

@@ -21,9 +21,10 @@
 #include "zx/ZXDefinitions.hpp"
 #include "zx/ZXDiagram.hpp"
 
+#include <gtest/gtest.h>
+
 #include <array>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -31,6 +32,9 @@
 #include <vector>
 
 namespace zx {
+
+namespace {
+
 class ZXFunctionalityTest : public ::testing::Test {
 public:
   qc::QuantumComputation qc;
@@ -54,6 +58,8 @@ void checkEquivalence(const qc::QuantumComputation& qc1,
     EXPECT_TRUE(d1.connected(d1.getInput(q), d1.getOutput(q)));
   }
 }
+} // namespace
+
 } // namespace
 
 TEST_F(ZXFunctionalityTest, parseQasm) {

@@ -8,13 +8,19 @@
  * Licensed under the MIT License
  */
 
+#include <gtest/gtest.h>
+
 #include <cstdlib>
 #include <filesystem>
-#include <gtest/gtest.h>
 #include <sstream>
 
 namespace qir {
+
+namespace {
+
 class QIRRunnerTest : public testing::TestWithParam<std::filesystem::path> {};
+
+} // namespace
 
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(

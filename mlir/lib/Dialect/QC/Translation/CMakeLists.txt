@@ -15,8 +15,9 @@ add_mlir_library(
   MLIRSCFDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
-  MQT::CoreIR
-  DISABLE_INSTALL)
+  MQT::CoreIR)
+
+mqt_mlir_target_use_project_options(MLIRQCTranslation)
 
 # collect header files
 file(GLOB_RECURSE TRANSLATION_HEADERS_SOURCE

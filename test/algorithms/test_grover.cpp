@@ -17,16 +17,19 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <bitset>
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <tuple>
+
+namespace {
 
 class Grover
     : public testing::TestWithParam<std::tuple<qc::Qubit, std::size_t>> {
@@ -56,6 +59,8 @@ protected:
   std::string expected;
   qc::GroverBitString targetValue;
 };
+
+} // namespace
 
 constexpr qc::Qubit GROVER_MAX_QUBITS = 15;
 constexpr std::size_t GROVER_NUM_SEEDS = 5;
