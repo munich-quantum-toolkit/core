@@ -366,7 +366,6 @@ void FunctionalityConstruction::addCcx(ZXDiagram& diag, const Qubit ctrl0,
 void FunctionalityConstruction::addCcz(ZXDiagram& diag, const Qubit ctrl0,
                                        const Qubit ctrl1, const Qubit target,
                                        std::vector<Vertex>& qubits) {
-
   addCnot(diag, ctrl1, target, qubits);
   addZSpider(diag, target, qubits, PiExpression(PiRational(-1, 4)));
   addCnot(diag, ctrl0, target, qubits);
@@ -420,7 +419,6 @@ void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
                                         std::vector<Qubit> controls,
                                         const Qubit target,
                                         std::vector<Vertex>& qubits) {
-
   const Qubit nextControl = controls.back();
   controls.pop_back();
 
@@ -434,7 +432,6 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
                                        std::vector<Qubit> controls,
                                        const Qubit target,
                                        std::vector<Vertex>& qubits) {
-
   switch (controls.size()) {
   case 0:
     addXSpider(diag, target, qubits, PiExpression(PiRational(1, 1)));
@@ -925,6 +922,7 @@ ZXDiagram FunctionalityConstruction::buildFunctionality(
   }
   return diag;
 }
+
 bool FunctionalityConstruction::transformableToZX(
     const qc::QuantumComputation* qc) {
   return std::ranges::all_of(
@@ -1032,6 +1030,7 @@ PiExpression FunctionalityConstruction::parseParam(const qc::Operation* op,
   }
   return PiExpression{PiRational{op->getParameter().at(i)}};
 }
+
 PiExpression
 FunctionalityConstruction::toPiExpr(const qc::SymbolOrNumber& param) {
   if (std::holds_alternative<double>(param)) {
@@ -1039,4 +1038,5 @@ FunctionalityConstruction::toPiExpr(const qc::SymbolOrNumber& param) {
   }
   return std::get<qc::Symbolic>(param).convert<PiRational>();
 }
+
 } // namespace zx
