@@ -555,11 +555,6 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
       }
     }
   }
-  // Mark scf operations that need to be changed afterwards
-  if ((!regionQubitMap.empty() || !regionRegisterMap.empty()) &&
-      op->getDialect()->getNamespace() == "scf") {
-    op->setAttr("needChange", StringAttr::get(op->getContext(), "yes"));
-  }
 
   return {regionQubitMap, regionRegisterMap};
 }
@@ -585,8 +580,8 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     auto* funcRegion = op->getParentRegion();
     auto& map = state.qubitMap[funcRegion];
 
-    // Build return values from qubitMap and collect live qubit information. A
-    // qubit from the current scope is considered alive if it is returned from
+    // Build return values from qubitMap and collect live qubit information.
+    // A qubit from the current scope is considered alive if it is returned from
     // the function. Otherwise, it is considered dead.
     llvm::SmallVector<Value> returnValues;
     returnValues.reserve(op.getNumOperands());
@@ -1595,8 +1590,10 @@ protected:
              llvm::none_of(op->getResultTypes(), isQubitMemref);
     });
 
-    target.addDynamicallyLegalDialect<scf::SCFDialect>([](Operation* op) {
-      return !(op->getAttrOfType<StringAttr>("needChange"));
+    target.addDynamicallyLegalDialect<scf::SCFDialect>([&](Operation* op) {
+      auto& regionQubitMap = state.regionQubitMap[op];
+      auto& regionTensorMap = state.regionRegisterMap[op];
+      return regionQubitMap.empty() && regionTensorMap.empty();
     });
     target.addDynamicallyLegalOp<scf::YieldOp, scf::ConditionOp>(
         [](Operation* op) {
