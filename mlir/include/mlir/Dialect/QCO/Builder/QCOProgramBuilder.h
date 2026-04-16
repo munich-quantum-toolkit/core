@@ -1261,7 +1261,7 @@ public:
    *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
    *   qco.yield %q1 : !qco.qubit
    * } else qubits(%arg0 = %q0) {
-   *   %q2 = qco.z : !qco.qubit -> !qco.qubit
+   *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
    *   qco.yield %q2 : !qco.qubit
    * }
    * ```
