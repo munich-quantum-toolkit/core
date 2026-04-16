@@ -23,7 +23,6 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -122,7 +121,7 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 
 Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
   auto* region = getInsertionBlock()->getParent();
-  for (Region* curr : llvm::reverse(regionStack)) {
+  for (Region* curr : regionStack) {
     if (loadedQubits[curr][memref].contains(index)) {
       llvm::reportFatalUsageError("Qubit already loaded in enclosing region");
     }
@@ -536,8 +535,8 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
       setInsertionPointToStart(insertionBlock);
       regionStack.emplace_back(insertionBlock->getParent());
       thenBody();
-      regionStack.pop_back();
       scf::YieldOp::create(b, loc);
+      regionStack.pop_back();
     });
   } else {
     scf::IfOp::create(
