@@ -23,6 +23,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -120,6 +121,9 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
   if (loadedQubits[memref].contains(index)) {
     llvm::reportFatalUsageError("Qubit is already loaded");
+  }
+  if (getConstantIntValue(index).has_value()) {
+    llvm::reportFatalUsageError("Index cant be a constant value");
   }
 
   auto loadOp = memref::LoadOp::create(*this, memref, index);
