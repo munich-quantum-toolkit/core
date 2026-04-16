@@ -39,7 +39,7 @@ class ZXFunctionalityTest : public ::testing::Test {
 public:
   qc::QuantumComputation qc;
 };
-namespace {
+
 void checkEquivalence(const qc::QuantumComputation& qc1,
                       const qc::QuantumComputation& qc2,
                       const std::vector<qc::Qubit>& qubits) {
@@ -58,7 +58,6 @@ void checkEquivalence(const qc::QuantumComputation& qc1,
     EXPECT_TRUE(d1.connected(d1.getInput(q), d1.getOutput(q)));
   }
 }
-} // namespace
 
 } // namespace
 
