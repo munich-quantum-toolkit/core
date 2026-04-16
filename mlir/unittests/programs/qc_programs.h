@@ -1035,9 +1035,6 @@ void powRxNeg(QCProgramBuilder& b);
 /// Creates a circuit with pow(-0.5) wrapping H (negative non-integer exponent).
 void negPowH(QCProgramBuilder& b);
 
-/// Reference for negPowH: pow(0.5) wrapping H (NegPowToInvPow + inv{H}=H).
-void negPowHRef(QCProgramBuilder& b);
-
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
 /// inv).
 void invPowRx(QCProgramBuilder& b);

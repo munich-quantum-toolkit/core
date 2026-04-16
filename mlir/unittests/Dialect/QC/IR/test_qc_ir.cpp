@@ -149,11 +149,13 @@ INSTANTIATE_TEST_SUITE_P(
         // // pow(p) { g } unchanged when no simplification applies
         QCTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
                    MQT_NAMED_BUILDER(powRxx)},
-        // pow(-p) { g } => pow(p) { inv { g } }  (NegPowToInvPow)
+        // pow(-n) { g } => pow(n) { inv { g } } only for integer n
         QCTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
                    MQT_NAMED_BUILDER(powRxNeg)},
+        // pow(-0.5) { H } unchanged: fractional exponent on a unitary with
+        // eigenvalue -1 cannot safely apply NegPowToInvPow
         QCTestCase{"NegPowH", MQT_NAMED_BUILDER(negPowH),
-                   MQT_NAMED_BUILDER(negPowHRef)},
+                   MQT_NAMED_BUILDER(negPowH)},
         // TODO should this maybe be in the inv tests?
         // inv { pow(p) { g } } => pow(p) { inv { g } }
         // (MovePowOutside)

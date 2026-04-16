@@ -2532,14 +2532,6 @@ void negPowH(QCOProgramBuilder& b) {
   });
 }
 
-void negPowHRef(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 0.5, [&](mlir::ValueRange qubits) {
-    auto q0 = b.h(qubits[0]);
-    return llvm::SmallVector<mlir::Value>{q0};
-  });
-}
-
 void invPowRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv({q[0]}, [&](mlir::ValueRange invArgs) {

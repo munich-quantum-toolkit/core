@@ -1598,11 +1598,6 @@ void negPowH(QCProgramBuilder& b) {
   b.pow(-0.5, [&] { b.h(q[0]); });
 }
 
-void negPowHRef(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.pow(0.5, [&] { b.h(q[0]); });
-}
-
 void invPowRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv([&] { b.pow(2.0, [&] { b.rx(0.123, q[0]); }); });

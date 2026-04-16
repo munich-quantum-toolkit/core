@@ -176,12 +176,15 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getExponentValue() >= 0.0) {
+    const double exp = op.getExponentValue();
+    // U^{-r} = (U^{-1})^r only when r is an integer: for fractional r,
+    // eigenvalue -1 yields (-1)^{-r} ≠ (-1)^r (conjugated phase factors).
+    if (exp >= 0.0 || !utils::isIntegerExponent(-exp)) {
       return failure();
     }
 
     rewriter.replaceOpWithNewOp<PowOp>(
-        op, op.getQubitsIn(), -op.getExponentValue(),
+        op, op.getQubitsIn(), -exp,
         [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
           return InvOp::create(
                      rewriter, op.getLoc(), powArgs,
