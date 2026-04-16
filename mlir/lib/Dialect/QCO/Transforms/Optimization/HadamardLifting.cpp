@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <math.h>
@@ -82,7 +83,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
   static LogicalResult swapPauliWithHadamard(UnitaryOpInterface gate,
                                              HOp hadamardGate,
                                              PatternRewriter& rewriter) {
-    auto op = gate.getOperation();
+    auto* op = gate.getOperation();
     return TypeSwitch<Operation*, LogicalResult>(op)
         .Case<XOp>([&](auto) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
@@ -162,6 +163,24 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
       : OpRewritePattern(context) {}
 
   /**
+   * @brief This method swaps two operand usages in an operation.
+   *
+   * @param op The operation on with the operand usage should be swapped.
+   * @param a The operand value to be swapped with b.
+   * @param b The operand value to be swapped with a.
+   */
+  static void swapOperandsInOp(Operation* op, Value a, Value b) {
+    for (OpOperand& operand :
+         llvm::make_filter_range(op->getOpOperands(), [&](const OpOperand& o) {
+           const Value valueOfOperand = o.get();
+           return valueOfOperand == a || valueOfOperand == b;
+         })) {
+      const bool operandValueIsA = operand.get() == a;
+      operand.set(operandValueIsA ? b : a);
+    }
+  }
+
+  /**
    * @brief This method swaps two qubits on a gate.
    *
    * This method swaps two qubits on a gate. Input and output are exchanged.
@@ -176,44 +195,21 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
    * @param rewriter The used rewriter.
    */
   static void swapQubits(UnitaryOpInterface gate, const Value inputQubit1,
-                         const Value inputQubit2,
-                         const Operation* succeedingOp1,
-                         const Operation* succeedingOp2,
-                         PatternRewriter& rewriter) {
+                         const Value inputQubit2, Operation* succeedingOp1,
+                         Operation* succeedingOp2, PatternRewriter& rewriter) {
     const Value outputQubit1 = gate.getOutputForInput(inputQubit1);
     const Value outputQubit2 = gate.getOutputForInput(inputQubit2);
-    const auto temporary =
-        IdOp::create(rewriter, gate.getLoc(), gate.getInputTarget(0))
-            .getResult();
 
-    rewriter.replaceUsesWithIf(outputQubit1, temporary,
-                               [&](const OpOperand& operand) {
-                                 return operand.getOwner() == gate ||
-                                        operand.getOwner() == succeedingOp1 ||
-                                        operand.getOwner() == succeedingOp2;
-                               });
-    rewriter.replaceUsesWithIf(outputQubit2, outputQubit1,
-                               [&](const OpOperand& operand) {
-                                 return operand.getOwner() == gate ||
-                                        operand.getOwner() == succeedingOp1 ||
-                                        operand.getOwner() == succeedingOp2;
-                               });
-    rewriter.replaceUsesWithIf(temporary, outputQubit2,
-                               [&](const OpOperand& operand) {
-                                 return operand.getOwner() == gate ||
-                                        operand.getOwner() == succeedingOp1 ||
-                                        operand.getOwner() == succeedingOp2;
-                               });
+    rewriter.modifyOpInPlace(
+        gate, [&] { swapOperandsInOp(gate, inputQubit1, inputQubit2); });
 
-    rewriter.replaceUsesWithIf(
-        inputQubit1, temporary,
-        [&](const OpOperand& operand) { return operand.getOwner() == gate; });
-    rewriter.replaceUsesWithIf(
-        inputQubit2, inputQubit1,
-        [&](const OpOperand& operand) { return operand.getOwner() == gate; });
-    rewriter.replaceUsesWithIf(
-        temporary, inputQubit2,
-        [&](const OpOperand& operand) { return operand.getOwner() == gate; });
+    rewriter.modifyOpInPlace(succeedingOp1, [&] {
+      swapOperandsInOp(succeedingOp1, outputQubit1, outputQubit2);
+    });
+
+    rewriter.modifyOpInPlace(succeedingOp2, [&] {
+      swapOperandsInOp(succeedingOp2, outputQubit1, outputQubit2);
+    });
   }
 
   /**
