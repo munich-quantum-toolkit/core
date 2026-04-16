@@ -964,9 +964,9 @@ public:
   /**
    * @brief Construct a scf.for operation
    *
-   * @param lowerbound Lowerbound of the loop
-   * @param upperbound Upperbound of the loop
-   * @param step Stepsize of the loop
+   * @param lowerbound Lower bound of the loop
+   * @param upperbound Upper bound of the loop
+   * @param step Step size of the loop
    * @param body Function that builds the body of the for operation
    * @return Reference to this builder for method chaining
    *
@@ -1024,8 +1024,7 @@ public:
    * @brief Construct a scf.if operation
    *
    * @param condition Condition for the if operation
-   * @param thenBody Function that builds the then body of the if
-   * operation
+   * @param thenBody Function that builds the then body of the if operation
    * @param elseBody Function that builds the else body of the if operation
    * @return Reference to this builder for method chaining
    *

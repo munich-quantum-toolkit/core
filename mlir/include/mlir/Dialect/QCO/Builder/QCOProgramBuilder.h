@@ -1271,7 +1271,7 @@ public:
         llvm::function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
   /**
-   * @brief Construct a scf.for operation with iter args
+   * @brief Construct a scf.for operation
    *
    * @details
    * Constructs a scf.for operation with the given loop boundaries and stepsize
@@ -1299,10 +1299,10 @@ public:
    * ```mlir
    * %q2 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0)
    * -> (tensor<3x!qco.qubit>) {
-   *   %outTensor, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+   *   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
    *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
-   *   %insert = qtensor.insert %q1 into %outTensor[%iv] : tensor<3x!qco.qubit>
-   *   scf.yield %insert : tensor<3x!qco.qubit>
+   *   %t1 = qtensor.insert %q1 into %t0[%iv] : tensor<3x!qco.qubit>
+   *   scf.yield %t1 : tensor<3x!qco.qubit>
    * }
    * ```
    */
@@ -1313,7 +1313,7 @@ public:
          llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body);
 
   /**
-   * @brief Construct a scf.while operation with arguments
+   * @brief Construct a scf.while operation
    *
    * @details
    * Constructs a scf.while with a range of qubit values for its iter args.
@@ -1351,7 +1351,7 @@ public:
    * ```
    */
   ValueRange
-  scfWhile(ValueRange args,
+  scfWhile(ValueRange initArgs,
            llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
            llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody);
 
@@ -1364,7 +1364,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfCondition(condition, yieldedValues);
+   * builder.scfCondition(condition, q0);
    * ```
    * ```mlir
    * scf.condition(%condition) %q0 : !qco.qubit

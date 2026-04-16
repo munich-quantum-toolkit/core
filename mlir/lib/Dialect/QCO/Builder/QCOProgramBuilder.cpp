@@ -900,7 +900,7 @@ ValueRange QCOProgramBuilder::scfFor(
   checkFinalized();
   checkQubitType(initArgs);
 
-  const auto loc = getLoc();
+  auto loc = getLoc();
   auto lb = utils::variantToValue(*this, loc, lowerbound);
   auto ub = utils::variantToValue(*this, loc, upperbound);
   auto stepSize = utils::variantToValue(*this, loc, step);
@@ -1066,6 +1066,7 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
 
   return *this;
 }
+
 //===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//

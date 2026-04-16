@@ -118,8 +118,8 @@ private:
  * @brief Moves the operations from one region into another.
  *
  * @details Moves the operations from the source region into the target region.
- * The target region replaces the uses of the old blockarguments with the
- * replacementValues and erases the unused blockarguments.
+ * The target region replaces the uses of the old block arguments with the
+ * @p replacementValues and erases the unused block arguments.
  *
  * @param sourceRegion Source region where the operations are moved from
  * @param targetRegion Target region where the operations are moved to
@@ -127,7 +127,6 @@ private:
  * @param numArgs Number of arguments that are dropped
  * @param replacementValues Values to replace the uses of the arguments
  * @param rewriter PatternRewriter of the current conversion pass
- *
  */
 static void inlineRegion(Region& sourceRegion, Region& targetRegion,
                          unsigned int offset, unsigned int numArgs,
@@ -743,10 +742,10 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
  * ```mlir
  * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
  * %qtensor) -> (tensor<3x!qco.qubit) {
- *   %outTensor, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+ *   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
  *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
- *   %insert = qtensor.insert %q1 into %outTensor[%iv] : tensor<3x!qco.qubit>
- *   scf.yield %insert : tensor<3x!qco.qubit>
+ *   %insert = qtensor.insert %q1 into %t1[%iv] : tensor<3x!qco.qubit>
+ *   scf.yield %t1 : tensor<3x!qco.qubit>
  * }
  * ```
  * is converted to

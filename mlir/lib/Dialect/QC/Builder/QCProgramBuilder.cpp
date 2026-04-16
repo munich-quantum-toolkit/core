@@ -468,10 +468,10 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
                          const llvm::function_ref<void(Value)>& body) {
   checkFinalized();
 
-  const auto loc = getLoc();
-  const auto lb = utils::variantToValue(*this, loc, lowerbound);
-  const auto ub = utils::variantToValue(*this, loc, upperbound);
-  const auto stepSize = utils::variantToValue(*this, loc, step);
+  auto loc = getLoc();
+  auto lb = utils::variantToValue(*this, loc, lowerbound);
+  auto ub = utils::variantToValue(*this, loc, upperbound);
+  auto stepSize = utils::variantToValue(*this, loc, step);
 
   scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
                      [&](OpBuilder& b, Location, Value iv, ValueRange) {
@@ -512,7 +512,7 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
                         const llvm::function_ref<void()>& elseBody) {
   checkFinalized();
 
-  const auto condition = utils::variantToValue(*this, getLoc(), cond);
+  auto condition = utils::variantToValue(*this, getLoc(), cond);
 
   if (!elseBody) {
     scf::IfOp::create(*this, condition, [&](OpBuilder& b, Location loc) {

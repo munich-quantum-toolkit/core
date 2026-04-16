@@ -103,10 +103,10 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
     return failure();
   }
 
-  SmallVector<OpAsmParser::Argument, 4> thenArgs;
-  SmallVector<OpAsmParser::Argument, 4> elseRegionArgs;
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> thenOperands;
-  SmallVector<OpAsmParser::UnresolvedOperand, 4> elseOperands;
+  SmallVector<OpAsmParser::Argument> thenArgs;
+  SmallVector<OpAsmParser::Argument> elseRegionArgs;
+  SmallVector<OpAsmParser::UnresolvedOperand> thenOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> elseOperands;
 
   if (parser.parseKeyword("qubits")) {
     return failure();

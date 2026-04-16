@@ -134,7 +134,7 @@ struct LoweringState {
   /// information
   llvm::DenseMap<Region*, llvm::DenseMap<Value, QubitInfo>> qubitInfoMap;
 
-  /// Per-region map from original its QC register to its extracted QC qubits
+  /// Per-region map from original QC register to its extracted QC qubits
   llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::SetVector<Value>>>
       extractedQubits;
 
@@ -331,7 +331,7 @@ resolveMappedQubits(LoweringState& state, Operation* anchor,
   }));
 }
 
-/** @brief Resolves a range of QC memrefs to their latest QCO tensor values. */
+/** @brief Resolves a range of QC memrefs to their latest QTensor values. */
 template <typename Range>
 [[nodiscard]] static SmallVector<Value>
 resolveMappedTensors(LoweringState& state, Operation* anchor,
@@ -351,7 +351,7 @@ static void assignMappedQubits(LoweringState& state, Operation* anchor,
   }
 }
 
-/** @brief Updates mappings for matching QC memref and QCO tensor ranges. */
+/** @brief Updates mappings for matching QC memref and QTensor ranges. */
 template <typename QcRange, typename QcoRange>
 static void assignMappedTensors(LoweringState& state, Operation* anchor,
                                 const QcRange& memrefs,
@@ -472,7 +472,7 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
 }
 
 /** @brief Resolves all QC qubit and memref values to their
- * latest QCO values.
+ * latest QCO and QTensor values.
  **/
 [[nodiscard]] static SmallVector<Value> resolveAllValues(LoweringState& state,
                                                          Operation* anchor) {
@@ -1232,10 +1232,10 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
  * ```mlir
  * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
  * %qtensor) -> (tensor<3x!qco.qubit) {
- *   %outTensor, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+ *   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
  *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
- *   %insert = qtensor.insert %q1 into %outTensor[%iv] : tensor<3x!qco.qubit>
- *   scf.yield %insert : tensor<3x!qco.qubit>
+ *   %t1 = qtensor.insert %q1 into %t0[%iv] : tensor<3x!qco.qubit>
+ *   scf.yield %t1 : tensor<3x!qco.qubit>
  * }
  * ```
  */
