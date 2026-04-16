@@ -565,6 +565,7 @@ namespace {
  * @brief Converts func.return and sinks remaining live qubits.
  *
  * @details
+ * QC uses reference semantics and does not enforce linear typing for qubits.
  * After conversion, QCO requires that every qubit SSA value is consumed
  * exactly once. For allocations (including static qubits), the sink is
  * `qco.sink`. This pattern inserts `qco.sink` operations for all
