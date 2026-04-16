@@ -826,8 +826,8 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                         qc::toString(op->getType()));
     }
   } else if (op->getNtargets() == 2) {
-    // At this point, op must have getNtargets() >= 2 (all 1-target cases
-    // handled above)
+    // at this point, op must have getNtargets() == 2
+    // all 1-target cases handled above
     const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
     const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
     std::vector<Qubit> controls;
