@@ -14,9 +14,11 @@
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
+#include <math.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <algorithm>
@@ -81,22 +83,27 @@ struct LiftHadamardsAbovePauliGatesPattern final
                                              HOp hadamardGate,
                                              PatternRewriter& rewriter) {
     auto op = gate.getOperation();
-    if (!llvm::isa<XOp>(op) && !llvm::isa<YOp>(op) && !llvm::isa<ZOp>(op)) {
-      return failure();
-    }
-    rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
-    if (llvm::isa<XOp>(op)) {
-      rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
-                                       hadamardGate.getInputQubit(0));
-    } else if (llvm::isa<ZOp>(op)) {
-      rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
-                                       hadamardGate.getInputQubit(0));
-    } else {
-      rewriter.replaceOpWithNewOp<YOp>(hadamardGate,
-                                       hadamardGate.getInputQubit(0));
-      GPhaseOp::create(rewriter, hadamardGate.getLoc(), M_PI);
-    }
-    return success();
+    return TypeSwitch<Operation*, LogicalResult>(op)
+        .Case<XOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
+          rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
+                                           hadamardGate.getInputQubit(0));
+          return success();
+        })
+        .Case<ZOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
+          rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
+                                           hadamardGate.getInputQubit(0));
+          return success();
+        })
+        .Case<YOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
+          rewriter.replaceOpWithNewOp<YOp>(hadamardGate,
+                                           hadamardGate.getInputQubit(0));
+          GPhaseOp::create(rewriter, hadamardGate.getLoc(), M_PI);
+          return success();
+        })
+        .Default([&](auto) { return failure(); });
   }
 
   /**
