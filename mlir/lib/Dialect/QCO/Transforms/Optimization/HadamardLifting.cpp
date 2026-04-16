@@ -58,7 +58,7 @@ namespace {
  * - Y - H - = - H - Y - G(pi) -
  * - Z - H - = - H - X -
  * This is applied to uncontrolled gates.
- * In case of Pauli Y, a global phase is applied, as HY = -YH.
+ * In case of Pauli-Y, a global phase is applied, as HY = -YH.
  */
 struct LiftHadamardsAbovePauliGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
@@ -138,12 +138,20 @@ struct LiftHadamardsAbovePauliGatesPattern final
 };
 
 /**
- * @brief This pattern removes an H gate between a CNOT and a measurement.
+ * @brief This pattern removes an H gate between a CNOT and a measurement, flips
+ * the CNOT and adds Hadamard gates before and after the new target and before
+ * the new control.
  *
  * If there is a Hadamard gate between the target qubit of a CNOT and a
  * measurement, we flip the CNOT and apply a hadamard gate to the incoming and
  * outcoming qubits. As H * H = id, the measurement is then the direct successor
- * of a CNOT ctrl, which is beneficial for the qubit reuse routine.
+ * of a CNOT control, which is beneficial for the qubit reuse routine. After the
+ * application of LiftHadamardAboveCNOTPattern, a measurement will follow
+ * directly after a control. In that case, measurement lifting (a routine of
+ * qubit reuse) can remove the multi-qubit gate by lifting the measurement in
+ * front of the control and changing the qubit-controlled Pauli-X to a
+ * classically controlled Pauli-X.
+ *
  * The procedure also works if there are additional ctrls. Only the target
  * and ctrl involved in the transformation get hadamard gates assigned.
  * The involved ctrl to be flipped with the target is chosen randomly.
