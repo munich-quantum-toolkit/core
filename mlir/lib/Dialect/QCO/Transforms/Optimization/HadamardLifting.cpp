@@ -84,21 +84,17 @@ struct LiftHadamardsAbovePauliGatesPattern final
     if (!llvm::isa<XOp>(op) && !llvm::isa<YOp>(op) && !llvm::isa<ZOp>(op)) {
       return failure();
     }
-    rewriter.setInsertionPoint(gate);
     rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
     if (llvm::isa<XOp>(op)) {
-      rewriter.setInsertionPoint(hadamardGate);
       rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
                                        hadamardGate.getInputQubit(0));
     } else if (llvm::isa<ZOp>(op)) {
-      rewriter.setInsertionPoint(hadamardGate);
       rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
                                        hadamardGate.getInputQubit(0));
     } else {
-      rewriter.setInsertionPoint(hadamardGate);
       rewriter.replaceOpWithNewOp<YOp>(hadamardGate,
                                        hadamardGate.getInputQubit(0));
-      // TODO: Add Gphase(pi)
+      GPhaseOp::create(rewriter, hadamardGate.getLoc(), M_PI);
     }
     return success();
   }
