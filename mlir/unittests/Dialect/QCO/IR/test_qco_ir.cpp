@@ -25,6 +25,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 
 #include <iosfwd>
 #include <memory>
@@ -147,6 +148,48 @@ TEST_F(QCOTest, DirectIfBuilder) {
   EXPECT_TRUE(verify(*refBuilder).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),
+                                                   refBuilder.get()));
+}
+
+TEST_F(QCOTest, IfOpParser) {
+  // Test IfOp parser
+  const char* mlirCode = R"(
+      module {
+        func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+            %c0 = arith.constant 0 : index
+            %c1 = arith.constant 1 : index
+            %c0_i64 = arith.constant 0 : i64
+            %t0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+            %t1, %q0 = qtensor.extract %t0[%c0] : tensor<1x!qco.qubit>
+            %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+            %q2, %cond = qco.measure %q1 : !qco.qubit
+            %q4 = qco.if %cond qubits(%arg0 = %q2) -> (!qco.qubit) {
+                %q3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+                qco.yield %q3 : !qco.qubit
+            } else qubits(%arg0 = %q2) {
+                qco.yield %arg0 : !qco.qubit
+            }
+            %t2 = qtensor.insert %q4 into %t1[%c0] : tensor<1x!qco.qubit>
+            qtensor.dealloc %t2 : tensor<1x!qco.qubit>
+            return %c0_i64 : i64
+        }
+    })";
+
+  auto parsedSourceModule =
+      parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsedSourceModule);
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+
+  auto refBuilder =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
+  ASSERT_TRUE(refBuilder);
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
                                                    refBuilder.get()));
 }
 
