@@ -198,6 +198,8 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 
 llvm::SmallVector<Value>
 QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
+  checkQubitType(initArgs);
+
   // Gather all used tensor ids first
   llvm::DenseSet<int64_t> tensorRegIds;
   for (auto initArg : initArgs) {
@@ -267,8 +269,7 @@ void QCOProgramBuilder::updateQubitValueTracking(ValueRange oldValues,
   }
 }
 
-/** @brief Helper function to check if every value is a qubit value*/
-static void checkQubitType(ValueRange values) {
+void QCOProgramBuilder::checkQubitType(ValueRange values) {
   for (Type type : values.getTypes()) {
     auto isQubitType = TypeSwitch<Type, bool>(type)
                            .Case<QubitType>([](auto) { return true; })
@@ -898,7 +899,6 @@ ValueRange QCOProgramBuilder::scfFor(
     const std::variant<int64_t, Value>& step, ValueRange initArgs,
     llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body) {
   checkFinalized();
-  checkQubitType(initArgs);
 
   auto loc = getLoc();
   auto lb = utils::variantToValue(*this, loc, lowerbound);
@@ -940,7 +940,6 @@ ValueRange QCOProgramBuilder::scfWhile(
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody) {
   checkFinalized();
-  checkQubitType(initArgs);
 
   // Get the updated arguments after inserting the extracted qubits
   auto updatedArgs = insertExtractedQubits(initArgs);
@@ -997,7 +996,6 @@ ValueRange QCOProgramBuilder::qcoIf(
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
-  checkQubitType(initArgs);
 
   auto conditionValue = variantToValue(*this, getLoc(), condition);
   auto updatedArgs = insertExtractedQubits(initArgs);

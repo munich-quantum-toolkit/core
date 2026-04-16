@@ -1031,12 +1031,18 @@ public:
    * @par Example:
    * ```c++
    * builder.scfIf(condition, [&] {
-   *   builder.h(q0);
+   *   builder.x(q0);
+   * }, [&] {
+   *   builder.z(q0);
    * });
    * ```
    * ```mlir
    * scf.if %condition {
-   *   qc.h %q0 : !qc.qubit
+   *   qc.x %q0 : !qc.qubit
+   *   scf.yield
+   * } else {
+   *   qc.z %q0 : !qc.qubit
+   *   scf.yield
    * }
    * ```
    */

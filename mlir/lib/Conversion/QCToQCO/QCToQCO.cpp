@@ -570,11 +570,11 @@ namespace {
  * @brief Converts func.return and sinks remaining live qubits.
  *
  * @details
- * QC uses reference semantics and does not enforce linear typing for
- * qubits. After conversion, QCO requires that every qubit SSA value is
- * consumed exactly once. For allocations (including static qubits), the
- * sink is `qco.sink`. This pattern inserts `qco.sink` operations for all
- * still-live qubits tracked in the lowering state right before the return.
+ * QC uses reference semantics and does not enforce linear typing for qubits.
+ * After conversion, QCO requires that every qubit SSA value is consumed exactly
+ * once. For allocations (including static qubits), the sink is `qco.sink`. This
+ * pattern inserts `qco.sink` operations for all still-live qubits tracked in
+ * the lowering state right before the return.
  */
 struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -586,9 +586,9 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     auto* funcRegion = op->getParentRegion();
     auto& map = state.qubitMap[funcRegion];
 
-    // Build return values from qubitMap and collect live qubit information.
-    // A qubit from the current scope is considered alive if it is returned
-    // from the function. Otherwise, it is considered dead.
+    // Build return values from qubitMap and collect live qubit information. A
+    // qubit from the current scope is considered alive if it is returned from
+    // the function. Otherwise, it is considered dead.
     llvm::SmallVector<Value> returnValues;
     returnValues.reserve(op.getNumOperands());
     llvm::DenseSet<Value> liveQubits;
@@ -751,8 +751,8 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
  * @brief Converts memref.dealloc to qtensor.dealloc
  *
  * @details
- * Before deallocating the tensor, all qubits are inserted back into it at
- * their original location.
+ * Before deallocating the tensor, all qubits are inserted back into it at their
+ * original location.
  *
  * @par Example:
  * ```mlir
@@ -1059,8 +1059,8 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
  * ```
  * is converted to
  * ```mlir
- * %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
+ * %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit -> !qco.qubit,
+ * !qco.qubit
  * ```
  */
 struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
@@ -1550,21 +1550,19 @@ struct ConvertSCFConditionOp final
  * @brief Pass implementation for QC-to-QCO conversion
  *
  * @details
- * This pass converts QC dialect operations (reference semantics) to QCO
- * dialect operations (value semantics). The conversion is essential for
- * enabling optimization passes that rely on SSA form and explicit dataflow
- * analysis.
+ * This pass converts QC dialect operations (reference semantics) to QCO dialect
+ * operations (value semantics). The conversion is essential for enabling
+ * optimization passes that rely on SSA form and explicit dataflow analysis.
  *
  * The pass operates in several phases:
  * 1. Type conversion: !qc.qubit -> !qco.qubit
  * 2. Operation conversion: Each QC op is converted to its QCO equivalent
  * 3. State tracking: A LoweringState maintains qubit value mappings
- * 4. Function/control-flow adaptation: Function signatures and control flow
- * are updated to use QCO types
+ * 4. Function/control-flow adaptation: Function signatures and control flow are
+ * updated to use QCO types
  *
  * The conversion maintains semantic equivalence while transforming the
- * representation from imperative (mutation-based) to functional
- * (SSA-based).
+ * representation from imperative (mutation-based) to functional (SSA-based).
  */
 struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
   using QCToQCOBase::QCToQCOBase;

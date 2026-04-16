@@ -1240,28 +1240,29 @@ public:
    *
    * @param condition Bool condition
    * @param initArgs Input qubit values
-   * @param thenBody Function that builds the then body of the if
-   * operation
-   * @param elseBody Function that builds the else body of the if
-   * operation
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
    * @return ValueRange of the results (must be the same types as the input
    * qubit types)
    *
    * @par Example:
    * ```c++
-   * auto result =
-   *   builder.qcoIf(condition, q0,
-   *     [&](ValueRange args) -> SmallVector<Value> {
-   *       auto q1 = builder.h(args[0]);
-   *       return {q1};
-   *     });
+   * result = builder.qcoIf(condition, q0, [&](ValueRange args)
+   * -> llvm::SmallVector<Value> {
+   *   auto q1 = builder.x(args[0]);
+   *   return {q1};
+   * }, [&] {
+   *   auto q2 = builder.z(args[0]);
+   *   return {q2};
+   * });
    * ```
    * ```mlir
-   * %q2 = qco.if %condition qubits(%arg0 = %q0) -> (!qco.qubit) {
-   *      %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
-   *      qco.yield %q1 : !qco.qubit
+   * %q3 = qco.if %condition qubits(%arg0 = %q0) -> (!qco.qubit) {
+   *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q1 : !qco.qubit
    * } else qubits(%arg0 = %q0) {
-   *      qco.yield %arg0 : !qco.qubit
+   *   %q2 = qco.z : !qco.qubit -> !qco.qubit
+   *   qco.yield %q2 : !qco.qubit
    * }
    * ```
    */
@@ -1279,9 +1280,9 @@ public:
    * from a tensor that is used as an argument for this operation are
    * automatically inserted before the operation is constructed.
    *
-   * @param lowerbound Lowerbound of the loop
-   * @param upperbound Upperbound of the loop
-   * @param step Stepsize of the loop
+   * @param lowerbound Lower bound of the loop
+   * @param upperbound Upper bound of the loop
+   * @param step Step size of the loop
    * @param initArgs Initial arguments for the iter args
    * @param body Function that builds the body of the for operation
    * @return ValueRange of the results
@@ -1297,12 +1298,12 @@ public:
    * });
    * ```
    * ```mlir
-   * %q2 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0)
+   * %t3 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %t0)
    * -> (tensor<3x!qco.qubit>) {
-   *   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+   *   %t1, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
    *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
-   *   %t1 = qtensor.insert %q1 into %t0[%iv] : tensor<3x!qco.qubit>
-   *   scf.yield %t1 : tensor<3x!qco.qubit>
+   *   %t2 = qtensor.insert %q1 into %t1[%iv] : tensor<3x!qco.qubit>
+   *   scf.yield %t2 : tensor<3x!qco.qubit>
    * }
    * ```
    */
@@ -1321,7 +1322,7 @@ public:
    * this operation are automatically inserted before the operation is
    * constructed.
    *
-   * @param args Arguments for the while loop
+   * @param initArgs Arguments for the while loop
    * @param beforeBody Function that builds the before body of the while
    * operation
    * @param afterBody Function that builds the after body of the while operation
@@ -1329,8 +1330,8 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfWhile(args, [&](ValueRange iterArgs) -> llvm::SmallVector<Value>
-   * {
+   * builder.scfWhile(initArgs, [&](ValueRange iterArgs) ->
+   * llvm::SmallVector<Value> {
    *   auto [q0, cond] = builder.measure(iterArgs[0]);
    *   builder.scfCondition(cond, q0);
    *   return {q0};
@@ -1465,11 +1466,19 @@ private:
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
   /**
-   * @brief Updates the latest QCO values of the initial values after inserting
-   * all extracted qubits back to the tensor.
-   * @param initArgs ValueRange of the initial QCO values
-   * @return SmallVector of the updated values after inserting the qubits back
-   * to the tensors.
+   * @brief Take a range of qubit and tensor values and insert all extracted
+   * qubits back to the tensors
+   *
+   * @details Iterates through a range of qubit and tensor values and returns
+   * the latest qubit and tensor values. Qubit values are returned without
+   * modification. Tensor values are updated by adding all extracted qubits back
+   * to the tensors. The latest tensor values after inserting the qubits are
+   * returned.
+   *
+   * @param initArgs ValueRange of the initial values
+   * @return SmallVector of the updated values of the initial values.
+   * @throws Abort if a tensor and one of its extracted qubits both appear in
+   * the @p initArgs
    */
   SmallVector<Value> insertExtractedQubits(ValueRange initArgs);
 
@@ -1479,6 +1488,13 @@ private:
    * @param newValues The new values to be tracked
    */
   void updateQubitValueTracking(ValueRange oldValues, ValueRange newValues);
+
+  /**
+   * @brief Check if every value is either a qubit or a tensor of qubits
+   * @param values The values that are checked
+   * @throws Abort if a value is neither a qubit nor a tensor of qubits
+   */
+  static void checkQubitType(ValueRange values);
 
   /**
    * @brief Information about a tensor
