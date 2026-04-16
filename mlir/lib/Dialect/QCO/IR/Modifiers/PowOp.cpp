@@ -186,14 +186,13 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
           return InvOp::create(
                      rewriter, op.getLoc(), powArgs,
                      [&](ValueRange invArgs) -> llvm::SmallVector<Value> {
-                       IRMapping mapping;
-                       auto* innerBody = op.getBody();
-                       for (size_t i = 0; i < op.getNumTargets(); ++i) {
-                         mapping.map(innerBody->getArgument(i), invArgs[i]);
-                       }
-                       return rewriter
-                           .clone(*op.getBodyUnitary().getOperation(), mapping)
-                           ->getResults();
+                       auto* invBody = rewriter.getInsertionBlock();
+                       rewriter.inlineBlockBefore(op.getBody(), invBody,
+                                                  invBody->begin(), invArgs);
+                       auto yieldedValues =
+                           llvm::to_vector(invBody->back().getOperands());
+                       rewriter.eraseOp(&invBody->back());
+                       return yieldedValues;
                      })
               .getResults();
         });

@@ -103,15 +103,13 @@ struct MovePowOutside final : OpRewritePattern<InvOp> {
           return InvOp::create(
                      rewriter, invOp.getLoc(), powArgs,
                      [&](ValueRange invArgs) -> llvm::SmallVector<Value> {
-                       IRMapping mapping;
-                       auto* innerBody = innerPow.getBody();
-                       for (size_t i = 0; i < innerPow.getNumTargets(); ++i) {
-                         mapping.map(innerBody->getArgument(i), invArgs[i]);
-                       }
-                       return rewriter
-                           .clone(*innerPow.getBodyUnitary().getOperation(),
-                                  mapping)
-                           ->getResults();
+                       auto* invBody = rewriter.getInsertionBlock();
+                       rewriter.inlineBlockBefore(innerPow.getBody(), invBody,
+                                                  invBody->begin(), invArgs);
+                       auto yieldedValues =
+                           llvm::to_vector(invBody->back().getOperands());
+                       rewriter.eraseOp(&invBody->back());
+                       return yieldedValues;
                      })
               .getResults();
         });

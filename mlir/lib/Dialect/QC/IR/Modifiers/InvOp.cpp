@@ -70,7 +70,10 @@ struct MovePowOutside final : OpRewritePattern<InvOp> {
     const double exponent = innerPow.getExponentValue();
     rewriter.replaceOpWithNewOp<PowOp>(invOp, exponent, [&] {
       InvOp::create(rewriter, invOp.getLoc(), [&] {
-        rewriter.clone(*innerPow.getBodyUnitary().getOperation());
+        auto* invBody = rewriter.getInsertionBlock();
+        rewriter.inlineBlockBefore(innerPow.getBody(), invBody,
+                                   invBody->begin());
+        rewriter.eraseOp(&invBody->back()); // erase the inlined YieldOp
       });
     });
     return success();
