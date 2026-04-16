@@ -29,6 +29,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 
@@ -63,6 +64,7 @@ void QCProgramBuilder::initialize() {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+  regionStack.emplace_back(entryBlock.getParent());
 }
 
 Value QCProgramBuilder::intConstant(const int64_t value) {
@@ -112,22 +114,22 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
     auto load = memref::LoadOp::create(*this, memref, index.getResult());
     const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
-    loadedQubits[memref].insert(index);
+    loadedQubits[load->getParentRegion()][memref].insert(index);
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
 }
 
 Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
-  if (loadedQubits[memref].contains(index)) {
-    llvm::reportFatalUsageError("Qubit is already loaded");
-  }
-  if (getConstantIntValue(index).has_value()) {
-    llvm::reportFatalUsageError("Index cant be a constant value");
+  auto* region = getInsertionBlock()->getParent();
+  for (Region* curr : llvm::reverse(regionStack)) {
+    if (loadedQubits[curr][memref].contains(index)) {
+      llvm::reportFatalUsageError("Qubit already loaded in enclosing region");
+    }
   }
 
   auto loadOp = memref::LoadOp::create(*this, memref, index);
-  loadedQubits[memref].insert(index);
+  loadedQubits[region][memref].insert(index);
 
   return loadOp.getResult();
 }
@@ -480,9 +482,12 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
   scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
                      [&](OpBuilder& b, Location, Value iv, ValueRange) {
                        const OpBuilder::InsertionGuard guard(*this);
-                       setInsertionPointToStart(b.getInsertionBlock());
+                       auto* insertionBlock = b.getInsertionBlock();
+                       setInsertionPointToStart(insertionBlock);
+                       regionStack.emplace_back(insertionBlock->getParent());
                        body(iv);
                        scf::YieldOp::create(b, loc);
+                       regionStack.pop_back();
                      });
 
   return *this;
@@ -497,14 +502,20 @@ QCProgramBuilder::scfWhile(const llvm::function_ref<void()>& beforeBody,
       *this, TypeRange{}, ValueRange{},
       [&](OpBuilder& b, Location, ValueRange) {
         const OpBuilder::InsertionGuard guard(*this);
-        setInsertionPointToStart(b.getInsertionBlock());
+        auto* insertionBlock = b.getInsertionBlock();
+        setInsertionPointToStart(insertionBlock);
+        regionStack.emplace_back(insertionBlock->getParent());
         beforeBody();
+        regionStack.pop_back();
       },
       [&](OpBuilder& b, Location loc, ValueRange) {
         const OpBuilder::InsertionGuard guard(*this);
-        setInsertionPointToStart(b.getInsertionBlock());
+        auto* insertionBlock = b.getInsertionBlock();
+        setInsertionPointToStart(insertionBlock);
+        regionStack.emplace_back(insertionBlock->getParent());
         afterBody();
         scf::YieldOp::create(b, loc);
+        regionStack.pop_back();
       });
 
   return *this;
@@ -521,8 +532,11 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
   if (!elseBody) {
     scf::IfOp::create(*this, condition, [&](OpBuilder& b, Location loc) {
       const OpBuilder::InsertionGuard guard(*this);
-      setInsertionPointToStart(b.getInsertionBlock());
+      auto* insertionBlock = b.getInsertionBlock();
+      setInsertionPointToStart(insertionBlock);
+      regionStack.emplace_back(insertionBlock->getParent());
       thenBody();
+      regionStack.pop_back();
       scf::YieldOp::create(b, loc);
     });
   } else {
@@ -530,15 +544,21 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
         *this, condition,
         [&](OpBuilder& b, Location loc) {
           const OpBuilder::InsertionGuard guard(*this);
-          setInsertionPointToStart(b.getInsertionBlock());
+          auto* insertionBlock = b.getInsertionBlock();
+          setInsertionPointToStart(insertionBlock);
+          regionStack.emplace_back(insertionBlock->getParent());
           thenBody();
           scf::YieldOp::create(b, loc);
+          regionStack.pop_back();
         },
         [&](OpBuilder& b, Location loc) {
           const OpBuilder::InsertionGuard guard(*this);
-          setInsertionPointToStart(b.getInsertionBlock());
+          auto* insertionBlock = b.getInsertionBlock();
+          setInsertionPointToStart(insertionBlock);
+          regionStack.emplace_back(insertionBlock->getParent());
           elseBody();
           scf::YieldOp::create(b, loc);
+          regionStack.pop_back();
         });
   }
   return *this;

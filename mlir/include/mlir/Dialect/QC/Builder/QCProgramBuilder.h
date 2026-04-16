@@ -12,6 +12,7 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -1108,8 +1109,12 @@ private:
   /// Track allocated MemRefs for automatic deallocation
   llvm::DenseSet<Value> allocatedMemrefs;
 
-  /// Track the loaded indices of memrefs
-  llvm::DenseMap<Value, llvm::DenseSet<Value>> loadedQubits;
+  /// Per-region map of memrefs and their loaded indices
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::DenseSet<Value>>>
+      loadedQubits;
+
+  /// Stack of the nested regions where the insertion point of the builder is
+  llvm::SmallVector<Region*> regionStack;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
