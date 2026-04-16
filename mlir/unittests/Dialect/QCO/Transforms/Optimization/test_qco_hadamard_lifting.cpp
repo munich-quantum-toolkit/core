@@ -241,7 +241,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
 
 /**
  * @brief Test: Checks that Hadamard gates are not lifted if they are controlled
- * and the Pauli gate is a Pauli Y gate.
+ * and the Pauli gate is a Pauli-Y gate.
  */
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverPauliYGateIfControlled) {
   auto q = programBuilder.allocQubitRegister(2);
