@@ -910,7 +910,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"InverseMultipleControlledTdg",
                     MQT_NAMED_BUILDER(inverseMultipleControlledTdg),
                     MQT_NAMED_BUILDER(multipleControlledT)},
-        QCOTestCase{"TdgThenS", MQT_NAMED_BUILDER(tdgThenT),
+        QCOTestCase{"TdgThenT", MQT_NAMED_BUILDER(tdgThenT),
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"TwoTdg", MQT_NAMED_BUILDER(twoTdg),
                     MQT_NAMED_BUILDER(sdg)},
