@@ -26,6 +26,8 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
+
 namespace {
 
 using namespace mlir;

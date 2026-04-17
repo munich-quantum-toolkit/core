@@ -15,14 +15,14 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
-#include <math.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace mlir::qco {
@@ -105,12 +105,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
     }
 
     // op needs to be in front of a Hadamard gate
-    const auto& users = op->getUsers();
-    if (users.empty()) {
-      return failure();
-    }
-    auto* const user = *users.begin();
-    auto hadamardGate = llvm::dyn_cast<HOp>(user);
+    auto hadamardGate = llvm::dyn_cast<HOp>(*op->getUsers().begin());
 
     if (!hadamardGate ||
         op.getOutputTarget(0) != hadamardGate.getInputTarget(0)) {
@@ -152,7 +147,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
    * @param a The operand value to be swapped with b.
    * @param b The operand value to be swapped with a.
    */
-  static void swapOperandsInOp(Operation* op, Value a, Value b) {
+  static void swapOperandsInOp(Operation* op, const Value a, const Value b) {
     for (OpOperand& operand :
          llvm::make_filter_range(op->getOpOperands(), [&](const OpOperand& o) {
            const Value valueOfOperand = o.get();
@@ -177,7 +172,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
    * output of inputQubit2.
    * @param rewriter The used rewriter.
    */
-  static void swapQubits(UnitaryOpInterface gate, const Value inputQubit1,
+  static void swapQubits(CtrlOp gate, const Value inputQubit1,
                          const Value inputQubit2, Operation* succeedingOp1,
                          Operation* succeedingOp2, PatternRewriter& rewriter) {
     const Value outputQubit1 = gate.getOutputForInput(inputQubit1);
@@ -204,7 +199,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
    * @param rewriter The used rewriter.
    * @returns One of the created Hadamard gates.
    */
-  static HOp addHadamardGatesBeforeGate(const UnitaryOpInterface gate,
+  static HOp addHadamardGatesBeforeGate(const CtrlOp gate,
                                         const ValueRange inputQubits,
                                         PatternRewriter& rewriter) {
     HOp newHOp;
@@ -232,7 +227,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
    * @param rewriter The used rewriter.
    * @returns One of the created Hadamard gates.
    */
-  static HOp addHadamardGatesAfterGate(const UnitaryOpInterface gate,
+  static HOp addHadamardGatesAfterGate(const CtrlOp gate,
                                        const ValueRange outputQubits,
                                        PatternRewriter& rewriter) {
     HOp newHOp;
@@ -279,7 +274,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     auto cnotGate = llvm::dyn_cast<CtrlOp>(predecessor);
     if (!cnotGate || cnotGate.getNumTargets() != 1 ||
         cnotGate.getOutputTarget(0) != inQubitHadamard ||
-        !llvm::dyn_cast<XOp>(cnotGate.getBodyUnitary())) {
+        llvm::dyn_cast<XOp>(cnotGate.getBodyUnitary()) == nullptr) {
       return failure();
     }
     // Determine the index of the control that will become the new target. The
