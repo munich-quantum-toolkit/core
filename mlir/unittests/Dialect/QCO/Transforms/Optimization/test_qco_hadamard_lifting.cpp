@@ -26,6 +26,8 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <numbers>
+
 namespace {
 
 using namespace mlir;
@@ -327,7 +329,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfSomeDifferentControls) {
   auto q = programBuilder.allocQubitRegister(3);
   auto [q12, q0] =
       programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](const ValueRange target) {
-        return SmallVector{programBuilder.z(target[0])};
+        return llvm::SmallVector{programBuilder.z(target[0])};
       });
   programBuilder.ch(q12[0], q0[0]);
   module = programBuilder.finalize();
@@ -335,7 +337,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfSomeDifferentControls) {
   auto qRef = referenceBuilder.allocQubitRegister(3);
   auto [q12Ref, q0Ref] = referenceBuilder.ctrl(
       {qRef[1], qRef[2]}, {qRef[0]}, [&](const ValueRange target) {
-        return SmallVector{referenceBuilder.z(target[0])};
+        return llvm::SmallVector{referenceBuilder.z(target[0])};
       });
   referenceBuilder.ch(q12Ref[0], q0Ref[0]);
   reference = referenceBuilder.finalize();
@@ -457,7 +459,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   const auto b = programBuilder.allocClassicalBitRegister(1);
   auto [q12, q0] =
       programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](const ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+        return llvm::SmallVector{programBuilder.x(target[0])};
       });
   q[1] = programBuilder.h(q0[0]);
   programBuilder.measure(q[1], b[0]);
@@ -469,7 +471,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   qRef[1] = referenceBuilder.h(qRef[1]);
   auto [q02Ref, q1Ref] = referenceBuilder.ctrl(
       {qRef[0], qRef[2]}, {qRef[1]}, [&](const ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+        return llvm::SmallVector{referenceBuilder.x(target[0])};
       });
   referenceBuilder.h(q1Ref[0]);
   referenceBuilder.measure(q02Ref[0], bRef[0]);
@@ -536,7 +538,7 @@ TEST_F(QCOHadamardLiftingTest,
   programBuilder.measure(q1, b[1]);
   auto [q34, q2] =
       programBuilder.ctrl({q[3], q[4]}, {q[2]}, [&](const ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+        return llvm::SmallVector{programBuilder.x(target[0])};
       });
   q[2] = programBuilder.h(q2[0]);
   programBuilder.measure(q[2], b[2]);
@@ -554,7 +556,7 @@ TEST_F(QCOHadamardLiftingTest,
   qRef[4] = referenceBuilder.h(qRef[4]);
   auto [qRef32, qRef4] = referenceBuilder.ctrl(
       {qRef[3], qRef[2]}, {qRef[4]}, [&](const ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+        return llvm::SmallVector{referenceBuilder.x(target[0])};
       });
   qRef[4] = referenceBuilder.h(qRef4[0]);
   referenceBuilder.measure(qRef32[1], bRef[2]);
