@@ -25,6 +25,8 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <cmath>
+
 namespace {
 
 using namespace mlir;
