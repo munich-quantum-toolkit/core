@@ -78,10 +78,14 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
 def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "This pass attempts to move Hadamard gates as far away from measurements as possible by commuting them "
-  "with Pauli gates. This is done in order to apply measurement lifting more efficiently, which is a sub-routine of "
-  "qubit reuse. Additionally, it can change target and control qubits from Pauli-Z gates to make Hadamard lifting "
-  "applicable. It also lifts Hadamard gates over CNOT gates if that moves a measurement directly after a control.";
+  let summary = "This pass attempts to move Hadamard gates as far away from "
+                "measurements as possible by commuting them "
+                "with Pauli gates. This is done in order to apply measurement "
+                "lifting more efficiently, which is a sub-routine of "
+                "qubit reuse. Additionally, it can change target and control "
+                "qubits from Pauli-Z gates to make Hadamard lifting "
+                "applicable. It also lifts Hadamard gates over CNOT gates if "
+                "that moves a measurement directly after a control.";
   let description = [{
     This pass lifts Hadamard gates away from the measurements in order to apply measurement lifting more effectively.
     Measurement lifting is a subroutine of the qubit reuse routine. The goal is to measure qubits earlier in the
