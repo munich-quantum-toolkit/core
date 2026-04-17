@@ -79,15 +79,15 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "This pass attempts to move Hadamard gates as far away from measurements as possible by commuting them "
-  "with Pauli gates. This is done to in order to apply measurement lifting more efficiently, which is a sub-routine of "
-  "qubit resuse. Additionally, it can change target and control qubits from Pauli-Z gates to make Hadamard lifting "
+  "with Pauli gates. This is done in order to apply measurement lifting more efficiently, which is a sub-routine of "
+  "qubit reuse. Additionally, it can change target and control qubits from Pauli-Z gates to make Hadamard lifting "
   "applicable. It also lifts Hadamard gates over CNOT gates if that moves a measurement directly after a control.";
   let description = [{
     This pass lifts Hadamard gates away from the measurements in order to apply measurement lifting more effectively.
     Measurement lifting is a subroutine of the qubit reuse routine. The goal is to measure qubits earlier in the
     circuit to reuse them and to potentially remove some quantum gates.
 
-    Measurement lifting commutes measurements with Pauli and phase gates. However, the routine stops if a Hadmard gate
+    Measurement lifting commutes measurements with Pauli and phase gates. However, the routine stops if a Hadamard gate
     is applied before the measurement takes place. Hadamard lifting attempts to move Hadamards further in front of the
     circuit, in order to improve the results provided by measurement lifting.
 
@@ -104,7 +104,7 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
     Hadamard lifting is only applied to commute Hadamard gates further in front in the circuit, not the other way
     around. A global phase is added if the Hadamard gate is commuted with a Pauli-Y gate, as YH = -HY.
 
-    The routine is only applied to non-controlled Pauli- and Hadamard gates.
+    The routine is only applied to non-controlled Pauli and Hadamard gates.
 
     In order to reduce multi-qubit gates, a second transformation routine is applied. Using the commutation rule
                  ┌───┐┌───┐┌───┐
