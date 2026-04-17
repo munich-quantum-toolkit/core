@@ -72,4 +72,14 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                               "The number of inserted SWAPs">];
 }
 
+def SwapAbsorb : Pass<"absorb-swaps", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "";
+  let options = [];
+  let statistics = [
+       Statistic<"numSwaps", "num-inserted-swaps",
+                              "The number of absorbed SWAPs">
+  ];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

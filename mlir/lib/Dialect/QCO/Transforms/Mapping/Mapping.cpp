@@ -810,7 +810,7 @@ private:
     ArrayRef<Operation*>::iterator anchorIt = anchors.begin();
     ArrayRef<SmallVector<IndexGate>>::iterator swapIt = swaps.begin();
 
-    walkUnit(funcBody, [&](Operation* op, Qubits& qubits) {
+    walkUnit(funcBody, [&](Operation* op, const Qubits& qubits) {
       // Early exit if we've processed all layers.
       if (anchorIt == anchors.end()) {
         return WalkResult::interrupt();
@@ -820,8 +820,8 @@ private:
         rewriter.setInsertionPoint(*anchorIt);
 
         for (const auto& [hw0, hw1] : *swapIt) {
-          const auto in0 = qubits.getHardwareQubit(hw0);
-          const auto in1 = qubits.getHardwareQubit(hw1);
+          const auto in0 = qubits.getQubit(hw0);
+          const auto in1 = qubits.getQubit(hw1);
 
           auto insertedOp = SWAPOp::create(rewriter, op->getLoc(), in0, in1);
 
@@ -830,14 +830,6 @@ private:
 
           rewriter.replaceAllUsesExcept(in0, out1, insertedOp);
           rewriter.replaceAllUsesExcept(in1, out0, insertedOp);
-
-          // Remove old qubit values.
-          qubits.remove(in0);
-          qubits.remove(in1);
-
-          // Add permutated qubit value - hw index pair.
-          qubits.add(out0, hw1);
-          qubits.add(out1, hw0);
         }
 
         // Collect statistics.
