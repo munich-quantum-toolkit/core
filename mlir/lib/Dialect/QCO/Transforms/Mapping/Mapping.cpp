@@ -562,7 +562,7 @@ private:
         return failure();
       }
 
-      const auto resB = route(wires, WalkDirection::Forward, layout);
+      const auto resB = route(wires, WalkDirection::Backward, layout);
       if (failed(resB)) {
         return failure();
       }
