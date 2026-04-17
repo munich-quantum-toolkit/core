@@ -34,19 +34,6 @@ using namespace mlir::qtensor;
 
 enum class CircuitWalkResult : std::uint8_t { Advance, Hold, Fail };
 
-bool proceedOnWire(const WireIterator& it, WalkDirection direction) {
-  if (direction == WalkDirection::Forward) {
-    return it != std::default_sentinel;
-  }
-
-  if (it.operation() == nullptr) {
-    return false;
-  }
-
-  return !isa<qco::AllocOp>(it.operation()) && !isa<StaticOp>(it.operation()) &&
-         !isa<qtensor::ExtractOp>(it.operation());
-}
-
 void Qubits::add(TypedValue<QubitType> q) { add(q, indexToValue_.size()); }
 
 void Qubits::add(TypedValue<QubitType> q, std::size_t index) {
@@ -131,20 +118,30 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
   PendingWiresMap pending;
   pending.reserve(wires.size());
 
-  SmallVector<WireIterator*> curr;
-  curr.reserve(wires.size());
-  for (auto& it : wires) {
-    curr.emplace_back(&it);
-  }
+  SmallVector<std::size_t> curr(wires.size());
+  std::iota(curr.begin(), curr.end(), 0UL);
 
-  SmallVector<WireIterator*> next;
+  SmallVector<std::size_t> next;
   next.reserve(wires.size());
 
+  const auto proceed = [&](const WireIterator& it) {
+    if (direction == WalkDirection::Forward) {
+      return it != std::default_sentinel;
+    }
+
+    if (it.operation() == nullptr) {
+      return false;
+    }
+
+    return !isa<qco::AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
+  };
+
   while (!curr.empty()) {
-    for (WireIterator* itP : curr) {
-      while (proceedOnWire(*itP, direction)) {
+    for (std::size_t i : curr) {
+      auto& it = wires[i];
+      while (proceed(it)) {
         const auto res =
-            TypeSwitch<Operation*, CircuitWalkResult>(itP->operation())
+            TypeSwitch<Operation*, CircuitWalkResult>(it.operation())
                 .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
                   // If there are fewer wires than the qubit requires inputs,
                   // it's impossible to release the operation. Hence, fail.
@@ -153,26 +150,26 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
                   }
 
                   if (op.getNumQubits() == 1) {
-                    std::ranges::advance(*itP, step);
+                    std::ranges::advance(it, step);
                     return CircuitWalkResult::Advance;
                   }
 
                   // Insert the unitary to the pending map.
                   // The caller decides if this op should be released.
                   const auto [it, inserted] = pending.try_emplace(op);
-                  auto& wires = it->second;
+                  auto& indices = it->second;
 
                   if (inserted) {
-                    wires.reserve(op.getNumQubits());
+                    indices.reserve(op.getNumQubits());
                   }
 
-                  wires.emplace_back(itP);
+                  indices.emplace_back(i);
 
                   return CircuitWalkResult::Hold; // Stop at multi-qubit gate.
                 })
                 .Case<AllocOp, StaticOp, ExtractOp, ResetOp, MeasureOp, SinkOp,
                       InsertOp>([&](auto) {
-                  std::ranges::advance(*itP, step);
+                  std::ranges::advance(it, step);
                   return CircuitWalkResult::Advance;
                 })
                 .Default([&](Operation* op) {
@@ -202,11 +199,10 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
       const auto& mapIt = pending.find(op);
       assert(mapIt != pending.end());
 
-      for (auto& it : wires) {
-        if (it.operation() == op) {
-          std::ranges::advance(it, step);
-          next.emplace_back(&it);
-        }
+      auto& indices = mapIt->second;
+      for (std::size_t i : mapIt->second) {
+        std::ranges::advance(wires[i], step);
+        next.emplace_back(i);
       }
 
       pending.erase(mapIt);

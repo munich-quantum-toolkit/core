@@ -95,7 +95,7 @@ void walkUnit(Region& region, WalkUnitFn fn);
 using ReleasedOps = SmallVector<UnitaryOpInterface, 8>;
 
 using PendingWiresMap =
-    DenseMap<UnitaryOpInterface, SmallVector<WireIterator*, 2>>;
+    DenseMap<UnitaryOpInterface, SmallVector<std::size_t, 2>>;
 
 struct IsReady {
   bool operator()(PendingWiresMap::value_type& kv) const {
@@ -110,27 +110,21 @@ using WalkCircuitGraphFn =
     function_ref<WalkResult(const ReadyRange&, ReleasedOps&)>;
 
 /**
- * @returns true if the wire iterator has not reached the end (Forward) or the
- * start (Backward) of the wire.
- */
-bool proceedOnWire(const WireIterator& it, WalkDirection direction);
-
-/**
  * @brief Walk the graph-like circuit IR of QCO dialect programs.
  * @details
  * Depending on the template parameter, the function collects the
  * layers in forward or backward direction, respectively. Towards that end,
- * the function traverses the def-use chain of each qubit until a two-qubit
- * gate is found. If a two-qubit gate is visited twice, it is considered ready
- * and inserted into the layer. This process is repeated until no more
- * two-qubit are found anymore.
+ * the function traverses the def-use chain of each qubit until a multi-qubit
+ * gate (including barriers) is found. If a multi-qubit gate is visited twice,
+ * it is considered ready and inserted into the layer. This process is repeated
+ * until no more multi-qubit gates are found anymore.
  *
  * The signature of the callback function is:
  *
  *     (FrontArrayRef, ReleasedOps&) -> WalkResult
  *
- * The wire iterators inserted into the parameter "released" determine which
- * two-qubit gates are released in next iteration.
+ * The operations inserted into the parameter "released" determine which
+ * multi-qubit gates are released in next iteration.
  *
  * @param wires A mutable array-ref of circuit wires (wire iterators).
  * @param direction The traversal direction.
