@@ -26,14 +26,16 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
-#include <utility>
 #include <numeric>
+#include <utility>
 
 namespace mlir::qco {
 
 using namespace mlir::qtensor;
 
+namespace {
 enum class CircuitWalkResult : std::uint8_t { Advance, Hold, Fail };
+} // namespace
 
 void Qubits::add(TypedValue<QubitType> q) { add(q, indexToValue_.size()); }
 
