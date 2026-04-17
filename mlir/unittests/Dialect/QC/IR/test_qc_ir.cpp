@@ -156,7 +156,6 @@ INSTANTIATE_TEST_SUITE_P(
         // eigenvalue -1 cannot safely apply NegPowToInvPow
         QCTestCase{"NegPowH", MQT_NAMED_BUILDER(negPowH),
                    MQT_NAMED_BUILDER(negPowH)},
-        // TODO should this maybe be in the inv tests?
         // inv { pow(p) { g } } => pow(p) { inv { g } }
         // (MovePowOutside)
         QCTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),

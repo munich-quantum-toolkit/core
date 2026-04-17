@@ -108,6 +108,38 @@ TEST_F(QCOMatrixTest, PowRxxOpMatrix) {
 
   ASSERT_TRUE(matrix->isApprox(eigenDefinition));
 }
+
+TEST_F(QCOMatrixTest, PowHalfXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powHalfX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+
+  // X^0.5 = SX
+  const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::SX);
+  Eigen::Matrix2cd eigenDefinition;
+  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+
+  ASSERT_TRUE(matrix->isApprox(eigenDefinition));
+}
+
+TEST_F(QCOMatrixTest, PowNegHalfXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powNegHalfX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+
+  // X^-0.5 = SXdg
+  const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::SXdg);
+  Eigen::Matrix2cd eigenDefinition;
+  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+
+  ASSERT_TRUE(matrix->isApprox(eigenDefinition));
+}
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp
