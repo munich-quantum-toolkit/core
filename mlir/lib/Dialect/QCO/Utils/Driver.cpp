@@ -16,7 +16,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -24,9 +23,11 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iterator>
 #include <utility>
+#include <numeric>
 
 namespace mlir::qco {
 
@@ -208,7 +209,7 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
       pending.erase(mapIt);
     }
 
-    curr = std::move(next);
+    curr.swap(next);
     next.clear();
   }
 

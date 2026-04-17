@@ -42,7 +42,7 @@ std::size_t Architecture::distanceBetween(std::size_t u, std::size_t v) const {
   return dist_[u][v];
 }
 
-ArrayRef<std::size_t> Architecture::neighboursOf(std::size_t u) const {
+llvm::ArrayRef<std::size_t> Architecture::neighboursOf(std::size_t u) const {
   return neighbours_[u];
 }
 

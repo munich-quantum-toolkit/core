@@ -15,6 +15,7 @@
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
+#include <llvm/ADT/ArrayRef.h>
 
 #include <cstddef>
 #include <string>
@@ -63,7 +64,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
+  [[nodiscard]] llvm::ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the
