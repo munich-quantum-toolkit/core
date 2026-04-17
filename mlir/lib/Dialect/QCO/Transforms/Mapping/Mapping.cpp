@@ -882,7 +882,7 @@ private:
       }
 
       if constexpr (mode == RoutingMode::Hot) {
-        
+
         // After SWAP insertion, a wire is either untouched by the SWAP
         // insertion or pointing at a SWAP operation. If the former is the case,
         // incrementing the wire iterator will undo the previous decrement,
