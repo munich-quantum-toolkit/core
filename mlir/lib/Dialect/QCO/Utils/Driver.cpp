@@ -115,18 +115,6 @@ void walkUnit(Region& region, WalkUnitFn fn) {
 LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
                                WalkDirection direction, WalkCircuitGraphFn fn) {
   const auto step = direction == WalkDirection::Forward ? 1 : -1;
-
-  ReleasedOps released;
-
-  PendingWiresMap pending;
-  pending.reserve(wires.size());
-
-  SmallVector<std::size_t> curr(wires.size());
-  std::iota(curr.begin(), curr.end(), 0UL);
-
-  SmallVector<std::size_t> next;
-  next.reserve(wires.size());
-
   const auto proceed = [&](const WireIterator& it) {
     if (direction == WalkDirection::Forward) {
       return it != std::default_sentinel;
@@ -138,6 +126,17 @@ LogicalResult walkCircuitGraph(MutableArrayRef<WireIterator> wires,
 
     return !isa<qco::AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
   };
+
+  ReleasedOps released;
+
+  PendingWiresMap pending;
+  pending.reserve(wires.size());
+
+  SmallVector<std::size_t> curr(wires.size());
+  std::iota(curr.begin(), curr.end(), 0UL);
+
+  SmallVector<std::size_t> next;
+  next.reserve(wires.size());
 
   while (!curr.empty()) {
     for (std::size_t i : curr) {

@@ -675,21 +675,75 @@ private:
   }
 
   /**
+   * @brief Skip a qubit-pair block.
+   * @details Traverses the pair of wire iterators in tandem until a two-qubit
+   * operation is found. If the two-qubit operation is equivalent, continue.
+   * Otherwise stop.
+   */
+  static void skipQubitPairBlock(WireIterator& w0, WireIterator& w1,
+                                 WalkDirection direction) {
+    const auto step = direction == WalkDirection::Forward ? 1 : -1;
+    const auto proceed = [&](const WireIterator& it) {
+      if (direction == WalkDirection::Forward) {
+        return it != std::default_sentinel;
+      }
+
+      if (it.operation() == nullptr) {
+        return false;
+      }
+
+      return !isa<qco::AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
+    };
+
+    WireIterator curr0(w0);
+    WireIterator curr1(w1);
+    while (true) {
+      while (proceed(curr0)) {
+        std::ranges::advance(curr0, step);
+      }
+
+      if (curr0 == std::default_sentinel) {
+        return;
+      }
+
+      while (proceed(curr1)) {
+        std::ranges::advance(curr1, step);
+      }
+
+      if (curr1 == std::default_sentinel) {
+        return;
+      }
+
+      if (curr0.operation() != curr1.operation()) {
+        return;
+      }
+
+      // Handle two-qubit barrier edge case explicitly.
+      if (auto barrier = dyn_cast<BarrierOp>(curr0.operation())) {
+        if (barrier.getNumQubits() != 2) {
+          return;
+        }
+      }
+
+      w0 = curr0;
+      w1 = curr1;
+    }
+  }
+
+  /**
    * @brief Build and return window of layers.
-   * @details
-   * Traverses the circuit-layers until the desired window sizes is reached.
-   * Assumes that wires[i] = i-th program qubit.
-   *
-   * The size of the window is 1 + nlookahead.
+   * @details Traverses the circuit-layers until the desired window sizes is
+   * reached. Assumes that wires[i] = i-th program qubit. The size of the window
+   * is 1 + nlookahead.
    * @returns window of layers.
    */
-  Window getWindow(ArrayRef<WireIterator> wires, WalkDirection direction) {
+  Window getWindow(ArrayRef<WireIterator> baseWires, WalkDirection direction) {
     Window window;
     window.reserve(1 + nlookahead);
 
-    SmallVector<WireIterator> curr(wires);
+    SmallVector<WireIterator> wires(baseWires);
     std::ignore = walkCircuitGraph(
-        curr, direction, [&](const ReadyRange& ready, ReleasedOps& released) {
+        wires, direction, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
@@ -706,7 +760,8 @@ private:
               return WalkResult::interrupt();
             }
 
-            released.emplace_back(op);
+            skipQubitPairBlock(wires[progs[0]], wires[progs[1]], direction);
+            released.emplace_back(wires[progs[0]].operation());
           }
 
           return WalkResult::advance();
@@ -715,6 +770,11 @@ private:
     return window;
   }
 
+  /**
+   * @brief Advance past all executable gates.
+   * @details Traverses the multi-qubit gates of the circuit until no more
+   * executable gates are found.
+   */
   void skipExecutableGates(MutableArrayRef<WireIterator> wires, Layout& layout,
                            WalkDirection direction) {
     std::ignore = walkCircuitGraph(
