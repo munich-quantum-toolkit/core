@@ -135,8 +135,6 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-
-  // auto arch = std::make_shared<qco::Architecture>("RigettiNovera", 9, COUPLING);
   // Stage 5: Optimization passes
   if (failed(runStage([&](PassManager& pm) {
         if (!config_.disableMergeSingleQubitRotationGates) {
@@ -238,3 +236,4 @@ std::string captureIR(ModuleOp module) {
 }
 
 } // namespace mlir
+  // auto arch = std::make_shared<qco::Architecture>("RigettiNovera", 9, COUPLING);

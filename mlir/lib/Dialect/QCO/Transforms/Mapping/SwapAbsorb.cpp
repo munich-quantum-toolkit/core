@@ -48,17 +48,17 @@ public:
       SmallVector<SWAPOp> readyToAbsorb;
       readyToAbsorb.reserve((wires.size() + 1) / 2);
 
-      std::ignore =
-          walkCircuitGraph(wires, WalkDirection::Forward,
-                           [&](const ReadyRange& ready, ReleasedOps& released) {
-                             for (const auto& [op, indices] : ready) {
-                               if (isa<SWAPOp>(op)) {
-                                 readyToAbsorb.emplace_back(op);
-                               }
-                               released.emplace_back(op);
-                             }
-                             return WalkResult::interrupt();
-                           });
+      // std::ignore =
+      //     walkCircuitGraph(wires, WalkDirection::Forward,
+      //                      [&](const ReadyRange& ready, ReleasedOps& released) {
+      //                        for (const auto& [op, indices] : ready) {
+      //                          if (isa<SWAPOp>(op)) {
+      //                            readyToAbsorb.emplace_back(op);
+      //                          }
+      //                          released.emplace_back(op);
+      //                        }
+      //                        return WalkResult::interrupt();
+      //                      });
 
       for (auto swapOp : readyToAbsorb) {
         auto in0 = swapOp.getQubit0In();
