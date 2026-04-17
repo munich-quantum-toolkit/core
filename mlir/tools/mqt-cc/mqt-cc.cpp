@@ -71,10 +71,9 @@ static cl::opt<bool>
                           cl::desc("Print IR after each compiler stage"),
                           cl::init(false));
 
-static cl::opt<bool>
-    hadamardLifting("hadamard-lifting",
-                    cl::desc("Apply Hadamard lifting during optimization"),
-                    cl::init(false));
+static cl::opt<bool> enableHadamardLifting(
+    "hadamard-lifting", cl::desc("Apply Hadamard lifting during optimization"),
+    cl::init(false));
 
 /**
  * @brief Load and parse a .qasm file
@@ -170,7 +169,7 @@ int main(int argc, char** argv) {
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;
   config.printIRAfterAllStages = printIRAfterAllStages;
-  config.hadamardLifting = hadamardLifting;
+  config.enableHadamardLifting = enableHadamardLifting;
 
   // Run the compilation pipeline
   CompilationRecord record;

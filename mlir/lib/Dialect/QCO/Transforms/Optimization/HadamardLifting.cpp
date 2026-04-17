@@ -22,7 +22,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <cmath>
 #include <utility>
 
 namespace mlir::qco {
@@ -84,7 +83,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           rewriter.replaceOpWithNewOp<YOp>(hadamardGate,
                                            hadamardGate.getInputQubit(0));
-          GPhaseOp::create(rewriter, hadamardGate.getLoc(), M_PI);
+          GPhaseOp::create(rewriter, hadamardGate.getLoc(), std::numbers::pi);
           return success();
         })
         .Default([&](auto) { return failure(); });
@@ -274,7 +273,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     auto cnotGate = llvm::dyn_cast<CtrlOp>(predecessor);
     if (!cnotGate || cnotGate.getNumTargets() != 1 ||
         cnotGate.getOutputTarget(0) != inQubitHadamard ||
-        llvm::dyn_cast<XOp>(cnotGate.getBodyUnitary()) == nullptr) {
+        nullptr == llvm::dyn_cast<XOp>(cnotGate.getBodyUnitary())) {
       return failure();
     }
     // Determine the index of the control that will become the new target. The
