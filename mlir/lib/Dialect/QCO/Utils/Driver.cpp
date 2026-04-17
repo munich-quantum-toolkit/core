@@ -26,8 +26,8 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
-#include <utility>
 #include <numeric>
+#include <utility>
 
 namespace mlir::qco {
 
