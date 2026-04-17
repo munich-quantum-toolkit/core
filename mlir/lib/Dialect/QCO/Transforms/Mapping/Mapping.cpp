@@ -830,6 +830,13 @@ private:
       }
 
       if constexpr (mode == RoutingMode::Hot) {
+
+        // At this point the wire iterators either point to
+        // std::default_sentinel or a multi-qubit gate (including barriers) of
+        // the current or subsequent layers. The former must be decremented
+        // twice (sentinel -> sink -> unitary/static). For the latter we simply
+        // must ensure the insertion point is before the multi-qubit gates.
+
         for (auto& it : wires) {
           if (it == std::default_sentinel) {
             --it;
@@ -875,6 +882,15 @@ private:
       }
 
       if constexpr (mode == RoutingMode::Hot) {
+        
+        // After SWAP insertion, a wire is either untouched by the SWAP
+        // insertion or pointing at a SWAP operation. If the former is the case,
+        // incrementing the wire iterator will undo the previous decrement,
+        // leaving it at the same position as before the SWAP insertion.
+        // Otherwise, an increment will move the iterator to the multi-qubit op
+        // of the current or subsequent layer or to a sink (and thus
+        // std::default_sentinel).
+
         for_each(wires, [](auto& it) { ++it; });
       }
 
