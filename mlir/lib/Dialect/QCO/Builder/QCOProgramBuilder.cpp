@@ -23,6 +23,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -74,6 +75,7 @@ Value QCOProgramBuilder::intConstant(const int64_t value) {
 
 Value QCOProgramBuilder::allocQubit() {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   auto allocOp = AllocOp::create(*this);
   auto qubit = allocOp.getResult();
@@ -86,6 +88,7 @@ Value QCOProgramBuilder::allocQubit() {
 
 Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Static);
 
   auto staticOp = StaticOp::create(*this, index);
   const auto qubit = staticOp.getQubit();
@@ -96,7 +99,7 @@ Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   return qubit;
 }
 
-llvm::SmallVector<Value>
+QCOProgramBuilder::QubitRegister
 QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
 
@@ -113,7 +116,8 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
     qtensor = qtensorOut;
     qubits.emplace_back(qubit);
   }
-  return qubits;
+
+  return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
 QCOProgramBuilder::ClassicalRegister
@@ -197,6 +201,7 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 Value QCOProgramBuilder::qtensorAlloc(
     const std::variant<int64_t, Value>& size) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   auto sizeValue = variantToValue(*this, getLoc(), size);
   auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
@@ -866,6 +871,29 @@ void QCOProgramBuilder::checkFinalized() const {
     llvm::reportFatalUsageError(
         "QCOProgramBuilder instance has been finalized");
   }
+}
+
+void QCOProgramBuilder::ensureAllocationMode(
+    const AllocationMode requestedMode) {
+  if (allocationMode == AllocationMode::Unset) {
+    allocationMode = requestedMode;
+    return;
+  }
+  if (allocationMode == requestedMode) {
+    return;
+  }
+
+  const char* const existingName =
+      allocationMode == AllocationMode::Static ? "static" : "dynamic";
+  const char* const requestedName =
+      requestedMode == AllocationMode::Static ? "static" : "dynamic";
+
+  const std::string message =
+      llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
+                    "QCOProgramBuilder",
+                    existingName, requestedName)
+          .str();
+  llvm::reportFatalUsageError(message.c_str());
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {

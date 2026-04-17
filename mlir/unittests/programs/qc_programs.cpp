@@ -94,6 +94,16 @@ void allocDeallocPair(QCProgramBuilder& b) {
   b.dealloc(q);
 }
 
+void mixedStaticThenDynamicQubit(QCProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b) {
+  b.allocQubitRegister(2);
+  b.staticQubit(0);
+}
+
 void singleMeasurementToSingleBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);
@@ -123,6 +133,11 @@ void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   b.measure(q[0], c0[0]);
   b.measure(q[1], c1[0]);
   b.measure(q[2], c1[1]);
+}
+
+void measurementWithoutRegisters(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.measure(q);
 }
 
 void resetQubitWithoutOp(QCProgramBuilder& b) {
@@ -369,6 +384,11 @@ void inverseH(QCProgramBuilder& b) {
 void inverseMultipleControlledH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mch({q[0], q[1]}, q[2]); });
+}
+
+void hWithoutRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
 }
 
 void s(QCProgramBuilder& b) {

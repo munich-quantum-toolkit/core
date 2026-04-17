@@ -76,6 +76,16 @@ void allocSinkPair(QCOProgramBuilder& b) {
   b.sink(q);
 }
 
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b) {
+  b.qtensorAlloc(2);
+  b.staticQubit(0);
+}
+
 void singleMeasurementToSingleBit(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);
@@ -105,6 +115,11 @@ void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
   b.measure(q[0], c0[0]);
   b.measure(q[1], c1[0]);
   b.measure(q[2], c1[1]);
+}
+
+void measurementWithoutRegisters(QCOProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.measure(q);
 }
 
 void resetQubitWithoutOp(QCOProgramBuilder& b) {
@@ -443,6 +458,11 @@ void twoH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.h(q[0]);
+}
+
+void hWithoutRegister(QCOProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
 }
 
 void s(QCOProgramBuilder& b) {
@@ -2104,7 +2124,7 @@ void ifElse(QCOProgramBuilder& b) {
 void constantTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
-      true, q,
+      true, q.qubits,
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
@@ -2118,7 +2138,7 @@ void constantTrueIf(QCOProgramBuilder& b) {
 void constantFalseIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
-      false, q,
+      false, q.qubits,
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};

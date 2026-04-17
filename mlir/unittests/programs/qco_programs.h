@@ -51,6 +51,16 @@ void staticQubitsWithInv(QCOProgramBuilder& b);
 /// Allocates and explicitly sinks a single qubit.
 void allocSinkPair(QCOProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: `qtensor` alloc then
+/// static.
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
@@ -64,6 +74,10 @@ void repeatedMeasurementToDifferentBits(QCOProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
 void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b);
+
+/// Measures a single qubit into a single classical bit, without explicitly
+/// allocating a quantum or classical register.
+void measurementWithoutRegisters(QCOProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
@@ -230,6 +244,9 @@ void inverseMultipleControlledH(QCOProgramBuilder& b);
 
 /// Creates a circuit with two H gates in a row.
 void twoH(QCOProgramBuilder& b);
+
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QCOProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 

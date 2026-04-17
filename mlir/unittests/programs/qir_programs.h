@@ -55,6 +55,16 @@ void staticQubitsWithDuplicates(QIRProgramBuilder& b);
 /// retrievals.
 void staticQubitsCanonical(QIRProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
+void mixedStaticThenDynamicQubit(QIRProgramBuilder& b);
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
+/// static.
+void mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b);
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
@@ -68,6 +78,10 @@ void repeatedMeasurementToDifferentBits(QIRProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
 void multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b);
+
+/// Measures a single qubit into a single classical bit, without explicitly
+/// allocating a quantum or classical register.
+void measurementWithoutRegisters(QIRProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
@@ -148,6 +162,9 @@ void singleControlledH(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled H gate.
 void multipleControlledH(QIRProgramBuilder& b);
+
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QIRProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 

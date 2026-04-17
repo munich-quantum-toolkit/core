@@ -59,6 +59,11 @@ namespace mlir::qir {
  * - Measurements block: Measurements, resets, deallocations
  * - Output block: Output recording calls (array-based, grouped by register)
  *
+ * @par Qubit addressing:
+ * A program must use either static qubits (`staticQubit`) or dynamic allocation
+ * (`allocQubit`, `allocQubitRegister`), never both. The builder terminates
+ * with a usage error if the modes are mixed.
+ *
  * @par Example Usage:
  * ```c++
  * QIRProgramBuilder builder(context);
@@ -139,6 +144,22 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Allocate a qubit
+   * @return An LLVM pointer representing the qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto q = builder.allocQubit();
+   * ```
+   * ```mlir
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
+   * !llvm.ptr
+   * ```
+   */
+  Value allocQubit();
+
+  /**
    * @brief Get a static qubit by index
    * @param index The qubit index (must be non-negative)
    * @return An LLVM pointer representing the qubit
@@ -155,7 +176,7 @@ public:
   Value staticQubit(int64_t index);
 
   /**
-   * @brief Allocate an array of (static) qubits
+   * @brief Allocate an array of qubits
    * @param size Number of qubits (must be positive)
    * @return Vector of LLVM pointers representing the qubits
    *
@@ -164,12 +185,15 @@ public:
    * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %c0 = llvm.mlir.constant(0 : i64) : i64
-   * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
-   * %c1 = llvm.mlir.constant(1 : i64) : i64
-   * %q1 = llvm.inttoptr %c1 : i64 to !llvm.ptr
-   * %c2 = llvm.mlir.constant(2 : i64) : i64
-   * %q2 = llvm.inttoptr %c2 : i64 to !llvm.ptr
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
+   * llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
+   * (i64, !llvm.ptr, !llvm.ptr) -> ()
+   * %q0 = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
+   * %ptr1 = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr
+   * %q1 = llvm.load %ptr1 : !llvm.ptr -> !llvm.ptr
+   * %ptr2 = llvm.getelementptr %alloca[2] : !llvm.ptr -> !llvm.ptr
+   * %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
    * ```
    */
   llvm::SmallVector<Value> allocQubitRegister(int64_t size);
@@ -868,6 +892,8 @@ public:
         const llvm::function_ref<void(QIRProgramBuilder&)>& buildFunc);
 
 private:
+  enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
+
   /// The main module
   ModuleOp module;
 
@@ -892,6 +918,9 @@ private:
 
   /// Cache static qubit pointers for reuse
   llvm::DenseMap<int64_t, Value> staticQubits;
+
+  /// Set of qubit pointers
+  llvm::DenseSet<Value> qubits;
 
   /// Set of qubit-array pointers
   llvm::DenseSet<Value> qubitArrays;
@@ -938,8 +967,14 @@ private:
 
   bool isFinalized = false;
 
+  /// Track whether static or dynamic qubit allocation is used.
+  AllocationMode allocationMode = AllocationMode::Unset;
+
   /// Check if the builder has been finalized
   void checkFinalized() const;
+
+  /// Ensure static and dynamic qubit allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode);
 };
 
 } // namespace mlir::qir

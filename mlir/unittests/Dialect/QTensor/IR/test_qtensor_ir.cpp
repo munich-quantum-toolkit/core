@@ -189,10 +189,8 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
 
 /// An alloc immediately followed by dealloc should be eliminated entirely.
 TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
-  auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
-    auto t = b.qtensorAlloc(3);
-    b.qtensorDealloc(t);
-  });
+  auto canonicalized =
+      buildAndCanonicalize([](QCOProgramBuilder& b) { b.qtensorAlloc(3); });
   ASSERT_TRUE(canonicalized);
   EXPECT_TRUE(verify(*canonicalized).succeeded());
   // Both AllocOp and DeallocOp should have been erased.
@@ -293,7 +291,6 @@ buildTwoQubitInsertChainProgram(MLIRContext* context,
     tensor = builder.qtensorInsert(q1, tensor, q1Target);
   }
 
-  builder.qtensorDealloc(tensor);
   return builder.finalize();
 }
 
@@ -315,7 +312,6 @@ buildResetWithCommutingInsertProgram(MLIRContext* context,
   }
   tensor = builder.qtensorInsert(q1, tensor, 1);
 
-  builder.qtensorDealloc(tensor);
   return builder.finalize();
 }
 
@@ -341,7 +337,6 @@ buildResetWithSameIndexInsertProgram(MLIRContext* context,
   tensor = builder.qtensorInsert(q11, tensor, 1);
   tensor = builder.qtensorInsert(q0, tensor, 0);
 
-  builder.qtensorDealloc(tensor);
   return builder.finalize();
 }
 

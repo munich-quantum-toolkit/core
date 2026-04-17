@@ -39,11 +39,13 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <limits>
 #include <numbers>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 namespace mlir {
@@ -55,6 +57,13 @@ using namespace qco;
 
 namespace {
 
+/** @brief Qubit allocation mode */
+enum class AllocationMode : std::uint8_t {
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
+};
+
 /**
  * @brief State object for tracking modifier information
  */
@@ -62,8 +71,8 @@ struct LoweringState {
   // Modifier information
   bool inCtrlOp = false;
   bool inInvOp = false;
-  qco::CtrlOp ctrlOp;
-  qco::InvOp invOp;
+  CtrlOp ctrlOp;
+  InvOp invOp;
   llvm::SmallVector<Value> controlsIn;
   llvm::SmallVector<Value> controlsOut;
   llvm::SmallVector<Value> targetsIn;
@@ -74,6 +83,23 @@ struct LoweringState {
   // Module information
   llvm::SmallVector<std::string> strings;
   std::string entryPointName;
+
+  /// The qubit allocation mode used in the module
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
+                                                   Operation* op) {
+    if (allocationMode == AllocationMode::Unset) {
+      allocationMode = requestedMode;
+      return success();
+    }
+    if (allocationMode == requestedMode) {
+      return success();
+    }
+    return op->emitOpError(
+        "cannot mix static and dynamic qubit allocation modes in QCO program");
+  }
 };
 
 /**
@@ -126,6 +152,66 @@ static void handleResult(Operation* op, ConversionPatternRewriter& rewriter,
 }
 
 /**
+ * @brief Target operands: `adaptor.getOperands()` at the matched op, or
+ * `state.targetsIn` while lowering inside `qco.ctrl` / `qco.inv`.
+ *
+ * @param state Lowering state.
+ * @param adaptor Operand adaptor for the matched op.
+ * @tparam NumParams Number of parameters to drop from the end of the operand
+ * list.
+ * @tparam OpAdaptor Adaptor with `getOperands()`.
+ * @return ValueRange The target operands.
+ */
+template <size_t NumParams, typename OpAdaptor>
+[[nodiscard]] static ValueRange getEffectiveTargetOperands(LoweringState& state,
+                                                           OpAdaptor adaptor) {
+  return state.inModifier()
+             ? ValueRange(state.targetsIn)
+             : ValueRange(adaptor.getOperands().drop_back(NumParams));
+}
+
+/**
+ * @brief Lowers QCO gates to matching Jeff ops.
+ *
+ * @details Uses `getEffectiveTargetOperands` and forwards target and parameter
+ * indices into `JeffOpType::create`.
+ *
+ * @tparam QCOOpType The QCO gate op type
+ * @tparam JeffOpType The Jeff op type
+ * @tparam ExtraAdjoint Whether to XOR the adjoint flag
+ * @tparam TargetIndices QCO target indices to forward
+ * @tparam ParamIndices QCO parameter indices to forward
+ */
+template <typename QCOOpType, typename JeffOpType, bool ExtraAdjoint = false,
+          std::size_t... TargetIndices, std::size_t... ParamIndices>
+static LogicalResult
+convertJeffGate(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                ConversionPatternRewriter& rewriter, LoweringState& state,
+                std::index_sequence<TargetIndices...> /*targetIndices*/,
+                std::index_sequence<ParamIndices...> /*paramIndices*/) {
+  constexpr std::size_t numParams = sizeof...(ParamIndices);
+  ValueRange targets = getEffectiveTargetOperands<numParams>(state, adaptor);
+  assert(targets.size() >= sizeof...(TargetIndices) &&
+         "Not enough operands available for conversion");
+  ValueRange params = op.getParameters();
+
+  auto jeffOp = JeffOpType::create(
+      rewriter, op.getLoc(), targets[TargetIndices]..., params[ParamIndices]...,
+      /*in_ctrl_qubits=*/state.controlsIn,
+      /*num_ctrls=*/state.controlsIn.size(),
+      /*is_adjoint=*/state.inInvOp ^ ExtraAdjoint,
+      /*power=*/1);
+
+  // Jeff well-known gates: leading results are transformed targets, then ctrl
+  // outs (same ordering as `getOutQubit` / `getOutCtrlQubits` accessors).
+  constexpr std::size_t numTargets = sizeof...(TargetIndices);
+  auto results = jeffOp->getResults();
+  handleResult(op, rewriter, state, results.take_front(numTargets),
+               results.drop_front(numTargets));
+  return success();
+}
+
+/**
  * @brief Converts an arbitrary QCO operation to a jeff.custom operation
  *
  * @tparam QCOOpType The operation type of the QCO operation
@@ -139,10 +225,9 @@ static void handleResult(Operation* op, ConversionPatternRewriter& rewriter,
  */
 template <typename QCOOpType>
 static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
-                           LoweringState& state,
-                           const llvm::SmallVector<Value>& targets,
-                           const llvm::SmallVector<Value>& params,
-                           const bool isAdjoint, StringRef name) {
+                           LoweringState& state, ValueRange targets,
+                           ValueRange params, const bool isAdjoint,
+                           StringRef name) {
   auto* const it = llvm::find(state.strings, name);
   if (it == state.strings.end()) {
     state.strings.emplace_back(name);
@@ -172,8 +257,7 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
  */
 template <typename QCOOpType>
 static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
-                        LoweringState& state,
-                        const llvm::SmallVector<Value>& targets,
+                        LoweringState& state, ValueRange targets,
                         const llvm::SmallVector<int32_t>& pauliGates) {
   auto pauliGatesAttr =
       DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
@@ -266,6 +350,10 @@ struct ConvertQTensorAllocOp final
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
     // TODO: Why is this not happening in native conversion?
     auto sizeValue = getConstantIntValue(adaptor.getSize());
     Value size;
@@ -274,7 +362,9 @@ struct ConvertQTensorAllocOp final
     } else {
       size = adaptor.getSize();
     }
-    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, size);
+    auto qregType =
+        jeff::QuregType::get(rewriter.getContext(), op.getType().getShape()[0]);
+    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, qregType, size);
     return success();
   }
 };
@@ -382,13 +472,50 @@ struct ConvertQTensorDeallocOp final
  * %q = jeff.qubit_alloc : !jeff.qubit
  * ```
  */
-struct ConvertQCOAllocOpToJeff final
-    : StatefulOpConversionPattern<qco::AllocOp> {
+struct ConvertQCOAllocOpToJeff final : StatefulOpConversionPattern<AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
+                                               op.getOperation()))) {
+      return failure();
+    }
+    rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qco.static to jeff.qubit_alloc
+ *
+ * @details
+ * The Jeff dialect does not model hardware-mapped or fixed-index static
+ * qubits yet. As a temporary workaround (see discussion on #1626), this
+ * lowers `qco.static` to the same `jeff.qubit_alloc` operation used for
+ * `qco.alloc`. The static index is not represented in Jeff IR; if Jeff gains
+ * static qubit support, this conversion should be revisited.
+ *
+ * @par Example:
+ * ```mlir
+ * %q = qco.static 0 : !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q = jeff.qubit_alloc : !jeff.qubit
+ * ```
+ */
+struct ConvertQCOStaticOpToJeff final : StatefulOpConversionPattern<StaticOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Static,
+                                               op.getOperation()))) {
+      return failure();
+    }
     rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
     return success();
   }
@@ -406,11 +533,11 @@ struct ConvertQCOAllocOpToJeff final
  * jeff.qubit_free_zero %q : !jeff.qubit
  * ```
  */
-struct ConvertQCOSinkOpToJeff final : StatefulOpConversionPattern<qco::SinkOp> {
+struct ConvertQCOSinkOpToJeff final : StatefulOpConversionPattern<SinkOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::SinkOp op, OpAdaptor adaptor,
+  matchAndRewrite(SinkOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.replaceOpWithNewOp<jeff::QubitFreeZeroOp>(op, adaptor.getQubit());
     return success();
@@ -430,11 +557,11 @@ struct ConvertQCOSinkOpToJeff final : StatefulOpConversionPattern<qco::SinkOp> {
  * ```
  */
 struct ConvertQCOMeasureOpToJeff final
-    : StatefulOpConversionPattern<qco::MeasureOp> {
+    : StatefulOpConversionPattern<MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::MeasureOp op, OpAdaptor adaptor,
+  matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.replaceOpWithNewOp<jeff::QubitMeasureNDOp>(op,
                                                         adaptor.getQubitIn());
@@ -454,12 +581,11 @@ struct ConvertQCOMeasureOpToJeff final
  * %q_out = jeff.qubit_reset %q_in : !jeff.qubit
  * ```
  */
-struct ConvertQCOResetOpToJeff final
-    : StatefulOpConversionPattern<qco::ResetOp> {
+struct ConvertQCOResetOpToJeff final : StatefulOpConversionPattern<ResetOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::ResetOp op, OpAdaptor adaptor,
+  matchAndRewrite(ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.replaceOpWithNewOp<jeff::QubitResetOp>(op, adaptor.getQubitIn());
     return success();
@@ -478,12 +604,11 @@ struct ConvertQCOResetOpToJeff final
  * jeff.gphase(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
  * ```
  */
-struct ConvertQCOGPhaseOpToJeff final
-    : StatefulOpConversionPattern<qco::GPhaseOp> {
+struct ConvertQCOGPhaseOpToJeff final : StatefulOpConversionPattern<GPhaseOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::GPhaseOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(GPhaseOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
@@ -503,16 +628,18 @@ struct ConvertQCOGPhaseOpToJeff final
   }
 };
 
-// OneTargetZeroParameter
-
 /**
- * @brief Converts a one-target, zero-parameter QCO gate to Jeff
+ * @brief Converts a QCO gate that lowers to a well-known Jeff op.
  *
- * @tparam QCOOpType The operation type of the QCO gate
- * @tparam JeffOpType The operation type of the Jeff gate
- * @tparam isAdjoint Whether the operation is an adjoint operation
+ * @tparam QCOOpType QCO operation type.
+ * @tparam JeffOpType Jeff op type passed to `convertJeffGate` /
+ * `JeffOpType::create`.
+ * @tparam NumTargets Number of target operands (1 or 2 for supported gates).
+ * @tparam NumParams Number of real parameters on the QCO op.
+ * @tparam JeffBaseAdjoint When true, XOR with inv-modifier (e.g. S† as `jeff.s`
+ * with adjoint set).
  *
- * @par Example:
+ * @par Example: one target, zero parameters
  * ```mlir
  * %q_out = qco.x %q_in : !qco.qubit -> !qco.qubit
  * ```
@@ -521,114 +648,8 @@ struct ConvertQCOGPhaseOpToJeff final
  * %q_out = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
  * %q_in : !jeff.qubit
  * ```
- */
-template <typename QCOOpType, typename JeffOpType, bool isAdjoint>
-struct ConvertQCOOneTargetZeroParameterToJeff final
-    : StatefulOpConversionPattern<QCOOpType> {
-  using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-
-    Value target;
-    if (!state.inModifier()) {
-      target = adaptor.getQubitIn();
-    } else {
-      target = state.targetsIn[0];
-    }
-
-    auto jeffOp = JeffOpType::create(rewriter, op.getLoc(), target,
-                                     /*in_ctrl_qubits=*/state.controlsIn,
-                                     /*num_ctrls=*/state.controlsIn.size(),
-                                     /*is_adjoint=*/state.inInvOp ^ isAdjoint,
-                                     /*power=*/1);
-
-    handleResult(op, rewriter, state, jeffOp.getOutQubit(),
-                 jeffOp.getOutCtrlQubits());
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.sx to jeff.custom
  *
- * @par Example:
- * ```mlir
- * %q_out = qco.sx %q_in : !qco.qubit -> !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = jeff.custom "sx"() {is_adjoint = false, num_ctrls = 0 : i8, power =
- * 1 : i8} %q_in : !jeff.qubit
- * ```
- */
-struct ConvertQCOSXOpToJeff final : StatefulOpConversionPattern<qco::SXOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::SXOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    Value target;
-    if (!state.inModifier()) {
-      target = adaptor.getQubitIn();
-    } else {
-      target = state.targetsIn[0];
-    }
-
-    createCustomOp(op, rewriter, state, {target}, {}, false, "sx");
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.sxdg to jeff.custom
- *
- * @par Example:
- * ```mlir
- * %q_out = qco.sxdg %q_in : !qco.qubit -> !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = jeff.custom "sx"() {is_adjoint = true, num_ctrls = 0 : i8, power = 1
- * : i8} %q_in : !jeff.qubit
- * ```
- */
-struct ConvertQCOSXdgOpToJeff final : StatefulOpConversionPattern<qco::SXdgOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::SXdgOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    Value target;
-    if (!state.inModifier()) {
-      target = adaptor.getQubitIn();
-    } else {
-      target = state.targetsIn[0];
-    }
-
-    createCustomOp(op, rewriter, state, {target}, {}, true, "sx");
-
-    return success();
-  }
-};
-
-// OneTargetOneParameter
-
-/**
- * @brief Converts a one-target, one-parameter QCO gate to Jeff
- *
- * @tparam QCOOpType The operation type of the QCO gate
- * @tparam JeffOpType The operation type of the Jeff gate
- *
- * @par Example:
+ * @par Example: one target, one parameter
  * ```mlir
  * %q_out = qco.rx(%theta) %q_in : !qco.qubit -> !qco.qubit
  * ```
@@ -637,9 +658,31 @@ struct ConvertQCOSXdgOpToJeff final : StatefulOpConversionPattern<qco::SXdgOp> {
  * %q_out = jeff.rx(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 :
  * i8} %q_in : !jeff.qubit
  * ```
+ *
+ * @par Example: one target, three parameters
+ * ```mlir
+ * %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = jeff.u(%theta, %phi, %lambda) {is_adjoint = false, num_ctrls = 0 :
+ * i8, power = 1 : i8} %q_in : !jeff.qubit
+ * ```
+ *
+ * @par Example: two targets, zero parameters
+ * ```mlir
+ * %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+ * !qco.qubit, !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out, %q1_out = jeff.swap {is_adjoint = false, num_ctrls = 0 : i8, power =
+ * 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
+ * ```
  */
-template <typename QCOOpType, typename JeffOpType>
-struct ConvertQCOOneTargetOneParameterToJeff final
+template <typename QCOOpType, typename JeffOpType, std::size_t NumTargets,
+          std::size_t NumParams, bool JeffBaseAdjoint>
+struct ConvertQCOWellKnownGateToJeff final
     : StatefulOpConversionPattern<QCOOpType> {
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
@@ -648,28 +691,96 @@ struct ConvertQCOOneTargetOneParameterToJeff final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
-    Value target;
-    if (!state.inModifier()) {
-      target = adaptor.getQubitIn();
-    } else {
-      target = state.targetsIn[0];
-    }
-
-    auto jeffOp =
-        JeffOpType::create(rewriter, op.getLoc(), target, op.getParameter(0),
-                           /*in_ctrl_qubits=*/state.controlsIn,
-                           /*num_ctrls=*/state.controlsIn.size(),
-                           /*is_adjoint=*/state.inInvOp,
-                           /*power=*/1);
-
-    handleResult(op, rewriter, state, jeffOp.getOutQubit(),
-                 jeffOp.getOutCtrlQubits());
-
-    return success();
+    return convertJeffGate<QCOOpType, JeffOpType, JeffBaseAdjoint>(
+        op, adaptor, rewriter, state, std::make_index_sequence<NumTargets>{},
+        std::make_index_sequence<NumParams>{});
   }
 };
 
-// OneTargetTwoParameter
+/**
+ * @brief Conversion pattern that lowers a QCO gate to `jeff.custom`.
+ *
+ * @tparam QCOOpType QCO operation type to match.
+ * @tparam NumTargets Number of target qubit operands (compile-time).
+ * @tparam NumParams Number of real parameters taken from the QCO op
+ * (compile-time).
+ *
+ * @details Validates operand count when not inside a modifier, collects targets
+ * and parameters, then dispatches to `createCustomOp` with the configured
+ * custom gate name and base adjoint flag.
+ */
+template <typename QCOOpType, std::size_t NumTargets, std::size_t NumParams>
+struct ConvertQCOCustomGateToJeff final
+    : StatefulOpConversionPattern<QCOOpType> {
+  ConvertQCOCustomGateToJeff(TypeConverter& typeConverter, MLIRContext* context,
+                             LoweringState* state, StringRef name,
+                             const bool baseIsAdjoint)
+      : StatefulOpConversionPattern<QCOOpType>(typeConverter, context, state),
+        name_(name), baseIsAdjoint_(baseIsAdjoint) {}
+
+  LogicalResult
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+
+    if (!state.inModifier()) {
+      const auto expected = NumTargets + NumParams;
+      if (adaptor.getOperands().size() != expected) {
+        return op.emitOpError()
+               << "expected " << expected
+               << " operands (targets + parameters) for QCO→Jeff custom gate "
+                  "conversion, got "
+               << adaptor.getOperands().size();
+      }
+    }
+
+    ValueRange targets = getEffectiveTargetOperands<NumParams>(state, adaptor);
+    assert(targets.size() >= NumTargets &&
+           "Not enough operands available for conversion");
+
+    createCustomOp(op, rewriter, state, targets, op.getParameters(),
+                   baseIsAdjoint_, name_);
+    return success();
+  }
+
+private:
+  StringRef name_;
+  bool baseIsAdjoint_;
+};
+
+/**
+ * @brief Conversion pattern that lowers a QCO gate to `jeff.ppr`.
+ *
+ * @tparam QCOOpType QCO operation type (expected: two targets, one rotation
+ * param).
+ *
+ * @details Selects two target operands (respecting modifier state) and builds
+ * the Pauli tuple from the constructor-supplied encodings `p0_` and `p1_`.
+ */
+template <typename QCOOpType>
+struct ConvertQCOPPRGateToJeff final : StatefulOpConversionPattern<QCOOpType> {
+  ConvertQCOPPRGateToJeff(TypeConverter& typeConverter, MLIRContext* context,
+                          LoweringState* state, const int32_t p0,
+                          const int32_t p1)
+      : StatefulOpConversionPattern<QCOOpType>(typeConverter, context, state),
+        p0_(p0), p1_(p1) {}
+
+  LogicalResult
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+
+    ValueRange targets = getEffectiveTargetOperands<1>(state, adaptor);
+    assert(targets.size() >= 2 &&
+           "Not enough operands available for conversion");
+    createPPROp(op, rewriter, state, targets, {p0_, p1_});
+    return success();
+  }
+
+private:
+  int32_t p0_;
+  int32_t p1_;
+};
 
 /**
  * @brief Converts qco.u2 to jeff.u
@@ -685,20 +796,17 @@ struct ConvertQCOOneTargetOneParameterToJeff final
  * i8, power = 1 : i8} %q_in : !jeff.qubit
  * ```
  */
-struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
+struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<U2Op> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::U2Op op, OpAdaptor adaptor,
+  matchAndRewrite(U2Op op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    Value target;
-    if (!state.inModifier()) {
-      target = adaptor.getQubitIn();
-    } else {
-      target = state.targetsIn[0];
-    }
+    ValueRange targets = getEffectiveTargetOperands<2>(state, adaptor);
+    assert(!targets.empty() && "Not enough operands available for conversion");
+    auto target = targets.front();
 
     auto loc = op.getLoc();
     auto theta = jeff::FloatConst64Op::create(
@@ -711,488 +819,6 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
 
     handleResult(op, rewriter, state, jeffOp.getOutQubit(),
                  jeffOp.getOutCtrlQubits());
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.r to jeff.custom
- *
- * @par Example:
- * ```mlir
- * %q_out = qco.r(%theta, %phi) %q_in : !qco.qubit -> !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = jeff.custom "r"(%theta, %phi) {is_adjoint = false, num_ctrls = 0 :
- * i8, power = 1 : i8} %q_in : !jeff.qubit
- * ```
- */
-struct ConvertQCOROpToJeff final : StatefulOpConversionPattern<qco::ROp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::ROp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    Value target;
-    if (!state.inModifier()) {
-      target = adaptor.getQubitIn();
-    } else {
-      target = state.targetsIn[0];
-    }
-
-    createCustomOp(op, rewriter, state, {target},
-                   {op.getParameter(0), op.getParameter(1)}, false, "r");
-
-    return success();
-  }
-};
-
-// OneTargetThreeParameter
-
-/**
- * @brief Converts a one-target, three-parameter QCO gate to Jeff
- *
- * @tparam QCOOpType The operation type of the QCO gate
- * @tparam JeffOpType The operation type of the Jeff gate
- *
- * @par Example:
- * ```mlir
- * %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit -> !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = jeff.u(%theta, %phi, %lambda) {is_adjoint = false, num_ctrls = 0 :
- * i8, power = 1 : i8} %q_in : !jeff.qubit
- * ```
- */
-template <typename QCOOpType, typename JeffOpType>
-struct ConvertQCOOneTargetThreeParameterToJeff final
-    : StatefulOpConversionPattern<QCOOpType> {
-  using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-
-    Value target;
-    if (!state.inModifier()) {
-      target = adaptor.getQubitIn();
-    } else {
-      target = state.targetsIn[0];
-    }
-
-    auto jeffOp =
-        JeffOpType::create(rewriter, op.getLoc(), target, op.getParameter(0),
-                           op.getParameter(1), op.getParameter(2),
-                           /*in_ctrl_qubits=*/state.controlsIn,
-                           /*num_ctrls=*/state.controlsIn.size(),
-                           /*is_adjoint=*/state.inInvOp,
-                           /*power=*/1);
-
-    handleResult(op, rewriter, state, jeffOp.getOutQubit(),
-                 jeffOp.getOutCtrlQubits());
-
-    return success();
-  }
-};
-
-// TwoTargetZeroParameter
-
-/**
- * @brief Converts a two-target, zero-parameter QCO gate to Jeff
- *
- * @tparam QCOOpType The operation type of the QCO gate
- * @tparam JeffOpType The operation type of the Jeff gate
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = jeff.swap {is_adjoint = false, num_ctrls = 0 : i8, power =
- * 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-template <typename QCOOpType, typename JeffOpType>
-struct ConvertQCOTwoTargetZeroParameterToJeff final
-    : StatefulOpConversionPattern<QCOOpType> {
-  using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
-
-    Value target0;
-    Value target1;
-    if (!state.inModifier()) {
-      target0 = adaptor.getQubit0In();
-      target1 = adaptor.getQubit1In();
-    } else {
-      target0 = state.targetsIn[0];
-      target1 = state.targetsIn[1];
-    }
-
-    auto jeffOp = JeffOpType::create(rewriter, op.getLoc(), target0, target1,
-                                     /*in_ctrl_qubits=*/state.controlsIn,
-                                     /*num_ctrls=*/state.controlsIn.size(),
-                                     /*is_adjoint=*/state.inInvOp,
-                                     /*power=*/1);
-
-    handleResult(op, rewriter, state,
-                 {jeffOp.getOutQubitOne(), jeffOp.getOutQubitTwo()},
-                 jeffOp.getOutCtrlQubits());
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.iswap to jeff.custom
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.iswap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.custom "iswap"() {is_adjoint = false, num_ctrls = 0 : i8,
- * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCOiSWAPOpToJeff final
-    : StatefulOpConversionPattern<qco::iSWAPOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::iSWAPOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createCustomOp(op, rewriter, state, targets, {}, false, "iswap");
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.ecr to jeff.custom
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.ecr %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.custom "ecr"() {is_adjoint = false, num_ctrls = 0 : i8, power
- * = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCOECROpToJeff final : StatefulOpConversionPattern<qco::ECROp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::ECROp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createCustomOp(op, rewriter, state, targets, {}, false, "ecr");
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.dcx to jeff.custom
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.dcx %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.custom "dcx"() {is_adjoint = false, num_ctrls = 0 : i8, power
- * = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCODCXOpToJeff final : StatefulOpConversionPattern<qco::DCXOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::DCXOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createCustomOp(op, rewriter, state, targets, {}, false, "dcx");
-
-    return success();
-  }
-};
-
-// TwoTargetOneParameter
-
-/**
- * @brief Converts qco.rxx to jeff.ppr
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.ppr(%theta, [1, 1]) {is_adjoint = false, num_ctrls = 0 : i8,
- * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCORXXOpToJeff final : StatefulOpConversionPattern<qco::RXXOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::RXXOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createPPROp(op, rewriter, state, targets, {1, 1});
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.ryy to jeff.ppr
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.ryy(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.ppr(%theta, [2, 2]) {is_adjoint = false, num_ctrls = 0 : i8,
- * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCORYYOpToJeff final : StatefulOpConversionPattern<qco::RYYOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::RYYOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createPPROp(op, rewriter, state, targets, {2, 2});
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.rzx to jeff.ppr
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.rzx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.ppr(%theta, [3, 1]) {is_adjoint = false, num_ctrls = 0 : i8,
- * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCORZXOpToJeff final : StatefulOpConversionPattern<qco::RZXOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::RZXOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createPPROp(op, rewriter, state, targets, {3, 1});
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.rzz to jeff.ppr
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.rzz(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.ppr(%theta, [3, 3]) {is_adjoint = false, num_ctrls = 0 : i8,
- * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCORZZOpToJeff final : StatefulOpConversionPattern<qco::RZZOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::RZZOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createPPROp(op, rewriter, state, targets, {3, 3});
-
-    return success();
-  }
-};
-
-// TwoTargetTwoParameter
-
-/**
- * @brief Converts qco.xx_minus_yy to jeff.custom
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.xx_minus_yy(%theta, %beta) %q0_in, %q1_in :
- * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.custom "xx_minus_yy"(%theta, %beta) {is_adjoint = false,
- * num_ctrls = 0 : i8, power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCOXXMinusYYOpToJeff final
-    : StatefulOpConversionPattern<qco::XXMinusYYOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::XXMinusYYOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createCustomOp(op, rewriter, state, targets,
-                   {op.getParameter(0), op.getParameter(1)}, false,
-                   "xx_minus_yy");
-
-    return success();
-  }
-};
-
-/**
- * @brief Converts qco.xx_plus_yy to jeff.custom
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = qco.xx_plus_yy(%theta, %beta) %q0_in, %q1_in : !qco.qubit,
- * !qco.qubit -> !qco.qubit, !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out:2 = jeff.custom "xx_plus_yy"(%theta, %beta) {is_adjoint = false,
- * num_ctrls = 0 : i8, power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- */
-struct ConvertQCOXXPlusYYOpToJeff final
-    : StatefulOpConversionPattern<qco::XXPlusYYOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qco::XXPlusYYOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets.push_back(adaptor.getQubit0In());
-      targets.push_back(adaptor.getQubit1In());
-    } else {
-      targets.push_back(state.targetsIn[0]);
-      targets.push_back(state.targetsIn[1]);
-    }
-
-    createCustomOp(op, rewriter, state, targets,
-                   {op.getParameter(0), op.getParameter(1)}, false,
-                   "xx_plus_yy");
 
     return success();
   }
@@ -1213,20 +839,15 @@ struct ConvertQCOXXPlusYYOpToJeff final
  * ```
  */
 struct ConvertQCOBarrierOpToJeff final
-    : StatefulOpConversionPattern<qco::BarrierOp> {
+    : StatefulOpConversionPattern<BarrierOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::BarrierOp op, OpAdaptor adaptor,
+  matchAndRewrite(BarrierOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    llvm::SmallVector<Value> targets;
-    if (!state.inModifier()) {
-      targets = adaptor.getQubitsIn();
-    } else {
-      targets = state.targetsIn;
-    }
+    ValueRange targets = getEffectiveTargetOperands<0>(state, adaptor);
 
     createCustomOp(op, rewriter, state, targets, {}, false, "barrier");
 
@@ -1250,11 +871,11 @@ struct ConvertQCOBarrierOpToJeff final
  * power = 1 : i8} %target_in ctrls(%control_in) : !jeff.qubit ctrls !jeff.qubit
  * ```
  */
-struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<qco::CtrlOp> {
+struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::CtrlOp op, OpAdaptor adaptor,
+  matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
@@ -1273,16 +894,12 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<qco::CtrlOp> {
     // Set modifier information
     state.inCtrlOp = true;
     state.ctrlOp = op;
-    const SmallVector<Value> controls(adaptor.getControlsIn().begin(),
-                                      adaptor.getControlsIn().end());
-    state.controlsIn = controls;
-    const SmallVector<Value> targets(adaptor.getTargetsIn().begin(),
-                                     adaptor.getTargetsIn().end());
-    state.targetsIn = targets;
+    state.controlsIn = llvm::to_vector(adaptor.getControlsIn());
+    state.targetsIn = llvm::to_vector(adaptor.getTargetsIn());
 
     // Inline region
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
-                               op->getIterator(), targets);
+                               op->getIterator(), state.targetsIn);
 
     return success();
   }
@@ -1304,11 +921,11 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<qco::CtrlOp> {
  * : !jeff.qubit
  * ```
  */
-struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<qco::InvOp> {
+struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::InvOp op, OpAdaptor adaptor,
+  matchAndRewrite(InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
@@ -1322,9 +939,7 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<qco::InvOp> {
     state.inInvOp = true;
     state.invOp = op;
     if (state.targetsIn.empty()) {
-      const SmallVector<Value> targets(adaptor.getQubitsIn().begin(),
-                                       adaptor.getQubitsIn().end());
-      state.targetsIn = targets;
+      state.targetsIn = llvm::to_vector(adaptor.getQubitsIn());
     }
 
     // Inline region
@@ -1338,12 +953,11 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<qco::InvOp> {
 /**
  * @brief Erases qco.yield operation
  */
-struct ConvertQCOYieldOpToJeff final
-    : StatefulOpConversionPattern<qco::YieldOp> {
+struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::YieldOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
@@ -1358,12 +972,8 @@ struct ConvertQCOYieldOpToJeff final
         state.targetsOut.clear();
       }
     } else if (state.inCtrlOp) {
-      SmallVector<Value> results;
-      const auto& controlsOut = state.controlsOut;
-      const auto& targetsOut = state.targetsOut;
-      results.append(controlsOut.begin(), controlsOut.end());
-      results.append(targetsOut.begin(), targetsOut.end());
-      rewriter.replaceOp(state.ctrlOp, results);
+      state.controlsOut.append(state.targetsOut);
+      rewriter.replaceOp(state.ctrlOp, state.controlsOut);
 
       state.inCtrlOp = false;
       state.ctrlOp = nullptr;
@@ -1455,18 +1065,112 @@ public:
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
 
-    addConversion([ctx](qco::QubitType /*type*/) -> Type {
+    addConversion([ctx](QubitType /*type*/) -> Type {
       return jeff::QubitType::get(ctx);
     });
 
     addConversion([ctx](RankedTensorType type) -> Type {
-      if (llvm::isa<qco::QubitType>(type.getElementType())) {
-        return jeff::QuregType::get(ctx);
+      if (llvm::isa<QubitType>(type.getElementType())) {
+        return jeff::QuregType::get(ctx, type.getShape()[0]);
       }
       return type;
     });
   }
 };
+
+/**
+ * @brief Helper for `static_assert` fallbacks in constexpr dispatch (always
+ * false).
+ *
+ * @details The non-type template parameter pack exists only so failed branches
+ * can use a dependent `false` value inside `static_assert`.
+ */
+template <auto...> struct AlwaysFalse : std::false_type {};
+
+/** @brief QCO→Jeff gate lowering category. */
+enum class JeffKind : std::uint8_t {
+  /// Lower to a Jeff gate from the standard `WellKnownGate` set (Jeff spec:
+  /// `QubitGate.gate.wellKnown`).
+  WellKnown,
+  Custom,       //!< Lower to jeff.custom with a name string.
+  PPR,          //!< Lower to jeff.ppr with Pauli-gate encoding.
+  SpecialU2ToU, //!< Lower qco.u2 via jeff.u with injected theta=pi/2.
+};
+
+/** @brief Pauli encoding for PPR lowering (1=X, 2=Y, 3=Z). */
+struct PPRPaulis {
+  std::int32_t p0;
+  std::int32_t p1;
+};
+
+} // namespace
+
+/**
+ * @brief Registers one QCO→Jeff rewrite pattern for a gate described at compile
+ * time.
+ *
+ * @tparam Kind How to lower: well-known Jeff op, `jeff.custom`, `jeff.ppr`, or
+ *        special-case `qco.u2` → `jeff.u`.
+ * @tparam Targets Number of target qubits for the QCO op.
+ * @tparam Params Number of real parameters on the QCO op.
+ * @tparam QCOOpType MLIR QCO operation type.
+ * @tparam JeffOpType Jeff operation type for `JeffKind::WellKnown` (or `void`
+ * for custom/PPR paths that do not use it).
+ * @tparam JeffBaseAdjoint For well-known ops: whether the Jeff op represents
+ * the adjoint of the QCO base gate (e.g. S† as `jeff.s` with adjoint set).
+ * @param patterns Pattern set to add to.
+ * @param typeConverter QCO→Jeff type converter passed to patterns.
+ * @param context MLIR context.
+ * @param state Shared lowering state pointer target (patterns store `&state`).
+ * @param customName Custom gate name when `Kind` is `JeffKind::Custom` (ignored
+ *        otherwise).
+ * @param ppr Pauli indices when `Kind` is `JeffKind::PPR` (ignored otherwise).
+ *
+ * @details Dispatches at compile time to the appropriate conversion pattern.
+ * Ill-formed combinations trigger `static_assert` with a message referencing
+ * this function.
+ */
+template <JeffKind Kind, std::size_t Targets, std::size_t Params,
+          typename QCOOpType, typename JeffOpType, bool JeffBaseAdjoint>
+static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
+                                    TypeConverter& typeConverter,
+                                    MLIRContext* context, LoweringState& state,
+                                    StringRef customName = {},
+                                    const PPRPaulis& ppr = {}) {
+  if constexpr (Kind == JeffKind::WellKnown) {
+    if constexpr ((Targets == 1 && Params == 0) ||
+                  (Targets == 1 && Params == 1) ||
+                  (Targets == 1 && Params == 3) ||
+                  (Targets == 2 && Params == 0)) {
+      patterns.add<ConvertQCOWellKnownGateToJeff<QCOOpType, JeffOpType, Targets,
+                                                 Params, JeffBaseAdjoint>>(
+          typeConverter, context, &state);
+    } else {
+      static_assert(AlwaysFalse<Kind, Targets, Params>::value,
+                    "addQCOToJeffGatePattern: unhandled JeffKind::WellKnown "
+                    "arity/params");
+    }
+  } else if constexpr (Kind == JeffKind::Custom) {
+    patterns.add<ConvertQCOCustomGateToJeff<QCOOpType, Targets, Params>>(
+        typeConverter, context, &state, customName, JeffBaseAdjoint);
+  } else if constexpr (Kind == JeffKind::PPR) {
+    static_assert(Targets == 2 && Params == 1,
+                  "QCOToJeff PPR lowering expects exactly 2 targets and 1 "
+                  "parameter");
+    patterns.add<ConvertQCOPPRGateToJeff<QCOOpType>>(typeConverter, context,
+                                                     &state, ppr.p0, ppr.p1);
+  } else if constexpr (Kind == JeffKind::SpecialU2ToU) {
+    static_assert(std::is_same_v<QCOOpType, U2Op> && Targets == 1 &&
+                      Params == 2,
+                  "QCOToJeff SpecialU2ToU is only implemented for qco.u2");
+    patterns.add<ConvertQCOU2OpToJeff>(typeConverter, context, &state);
+  } else {
+    static_assert(AlwaysFalse<Kind, Targets, Params>::value,
+                  "addQCOToJeffGatePattern: unhandled JeffKind");
+  }
+}
+
+namespace {
 
 /**
  * @brief Pass for converting QCO operations to Jeff operations
@@ -1497,34 +1201,76 @@ protected:
 
     // Register operation conversion patterns
     jeff::populateNativeToJeffConversionPatterns(patterns);
-    patterns.add<
-        ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-        ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
-        ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
-        ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::IdOp, jeff::IOp, false>,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::XOp, jeff::XOp, false>,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::YOp, jeff::YOp, false>,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::ZOp, jeff::ZOp, false>,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::HOp, jeff::HOp, false>,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::SOp, jeff::SOp, false>,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::SdgOp, jeff::SOp, true>,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::TOp, jeff::TOp, false>,
-        ConvertQCOOneTargetZeroParameterToJeff<qco::TdgOp, jeff::TOp, true>,
-        ConvertQCOSXOpToJeff, ConvertQCOSXdgOpToJeff,
-        ConvertQCOOneTargetOneParameterToJeff<qco::RXOp, jeff::RxOp>,
-        ConvertQCOOneTargetOneParameterToJeff<qco::RYOp, jeff::RyOp>,
-        ConvertQCOOneTargetOneParameterToJeff<qco::RZOp, jeff::RzOp>,
-        ConvertQCOOneTargetOneParameterToJeff<qco::POp, jeff::R1Op>,
-        ConvertQCOROpToJeff, ConvertQCOU2OpToJeff,
-        ConvertQCOOneTargetThreeParameterToJeff<qco::UOp, jeff::UOp>,
-        ConvertQCOTwoTargetZeroParameterToJeff<qco::SWAPOp, jeff::SwapOp>,
-        ConvertQCOiSWAPOpToJeff, ConvertQCOECROpToJeff, ConvertQCODCXOpToJeff,
-        ConvertQCORXXOpToJeff, ConvertQCORYYOpToJeff, ConvertQCORZXOpToJeff,
-        ConvertQCORZZOpToJeff, ConvertQCOXXMinusYYOpToJeff,
-        ConvertQCOXXPlusYYOpToJeff, ConvertQCOBarrierOpToJeff,
-        ConvertQCOCtrlOpToJeff, ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
-        ConvertQCOMainToJeff>(typeConverter, context, &state);
+    patterns.add<ConvertQTensorAllocOp, ConvertQTensorExtractOp,
+                 ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
+                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,
+                 ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
+                 ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff>(
+        typeConverter, context, &state);
+
+    using JK = JeffKind;
+    using PP = PPRPaulis;
+
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, IdOp, jeff::IOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, XOp, jeff::XOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, YOp, jeff::YOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, ZOp, jeff::ZOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, HOp, jeff::HOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, SOp, jeff::SOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, SdgOp, jeff::SOp, true>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, TOp, jeff::TOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 0, TdgOp, jeff::TOp, true>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::Custom, 1, 0, SXOp, void, false>(
+        patterns, typeConverter, context, state, "sx");
+    addQCOToJeffGatePattern<JK::Custom, 1, 0, SXdgOp, void, true>(
+        patterns, typeConverter, context, state, "sx");
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 1, RXOp, jeff::RxOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 1, RYOp, jeff::RyOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 1, RZOp, jeff::RzOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 1, POp, jeff::R1Op, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::Custom, 1, 2, ROp, void, false>(
+        patterns, typeConverter, context, state, "r");
+    addQCOToJeffGatePattern<JK::SpecialU2ToU, 1, 2, U2Op, jeff::UOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 1, 3, UOp, jeff::UOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::WellKnown, 2, 0, SWAPOp, jeff::SwapOp, false>(
+        patterns, typeConverter, context, state);
+    addQCOToJeffGatePattern<JK::Custom, 2, 0, iSWAPOp, void, false>(
+        patterns, typeConverter, context, state, "iswap");
+    addQCOToJeffGatePattern<JK::Custom, 2, 0, DCXOp, void, false>(
+        patterns, typeConverter, context, state, "dcx");
+    addQCOToJeffGatePattern<JK::Custom, 2, 0, ECROp, void, false>(
+        patterns, typeConverter, context, state, "ecr");
+    addQCOToJeffGatePattern<JK::PPR, 2, 1, RXXOp, void, false>(
+        patterns, typeConverter, context, state, "_", PP{.p0 = 1, .p1 = 1});
+    addQCOToJeffGatePattern<JK::PPR, 2, 1, RYYOp, void, false>(
+        patterns, typeConverter, context, state, "_", PP{.p0 = 2, .p1 = 2});
+    addQCOToJeffGatePattern<JK::PPR, 2, 1, RZXOp, void, false>(
+        patterns, typeConverter, context, state, "_", PP{.p0 = 3, .p1 = 1});
+    addQCOToJeffGatePattern<JK::PPR, 2, 1, RZZOp, void, false>(
+        patterns, typeConverter, context, state, "_", PP{.p0 = 3, .p1 = 3});
+    addQCOToJeffGatePattern<JK::Custom, 2, 2, XXPlusYYOp, void, false>(
+        patterns, typeConverter, context, state, "xx_plus_yy");
+    addQCOToJeffGatePattern<JK::Custom, 2, 2, XXMinusYYOp, void, false>(
+        patterns, typeConverter, context, state, "xx_minus_yy");
+
+    patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
+                 ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
+                 ConvertQCOMainToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
