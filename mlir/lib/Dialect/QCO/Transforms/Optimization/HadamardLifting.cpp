@@ -272,7 +272,10 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     const auto inQubitHadamard = hadamardGate.getInputQubit(0);
     predecessor = inQubitHadamard.getDefiningOp();
     auto cnotGate = llvm::dyn_cast<CtrlOp>(predecessor);
-    if (!cnotGate || cnotGate.getNumTargets() != 1 ||
+    if (!cnotGate) {
+      return failure();
+    }
+    if (cnotGate.getNumTargets() != 1 ||
         cnotGate.getOutputTarget(0) != inQubitHadamard ||
         nullptr == llvm::dyn_cast<XOp>(cnotGate.getBodyUnitary())) {
       return failure();
