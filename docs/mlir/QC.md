@@ -9,3 +9,9 @@ tocdepth: 3
 ```{include} Dialects/QCInterfaces.md
 :heading-offset: 1
 ```
+
+## Passes
+
+```{include} Passes/QCTransforms.md
+
+```

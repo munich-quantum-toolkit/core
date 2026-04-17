@@ -18,6 +18,7 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -106,8 +107,33 @@ Value QIRProgramBuilder::doubleConstant(double value) {
   return LLVM::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
 }
 
+Value QIRProgramBuilder::allocQubit() {
+  checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
+
+  metadata_.useDynamicQubit = true;
+
+  // Save current insertion point
+  const InsertionGuard guard(*this);
+
+  // Insert allocations and constants in entry block
+  setInsertionPoint(entryBlock->getTerminator());
+
+  auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+  auto fnDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_ALLOC, fnSig);
+
+  auto zero = LLVM::ZeroOp::create(*this, ptrType);
+  auto qubit = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
+
+  qubits.insert(qubit);
+
+  return qubit;
+}
+
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Static);
 
   if (index < 0) {
     llvm::reportFatalUsageError("Index must be non-negative");
@@ -132,6 +158,7 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
 
 SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
+  ensureAllocationMode(AllocationMode::Dynamic);
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
@@ -197,16 +224,16 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  auto allocFnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(getContext()), {getI64Type(), ptrType, ptrType});
-  auto allocFnDecl = getOrCreateFunctionDeclaration(
-      *this, module, QIR_RESULT_ARRAY_ALLOC, allocFnSignature);
+  auto fnSig =
+      LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
+  auto fnDec = getOrCreateFunctionDeclaration(*this, module,
+                                              QIR_RESULT_ARRAY_ALLOC, fnSig);
 
   auto array =
       LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
   auto zero = LLVM::ZeroOp::create(*this, ptrType);
   LLVM::CallOp::create(
-      *this, allocFnDecl,
+      *this, fnDec,
       ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
   resultArrays.try_emplace(name, array.getResult());
@@ -604,6 +631,29 @@ void QIRProgramBuilder::checkFinalized() const {
   }
 }
 
+void QIRProgramBuilder::ensureAllocationMode(
+    const AllocationMode requestedMode) {
+  if (allocationMode == AllocationMode::Unset) {
+    allocationMode = requestedMode;
+    return;
+  }
+  if (allocationMode == requestedMode) {
+    return;
+  }
+
+  const char* const existingName =
+      allocationMode == AllocationMode::Static ? "static" : "dynamic";
+  const char* const requestedName =
+      requestedMode == AllocationMode::Static ? "static" : "dynamic";
+
+  const std::string message =
+      llvm::formatv("Cannot mix {0} and {1} qubit allocation modes in "
+                    "QIRProgramBuilder",
+                    existingName, requestedName)
+          .str();
+  llvm::reportFatalUsageError(message.c_str());
+}
+
 void QIRProgramBuilder::generateOutputRecording() {
   if (resultArrays.empty() && resultPtrs.empty()) {
     return; // No measurements to record
@@ -669,6 +719,13 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
   // Release resources in output block
   setInsertionPoint(outputBlock->getTerminator());
+
+  for (auto qubit : qubits) {
+    auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
+    auto dec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_RELEASE, sig);
+    LLVM::CallOp::create(*this, dec, ValueRange{qubit});
+  }
 
   for (auto array : qubitArrays) {
     auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});

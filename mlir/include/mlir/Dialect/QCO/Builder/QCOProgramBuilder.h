@@ -13,7 +13,6 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -21,6 +20,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
@@ -43,6 +43,11 @@ namespace mlir::qco {
  * values. Once a qubit is consumed by an operation producing a new version
  * (e.g., reset, measure), the old SSA value is invalidated. This prevents
  * use-after-consume errors and mirrors quantum computing's no-cloning theorem.
+ *
+ * @par Qubit addressing:
+ * A program must use either static qubits (`staticQubit`) or dynamic allocation
+ * (`allocQubit`, `allocQubitRegister`, or `qtensorAlloc`), never both. The
+ * builder terminates with a usage error if the modes are mixed.
  *
  * @par Example Usage:
  * ```c++
@@ -104,6 +109,34 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Represents a qubit register with its qubits.
+   */
+  struct QubitRegister {
+    /// The QTensor value representing the qubit register
+    Value value;
+    /// The allocated qubit values
+    SmallVector<Value> qubits;
+
+    /**
+     * @brief Access a specific qubit in the register
+     * @param index The index of the qubit to access
+     * @return The specified qubit value
+     */
+    Value& operator[](size_t index) {
+      if (index >= qubits.size()) {
+        llvm::reportFatalUsageError("Qubit index out of bounds");
+      }
+      return qubits[index];
+    }
+
+    /**
+     * @brief Conversion to the backing QTensor value
+     * @return The QTensor value representing the qubit register
+     */
+    explicit operator Value() const { return value; }
+  };
+
+  /**
    * @brief Allocate a single qubit initialized to |0⟩
    * @return A tracked, valid qubit SSA value
    *
@@ -135,7 +168,7 @@ public:
   /**
    * @brief Allocate a qubit register
    * @param size Number of qubits (must be positive)
-   * @return Vector of tracked, valid qubit SSA values
+   * @return A `QubitRegister` structure
    *
    * @par Example:
    * ```c++
@@ -148,7 +181,7 @@ public:
    * %t3, %q2 = qtensor.extract %t2[%c2]: tensor<3x!qco.qubit>
    * ```
    */
-  llvm::SmallVector<Value> allocQubitRegister(int64_t size);
+  QubitRegister allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -193,7 +226,7 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A ClassicalRegister structure
+   * @return A `ClassicalRegister` structure
    *
    * @par Example:
    * ```c++
@@ -1125,7 +1158,7 @@ public:
    * ```c++
    * {controls_out, targets_out} =
    *   builder.ctrl(q0_in, q1_in,
-   *     [&](ValueRange targets) -> llvm::SmallVector<Value> {
+   *     [&](ValueRange targets) -> SmallVector<Value> {
    *       return {builder.x(targets[0])};
    *   });
    * ```
@@ -1138,7 +1171,7 @@ public:
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
+       llvm::function_ref<SmallVector<Value>(ValueRange)> body);
 
   /**
    * @brief Apply an inverse operation
@@ -1150,7 +1183,7 @@ public:
    * @par Example:
    * ```c++
    * qubits_out = builder.inv(q0_in,
-   *   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
+   *   [&](ValueRange qubits) -> SmallVector<Value> {
    *     return {builder.s(qubits[0])};
    *   }
    * );
@@ -1163,7 +1196,7 @@ public:
    * ```
    */
   ValueRange inv(ValueRange qubits,
-                 llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
+                 llvm::function_ref<SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -1214,7 +1247,7 @@ public:
    * ```c++
    * auto result =
    *   builder.qcoIf(condition, q0,
-   *     [&](ValueRange args) -> llvm::SmallVector<Value> {
+   *     [&](ValueRange args) -> SmallVector<Value> {
    *       auto q1 = builder.h(args[0]);
    *       return {q1};
    *     });
@@ -1230,9 +1263,8 @@ public:
    */
   ValueRange
   qcoIf(const std::variant<bool, Value>& condition, ValueRange qubits,
-        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
-        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody =
-            nullptr);
+        llvm::function_ref<SmallVector<Value>(ValueRange)> thenBody,
+        llvm::function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -1265,6 +1297,8 @@ public:
         const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc);
 
 private:
+  enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
+
   MLIRContext* ctx{};
   ModuleOp module;
 
@@ -1337,5 +1371,11 @@ private:
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseMap<Value, TensorInfo> validTensors;
+
+  /// Track whether static or dynamic qubit allocation is used.
+  AllocationMode allocationMode = AllocationMode::Unset;
+
+  /// Ensure static and dynamic qubit allocation modes are not mixed.
+  void ensureAllocationMode(AllocationMode requestedMode);
 };
 } // namespace mlir::qco

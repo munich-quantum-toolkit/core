@@ -279,8 +279,7 @@ archs = "auto64"
 test-groups = ["test"]
 test-sources = ["test/python", "json/na"]
 test-command = "pytest test/python"
-build-frontend = "build[uv]"
-enable = ["cpython-freethreading"]
+build-frontend = "uv"
 test-skip = [
   "cp3??t-*", # no freethreading qiskit wheels
   "cp*-win_arm64", # no numpy, qiskit, ... wheels
@@ -367,5 +366,5 @@ dev = [
   {include-group = "test"},
   "lit>=18.1.8",
   "nox>=2025.11.12",
-  "ty==0.0.28",
+  "ty==0.0.29",
 ]
