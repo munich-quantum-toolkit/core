@@ -277,7 +277,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     }
     if (cnotGate.getNumTargets() != 1 ||
         cnotGate.getOutputTarget(0) != inQubitHadamard ||
-        nullptr == llvm::dyn_cast<XOp>(cnotGate.getBodyUnitary())) {
+        llvm::dyn_cast<XOp>(cnotGate.getBodyUnitary())) {
       return failure();
     }
     // Determine the index of the control that will become the new target. The
