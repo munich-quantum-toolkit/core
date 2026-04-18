@@ -23,7 +23,7 @@ authors = [
 ]
 keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams", "zx-calculus"]
 license = "MIT"
-license-files = ["LICENSE.md"]
+license-files = ["LICENSE"]
 
 classifiers = [
   "Development Status :: 5 - Production/Stable",
