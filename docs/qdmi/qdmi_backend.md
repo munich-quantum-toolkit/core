@@ -93,9 +93,7 @@ print(f"Qubits: {backend.target.num_qubits}")
 
 ```python
 # Filter backends by name substring
-filtered_qdmi = provider.backends(
-    name="QDMI"
-)  # Matches all backends with "QDMI" in name
+filtered_qdmi = provider.backends(name="QDMI")  # Matches all backends with "QDMI" in name
 filtered_ddsim = provider.backends(name="DDSIM")  # Matches "MQT Core DDSIM QDMI Device"
 
 # Filter by full name also works
@@ -175,9 +173,7 @@ Associate your session with a specific project or organization:
 
 ```python
 # Specify a project ID
-provider = QDMIProvider(
-    token="your_api_token", project_id="quantum-research-project-2024"
-)
+provider = QDMIProvider(token="your_api_token", project_id="quantum-research-project-2024")
 ```
 
 ### Combining Authentication Parameters
