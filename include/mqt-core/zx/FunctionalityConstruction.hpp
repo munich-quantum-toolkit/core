@@ -107,8 +107,8 @@ protected:
          const std::optional<double>& unconvertedPhase = std::nullopt);
   static void
   addMcrzz(ZXDiagram& diag, const PiExpression& phase,
-           const std::vector<Qubit>& controls, const Qubit target,
-           const Qubit target2, std::vector<Vertex>& qubits,
+           const std::vector<Qubit>& controls, Qubit target, Qubit target2,
+           std::vector<Vertex>& qubits,
            const std::optional<double>& unconvertedPhase = std::nullopt);
   static void addDcx(ZXDiagram& diag, Qubit qubit1, Qubit qubit2,
                      std::vector<Vertex>& qubits);
@@ -126,22 +126,20 @@ protected:
                      std::vector<Vertex>& qubits);
   static void addCcz(ZXDiagram& diag, Qubit ctrl0, Qubit ctrl1, Qubit target,
                      std::vector<Vertex>& qubits);
-  static void addCrx(ZXDiagram& diag, const PiExpression& phase,
-                     const Qubit control, const Qubit target,
-                     std::vector<Vertex>& qubits);
+  static void addCrx(ZXDiagram& diag, const PiExpression& phase, Qubit control,
+                     Qubit target, std::vector<Vertex>& qubits);
   static void addMcrx(ZXDiagram& diag, const PiExpression& phase,
-                      std::vector<Qubit> controls, const Qubit target,
+                      const std::vector<Qubit>& controls, Qubit target,
                       std::vector<Vertex>& qubits);
-  static void addCrz(ZXDiagram& diag, const PiExpression& phase,
-                     const Qubit control, const Qubit target,
-                     std::vector<Vertex>& qubits);
+  static void addCrz(ZXDiagram& diag, const PiExpression& phase, Qubit control,
+                     Qubit target, std::vector<Vertex>& qubits);
   static void addMcrz(ZXDiagram& diag, const PiExpression& phase,
-                      std::vector<Qubit> controls, const Qubit target,
+                      std::vector<Qubit> controls, Qubit target,
                       std::vector<Vertex>& qubits);
-  static void addMcx(ZXDiagram& diag, std::vector<Qubit> controls,
-                     const Qubit target, std::vector<Vertex>& qubits);
-  static void addMcz(ZXDiagram& diag, std::vector<Qubit> controls,
-                     const Qubit target, std::vector<Vertex>& qubits);
+  static void addMcx(ZXDiagram& diag, std::vector<Qubit> controls, Qubit target,
+                     std::vector<Vertex>& qubits);
+  static void addMcz(ZXDiagram& diag, const std::vector<Qubit>& controls,
+                     Qubit target, std::vector<Vertex>& qubits);
   static op_it parseOp(ZXDiagram& diag, op_it it, op_it end,
                        std::vector<Vertex>& qubits, const qc::Permutation& p);
   static op_it parseCompoundOp(ZXDiagram& diag, op_it it, op_it end,

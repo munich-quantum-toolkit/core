@@ -376,10 +376,7 @@ void FunctionalityConstruction::addCcz(ZXDiagram& diag, const Qubit ctrl0,
   addCnot(diag, ctrl0, ctrl1, qubits);
   addZSpider(diag, ctrl0, qubits, PiExpression(PiRational(1, 4)));
   addZSpider(diag, ctrl1, qubits, PiExpression(PiRational(-1, 4)));
-  addZSpider(diag, target, qubits, PiExpression(PiRational(0, 1)),
-             EdgeType::Hadamard);
   addCnot(diag, ctrl0, ctrl1, qubits);
-  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
 }
 
 void FunctionalityConstruction::addCrx(ZXDiagram& diag,
@@ -393,11 +390,11 @@ void FunctionalityConstruction::addCrx(ZXDiagram& diag,
 
 void FunctionalityConstruction::addMcrx(ZXDiagram& diag,
                                         const PiExpression& phase,
-                                        std::vector<Qubit> controls,
+                                        const std::vector<Qubit>& controls,
                                         const Qubit target,
                                         std::vector<Vertex>& qubits) {
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-  addMcrz(diag, phase, std::move(controls), target, qubits);
+  addMcrz(diag, phase, controls, target, qubits);
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
 }
 
@@ -469,11 +466,11 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
 }
 
 void FunctionalityConstruction::addMcz(ZXDiagram& diag,
-                                       std::vector<Qubit> controls,
+                                       const std::vector<Qubit>& controls,
                                        const Qubit target,
                                        std::vector<Vertex>& qubits) {
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-  addMcx(diag, std::move(controls), target, qubits);
+  addMcx(diag, controls, target, qubits);
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
 }
 
