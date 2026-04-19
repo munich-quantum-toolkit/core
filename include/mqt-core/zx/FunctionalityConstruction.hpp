@@ -88,10 +88,10 @@ protected:
   static void addMcphase(ZXDiagram& diag, const PiExpression& phase,
                          const std::vector<Qubit>& controls, Qubit target,
                          std::vector<Vertex>& qubits);
-  static void addSwap(ZXDiagram& diag, Qubit target, Qubit target2,
+  static void addSwap(ZXDiagram& diag, Qubit target1, Qubit target2,
                       std::vector<Vertex>& qubits);
   static void addMcswap(ZXDiagram& diag, const std::vector<Qubit>& controls,
-                        Qubit target, Qubit target2,
+                        Qubit target1, Qubit target2,
                         std::vector<Vertex>& qubits);
   static void
   addRzz(ZXDiagram& diag, const PiExpression& phase, Qubit target,

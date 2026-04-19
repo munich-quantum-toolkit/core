@@ -303,10 +303,10 @@ void FunctionalityConstruction::addXXminusYY(
   addRz(diag, PiExpression(-PiRational(1, 2)), qubit1, qubits);
 }
 
-void FunctionalityConstruction::addSwap(ZXDiagram& diag, const Qubit target,
+void FunctionalityConstruction::addSwap(ZXDiagram& diag, const Qubit target1,
                                         const Qubit target2,
                                         std::vector<Vertex>& qubits) {
-  const auto c = static_cast<std::size_t>(target);
+  const auto c = static_cast<std::size_t>(target1);
   const auto t = static_cast<std::size_t>(target2);
 
   const auto s0 = qubits[t];
@@ -319,7 +319,7 @@ void FunctionalityConstruction::addSwap(ZXDiagram& diag, const Qubit target,
   const auto col = vData->col + 1;
 
   const auto t0 = diag.addVertex(target2, col);
-  const auto t1 = diag.addVertex(target, col);
+  const auto t1 = diag.addVertex(target1, col);
   diag.addEdge(s0, t1);
   diag.addEdge(s1, t0);
   qubits[t] = t0;
@@ -328,16 +328,16 @@ void FunctionalityConstruction::addSwap(ZXDiagram& diag, const Qubit target,
 
 void FunctionalityConstruction::addMcswap(ZXDiagram& diag,
                                           const std::vector<Qubit>& controls,
-                                          const Qubit target,
+                                          const Qubit target1,
                                           const Qubit target2,
                                           std::vector<Vertex>& qubits) {
 
-  std::vector mcx_controls = controls;
-  mcx_controls.emplace_back(target2);
+  std::vector mcxControls = controls;
+  mcxControls.emplace_back(target2);
 
-  addCnot(diag, target, target2, qubits);
-  addMcx(diag, mcx_controls, target, qubits);
-  addCnot(diag, target, target2, qubits);
+  addCnot(diag, target1, target2, qubits);
+  addMcx(diag, mcxControls, target1, qubits);
+  addCnot(diag, target1, target2, qubits);
 }
 
 void FunctionalityConstruction::addCcx(ZXDiagram& diag, const Qubit ctrl0,
