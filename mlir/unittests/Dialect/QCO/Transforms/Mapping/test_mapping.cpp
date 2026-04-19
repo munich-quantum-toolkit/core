@@ -8,18 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -29,13 +26,11 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 
 #include <cassert>
-#include <cstddef>
 #include <memory>
 #include <string>
-#include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -43,55 +38,26 @@ using namespace mlir::qco;
 namespace {
 struct ArchitectureParam {
   std::string name;
-  Architecture (*factory)();
+  std::shared_ptr<Architecture> (*factory)();
 };
+
+TEST(ArchitectureTest, EmptyArchitecture) {
+  const auto arch = getEmptyArchitecture();
+  EXPECT_TRUE(arch.name().empty());
+  EXPECT_EQ(arch.nqubits(), 0U);
+  EXPECT_EQ(arch.maxDegree(), 0U);
+}
 
 class MappingPassTest : public testing::Test,
                         public testing::WithParamInterface<ArchitectureParam> {
 public:
-  /**
-   * @brief Walks the IR and validates if each two-qubit op is executable on the
-   * given architecture.
-   * @returns true iff. all two-qubit gates are executable on the architecture.
-   */
-  static bool isExecutable(OwningOpRef<ModuleOp>& moduleOp,
-                           const Architecture& arch) {
-    auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
-    DenseMap<Value, std::size_t> mappings;
-    for_each(entry.getOps<qc::StaticOp>(), [&](qc::StaticOp op) {
-      mappings.try_emplace(op.getQubit(), op.getIndex());
-    });
-
-    bool executable = true;
-    std::ignore = moduleOp->walk([&](qc::UnitaryOpInterface op) {
-      if (isa<qc::BarrierOp>(op)) {
-        return WalkResult::advance();
-      }
-      if (op.getNumQubits() > 1) {
-        assert(op.getNumQubits() == 2 &&
-               "Expected only 2-qubit gates after decomposition");
-        assert(mappings.contains(op.getQubit(0)) && "Qubit 0 not in mapping");
-        assert(mappings.contains(op.getQubit(1)) && "Qubit 1 not in mapping");
-        const auto i0 = mappings[op.getQubit(0)];
-        const auto i1 = mappings[op.getQubit(1)];
-        if (!arch.areAdjacent(i0, i1)) {
-          executable = false;
-          return WalkResult::interrupt();
-        }
-      }
-      return WalkResult::advance();
-    });
-
-    return executable;
-  }
-
-  static Architecture getRigettiNovera() {
+  static std::shared_ptr<Architecture> getRigettiNovera() {
     // TODO: At some point this should be provided via QDMI.
     const static Architecture::CouplingSet COUPLING{
         {0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1}, {1, 2}, {2, 1},
         {2, 5}, {5, 2}, {3, 6}, {6, 3}, {3, 4}, {4, 3}, {4, 7}, {7, 4},
         {4, 5}, {5, 4}, {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
-    return Architecture("RigettiNovera", 9, COUPLING);
+    return std::make_shared<Architecture>("RigettiNovera", 9, COUPLING);
   }
 
 protected:
@@ -105,18 +71,14 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static void runHeuristicMapping(OwningOpRef<ModuleOp>& moduleOp) {
+  static void runHeuristicMapping(OwningOpRef<ModuleOp>& moduleOp,
+                                  std::shared_ptr<Architecture> arch,
+                                  const qco::MappingPassOptions& options) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
-    pm.addPass(qco::createMappingPass(qco::MappingPassOptions{.nlookahead = 5,
-                                                              .alpha = 1,
-                                                              .lambda = 0.85,
-                                                              .niterations = 2,
-                                                              .ntrials = 16,
-                                                              .seed = 1337}));
-    pm.addPass(createQCOToQC());
+    pm.addPass(qco::createMappingPass(std::move(arch), options));
     auto res = pm.run(*moduleOp);
-    ASSERT_TRUE(succeeded(res));
+    ASSERT_TRUE(res.succeeded());
   }
 
   std::unique_ptr<MLIRContext> context;
@@ -142,8 +104,16 @@ TEST_P(MappingPassTest, GHZ) {
   builder.dealloc(q2);
 
   auto moduleOp = builder.finalize();
-  runHeuristicMapping(moduleOp);
-  EXPECT_TRUE(isExecutable(moduleOp, arch));
+
+  const qco::MappingPassOptions options{.nlookahead = 5,
+                                        .alpha = 1,
+                                        .lambda = 0.85,
+                                        .niterations = 2,
+                                        .ntrials = 4,
+                                        .seed = 1337};
+  runHeuristicMapping(moduleOp, arch, options);
+  auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), *arch).succeeded());
 }
 
 TEST_P(MappingPassTest, Sabre) {
@@ -203,8 +173,15 @@ TEST_P(MappingPassTest, Sabre) {
   builder.dealloc(q5);
 
   auto moduleOp = builder.finalize();
-  runHeuristicMapping(moduleOp);
-  EXPECT_TRUE(isExecutable(moduleOp, arch));
+  const qco::MappingPassOptions options{.nlookahead = 1,
+                                        .alpha = 1,
+                                        .lambda = 0.85,
+                                        .niterations = 2,
+                                        .ntrials = 1,
+                                        .seed = 42};
+  runHeuristicMapping(moduleOp, arch, options);
+  auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), *arch).succeeded());
 }
 
 INSTANTIATE_TEST_SUITE_P(

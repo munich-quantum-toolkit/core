@@ -40,7 +40,7 @@ protected:
 };
 } // namespace
 
-TEST_F(DriversTest, FullWalk) {
+TEST_F(DriversTest, FullWalkStatic) {
   qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
   const auto q00 = builder.allocQubit();
@@ -70,12 +70,12 @@ TEST_F(DriversTest, FullWalk) {
   Value ex2 = nullptr;
   Value ex3 = nullptr;
 
-  qco::walkUnit(func.getBody(), [&](Operation* op, qco::Qubits& qubits) {
+  qco::walkUnit(func.getBody(), [&](Operation* op, const qco::Qubits& qubits) {
     if (op == q03.getDefiningOp()) {
-      ex0 = qubits.getProgramQubit(0);
-      ex1 = qubits.getProgramQubit(1);
-      ex2 = qubits.getProgramQubit(2);
-      ex3 = qubits.getProgramQubit(3);
+      ex0 = qubits.getQubit(0);
+      ex1 = qubits.getQubit(1);
+      ex2 = qubits.getQubit(2);
+      ex3 = qubits.getQubit(3);
       return WalkResult::interrupt();
     }
     return WalkResult::advance();

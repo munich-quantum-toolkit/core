@@ -63,7 +63,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                  Option<"niterations", "niterations", "std::size_t", "2",
                         "The number of forwards and backwards traversal to "
                         "improve the initial layout.">,
-                 Option<"ntrials", "ntrials", "std::size_t", "4",
+                 Option<"ntrials", "ntrials", "std::size_t", "1",
                         "The number of (possibly parallel) random trials of "
                         "the forwards and backwards mechanism. Must be > 0.">,
                  Option<"seed", "seed", "std::size_t", "42",

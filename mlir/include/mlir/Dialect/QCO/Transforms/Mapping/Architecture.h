@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Twine.h>
@@ -27,15 +28,15 @@ namespace mlir::qco {
  */
 class [[nodiscard]] Architecture {
 public:
-  using CouplingSet = mlir::DenseSet<std::pair<std::size_t, std::size_t>>;
-  using NeighbourVector = mlir::SmallVector<mlir::SmallVector<std::size_t, 4>>;
+  using CouplingSet = DenseSet<std::pair<std::size_t, std::size_t>>;
+  using NeighbourVector = SmallVector<SmallVector<std::size_t, 4>>;
 
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
         couplingSet_(std::move(couplingSet)), neighbours_(nqubits),
-        dist_(nqubits, mlir::SmallVector<std::size_t>(nqubits, UINT64_MAX)),
-        prev_(nqubits, mlir::SmallVector<std::size_t>(nqubits, UINT64_MAX)) {
+        dist_(nqubits, SmallVector<std::size_t>(nqubits, UINT64_MAX)),
+        prev_(nqubits, SmallVector<std::size_t>(nqubits, UINT64_MAX)) {
     floydWarshallWithPathReconstruction();
     collectNeighbours();
   }
@@ -63,8 +64,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] mlir::SmallVector<std::size_t, 4>
-  neighboursOf(std::size_t u) const;
+  [[nodiscard]] llvm::ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the
@@ -73,7 +73,10 @@ public:
   [[nodiscard]] std::size_t maxDegree() const;
 
 private:
-  using Matrix = mlir::SmallVector<mlir::SmallVector<std::size_t, 0>, 0>;
+  using Matrix = SmallVector<SmallVector<std::size_t, 0>, 0>;
+
+  Architecture() : nqubits_(0) {}
+  friend Architecture getEmptyArchitecture();
 
   /**
    * @brief Find all shortest paths in the coupling map between two qubits.
@@ -97,5 +100,10 @@ private:
   Matrix dist_;
   Matrix prev_;
 };
+
+/**
+ * @brief Return an empty architecture with no qubits and no coupling.
+ */
+[[nodiscard]] Architecture getEmptyArchitecture();
 
 } // namespace mlir::qco
