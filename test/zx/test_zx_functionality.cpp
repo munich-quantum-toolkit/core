@@ -345,6 +345,7 @@ TEST_F(ZXFunctionalityTest, MCRZ1) {
   checkEquivalence(qc, qcPrime, {0, 1});
 }
 
+
 TEST_F(ZXFunctionalityTest, UnsupportedControl) {
 
   qc = qc::QuantumComputation(2);
@@ -364,6 +365,27 @@ TEST_F(ZXFunctionalityTest, UnsupportedControl2) {
                    FunctionalityConstruction::buildFunctionality(&qc),
                ZXException);
 }
+
+TEST_F(ZXFunctionalityTest, UnsupportedControl3) {
+
+  qc = qc::QuantumComputation(4);
+  qc.mcy({1, 2, 3}, 0);
+  EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
+  EXPECT_THROW(const ZXDiagram diag =
+                   FunctionalityConstruction::buildFunctionality(&qc),
+               ZXException);
+}
+
+TEST_F(ZXFunctionalityTest, UnsupportedTwoTargetControl) {
+
+  qc = qc::QuantumComputation(4);
+  qc.mcdcx({2, 3}, 0, 1);
+  EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
+  EXPECT_THROW(const ZXDiagram diag =
+                   FunctionalityConstruction::buildFunctionality(&qc),
+               ZXException);
+}
+
 
 TEST_F(ZXFunctionalityTest, InitialLayout) {
   qc = qc::QuantumComputation(2);
