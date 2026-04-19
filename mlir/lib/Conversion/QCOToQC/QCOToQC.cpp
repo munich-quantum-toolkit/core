@@ -18,10 +18,13 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -62,6 +65,13 @@ enum class AllocationMode : std::uint8_t {
  * catch cases of mixed allocation modes being used, which is not supported.
  */
 struct LoweringState {
+  /// Per-region map from from QC registers to its already extracted indices
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, SetVector<Value>>>
+      extractedIndices;
+  /// Per-region map from a register to its QC qubit indices and the qubit
+  /// values
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::DenseMap<Value, Value>>>
+      qubitValues;
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
 
@@ -103,6 +113,37 @@ private:
   LoweringState* state_;
 };
 } // namespace
+
+/**
+ * @brief Moves the operations from one region into another.
+ *
+ * @details Moves the operations from the source region into the target region.
+ * The target region replaces the uses of the old block arguments with the
+ * @p replacementValues and erases the unused block arguments.
+ *
+ * @param sourceRegion Source region where the operations are moved from
+ * @param targetRegion Target region where the operations are moved to
+ * @param offset Offset to the arguments that are dropped
+ * @param numArgs Number of arguments that are dropped
+ * @param replacementValues Values to replace the uses of the arguments
+ * @param rewriter PatternRewriter of the current conversion pass
+ */
+static void inlineRegion(Region& sourceRegion, Region& targetRegion,
+                         unsigned int offset, unsigned int numArgs,
+                         ValueRange replacementValues,
+                         ConversionPatternRewriter& rewriter) {
+  assert(replacementValues.size() == numArgs &&
+         "replacementValues size must match numArgs");
+
+  rewriter.inlineRegionBefore(sourceRegion, targetRegion, targetRegion.end());
+  auto& block = targetRegion.front();
+
+  for (auto [arg, replacementVal] : llvm::zip_equal(
+           block.getArguments().drop_front(offset), replacementValues)) {
+    arg.replaceAllUsesWith(replacementVal);
+  }
+  block.eraseArguments(offset, numArgs);
+}
 
 #define GEN_PASS_DEF_QCOTOQC
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
@@ -195,15 +236,33 @@ struct ConvertQTensorAllocOp final
  * %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
  * ```
  */
-struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQTensorExtractOp final
+    : StatefulOpConversionPattern<qtensor::ExtractOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto load = memref::LoadOp::create(rewriter, op.getLoc(),
-                                       adaptor.getTensor(), adaptor.getIndex());
-    rewriter.replaceOp(op, {adaptor.getTensor(), load.getResult()});
+    auto& state = getState();
+    auto* region = op->getParentRegion();
+    auto memref = adaptor.getTensor();
+    auto index = adaptor.getIndex();
+
+    // Reuse the already existing extracted qubit if it exists
+    auto& extractedIndices = state.extractedIndices[region][memref];
+    auto& qubitValues = state.qubitValues[region][memref];
+    if (extractedIndices.contains(index)) {
+      rewriter.replaceOp(op, {memref, qubitValues[index]});
+      return success();
+    }
+
+    auto load = memref::LoadOp::create(rewriter, op.getLoc(), memref, index)
+                    .getResult();
+    // Store the extracted qubit and index
+    extractedIndices.insert(index);
+    qubitValues[index] = load;
+
+    rewriter.replaceOp(op, {memref, load});
     return success();
   }
 };
@@ -574,7 +633,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
  * ```mlir
  * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
  *   %a_res = qco.x %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res
+ *   qco.yield %a_res : !qco.qubit
  * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
  * ```
  * is converted to
@@ -596,34 +655,10 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     // Create qc.ctrl operation
     auto qcOp = qc::CtrlOp::create(rewriter, op.getLoc(), qcControls);
 
-    // Clone body region from QCO to QC
-    auto& dstRegion = qcOp.getRegion();
-    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
-
-    auto& entryBlock = dstRegion.front();
-    const auto numArgs = entryBlock.getNumArguments();
-    if (adaptor.getTargetsIn().size() != numArgs) {
-      return op.emitOpError() << "qco.ctrl: entry block args (" << numArgs
-                              << ") must match number of target operands ("
-                              << adaptor.getTargetsIn().size() << ")";
-    }
-
-    // Remove all block arguments in the cloned region
-    rewriter.modifyOpInPlace(qcOp, [&] {
-      // 1. Replace uses (Must be done BEFORE erasing)
-      // We iterate 0..N using indices since the block args are still stable
-      // here.
-      for (auto i = 0UL; i < numArgs; ++i) {
-        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getTargetsIn()[i]);
-      }
-
-      // 2. Erase all block arguments
-      // Now that they have no uses, we can safely wipe them.
-      // We use a bulk erase for efficiency (start index 0, count N).
-      if (numArgs > 0) {
-        entryBlock.eraseArguments(0, numArgs);
-      }
-    });
+    // Inline the region and replace the blockarguments
+    inlineRegion(op.getRegion(), qcOp.getRegion(), 0,
+                 adaptor.getTargetsIn().size(), adaptor.getTargetsIn(),
+                 rewriter);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());
@@ -639,7 +674,7 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
  * ```mlir
  * %q0_out = qco.inv (%a_in = %q0_in) {
  *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res
+ *   qco.yield %a_res : !qco.qubit
  * } : {!qco.qubit} -> {!qco.qubit}
  * ```
  * is converted to
@@ -658,34 +693,9 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
     // Create qc.inv operation
     auto qcOp = qc::InvOp::create(rewriter, op.getLoc());
 
-    // Clone body region from QCO to QC
-    auto& dstRegion = qcOp.getRegion();
-    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
-
-    auto& entryBlock = dstRegion.front();
-    const auto numArgs = entryBlock.getNumArguments();
-    if (adaptor.getQubitsIn().size() != numArgs) {
-      return op.emitOpError() << "qco.inv: entry block args (" << numArgs
-                              << ") must match number of target operands ("
-                              << adaptor.getQubitsIn().size() << ")";
-    }
-
-    // Remove all block arguments in the cloned region
-    rewriter.modifyOpInPlace(qcOp, [&] {
-      // 1. Replace uses (Must be done BEFORE erasing)
-      // We iterate 0..N using indices since the block args are still stable
-      // here.
-      for (auto i = 0UL; i < numArgs; ++i) {
-        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getQubitsIn()[i]);
-      }
-
-      // 2. Erase all block arguments
-      // Now that they have no uses, we can safely wipe them.
-      // We use a bulk erase for efficiency (start index 0, count N).
-      if (numArgs > 0) {
-        entryBlock.eraseArguments(0, numArgs);
-      }
-    });
+    // Inline the region and replace the blockarguments
+    inlineRegion(op.getRegion(), qcOp.getRegion(), 0,
+                 adaptor.getOperands().size(), adaptor.getQubitsIn(), rewriter);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());
@@ -695,11 +705,12 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
 };
 
 /**
- * @brief Converts qco.yield to qc.yield
+ * @brief Converts qco.yield to qc.yield or to scf.yield if the parent is a
+ * scf::IfOp
  *
  * @par Example:
  * ```mlir
- * qco.yield %targets
+ * qco.yield %targets : !qco.qubit
  * ```
  * is converted to
  * ```mlir
@@ -712,7 +723,210 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   LogicalResult
   matchAndRewrite(qco::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
+    if (llvm::isa<scf::IfOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    } else {
+      rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
+    }
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.for with value semantics to scf.for with memory
+ * semantics for qubit values. This currently assumes only qubit types as return
+ * values.
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
+ * %qtensor) -> (tensor<3x!qco.qubit) {
+ *   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+ *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+ *   %insert = qtensor.insert %q1 into %t1[%iv] : tensor<3x!qco.qubit>
+ *   scf.yield %t1 : tensor<3x!qco.qubit>
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.for %iv = %lb to %ub step %step {
+ *   %q0 = qc.load %memref[%iv] : !memref<3x!qc.qubit>
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ */
+struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto newFor = scf::ForOp::create(
+        rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
+        adaptor.getStep(), ValueRange{});
+    // Erase default block
+    rewriter.eraseBlock(&newFor.getRegion().front());
+
+    // Inline the region and replace the blockarguments
+    inlineRegion(op.getRegion(), newFor.getRegion(), 1,
+                 adaptor.getInitArgs().size(), adaptor.getInitArgs(), rewriter);
+
+    rewriter.replaceOp(op, adaptor.getInitArgs());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.while with value semantics to scf.while with memory
+ * semantics for qubit values. This currently assumes only qubit types as return
+ * values.
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+ *   %q1, %cond = qco.measure %arg0 : !qco.qubit
+ *   scf.condition(%cond) %q1 : !qco.qubit
+ * } do {
+ * ^bb0(%arg0: !qco.qubit):
+ *   %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q2 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.while : () -> () {
+ *   %cond = qc.measure %q0 : !qc.qubit -> i1
+ *   scf.condition(%cond)
+ * } do {
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ */
+struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto newWhileOp =
+        scf::WhileOp::create(rewriter, op->getLoc(), TypeRange{}, ValueRange{});
+
+    // Inline the regions and replace the blockarguments
+    inlineRegion(op.getBefore(), newWhileOp.getBefore(), 0,
+                 adaptor.getInits().size(), adaptor.getInits(), rewriter);
+    inlineRegion(op.getAfter(), newWhileOp.getAfter(), 0,
+                 adaptor.getInits().size(), adaptor.getInits(), rewriter);
+
+    rewriter.replaceOp(op, adaptor.getInits());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qco.if to scf.if
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = qco.if %cond qubits(%arg0 = %q0) -> (!qco.qubit) {
+ *   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q1 : !qco.qubit
+ * } else {
+ *   qco.yield %arg0 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.if %cond {
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * }
+ * ```
+ */
+struct ConvertQCOIfOp final : OpConversionPattern<qco::IfOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::IfOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create the new if operation
+    auto newIf = scf::IfOp::create(rewriter, op.getLoc(), TypeRange{},
+                                   op.getCondition(), false);
+    auto& newThenRegion = newIf.getThenRegion();
+    auto& oldElseRegion = op.getElseRegion();
+    // Erase the default empty then block
+    rewriter.eraseBlock(&newThenRegion.front());
+
+    // Inline the region and replace the blockarguments
+    inlineRegion(op.getThenRegion(), newThenRegion, 0,
+                 adaptor.getOperands().size() - 1,
+                 adaptor.getOperands().drop_front(1), rewriter);
+
+    // Inline the else block if it has more than just the yield operation
+    if (oldElseRegion.front().getOperations().size() > 1) {
+      inlineRegion(oldElseRegion, newIf.getElseRegion(), 0,
+                   adaptor.getOperands().size() - 1,
+                   adaptor.getOperands().drop_front(1), rewriter);
+    }
+
+    // Replace the qco results with the input qc values except the condition
+    rewriter.replaceOp(op, adaptor.getOperands().drop_front(1));
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.yield with value semantics to scf.yield with memory
+ * semantics for qubit values. This currently assumes no mixed types as yielded
+ * values.
+ *
+ * @par Example:
+ * ```mlir
+ * scf.yield %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.yield
+ * ```
+ */
+struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.condition with value semantics to scf.condition with
+ * memory semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * scf.condition(%cond) %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.condition(%cond)
+ * ```
+ */
+struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+                                                  ValueRange{});
+
     return success();
   }
 };
@@ -763,10 +977,27 @@ protected:
     target.addIllegalDialect<QCODialect, qtensor::QTensorDialect>();
     target.addLegalDialect<QCDialect, memref::MemRefDialect>();
 
+    target.addDynamicallyLegalDialect<scf::SCFDialect>([](Operation* op) {
+      // Some types are not converted yet so QC and QCO types have to be checked
+      auto isQubitType = [](Type t) {
+        return TypeSwitch<Type, bool>(t)
+            .Case<qc::QubitType, qco::QubitType>([](auto) { return true; })
+            .Case<MemRefType>([](MemRefType t) {
+              return llvm::isa<qc::QubitType>(t.getElementType());
+            })
+            .Case<RankedTensorType>([](RankedTensorType t) {
+              return llvm::isa<qco::QubitType>(t.getElementType());
+            })
+            .Default([](auto) { return false; });
+      };
+
+      return !llvm::any_of(op->getOperandTypes(), isQubitType);
+    });
+
     // Register operation conversion patterns that do not need state tracking
     patterns
-        .add<ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-             ConvertQTensorDeallocOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
+        .add<ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp,
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
@@ -777,11 +1008,14 @@ protected:
 #undef MQT_ADD_QCO_TO_QC_GATE
 
     patterns.add<ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
-                 ConvertQCOYieldOp>(typeConverter, context);
+                 ConvertQCOYieldOp, ConvertQCOIfOp, ConvertQCOSCFWhileOp,
+                 ConvertQCOSCFConditionOp, ConvertQCOSCFYieldOp,
+                 ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
-                 ConvertQCOSinkOp>(typeConverter, context, &state);
+    patterns.add<ConvertQTensorExtractOp, ConvertQTensorAllocOp,
+                 ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
+        typeConverter, context, &state);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes

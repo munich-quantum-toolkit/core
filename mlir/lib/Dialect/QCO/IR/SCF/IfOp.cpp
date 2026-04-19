@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -185,7 +184,7 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
  * Allow the true region of an if to assume the condition is true
  * and vice versa. For example:
  *
- *   qco.if %cmp qubits(%arg0 = %q0) {
+ *   qco.if %cmp qubits(%arg0 = %q0) -> (!qco.qubit) {
  *      print(true)
  *      ...
  *   } else (%arg = %q0) {
@@ -256,11 +255,6 @@ LogicalResult IfOp::verify() {
   const auto& outputQubits = getResults();
   const auto numOutputQubits = outputQubits.size();
 
-  for (auto type : inputQubits.getTypes()) {
-    if (!llvm::isa<QubitType>(type)) {
-      return emitOpError("Inputs must be qubit type!");
-    }
-  }
   const auto numThenArgs = thenBlock()->getNumArguments();
   const auto numElseArgs = elseBlock()->getNumArguments();
 
@@ -271,14 +265,6 @@ LogicalResult IfOp::verify() {
   if (numThenArgs != numInputQubits) {
     return emitOpError("Both regions must have the same number of qubits as "
                        "arguments as the number of input qubits");
-  }
-  if (numInputQubits != thenYield()->getNumOperands()) {
-    return emitOpError("Then region yield must return the same number of "
-                       "qubits as the number of input qubits.");
-  }
-  if (numInputQubits != elseYield()->getNumOperands()) {
-    return emitOpError("Else region yield must return the same number of "
-                       "qubits as the number of input qubits.");
   }
   if (numInputQubits != numOutputQubits) {
     return emitOpError("Operation must return the same number of qubits as the "

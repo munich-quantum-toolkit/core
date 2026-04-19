@@ -862,7 +862,7 @@ struct ConvertQCOBarrierOpToJeff final
  * ```mlir
  * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
  *   %a_res = qco.x %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res
+ *   qco.yield %a_res : !qco.qubit
  * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
  * ```
  * is converted to
@@ -912,7 +912,7 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
  * ```mlir
  * %q_out = qco.inv (%a_in = %q_in) {
  *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res
+ *   qco.yield %a_res : !qco.qubit
  * } : {!qco.qubit} -> {!qco.qubit}
  * ```
  * is converted to

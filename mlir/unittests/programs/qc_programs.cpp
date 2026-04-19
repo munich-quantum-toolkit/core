@@ -1280,4 +1280,111 @@ void invCtrlSandwich(QCProgramBuilder& b) {
   });
 }
 
+void simpleIf(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0]);
+  b.scfIf(cond, [&] { b.x(q[0]); });
+}
+
+void ifElse(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0]);
+  b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
+}
+
+void ifTwoQubits(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  auto cond = b.measure(q[0]);
+  b.scfIf(cond, [&] {
+    b.x(q[0]);
+    b.x(q[1]);
+  });
+}
+
+void nestedIfOpForLoop(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  b.h(q0);
+  auto cond = b.measure(q0);
+  b.scfIf(cond, [&] {
+    b.scfFor(0, 3, 1, [&](Value iv) {
+      auto q1 = b.memrefLoad(reg.value, iv);
+      b.h(q1);
+    });
+  });
+}
+
+void simpleWhileReset(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+  b.scfWhile(
+      [&] {
+        auto measureResult = b.measure(q);
+        b.scfCondition(measureResult);
+      },
+      [&] { b.h(q); });
+}
+
+void simpleDoWhileReset(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.scfWhile(
+      [&] {
+        b.h(q);
+        auto measureResult = b.measure(q);
+        b.scfCondition(measureResult);
+      },
+      [&] {});
+}
+
+void simpleForLoop(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.memrefLoad(reg.value, iv);
+    b.h(q);
+  });
+};
+
+void nestedForLoopIfOp(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto qCond = b.allocQubit();
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    b.h(qCond);
+    auto cond = b.measure(qCond);
+    b.scfIf(cond, [&] {
+      auto q = b.memrefLoad(reg.value, iv);
+      b.h(q);
+    });
+  });
+}
+
+void nestedForLoopWhileOp(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.memrefLoad(reg.value, iv);
+    b.h(q);
+  });
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.memrefLoad(reg.value, iv);
+    b.scfWhile(
+        [&] {
+          auto measureResult = b.measure(q);
+          b.scfCondition(measureResult);
+        },
+        [&] { b.h(q); });
+  });
+}
+
+void nestedForLoopCtrlOp(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto control = b.allocQubit();
+  b.h(control);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q0 = b.memrefLoad(reg.value, iv);
+    b.ctrl(control, [&] { b.h(q0); });
+  });
+}
+
 } // namespace mlir::qc
