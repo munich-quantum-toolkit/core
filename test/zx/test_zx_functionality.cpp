@@ -522,7 +522,7 @@ TEST_F(ZXFunctionalityTest, MCRzz) {
 TEST_F(ZXFunctionalityTest, MCRxx) {
   qc = qc::QuantumComputation(4);
   qc.mcrxx(qc::PI_2 / 3, {0, 1}, 2, 3);
-  qc.mcrzx(2 * qc::PI, {0, 1}, 2, 3);
+  qc.mcrxx(2 * qc::PI, {0, 1}, 2, 3);
 
   auto qcPrime = qc::QuantumComputation(4);
   qcPrime.mcrxx(qc::PI_2 / 3, {0, 1}, 2, 3);
