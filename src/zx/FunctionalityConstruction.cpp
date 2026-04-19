@@ -431,9 +431,6 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
                                        const Qubit target,
                                        std::vector<Vertex>& qubits) {
   switch (controls.size()) {
-  case 0:
-    addXSpider(diag, target, qubits, PiExpression(PiRational(1, 1)));
-    return;
   case 1:
     addCnot(diag, controls.front(), target, qubits);
     return;
