@@ -238,11 +238,14 @@ void FunctionalityConstruction::addMcrzz(
     const std::vector<Qubit>& controls, const Qubit target, const Qubit target2,
     std::vector<Vertex>& qubits,
     const std::optional<double>& unconvertedPhase) {
-  addRzz(diag, phase / 2, target, target2, qubits, unconvertedPhase);
+  addRzz(diag, phase / 2, target, target2, qubits,
+         unconvertedPhase.has_value()
+             ? std::optional<double>(unconvertedPhase.value() / 2)
+             : std::nullopt);
   addMcx(diag, controls, target, qubits);
   addRzz(diag, -phase / 2, target, target2, qubits,
          unconvertedPhase.has_value()
-             ? std::optional<double>(-unconvertedPhase.value())
+             ? std::optional<double>(-unconvertedPhase.value() / 2)
              : std::nullopt);
   addMcx(diag, controls, target, qubits);
 }
@@ -400,13 +403,13 @@ void FunctionalityConstruction::addMcrx(ZXDiagram& diag,
 
 void FunctionalityConstruction::addCrz(ZXDiagram& diag,
                                        const PiExpression& phase,
-                                       const Qubit q0, const Qubit q1,
+                                       const Qubit control, const Qubit target,
                                        std::vector<Vertex>& qubits) {
   // CRZ decomposition uses reversed CNOT direction
-  addZSpider(diag, q1, qubits, phase / 2);
-  addCnot(diag, q1, q0, qubits);
-  addZSpider(diag, q0, qubits, -phase / 2);
-  addCnot(diag, q1, q0, qubits);
+  addZSpider(diag, target, qubits, phase / 2);
+  addCnot(diag, target, control, qubits);
+  addZSpider(diag, control, qubits, -phase / 2);
+  addCnot(diag, target, control, qubits);
 }
 
 void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
@@ -775,8 +778,9 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       addMcrx(diag, parseParam(op.get(), 0), {ctrl0, ctrl1}, target, qubits);
       break;
     default:
-      throw ZXException("Unsupported Multi-control operation: " +
-                        qc::toString(op->getType()));
+      throw ZXException("Unsupported multi-control operation (" +
+                        std::to_string(op->getNcontrols()) +
+                        " ctrls): " + qc::toString(op->getType()));
     }
   } else if (op->getNtargets() == 1) {
     const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
@@ -810,9 +814,9 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       addMcrx(diag, parseParam(op.get(), 0), controls, target, qubits);
       break;
     default:
-      throw ZXException("Unsupported Multi-control operation (" +
-                        std::to_string(op->getNcontrols()) + " ctrls)" +
-                        qc::toString(op->getType()));
+      throw ZXException("Unsupported multi-control operation (" +
+                        std::to_string(op->getNcontrols()) +
+                        " ctrls): " + qc::toString(op->getType()));
     }
   } else if (op->getNtargets() == 2) {
     // at this point, op must have getNtargets() == 2
@@ -865,14 +869,14 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       break;
     }
     default:
-      throw ZXException("Unsupported Multi-control operation (" +
-                        std::to_string(op->getNcontrols()) + " ctrls)" +
-                        qc::toString(op->getType()));
+      throw ZXException("Unsupported multi-control operation (" +
+                        std::to_string(op->getNcontrols()) +
+                        " ctrls): " + qc::toString(op->getType()));
     }
   } else {
-    throw ZXException("Unsupported Multi-control operation (" +
-                      std::to_string(op->getNcontrols()) + " ctrls)" +
-                      qc::toString(op->getType()));
+    throw ZXException("Unsupported multi-control operation (" +
+                      std::to_string(op->getNcontrols()) +
+                      " ctrls): " + qc::toString(op->getType()));
   }
   return it + 1;
 }
