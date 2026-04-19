@@ -1,6 +1,7 @@
 # The MQT Compiler Collection
 
-The MQT Compiler Collection (`mqt-cc`) is a blueprint for a future-proof quantum-classical compilation framework built on the Multi-Level Intermediate Representation (MLIR).
+The MQT Compiler Collection (`mqt-cc`) is a blueprint for a future-proof quantum-classical compilation framework built
+on the Multi-Level Intermediate Representation (MLIR).
 For an overview, see {cite:p}`MQTCompilerCollection2026`.
 
 This page gives a technical introduction.
@@ -12,7 +13,8 @@ We define multiple dialects, each with its dedicated purpose:
 - The {doc}`QCO dialect <QCO>` uses value semantics and is mainly designed for running optimizations.
 - The {doc}`QTensor dialect <QTensor>` adds support for one-dimensional tensors of qubits with linear typing and is used in the QCO dialect to represent collections of qubits such as registers.
 
-These dialects define various canonicalization and transformation passes that enable the compilation of quantum programs to native quantum hardware.
+These dialects define various canonicalization and transformation passes that enable the compilation of quantum programs
+to native quantum hardware.
 For interoperability, we provide {doc}`conversions <Conversions>` between dialects.
 
 ```{toctree}
