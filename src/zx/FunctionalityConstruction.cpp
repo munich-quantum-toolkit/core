@@ -238,9 +238,9 @@ void FunctionalityConstruction::addMcrzz(
     const std::vector<Qubit>& controls, const Qubit target, const Qubit target2,
     std::vector<Vertex>& qubits,
     const std::optional<double>& unconvertedPhase) {
-  addRzz(diag, phase, target, target2, qubits, unconvertedPhase);
+  addRzz(diag, phase / 2, target, target2, qubits, unconvertedPhase);
   addMcx(diag, controls, target, qubits);
-  addRzz(diag, -phase, target, target2, qubits,
+  addRzz(diag, -phase / 2, target, target2, qubits,
          unconvertedPhase.has_value()
              ? std::optional<double>(-unconvertedPhase.value())
              : std::nullopt);
