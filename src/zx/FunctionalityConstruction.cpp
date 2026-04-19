@@ -403,13 +403,13 @@ void FunctionalityConstruction::addMcrx(ZXDiagram& diag,
 
 void FunctionalityConstruction::addCrz(ZXDiagram& diag,
                                        const PiExpression& phase,
-                                       const Qubit control, const Qubit target,
+                                       const Qubit qubit0, const Qubit qubit1,
                                        std::vector<Vertex>& qubits) {
   // CRZ decomposition uses reversed CNOT direction
-  addZSpider(diag, target, qubits, phase / 2);
-  addCnot(diag, target, control, qubits);
-  addZSpider(diag, control, qubits, -phase / 2);
-  addCnot(diag, target, control, qubits);
+  addZSpider(diag, qubit1, qubits, phase / 2);
+  addCnot(diag, qubit1, qubit0, qubits);
+  addZSpider(diag, qubit0, qubits, -phase / 2);
+  addCnot(diag, qubit1, qubit0, qubits);
 }
 
 void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
