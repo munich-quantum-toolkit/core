@@ -18,6 +18,7 @@ For interoperability, we provide {doc}`conversions <Conversions>` between dialec
 ```{toctree}
 :maxdepth: 2
 
+GettingStarted
 QC
 QCO
 QTensor
