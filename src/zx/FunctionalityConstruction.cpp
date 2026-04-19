@@ -598,27 +598,21 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
     case qc::OpType::RXX: {
       const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
       const auto& phase = parseParam(op.get(), 0);
-      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
       if (phase.isConstant()) {
         addRxx(diag, phase, target, target2, qubits, op->getParameter().at(0));
       } else {
         addRxx(diag, phase, target, target2, qubits);
       }
-      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
       break;
     }
     case qc::OpType::RZX: {
       const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
       const auto& phase = parseParam(op.get(), 0);
-      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
       if (phase.isConstant()) {
         addRzx(diag, phase, target, target2, qubits, op->getParameter().at(0));
       } else {
         addRzx(diag, phase, target, target2, qubits);
       }
-      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
       break;
     }
     case qc::OpType::RYY: {
