@@ -345,7 +345,6 @@ TEST_F(ZXFunctionalityTest, MCRZ1) {
   checkEquivalence(qc, qcPrime, {0, 1});
 }
 
-
 TEST_F(ZXFunctionalityTest, UnsupportedControl) {
 
   qc = qc::QuantumComputation(2);
@@ -385,7 +384,6 @@ TEST_F(ZXFunctionalityTest, UnsupportedTwoTargetControl) {
                    FunctionalityConstruction::buildFunctionality(&qc),
                ZXException);
 }
-
 
 TEST_F(ZXFunctionalityTest, InitialLayout) {
   qc = qc::QuantumComputation(2);
