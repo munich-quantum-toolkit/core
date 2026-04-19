@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407]) ([**@J4MMlE**])
 - ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637]) ([**@denialhaag**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588]) ([**@MatthiasReumann**])
@@ -395,6 +396,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1413]: https://github.com/munich-quantum-toolkit/core/pull/1413
 [#1412]: https://github.com/munich-quantum-toolkit/core/pull/1412
 [#1411]: https://github.com/munich-quantum-toolkit/core/pull/1411
+[#1407]: https://github.com/munich-quantum-toolkit/core/pull/1407
 [#1406]: https://github.com/munich-quantum-toolkit/core/pull/1406
 [#1403]: https://github.com/munich-quantum-toolkit/core/pull/1403
 [#1402]: https://github.com/munich-quantum-toolkit/core/pull/1402
@@ -551,6 +553,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@lirem101**]: https://github.com/lirem101
 [**@Ectras**]: https://github.com/Ectras
 [**@simon1hofmann**]: https://github.com/simon1hofmann
+[**@J4MMlE**]: https://github.com/J4MMlE
 
 <!-- General links -->
 

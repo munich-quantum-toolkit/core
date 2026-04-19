@@ -71,6 +71,11 @@ static cl::opt<bool>
                           cl::desc("Print IR after each compiler stage"),
                           cl::init(false));
 
+static cl::opt<bool> disableMergeSingleQubitRotationGates(
+    "disable-merge-single-qubit-rotation-gates",
+    cl::desc("Disable quaternion-based single-qubit rotation gate merging"),
+    cl::init(false));
+
 /**
  * @brief Load and parse a .qasm file
  */
@@ -165,6 +170,8 @@ int main(int argc, char** argv) {
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;
   config.printIRAfterAllStages = printIRAfterAllStages;
+  config.disableMergeSingleQubitRotationGates =
+      disableMergeSingleQubitRotationGates;
 
   // Run the compilation pipeline
   CompilationRecord record;
