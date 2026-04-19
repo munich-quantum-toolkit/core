@@ -489,9 +489,9 @@ TEST_F(ZXFunctionalityTest, CSWAP) {
   qc.mcswap({0}, 1, 2);
 
   auto qcPrime = qc::QuantumComputation(3);
-  qcPrime.mcx({0, 1}, 2);
+  qcPrime.cx(1, 2);
   qcPrime.mcx({0, 2}, 1);
-  qcPrime.mcx({0, 1}, 2);
+  qcPrime.cx(1, 2);
 
   checkEquivalence(qc, qcPrime, {0, 1, 2});
 }
@@ -501,9 +501,9 @@ TEST_F(ZXFunctionalityTest, MCSWAP) {
   qc.mcswap({0, 1}, 2, 3);
 
   auto qcPrime = qc::QuantumComputation(4);
-  qcPrime.mcx({0, 1, 2}, 3);
+  qcPrime.cx(2, 3);
   qcPrime.mcx({0, 1, 3}, 2);
-  qcPrime.mcx({0, 1, 2}, 3);
+  qcPrime.cx(2, 3);
 
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }

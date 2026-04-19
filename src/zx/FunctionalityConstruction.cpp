@@ -331,15 +331,12 @@ void FunctionalityConstruction::addMcswap(ZXDiagram& diag,
                                           const Qubit target,
                                           const Qubit target2,
                                           std::vector<Vertex>& qubits) {
-  std::vector controls1 = controls;
-  std::vector controls2 = controls;
-
-  controls1.emplace_back(target);
-  controls2.emplace_back(target2);
-
-  addMcx(diag, controls1, target2, qubits);
-  addMcx(diag, controls2, target, qubits);
-  addMcx(diag, controls1, target2, qubits);
+  
+  std::vector controls = controls;
+  controls.emplace_back(target2);
+  addCnot(diag, target, target2, qubits);
+  addMcx(diag, controls, target, qubits);
+  addCnot(diag, target, target2, qubits);
 }
 
 void FunctionalityConstruction::addCcx(ZXDiagram& diag, const Qubit ctrl0,
