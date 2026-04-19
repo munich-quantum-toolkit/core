@@ -142,6 +142,17 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::allocSinkPair)}));
 /// @}
 
+/// \name QCToQCO/Modifiers/PowOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCPowOpTest, QCToQCOTest,
+    testing::Values(
+        // pow(1/3){SX} inside ctrl: fold would emit gphase+rx (two ops,
+        // invalid in ctrl body) → pow survives and hits ConvertQCPowOp
+        QCToQCOTestCase{"CtrlPowSx", MQT_NAMED_BUILDER(qc::ctrlPowSx),
+                        MQT_NAMED_BUILDER(qco::ctrlPowSx)}));
+/// @}
+
 /// \name QCToQCO/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

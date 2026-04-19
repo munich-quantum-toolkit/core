@@ -953,6 +953,58 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
 };
 
 /**
+ * @brief Converts qc.pow to qco.pow
+ *
+ * @par Example:
+ * ```mlir
+ * qc.pow(2.000000e+00) {
+ *   qc.s %q0 : !qc.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out = qco.pow (2.000000e+00) (%a0_in = %q0_in) {
+ *   %a0_res = qco.s %a0_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %a0_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ */
+struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::PowOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    const auto numTargets = op.getNumTargets();
+    const auto qcTargets = op.getTargets();
+    auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
+
+    // Create qco.pow with exponent
+    const double exponent = op.getExponentValue();
+    auto qcoOp =
+        qco::PowOp::create(rewriter, op.getLoc(), qcoTargets, exponent);
+
+    assignMappedQubits(state, operation, qcTargets, qcoOp.getQubitsOut());
+
+    // Clone body region from QC to QCO
+    auto& dstRegion = qcoOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+
+    // Create block arguments for target qubits and seed the nested frame.
+    auto& entryBlock = dstRegion.front();
+    assert(entryBlock.getNumArguments() == 0 &&
+           "QC pow region unexpectedly has entry block arguments");
+    pushModifierFrame(state, qcTargets,
+                      addModifierAliases(qcoOp, numTargets, rewriter));
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
  * @brief Converts qc.yield to qco.yield
  *
  * @par Example:
@@ -1032,7 +1084,7 @@ protected:
         .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
              ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
              ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCBarrierOp,
-             ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
+             ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp>(
             typeConverter, context, &state);
 
     // Not part of the central gate table (no Jeff/QIR lowering).

@@ -1009,4 +1009,53 @@ def InvOp : QCOp<"inv",
   let hasVerifier = 1;
 }
 
+def PowOp : QCOp<"pow",
+                 traits = [UnitaryOpInterface,
+                           SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                           RecursiveMemoryEffects]> {
+  let summary = "Apply a gate power modifier";
+  let description = [{
+          A modifier operation that raises the unitary operation defined in its
+          body region to a given power (exponent can be integer or fractional).
+
+          - r > 0: apply the gate raised to the r-th power.
+          - r = 0: identity (no-op).
+          - r < 0: equivalent to inv @ pow(-r) @ g.
+
+          Example:
+          ```mlir
+          qc.pow(2.000000e+00) {
+            qc.s %q0 : !qc.qubit
+          }
+          ```
+      }];
+
+  let arguments = (ins F64Attr:$exponent);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = "`(` $exponent `)` $region attr-dict";
+
+  let extraClassDeclaration = [{
+          [[nodiscard]] UnitaryOpInterface getBodyUnitary();
+          size_t getNumQubits() { return getBodyUnitary().getNumQubits(); }
+          size_t getNumTargets() { return getBodyUnitary().getNumTargets(); }
+          size_t getNumControls() { return getBodyUnitary().getNumControls(); }
+          Value getQubit(size_t i) { return getBodyUnitary().getQubit(i); }
+          Value getTarget(size_t i) { return getBodyUnitary().getTarget(i); }
+          ValueRange getTargets() { return getBodyUnitary().getTargets(); }
+          Value getControl(size_t i) { return getBodyUnitary().getControl(i); }
+          ValueRange getControls() { return getBodyUnitary().getControls(); }
+          size_t getNumParams() { return getBodyUnitary().getNumParams(); }
+          Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+          ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+          double getExponentValue() { return getExponentAttr().getValueAsDouble(); }
+          static StringRef getBaseSymbol() { return "pow"; }
+      }];
+
+  let builders = [OpBuilder<(ins "double":$exponent,
+      "const llvm::function_ref<void()>&":$bodyBuilder)>];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
 #endif // MLIR_DIALECT_QC_IR_QCOPS_TD
