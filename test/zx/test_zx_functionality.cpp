@@ -32,16 +32,14 @@
 #include <vector>
 
 namespace zx {
+
+namespace {
+
 class ZXFunctionalityTest : public ::testing::Test {
 public:
   qc::QuantumComputation qc;
 };
 
-<<<<<<< HEAD
-||||||| parent of 2497aee2 (✨ Add support for multi-controlled gates to ZX package (#1380))
-} // namespace
-
-=======
 void checkEquivalence(const qc::QuantumComputation& qc1,
                       const qc::QuantumComputation& qc2,
                       const std::vector<qc::Qubit>& qubits) {
@@ -63,7 +61,6 @@ void checkEquivalence(const qc::QuantumComputation& qc1,
 
 } // namespace
 
->>>>>>> 2497aee2 (✨ Add support for multi-controlled gates to ZX package (#1380))
 TEST_F(ZXFunctionalityTest, parseQasm) {
   const std::string testfile = "OPENQASM 2.0;"
                                "include \"qelib1.inc\";"
@@ -679,4 +676,5 @@ TEST_F(ZXFunctionalityTest, MCT2) {
 
   checkEquivalence(qc, qcPrime, {0, 1, 2});
 }
+
 } // namespace zx

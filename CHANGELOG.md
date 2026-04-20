@@ -487,17 +487,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@lsschmid**]: https://github.com/lsschmid
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
-
-<<<<<<< HEAD
-||||||| parent of 2497aee2 (✨ Add support for multi-controlled gates to ZX package (#1380))
-[**@Ectras**]: https://github.com/Ectras
-[**@simon1hofmann**]: https://github.com/simon1hofmann
-=======
-[**@Ectras**]: https://github.com/Ectras
-[**@simon1hofmann**]: https://github.com/simon1hofmann
 [**@keefehuang**]: https://github.com/keefehuang
-
-> > > > > > > 2497aee2 (✨ Add support for multi-controlled gates to ZX package (#1380))
 
 <!-- General links -->
 
