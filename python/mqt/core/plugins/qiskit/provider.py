@@ -110,7 +110,7 @@ class QDMIProvider:
         """
         # Filter by name substring if specified
         if name is not None:
-            return [b for b in self._backends if name in b.name]
+            return [b for b in self._backends if b.name is not None and name in b.name]
 
         return self._backends
 
