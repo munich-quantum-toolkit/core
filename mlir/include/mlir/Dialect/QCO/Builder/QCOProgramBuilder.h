@@ -1239,19 +1239,18 @@ public:
    * automatically inserted before the operation is constructed.
    *
    * @param condition Bool condition
-   * @param initArgs Input qubit values
+   * @param initArgs Initial arguments for the if branches
    * @param thenBody Function that builds the then body of the if operation
    * @param elseBody Function that builds the else body of the if operation
-   * @return ValueRange of the results (must be the same types as the input
-   * qubit types)
+   * @return ValueRange of the results
    *
    * @par Example:
    * ```c++
-   * result = builder.qcoIf(condition, q0, [&](ValueRange args)
+   * result = builder.qcoIf(condition, initArgs, [&](ValueRange args)
    * -> llvm::SmallVector<Value> {
    *   auto q1 = builder.x(args[0]);
    *   return {q1};
-   * }, [&] {
+   * }, [&](ValueRange args) -> llvm::SmallVector<Value> {
    *   auto q2 = builder.z(args[0]);
    *   return {q2};
    * });

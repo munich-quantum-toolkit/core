@@ -1018,6 +1018,10 @@ ValueRange QCOProgramBuilder::qcoIf(
 
   updateQubitValueTracking(updatedArgs, thenArgs);
   const auto thenResult = thenBody(thenArgs);
+  if (thenResult.size() != updatedArgs.size()) {
+    llvm::reportFatalUsageError(
+        "Then body must return exactly one value per input value");
+  }
   YieldOp::create(*this, thenResult);
 
   setInsertionPointToStart(elseBlock);
@@ -1026,17 +1030,14 @@ ValueRange QCOProgramBuilder::qcoIf(
   updateQubitValueTracking(thenResult, elseArgs);
   if (elseBody) {
     elseResult = elseBody(elseArgs);
+    if (elseResult.size() != updatedArgs.size()) {
+      llvm::reportFatalUsageError(
+          "Else body must return exactly one value per input value");
+    }
     YieldOp::create(*this, elseResult);
   } else {
     elseResult.assign(elseArgs.begin(), elseArgs.end());
     YieldOp::create(*this, elseArgs);
-  }
-
-  if (thenResult.size() != initArgs.size() ||
-      thenResult.size() != elseResult.size()) {
-    llvm::reportFatalUsageError(
-        "Then and else body must return the same amount of qubits as the "
-        "number of input qubits!");
   }
 
   // Update the qubit tracking

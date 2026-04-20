@@ -120,6 +120,8 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 }
 
 Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
+  checkFinalized();
+
   auto* region = getInsertionBlock()->getParent();
 
   if (regionStack.size() == 1) {
@@ -533,37 +535,23 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 
   auto condition = utils::variantToValue(*this, getLoc(), cond);
 
-  if (!elseBody) {
-    scf::IfOp::create(*this, condition, [&](OpBuilder& b, Location loc) {
+  auto buildRegion = [&](const llvm::function_ref<void()>& body) {
+    return [&, body](OpBuilder& b, Location loc) {
       const OpBuilder::InsertionGuard guard(*this);
       auto* insertionBlock = b.getInsertionBlock();
       setInsertionPointToStart(insertionBlock);
       regionStack.emplace_back(insertionBlock->getParent());
-      thenBody();
+      body();
       scf::YieldOp::create(b, loc);
       regionStack.pop_back();
-    });
+    };
+  };
+
+  if (!elseBody) {
+    scf::IfOp::create(*this, condition, buildRegion(thenBody));
   } else {
-    scf::IfOp::create(
-        *this, condition,
-        [&](OpBuilder& b, Location loc) {
-          const OpBuilder::InsertionGuard guard(*this);
-          auto* insertionBlock = b.getInsertionBlock();
-          setInsertionPointToStart(insertionBlock);
-          regionStack.emplace_back(insertionBlock->getParent());
-          thenBody();
-          scf::YieldOp::create(b, loc);
-          regionStack.pop_back();
-        },
-        [&](OpBuilder& b, Location loc) {
-          const OpBuilder::InsertionGuard guard(*this);
-          auto* insertionBlock = b.getInsertionBlock();
-          setInsertionPointToStart(insertionBlock);
-          regionStack.emplace_back(insertionBlock->getParent());
-          elseBody();
-          scf::YieldOp::create(b, loc);
-          regionStack.pop_back();
-        });
+    scf::IfOp::create(*this, condition, buildRegion(thenBody),
+                      buildRegion(elseBody));
   }
   return *this;
 }
