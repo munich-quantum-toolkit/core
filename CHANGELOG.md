@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add support for multi-controlled gates to ZX package ([#1380]) ([**@keefehuang**])
 - ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
 
 ### Changed
@@ -342,6 +343,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1383]: https://github.com/munich-quantum-toolkit/core/pull/1383
 [#1382]: https://github.com/munich-quantum-toolkit/core/pull/1382
 [#1381]: https://github.com/munich-quantum-toolkit/core/pull/1381
+[#1380]: https://github.com/munich-quantum-toolkit/core/pull/1380
 [#1378]: https://github.com/munich-quantum-toolkit/core/pull/1378
 [#1375]: https://github.com/munich-quantum-toolkit/core/pull/1375
 [#1371]: https://github.com/munich-quantum-toolkit/core/pull/1371
@@ -485,6 +487,15 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@lsschmid**]: https://github.com/lsschmid
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
+<<<<<<< HEAD
+||||||| parent of 2497aee2 (✨ Add support for multi-controlled gates to ZX package (#1380))
+[**@Ectras**]: https://github.com/Ectras
+[**@simon1hofmann**]: https://github.com/simon1hofmann
+=======
+[**@Ectras**]: https://github.com/Ectras
+[**@simon1hofmann**]: https://github.com/simon1hofmann
+[**@keefehuang**]: https://github.com/keefehuang
+>>>>>>> 2497aee2 (✨ Add support for multi-controlled gates to ZX package (#1380))
 
 <!-- General links -->
 
