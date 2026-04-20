@@ -303,10 +303,10 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     rewriter.eraseOp(hadamardGate);
 
     // Add Hadamard gates to the other in- and output gates of CNOT
-    const ValueRange relevantInputQubitsForHadamard(
-        {cnotGate.getInputTarget(0), cnotGate.getInputControl(controlIndex)});
-    addHadamardGatesBeforeGate(cnotGate, relevantInputQubitsForHadamard,
-                               rewriter);
+    addHadamardGatesBeforeGate(
+        cnotGate,
+        {cnotGate.getInputTarget(0), cnotGate.getInputControl(controlIndex)},
+        rewriter);
 
     const HOp newHOPAfterCtrl = addHadamardGatesAfterGate(
         cnotGate,
