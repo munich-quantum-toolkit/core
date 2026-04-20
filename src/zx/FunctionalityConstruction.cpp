@@ -683,7 +683,6 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                         qc::toString(op->getType()));
     }
   } else if (op->getNcontrols() == 1 && op->getNtargets() == 1) {
-    // two-qubit controlled gates
     const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
     const auto ctrl =
         static_cast<Qubit>(p.at((*op->getControls().begin()).qubit));
@@ -738,7 +737,6 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                         qc::toString(op->getType()));
     }
   } else if (op->getNcontrols() == 2 && op->getNtargets() == 1) {
-    // three-qubit controlled gates (ccx or ccz)
     Qubit ctrl0 = 0;
     Qubit ctrl1 = 0;
     const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
@@ -764,8 +762,16 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       addMcphase(diag, PiExpression{PiRational(1, 4)}, {ctrl0, ctrl1}, target,
                  qubits);
       break;
+    case qc::OpType::Tdg:
+      addMcphase(diag, PiExpression{PiRational(-1, 4)}, {ctrl0, ctrl1}, target,
+                 qubits);
+      break;
     case qc::OpType::S:
       addMcphase(diag, PiExpression{PiRational(1, 2)}, {ctrl0, ctrl1}, target,
+                 qubits);
+      break;
+    case qc::OpType::Sdg:
+      addMcphase(diag, PiExpression{PiRational(-1, 2)}, {ctrl0, ctrl1}, target,
                  qubits);
       break;
     case qc::OpType::RZ:
@@ -800,8 +806,16 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       addMcphase(diag, PiExpression{PiRational(1, 4)}, controls, target,
                  qubits);
       break;
+    case qc::OpType::Tdg:
+      addMcphase(diag, PiExpression{PiRational(-1, 4)}, controls, target,
+                 qubits);
+      break;
     case qc::OpType::S:
       addMcphase(diag, PiExpression{PiRational(1, 2)}, controls, target,
+                 qubits);
+      break;
+    case qc::OpType::Sdg:
+      addMcphase(diag, PiExpression{PiRational(-1, 2)}, controls, target,
                  qubits);
       break;
     case qc::OpType::RZ:
@@ -977,8 +991,8 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::I:
     case qc::OpType::P:
     case qc::OpType::T:
-    case qc::OpType::S:
     case qc::OpType::Tdg:
+    case qc::OpType::S:
     case qc::OpType::Sdg:
     case qc::OpType::RX:
     case qc::OpType::RZ:
@@ -992,7 +1006,9 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::Z:
     case qc::OpType::P:
     case qc::OpType::T:
+    case qc::OpType::Tdg:
     case qc::OpType::S:
+    case qc::OpType::Sdg:
     case qc::OpType::RZ:
     case qc::OpType::RX:
       return true;

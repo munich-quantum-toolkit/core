@@ -435,7 +435,7 @@ TEST_F(ZXFunctionalityTest, ISWAP) {
   qcPrime.h(0);
   qcPrime.cx(0, 1);
   qcPrime.cx(1, 0);
-  qc.h(1);
+  qcPrime.h(1);
 
   checkEquivalence(qc, qcPrime, {0, 1});
 }
@@ -617,12 +617,32 @@ TEST_F(ZXFunctionalityTest, MCS) {
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
+TEST_F(ZXFunctionalityTest, MCSdg) {
+  qc = qc::QuantumComputation(4);
+  qc.mcsdg({0, 1, 2}, 3);
+
+  auto qcPrime = qc::QuantumComputation(4);
+  qcPrime.mcsdg({0, 1, 2}, 3);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
+}
+
 TEST_F(ZXFunctionalityTest, MCT) {
   qc = qc::QuantumComputation(4);
   qc.mct({0, 1, 2}, 3);
 
   auto qcPrime = qc::QuantumComputation(4);
   qcPrime.mct({0, 1, 2}, 3);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
+}
+
+TEST_F(ZXFunctionalityTest, MCTdg) {
+  qc = qc::QuantumComputation(4);
+  qc.mctdg({0, 1, 2}, 3);
+
+  auto qcPrime = qc::QuantumComputation(4);
+  qcPrime.mctdg({0, 1, 2}, 3);
 
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
