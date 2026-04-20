@@ -43,9 +43,9 @@ public:
 void checkEquivalence(const qc::QuantumComputation& qc1,
                       const qc::QuantumComputation& qc2,
                       const std::vector<qc::Qubit>& qubits) {
-  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc1));
-  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc2));
-  EXPECT_EQ(qc1.getNqubits(), qc2.getNqubits());
+  ASSERT_TRUE(FunctionalityConstruction::transformableToZX(&qc1));
+  ASSERT_TRUE(FunctionalityConstruction::transformableToZX(&qc2));
+  ASSERT_EQ(qc1.getNqubits(), qc2.getNqubits());
 
   auto d1 = FunctionalityConstruction::buildFunctionality(&qc1);
   auto d2 = FunctionalityConstruction::buildFunctionality(&qc2);
