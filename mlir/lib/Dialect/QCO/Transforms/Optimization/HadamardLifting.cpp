@@ -82,9 +82,9 @@ struct LiftHadamardsAbovePauliGatesPattern final
         })
         .Case<YOp>([&](auto) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
-          rewriter.replaceOpWithNewOp<YOp>(hadamardGate,
-                                           hadamardGate.getInputQubit(0));
-          GPhaseOp::create(rewriter, hadamardGate.getLoc(), std::numbers::pi);
+          auto yGate = rewriter.replaceOpWithNewOp<YOp>(
+              hadamardGate, hadamardGate.getInputQubit(0));
+          GPhaseOp::create(rewriter, yGate.getLoc(), std::numbers::pi);
           return success();
         })
         .Default([&](auto) { return failure(); });
