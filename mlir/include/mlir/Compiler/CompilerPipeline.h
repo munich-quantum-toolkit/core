@@ -40,6 +40,9 @@ struct QuantumCompilerConfig {
 
   /// Print IR after each stage
   bool printIRAfterAllStages = false;
+
+  /// Disable quaternion-based single-qubit rotation gate merging
+  bool disableMergeSingleQubitRotationGates = false;
 };
 
 /**
