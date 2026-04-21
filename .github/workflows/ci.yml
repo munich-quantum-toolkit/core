@@ -37,7 +37,7 @@ jobs:
       config: ${{ matrix.config }}
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 21.1.8
 
   cpp-tests-macos:
     name: 🇨‌ Test 🍎
@@ -60,7 +60,7 @@ jobs:
       config: ${{ matrix.config }}
       cmake-args: -DMQT_CORE_WITH_GMP=ON -DBUILD_MQT_CORE_MLIR=ON
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 21.1.8
 
   cpp-tests-windows:
     name: 🇨‌ Test 🏁
@@ -83,7 +83,7 @@ jobs:
       config: ${{ matrix.config }}
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 21.1.8
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-ubuntu:
@@ -103,7 +103,7 @@ jobs:
       config: ${{ matrix.config }}
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 21.1.8
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-macos:
@@ -123,7 +123,7 @@ jobs:
       config: ${{ matrix.config }}
       cmake-args: -DMQT_CORE_WITH_GMP=ON -DBUILD_MQT_CORE_MLIR=ON
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 21.1.8
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-windows:
@@ -143,7 +143,7 @@ jobs:
       config: ${{ matrix.config }}
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 21.1.8
 
   cpp-coverage:
     name: 🇨‌ Coverage
@@ -153,7 +153,7 @@ jobs:
     with:
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 21.1.8
     permissions:
       contents: read
       id-token: write
@@ -172,7 +172,7 @@ jobs:
       install-pkgs: "nanobind==2.11.0"
       cpp-linter-extra-args: "-std=c++20"
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 21.1.8
 
   python-tests:
     name: 🐍 Test
