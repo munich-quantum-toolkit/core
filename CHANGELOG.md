@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-04-21
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#350)._
+
 ### Added
 
 - ✨ Add support for multi-controlled gates to ZX package ([#1380]) ([**@keefehuang**])
@@ -40,6 +44,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 🔥 No longer actively type check Python code with `mypy` and solely rely on `ty` ([#1437]) ([**@burgholzer**])
 
 ## [3.4.0] - 2026-01-08
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#340)._
 
 ### Added
 
@@ -191,6 +197,8 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
 
 ## [3.2.0] - 2025-07-31
 
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#320)._
+
 ### Added
 
 - 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
@@ -309,7 +317,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.0
 [3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
 [3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
 [3.3.3]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.3
