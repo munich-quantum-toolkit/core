@@ -24,6 +24,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
@@ -40,6 +41,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -315,22 +317,6 @@ private:
       });
     }
 
-    /**
-     * @returns a vector of "ready" two-qubit ops.
-     */
-    [[nodiscard]] DenseSet<Operation*>
-    getReadyOps(ArrayRef<LayerItem> front, const Architecture& arch) const {
-      DenseSet<Operation*> ops;
-      for (const auto& item : front) {
-        const auto& [prog0, prog1] = item.progs;
-        if (arch.areAdjacent(layout.getHardwareIndex(prog0),
-                             layout.getHardwareIndex(prog1))) {
-          ops.insert(item.op);
-        }
-      }
-      return ops;
-    }
-
   private:
     /**
      * @brief Calculate the path cost for the A* search algorithm.
@@ -372,12 +358,12 @@ public:
       : arch(std::make_shared<Architecture>(getEmptyArchitecture())) {}
 
   explicit MappingPass(MappingPassOptions options)
-      : arch(std::make_shared<Architecture>(getEmptyArchitecture())),
-        MappingPassBase<MappingPass>(options) {}
+      : MappingPassBase<MappingPass>(options),
+        arch(std::make_shared<Architecture>(getEmptyArchitecture())) {}
 
   explicit MappingPass(std::shared_ptr<Architecture> arch,
                        MappingPassOptions options)
-      : arch(std::move(arch)), MappingPassBase<MappingPass>(options) {}
+      : MappingPassBase<MappingPass>(options), arch(std::move(arch)) {}
 
 protected:
   void runOnOperation() override {
@@ -385,16 +371,7 @@ protected:
     IRRewriter rewriter(&getContext());
 
     for (auto func : getOperation().getOps<func::FuncOp>()) {
-      // TODO: 1) Not necessarily correct because deallocations could happen
-      // in-between.
-      // TODO: 2) Include QTensors.
-      if (range_size(func.getOps<AllocOp>()) > arch->nqubits()) {
-        func.emitError() << "the targeted architecture supports "
-                         << arch->nqubits() << " qubits, got "
-                         << range_size(func.getOps<AllocOp>());
-        signalPassFailure();
-        return;
-      }
+      // TODO: Check if num-qubits > arch.nqubits
 
       // Create trials for initial layout refining. Currently this includes
       // `ntrials` many random layouts.
@@ -442,7 +419,7 @@ protected:
       }
 
       // Collect statistics.
-      numSwaps += *res;
+      numSwaps = *res - absorbSWAPs(func, rewriter);
 
       // Fix SSA Dominance issues.
       for_each(func.getFunctionBody().getBlocks(),
@@ -557,8 +534,7 @@ private:
 
     std::size_t nswaps{0};
     for (std::size_t i = 0; i < niterations; ++i) {
-      const auto resF = route(wires, WalkDirection::Forward, layout);
-      if (failed(resF)) {
+      if (failed(route(wires, WalkDirection::Forward, layout))) {
         return failure();
       }
 
@@ -570,6 +546,76 @@ private:
     }
 
     return nswaps;
+  }
+
+  /**
+   * @brief Absorb front layer SWAPs by swapping static qubit ops.
+   * @returns the number of absorbed SWAP gates.
+   */
+  [[nodiscard]] static std::size_t absorbSWAPs(func::FuncOp func,
+                                               IRRewriter& rewriter) {
+
+    SmallVector<WireIterator> wires;
+    wires.reserve(range_size(func.getOps<StaticOp>()));
+
+    SmallVector<SWAPOp> readyToAbsorb;
+    readyToAbsorb.reserve((wires.size() + 1) / 2);
+
+    std::size_t nabsorbed{0};
+    while (true) {
+      for_each(func.getOps<StaticOp>(),
+               [&](auto op) { wires.emplace_back(op.getQubit()); });
+
+      std::ignore =
+          walkCircuitGraph(wires, WalkDirection::Forward,
+                           [&](const ReadyRange& ready, ReleasedOps&) {
+                             for (const auto& [op, indices] : ready) {
+                               if (isa<SWAPOp>(op)) {
+                                 readyToAbsorb.emplace_back(op);
+                               }
+                             }
+                             return WalkResult::interrupt();
+                           });
+
+      if (readyToAbsorb.empty()) {
+        break;
+      }
+
+      for (auto swapOp : readyToAbsorb) {
+        WireIterator w0(swapOp.getQubit0In());
+        while (!isa<StaticOp>(w0.operation())) {
+          --w0;
+        }
+
+        WireIterator w1(swapOp.getQubit1In());
+        while (!isa<StaticOp>(w1.operation())) {
+          --w1;
+        }
+
+        StaticOp op0 = cast<StaticOp>(w0.operation());
+        StaticOp op1 = cast<StaticOp>(w1.operation());
+        auto i0 = op0.getIndex();
+        auto i1 = op1.getIndex();
+
+        rewriter.replaceAllUsesWith(swapOp.getQubit0Out(),
+                                    swapOp.getQubit1In());
+        rewriter.replaceAllUsesWith(swapOp.getQubit1Out(),
+                                    swapOp.getQubit0In());
+
+        rewriter.replaceOpWithNewOp<StaticOp>(op0, i1);
+        rewriter.replaceOpWithNewOp<StaticOp>(op1, i0);
+
+        rewriter.eraseOp(swapOp);
+      }
+
+      nabsorbed += readyToAbsorb.size();
+
+      // Clear for next iteration.
+      readyToAbsorb.clear();
+      wires.clear();
+    }
+
+    return nabsorbed;
   }
 
   /**
@@ -653,7 +699,8 @@ private:
       // between two neighbouring hardware qubits.
 
       expansionSet.clear();
-      const auto& [q0, q1] = window.front().progs;
+      const auto& item = window.front();
+      const auto& [q0, q1] = item.progs;
       for (const auto prog : {q0, q1}) {
         for (const auto hw0 = curr->layout.getHardwareIndex(prog);
              const auto hw1 : arch->neighboursOf(hw0)) {
@@ -737,9 +784,16 @@ private:
    * is 1 + nlookahead.
    * @returns window of layers.
    */
-  Window getWindow(ArrayRef<WireIterator> baseWires, WalkDirection direction) {
+  Window getWindow(ArrayRef<WireIterator> baseWires, const Layout& layout,
+                   WalkDirection direction) {
     Window window;
     window.reserve(1 + nlookahead);
+
+    struct Candidate {
+      UnitaryOpInterface op;
+      IndexPairType progs;
+      std::size_t complexity;
+    };
 
     SmallVector<WireIterator> wires(baseWires);
     std::ignore = walkCircuitGraph(
@@ -748,20 +802,41 @@ private:
             return WalkResult::advance();
           }
 
-          // Construct layer from wire iterators.
+          // Collect candidates.
+          SmallVector<Candidate> candidates;
+          candidates.reserve(range_size(ready));
+
           for (const auto& [op, progs] : ready) {
             if (isa<BarrierOp>(op)) {
               released.emplace_back(op);
               continue;
             }
 
-            window.emplace_back(op, std::make_pair(progs[0], progs[1]));
+            const auto complexity =
+                arch->distanceBetween(layout.getHardwareIndex(progs[0]),
+                                      layout.getHardwareIndex(progs[1]));
+            candidates.emplace_back(op, std::make_pair(progs[0], progs[1]),
+                                    complexity);
+          }
+
+          // Sort candidates by complexity.
+          if (window.empty()) {
+            sort(candidates, [](const Candidate& a, const Candidate& b) {
+              return a.complexity < b.complexity; // Route easier gates first.
+            });
+          }
+
+          // Add candidates.
+          for (const auto& c : candidates) {
+            const auto& [prog0, prog1] = c.progs;
+
+            window.emplace_back(c.op, c.progs);
             if (window.size() == 1 + nlookahead) {
               return WalkResult::interrupt();
             }
 
-            skipQubitPairBlock(wires[progs[0]], wires[progs[1]], direction);
-            released.emplace_back(wires[progs[0]].operation());
+            skipQubitPairBlock(wires[prog0], wires[prog1], direction);
+            released.emplace_back(wires[prog0].operation());
           }
 
           return WalkResult::advance();
@@ -824,7 +899,7 @@ private:
     while (true) {
       skipExecutableGates(wires, layout, direction);
 
-      const auto window = getWindow(wires, direction);
+      const auto window = getWindow(wires, layout, direction);
       if (window.empty()) {
         break;
       }
