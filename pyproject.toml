@@ -8,8 +8,8 @@
 
 [build-system]
 requires = [
-  "nanobind~=2.11.0",
-  "scikit-build-core>=0.11.6",
+  "nanobind~=2.12.0",
+  "scikit-build-core>=0.12.2",
   "setuptools-scm>=9.2.2",
 ]
 build-backend = "scikit_build_core.build"
@@ -23,7 +23,7 @@ authors = [
 ]
 keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams", "zx-calculus"]
 license = "MIT"
-license-files = ["LICENSE.md"]
+license-files = ["LICENSE"]
 
 classifiers = [
   "Development Status :: 5 - Production/Stable",
@@ -205,6 +205,10 @@ unsafe-fixes = true
 show-fixes = true
 src = ["python"]
 
+[tool.ruff.format]
+preview = true
+docstring-code-format = true
+
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
@@ -242,9 +246,6 @@ known-first-party = ["mqt.core"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.ruff.format]
-docstring-code-format = true
-
 
 [tool.typos]
 default.extend-ignore-re = [
@@ -262,14 +263,13 @@ optin = "optin"
 nd = "nd"
 
 
-[tool.repo-review]
-ignore = [
-  "GH200", # We use Renovate instead of Dependabot
-  "MY100", # We use ty instead of mypy
-  "PC140", # We use ty instead of mypy
-  "PC160", # We use a mirror of crate-ci/typos
-  "PC170", # We do not use rST files anymore
-]
+[tool.repo-review.ignore]
+GH200 = "We use Renovate instead of Dependabot"
+MY100 = "We use ty instead of mypy"
+PC111 = "We use ruff instead of blacken-docs"
+PC140 = "We use ty instead of mypy"
+PC160 = "We use a mirror of crate-ci/typos"
+PC170 = "We do not use rST files anymore"
 
 
 [tool.cibuildwheel]
@@ -279,8 +279,7 @@ archs = "auto64"
 test-groups = ["test"]
 test-sources = ["test/python", "json/na"]
 test-command = "pytest test/python"
-build-frontend = "build[uv]"
-enable = ["cpython-freethreading"]
+build-frontend = "uv"
 test-skip = [
   "cp3??t-*", # no freethreading qiskit wheels
   "cp*-win_arm64", # no numpy, qiskit, ... wheels
@@ -288,8 +287,8 @@ test-skip = [
 
 [tool.cibuildwheel.linux]
 before-all = "uv tool install sccache>=0.10.0"
-environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin" }
 before-test = "uvx sccache --show-stats"
+environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin" }
 
 [tool.cibuildwheel.macos]
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
@@ -330,8 +329,8 @@ exclude = [
 
 [dependency-groups]
 build = [
-  "nanobind~=2.11.0",
-  "scikit-build-core>=0.11.6",
+  "nanobind~=2.12.0",
+  "scikit-build-core>=0.12.2",
   "setuptools-scm>=9.2.2",
 ]
 docs = [
@@ -367,5 +366,5 @@ dev = [
   {include-group = "test"},
   "lit>=18.1.8",
   "nox>=2025.11.12",
-  "ty==0.0.14",
+  "ty==0.0.29",
 ]

@@ -17,6 +17,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -37,9 +38,8 @@ using Qubit = std::uint16_t;
  * @note Adjusting the precision might lead to unexpected results.
  */
 using fp = double;
-static_assert(
-    std::is_floating_point_v<fp>,
-    "fp should be a floating point type (float, *double*, long double)");
+static_assert(std::is_floating_point_v<fp>,
+              "fp should be a floating point type (float or double)");
 
 // logic radix
 static constexpr std::uint8_t RADIX = 2;
@@ -55,14 +55,11 @@ enum class BasisStates : std::uint8_t {
   left   // NOLINT(readability-identifier-naming)
 };
 
-static constexpr fp SQRT2_2 = static_cast<fp>(
+static constexpr auto SQRT2_2 = static_cast<fp>(
     0.707106781186547524400844362104849039284835937688474036588L);
-static constexpr fp PI = static_cast<fp>(
-    3.141592653589793238462643383279502884197169399375105820974L);
-static constexpr fp PI_2 = static_cast<fp>(
-    1.570796326794896619231321691639751442098584699687552910487L);
-static constexpr fp PI_4 = static_cast<fp>(
-    0.785398163397448309615660845819875721049292349843776455243L);
+static constexpr fp PI = std::numbers::pi;
+static constexpr auto PI_2 = PI / 2;
+static constexpr fp PI_4 = PI / 4;
 
 static constexpr std::uint64_t SERIALIZATION_VERSION = 1;
 
@@ -91,7 +88,7 @@ using TwoQubitGateMatrix =
  * @param nbits The number of bits to use for the binary representation
  * @return The binary representation of the decimal number
  */
-[[nodiscard]] static inline std::string
+[[nodiscard, maybe_unused]] static std::string
 intToBinaryString(const std::size_t value, const std::size_t nbits) {
   std::string binary(nbits, '0');
   for (std::size_t j = 0; j < nbits; ++j) {
@@ -104,7 +101,7 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
 
 // calculates the Units in Last Place (ULP) distance of two floating point
 // numbers
-[[maybe_unused]] static std::size_t ulpDistance(fp a, fp b) {
+[[nodiscard, maybe_unused]] static std::size_t ulpDistance(fp a, fp b) {
   // NOLINTNEXTLINE(clang-diagnostic-float-equal)
   if (a == b) {
     return 0;

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
@@ -87,7 +88,7 @@ VectorDD makeWState(std::size_t n, Package& dd);
 VectorDD makeStateFromVector(const CVec& vec, Package& dd);
 
 /// @brief The strategy to wire two layers.
-enum GenerationWireStrategy : std::uint8_t {
+enum class GenerationWireStrategy : std::uint8_t {
   ROUNDROBIN, // Choose nodes in the next layer in a round-robin fashion.
   RANDOM      // Randomly choose nodes in the next layer.
 };

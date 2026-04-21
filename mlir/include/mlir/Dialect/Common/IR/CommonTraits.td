@@ -16,7 +16,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 
 class TargetArity<int N>
     : ParamNativeOpTrait<"TargetArityTrait", !cast<string>(N)> {
-    let cppNamespace = "::mqt::ir::common";
+  let cppNamespace = "::mqt::ir::common";
 }
 
 def NoTarget : TargetArity<0>;
@@ -25,7 +25,7 @@ def TwoTarget : TargetArity<2>;
 
 class ParameterArity<int N>
     : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(N)> {
-    let cppNamespace = "::mqt::ir::common";
+  let cppNamespace = "::mqt::ir::common";
 }
 
 def NoParameter : ParameterArity<0>;
@@ -34,15 +34,15 @@ def TwoParameters : ParameterArity<2>;
 def ThreeParameters : ParameterArity<3>;
 
 def NoControl : NativeOpTrait<"NoControlTrait"> {
-    let cppNamespace = "::mqt::ir::common";
+  let cppNamespace = "::mqt::ir::common";
 }
 
 def UniqueSizeDefinition : NativeOpTrait<"UniqueSizeDefinitionTrait"> {
-    let cppNamespace = "::mqt::ir::common";
+  let cppNamespace = "::mqt::ir::common";
 }
 
 def UniqueIndexDefinition : NativeOpTrait<"UniqueIndexDefinitionTrait"> {
-    let cppNamespace = "::mqt::ir::common";
+  let cppNamespace = "::mqt::ir::common";
 }
 
 #endif // MQTCOMMON_TRAITS

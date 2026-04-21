@@ -78,7 +78,7 @@ def test_estimator_run_parameterized_observable(backend_with_mock_jobs: QDMIBack
     op = SparsePauliOp("Z")
 
     # Run with 2 parameters using explicit EstimatorPub via coerce
-    pub = EstimatorPub.coerce((qc, op, [0.0, np.pi]))  # type: ignore[arg-type]
+    pub = EstimatorPub.coerce((qc, op, {theta: [0.0, np.pi]}))
     job = estimator.run([pub])
     result = job.result()
 
@@ -178,9 +178,9 @@ def test_estimator_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
     # 2 Parameter sets (shape (2,) / two values)
     # Test asserts broadcasting for 2 observables x 2 parameter sets
     # We align shapes to (2,) so they broadcast element-wise.
-    vals = [[0.0], [np.pi]]
+    vals = {theta: [[0.0], [np.pi]]}
 
-    pub = EstimatorPub.coerce((qc, ops, vals))  # type: ignore[arg-type]
+    pub = EstimatorPub.coerce((qc, ops, vals))
     job = estimator.run([pub])
     result = job.result()
 

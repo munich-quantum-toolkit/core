@@ -9,9 +9,10 @@
 include "mlir/Pass/PassBase.td"
 
 def MQTRefToQIR : Pass<"mqtref-to-qir"> {
-   let summary = "Lower the `MQTRef` dialect to the LLVM dialect compliant with QIR 2.0 (Base Profile)";
+  let summary = "Lower the `MQTRef` dialect to the LLVM dialect compliant with "
+                "QIR 2.0 (Base Profile)";
 
-   let description = [{
+  let description = [{
       Overview
       Converts the MQTRef dialect to the LLVM dialect following the QIR 2.0 Base Profile. Quantum operations are mapped to calls
       into the QIR instruction set, while non-quantum operations are lowered using MLIR's standard LLVM conversions.
@@ -59,8 +60,6 @@ def MQTRefToQIR : Pass<"mqtref-to-qir"> {
    }];
 
   // Define dependent dialects
-  let dependentDialects = [
-     "::mqt::ir::ref::MQTRefDialect",
-     "mlir::LLVM::LLVMDialect"
-  ];
+  let dependentDialects = ["::mqt::ir::ref::MQTRefDialect",
+                           "mlir::LLVM::LLVMDialect"];
 }

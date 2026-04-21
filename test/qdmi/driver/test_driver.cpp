@@ -44,7 +44,11 @@ MATCHER_P2(IsBetween, a, b,
 // NOLINTEND(readability-identifier-naming,cppcoreguidelines-avoid-const-or-ref-data-members)
 } // namespace
 } // namespace testing
+
 namespace qc {
+
+namespace {
+
 class DriverTest : public testing::TestWithParam<const char*> {
 protected:
   QDMI_Session session = nullptr;
@@ -126,6 +130,8 @@ protected:
     DriverTest::TearDown();
   }
 };
+
+} // namespace
 
 TEST_P(DriverTest, SessionSetParameter) {
   const std::string authFile = "authfile.txt";

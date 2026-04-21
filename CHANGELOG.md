@@ -16,9 +16,12 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ⬆️ Update `nanobind` to version 2.12.0 ([#1654]) ([**@burgholzer**])
 - ⬆️ Update QDMI to v1.3.0 ([#1652]) ([**@burgholzer**])
 - 📦 Switch to component-based installation for the MQT Core Python package ([#1596]) ([**@burgholzer**])
 - ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1593]) ([**@burgholzer**])
+- ⬆️ Update `clang-tidy` to version 22 ([#1564]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Build on `macos-26`/`macos-26-intel` by default and `macos-15`/`macos-15-intel` for extensive tests ([#1571]) ([**@denialhaag**])
 
 ## [3.4.1] - 2026-02-01
 
@@ -26,7 +29,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ⬆️ Update `nanobind` to version 2.11.0 ([#1481]) ([**@denialhaag**])
 - ⬆️ Update Boost to version 1.89.0 ([#1453]) ([**@burgholzer**])
-- ⬆️ Update QDMI to latest version from stable v1.2.x branch ([#1453]) ([**@burgholzer**])
+- ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1453]) ([**@burgholzer**])
 - ⬆️ Update `spdlog` to version 1.17.0 ([#1453]) ([**@burgholzer**])
 - ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
 - ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
@@ -53,7 +56,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 📦🏁 Build Windows x86 wheels on windows-2025 runner for newer compiler ([#1415]) ([**@burgholzer**])
+- 📦🏁 Build Windows x86 wheels on `windows-2025` runner for newer compiler ([#1415]) ([**@burgholzer**])
 - 👷 Build on `macos-15`/`windows-2025` by default and `macos-14`/`windows-2022` for extensive tests ([#1414]) ([**@burgholzer**])
 - 📦🍎 Build macOS arm64 wheels on macos-15 runner for newer compiler ([#1413]) ([**@burgholzer**])
 - ⚡ Improve uv build caching by removing unconditional `reinstall-package` and configuring dedicated `cache-keys` ([#1412]) ([**@burgholzer**])
@@ -323,9 +326,12 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1654]: https://github.com/munich-quantum-toolkit/core/pull/1654
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
 [#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
+[#1571]: https://github.com/munich-quantum-toolkit/core/pull/1571
+[#1564]: https://github.com/munich-quantum-toolkit/core/pull/1564
 [#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453

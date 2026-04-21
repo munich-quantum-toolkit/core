@@ -16,7 +16,8 @@ include "mlir/Pass/PassBase.td"
 //===----------------------------------------------------------------------===//
 
 def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
-  let summary = "This pass performs a round trip to MQT Core's QuantumComputation and back";
+  let summary = "This pass performs a round trip to MQT Core's "
+                "QuantumComputation and back";
   let description = [{
     This pass starts by extracting all quantum-computation-relevant operations and then translates them into an MQT Core `QuantumComputation`,
     deleting all quantum operations in the process.
@@ -35,7 +36,8 @@ def MQTCoreRoundTrip : Pass<"mqt-core-round-trip", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
-  let summary = "This pass searches for consecutive applications of gates and their inverses and cancels them.";
+  let summary = "This pass searches for consecutive applications of gates and "
+                "their inverses and cancels them.";
   let description = [{
     This pass searches for applications of gates that are their own inverses. Walking down their def-use chain,
     it then checks if the same gate is applied once again. In that case, the two gates are cancelled.
@@ -44,7 +46,8 @@ def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
 }
 
 def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
-  let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
+  let summary = "This pass searches for consecutive applications of rotation "
+                "gates that can be merged.";
   let description = [{
     Consecutive applications of gphase, `p`, `rx`, `ry`, `rz`, `rxx`, `ryy`, `rzz`, and `rzx` are merged into one by adding their angles.
     The merged gate is currently not removed if the angles add up to zero.
@@ -53,8 +56,10 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   }];
 }
 
-def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
-  let summary = "Reconstruct SWAPs from eligible CNOT pairs and eliminate SWAPs by applying the implied qubit permutation.";
+def SwapReconstructionAndElision
+    : Pass<"swap-reconstruction-and-elision", "mlir::ModuleOp"> {
+  let summary = "Reconstruct SWAPs from eligible CNOT pairs and eliminate "
+                "SWAPs by applying the implied qubit permutation.";
   let description = [{
     Eliminates all uncontrolled `swap` operations by:
     1. Reconstructing explicit `swap` ops from eligible CNOT patterns (canonical 3–CNOT form or two alternating CNOT pairs).
@@ -85,23 +90,29 @@ def SwapReconstructionAndElision : Pass<"swap-reconstruction-and-elision", "mlir
 }
 
 def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
-  let summary = "This pass attempts to push down operations into branches for possible optimizations.";
+  let summary = "This pass attempts to push down operations into branches for "
+                "possible optimizations.";
   let description = [{
     This pass searches for branch instructions and attempts to push instructions from previous branches into them.
   }];
 }
 
 def LiftMeasurementsPass : Pass<"lift-measurements", "mlir::ModuleOp"> {
-  let dependentDialects = [ "mlir::arith::ArithDialect", "mlir::scf::SCFDialect", "mqt::ir::opt::MQTOptDialect" ];
-  let summary = "This pass attempts to lift measurements as much as possible by replacing quantum operations with classical operations where possible.";
+  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::scf::SCFDialect",
+                           "mqt::ir::opt::MQTOptDialect"];
+  let summary =
+      "This pass attempts to lift measurements as much as possible by "
+      "replacing quantum operations with classical operations where possible.";
   let description = [{
     This pass consists of several patterns that attempt to push different structures of quantum gates below measurements.
   }];
 }
 
 def ReuseQubitsPass : Pass<"reuse-qubits", "mlir::ModuleOp"> {
-  let dependentDialects = [ "mlir::scf::SCFDialect", "mqt::ir::opt::MQTOptDialect" ];
-  let summary = "Reduce the number of required qubits by reusing existing ones that are no longer used.";
+  let dependentDialects = ["mlir::scf::SCFDialect",
+                           "mqt::ir::opt::MQTOptDialect"];
+  let summary = "Reduce the number of required qubits by reusing existing ones "
+                "that are no longer used.";
   let description = [{
     This pass performs qubit reuse, searching for qubits that are first referenced after the final reference to a different qubit.
     In these cases, rather than using a new qubit, the old qubit can be reset and reused.
@@ -113,61 +124,61 @@ def ReuseQubitsPass : Pass<"reuse-qubits", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
-  let summary = "This pass maps program qubits to hardware qubits on superconducting quantum devices using initial placement strategies.";
-  let options = [
-    Option<"strategy", "strategy", "PlacementStrategy", "PlacementStrategy::Random",
-           "The initial placement strategy to use.", [{llvm::cl::values(
+  let summary =
+      "This pass maps program qubits to hardware qubits on superconducting "
+      "quantum devices using initial placement strategies.";
+  let options = [Option<"strategy", "strategy", "PlacementStrategy",
+                        "PlacementStrategy::Random",
+                        "The initial placement strategy to use.",
+                        [{llvm::cl::values(
              clEnumValN(PlacementStrategy::Random, "random", "Random placement"),
              clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>,
-    Option<"archName", "arch", "std::string", "",
-           "The name of the targeted architecture.">,
+                 Option<"archName", "arch", "std::string", "",
+                        "The name of the targeted architecture.">,
   ];
 }
 
 def NaiveRoutingPassSC : Pass<"route-naive-sc", "mlir::ModuleOp"> {
-  let summary = "This pass ensures that all two-qubit gates are executable on the target architecture.";
+  let summary = "This pass ensures that all two-qubit gates are executable on "
+                "the target architecture.";
   let description = [{
     Simple pre-order traversal of the IR that routes any non-executable gates by inserting SWAPs along the shortest path.
   }];
-  let options = [
-    Option<"archName", "arch", "std::string", "",
-           "The name of the targeted architecture.">,
+  let options = [Option<"archName", "arch", "std::string", "",
+                        "The name of the targeted architecture.">,
   ];
-  let statistics = [
-    Statistic<"numSwaps", "num-additional-swaps", "The number of additional SWAPs">
-  ];
+  let statistics = [Statistic<"numSwaps", "num-additional-swaps",
+                              "The number of additional SWAPs">];
 }
 
 def AStarRoutingPassSC : Pass<"route-astar-sc", "mlir::ModuleOp"> {
-  let summary = "This pass ensures that all two-qubit gates are executable on the target architecture.";
+  let summary = "This pass ensures that all two-qubit gates are executable on "
+                "the target architecture.";
   let description = [{
     Routes the program by dividing the circuit into layers of parallel two-qubit gates and iteratively searches and
     inserts SWAPs for each layer using A*-search.
   }];
-  let options = [
-    Option<"archName", "arch", "std::string", "",
-           "The name of the targeted architecture.">,
-    Option<"nlookahead", "nlookahead", "std::size_t", "1",
-           "astar option: Number of lookahead steps (heuristic horizon)">,
-    Option<"alpha", "alpha", "float", "1.0F",
-           "astar option: The alpha factor in the cost function">,
-    Option<"lambda", "lambda", "float", "0.5F",
-           "astar option: The lambda factor in the cost function">
-  ];
-  let statistics = [
-    Statistic<"numSwaps", "num-additional-swaps", "The number of additional SWAPs">
-  ];
+  let options =
+      [Option<"archName", "arch", "std::string", "",
+              "The name of the targeted architecture.">,
+       Option<"nlookahead", "nlookahead", "std::size_t", "1",
+              "astar option: Number of lookahead steps (heuristic horizon)">,
+       Option<"alpha", "alpha", "float", "1.0F",
+              "astar option: The alpha factor in the cost function">,
+       Option<"lambda", "lambda", "float", "0.5F",
+              "astar option: The lambda factor in the cost function">];
+  let statistics = [Statistic<"numSwaps", "num-additional-swaps",
+                              "The number of additional SWAPs">];
 }
 
 def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
-  let summary = "This pass verifies that all two-qubit gates are executable on the target architecture.";
+  let summary = "This pass verifies that all two-qubit gates are executable on "
+                "the target architecture.";
   let description = [{
     This pass ensures that all two-qubit gates are executable on the target's architecture.
   }];
-  let options = [
-    Option<"archName", "arch", "std::string", "",
-           "The name of the targeted architecture.">
-  ];
+  let options = [Option<"archName", "arch", "std::string", "",
+                        "The name of the targeted architecture.">];
 }
 
 #endif // MQTO_PASSES

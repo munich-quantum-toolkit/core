@@ -676,5 +676,4 @@ TEST_F(ZXFunctionalityTest, MCT2) {
 
   checkEquivalence(qc, qcPrime, {0, 1, 2});
 }
-
 } // namespace zx

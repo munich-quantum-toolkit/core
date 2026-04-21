@@ -41,6 +41,7 @@
 namespace qc {
 
 namespace {
+
 void printRegisters(const QuantumComputation& qc) {
   for (const auto& [name, reg] : qc.getQuantumRegisters()) {
     std::cout << "QuantumRegister(name=" << name
@@ -58,7 +59,6 @@ void printRegisters(const QuantumComputation& qc) {
               << ")\n";
   }
 }
-} // namespace
 
 class QFRFunctionality : public testing::TestWithParam<std::size_t> {
 protected:
@@ -75,6 +75,8 @@ protected:
   std::mt19937_64 mt;
   std::uniform_real_distribution<fp> dist;
 };
+
+} // namespace
 
 TEST_F(QFRFunctionality, removeTrailingIdleQubits) {
   const std::size_t nqubits = 4;

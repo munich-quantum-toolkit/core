@@ -24,12 +24,12 @@ include "mlir/Dialect/MQTRef/IR/MQTRefInterfaces.td"
 //===----------------------------------------------------------------------===//
 
 def MQTRefDialect : Dialect {
-    // The dialect name used in the MLIR file to prefix operations.
-    let name = "mqtref";
+  // The dialect name used in the MLIR file to prefix operations.
+  let name = "mqtref";
 
-    let summary = "The MQT reference semantics (`mqtref`) dialect.";
+  let summary = "The MQT reference semantics (`mqtref`) dialect.";
 
-    let description = [{
+  let description = [{
         This dialect uses memory semantics to represent and work with qubits.
         Similar to many existing quantum programming languages, operations can
         just be applied to qubits without needing to track state updates.
@@ -43,14 +43,14 @@ def MQTRefDialect : Dialect {
         addressing.
     }];
 
-    // The C++ namespace that the dialect, and all sub-components, get placed
-    // in. Here, `mlir::` must either appear at the front or not at all.
-    let cppNamespace = "::mqt::ir::ref";
+  // The C++ namespace that the dialect, and all sub-components, get placed
+  // in. Here, `mlir::` must either appear at the front or not at all.
+  let cppNamespace = "::mqt::ir::ref";
 
-    // This dialect defines its own types for qubits and qubit registers. To
-    // parse and print these, respective hooks must be defined. With this flag
-    // set to 1, the default hooks are created and used.
-    let useDefaultTypePrinterParser = 1;
+  // This dialect defines its own types for qubits and qubit registers. To
+  // parse and print these, respective hooks must be defined. With this flag
+  // set to 1, the default hooks are created and used.
+  let useDefaultTypePrinterParser = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -58,12 +58,12 @@ def MQTRefDialect : Dialect {
 //===----------------------------------------------------------------------===//
 
 class MQTRefType<string name, string typeMnemonic, list<Trait> traits = []>
-        : TypeDef<MQTRefDialect, name, traits> {
-    let mnemonic = typeMnemonic;
+    : TypeDef<MQTRefDialect, name, traits> {
+  let mnemonic = typeMnemonic;
 }
 
 def QubitType : MQTRefType<"Qubit", "Qubit", [MemRefElementTypeInterface]> {
-    let summary = "qubit reference";
+  let summary = "qubit reference";
 }
 
 //===----------------------------------------------------------------------===//
@@ -73,27 +73,22 @@ def QubitType : MQTRefType<"Qubit", "Qubit", [MemRefElementTypeInterface]> {
 // This is the base class for all operations in the MQTRef dialect. It is a
 // template that takes the operation mnemonic and a list of traits. The MQTRefOp
 // class is a subclass of the Op class defined in the MLIR core.
-class MQTRefOp<string mnemonic, list<Trait> traits = []> :
-        Op<MQTRefDialect, mnemonic, traits>;
+class MQTRefOp<string mnemonic, list<Trait> traits = []>
+    : Op<MQTRefDialect, mnemonic, traits>;
 
-class GateOp<string mnemonic, list<Trait> traits = []> :
-    MQTRefOp<mnemonic, traits> {
-}
+class GateOp<string mnemonic, list<Trait> traits = []>
+    : MQTRefOp<mnemonic, traits> {}
 
-class UnitaryOp<string mnemonic, list<Trait> traits = []> :
-    GateOp<mnemonic, traits # [AttrSizedOperandSegments, UnitaryInterface]> {
-    let arguments = (ins
-        OptionalAttr<DenseF64ArrayAttr>:$static_params,
-        OptionalAttr<DenseBoolArrayAttr>:$params_mask,
-        Variadic<F64>:$params,
-        Variadic<QubitType>:$in_qubits,
-        Variadic<QubitType>:$pos_ctrl_in_qubits,
-        Variadic<QubitType>:$neg_ctrl_in_qubits
-    );
+class UnitaryOp<string mnemonic, list<Trait> traits = []>
+    : GateOp<mnemonic, traits#[AttrSizedOperandSegments, UnitaryInterface]> {
+  let arguments = (ins OptionalAttr<DenseF64ArrayAttr>:$static_params,
+      OptionalAttr<DenseBoolArrayAttr>:$params_mask, Variadic<F64>:$params,
+      Variadic<QubitType>:$in_qubits, Variadic<QubitType>:$pos_ctrl_in_qubits,
+      Variadic<QubitType>:$neg_ctrl_in_qubits);
 
-    let results = (outs);
+  let results = (outs);
 
-    let assemblyFormat = [{
+  let assemblyFormat = [{
         `(` custom<RefParams>($params, $static_params, $params_mask) `)`
         attr-dict
         $in_qubits ( `ctrl` $pos_ctrl_in_qubits^ )? ( `nctrl` $neg_ctrl_in_qubits^ )?
@@ -103,9 +98,9 @@ class UnitaryOp<string mnemonic, list<Trait> traits = []> :
 include "mlir/Dialect/MQTRef/IR/MQTRefStdOps.td"
 
 def MeasureOp : GateOp<"measure", []> {
-    let summary = "A measure operation";
+  let summary = "A measure operation";
 
-    let description = [{
+  let description = [{
         This class represents a measure operation.
         It takes a single qubit as input and returns a bit.
         After the measurement, the referenced qubit is in state "0" or "1".
@@ -117,15 +112,15 @@ def MeasureOp : GateOp<"measure", []> {
         ```
     }];
 
-    let arguments = (ins QubitType:$in_qubit);
-    let results = (outs I1:$out_bit);
-    let assemblyFormat = "$in_qubit attr-dict";
+  let arguments = (ins QubitType:$in_qubit);
+  let results = (outs I1:$out_bit);
+  let assemblyFormat = "$in_qubit attr-dict";
 }
 
 def ResetOp : GateOp<"reset", []> {
-    let summary = "A reset operation";
+  let summary = "A reset operation";
 
-    let description = [{
+  let description = [{
         This class represents a reset operation.
         It takes a single qubit as input and and resets its state to "0".
 
@@ -135,17 +130,18 @@ def ResetOp : GateOp<"reset", []> {
         ```
     }];
 
-    let arguments = (ins QubitType:$in_qubit);
-    let results = (outs);
-    let assemblyFormat = "$in_qubit attr-dict";
+  let arguments = (ins QubitType:$in_qubit);
+  let results = (outs);
+  let assemblyFormat = "$in_qubit attr-dict";
 }
 
-class ResourceOp<string mnemonic, list<Trait> traits = []> : MQTRefOp<mnemonic, traits>;
+class ResourceOp<string mnemonic, list<Trait> traits = []>
+    : MQTRefOp<mnemonic, traits>;
 
 def AllocQubitOp : ResourceOp<"allocQubit"> {
-    let summary = "Allocates a single qubit";
+  let summary = "Allocates a single qubit";
 
-    let description = [{
+  let description = [{
         Allocates a single qubit in the "0" state.
         The qubit can be used in operations after allocation.
         It must be deallocated with the `deallocQubit` operation.
@@ -156,15 +152,15 @@ def AllocQubitOp : ResourceOp<"allocQubit"> {
         ```
     }];
 
-    let arguments = (ins);
-    let results = (outs QubitType:$qubit);
-    let assemblyFormat = "attr-dict";
+  let arguments = (ins);
+  let results = (outs QubitType:$qubit);
+  let assemblyFormat = "attr-dict";
 }
 
 def DeallocQubitOp : ResourceOp<"deallocQubit"> {
-    let summary = "Deallocates a single qubit";
+  let summary = "Deallocates a single qubit";
 
-    let description = [{
+  let description = [{
         Deallocates a single qubit that was previously allocated with the
         `allocQubit` operation. After this operation, the qubit is no longer
         valid and cannot be used in further operations.
@@ -175,14 +171,14 @@ def DeallocQubitOp : ResourceOp<"deallocQubit"> {
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit);
-    let results = (outs);
-    let assemblyFormat = "$qubit attr-dict";
+  let arguments = (ins QubitType:$qubit);
+  let results = (outs);
+  let assemblyFormat = "$qubit attr-dict";
 }
 
 def QubitOp : ResourceOp<"qubit"> {
-    let summary = "Assign static qubit reference";
-    let description = [{
+  let summary = "Assign static qubit reference";
+  let description = [{
         The `mqtref.qubit` operation produces an SSA value from the given index
         to a static (hardware) qubit.
 
@@ -192,9 +188,9 @@ def QubitOp : ResourceOp<"qubit"> {
         ```
     }];
 
-    let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
-    let results = (outs QubitType:$qubit);
-    let assemblyFormat = "$index attr-dict";
+  let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
+  let results = (outs QubitType:$qubit);
+  let assemblyFormat = "$index attr-dict";
 }
 
 #endif // MQTREF_OPS
