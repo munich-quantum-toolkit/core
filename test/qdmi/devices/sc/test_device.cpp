@@ -20,6 +20,7 @@
 #include <vector>
 
 namespace {
+
 [[nodiscard]] auto querySites(MQT_SC_QDMI_Device_Session session)
     -> std::vector<MQT_SC_QDMI_Site> {
   size_t size = 0;
@@ -39,7 +40,6 @@ namespace {
   }
   return sites;
 }
-} // namespace
 
 class ScQDMISpecificationTest : public ::testing::Test {
 protected:
@@ -87,6 +87,8 @@ protected:
     ScQDMISpecificationTest::TearDown();
   }
 };
+
+} // namespace
 
 TEST_F(ScQDMISpecificationTest, SessionAlloc) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_alloc(nullptr),

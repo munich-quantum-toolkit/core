@@ -38,6 +38,8 @@
 using namespace qc;
 using namespace dd;
 
+namespace {
+
 class DDFunctionality : public testing::TestWithParam<OpType> {
 protected:
   void TearDown() override {}
@@ -55,6 +57,8 @@ protected:
   std::mt19937_64 mt;
   std::uniform_real_distribution<fp> dist;
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     Parameters, DDFunctionality,

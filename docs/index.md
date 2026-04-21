@@ -63,6 +63,8 @@ dd_package_evaluation
 :hidden:
 
 contributing
+ai_usage
+tooling
 support
 ```
 ````

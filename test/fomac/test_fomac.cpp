@@ -29,6 +29,9 @@
 #include <vector>
 
 namespace fomac {
+
+namespace {
+
 class DeviceTest : public testing::TestWithParam<Session::Device> {
 protected:
   Session::Device device;
@@ -102,6 +105,8 @@ cx q[0], q[1];
     return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0);
   }
 };
+
+} // namespace
 
 TEST(FoMaCTest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_WARN_GENERAL), "General warning");

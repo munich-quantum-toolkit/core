@@ -160,10 +160,8 @@ public:
     static_assert(std::is_base_of_v<NodeBase, Node>,
                   "Node must be derived from NodeBase");
     auto q = cfg.nVars - 1U;
-    for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
-      auto& table = *it;
-      std::cout << "\tq" << q << ":"
-                << "\n";
+    for (const auto& table : std::ranges::reverse_view(tables)) {
+      std::cout << "\tq" << q << ":" << "\n";
       for (std::size_t key = 0; key < table.size(); ++key) {
         auto* p = static_cast<Node*>(table[key]);
         if (p != nullptr) {

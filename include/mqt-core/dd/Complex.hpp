@@ -37,7 +37,7 @@ struct Complex {
    * @return A complex number with real and imaginary part equal to zero.
    */
   static constexpr Complex zero() noexcept {
-    return {&constants::zero, &constants::zero};
+    return {.r = &constants::zero, .i = &constants::zero};
   }
 
   /**
@@ -46,7 +46,7 @@ struct Complex {
    * equal to zero.
    */
   static constexpr Complex one() noexcept {
-    return {&constants::one, &constants::zero};
+    return {.r = &constants::one, .i = &constants::zero};
   }
 
   /**

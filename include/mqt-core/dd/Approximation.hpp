@@ -10,8 +10,11 @@
 
 #pragma once
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+
+#include <cstddef>
 
 namespace dd {
 

@@ -1,5 +1,8 @@
 name: Templating
 on:
+  push:
+    branches:
+      - main
   pull_request:
     paths:
       - ".github/workflows/templating.yml"
@@ -19,11 +22,11 @@ jobs:
           JSON_CONTENT=$(cat .github/workflow_inputs/release_drafter_categories.json | jq -c .)
           echo "release_drafter_categories=$JSON_CONTENT" >> $GITHUB_OUTPUT
       - id: create-token
-        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: munich-quantum-toolkit/templates@dfe78235728b5fc715f7ac8ec483970666d3f0cf # v1.1.12
+      - uses: munich-quantum-toolkit/templates@58aa931467691cea6d910016e1c75ab83780bc54 # v1.2.0
         with:
           token: ${{ steps.create-token.outputs.token }}
           name: Core

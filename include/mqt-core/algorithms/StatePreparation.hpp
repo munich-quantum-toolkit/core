@@ -10,12 +10,12 @@
 
 #pragma once
 
-#include "ir/QuantumComputation.hpp"
-
 #include <complex>
 #include <vector>
 
 namespace qc {
+class QuantumComputation;
+
 /**
  * @brief Prepares a generic quantum state from a list of normalized
  *        complex amplitudes

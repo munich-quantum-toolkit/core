@@ -9,9 +9,9 @@
 include "mlir/Pass/PassBase.td"
 
 def MQTRefToMQTOpt : Pass<"mqtref-to-mqtopt"> {
-    let summary = "Convert MQT's `Ref` to MQT's `Opt` dialect.";
+  let summary = "Convert MQT's `Ref` to MQT's `Opt` dialect.";
 
-    let description = [{
+  let description = [{
       This pass converts all current MQTRef operations to an equivalent MQTOpt operation.
       To convert them to the opt dialect, the conversion pass maintains a map that matches each ref qubit
       and ref qubit register to its latest state value when replacing them with an opt operation. These state values
@@ -21,9 +21,7 @@ def MQTRefToMQTOpt : Pass<"mqtref-to-mqtopt"> {
    }];
 
   // Define dependent dialects
-  let dependentDialects = [
-    "mlir::memref::MemRefDialect",
-    "::mqt::ir::ref::MQTRefDialect",
-    "::mqt::ir::opt::MQTOptDialect"
-  ];
+  let dependentDialects = ["mlir::memref::MemRefDialect",
+                           "::mqt::ir::ref::MQTRefDialect",
+                           "::mqt::ir::opt::MQTOptDialect"];
 }

@@ -2,6 +2,8 @@ FormatStyle: file
 
 Checks: |
   bugprone-*,
+  -bugprone-command-processor,
+  -bugprone-random-generator-seed,
   -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
   clang-analyzer-*,
@@ -14,6 +16,7 @@ Checks: |
   -cppcoreguidelines-macro-usage,
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
   -cppcoreguidelines-avoid-do-while,
   google-*,
   -google-readability-todo,

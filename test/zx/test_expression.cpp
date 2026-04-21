@@ -22,12 +22,16 @@ namespace sym {
 
 using namespace zx;
 
+namespace {
+
 class ExpressionTest : public ::testing::Test {
 public:
   Term<double> x{Variable("x"), 1.0};
   Term<double> y{Variable("y")};
   Term<double> z{Variable("z")};
 };
+
+} // namespace
 
 TEST_F(ExpressionTest, basicOps1) {
   Expression<double, PiRational> e(x);

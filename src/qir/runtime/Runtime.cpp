@@ -114,6 +114,7 @@ auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
   }
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape)
 auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> void {
   const auto target1 = translateAddresses(std::array{qubit1})[0];
   const auto target2 = translateAddresses(std::array{qubit2})[0];

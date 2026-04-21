@@ -175,7 +175,7 @@ VectorDD makeBasisState(const std::size_t n,
     }
     f = dd.makeDDNode(v, edges);
   }
-  const vEdge e{f.p, dd.cn.lookup(f.w)};
+  const vEdge e{.p = f.p, .w = dd.cn.lookup(f.w)};
   dd.incRef(e);
   return e;
 }
@@ -260,7 +260,7 @@ VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
 
   const vCachedEdge state = makeStateFromVector(vec.begin(), vec.end(), v, dd);
 
-  const vEdge ret{state.p, dd.cn.lookup(state.w)};
+  const vEdge ret{.p = state.p, .w = dd.cn.lookup(state.w)};
   dd.incRef(ret);
   return ret;
 }
@@ -275,7 +275,8 @@ VectorDD generateExponentialState(const std::size_t levels, Package& dd,
   std::vector<std::size_t> nodesPerLevel(levels); // [1, 2, 4, 8, ...]
   std::ranges::generate(nodesPerLevel,
                         [exp = 0]() mutable { return 1ULL << exp++; });
-  return generateRandomState(levels, nodesPerLevel, ROUNDROBIN, dd, seed);
+  return generateRandomState(levels, nodesPerLevel,
+                             GenerationWireStrategy::ROUNDROBIN, dd, seed);
 }
 
 VectorDD generateRandomState(const std::size_t levels,
@@ -324,12 +325,12 @@ VectorDD generateRandomState(const std::size_t levels,
 
     std::vector<std::size_t> indices(2 * n); // Indices for wireing.
     switch (strategy) {
-    case ROUNDROBIN: {
+    case GenerationWireStrategy::ROUNDROBIN: {
       std::ranges::generate(indices,
                             [&m, r = 0UL]() mutable { return (r++) % m; });
       break;
     }
-    case RANDOM: {
+    case GenerationWireStrategy::RANDOM: {
       IndexDistribution idxDist{0, m - 1};
 
       // Ensure that all the nodes below have a connection upwards.
@@ -357,7 +358,7 @@ VectorDD generateRandomState(const std::size_t levels,
   }
 
   // Below only contains one element: the root.
-  vEdge ret{curr.at(0).p, Complex::one()};
+  vEdge ret{.p = curr.at(0).p, .w = Complex::one()};
   dd.incRef(ret);
   return ret;
 }

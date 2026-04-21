@@ -9,9 +9,10 @@
 include "mlir/Pass/PassBase.td"
 
 def QIRToMQTRef : Pass<"qir-to-mqtref"> {
-    let summary = "Raise LLVM/QIR (Base Profile) to the `MQTRef` dialect by converting QIR calls into `mqtref` ops";
+  let summary = "Raise LLVM/QIR (Base Profile) to the `MQTRef` dialect by "
+                "converting QIR calls into `mqtref` ops";
 
-    let description = [{
+  let description = [{
       Overview
       Converts LLVM dialect modules that use QIR into MQTRef IR by pattern-matching and replacing calls to QIR functions with
       equivalent operations from the MQTRef dialect.
@@ -42,10 +43,8 @@ def QIRToMQTRef : Pass<"qir-to-mqtref"> {
    }];
 
   // Define dependent dialects
-  let dependentDialects = [
-    "::mqt::ir::ref::MQTRefDialect",
-    "mlir::LLVM::LLVMDialect",
-    "mlir::memref::MemRefDialect",
-    "mlir::arith::ArithDialect"
-  ];
+  let dependentDialects = ["::mqt::ir::ref::MQTRefDialect",
+                           "mlir::LLVM::LLVMDialect",
+                           "mlir::memref::MemRefDialect",
+                           "mlir::arith::ArithDialect"];
 }

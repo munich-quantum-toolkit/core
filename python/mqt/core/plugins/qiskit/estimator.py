@@ -230,7 +230,7 @@ class QDMIEstimator(BaseEstimatorV2):
             # Decompose into Pauli strings
             if not isinstance(observable, SparsePauliOp):
                 if isinstance(observable, dict):
-                    observable = SparsePauliOp.from_list(list(observable.items()))
+                    observable = SparsePauliOp.from_list(observable.items())
                 else:
                     observable = SparsePauliOp(observable)
 
