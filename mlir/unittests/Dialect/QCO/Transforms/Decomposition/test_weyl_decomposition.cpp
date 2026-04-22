@@ -72,6 +72,27 @@ TEST_P(WeylDecompositionTest, TestApproximation) {
       << restoredMatrix << '\n';
 }
 
+TEST(WeylDecompositionTest, CnotProducesValidWeylParametersAndUnitaryLocals) {
+  Eigen::Matrix4cd cnot = Eigen::Matrix4cd::Zero();
+  cnot(0, 0) = 1.0;
+  cnot(1, 1) = 1.0;
+  cnot(2, 3) = 1.0;
+  cnot(3, 2) = 1.0;
+
+  const auto decomp = TwoQubitWeylDecomposition::create(cnot, std::nullopt);
+  EXPECT_GE(decomp.a(), -1e-10);
+  EXPECT_GE(decomp.b(), -1e-10);
+  EXPECT_GE(decomp.c(), -1e-10);
+  constexpr double piOver4 = 0.7853981633974483;
+  EXPECT_LE(decomp.a(), piOver4 + 1e-10);
+  EXPECT_LE(decomp.b(), piOver4 + 1e-10);
+  EXPECT_LE(decomp.c(), piOver4 + 1e-10);
+  EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k1l()));
+  EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k2l()));
+  EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k1r()));
+  EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k2r()));
+}
+
 TEST(WeylDecompositionTest, Random) {
   constexpr auto maxIterations = 5000;
   std::mt19937 rng{1234567UL};

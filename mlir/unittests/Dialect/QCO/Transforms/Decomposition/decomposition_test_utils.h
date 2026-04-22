@@ -12,11 +12,42 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 
+#include <Eigen/Core>
 #include <Eigen/QR>
 
 #include <cassert>
+#include <cmath>
 #include <complex>
 #include <random>
+
+/// Standard U3 matrix (same convention as QCO ``u`` angles).
+[[nodiscard]] inline Eigen::Matrix2cd u3Matrix(double theta, double phi,
+                                               double lambda) {
+  using Complex = std::complex<double>;
+  const Complex i(0.0, 1.0);
+  const double c = std::cos(theta / 2.0);
+  const double s = std::sin(theta / 2.0);
+  const Complex eiphi = std::exp(i * phi);
+  const Complex eilambda = std::exp(i * lambda);
+  const Complex eiphilambda = std::exp(i * (phi + lambda));
+
+  Eigen::Matrix2cd mat;
+  mat << c, -eilambda * s, eiphi * s, eiphilambda * c;
+  return mat;
+}
+
+/// Compare up to a single global phase factor.
+template <typename Matrix>
+[[nodiscard]] bool isEquivalentUpToGlobalPhase(const Matrix& lhs,
+                                               const Matrix& rhs,
+                                               double atol = 1e-10) {
+  const auto overlap = (rhs.adjoint() * lhs).trace();
+  if (std::abs(overlap) <= atol) {
+    return false;
+  }
+  const auto factor = overlap / std::abs(overlap);
+  return lhs.isApprox(factor * rhs, atol);
+}
 
 template <typename MatrixType>
 [[nodiscard]] MatrixType randomUnitaryMatrix(std::mt19937& rng) {
