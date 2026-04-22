@@ -15,6 +15,9 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
@@ -23,7 +26,11 @@
 #include "qir_programs.h"
 #include "quantum_computation_programs.h"
 
+#include <Eigen/Core>
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -34,12 +41,16 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 
+#include <complex>
+#include <cstddef>
 #include <cstdlib>
 #include <iosfwd>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace mqt::test::compiler {
@@ -662,5 +673,519 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxMinusYY),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxMinusYY)}));
+
+namespace {
+
+class CompilerPipelineNativeSynthesisConfigTest : public testing::Test {
+protected:
+  std::unique_ptr<mlir::MLIRContext> context;
+  mlir::OwningOpRef<mlir::ModuleOp> module;
+  mlir::QuantumCompilerConfig config;
+
+  void SetUp() override {
+    mlir::DialectRegistry registry;
+    registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
+                    mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
+                    mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
+                    mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
+                    mlir::LLVM::LLVMDialect>();
+    context = std::make_unique<mlir::MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+
+    module = mlir::qc::QCProgramBuilder::build(context.get(),
+                                               mlir::qc::staticQubitsWithOps);
+    ASSERT_TRUE(module);
+
+    config.convertToQIR = false;
+    config.recordIntermediates = true;
+  }
+
+  [[nodiscard]] mlir::CompilationRecord runPipelineAndExpectSuccess() const {
+    mlir::CompilationRecord record;
+    mlir::QuantumCompilerPipeline pipeline(config);
+    EXPECT_TRUE(pipeline.runPipeline(module.get(), &record).succeeded());
+    return record;
+  }
+
+  void runPipelineAndExpectFailure() const {
+    mlir::CompilationRecord record;
+    mlir::QuantumCompilerPipeline pipeline(config);
+    EXPECT_TRUE(failed(pipeline.runPipeline(module.get(), &record)));
+  }
+};
+
+/// Compute the 4×4 unitary of a two-qubit QCO module whose qubits are
+/// introduced by `qco.static` ops with indices 0 and 1. Handles the op set
+/// that stage-4/stage-5 IR can contain for the `staticQubitsWithOps`
+/// program (pre-synthesis: `qco.h`; post-synthesis: `qco.rz`, `qco.sx`,
+/// `qco.x`, `qco.p`, `qco.u`; and `qco.gphase`, which is skipped). Returns
+/// `std::nullopt` if the IR contains an unsupported op or non-constant
+/// parameters.
+std::optional<Eigen::Matrix4cd>
+computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
+  if (module == nullptr) {
+    return std::nullopt;
+  }
+
+  Eigen::Matrix4cd unitary = Eigen::Matrix4cd::Identity();
+  llvm::DenseMap<mlir::Value, std::size_t> qubitIds;
+
+  const auto getQubitId = [&](mlir::Value qubit) -> std::optional<std::size_t> {
+    const auto it = qubitIds.find(qubit);
+    if (it == qubitIds.end()) {
+      return std::nullopt;
+    }
+    return it->second;
+  };
+
+  for (auto func : module.getOps<mlir::func::FuncOp>()) {
+    for (auto& block : func.getBlocks()) {
+      for (auto& rawOp : block.getOperations()) {
+        if (auto staticOp = llvm::dyn_cast<mlir::qco::StaticOp>(&rawOp)) {
+          const auto index = static_cast<std::size_t>(staticOp.getIndex());
+          if (index >= 2) {
+            return std::nullopt;
+          }
+          qubitIds.try_emplace(staticOp.getResult(), index);
+          continue;
+        }
+
+        if (llvm::isa<mlir::qco::BarrierOp, mlir::qco::GPhaseOp>(&rawOp)) {
+          continue;
+        }
+
+        auto op = llvm::dyn_cast<mlir::qco::UnitaryOpInterface>(&rawOp);
+        if (!op) {
+          continue;
+        }
+
+        if (op.isSingleQubit()) {
+          const auto qid = getQubitId(op.getInputQubit(0));
+          if (!qid) {
+            return std::nullopt;
+          }
+          Eigen::Matrix2cd oneQ;
+          if (!op.getUnitaryMatrix2x2(oneQ)) {
+            return std::nullopt;
+          }
+          unitary =
+              mlir::qco::decomposition::expandToTwoQubits(oneQ, *qid) * unitary;
+          qubitIds[op.getOutputQubit(0)] = *qid;
+          continue;
+        }
+
+        if (op.isTwoQubit()) {
+          const auto q0 = getQubitId(op.getInputQubit(0));
+          const auto q1 = getQubitId(op.getInputQubit(1));
+          if (!q0 || !q1) {
+            return std::nullopt;
+          }
+          Eigen::Matrix4cd twoQ;
+          if (auto ctrl = llvm::dyn_cast<mlir::qco::CtrlOp>(&rawOp)) {
+            if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
+              return std::nullopt;
+            }
+            auto* body = ctrl.getBodyUnitary().getOperation();
+            if (llvm::isa<mlir::qco::XOp>(body)) {
+              // CX matrix (same 4×4 layout as QCO unitary interface).
+              twoQ << 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0;
+            } else if (llvm::isa<mlir::qco::ZOp>(body)) {
+              twoQ = Eigen::Matrix4cd::Identity();
+              twoQ(3, 3) = -1.0;
+            } else {
+              return std::nullopt;
+            }
+          } else if (!op.getUnitaryMatrix4x4(twoQ)) {
+            return std::nullopt;
+          }
+          const llvm::SmallVector<mlir::qco::decomposition::QubitId, 2> ids{
+              static_cast<mlir::qco::decomposition::QubitId>(*q0),
+              static_cast<mlir::qco::decomposition::QubitId>(*q1)};
+          unitary =
+              mlir::qco::decomposition::fixTwoQubitMatrixQubitOrder(twoQ, ids) *
+              unitary;
+          qubitIds[op.getOutputQubit(0)] = *q0;
+          qubitIds[op.getOutputQubit(1)] = *q1;
+          continue;
+        }
+
+        return std::nullopt;
+      }
+    }
+  }
+
+  return unitary;
+}
+
+/// Check matrix equality up to a unit-modulus global phase.
+bool isEquivalentUpToGlobalPhase(const Eigen::Matrix4cd& lhs,
+                                 const Eigen::Matrix4cd& rhs,
+                                 const double atol = 1e-10) {
+  const auto overlap = (rhs.adjoint() * lhs).trace();
+  if (std::abs(overlap) <= atol) {
+    return false;
+  }
+  const auto factor = overlap / std::abs(overlap);
+  return lhs.isApprox(factor * rhs, atol);
+}
+
+} // namespace
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       AppliesConfiguredNativeSynthesisProfileInStage5) {
+  config.nativeGates = "x,sx,rz,cx";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  // Stage 4 still contains unsynthesized H operations from the source program.
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  // Stage 5 must rewrite them when a native menu is configured.
+  EXPECT_EQ(record.afterOptimization.find("qco.h"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       AppliesConfiguredU3CxNativeSynthesisProfileInStage5) {
+  config.nativeGates = "u,cx";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterOptimization.find("qco.h"), std::string::npos);
+  EXPECT_NE(record.afterOptimization.find("qco.u"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       AppliesConfiguredExpandedNativeSynthesisProfileInStage5) {
+  config.nativeGates = "u,rx,rz,cx,cz";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterOptimization.find("qco.h"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       RejectsInvalidNativeSynthesisScoreWeightsInStage5) {
+  config.nativeGates = "u,cx";
+  config.nativeGateScoreWeightTwoQ = -1.0;
+
+  runPipelineAndExpectFailure();
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       RejectsUnderSpecifiedNativeSynthesisMenuInStage5) {
+  // A menu with only two-qubit entanglers cannot synthesize any single-qubit
+  // operation.
+  config.nativeGates = "cx,cz";
+
+  runPipelineAndExpectFailure();
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       RejectsInvalidNativeGateTokenInStage5) {
+  // Unknown tokens in the menu must be rejected.
+  config.nativeGates = "not-a-gate";
+
+  runPipelineAndExpectFailure();
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       LeavesIRUnchangedWhenNoNativeProfileIsConfigured) {
+  // Stage 5 must be a no-op when `nativeGates` is empty (the documented
+  // default): the stage-4 (QCO canonicalized) and stage-5 (optimization +
+  // native gate synthesis) IRs have to be byte-identical.
+  config.nativeGates = "";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterQCOCanon, record.afterOptimization);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       NativeSynthesisPreservesUnitaryOnStaticQubits) {
+  // End-to-end unitary equivalence check: after the pipeline lowers
+  // `staticQubitsWithOps` (H on two static qubits) onto the `x,sx,rz,cx`
+  // native gate set, the 4×4 unitary of the IR after stage 5 must match the
+  // unitary of the pre-synthesis (`afterQCOCanon`) IR up to a global phase.
+  config.nativeGates = "x,sx,rz,cx";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  auto preSynth = mlir::parseSourceString<mlir::ModuleOp>(record.afterQCOCanon,
+                                                          context.get());
+  auto postSynth = mlir::parseSourceString<mlir::ModuleOp>(
+      record.afterOptimization, context.get());
+  ASSERT_TRUE(preSynth);
+  ASSERT_TRUE(postSynth);
+
+  const auto preU = computeStaticTwoQubitUnitary(preSynth.get());
+  const auto postU = computeStaticTwoQubitUnitary(postSynth.get());
+  ASSERT_TRUE(preU);
+  ASSERT_TRUE(postU);
+  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*preU, *postU));
+}
+
+namespace {
+
+struct NativeSynthesisProgramTestCase {
+  std::string name;
+  QCProgramBuilderFn qcProgramBuilder;
+
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const NativeSynthesisProgramTestCase& info) {
+    return os << "NativeSynthesisProgram{" << info.name << "}";
+  }
+};
+
+struct NativeSynthesisProfileTestCase {
+  std::string name;
+  std::string nativeGates;
+  bool expectUInStage5 = false;
+  llvm::SmallVector<std::string> nonNativeOpsToEliminate;
+
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const NativeSynthesisProfileTestCase& info) {
+    return os << "NativeSynthesisProfile{" << info.name << "}";
+  }
+};
+
+struct NativeSynthesisStage5TestCase {
+  NativeSynthesisProgramTestCase program;
+  NativeSynthesisProfileTestCase profile;
+
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const NativeSynthesisStage5TestCase& info) {
+    return os << info.profile << " / " << info.program;
+  }
+};
+
+mlir::OwningOpRef<mlir::ModuleOp>
+buildQCModuleForNativeSynthesisProgram(mlir::MLIRContext* context,
+                                       const QCProgramBuilderFn builder) {
+  auto module = mlir::qc::QCProgramBuilder::build(context, builder.fn);
+  EXPECT_TRUE(module) << "failed to build QC module";
+  return module;
+}
+
+mlir::CompilationRecord
+runPipelineWithNativeSynthesisConfig(mlir::ModuleOp module,
+                                     const std::string& nativeGates) {
+  mlir::QuantumCompilerConfig config;
+  config.convertToQIR = false;
+  config.recordIntermediates = true;
+  config.nativeGates = nativeGates;
+
+  mlir::CompilationRecord record;
+  mlir::QuantumCompilerPipeline pipeline(config);
+  EXPECT_TRUE(pipeline.runPipeline(module, &record).succeeded());
+  return record;
+}
+
+class CompilerPipelineNativeSynthesisProgramsTest
+    : public testing::TestWithParam<NativeSynthesisStage5TestCase> {
+protected:
+  std::unique_ptr<mlir::MLIRContext> context;
+
+  void SetUp() override {
+    mlir::DialectRegistry registry;
+    registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
+                    mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
+                    mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
+                    mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
+                    mlir::LLVM::LLVMDialect>();
+    context = std::make_unique<mlir::MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
+};
+
+} // namespace
+
+TEST_P(CompilerPipelineNativeSynthesisProgramsTest,
+       SynthesizesHOperationsInStage5) {
+  const auto& testCase = GetParam();
+  auto module = buildQCModuleForNativeSynthesisProgram(
+      context.get(), testCase.program.qcProgramBuilder);
+  ASSERT_TRUE(module);
+
+  const auto record = runPipelineWithNativeSynthesisConfig(
+      module.get(), testCase.profile.nativeGates);
+
+  for (const auto& opName : testCase.profile.nonNativeOpsToEliminate) {
+    ASSERT_NE(record.afterQCOCanon.find(opName), std::string::npos)
+        << "Program must contain " << opName << " after QCO canonicalization";
+    EXPECT_EQ(record.afterOptimization.find(opName), std::string::npos);
+  }
+  if (testCase.profile.expectUInStage5) {
+    EXPECT_NE(record.afterOptimization.find("qco.u"), std::string::npos);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    NativeSynthesisStage5Programs, CompilerPipelineNativeSynthesisProgramsTest,
+    testing::Values(
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "IbmBasicCx",
+                    .nativeGates = "x,sx,rz,cx",
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "ResetMultipleQubitsAfterSingleOp",
+                    MQT_NAMED_BUILDER(
+                        mlir::qc::resetMultipleQubitsAfterSingleOp),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "IbmBasicCx",
+                    .nativeGates = "x,sx,rz,cx",
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "S",
+                    MQT_NAMED_BUILDER(mlir::qc::s),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "IbmBasicCx",
+                    .nativeGates = "x,sx,rz,cx",
+                    .nonNativeOpsToEliminate = {"qco.s"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "T",
+                    MQT_NAMED_BUILDER(mlir::qc::t_),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "IbmBasicCx",
+                    .nativeGates = "x,sx,rz,cx",
+                    .nonNativeOpsToEliminate = {"qco.t"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "Y",
+                    MQT_NAMED_BUILDER(mlir::qc::y),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "IbmBasicCx",
+                    .nativeGates = "x,sx,rz,cx",
+                    .nonNativeOpsToEliminate = {"qco.y"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "U3Cx",
+                    .nativeGates = "u,cx",
+                    .expectUInStage5 = true,
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "ResetMultipleQubitsAfterSingleOp",
+                    MQT_NAMED_BUILDER(
+                        mlir::qc::resetMultipleQubitsAfterSingleOp),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "U3Cx",
+                    .nativeGates = "u,cx",
+                    .expectUInStage5 = true,
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "IbmBasicCz",
+                    .nativeGates = "x,sx,rz,cz",
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "IbmFractional",
+                    .nativeGates = "x,sx,rz,rx,rzz,cz",
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "IqmDefault",
+                    .nativeGates = "r,cz",
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "AxisPairRxRzCx",
+                    .nativeGates = "rx,rz,cx",
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        },
+        NativeSynthesisStage5TestCase{
+            .program =
+                NativeSynthesisProgramTestCase{
+                    "StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+                },
+            .profile =
+                NativeSynthesisProfileTestCase{
+                    .name = "U3Cz",
+                    .nativeGates = "u,cz",
+                    .expectUInStage5 = true,
+                    .nonNativeOpsToEliminate = {"qco.h"},
+                },
+        }));
 
 } // namespace mqt::test::compiler

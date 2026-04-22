@@ -101,4 +101,71 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                               "The number of inserted SWAPs">];
 }
 
+def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
+  let description = [{
+    This pass rewrites a module so that every remaining unitary operation is
+    allowed by the `native-gates` menu. `qco.barrier` and `qco.gphase` are
+    preserved; controlled gates (`qco.ctrl`) must have a single control and a
+    single target.
+
+    The menu is a comma-separated list of gate tokens from which the pass
+    derives a single-qubit synthesis strategy (`u`, `zsxx`, IQM-style `r`, or
+    an axis pair `rx`/`ry`/`rz`) and the set of available two-qubit entanglers
+    (`cx`, `cz`, `rzz`).
+
+    Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`, `cx`,
+    `cz`, `rzz`. An empty or whitespace-only menu is a no-op, which is the
+    intended pipeline default when synthesis is not needed. An unrecognised
+    token or an invalid score weight (non-finite or negative) causes the pass
+    to fail.
+
+    Example menus:
+    - `x,sx,rz,cx` (IBM basic)
+    - `x,sx,rz,rx,rzz,cz` (IBM fractional)
+    - `r,cz` (IQM default)
+    - `u,cx` (generic U3 + CX)
+    - `rx,rz,cx` (Rx/Rz axis pair + CX)
+
+    The pass runs single-qubit fusion, then a two-qubit window pass (including
+    absorbed single-qubit padding), then up to four lowering sweeps over
+    remaining non-native unitaries. Two-qubit lowering may emit temporary
+    off-menu single-qubit gates; later sweeps try to absorb them. If any
+    off-menu single-qubit gates remain after that cap, the pass fails.
+
+    It then fuses single-qubit runs again (seams between two-qubit blocks),
+    merges `rz` angles through `qco.ctrl` control chains where valid, fuses
+    single-qubit runs once more, and runs up to four optional lowering +
+    fusion rounds until the full menu holds (including `qco.ctrl` shells and
+    bare two-qubit gates). If anything is still off-menu, the pass fails.
+
+    Candidate selection minimises the linear cost
+    `score-weight-twoq * #2q + score-weight-oneq * #1q +
+    score-weight-depth * local-depth`. Defaults (`1.0 / 0.1 / 0.01`) favour
+    minimising two-qubit count first, then single-qubit count, then depth.
+
+    `qco.ctrl` wrappers whose body is `qco.x` or `qco.z` are left untouched
+    when `cx` or `cz` is on the menu; otherwise they are treated as a `4×4`
+    unitary and go through the same two-qubit search as bare two-qubit gates.
+    `qco.xx_plus_yy` / `qco.xx_minus_yy` are lowered via a dedicated
+    `rzz`-centric rewrite when `rzz` is on the menu, and via the general
+    two-qubit decomposition otherwise.
+  }];
+  let options =
+      [Option<"nativeGates", "native-gates", "std::string", "\"\"",
+              "Comma-separated native gate menu. Empty or whitespace-only is "
+              "a no-op. Recognised tokens: u, x, sx, rz (or p), rx, ry, r, cx, "
+              "cz, rzz.">,
+       Option<"scoreWeightTwoQ", "score-weight-twoq", "double", "1.0",
+              "Weight for the number of two-qubit gates in candidate "
+              "scoring. Must be finite and non-negative.">,
+       Option<"scoreWeightOneQ", "score-weight-oneq", "double", "0.1",
+              "Weight for the number of single-qubit gates in candidate "
+              "scoring. Must be finite and non-negative.">,
+       Option<"scoreWeightDepth", "score-weight-depth", "double", "0.01",
+              "Weight for the local candidate depth in candidate scoring. "
+              "Must be finite and non-negative.">];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

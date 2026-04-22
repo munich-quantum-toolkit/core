@@ -136,19 +136,26 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  // Stage 5: Optimization passes
+  // Stage 5: Optimization and native gate synthesis
   if (failed(runStage([&](PassManager& pm) {
         if (!config_.disableMergeSingleQubitRotationGates) {
           pm.addPass(qco::createMergeSingleQubitRotationGates());
         }
+        pm.addPass(
+            qco::createNativeGateSynthesisPass(qco::NativeGateSynthesisOptions{
+                .nativeGates = config_.nativeGates,
+                .scoreWeightTwoQ = config_.nativeGateScoreWeightTwoQ,
+                .scoreWeightOneQ = config_.nativeGateScoreWeightOneQ,
+                .scoreWeightDepth = config_.nativeGateScoreWeightDepth,
+            }));
       }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
     record->afterOptimization = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Optimization Passes", ++currentStage,
-                       totalStages);
+      prettyPrintStage(module, "Optimization and Native Gate Synthesis",
+                       ++currentStage, totalStages);
     }
   }
   // Stage 6: QCO cleanup

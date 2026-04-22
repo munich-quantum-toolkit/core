@@ -43,6 +43,25 @@ struct QuantumCompilerConfig {
 
   /// Disable quaternion-based single-qubit rotation gate merging
   bool disableMergeSingleQubitRotationGates = false;
+
+  /// Comma-separated native gate menu. Recognised tokens: `u`, `x`, `sx`,
+  /// `rz` (or `p`), `rx`, `ry`, `r`, `cx`, `cz`, `rzz`. An empty or
+  /// whitespace-only string leaves native synthesis as a no-op (IR
+  /// unchanged). Common examples:
+  /// - `"x,sx,rz,cx"`         — IBM basic (CX)
+  /// - `"x,sx,rz,rx,rzz,cz"`  — IBM fractional
+  /// - `"r,cz"`               — IQM default
+  /// - `"u,cx"`               — generic U3 + CX
+  std::string nativeGates;
+
+  /// Weight for two-qubit gates in local candidate scoring
+  double nativeGateScoreWeightTwoQ = 1.0;
+
+  /// Weight for single-qubit gates in local candidate scoring
+  double nativeGateScoreWeightOneQ = 0.1;
+
+  /// Weight for local candidate depth in local candidate scoring
+  double nativeGateScoreWeightDepth = 0.01;
 };
 
 /**
@@ -78,7 +97,7 @@ struct CompilationRecord {
  * 2. QC cleanup pipeline
  * 3. QCO dialect (value semantics) - enables SSA-based optimizations
  * 4. QCO cleanup pipeline
- * 5. Quantum optimization passes
+ * 5. Optimization and native gate synthesis
  * 6. QCO cleanup pipeline
  * 7. QC dialect - converted back for backend lowering
  * 8. QC cleanup pipeline

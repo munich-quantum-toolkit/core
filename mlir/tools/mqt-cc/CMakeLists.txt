@@ -18,7 +18,8 @@ target_link_libraries(
           # Required for OpenQASM parsing
           MQT::CoreQASM
           MQT::CoreIR
-          MLIRQCTranslation)
+          MLIRQCTranslation
+          MLIRMemRefDialect)
 
 mqt_mlir_target_use_project_options(mqt-cc)
 llvm_update_compile_flags(mqt-cc)

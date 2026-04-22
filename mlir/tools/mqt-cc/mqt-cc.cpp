@@ -25,6 +25,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/AsmState.h>
 #include <mlir/IR/MLIRContext.h>
@@ -75,6 +76,29 @@ static cl::opt<bool> disableMergeSingleQubitRotationGates(
     "disable-merge-single-qubit-rotation-gates",
     cl::desc("Disable quaternion-based single-qubit rotation gate merging"),
     cl::init(false));
+
+static cl::opt<std::string> nativeGates(
+    "native-gates",
+    cl::desc("Comma-separated native gate menu for the native-gate-synthesis "
+             "pass (empty or whitespace-only disables synthesis)"),
+    cl::value_desc("csv"), cl::init(""));
+
+static cl::opt<double> nativeGateScoreWeightTwoQ(
+    "native-gate-score-two-q",
+    cl::desc(
+        "Weight for two-qubit gates in native synthesis candidate scoring"),
+    cl::init(1.0));
+
+static cl::opt<double> nativeGateScoreWeightOneQ(
+    "native-gate-score-one-q",
+    cl::desc("Weight for single-qubit gates in native synthesis candidate "
+             "scoring"),
+    cl::init(0.1));
+
+static cl::opt<double> nativeGateScoreWeightDepth(
+    "native-gate-score-depth",
+    cl::desc("Weight for local depth in native synthesis candidate scoring"),
+    cl::init(0.01));
 
 /**
  * @brief Load and parse a .qasm file
@@ -146,6 +170,7 @@ int main(int argc, char** argv) {
   registry.insert<arith::ArithDialect>();
   registry.insert<cf::ControlFlowDialect>();
   registry.insert<func::FuncDialect>();
+  registry.insert<mlir::memref::MemRefDialect>();
   registry.insert<scf::SCFDialect>();
   registry.insert<LLVM::LLVMDialect>();
 
@@ -172,6 +197,10 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = printIRAfterAllStages;
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
+  config.nativeGates = nativeGates.getValue();
+  config.nativeGateScoreWeightTwoQ = nativeGateScoreWeightTwoQ.getValue();
+  config.nativeGateScoreWeightOneQ = nativeGateScoreWeightOneQ.getValue();
+  config.nativeGateScoreWeightDepth = nativeGateScoreWeightDepth.getValue();
 
   // Run the compilation pipeline
   CompilationRecord record;
@@ -192,7 +221,8 @@ int main(int argc, char** argv) {
            << record.afterQCOConversion << "\n";
     outs() << "After Initial QCO Canonicalization:\n"
            << record.afterQCOCanon << "\n";
-    outs() << "After Optimization:\n" << record.afterOptimization << "\n";
+    outs() << "After Optimization and Native Gate Synthesis:\n"
+           << record.afterOptimization << "\n";
     outs() << "After Final QCO Canonicalization:\n"
            << record.afterOptimizationCanon << "\n";
     outs() << "After QCO-to-QC Conversion:\n"
