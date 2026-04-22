@@ -9,10 +9,10 @@ This document describes breaking changes and how to upgrade. For a complete list
 The shared library ABI version (`SOVERSION`) is increased from `3.4` to `3.5`.
 Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
 
-### `nanobind` updated to v1.12.0
+### `nanobind` updated to version 2.12.0
 
-This release updates the `nanobind` dependency to v1.12.0, which includes an ABI bump.
-Any existing code that uses the `mqt-core` Python bindings will need to be recompiled with the new nanobind version.
+This release updates the `nanobind` dependency to version 2.12.0, which includes an ABI bump.
+Any existing code that uses the `mqt-core` Python bindings will need to be recompiled with the new `nanobind` version.
 
 ## [3.4.0]
 

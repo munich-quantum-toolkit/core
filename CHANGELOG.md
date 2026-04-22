@@ -16,12 +16,12 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#350)._
 ### Added
 
 - ✨ Add support for multi-controlled gates to ZX package ([#1380]) ([**@keefehuang**])
-- ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
+- ✨ Add Sampler and Estimator primitives to the QDMI-Qiskit interface ([#1507]) ([**@marcelwa**])
 
 ### Changed
 
-- ⬆️ Update `nanobind` to version 2.12.0 ([#1654]) ([**@burgholzer**])
-- ⬆️ Update QDMI to v1.3.0 ([#1652]) ([**@burgholzer**])
+- ⬆️ Update `nanobind` to version 2.12.0 ([#1528])
+- ⬆️ Update QDMI to `v1.3.0` ([#1652]) ([**@burgholzer**])
 - 📦 Switch to component-based installation for the MQT Core Python package ([#1596]) ([**@burgholzer**])
 - ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1593]) ([**@burgholzer**])
 - ⬆️ Update `clang-tidy` to version 22 ([#1564]) ([**@denialhaag**], [**@burgholzer**])
@@ -341,6 +341,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
 [#1571]: https://github.com/munich-quantum-toolkit/core/pull/1571
 [#1564]: https://github.com/munich-quantum-toolkit/core/pull/1564
+[#1528]: https://github.com/munich-quantum-toolkit/core/pull/1528
 [#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453
