@@ -41,7 +41,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -102,12 +101,7 @@ private:
 
   enum class RoutingMode : std::uint8_t { Cold, Hot };
 
-  struct LayerItem {
-    Operation* op;
-    IndexPairType progs;
-  };
-
-  using Window = SmallVector<LayerItem>;
+  using Window = SmallVector<IndexPairType>;
 
   /**
    * @brief A qubit layout that maps program and hardware indices without
@@ -308,13 +302,10 @@ private:
      * @returns true if the current SWAP sequence makes all gates in the front
      * executable.
      */
-    [[nodiscard]] bool isGoal(ArrayRef<LayerItem> front,
+    [[nodiscard]] bool isGoal(IndexPairType front,
                               const Architecture& arch) const {
-      return all_of(front, [&](const LayerItem& item) {
-        const auto& [prog0, prog1] = item.progs;
-        return arch.areAdjacent(layout.getHardwareIndex(prog0),
-                                layout.getHardwareIndex(prog1));
-      });
+      return arch.areAdjacent(layout.getHardwareIndex(front.first),
+                              layout.getHardwareIndex(front.second));
     }
 
   private:
@@ -342,8 +333,8 @@ private:
       float costs{0};
       float decay{1.};
 
-      for (const auto& [i, item] : enumerate(window)) {
-        const auto [prog0, prog1] = item.progs;
+      for (const auto& [i, progs] : enumerate(window)) {
+        const auto [prog0, prog1] = progs;
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
         const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
@@ -699,8 +690,7 @@ private:
       // between two neighbouring hardware qubits.
 
       expansionSet.clear();
-      const auto& item = window.front();
-      const auto& [q0, q1] = item.progs;
+      const auto& [q0, q1] = window.front();
       for (const auto prog : {q0, q1}) {
         for (const auto hw0 = curr->layout.getHardwareIndex(prog);
              const auto hw1 : arch->neighboursOf(hw0)) {
@@ -784,16 +774,9 @@ private:
    * is 1 + nlookahead.
    * @returns window of layers.
    */
-  Window getWindow(ArrayRef<WireIterator> baseWires, const Layout& layout,
-                   WalkDirection direction) {
+  Window getWindow(ArrayRef<WireIterator> baseWires, WalkDirection direction) {
     Window window;
     window.reserve(1 + nlookahead);
-
-    struct Candidate {
-      UnitaryOpInterface op;
-      IndexPairType progs;
-      std::size_t complexity;
-    };
 
     SmallVector<WireIterator> wires(baseWires);
     std::ignore = walkCircuitGraph(
@@ -802,41 +785,21 @@ private:
             return WalkResult::advance();
           }
 
-          // Collect candidates.
-          SmallVector<Candidate> candidates;
-          candidates.reserve(range_size(ready));
-
           for (const auto& [op, progs] : ready) {
             if (isa<BarrierOp>(op)) {
               released.emplace_back(op);
               continue;
             }
 
-            const auto complexity =
-                arch->distanceBetween(layout.getHardwareIndex(progs[0]),
-                                      layout.getHardwareIndex(progs[1]));
-            candidates.emplace_back(op, std::make_pair(progs[0], progs[1]),
-                                    complexity);
-          }
-
-          // Sort candidates by complexity.
-          if (window.empty()) {
-            sort(candidates, [](const Candidate& a, const Candidate& b) {
-              return a.complexity < b.complexity; // Route easier gates first.
-            });
-          }
-
-          // Add candidates.
-          for (const auto& c : candidates) {
-            const auto& [prog0, prog1] = c.progs;
-
-            window.emplace_back(c.op, c.progs);
+            const auto p0 = progs[0];
+            const auto p1 = progs[1];
+            window.emplace_back(p0, p1);
             if (window.size() == 1 + nlookahead) {
               return WalkResult::interrupt();
             }
 
-            skipQubitPairBlock(wires[prog0], wires[prog1], direction);
-            released.emplace_back(wires[prog0].operation());
+            skipQubitPairBlock(wires[p0], wires[p1], direction);
+            released.emplace_back(wires[p0].operation());
           }
 
           return WalkResult::advance();
@@ -899,7 +862,7 @@ private:
     while (true) {
       skipExecutableGates(wires, layout, direction);
 
-      const auto window = getWindow(wires, layout, direction);
+      const auto window = getWindow(wires, direction);
       if (window.empty()) {
         break;
       }
