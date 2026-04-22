@@ -124,7 +124,7 @@ repos:
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
-        priority: 1
+        priority: 5
       - id: clang-format
         name: clang-format (TableGen)
         types_or: [file]
