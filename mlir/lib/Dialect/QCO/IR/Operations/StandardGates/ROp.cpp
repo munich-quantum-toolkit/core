@@ -81,15 +81,17 @@ void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Eigen::Matrix2cd> ROp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
   const auto theta = valueToDouble(getTheta());
   const auto phi = valueToDouble(getPhi());
   if (!theta || !phi) {
     return std::nullopt;
   }
 
-  const auto thetaSin = std::sin(*theta / 2.0);
-  const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
-  const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
-  const std::complex<double> thetaCos = std::cos(*theta / 2.0);
-  return Eigen::Matrix2cd{{thetaCos, m01}, {m10, thetaCos}};
+  const auto s = std::sin(*theta / 2.0);
+  const auto c = std::cos(*theta / 2.0) + 0i;
+  const auto m01 = s * std::exp(1i * (-*phi - (std::numbers::pi / 2.0)));
+  const auto m10 = s * std::exp(1i * (*phi - (std::numbers::pi / 2.0)));
+  return Eigen::Matrix2cd{{c, m01}, {m10, c}};
 }

@@ -88,8 +88,8 @@ std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {
 
   if (const auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
-    const auto mp = std::polar(1.0, *theta / 2.0);
-    const auto mm = std::polar(1.0, -*theta / 2.0);
+    const auto mp = std::exp(1i * (*theta / 2.0));
+    const auto mm = std::exp(1i * (-*theta / 2.0));
     return Eigen::Matrix4cd{{mm, m0, m0, m0},  // row 0
                             {m0, mp, m0, m0},  // row 1
                             {m0, m0, mp, m0},  // row 2
