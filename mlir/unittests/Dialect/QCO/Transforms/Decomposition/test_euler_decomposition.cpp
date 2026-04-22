@@ -172,6 +172,58 @@ TEST(EulerDecompositionTest, ZsxxPauliXUsesSingleXGate) {
   EXPECT_TRUE(sequenceMatchesSingleQubitMatrix(pauliX, seq));
 }
 
+TEST(EulerDecompositionTest, GetGateTypesForEulerBasis) {
+  const auto zyz = getGateTypesForEulerBasis(EulerBasis::ZYZ);
+  ASSERT_EQ(zyz.size(), 2U);
+  EXPECT_EQ(zyz[0], GateKind::RZ);
+  EXPECT_EQ(zyz[1], GateKind::RY);
+
+  const auto uFamily = getGateTypesForEulerBasis(EulerBasis::U321);
+  ASSERT_EQ(uFamily.size(), 1U);
+  EXPECT_EQ(uFamily[0], GateKind::U);
+
+  const auto zsxx = getGateTypesForEulerBasis(EulerBasis::ZSXX);
+  ASSERT_EQ(zsxx.size(), 3U);
+  EXPECT_EQ(zsxx[0], GateKind::RZ);
+  EXPECT_EQ(zsxx[1], GateKind::SX);
+  EXPECT_EQ(zsxx[2], GateKind::X);
+}
+
+TEST(EulerDecompositionTest, UAndU321MatchU3Reconstruction) {
+  std::mt19937 rng(99991);
+  for (int i = 0; i < 32; ++i) {
+    const auto u = randomUnitaryMatrix<Eigen::Matrix2cd>(rng);
+    const auto seqU3 = EulerDecomposition::generateCircuit(EulerBasis::U3, u,
+                                                           true, std::nullopt);
+    const auto seqU = EulerDecomposition::generateCircuit(EulerBasis::U, u,
+                                                          true, std::nullopt);
+    const auto seqU321 = EulerDecomposition::generateCircuit(
+        EulerBasis::U321, u, true, std::nullopt);
+    EXPECT_TRUE(EulerDecompositionTest::restore(seqU3).isApprox(u));
+    EXPECT_TRUE(EulerDecompositionTest::restore(seqU).isApprox(u));
+    EXPECT_TRUE(EulerDecompositionTest::restore(seqU321).isApprox(u));
+  }
+}
+
+TEST(EulerDecompositionTest, AnglesFromUnitaryXZXReconstructsRx) {
+  const Eigen::Matrix2cd u = rxMatrix(0.7);
+  (void)EulerDecomposition::anglesFromUnitary(u, EulerBasis::XZX);
+  const auto seq = EulerDecomposition::generateCircuit(EulerBasis::XZX, u,
+                                                       false, std::nullopt);
+  EXPECT_TRUE(EulerDecompositionTest::restore(seq).isApprox(u));
+}
+
+TEST(EulerDecompositionTest, GateSequenceComplexityAndGlobalPhase) {
+  OneQubitGateSequence seq;
+  seq.gates.push_back(
+      {.type = GateKind::RZ, .parameter = {0.2}, .qubitId = {0}});
+  seq.globalPhase = 0.5;
+  EXPECT_TRUE(seq.hasGlobalPhase());
+  EXPECT_GE(seq.complexity(), 1U);
+  seq.globalPhase = 0.0;
+  EXPECT_FALSE(seq.hasGlobalPhase());
+}
+
 INSTANTIATE_TEST_SUITE_P(
     SingleQubitMatrices, EulerDecompositionTest,
     testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,

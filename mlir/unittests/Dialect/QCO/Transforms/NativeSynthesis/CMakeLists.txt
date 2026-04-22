@@ -9,12 +9,27 @@
 set(target_name mqt-core-mlir-unittest-native-synthesis)
 add_executable(
   ${target_name}
-  native_synthesis_test_helpers.cpp test_native_synthesis_pass_custom_menus.cpp
-  test_native_synthesis_pass_fusion.cpp test_native_synthesis_pass_multi_qubit.cpp
-  test_native_synthesis_pass_profiles.cpp test_native_synthesis_pass_scoring.cpp)
+  native_synthesis_test_helpers.cpp
+  test_native_policy.cpp
+  test_native_spec.cpp
+  test_native_synthesis_pass_custom_menus.cpp
+  test_native_synthesis_pass_fusion.cpp
+  test_native_synthesis_pass_multi_qubit.cpp
+  test_native_synthesis_pass_profiles.cpp
+  test_native_synthesis_pass_scoring.cpp)
 
-target_link_libraries(${target_name} PRIVATE MLIRParser GTest::gtest_main MLIRQCProgramBuilder
-                                             MLIRQCToQCO MLIRQCOTransforms)
+target_link_libraries(
+  ${target_name}
+  PRIVATE MLIRParser
+          GTest::gtest_main
+          MLIRQCProgramBuilder
+          MLIRQCOProgramBuilder
+          MLIRQCOUtils
+          MLIRQCToQCO
+          MLIRQCOTransforms
+          MLIRPass
+          MLIRSupport
+          LLVMSupport)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

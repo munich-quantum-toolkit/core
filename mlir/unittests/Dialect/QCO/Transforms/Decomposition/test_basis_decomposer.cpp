@@ -134,6 +134,20 @@ TEST(BasisDecomposerTest, Random) {
   }
 }
 
+TEST(BasisDecomposerNumBasisTest, ForcesZeroBasisUsesForIdentityTarget) {
+  const Gate basis{.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}};
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const Eigen::Matrix4cd target = Eigen::Matrix4cd::Identity();
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(target, std::optional<double>{1.0});
+  const llvm::SmallVector<EulerBasis> eulerBases{EulerBasis::ZYZ};
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, eulerBases, 1.0,
+                                                       false, std::uint8_t{0});
+  ASSERT_TRUE(decomposed.has_value());
+  const Eigen::Matrix4cd restored = BasisDecomposerTest::restore(*decomposed);
+  EXPECT_TRUE(restored.isApprox(target));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     ProductTwoQubitMatrices, BasisDecomposerTest,
     testing::Combine(

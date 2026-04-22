@@ -904,6 +904,16 @@ TEST_F(CompilerPipelineNativeSynthesisConfigTest,
 }
 
 TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       LeavesIRUnchangedWhenNativeGatesIsWhitespaceOnly) {
+  config.nativeGates = "   \t  ";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterQCOCanon, record.afterOptimization);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
        NativeSynthesisPreservesUnitaryOnStaticQubits) {
   // End-to-end unitary equivalence check: after the pipeline lowers
   // `staticQubitsWithOps` (H on two static qubits) onto the `x,sx,rz,cx`
