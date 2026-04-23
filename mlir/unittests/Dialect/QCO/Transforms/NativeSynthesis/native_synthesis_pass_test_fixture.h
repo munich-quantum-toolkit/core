@@ -18,11 +18,13 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "native_synthesis_test_helpers.h"
+#include "qc_programs.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/Pass/PassManager.h>
@@ -44,7 +46,8 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
-                    mlir::arith::ArithDialect, mlir::func::FuncDialect>();
+                    mlir::arith::ArithDialect, mlir::func::FuncDialect,
+                    mlir::memref::MemRefDialect>();
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -182,94 +185,20 @@ protected:
 
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildBroadOneQCanonicalizationCircuit() const {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-
-    builder.id(q0);
-    builder.x(q0);
-    builder.y(q1);
-    builder.z(q0);
-    builder.h(q1);
-    builder.s(q0);
-    builder.sdg(q1);
-    builder.t(q0);
-    builder.tdg(q1);
-    builder.sx(q0);
-    builder.sxdg(q1);
-    builder.rx(0.13, q0);
-    builder.ry(-0.47, q1);
-    builder.rz(0.29, q0);
-    builder.p(-0.38, q1);
-    builder.r(0.61, -0.22, q0);
-    builder.cz(q0, q1);
-
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthBroadOneQCanonicalization);
   }
 
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildZeroAngleCanonicalizationCircuit() const {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-
-    builder.rx(0.0, q0);
-    builder.ry(0.0, q1);
-    builder.rz(0.0, q0);
-    builder.p(0.0, q1);
-    builder.r(0.0, 0.0, q0);
-    builder.cz(q0, q1);
-
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthZeroAngleCanonicalization);
   }
 
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildIbmFractionalAllGateFamiliesCircuit() const {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-
-    builder.id(q0);
-    builder.x(q0);
-    builder.y(q1);
-    builder.z(q0);
-    builder.h(q1);
-    builder.s(q0);
-    builder.sdg(q1);
-    builder.t(q0);
-    builder.tdg(q1);
-    builder.sx(q0);
-    builder.sxdg(q1);
-    builder.rx(0.13, q0);
-    builder.ry(-0.47, q1);
-    builder.rz(0.29, q0);
-    builder.p(-0.38, q1);
-    builder.r(0.61, -0.22, q0);
-
-    builder.cx(q0, q1);
-    builder.cz(q1, q0);
-
-    builder.swap(q0, q1);
-    builder.iswap(q0, q1);
-    builder.dcx(q0, q1);
-    builder.ecr(q0, q1);
-    builder.rxx(0.17, q0, q1);
-    builder.ryy(-0.21, q0, q1);
-    builder.rzx(0.41, q0, q1);
-    builder.rzz(-0.33, q0, q1);
-    builder.xx_plus_yy(0.52, -0.14, q0, q1);
-    builder.xx_minus_yy(-0.37, 0.26, q0, q1);
-
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthIbmFractionalAllGateFamilies);
   }
 
   static void runNativeSynthesis(mlir::OwningOpRef<mlir::ModuleOp>& moduleOp,

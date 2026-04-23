@@ -11,6 +11,7 @@
 #include "qc_programs.h"
 
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mlir/IR/Value.h"
 
 #include <numbers>
 
@@ -1278,6 +1279,524 @@ void invCtrlSandwich(QCProgramBuilder& b) {
   b.inv([&]() {
     b.ctrl(q[0], [&]() { b.inv([&]() { b.rxx(0.123, q[1], q[2]); }); });
   });
+}
+
+namespace {
+
+void emitNativeSynthControlledPhase(QCProgramBuilder& b, const double theta,
+                                    mlir::Value ctrl, mlir::Value tgt) {
+  b.p(theta / 2.0, ctrl);
+  b.cx(ctrl, tgt);
+  b.p(-theta / 2.0, tgt);
+  b.cx(ctrl, tgt);
+  b.p(theta / 2.0, tgt);
+}
+
+void emitNativeSynthToffoli(QCProgramBuilder& b, mlir::Value c1, mlir::Value c2,
+                            mlir::Value t) {
+  b.h(t);
+  b.cx(c2, t);
+  b.tdg(t);
+  b.cx(c1, t);
+  b.t(t);
+  b.cx(c2, t);
+  b.tdg(t);
+  b.cx(c1, t);
+  b.t(c2);
+  b.t(t);
+  b.h(t);
+  b.cx(c1, c2);
+  b.t(c1);
+  b.tdg(c2);
+  b.cx(c1, c2);
+}
+
+/// Shared by ``nativeSynthBroadOneQCanonicalization`` and
+/// ``nativeSynthIbmFractionalAllGateFamilies``: wide 1q sweep on two qubits,
+/// ending before any two-qubit primitive.
+void emitNativeSynthFixtureBroad1qPrefix(QCProgramBuilder& b, mlir::Value q0,
+                                         mlir::Value q1) {
+  b.id(q0);
+  b.x(q0);
+  b.y(q1);
+  b.z(q0);
+  b.h(q1);
+  b.s(q0);
+  b.sdg(q1);
+  b.t(q0);
+  b.tdg(q1);
+  b.sx(q0);
+  b.sxdg(q1);
+  b.rx(0.13, q0);
+  b.ry(-0.47, q1);
+  b.rz(0.29, q0);
+  b.p(-0.38, q1);
+  b.r(0.61, -0.22, q0);
+}
+
+void emitNativeSynthFiveQStressLayers(QCProgramBuilder& b,
+                                      const int numLayers) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  const auto q3 = b.allocQubit();
+  const auto q4 = b.allocQubit();
+  b.h(q0);
+  b.s(q1);
+  b.t(q2);
+  b.y(q3);
+  b.h(q4);
+  b.cx(q0, q1);
+  b.cz(q1, q2);
+  b.swap(q2, q3);
+  b.cx(q3, q4);
+  for (int layer = 0; layer < numLayers; ++layer) {
+    b.h(q0);
+    b.s(q0);
+    b.t(q0);
+    b.y(q1);
+    b.h(q2);
+    b.s(q3);
+    b.t(q4);
+    b.cx(q0, q2);
+    b.cz(q1, q3);
+    b.cx(q2, q4);
+    if ((layer % 2) == 0) {
+      b.swap(q0, q1);
+      b.swap(q3, q4);
+    } else {
+      b.cx(q4, q0);
+      b.cz(q2, q1);
+    }
+  }
+  b.p(0.25, q0);
+  b.p(-0.5, q2);
+  b.p(0.75, q4);
+}
+
+void emitNativeSynthTwoQRzx(QCProgramBuilder& b, const double theta,
+                            const bool controlOnFirstWire) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  if (controlOnFirstWire) {
+    b.rzx(theta, q0, q1);
+  } else {
+    b.rzx(theta, q1, q0);
+  }
+}
+
+} // namespace
+
+void nativeSynthBroadOneQCanonicalization(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  emitNativeSynthFixtureBroad1qPrefix(b, q0, q1);
+  b.cz(q0, q1);
+}
+
+void nativeSynthZeroAngleCanonicalization(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.rx(0.0, q0);
+  b.ry(0.0, q1);
+  b.rz(0.0, q0);
+  b.p(0.0, q1);
+  b.r(0.0, 0.0, q0);
+  b.cz(q0, q1);
+}
+
+void nativeSynthIbmFractionalAllGateFamilies(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  emitNativeSynthFixtureBroad1qPrefix(b, q0, q1);
+  b.cx(q0, q1);
+  b.cz(q1, q0);
+  b.swap(q0, q1);
+  b.iswap(q0, q1);
+  b.dcx(q0, q1);
+  b.ecr(q0, q1);
+  b.rxx(0.17, q0, q1);
+  b.ryy(-0.21, q0, q1);
+  b.rzx(0.41, q0, q1);
+  b.rzz(-0.33, q0, q1);
+  b.xx_plus_yy(0.52, -0.14, q0, q1);
+  b.xx_minus_yy(-0.37, 0.26, q0, q1);
+}
+
+void nativeSynthFusionHadamardZHadamard(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.h(q0);
+  b.z(q0);
+  b.h(q0);
+}
+
+void nativeSynthFusionHadamardHadamard(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.h(q0);
+  b.h(q0);
+}
+
+void nativeSynthFusionMixedChainHSTYSX(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.h(q0);
+  b.s(q0);
+  b.t(q0);
+  b.y(q0);
+  b.sx(q0);
+}
+
+void nativeSynthFusionHadamardCxHadamard(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.cx(q0, q1);
+  b.h(q0);
+}
+
+void nativeSynthFusionHadamardBarrierHadamard(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.h(q0);
+  b.barrier({q0});
+  b.h(q0);
+}
+
+void nativeSynthFusionRzSxRz(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.rz(0.4, q0);
+  b.sx(q0);
+  b.rz(-0.9, q0);
+}
+
+void nativeSynthFusionUUTwoQGenericU3(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.u(0.3, 0.1, -0.2, q0);
+  b.u(-0.5, 0.7, 0.4, q0);
+}
+
+void nativeSynthFusionTS(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.t(q0);
+  b.s(q0);
+}
+
+void nativeSynthFusionUUTwoQDet1(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.u(0.3, 0.2, -0.2, q0);
+  b.u(0.5, 0.4, -0.4, q0);
+}
+
+void nativeSynthFusionLongMixedTenOpCx(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.t(q0);
+  b.rx(0.37, q0);
+  b.s(q0);
+  b.ry(-0.21, q0);
+  b.h(q0);
+  b.z(q0);
+  b.rz(0.52, q0);
+  b.sx(q0);
+  b.y(q0);
+  b.cx(q0, q1);
+}
+
+void nativeSynthFusionCxCx(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.cx(q0, q1);
+}
+
+void nativeSynthFusionHCxInterleavedTCx(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.cx(q0, q1);
+  b.t(q1);
+  b.s(q0);
+  b.cx(q0, q1);
+}
+
+void nativeSynthFusionThreeLineCx01Cx12Cx01(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  b.cx(q0, q1);
+  b.cx(q1, q2);
+  b.cx(q0, q1);
+}
+
+void nativeSynthFusionCxBarrierCx(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.barrier({q0, q1});
+  b.cx(q0, q1);
+}
+
+void nativeSynthFusionSwapCxPattern(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.cx(q1, q0);
+  b.cx(q0, q1);
+}
+
+void nativeSynthFusionHDcxSCx(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.dcx(q0, q1);
+  b.s(q1);
+  b.cx(q0, q1);
+}
+
+void nativeSynthFusionXRzxTCx(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.x(q0);
+  b.rzx(0.41, q0, q1);
+  b.t(q1);
+  b.cx(q0, q1);
+}
+
+void nativeSynthFusionHRzzSRzz(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.rzz(-0.29, q0, q1);
+  b.s(q1);
+  b.rzz(0.17, q0, q1);
+}
+
+void nativeSynthFusionRzx041Q0First(QCProgramBuilder& b) {
+  emitNativeSynthTwoQRzx(b, 0.41, /*controlOnFirstWire=*/true);
+}
+
+void nativeSynthFusionRzx041Q1First(QCProgramBuilder& b) {
+  emitNativeSynthTwoQRzx(b, 0.41, /*controlOnFirstWire=*/false);
+}
+
+void nativeSynthFusionRzxPiHalfQ0First(QCProgramBuilder& b) {
+  emitNativeSynthTwoQRzx(b, std::numbers::pi / 2.0,
+                         /*controlOnFirstWire=*/true);
+}
+
+void nativeSynthFusionRzxPiHalfQ1First(QCProgramBuilder& b) {
+  emitNativeSynthTwoQRzx(b, std::numbers::pi / 2.0,
+                         /*controlOnFirstWire=*/false);
+}
+
+void nativeSynthProfilesHstycxTwoQ(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.s(q0);
+  b.t(q0);
+  b.y(q0);
+  b.cx(q0, q1);
+}
+
+void nativeSynthProfilesHCxTOnQ1(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q1);
+  b.cx(q0, q1);
+  b.t(q1);
+}
+
+void nativeSynthProfilesXYSXCz(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.x(q0);
+  b.y(q0);
+  b.sx(q0);
+  b.cz(q0, q1);
+}
+
+void nativeSynthProfilesFractionalChain(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.ry(0.37, q0);
+  b.sxdg(q0);
+  b.cx(q0, q1);
+  b.rzz(0.23, q0, q1);
+}
+
+void nativeSynthProfilesHYcx(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.y(q0);
+  b.cx(q0, q1);
+}
+
+void nativeSynthProfilesZCx(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.z(q0);
+  b.cx(q0, q1);
+}
+
+void nativeSynthProfilesXHCz(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.x(q0);
+  b.h(q0);
+  b.cz(q0, q1);
+}
+
+void nativeSynthProfilesCxYOnQ1(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.y(q1);
+}
+
+void nativeSynthProfilesHq0Yq1CxSq0(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.y(q1);
+  b.cx(q0, q1);
+  b.s(q0);
+}
+
+void nativeSynthProfilesHCxSq1(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.cx(q0, q1);
+  b.s(q1);
+}
+
+void nativeSynthProfilesHYSameWireCxSq1(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.y(q0);
+  b.cx(q0, q1);
+  b.s(q1);
+}
+
+void nativeSynthProfilesPhaseHCxPhase(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.p(0.13, q0);
+  b.h(q0);
+  b.cx(q0, q1);
+  b.p(-0.27, q1);
+}
+
+void nativeSynthProfilesLargeFiveQStressEightLayers(QCProgramBuilder& b) {
+  emitNativeSynthFiveQStressLayers(b, /*numLayers=*/8);
+}
+
+void nativeSynthMultiQThreeQGhz(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  b.h(q0);
+  b.cx(q0, q1);
+  b.cx(q1, q2);
+}
+
+void nativeSynthMultiQThreeQToffoli(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  emitNativeSynthToffoli(b, q0, q1, q2);
+}
+
+void nativeSynthMultiQThreeQQft(QCProgramBuilder& b) {
+  using std::numbers::pi;
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  b.h(q2);
+  emitNativeSynthControlledPhase(b, pi / 2.0, q1, q2);
+  b.h(q1);
+  emitNativeSynthControlledPhase(b, pi / 4.0, q0, q2);
+  emitNativeSynthControlledPhase(b, pi / 2.0, q0, q1);
+  b.h(q0);
+  b.cx(q0, q2);
+  b.cx(q2, q0);
+  b.cx(q0, q2);
+}
+
+void nativeSynthMultiQThreeQCliffordTMix(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  b.h(q0);
+  b.t(q1);
+  b.x(q2);
+  b.cx(q0, q1);
+  b.rz(0.37, q2);
+  b.cz(q1, q2);
+  b.sdg(q0);
+  b.ry(-0.42, q1);
+  b.cx(q2, q0);
+  b.y(q1);
+  b.tdg(q2);
+  b.cx(q0, q1);
+  b.p(0.21, q2);
+  b.h(q2);
+  b.cz(q0, q2);
+  b.rx(-0.13, q1);
+  b.s(q0);
+}
+
+void nativeSynthMultiQFiveQStressFourLayers(QCProgramBuilder& b) {
+  emitNativeSynthFiveQStressLayers(b, /*numLayers=*/4);
+}
+
+void nativeSynthCustomMenusIbmFractionalTwoQStress(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.sxdg(q0);
+  b.ry(-0.22, q1);
+  b.swap(q0, q1);
+  b.rxx(0.53, q0, q1);
+  b.ecr(q0, q1);
+  b.p(0.31, q0);
+  b.rzz(-0.44, q0, q1);
+}
+
+void nativeSynthCustomMenusXxPlusYyChain(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.sx(q1);
+  b.xx_plus_yy(0.52, -0.14, q0, q1);
+  b.rz(0.31, q0);
+}
+
+void nativeSynthCustomMenusXxMinusYyOnly(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.xx_minus_yy(-0.37, 0.26, q0, q1);
+}
+
+void nativeSynthScoringXxPlusYyOnly(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.xx_plus_yy(0.52, -0.14, q0, q1);
+}
+
+void nativeSynthScoringXxMinusYyOnly(QCProgramBuilder& b) {
+  nativeSynthCustomMenusXxMinusYyOnly(b);
+}
+
+void nativeSynthDeterminismTwoQubitSwap(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.swap(q0, q1);
+  b.dealloc(q0);
+  b.dealloc(q1);
 }
 
 } // namespace mlir::qc

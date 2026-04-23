@@ -9,12 +9,16 @@
  */
 
 // 1q run merging, 2q block consolidation, and RZX profile sweeps for the
-// native-gate synthesis pass. Linked with sibling `test_native_synthesis_*.cpp`
-// sources into `mqt-core-mlir-unittest-native-synthesis`.
+// native-gate synthesis pass. Includes a few ``TEST_P`` matrices (U3 GPhase
+// pair, generic-u3-cx two-qubit equivalence rows). Linked with sibling
+// ``test_native_synthesis_*.cpp`` sources into
+// ``mqt-core-mlir-unittest-native-synthesis``.
 
 #include "native_synthesis_pass_test_fixture.h"
 
+#include <array>
 #include <numbers>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -33,7 +37,103 @@ std::size_t countOpsOfTypeInModule(const OwningOpRef<ModuleOp>& moduleOp) {
   });
   return count;
 }
+
+struct OneQU3FusionGPhaseRow {
+  const char* name;
+  void (*program)(mlir::qc::QCProgramBuilder&);
+  unsigned expectGPhaseCount;
+};
+
+struct TwoQBlockEquivGenericU3CxRow {
+  const char* name;
+  void (*program)(mlir::qc::QCProgramBuilder&);
+  std::optional<unsigned> expectExactCtrlOpCount;
+};
 } // namespace
+
+class NativeSynthesisOneQFusionU3GPhaseTest
+    : public NativeSynthesisPassTest,
+      public testing::WithParamInterface<OneQU3FusionGPhaseRow> {
+public:
+  using NativeSynthesisPassTest::onlyGenericU3CxOps;
+};
+
+TEST_P(NativeSynthesisOneQFusionU3GPhaseTest, FusesAdjacentNativeUChain) {
+  const OneQU3FusionGPhaseRow& param = GetParam();
+  auto moduleOp =
+      mlir::qc::QCProgramBuilder::build(context.get(), param.program);
+  runNativeSynthesis(moduleOp, "u,cx");
+  EXPECT_TRUE(onlyGenericU3CxOps(moduleOp));
+  EXPECT_EQ(countOpsOfTypeInModule<qco::UOp>(moduleOp), 1U);
+  EXPECT_EQ(countOpsOfTypeInModule<qco::GPhaseOp>(moduleOp),
+            param.expectGPhaseCount);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    OneQRunMergingU3GPhaseMatrix, NativeSynthesisOneQFusionU3GPhaseTest,
+    testing::Values(OneQU3FusionGPhaseRow{"EmitsGlobalPhaseOnU3",
+                                          mlir::qc::nativeSynthFusionTS,
+                                          /*expectGPhaseCount=*/1U},
+                    OneQU3FusionGPhaseRow{"OmitsGPhaseWhenResidualIsTrivial",
+                                          mlir::qc::nativeSynthFusionUUTwoQDet1,
+                                          /*expectGPhaseCount=*/0U}),
+    [](const testing::TestParamInfo<OneQU3FusionGPhaseRow>& info) {
+      return info.param.name;
+    });
+
+class NativeSynthesisTwoQBlockEquivGenericU3CxTest
+    : public NativeSynthesisPassTest,
+      public testing::WithParamInterface<TwoQBlockEquivGenericU3CxRow> {
+public:
+  using NativeSynthesisPassTest::onlyGenericU3CxOps;
+};
+
+TEST_P(NativeSynthesisTwoQBlockEquivGenericU3CxTest,
+       EquivalentUnderConsolidation) {
+  const TwoQBlockEquivGenericU3CxRow& param = GetParam();
+  auto buildFn = [&] {
+    return mlir::qc::QCProgramBuilder::build(context.get(), param.program);
+  };
+
+  auto expected = buildFn();
+  runQcToQco(expected);
+  const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
+  ASSERT_TRUE(expectedUnitary.has_value());
+
+  auto synth = buildFn();
+  runNativeSynthesis(synth, "u,cx");
+  EXPECT_TRUE(onlyGenericU3CxOps(synth));
+  if (param.expectExactCtrlOpCount.has_value()) {
+    EXPECT_EQ(countOpsOfTypeInModule<qco::CtrlOp>(synth),
+              *param.expectExactCtrlOpCount);
+  }
+  const auto synthUnitary = computeTwoQubitUnitaryFromModule(synth);
+  ASSERT_TRUE(synthUnitary.has_value());
+  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    TwoQBlockEquivGenericU3CxMatrix,
+    NativeSynthesisTwoQBlockEquivGenericU3CxTest,
+    testing::Values(
+        TwoQBlockEquivGenericU3CxRow{"AdjacentCxCancel",
+                                     mlir::qc::nativeSynthFusionCxCx,
+                                     /*expectExactCtrlOpCount=*/0U},
+        TwoQBlockEquivGenericU3CxRow{
+            "FusesCxThroughInterleavedOneQOps",
+            mlir::qc::nativeSynthFusionHCxInterleavedTCx, std::nullopt},
+        TwoQBlockEquivGenericU3CxRow{"HandlesSwappedWireOrder",
+                                     mlir::qc::nativeSynthFusionSwapCxPattern,
+                                     std::nullopt},
+        TwoQBlockEquivGenericU3CxRow{"EquivalentWhenBlockContainsDcx",
+                                     mlir::qc::nativeSynthFusionHDcxSCx,
+                                     std::nullopt},
+        TwoQBlockEquivGenericU3CxRow{"EquivalentWhenBlockContainsRzx",
+                                     mlir::qc::nativeSynthFusionXRzxTCx,
+                                     std::nullopt}),
+    [](const testing::TestParamInfo<TwoQBlockEquivGenericU3CxRow>& info) {
+      return info.param.name;
+    });
 
 // --- 1q-run-merging pre-synthesis step ---
 //
@@ -49,14 +149,8 @@ TEST_F(NativeSynthesisPassTest, OneQRunMergingCollapsesHadamardZHadamardToX) {
   // fusion we would expect at least 3 RZ gates from two H decompositions and
   // the Z.
   auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    builder.h(q0);
-    builder.z(q0);
-    builder.h(q0);
-    builder.dealloc(q0);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthFusionHadamardZHadamard);
   };
 
   auto moduleOp = buildFn();
@@ -70,13 +164,8 @@ TEST_F(NativeSynthesisPassTest, OneQRunMergingCollapsesHadamardZHadamardToX) {
 TEST_F(NativeSynthesisPassTest, OneQRunMergingCancelsAdjacentSelfInverses) {
   // H * H = I. Fusion collapses the run to no 1q ops at all.
   auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    builder.h(q0);
-    builder.h(q0);
-    builder.dealloc(q0);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthFusionHadamardHadamard);
   };
 
   auto moduleOp = buildFn();
@@ -92,16 +181,8 @@ TEST_F(NativeSynthesisPassTest, OneQRunMergingReducesMixedChainToSingleU) {
   // single UOp on the generic-u3-cx profile via fusion, regardless of the
   // mix of non-native ops in the input.
   auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    builder.h(q0);
-    builder.s(q0);
-    builder.t(q0);
-    builder.y(q0);
-    builder.sx(q0);
-    builder.dealloc(q0);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthFusionMixedChainHSTYSX);
   };
 
   auto moduleOp = buildFn();
@@ -116,32 +197,14 @@ TEST_F(NativeSynthesisPassTest, OneQRunMergingDoesNotFuseAcrossCX) {
   // we assert we still see >=2 SX gates (one from each Hadamard expansion).
   expectEquivalentAndNativeAfterSynthesis(
       [&] {
-        mlir::qc::QCProgramBuilder builder(context.get());
-        builder.initialize();
-        const auto q0 = builder.allocQubit();
-        const auto q1 = builder.allocQubit();
-        builder.h(q0);
-        builder.cx(q0, q1);
-        builder.h(q0);
-        builder.dealloc(q0);
-        builder.dealloc(q1);
-        return builder.finalize();
+        return mlir::qc::QCProgramBuilder::build(
+            context.get(), mlir::qc::nativeSynthFusionHadamardCxHadamard);
       },
       "x,sx,rz,cx", &NativeSynthesisPassTest::onlyIbmBasicCxOps,
       computeTwoQubitUnitaryFromModule);
 
-  auto moduleOp = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.h(q0);
-    builder.cx(q0, q1);
-    builder.h(q0);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
-  }();
+  auto moduleOp = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::nativeSynthFusionHadamardCxHadamard);
   runNativeSynthesis(moduleOp, "x,sx,rz,cx");
   // Each H decomposes to rz(pi/2) sx rz(pi/2); without fusion we get two
   // separate decompositions => at least 2 SX gates total.
@@ -152,16 +215,8 @@ TEST_F(NativeSynthesisPassTest, OneQRunMergingDoesNotFuseAcrossBarrier) {
   // A barrier between two 1q ops on the same wire interrupts the run:
   // `BarrierOp` is explicitly excluded from fusibility and its use of the
   // qubit breaks the single-use precondition on the intermediate value.
-  auto moduleOp = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    builder.h(q0);
-    builder.barrier({q0});
-    builder.h(q0);
-    builder.dealloc(q0);
-    return builder.finalize();
-  }();
+  auto moduleOp = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::nativeSynthFusionHadamardBarrierHadamard);
   runNativeSynthesis(moduleOp, "x,sx,rz,cx");
   EXPECT_TRUE(onlyIbmBasicCxOps(moduleOp));
   // Two separate H decompositions survive => at least 2 SX gates.
@@ -174,16 +229,8 @@ TEST_F(NativeSynthesisPassTest, OneQRunMergingSkipsFullyNativeRuns) {
   // fuses a fully-native run when fusion would produce strictly fewer ops
   // than the original run. For `rz; sx; rz` the ZSXX decomposition of the
   // fused matrix is itself three ops, so the run is left untouched.
-  auto moduleOp = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    builder.rz(0.4, q0);
-    builder.sx(q0);
-    builder.rz(-0.9, q0);
-    builder.dealloc(q0);
-    return builder.finalize();
-  }();
+  auto moduleOp = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::nativeSynthFusionRzSxRz);
   runNativeSynthesis(moduleOp, "x,sx,rz,cx");
   EXPECT_TRUE(onlyIbmBasicCxOps(moduleOp));
   EXPECT_EQ(countOpsOfTypeInModule<qco::RZOp>(moduleOp), 2U);
@@ -197,65 +244,16 @@ TEST_F(NativeSynthesisPassTest,
   // emits exactly one gate per fused 2x2 unitary. Without the cost gate,
   // the fully-native run would be skipped; without fusion, the run would
   // survive as two ops because there is no `MergeSubsequentU` canonicalizer.
-  auto moduleOp = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    builder.u(0.3, 0.1, -0.2, q0);
-    builder.u(-0.5, 0.7, 0.4, q0);
-    builder.dealloc(q0);
-    return builder.finalize();
-  }();
+  auto moduleOp = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::nativeSynthFusionUUTwoQGenericU3);
   runNativeSynthesis(moduleOp, "u,cx");
   EXPECT_TRUE(onlyGenericU3CxOps(moduleOp));
   EXPECT_EQ(countOpsOfTypeInModule<qco::UOp>(moduleOp), 1U);
 }
 
-TEST_F(NativeSynthesisPassTest, OneQRunMergingEmitsGlobalPhaseOnU3) {
-  // Phase-A GPhase refinement: fusing `T; S` on the generic-u3-cx profile
-  // composes to a diagonal matrix whose SU(2) normalisation sheds a
-  // non-trivial residual phase of `3*pi/8`. The fusion emitter preserves
-  // the phase via a `qco.gphase` op so the synthesized IR reconstructs the
-  // original unitary exactly (not merely up to global phase). `T; S` is
-  // chosen over `T; T` because `MergeSubsequentT` would otherwise fold the
-  // latter to `S` upstream: `T; S` is not matched by any existing
-  // canonicalizer, so this test exercises the fusion path unambiguously.
-  auto moduleOp = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    builder.t(q0);
-    builder.s(q0);
-    builder.dealloc(q0);
-    return builder.finalize();
-  }();
-  runNativeSynthesis(moduleOp, "u,cx");
-  EXPECT_TRUE(onlyGenericU3CxOps(moduleOp));
-  EXPECT_EQ(countOpsOfTypeInModule<qco::UOp>(moduleOp), 1U);
-  EXPECT_EQ(countOpsOfTypeInModule<qco::GPhaseOp>(moduleOp), 1U);
-}
-
-TEST_F(NativeSynthesisPassTest,
-       OneQRunMergingOmitsGPhaseWhenResidualIsTrivial) {
-  // Negative complement of OneQRunMergingEmitsGlobalPhaseOnU3: each U3 with
-  // `lambda = -phi` has det = 1, so the composed unitary also has det = 1.
-  // The fusion path computes an SU(2)-normalised decomposition whose
-  // `globalPhase` is negligible, and `emitGPhaseIfNonTrivial` must skip
-  // emitting any `qco.gphase` op.
-  auto moduleOp = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    builder.u(0.3, 0.2, -0.2, q0);
-    builder.u(0.5, 0.4, -0.4, q0);
-    builder.dealloc(q0);
-    return builder.finalize();
-  }();
-  runNativeSynthesis(moduleOp, "u,cx");
-  EXPECT_TRUE(onlyGenericU3CxOps(moduleOp));
-  EXPECT_EQ(countOpsOfTypeInModule<qco::UOp>(moduleOp), 1U);
-  EXPECT_EQ(countOpsOfTypeInModule<qco::GPhaseOp>(moduleOp), 0U);
-}
+// GPhase expectations for adjacent native ``U`` fusion are covered by
+// ``OneQRunMergingU3GPhaseMatrix`` (``EmitsGlobalPhaseOnU3`` /
+// ``OmitsGPhaseWhenResidualIsTrivial``).
 
 TEST_F(NativeSynthesisPassTest,
        OneQRunMergingLongMixedChainEquivalentAcrossProfiles) {
@@ -264,24 +262,8 @@ TEST_F(NativeSynthesisPassTest,
   // ``fiveCxEntanglerEquivalenceProfiles``), excluding IQM-default ``r,cz``,
   // which uses a different two-qubit path.
   auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.h(q0);
-    builder.t(q0);
-    builder.rx(0.37, q0);
-    builder.s(q0);
-    builder.ry(-0.21, q0);
-    builder.h(q0);
-    builder.z(q0);
-    builder.rz(0.52, q0);
-    builder.sx(q0);
-    builder.y(q0);
-    builder.cx(q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthFusionLongMixedTenOpCx);
   };
 
   const auto profiles =
@@ -316,69 +298,8 @@ TEST_F(NativeSynthesisPassTest,
 // strictly shorter, and (c) boundary conditions such as wire swaps and
 // interleaved barriers.
 
-TEST_F(NativeSynthesisPassTest, TwoQBlockConsolidationCancelsAdjacentCx) {
-  // Two CX(q0,q1) cancel to the identity. The consolidation step folds the
-  // pair into a trivial 4x4, which the decomposer realises with zero basis
-  // gate uses.
-  auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.cx(q0, q1);
-    builder.cx(q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
-  };
-
-  auto expected = buildFn();
-  runQcToQco(expected);
-  const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
-  ASSERT_TRUE(expectedUnitary.has_value());
-
-  auto synth = buildFn();
-  runNativeSynthesis(synth, "u,cx");
-  EXPECT_TRUE(onlyGenericU3CxOps(synth));
-  EXPECT_EQ(countOpsOfTypeInModule<qco::CtrlOp>(synth), 0U);
-  const auto synthUnitary = computeTwoQubitUnitaryFromModule(synth);
-  ASSERT_TRUE(synthUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary));
-}
-
-TEST_F(NativeSynthesisPassTest,
-       TwoQBlockConsolidationFusesCxThroughInterleavedOneQOps) {
-  // A non-native block containing interleaved single-qubit ops on the two
-  // wires must consolidate into a single 4x4 unitary that the decomposer
-  // synthesises with the target's entangler (CX). The resulting circuit
-  // must be unitarily equivalent to the original.
-  auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.h(q0);
-    builder.cx(q0, q1);
-    builder.t(q1);
-    builder.s(q0);
-    builder.cx(q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
-  };
-
-  auto expected = buildFn();
-  runQcToQco(expected);
-  const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
-  ASSERT_TRUE(expectedUnitary.has_value());
-
-  auto synth = buildFn();
-  runNativeSynthesis(synth, "u,cx");
-  EXPECT_TRUE(onlyGenericU3CxOps(synth));
-  const auto synthUnitary = computeTwoQubitUnitaryFromModule(synth);
-  ASSERT_TRUE(synthUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary));
-}
+// Generic-u3-cx two-qubit block equivalence rows (including adjacent-CX
+// cancellation) live in ``TwoQBlockEquivGenericU3CxMatrix``.
 
 TEST_F(NativeSynthesisPassTest,
        TwoQBlockConsolidationStopsAtDifferentPairBoundary) {
@@ -387,18 +308,8 @@ TEST_F(NativeSynthesisPassTest,
   // `cx(q1, q2)` so block consolidation cannot fuse the outer pair into a
   // single identity; equivalence still has to hold.
   auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    const auto q2 = builder.allocQubit();
-    builder.cx(q0, q1);
-    builder.cx(q1, q2);
-    builder.cx(q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    builder.dealloc(q2);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthFusionThreeLineCx01Cx12Cx01);
   };
 
   auto synth = buildFn();
@@ -414,16 +325,8 @@ TEST_F(NativeSynthesisPassTest,
   // A barrier between two CX(q0,q1) blocks must prevent them from being
   // fused into a single block. Each CX stays an individual entangler.
   auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.cx(q0, q1);
-    builder.barrier({q0, q1});
-    builder.cx(q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthFusionCxBarrierCx);
   };
 
   auto synth = buildFn();
@@ -434,115 +337,14 @@ TEST_F(NativeSynthesisPassTest,
   EXPECT_EQ(countOpsOfTypeInModule<qco::CtrlOp>(synth), 2U);
 }
 
-TEST_F(NativeSynthesisPassTest, TwoQBlockConsolidationHandlesSwappedWireOrder) {
-  // Three CXs in alternating direction form SWAP; consolidation must preserve
-  // the unitary.
-  auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.cx(q0, q1);
-    builder.cx(q1, q0);
-    builder.cx(q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
-  };
-
-  auto expected = buildFn();
-  runQcToQco(expected);
-  const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
-  ASSERT_TRUE(expectedUnitary.has_value());
-
-  auto synth = buildFn();
-  runNativeSynthesis(synth, "u,cx");
-  EXPECT_TRUE(onlyGenericU3CxOps(synth));
-  const auto synthUnitary = computeTwoQubitUnitaryFromModule(synth);
-  ASSERT_TRUE(synthUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary));
-}
-
-TEST_F(NativeSynthesisPassTest,
-       TwoQBlockConsolidationEquivalentWhenBlockContainsDcx) {
-  // Convention audit: DCX is directional/asymmetric, so this checks that
-  // Phase-B block accumulation preserves operand ordering when a DCX appears
-  // inside an otherwise consolidatable block.
-  auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.h(q0);
-    builder.dcx(q0, q1);
-    builder.s(q1);
-    builder.cx(q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
-  };
-
-  auto expected = buildFn();
-  runQcToQco(expected);
-  const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
-  ASSERT_TRUE(expectedUnitary.has_value());
-
-  auto synth = buildFn();
-  runNativeSynthesis(synth, "u,cx");
-  EXPECT_TRUE(onlyGenericU3CxOps(synth));
-  const auto synthUnitary = computeTwoQubitUnitaryFromModule(synth);
-  ASSERT_TRUE(synthUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary));
-}
-
-TEST_F(NativeSynthesisPassTest,
-       TwoQBlockConsolidationEquivalentWhenBlockContainsRzx) {
-  // Convention audit: RZX is directional/asymmetric. This test guards
-  // against BE/LE mismatches in mixed blocks containing RZX.
-  auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.x(q0);
-    builder.rzx(0.41, q0, q1);
-    builder.t(q1);
-    builder.cx(q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
-  };
-
-  auto expected = buildFn();
-  runQcToQco(expected);
-  const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
-  ASSERT_TRUE(expectedUnitary.has_value());
-
-  auto synth = buildFn();
-  runNativeSynthesis(synth, "u,cx");
-  EXPECT_TRUE(onlyGenericU3CxOps(synth));
-  const auto synthUnitary = computeTwoQubitUnitaryFromModule(synth);
-  ASSERT_TRUE(synthUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary));
-}
-
 TEST_F(NativeSynthesisPassTest,
        TwoQBlockConsolidationHandlesRzzOnIbmFractional) {
   // Explicitly exercise a non-CX/CZ two-qubit gate inside a block on a
   // profile that supports it natively. Consolidation may keep/reshape the
   // block, but equivalence and profile validity must hold.
   auto buildFn = [&] {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.h(q0);
-    builder.rzz(-0.29, q0, q1);
-    builder.s(q1);
-    builder.rzz(0.17, q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        context.get(), mlir::qc::nativeSynthFusionHRzzSRzz);
   };
 
   auto expected = buildFn();
@@ -563,48 +365,52 @@ TEST_F(NativeSynthesisPassTest,
   // Directed RZX tests (asymmetric 2q); both operand orders.
   const auto profiles = NativeSynthesisPassTest::allNineEquivalenceProfiles();
 
-  // Representative generic and ``pi/2`` angles (operand order tested below).
-  const std::array<double, 2> angles{{0.41, std::numbers::pi / 2.0}};
+  // Four directed RZX fixtures: two angles × two operand orders.
+  struct RzxStandaloneRow {
+    double theta;
+    bool swapOperands;
+    void (*program)(mlir::qc::QCProgramBuilder&);
+  };
+  const std::array<RzxStandaloneRow, 4> rzxRows{{
+      RzxStandaloneRow{.theta = 0.41,
+                       .swapOperands = false,
+                       .program = mlir::qc::nativeSynthFusionRzx041Q0First},
+      RzxStandaloneRow{.theta = 0.41,
+                       .swapOperands = true,
+                       .program = mlir::qc::nativeSynthFusionRzx041Q1First},
+      RzxStandaloneRow{.theta = std::numbers::pi / 2.0,
+                       .swapOperands = false,
+                       .program = mlir::qc::nativeSynthFusionRzxPiHalfQ0First},
+      RzxStandaloneRow{.theta = std::numbers::pi / 2.0,
+                       .swapOperands = true,
+                       .program = mlir::qc::nativeSynthFusionRzxPiHalfQ1First},
+  }};
 
   for (const auto& profileCase : profiles) {
-    for (const double theta : angles) {
-      for (const bool swapOperands : {false, true}) {
-        auto buildFn = [&] {
-          mlir::qc::QCProgramBuilder builder(context.get());
-          builder.initialize();
-          const auto q0 = builder.allocQubit();
-          const auto q1 = builder.allocQubit();
-          if (swapOperands) {
-            builder.rzx(theta, q1, q0);
-          } else {
-            builder.rzx(theta, q0, q1);
-          }
-          builder.dealloc(q0);
-          builder.dealloc(q1);
-          return builder.finalize();
-        };
+    for (const RzxStandaloneRow& row : rzxRows) {
+      auto buildFn = [&] {
+        return mlir::qc::QCProgramBuilder::build(context.get(), row.program);
+      };
 
-        auto expected = buildFn();
-        runQcToQco(expected);
-        const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
-        ASSERT_TRUE(expectedUnitary.has_value())
-            << "native-gates=" << profileCase.nativeGates << " theta=" << theta
-            << " swapped=" << swapOperands;
+      auto expected = buildFn();
+      runQcToQco(expected);
+      const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
+      ASSERT_TRUE(expectedUnitary.has_value())
+          << "native-gates=" << profileCase.nativeGates
+          << " theta=" << row.theta << " swapped=" << row.swapOperands;
 
-        auto synth = buildFn();
-        runNativeSynthesis(synth, profileCase.nativeGates);
-        EXPECT_TRUE(profileCase.isNative(synth))
-            << "native-gates=" << profileCase.nativeGates << " theta=" << theta
-            << " swapped=" << swapOperands;
-        const auto synthUnitary = computeTwoQubitUnitaryFromModule(synth);
-        ASSERT_TRUE(synthUnitary.has_value())
-            << "native-gates=" << profileCase.nativeGates << " theta=" << theta
-            << " swapped=" << swapOperands;
-        EXPECT_TRUE(
-            isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary))
-            << "native-gates=" << profileCase.nativeGates << " theta=" << theta
-            << " swapped=" << swapOperands;
-      }
+      auto synth = buildFn();
+      runNativeSynthesis(synth, profileCase.nativeGates);
+      EXPECT_TRUE(profileCase.isNative(synth))
+          << "native-gates=" << profileCase.nativeGates
+          << " theta=" << row.theta << " swapped=" << row.swapOperands;
+      const auto synthUnitary = computeTwoQubitUnitaryFromModule(synth);
+      ASSERT_TRUE(synthUnitary.has_value())
+          << "native-gates=" << profileCase.nativeGates
+          << " theta=" << row.theta << " swapped=" << row.swapOperands;
+      EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary))
+          << "native-gates=" << profileCase.nativeGates
+          << " theta=" << row.theta << " swapped=" << row.swapOperands;
     }
   }
 }

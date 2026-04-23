@@ -22,7 +22,7 @@ target_link_libraries(
   ${target_name}
   PRIVATE MLIRParser
           GTest::gtest_main
-          MLIRQCProgramBuilder
+          MLIRQCPrograms
           MLIRQCOProgramBuilder
           MLIRQCOUtils
           MLIRQCToQCO

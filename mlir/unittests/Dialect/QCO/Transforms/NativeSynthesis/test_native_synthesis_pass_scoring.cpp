@@ -222,44 +222,35 @@ TEST(NativeSynthesisScoringTest,
 TEST_F(NativeSynthesisPassTest, XxPlusMinusYyEmittedCountsMatchScoringMetrics) {
   using namespace mlir::qco::native_synth;
 
-  const auto runRewriteCase = [&](auto emitTwoQGate) {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    emitTwoQGate(builder, q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    OwningOpRef<ModuleOp> module = builder.finalize();
+  const auto runRewriteCase =
+      [&](void (*emitProgram)(mlir::qc::QCProgramBuilder&)) {
+        OwningOpRef<ModuleOp> module =
+            mlir::qc::QCProgramBuilder::build(context.get(), emitProgram);
 
-    PassManager pm(context.get());
-    pm.addPass(createQCToQCO());
-    ASSERT_TRUE(succeeded(pm.run(*module)));
+        PassManager pm(context.get());
+        pm.addPass(createQCToQCO());
+        ASSERT_TRUE(succeeded(pm.run(*module)));
 
-    Operation* twoQOp = nullptr;
-    module->walk([&](Operation* op) {
-      if (isa<qco::XXPlusYYOp, qco::XXMinusYYOp>(op)) {
-        twoQOp = op;
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    });
-    ASSERT_NE(twoQOp, nullptr);
+        Operation* twoQOp = nullptr;
+        module->walk([&](Operation* op) {
+          if (isa<qco::XXPlusYYOp, qco::XXMinusYYOp>(op)) {
+            twoQOp = op;
+            return WalkResult::interrupt();
+          }
+          return WalkResult::advance();
+        });
+        ASSERT_NE(twoQOp, nullptr);
 
-    IRRewriter rewriter(context.get());
-    ASSERT_TRUE(succeeded(rewriteXXPlusMinusYYViaRxxRyy(rewriter, twoQOp)));
+        IRRewriter rewriter(context.get());
+        ASSERT_TRUE(succeeded(rewriteXXPlusMinusYYViaRxxRyy(rewriter, twoQOp)));
 
-    const auto expected = xxPlusMinusYyRzzRewriteScoringMetrics();
-    const auto [numOneQ, numTwoQ] =
-        countSingleAndTwoQubitUnitariesForXxRzzMetrics(*module);
-    EXPECT_EQ(numOneQ, expected.numOneQ);
-    EXPECT_EQ(numTwoQ, expected.numTwoQ);
-  };
+        const auto expected = xxPlusMinusYyRzzRewriteScoringMetrics();
+        const auto [numOneQ, numTwoQ] =
+            countSingleAndTwoQubitUnitariesForXxRzzMetrics(*module);
+        EXPECT_EQ(numOneQ, expected.numOneQ);
+        EXPECT_EQ(numTwoQ, expected.numTwoQ);
+      };
 
-  runRewriteCase([](mlir::qc::QCProgramBuilder& b, Value q0, Value q1) {
-    b.xx_plus_yy(0.52, -0.14, q0, q1);
-  });
-  runRewriteCase([](mlir::qc::QCProgramBuilder& b, Value q0, Value q1) {
-    b.xx_minus_yy(-0.37, 0.26, q0, q1);
-  });
+  runRewriteCase(mlir::qc::nativeSynthScoringXxPlusYyOnly);
+  runRewriteCase(mlir::qc::nativeSynthScoringXxMinusYyOnly);
 }

@@ -444,21 +444,8 @@ TEST_F(NativeSynthesisPassTest, RandomizedCustomMenusAndCircuitsAreEquivalent) {
 TEST_F(NativeSynthesisPassTest,
        LargeCircuitEquivalentAndNativeGatesIbmFractional) {
   auto buildStressCircuit = [&](MLIRContext* ctx) {
-    mlir::qc::QCProgramBuilder builder(ctx);
-    builder.initialize();
-    const auto q0 = builder.allocQubit();
-    const auto q1 = builder.allocQubit();
-    builder.h(q0);
-    builder.sxdg(q0);
-    builder.ry(-0.22, q1);
-    builder.swap(q0, q1);
-    builder.rxx(0.53, q0, q1);
-    builder.ecr(q0, q1);
-    builder.p(0.31, q0);
-    builder.rzz(-0.44, q0, q1);
-    builder.dealloc(q0);
-    builder.dealloc(q1);
-    return builder.finalize();
+    return mlir::qc::QCProgramBuilder::build(
+        ctx, mlir::qc::nativeSynthCustomMenusIbmFractionalTwoQStress);
   };
   expectEquivalentAndNativeAfterSynthesis(
       [&] { return buildStressCircuit(context.get()); }, "x,sx,rz,rx,rzz,cz",
@@ -476,29 +463,18 @@ TEST_F(NativeSynthesisPassTest,
 
 TEST_F(NativeSynthesisPassTest, XXPlusMinusYYEquivalentAndNativeIbmFractional) {
   constexpr const char* kIbmFrac = "x,sx,rz,rx,rzz,cz";
-  const auto assertEquivalent = [&](auto buildBody) {
-    expectEquivalentAndNativeAfterSynthesis(
-        [&] {
-          mlir::qc::QCProgramBuilder builder(context.get());
-          builder.initialize();
-          const auto q0 = builder.allocQubit();
-          const auto q1 = builder.allocQubit();
-          buildBody(builder, q0, q1);
-          builder.dealloc(q0);
-          builder.dealloc(q1);
-          return builder.finalize();
-        },
-        kIbmFrac, &NativeSynthesisPassTest::onlyIbmFractionalOps,
-        computeTwoQubitUnitaryFromModule);
-  };
-
-  assertEquivalent(
-      [](mlir::qc::QCProgramBuilder& b, mlir::Value q0, mlir::Value q1) {
-        b.h(q0);
-        b.sx(q1);
-        b.xx_plus_yy(0.52, -0.14, q0, q1);
-        b.rz(0.31, q0);
-      });
-  assertEquivalent([](mlir::qc::QCProgramBuilder& b, mlir::Value q0,
-                      mlir::Value q1) { b.xx_minus_yy(-0.37, 0.26, q0, q1); });
+  expectEquivalentAndNativeAfterSynthesis(
+      [&] {
+        return mlir::qc::QCProgramBuilder::build(
+            context.get(), mlir::qc::nativeSynthCustomMenusXxPlusYyChain);
+      },
+      kIbmFrac, &NativeSynthesisPassTest::onlyIbmFractionalOps,
+      computeTwoQubitUnitaryFromModule);
+  expectEquivalentAndNativeAfterSynthesis(
+      [&] {
+        return mlir::qc::QCProgramBuilder::build(
+            context.get(), mlir::qc::nativeSynthCustomMenusXxMinusYyOnly);
+      },
+      kIbmFrac, &NativeSynthesisPassTest::onlyIbmFractionalOps,
+      computeTwoQubitUnitaryFromModule);
 }
