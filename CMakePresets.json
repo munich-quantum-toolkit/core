@@ -4,7 +4,6 @@
     {
       "name": "base",
       "hidden": true,
-      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "MLIR_DIR": "$env(MLIR_DIR)",
@@ -12,9 +11,30 @@
       }
     },
     {
-      "name": "debug",
+      "name": "base-ninja",
+      "hidden": true,
       "inherits": "base",
-      "displayName": "debug config",
+      "generator": "Ninja",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "base-windows",
+      "hidden": true,
+      "inherits": "base",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base-ninja",
+      "displayName": "Debug config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "LLVM_ENABLE_ASSERTIONS": "ON"
@@ -22,8 +42,25 @@
     },
     {
       "name": "release",
-      "inherits": "base",
-      "displayName": "release config",
+      "inherits": "base-ninja",
+      "displayName": "Release config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-debug",
+      "inherits": "base-windows",
+      "displayName": "Windows Debug config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "LLVM_ENABLE_ASSERTIONS": "ON"
+      }
+    },
+    {
+      "name": "windows-release",
+      "inherits": "base-windows",
+      "displayName": "Windows Release config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
@@ -32,11 +69,23 @@
   "buildPresets": [
     {
       "name": "debug",
-      "configurePreset": "debug"
+      "configurePreset": "debug",
+      "configuration": "Debug"
     },
     {
       "name": "release",
-      "configurePreset": "release"
+      "configurePreset": "release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-debug",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release"
     }
   ]
 }

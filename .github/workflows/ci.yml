@@ -71,11 +71,11 @@ jobs:
       matrix:
         runs-on: [windows-2025, windows-11-arm]
         compiler: [msvc]
-        preset: [release]
+        preset: [windows-release]
         include:
           - runs-on: windows-2025
             compiler: msvc
-            preset: debug
+            preset: windows-debug
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
     with:
       runs-on: ${{ matrix.runs-on }}
@@ -135,7 +135,7 @@ jobs:
       matrix:
         runs-on: [windows-2022, windows-2025, windows-11-arm]
         compiler: [msvc, clang]
-        preset: [release, debug]
+        preset: [windows-release, windows-debug]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
     with:
       runs-on: ${{ matrix.runs-on }}
