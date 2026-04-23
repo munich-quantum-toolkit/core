@@ -105,10 +105,8 @@ def SwapAbsorb : Pass<"absorb-swaps", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "";
   let options = [];
-  let statistics = [
-       Statistic<"numSwaps", "num-inserted-swaps",
-                              "The number of absorbed SWAPs">
-  ];
+  let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
+                              "The number of absorbed SWAPs">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
