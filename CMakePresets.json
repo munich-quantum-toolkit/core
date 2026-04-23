@@ -87,5 +87,40 @@
       "configurePreset": "windows-release",
       "configuration": "Release"
     }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": {
+        "repeat": { "mode": "until-pass", "count": 3 },
+        "timeout": 600
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "configurePreset": "debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "configurePreset": "release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-debug",
+      "inherits": "base",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-release",
+      "inherits": "base",
+      "configurePreset": "windows-release",
+      "configuration": "Release"
+    }
   ]
 }

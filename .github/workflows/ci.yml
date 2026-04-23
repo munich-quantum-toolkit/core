@@ -30,7 +30,7 @@ jobs:
           - runs-on: ubuntu-24.04
             compiler: gcc
             preset: debug
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@f0fdd1f876755d96bd1cb095f4b9c1cade1114e4 # v1.18.1
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -53,7 +53,7 @@ jobs:
           - runs-on: macos-26
             compiler: clang
             preset: debug
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@f0fdd1f876755d96bd1cb095f4b9c1cade1114e4 # v1.18.1
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -76,7 +76,7 @@ jobs:
           - runs-on: windows-2025
             compiler: msvc
             preset: windows-debug
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@f0fdd1f876755d96bd1cb095f4b9c1cade1114e4 # v1.18.1
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -96,7 +96,7 @@ jobs:
         runs-on: [ubuntu-24.04, ubuntu-24.04-arm]
         compiler: [gcc, clang, clang-20, clang-21]
         preset: [release, debug]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@f0fdd1f876755d96bd1cb095f4b9c1cade1114e4 # v1.18.1
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -116,7 +116,7 @@ jobs:
         runs-on: [macos-15, macos-15-intel, macos-26, macos-26-intel]
         compiler: [clang, clang-20, clang-21, gcc-14, gcc-15]
         preset: [release, debug]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@f0fdd1f876755d96bd1cb095f4b9c1cade1114e4 # v1.18.1
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -136,7 +136,7 @@ jobs:
         runs-on: [windows-2022, windows-2025, windows-11-arm]
         compiler: [msvc, clang]
         preset: [windows-release, windows-debug]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@f0fdd1f876755d96bd1cb095f4b9c1cade1114e4 # v1.18.1
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -149,7 +149,7 @@ jobs:
     name: 🇨‌ Coverage
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@f0fdd1f876755d96bd1cb095f4b9c1cade1114e4 # v1.18.1
     with:
       setup-mlir: true
       llvm-version: 22.1.0
@@ -163,7 +163,7 @@ jobs:
     name: 🇨‌ Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@d545cea335aba31af40ede322eae9088e93db8f7 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@f0fdd1f876755d96bd1cb095f4b9c1cade1114e4 # v1.18.1
     with:
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_BINDINGS=ON
       clang-version: 22
