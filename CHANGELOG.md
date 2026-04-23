@@ -362,7 +362,6 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
-[#1654]: https://github.com/munich-quantum-toolkit/core/pull/1654
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637
 [#1635]: https://github.com/munich-quantum-toolkit/core/pull/1635
