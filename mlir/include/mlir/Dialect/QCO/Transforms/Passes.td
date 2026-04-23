@@ -110,10 +110,12 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
     preserved; controlled gates (`qco.ctrl`) must have a single control and a
     single target.
 
-    The menu is a comma-separated list of gate tokens from which the pass
-    derives a single-qubit synthesis strategy (`u`, `zsxx`, IQM-style `r`, or
-    an axis pair `rx`/`ry`/`rz`) and the set of available two-qubit entanglers
-    (`cx`, `cz`, `rzz`).
+    The menu is a comma-separated list of gate tokens (order not significant)
+    from which the pass builds a profile: a single-qubit synthesis mode
+    (generic `qco.u` when `u` is present; IBM-style surface gates when all of
+    `x`, `sx`, and `rz`/`p` are present; IQM-style `qco.r` when `r` is present;
+    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus optional
+    two-qubit entanglers `cx`, `cz`, and optional `rzz`.
 
     Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`, `cx`,
     `cz`, `rzz`. An empty or whitespace-only menu is a no-op, which is the
@@ -121,24 +123,25 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
     token or an invalid score weight (non-finite or negative) causes the pass
     to fail.
 
-    Example menus:
-    - `x,sx,rz,cx` (IBM basic)
-    - `x,sx,rz,rx,rzz,cz` (IBM fractional)
-    - `r,cz` (IQM default)
-    - `u,cx` (generic U3 + CX)
-    - `rx,rz,cx` (Rx/Rz axis pair + CX)
+    Example menus (each line is one illustrative menu; pick either `cx` or
+    `cz` as the entangler, or list both if both are native):
+    - IBM basic (no fractional two-qubit): `x,sx,rz,cx` or `x,sx,rz,cz`
+    - IBM fractional: `x,sx,rz,rx,rzz,cx` or `x,sx,rz,rx,rzz,cz`
+    - Generic single-qubit U: `u,cx` or `u,cz`
+    - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
+    - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
+      Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
 
-    The pass runs single-qubit fusion, then a two-qubit window pass (including
-    absorbed single-qubit padding), then up to four lowering sweeps over
-    remaining non-native unitaries. Two-qubit lowering may emit temporary
-    off-menu single-qubit gates; later sweeps try to absorb them. If any
-    off-menu single-qubit gates remain after that cap, the pass fails.
-
-    It then fuses single-qubit runs again (seams between two-qubit blocks),
-    merges `rz` angles through `qco.ctrl` control chains where valid, fuses
-    single-qubit runs once more, and runs up to four optional lowering +
-    fusion rounds until the full menu holds (including `qco.ctrl` shells and
-    bare two-qubit gates). If anything is still off-menu, the pass fails.
+    Execution order (mirrors the implementation): fuse consecutive
+    single-qubit runs; consolidate two-qubit windows (including absorbed
+    single-qubit padding); run up to four synthesis sweeps over remaining
+    non-native unitaries until every single-qubit op matches the menu (two-qubit
+    lowering may temporarily emit off-menu 1q ops that later sweeps absorb—if
+    any remain after that cap, the pass fails); fuse 1q seams between two-qubit
+    blocks; merge `rz` through eligible `qco.ctrl` control wires; fuse 1q runs
+    again; then up to four further synthesis + fusion rounds until the full menu
+    holds (including native `qco.ctrl` shells and bare `rzz` when allowed). If
+    anything is still off-menu, the pass fails.
 
     Candidate selection minimises the linear cost
     `score-weight-twoq * #2q + score-weight-oneq * #1q +
@@ -155,8 +158,8 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
   let options =
       [Option<"nativeGates", "native-gates", "std::string", "\"\"",
               "Comma-separated native gate menu. Empty or whitespace-only is "
-              "a no-op. Recognised tokens: u, x, sx, rz (or p), rx, ry, r, cx, "
-              "cz, rzz.">,
+              "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz, rzz. "
+              "Examples: x,sx,rz,cx; x,sx,rz,rx,rzz,cz; u,cx; r,cz; rx,rz,cx.">,
        Option<"scoreWeightTwoQ", "score-weight-twoq", "double", "1.0",
               "Weight for the number of two-qubit gates in candidate "
               "scoring. Must be finite and non-negative.">,

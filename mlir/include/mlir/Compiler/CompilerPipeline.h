@@ -47,11 +47,15 @@ struct QuantumCompilerConfig {
   /// Comma-separated native gate menu. Recognised tokens: `u`, `x`, `sx`,
   /// `rz` (or `p`), `rx`, `ry`, `r`, `cx`, `cz`, `rzz`. An empty or
   /// whitespace-only string leaves native synthesis as a no-op (IR
-  /// unchanged). Common examples:
-  /// - `"x,sx,rz,cx"`         — IBM basic (CX)
-  /// - `"x,sx,rz,rx,rzz,cz"`  — IBM fractional
-  /// - `"r,cz"`               — IQM default
-  /// - `"u,cx"`               — generic U3 + CX
+  /// unchanged). Illustrative menus (use `cx` or `cz` as the entangler, or
+  /// both):
+  /// - `"x,sx,rz,cx"` / `"x,sx,rz,cz"` — IBM basic (no fractional 2q)
+  /// - `"x,sx,rz,rx,rzz,cx"` / `"...,cz"` — IBM fractional
+  /// - `"u,cx"` / `"u,cz"` — generic single-qubit `qco.u` (menu token `u`, not
+  ///   `u3`)
+  /// - `"r,cz"` — IQM-style default
+  /// - `"rx,rz,cx"`, `"rx,ry,cz"`, `"ry,rz,cx"` — supported `rx`/`ry`/`rz`
+  ///   pairs plus entangler
   std::string nativeGates;
 
   /// Weight for two-qubit gates in local candidate scoring
