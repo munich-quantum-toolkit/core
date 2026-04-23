@@ -181,8 +181,15 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
   double actualBasisFidelity = getBasisFidelity();
   auto traces = this->traces(targetDecomposition);
   auto getDefaultNbasis = [&]() -> std::uint8_t {
-    // determine smallest number of basis gates required to fulfill given
-    // basis fidelity constraint
+    // Pick the number of basis gate uses `i ∈ {0, 1, 2, 3}` that maximizes
+    //   expected_fidelity(i) = traceToFidelity(traces[i]) * basisFidelity^i
+    // i.e. "how well does using `i` basis gates approximate the target,
+    // assuming each basis gate has fidelity `basisFidelity`". With
+    // `basisFidelity == 1.0` (exact mode) the `pow` factor is constant and
+    // the larger `i` values tend to win because they can represent any
+    // SU(4); when `basisFidelity < 1.0` the `pow(...)^i` penalty lets
+    // shorter (lower-`i`) approximations win when the target is close
+    // enough. This is *not* a "smallest `i` above a threshold" rule.
     auto bestValue = std::numeric_limits<double>::lowest();
     auto bestIndex = -1;
     for (int i = 0; std::cmp_less(i, traces.size()); ++i) {
@@ -228,8 +235,8 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
   llvm::SmallVector<TwoQubitGateSequence, 8> eulerDecompositions;
   for (auto&& decomp : decomposition) {
     assert(helpers::isUnitaryMatrix(decomp));
-    auto eulerDecomp = unitaryToGateSequence(decomp, target1qEulerBases, 0,
-                                             true, std::nullopt);
+    auto eulerDecomp =
+        unitaryToGateSequence(decomp, target1qEulerBases, true, std::nullopt);
     eulerDecompositions.push_back(eulerDecomp);
   }
   TwoQubitGateSequence gates{
@@ -244,6 +251,10 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
   gates.gates.reserve(twoQubitSequenceDefaultCapacity);
   gates.globalPhase -= bestNbasis * basisDecomposer.globalPhase();
   if (bestNbasis == 2) {
+    // The two-basis (2x CX/CZ) template in `decomp2Supercontrolled` produces
+    // a sequence whose global phase is off by `pi` relative to the target;
+    // compensate here so the emitted sequence reproduces the target
+    // unitary exactly, not just up to sign.
     gates.globalPhase += std::numbers::pi;
   }
 
@@ -345,6 +356,16 @@ TwoQubitBasisDecomposer::decomp3Supercontrolled(
 
 std::array<std::complex<double>, 4>
 TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
+  // Returns the Hilbert-Schmidt traces between the target canonical gate and
+  // the best candidate reachable with `0, 1, 2, 3` uses of the basis gate,
+  // respectively. Fed into `traceToFidelity` by `getDefaultNbasis` to pick
+  // the best basis-gate count. The closed-form expressions specialize
+  // `TwoQubitWeylDecomposition::getTrace(a, b, c, ap, bp, cp)` for:
+  //   i == 0: no basis gate       (ap == bp == cp == 0)
+  //   i == 1: one basis use       (ap == pi/4, bp == basis.b, cp == 0)
+  //   i == 2: two basis uses      (ap == 0, bp == 0, cp == -target.c)
+  //   i == 3: three basis uses    (target reachable exactly -> trace == 4)
+  // so the array has length 4 and is indexed by the number of basis uses.
   return {
       4. * std::complex<double>{std::cos(target.a()) * std::cos(target.b()) *
                                     std::cos(target.c()),
@@ -364,10 +385,8 @@ TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
 
 OneQubitGateSequence TwoQubitBasisDecomposer::unitaryToGateSequence(
     const Eigen::Matrix2cd& unitaryMat,
-    const llvm::SmallVector<EulerBasis>& targetBasisList, QubitId /*qubit*/,
-    // TODO: add error map here: per qubit a mapping of
-    // operation to error value for better calculateError()
-    bool simplify, std::optional<double> atol) {
+    const llvm::SmallVector<EulerBasis>& targetBasisList, bool simplify,
+    std::optional<double> atol) {
   assert(!targetBasisList.empty());
 
   auto calculateError = [](const OneQubitGateSequence& sequence) -> double {

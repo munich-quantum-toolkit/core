@@ -14,7 +14,6 @@
 
 #include <Eigen/Core> // NOLINT(misc-include-cleaner)
 
-#include <cassert>
 #include <complex>
 #include <cstdint>
 #include <optional>
@@ -224,27 +223,22 @@ protected:
   bool applySpecialization();
 
 private:
-  // a, b, c are the parameters of the canonical gate (CAN)
-  double a_{}; // rotation of RXX gate in CAN (must be taken times -2.0)
-  double b_{}; // rotation of RYY gate in CAN (must be taken times -2.0)
-  double c_{}; // rotation of RZZ gate in CAN (must be taken times -2.0)
-  double globalPhase_{}; // global phase adjustment
-  /**
-   * q1 - k2r - C - k1r -
-   *            A
-   * q0 - k2l - N - k1l -
-   */
-  Eigen::Matrix2cd k1l_; // "left" qubit after canonical gate
-  Eigen::Matrix2cd k2l_; // "left" qubit before canonical gate
-  Eigen::Matrix2cd k1r_; // "right" qubit after canonical gate
-  Eigen::Matrix2cd k2r_; // "right" qubit before canonical gate
-  Specialization specialization{
-      Specialization::General}; // detected symmetries in the matrix
-  EulerBasis defaultEulerBasis{
-      EulerBasis::U3}; // recommended euler basis for k1l/k2l/k1r/k2r
+  // Canonical gate parameters `(a, b, c)`; documented on the public accessors.
+  double a_{};
+  double b_{};
+  double c_{};
+  double globalPhase_{};
+  // Single-qubit factors surrounding the canonical gate; see the accessors
+  // for the per-field wiring diagram.
+  Eigen::Matrix2cd k1l_;
+  Eigen::Matrix2cd k2l_;
+  Eigen::Matrix2cd k1r_;
+  Eigen::Matrix2cd k2r_;
+  Specialization specialization{Specialization::General};
+  EulerBasis defaultEulerBasis{EulerBasis::U3};
   /// Optional `traceToFidelity` floor for specialization; unset disables it.
   std::optional<double> requestedFidelity;
-  double calculatedFidelity{};    // actual fidelity of decomposition
-  Eigen::Matrix4cd unitaryMatrix; // original matrix for this decomposition
+  double calculatedFidelity{};
+  Eigen::Matrix4cd unitaryMatrix;
 };
 } // namespace mlir::qco::decomposition

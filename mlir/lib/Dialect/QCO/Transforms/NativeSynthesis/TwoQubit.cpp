@@ -97,6 +97,10 @@ bool menuAllows(const decomposition::Gate& gate,
   return false;
 }
 
+/// Can `emitter` lower the single-qubit `op` directly (without the matrix
+/// fallback)? Dispatches to the mode-specific `canDirectlyDecomposeTo*`
+/// predicate; these predicates encode which abstract gate kinds each
+/// emitter understands as-is.
 bool emitterHasDirectLowering(Operation* op,
                               const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
@@ -176,14 +180,31 @@ collectSingleQubitCandidates(UnitaryOpInterface unitary,
 
 namespace {
 
+/// Try every `numBasisUses` in `{0, 1, 2, 3}` for the `(entangler, emitter,
+/// basis)` triple, running the Weyl-based basis decomposer for each. Any
+/// resulting gate sequence that both matches `targetMatrix` up to global
+/// phase AND stays inside the native menu is appended to `candidates` (with
+/// a freshly-incremented `enumerationIndex` to keep scoring deterministic).
 void tryAddTwoQubitBasisCandidatesForEmitterBasis(
     llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>& candidates,
     unsigned& enumerationIndex, const Eigen::Matrix4cd& targetMatrix,
     const NativeProfileSpec& spec, EntanglerBasis entangler,
     const SingleQubitEmitterSpec& emitter, decomposition::EulerBasis basis) {
+  // An arbitrary 2-qubit unitary can always be realized using at most three
+  // copies of any fixed (non-diagonal) entangler plus local gates -- this is
+  // a consequence of the KAK/Weyl decomposition. Trying all four candidate
+  // counts (0..3) and scoring them with the gate-sequence metric lets the
+  // outer pass pick the cheapest realization for the particular target
+  // unitary (e.g. local unitaries collapse to 0 entanglers, SWAP uses 3).
   for (std::uint8_t numBasisUses = 0; numBasisUses <= 3; ++numBasisUses) {
     auto seq = decomposeTwoQubitFromMatrix(targetMatrix, entangler, basis,
                                            numBasisUses);
+    // Two independent checks: `isEquivalentUpToGlobalPhase` verifies the
+    // numerical decomposition actually reproduces the target; `fitsMenu`
+    // verifies every emitted gate kind is in the backend native set. Both
+    // are required because the decomposer can legitimately produce an
+    // accurate sequence that still contains non-native gates (e.g. when the
+    // requested emitter supports fewer axes than the target unitary needs).
     if (!seq ||
         !isEquivalentUpToGlobalPhase(seq->getUnitaryMatrix(), targetMatrix) ||
         !gateSequenceFitsMenu(*seq, spec)) {
@@ -268,6 +289,9 @@ LogicalResult rewriteXXPlusMinusYYViaRxxRyy(IRRewriter& rewriter,
     return RZOp::create(rewriter, loc, sx.getOutputQubit(0), constF(HALF_PI))
         .getOutputQubit(0);
   };
+  // Realize `Rxx(theta)` as `(H ⊗ H) * Rzz(theta) * (H ⊗ H)`: Hadamard
+  // conjugation maps the Z axis to X on each qubit, and the tensor-product
+  // identity `(H ⊗ H) * ZZ * (H ⊗ H) == XX` lifts that to the entangler.
   const auto emitRxxViaRzz = [&](Value q0, Value q1,
                                  Value theta) -> std::pair<Value, Value> {
     q0 = emitH(q0);
@@ -277,6 +301,10 @@ LogicalResult rewriteXXPlusMinusYYViaRxxRyy(IRRewriter& rewriter,
     q1 = rzz.getOutputQubit(1);
     return {emitH(q0), emitH(q1)};
   };
+  // Realize `Ryy(theta)` as `(Rx(-pi/2) ⊗ Rx(-pi/2)) * Rzz(theta) *
+  // (Rx(pi/2) ⊗ Rx(pi/2))`: Rx(pi/2) maps Z to Y on each qubit, so the
+  // conjugation transports `ZZ` to `YY` just like the Hadamard sandwich
+  // above maps it to `XX`.
   const auto emitRyyViaRzz = [&](Value q0, Value q1,
                                  Value theta) -> std::pair<Value, Value> {
     auto rx0 = RXOp::create(rewriter, loc, q0, constF(HALF_PI));
@@ -290,6 +318,15 @@ LogicalResult rewriteXXPlusMinusYYViaRxxRyy(IRRewriter& rewriter,
     return {rxb0.getOutputQubit(0), rxb1.getOutputQubit(0)};
   };
 
+  // `XXPlusYY(theta, beta)` and `XXMinusYY(theta, beta)` both act as
+  //   Rz(-beta) on q0 -> entangling core -> Rz(+beta) on q0,
+  // but differ in the entangling core:
+  //   XXPlusYY:  exp(-i * theta/4 * (XX + YY))  == Ryy(theta/2) * Rxx(theta/2)
+  //   XXMinusYY: exp(-i * theta/4 * (XX - YY))  == Rxx(theta/2) * Ryy(-theta/2)
+  // (XX and YY commute, so the two multiplication orders produce identical
+  // unitaries; the distinct order and sign below are what makes `XXMinusYY`
+  // the "minus" variant and must be preserved even though an order flip
+  // alone would also compile.)
   if (auto xxPlus = dyn_cast<XXPlusYYOp>(op)) {
     Value q0 = xxPlus.getInputQubit(0);
     Value q1 = xxPlus.getInputQubit(1);

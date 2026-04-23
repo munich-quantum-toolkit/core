@@ -45,7 +45,6 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 
-#include <complex>
 #include <cstddef>
 #include <cstdlib>
 #include <iosfwd>
@@ -818,17 +817,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
   return unitary;
 }
 
-/// Check matrix equality up to a unit-modulus global phase.
-bool isEquivalentUpToGlobalPhase(const Eigen::Matrix4cd& lhs,
-                                 const Eigen::Matrix4cd& rhs,
-                                 const double atol = 1e-10) {
-  const auto overlap = (rhs.adjoint() * lhs).trace();
-  if (std::abs(overlap) <= atol) {
-    return false;
-  }
-  const auto factor = overlap / std::abs(overlap);
-  return lhs.isApprox(factor * rhs, atol);
-}
+using mqt::test::isEquivalentUpToGlobalPhase;
 
 } // namespace
 

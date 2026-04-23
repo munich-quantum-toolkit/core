@@ -80,6 +80,11 @@ bool allowsSingleQubitOp(UnitaryOpInterface op, const NativeProfileSpec& spec) {
 CandidateMetrics
 computeGateSequenceMetrics(const decomposition::QubitGateSequence& seq) {
   CandidateMetrics metrics;
+  // Per-qubit depth counters used as a mini scheduler: single-qubit gates
+  // advance only their own wire's counter, while two-qubit gates act as a
+  // *sync barrier* and advance both wires to `1 + max(...)`. This mirrors a
+  // simple ASAP scheduling model where entangling gates force alignment of
+  // the two wires they touch.
   llvm::SmallVector<unsigned, 2> qubitDepths(2, 0);
   for (const auto& gate : seq.gates) {
     if (gate.qubitId.size() == 2) {

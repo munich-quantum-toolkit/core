@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "TestCaseUtils.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 
 #include <Eigen/Core>
@@ -26,16 +27,7 @@
 
 namespace mlir::qco::native_synth_test {
 
-template <typename Matrix>
-bool isEquivalentUpToGlobalPhase(const Matrix& lhs, const Matrix& rhs,
-                                 double atol = 1e-10) {
-  const auto overlap = (rhs.adjoint() * lhs).trace();
-  if (std::abs(overlap) <= atol) {
-    return false;
-  }
-  const auto factor = overlap / std::abs(overlap);
-  return lhs.isApprox(factor * rhs, atol);
-}
+using mqt::test::isEquivalentUpToGlobalPhase;
 
 [[nodiscard]] std::complex<double> phasedAmplitude(double magnitude,
                                                    double phase);

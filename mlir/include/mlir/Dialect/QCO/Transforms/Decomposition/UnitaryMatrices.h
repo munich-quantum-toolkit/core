@@ -25,9 +25,9 @@ inline constexpr double FRAC1_SQRT2 =
     0.707106781186547524400844362104849039284835937688474036588L;
 
 /// Generic 3-parameter single-qubit unitary `U(theta, phi, lambda)`.
-[[nodiscard]] Eigen::Matrix2cd uMatrix(double lambda, double phi, double theta);
+[[nodiscard]] Eigen::Matrix2cd uMatrix(double theta, double phi, double lambda);
 /// `U2(phi, lambda) == U(pi/2, phi, lambda)`.
-[[nodiscard]] Eigen::Matrix2cd u2Matrix(double lambda, double phi);
+[[nodiscard]] Eigen::Matrix2cd u2Matrix(double phi, double lambda);
 /// Axis rotations `exp(-i theta/2 * sigma_{x,y,z})`.
 [[nodiscard]] Eigen::Matrix2cd rxMatrix(double theta);
 [[nodiscard]] Eigen::Matrix2cd ryMatrix(double theta);

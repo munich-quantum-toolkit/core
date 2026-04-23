@@ -27,6 +27,7 @@
 
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
+using namespace mlir::qco::decomposition_test;
 
 namespace {
 

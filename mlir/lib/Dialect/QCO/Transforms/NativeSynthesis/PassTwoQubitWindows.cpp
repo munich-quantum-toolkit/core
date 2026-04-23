@@ -26,6 +26,10 @@
 namespace mlir::qco::native_synth {
 namespace {
 
+/// Check whether a two-qubit op `op` is already expressible by the resolved
+/// native menu: a single-control `CX`/`CZ` consistent with the active
+/// entangler, or `Rzz` when `spec.allowRzz` is set. Multi-control and other
+/// two-qubit ops are considered non-native.
 bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
   if (auto ctrl = dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
@@ -43,6 +47,11 @@ bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
   return spec.allowRzz && isa<RZZOp>(op);
 }
 
+/// Decide whether replacing a consolidated window with the candidate
+/// described by `best` is worthwhile. Always replace a window that contains
+/// any non-native op (we have to lower them anyway); otherwise only replace
+/// when the candidate has strictly fewer two-qubit gates, or the same number
+/// with strictly fewer one-qubit gates.
 bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
                                  const CandidateMetrics& best) {
   if (block.anyNonNative) {
@@ -56,6 +65,10 @@ bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
 
 } // namespace
 
+/// Emit the chosen synthesis sequence `best` at the location of the window's
+/// first op, rewire the block's trailing SSA values (`wireA`, `wireB`) to
+/// the newly emitted outputs, and erase the replaced ops in reverse order
+/// so def-use edges are cleared before their defining ops disappear.
 static void materializeSingleTwoQubitBlock(
     IRRewriter& rewriter, const TwoQubitBlock& block,
     const SynthesisCandidate<TwoQubitRewritePlan>& best) {
@@ -87,7 +100,7 @@ static void materializeSingleTwoQubitBlock(
 }
 
 void collectUnitaryOpsInPreOrder(Operation* root,
-                                 std::vector<Operation*>& ops) {
+                                 llvm::SmallVectorImpl<Operation*>& ops) {
   root->walk([&](Operation* op) {
     if (isa<UnitaryOpInterface>(op)) {
       ops.push_back(op);
@@ -111,8 +124,33 @@ void TwoQubitWindowConsolidator::closeBlockOnWire(Value v) {
   }
 }
 
+/// State-machine step for one IR op, invoked in walk order over the module.
+///
+/// The consolidator tracks a set of *maximal two-qubit windows* -- contiguous
+/// slices of the dataflow where at most two qubit wires interact -- so a
+/// later pass can re-synthesize each window as a single 4x4 unitary. For
+/// each op we update two pieces of state:
+///
+///   * `blocks`        -- append-only list of `TwoQubitBlock`s. Closed
+///                        blocks are kept so `materialize()` can rewrite
+///                        them later.
+///   * `wireToBlock`   -- maps each *currently-open* SSA qubit Value to the
+///                        index of the block that still owns it.
+///                        Re-keyed whenever an op produces a new output
+///                        Value on a tracked wire.
+///
+/// Because `process` is called in pre-order over the IR, when we see an op
+/// its input Values have already been processed (or were function
+/// arguments). A block stays open for a wire as long as every op consuming
+/// that wire is either (a) a single-qubit op absorbable into the block, or
+/// (b) another two-qubit op on the *same* pair of wires. Any other
+/// consumer -- a barrier, a control, a different pair of wires, a
+/// multi-use fork -- closes the block.
 void TwoQubitWindowConsolidator::process(Operation* op,
                                          const NativeProfileSpec& spec) {
+  // Skip ops nested inside a `CtrlOp`'s body: those are handled as part of
+  // their enclosing controlled op (seen at the parent level), not as
+  // independent two-qubit gates.
   if (isa_and_present<CtrlOp>(op->getParentOp())) {
     return;
   }
@@ -120,6 +158,9 @@ void TwoQubitWindowConsolidator::process(Operation* op,
   if (!unitary) {
     return;
   }
+  // Barriers and stand-alone global-phase ops are not unitaries we can
+  // absorb; they act as synchronization points that force any block
+  // touching their operand wires to close.
   if (isa<BarrierOp, GPhaseOp>(op)) {
     for (Value v : op->getOperands()) {
       closeBlockOnWire(v);
@@ -128,6 +169,9 @@ void TwoQubitWindowConsolidator::process(Operation* op,
   }
 
   if (unitary.isTwoQubit()) {
+    // A two-qubit op for which we cannot build a 4x4 matrix (e.g. a
+    // multi-control `CtrlOp` with more than one control) is opaque to the
+    // window model; close any blocks on its inputs and bail out.
     Eigen::Matrix4cd opMatrix;
     if (!getBlockTwoQubitMatrix(op, opMatrix)) {
       closeBlockOnWire(unitary.getInputQubit(0));
@@ -140,12 +184,26 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     auto it1 = wireToBlock.find(v1);
     const bool tracked0 = it0 != wireToBlock.end();
     const bool tracked1 = it1 != wireToBlock.end();
+    // "Same block" means the two input wires are currently the (wireA,
+    // wireB) pair of one existing block -- i.e. this op operates on the
+    // same pair as the previous two-qubit op in that block. Otherwise the
+    // op either extends into a *new* pair (merging two blocks, which we
+    // don't support) or starts a fresh block.
     const bool sameBlock = tracked0 && tracked1 && it0->second == it1->second;
     const bool singleUse = v0.hasOneUse() && v1.hasOneUse();
 
+    // ---- Case A: extend the existing block ---------------------------
+    // Both inputs belong to the same open block and nothing else uses
+    // them. Absorb the new gate into the block's accumulated unitary and
+    // advance the tracked wires to this op's outputs.
     if (sameBlock && singleUse) {
       const size_t idx = it0->second;
       auto& block = blocks[idx];
+      // `block.accum` is the composite 4x4 unitary of the gates absorbed so
+      // far, with qubit 0 == `wireA` and qubit 1 == `wireB`. The incoming
+      // op's `opMatrix` is in the (v0, v1) operand order, so we reorder it
+      // to the block's (wireA, wireB) convention before left-multiplying
+      // (newest gate on the left, matching matrix-times-column-state order).
       llvm::SmallVector<decomposition::QubitId, 2> ids;
       if (v0 == block.wireA && v1 == block.wireB) {
         ids = {0, 1};
@@ -180,6 +238,13 @@ void TwoQubitWindowConsolidator::process(Operation* op,
       return;
     }
 
+    // ---- Case B: close overlapping blocks, start a new one ----------
+    // The inputs do not form a clean pair on an existing block (fan-out,
+    // straddling two different blocks, or only one wire tracked). Closing
+    // the affected blocks prevents wire-to-block aliasing from becoming
+    // inconsistent -- note the second `if` guards against double-closing
+    // the same block when both inputs happened to live in it but `sameBlock
+    // && singleUse` was false (e.g. only fan-out violated).
     if (tracked0) {
       closeBlock(it0->second);
     }
@@ -200,6 +265,10 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     return;
   }
 
+  // ---- Case C: single-qubit op on a tracked wire -------------------
+  // Absorbable into the block's accumulated 4x4 by lifting the 2x2 to the
+  // appropriate tensor slot. If the wire is not tracked, the op simply
+  // does not interact with any open block and is left for other passes.
   if (unitary.isSingleQubit()) {
     const Value v = unitary.getInputQubit(0);
     auto it = wireToBlock.find(v);
@@ -209,6 +278,10 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     const size_t idx = it->second;
     auto& block = blocks[idx];
     Eigen::Matrix2cd m;
+    // `!v.hasOneUse()` is the fan-out guard: if any other op also consumes
+    // this wire, we cannot soundly absorb this single-qubit gate into the
+    // block (the sibling user would see the pre-gate state). Close the
+    // block and let the outer pass rewrite the op individually.
     if (!unitary.getUnitaryMatrix2x2(m) || !v.hasOneUse()) {
       closeBlock(idx);
       return;
@@ -233,6 +306,9 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     return;
   }
 
+  // ---- Case D: any other unitary (e.g. >2-qubit ops) ---------------
+  // We can neither absorb nor continue a window through an op of unknown
+  // arity, so close every block that touches one of its operand wires.
   for (Value v : op->getOperands()) {
     closeBlockOnWire(v);
   }

@@ -38,7 +38,6 @@
 
 #include <cstddef>
 #include <ranges>
-#include <vector>
 
 namespace mlir::qco {
 #define GEN_PASS_DEF_NATIVEGATESYNTHESISPASS
@@ -102,6 +101,12 @@ bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
   });
 
   assert(!spec.singleQubitEmitters.empty() && "expected at least one emitter");
+  // Single-qubit fusion intentionally uses only the first emitter: a menu
+  // that declares multiple single-qubit emitters (e.g. ZSXX + U3) picks the
+  // canonical lowering via `front()` for fusion so the rewrite is
+  // deterministic. Picking the cheapest emitter per run would require running
+  // all emitters and comparing their lengths here; today this is the same
+  // tradeoff as elsewhere in the pass, so we keep it simple.
   const auto& emitter = spec.singleQubitEmitters.front();
 
   // Fully native runs: fuse only if the emitter shortens the chain.
@@ -147,6 +152,9 @@ UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   return unitary;
 }
 
+/// Dispatch `op`'s direct (non-matrix) single-qubit lowering to the
+/// `decomposeTo*` helper for `emitter.mode`. Returns the output qubit value
+/// or a null `Value` if no direct rule applies for this op.
 Value applyDirectSingleQubitLowering(IRRewriter& rewriter, Operation* op,
                                      Value in,
                                      const SingleQubitEmitterSpec& emitter) {
@@ -169,10 +177,17 @@ Value applyDirectSingleQubitLowering(IRRewriter& rewriter, Operation* op,
 /// fails if anything remains off-menu).
 struct NativeGateSynthesisPass
     : impl::NativeGateSynthesisPassBase<NativeGateSynthesisPass> {
+  /// Default-construct the pass with the TableGen-generated option defaults.
   NativeGateSynthesisPass() = default;
+
+  /// Construct the pass from the TableGen-generated options struct (forwards
+  /// all option values into the base class).
   explicit NativeGateSynthesisPass(
       const NativeGateSynthesisPassOptions& options)
       : NativeGateSynthesisPassBase(options) {}
+
+  /// Construct the pass from the public `NativeGateSynthesisOptions` struct
+  /// used by pipeline code that cannot include the TableGen-generated header.
   explicit NativeGateSynthesisPass(const NativeGateSynthesisOptions& options) {
     nativeGates = options.nativeGates;
     scoreWeightTwoQ = options.scoreWeightTwoQ;
@@ -180,6 +195,11 @@ struct NativeGateSynthesisPass
     scoreWeightDepth = options.scoreWeightDepth;
   }
 
+  /// Top-level pass entry point. Validates the score weights and native-gate
+  /// menu, then drives the staged rewrite pipeline: one-qubit run fusion,
+  /// two-qubit window consolidation, synthesis sweeps until the single-qubit
+  /// surface is native, seam cleanup, `rz`-through-`ctrl` folding, and a
+  /// final fusion pass. Fails the pass on invalid input or non-convergence.
   void runOnOperation() override {
     const ScoreWeights weights{.twoQ = scoreWeightTwoQ,
                                .oneQ = scoreWeightOneQ,
@@ -347,6 +367,11 @@ private:
     llvm::SmallVector<OneQubitRun> runs;
     llvm::DenseMap<Operation*, size_t> tailOpToRun;
 
+    // Extend the current run only when this op consumes the run's *tail*
+    // output with no other uses: both the `tailOpToRun` lookup and
+    // `inQubit.hasOneUse()` are required. Without the single-use check a run
+    // could fuse gates on a wire that also feeds another path (fan-out),
+    // which would silently drop the sibling user.
     getOperation()->walk([&](Operation* op) {
       auto unitary = fusibleSingleQubitOp(op);
       if (!unitary) {
@@ -379,6 +404,14 @@ private:
 
   /// If `rz1` can reach another `rz` through at least one `ctrl` control hop,
   /// merge angles into `rz1` and erase the partner.
+  ///
+  /// `Rz` commutes with a `ctrl` operation acting on the same wire when the
+  /// wire is a *control* line (controls only diagonalize the computational
+  /// basis and are invariant under Z-rotations). We walk the def-use chain
+  /// forward from `rz1`'s output, hopping through `ctrl`s where the wire is
+  /// used as a control, and fold into the next `rz` we find. The `hops == 0`
+  /// guard intentionally rejects two adjacent `rz`s with nothing in between
+  /// -- that case is handled by `fuseOneQubitRuns` above.
   static bool tryFuseRzForwardThroughCtrls(IRRewriter& rewriter, RZOp rz1) {
     Value v = rz1.getQubitOut();
     RZOp partner;
@@ -445,7 +478,7 @@ private:
   void consolidateTwoQubitBlocks(IRRewriter& rewriter,
                                  const NativeProfileSpec& spec,
                                  const ScoreWeights& weights) {
-    std::vector<Operation*> ops;
+    llvm::SmallVector<Operation*, 32> ops;
     collectUnitaryOpsInPreOrder(getOperation(), ops);
     TwoQubitWindowConsolidator consolidator;
     for (Operation* op : ops) {
@@ -470,10 +503,15 @@ private:
                                                 matrix, plan.emitter);
   }
 
+  /// One synthesis sweep over the whole function: rewrite every remaining
+  /// off-menu unitary by dispatching to `rewriteSingleQubit` /
+  /// `rewriteControlled` / `rewriteTwoQubit`. Returns `failure()` as soon as
+  /// any op cannot be lowered to the native menu. Safe to call repeatedly;
+  /// `runOnOperation` iterates until convergence.
   LogicalResult synthesizeRemainingOps(IRRewriter& rewriter,
                                        const NativeProfileSpec& spec,
                                        const ScoreWeights& weights) {
-    std::vector<Operation*> ops;
+    llvm::SmallVector<Operation*, 32> ops;
     collectUnitaryOpsInPreOrder(getOperation(), ops);
 
     for (Operation* op : ops) {
@@ -521,6 +559,10 @@ private:
     return success();
   }
 
+  /// Lower one off-menu single-qubit `op`: enumerate all valid rewrite
+  /// candidates for the active native profile, pick the best by `weights`,
+  /// emit it, and replace `op`. Returns `failure()` (with a diagnostic) if
+  /// no candidate fits the profile.
   static LogicalResult rewriteSingleQubit(IRRewriter& rewriter, Operation* op,
                                           UnitaryOpInterface unitary,
                                           const NativeProfileSpec& spec,
@@ -540,6 +582,12 @@ private:
     return success();
   }
 
+  /// Lower a single-control, single-target `CtrlOp` to the native profile.
+  /// Fast-path: already-native `CX`/`CZ` are kept as-is. Otherwise, lift the
+  /// controlled op to its 4x4 matrix (with SU(4) normalization), run the
+  /// Weyl-based basis-decomposer search, and emit the best candidate.
+  /// Returns `failure()` for multi-control ops, non-`X`/`Z` bodies, or when
+  /// no candidate fits the profile.
   static LogicalResult rewriteControlled(IRRewriter& rewriter, CtrlOp ctrl,
                                          const NativeProfileSpec& spec,
                                          const ScoreWeights& weights) {
@@ -581,6 +629,11 @@ private:
     return failure();
   }
 
+  /// Lower an off-menu generic two-qubit op (`RZZ`, `XXPlusYY`, `XXMinusYY`,
+  /// or any arbitrary 4x4 unitary). Handles the `Rzz`-native fast path and
+  /// the `XXPlusMinusYY -> Rzz` specialization first, then falls back to the
+  /// Weyl-based basis-decomposer search. Returns `failure()` (with a
+  /// diagnostic) when no candidate fits the profile.
   static LogicalResult rewriteTwoQubit(IRRewriter& rewriter, Operation* op,
                                        UnitaryOpInterface unitary,
                                        const NativeProfileSpec& spec,

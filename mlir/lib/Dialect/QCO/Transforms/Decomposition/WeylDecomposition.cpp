@@ -38,6 +38,11 @@ TwoQubitWeylDecomposition::create(const Eigen::Matrix4cd& unitaryMatrix,
                                   std::optional<double> fidelity) {
   auto u = unitaryMatrix;
   auto detU = u.determinant();
+  // Project into SU(4) by dividing out the fourth root of det(U): for a 4x4
+  // unitary, |det(U)| == 1 so `det^{-1/4}` both enforces det == 1 and removes
+  // the global phase. The extracted phase is tracked separately in
+  // `globalPhase` (quarter of arg(det) to match the fourth-root choice) so the
+  // caller can reconstruct the original matrix exactly if needed.
   auto detPow = std::pow(detU, -0.25);
   u *= detPow; // remove global phase from unitary matrix
   auto globalPhase = std::arg(detU) / 4.;
@@ -264,6 +269,12 @@ TwoQubitWeylDecomposition::create(const Eigen::Matrix4cd& unitaryMatrix,
 
 Eigen::Matrix4cd
 TwoQubitWeylDecomposition::getCanonicalMatrix(double a, double b, double c) {
+  // Canonical gate `U_d(a, b, c) = exp(i * (a*XX + b*YY + c*ZZ))`. XX/YY/ZZ
+  // commute pairwise, so any product order is equivalent; the order below is
+  // chosen to match common Qiskit/QuantumFlow references. The negated rotation
+  // angles (`-2 * a`, ...) compensate for the `RXX/RYY/RZZ` convention
+  // `exp(-i * theta/2 * XX)` used in `getTwoQubitMatrix`, so that the
+  // factored angles sum back to the intended `+a`, `+b`, `+c`.
   auto xx = getTwoQubitMatrix({
       .type = GateKind::RXX,
       .parameter = {-2.0 * a},
@@ -286,6 +297,12 @@ Eigen::Matrix4cd
 TwoQubitWeylDecomposition::magicBasisTransform(const Eigen::Matrix4cd& unitary,
                                                MagicBasisTransform direction) {
   using namespace std::complex_literals;
+  // Makhlin "magic basis" transform. Conjugating a 2-qubit unitary by
+  // `bNonNormalized` maps SU(2) x SU(2) factors onto SO(4) and diagonalizes
+  // the canonical (Weyl) gate. The matrices are stored unnormalized: the
+  // `1/2` pre-factor that would normally appear in `B^dagger` is absorbed
+  // into `bNonNormalizedDagger` directly so the product `Bd * B == I`
+  // without an extra scalar.
   const Eigen::Matrix4cd bNonNormalized{
       {1, 1i, 0, 0},
       {0, 0, 1i, 1},
@@ -421,6 +438,13 @@ TwoQubitWeylDecomposition::decomposeTwoQubitProductGate(
 std::complex<double> TwoQubitWeylDecomposition::getTrace(double a, double b,
                                                          double c, double ap,
                                                          double bp, double cp) {
+  // Closed-form Hilbert-Schmidt overlap `tr(U_d(a,b,c)^dag * U_d(ap,bp,cp))`
+  // between two canonical (Weyl) gates, expressed in terms of the coordinate
+  // differences. Feeding the result into `traceToFidelity` gives the average
+  // two-qubit gate fidelity between the two canonical gates, which
+  // `bestSpecialization` uses to rank candidate specializations.
+  // Reference: Zhang et al., "Geometric theory of nonlocal two-qubit
+  // operations", Phys. Rev. A 67, 042313 (2003), Eq. (20).
   auto da = a - ap;
   auto db = b - bp;
   auto dc = c - cp;

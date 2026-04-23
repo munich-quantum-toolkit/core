@@ -21,7 +21,7 @@
 
 namespace mlir::qco::decomposition {
 
-Eigen::Matrix2cd uMatrix(double lambda, double phi, double theta) {
+Eigen::Matrix2cd uMatrix(double theta, double phi, double lambda) {
   return Eigen::Matrix2cd{{{{std::cos(theta / 2.), 0.},
                             {-std::cos(lambda) * std::sin(theta / 2.),
                              -std::sin(lambda) * std::sin(theta / 2.)}},
@@ -31,7 +31,7 @@ Eigen::Matrix2cd uMatrix(double lambda, double phi, double theta) {
                              std::sin(lambda + phi) * std::cos(theta / 2.)}}}};
 }
 
-Eigen::Matrix2cd u2Matrix(double lambda, double phi) {
+Eigen::Matrix2cd u2Matrix(double phi, double lambda) {
   return Eigen::Matrix2cd{
       {FRAC1_SQRT2,
        {-std::cos(lambda) * FRAC1_SQRT2, -std::sin(lambda) * FRAC1_SQRT2}},
@@ -151,11 +151,13 @@ Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate) {
   }
   if (gate.type == GateKind::U) {
     assert(gate.parameter.size() == 3);
-    return uMatrix(gate.parameter[0], gate.parameter[1], gate.parameter[2]);
+    // EulerDecomposition stores `U` parameters as {lambda, phi, theta}.
+    return uMatrix(gate.parameter[2], gate.parameter[1], gate.parameter[0]);
   }
   if (gate.type == GateKind::U2) {
     assert(gate.parameter.size() == 2);
-    return u2Matrix(gate.parameter[0], gate.parameter[1]);
+    // `U2` parameters are stored as {lambda, phi}.
+    return u2Matrix(gate.parameter[1], gate.parameter[0]);
   }
   if (gate.type == GateKind::H) {
     return H_GATE;
@@ -174,12 +176,18 @@ Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
   }
   if (gate.qubitId.size() == 2) {
     if (gate.type == GateKind::X) {
-      // controlled X (CX)
+      // Controlled-X. The two matrices below are the *same* CX gate written in
+      // the two possible operand orderings used by `Gate::qubitId`: qubit 0 is
+      // the MSB of the 4x4 computational basis (matching
+      // `UnitaryOpInterface::getUnitaryMatrix4x4`), so swapping
+      // control/target wires produces a different basis-layout matrix.
       if (gate.qubitId == llvm::SmallVector<QubitId, 2>{0, 1}) {
+        // control = wire 0 (MSB), target = wire 1.
         return Eigen::Matrix4cd{
             {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
       }
       if (gate.qubitId == llvm::SmallVector<QubitId, 2>{1, 0}) {
+        // control = wire 1, target = wire 0 (MSB).
         return Eigen::Matrix4cd{
             {1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 0}};
       }

@@ -29,17 +29,7 @@ std::complex<double> phasedAmplitude(const double magnitude,
 }
 
 Eigen::Matrix2cd u3Matrix(double theta, double phi, double lambda) {
-  using Complex = std::complex<double>;
-  const Complex i(0.0, 1.0);
-  const double c = std::cos(theta / 2.0);
-  const double s = std::sin(theta / 2.0);
-  const Complex eiphi = std::exp(i * phi);
-  const Complex eilambda = std::exp(i * lambda);
-  const Complex eiphilambda = std::exp(i * (phi + lambda));
-
-  Eigen::Matrix2cd mat;
-  mat << c, -eilambda * s, eiphi * s, eiphilambda * c;
-  return mat;
+  return decomposition::uMatrix(theta, phi, lambda);
 }
 
 bool isUnitary(const Eigen::Matrix2cd& m, const double atol) {

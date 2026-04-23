@@ -57,6 +57,10 @@ bool isEquivalentUpToGlobalPhase(const Eigen::Matrix4cd& lhs,
 void normalizeToSU4(Eigen::Matrix4cd& matrix) {
   using namespace std::complex_literals;
   const std::complex<double> det = matrix.determinant();
+  // Project `matrix` into SU(4) by dividing out the fourth root of its
+  // determinant (det(SU(N)) == 1). `|det|^{-1/4}` fixes the magnitude and
+  // `exp(-i * arg(det) / 4)` removes the global phase so the Weyl
+  // decomposition downstream operates on a special-unitary input.
   if (std::abs(det) > 1e-16) {
     matrix *=
         std::pow(std::abs(det), -0.25) * std::exp(1i * (-std::arg(det) / 4.0));
@@ -102,15 +106,30 @@ bool getBlockTwoQubitMatrix(Operation* op, Eigen::Matrix4cd& matrix) {
 
 namespace {
 
-/// Emit a single-qubit gate from a decomposition gate, threading `target`.
-/// Returns `failure()` if the gate kind/parameter count is unsupported.
-LogicalResult emitSingleQubitStep(IRRewriter& rewriter, Location loc,
-                                  const decomposition::Gate& gate,
-                                  Value& target) {
+/// Emit a single-qubit gate from a decomposition gate, threading `target` and
+/// recording the inserted op (if any) in `insertedOps` so the caller can roll
+/// back on failure. Returns `failure()` if the gate kind/parameter count is
+/// unsupported.
+LogicalResult
+emitSingleQubitStep(IRRewriter& rewriter, Location loc,
+                    const decomposition::Gate& gate, Value& target,
+                    llvm::SmallVectorImpl<Operation*>& insertedOps) {
   const auto emitConst = [&](double v) {
-    return createF64Const(rewriter, loc, v);
+    auto constant = arith::ConstantFloatOp::create(
+        rewriter, loc, rewriter.getF64Type(), llvm::APFloat(v));
+    insertedOps.push_back(constant);
+    return constant.getResult();
+  };
+  const auto record = [&](auto op) {
+    insertedOps.push_back(op.getOperation());
+    return op;
   };
   switch (gate.type) {
+  case decomposition::GateKind::I:
+    // Identity is a no-op; leave the threaded `target` unchanged. Euler
+    // decomposers do not emit explicit identity steps today, so this case is
+    // kept defensively to mirror the handling in `SingleQubit.cpp`.
+    return success();
   case decomposition::GateKind::U:
     if (gate.parameter.size() != 3) {
       return failure();
@@ -118,40 +137,54 @@ LogicalResult emitSingleQubitStep(IRRewriter& rewriter, Location loc,
     // EulerDecomposition emits `U` with parameters = {lambda, phi, theta}
     // whereas `UOp` takes (theta, phi, lambda); reorder accordingly.
     target =
-        UOp::create(rewriter, loc, target, emitConst(gate.parameter[2]),
-                    emitConst(gate.parameter[1]), emitConst(gate.parameter[0]))
+        record(UOp::create(rewriter, loc, target, emitConst(gate.parameter[2]),
+                           emitConst(gate.parameter[1]),
+                           emitConst(gate.parameter[0])))
             .getOutputQubit(0);
     return success();
   case decomposition::GateKind::SX:
-    target = SXOp::create(rewriter, loc, target).getOutputQubit(0);
+    target = record(SXOp::create(rewriter, loc, target)).getOutputQubit(0);
     return success();
   case decomposition::GateKind::X:
-    target = XOp::create(rewriter, loc, target).getOutputQubit(0);
+    target = record(XOp::create(rewriter, loc, target)).getOutputQubit(0);
     return success();
   case decomposition::GateKind::RX:
     if (gate.parameter.size() != 1) {
       return failure();
     }
-    target = RXOp::create(rewriter, loc, target, emitConst(gate.parameter[0]))
+    target = record(RXOp::create(rewriter, loc, target,
+                                 emitConst(gate.parameter[0])))
                  .getOutputQubit(0);
     return success();
   case decomposition::GateKind::RY:
     if (gate.parameter.size() != 1) {
       return failure();
     }
-    target = RYOp::create(rewriter, loc, target, emitConst(gate.parameter[0]))
+    target = record(RYOp::create(rewriter, loc, target,
+                                 emitConst(gate.parameter[0])))
                  .getOutputQubit(0);
     return success();
   case decomposition::GateKind::RZ:
     if (gate.parameter.size() != 1) {
       return failure();
     }
-    target = RZOp::create(rewriter, loc, target, emitConst(gate.parameter[0]))
+    target = record(RZOp::create(rewriter, loc, target,
+                                 emitConst(gate.parameter[0])))
                  .getOutputQubit(0);
     return success();
   default:
     return failure();
   }
+}
+
+/// Erase all ops tracked in `insertedOps` in reverse insertion order. Clears
+/// the vector on return.
+void rollbackInsertedOps(IRRewriter& rewriter,
+                         llvm::SmallVectorImpl<Operation*>& insertedOps) {
+  for (Operation* op : llvm::reverse(insertedOps)) {
+    rewriter.eraseOp(op);
+  }
+  insertedOps.clear();
 }
 
 } // namespace
@@ -161,10 +194,13 @@ emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,
                               Value qubit1,
                               const decomposition::TwoQubitGateSequence& seq,
                               Value& outQubit0, Value& outQubit1) {
+  llvm::SmallVector<Operation*, 16> insertedOps;
   for (const auto& gate : seq.gates) {
     if (gate.qubitId.size() == 1) {
       Value& target = (gate.qubitId[0] == 0) ? qubit0 : qubit1;
-      if (failed(emitSingleQubitStep(rewriter, loc, gate, target))) {
+      if (failed(
+              emitSingleQubitStep(rewriter, loc, gate, target, insertedOps))) {
+        rollbackInsertedOps(rewriter, insertedOps);
         return failure();
       }
       continue;
@@ -174,6 +210,7 @@ emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,
         gate.qubitId.size() == 2 && (gate.type == decomposition::GateKind::X ||
                                      gate.type == decomposition::GateKind::Z);
     if (!isCxOrCz) {
+      rollbackInsertedOps(rewriter, insertedOps);
       return failure();
     }
 
@@ -191,6 +228,8 @@ emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,
           }
           return {ZOp::create(rewriter, loc, targetArgs[0]).getOutputQubit(0)};
         });
+    // Erasing the `CtrlOp` also removes its nested body op.
+    insertedOps.push_back(ctrlOp.getOperation());
     const Value controlOut = ctrlOp.getOutputControl(0);
     const Value targetOut = ctrlOp.getOutputTarget(0);
     Value next0 = qubit0;

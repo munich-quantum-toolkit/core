@@ -22,6 +22,7 @@
 
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
+using namespace mlir::qco::decomposition_test;
 
 class WeylDecompositionTest
     : public testing::TestWithParam<Eigen::Matrix4cd (*)()> {

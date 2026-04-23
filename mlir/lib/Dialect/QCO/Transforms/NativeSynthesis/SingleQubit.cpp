@@ -29,49 +29,64 @@ namespace {
 constexpr double PI = std::numbers::pi;
 constexpr double HALF_PI = PI / 2.0;
 
-/// Small convenience wrapper to avoid passing rewriter/loc everywhere.
+/// Small convenience wrapper to avoid passing rewriter/loc everywhere. Each
+/// method creates the corresponding QCO op threaded through `q` and returns
+/// its new output qubit value.
 struct SingleQubitEmitter {
   IRRewriter* rewriter;
   Location loc;
 
+  /// Create an `arith.constant` `f64` of value `v` at `loc`.
   [[nodiscard]] Value constF(double v) const {
     return createF64Const(*rewriter, loc, v);
   }
 
+  /// Emit `rx(theta)` with a compile-time scalar angle.
   [[nodiscard]] Value rx(Value q, double theta) const {
     return RXOp::create(*rewriter, loc, q, constF(theta)).getOutputQubit(0);
   }
+  /// Emit `rx(theta)` with a runtime `f64` angle value.
   [[nodiscard]] Value rx(Value q, Value theta) const {
     return RXOp::create(*rewriter, loc, q, theta).getOutputQubit(0);
   }
+  /// Emit `ry(theta)` with a compile-time scalar angle.
   [[nodiscard]] Value ry(Value q, double theta) const {
     return RYOp::create(*rewriter, loc, q, constF(theta)).getOutputQubit(0);
   }
+  /// Emit `ry(theta)` with a runtime `f64` angle value.
   [[nodiscard]] Value ry(Value q, Value theta) const {
     return RYOp::create(*rewriter, loc, q, theta).getOutputQubit(0);
   }
+  /// Emit `rz(theta)` with a compile-time scalar angle.
   [[nodiscard]] Value rz(Value q, double theta) const {
     return RZOp::create(*rewriter, loc, q, constF(theta)).getOutputQubit(0);
   }
+  /// Emit `rz(theta)` with a runtime `f64` angle value.
   [[nodiscard]] Value rz(Value q, Value theta) const {
     return RZOp::create(*rewriter, loc, q, theta).getOutputQubit(0);
   }
+  /// Emit `sx` (square-root-of-X).
   [[nodiscard]] Value sx(Value q) const {
     return SXOp::create(*rewriter, loc, q).getOutputQubit(0);
   }
+  /// Emit a Pauli `x`.
   [[nodiscard]] Value x(Value q) const {
     return XOp::create(*rewriter, loc, q).getOutputQubit(0);
   }
+  /// Emit `r(theta, phi)` with compile-time scalar angles.
   [[nodiscard]] Value r(Value q, double theta, double phi) const {
     return ROp::create(*rewriter, loc, q, constF(theta), constF(phi))
         .getOutputQubit(0);
   }
+  /// Emit `r(theta, phi)` with runtime `f64` angle values.
   [[nodiscard]] Value r(Value q, Value theta, Value phi) const {
     return ROp::create(*rewriter, loc, q, theta, phi).getOutputQubit(0);
   }
+  /// Emit `u(theta, phi, lambda)` with runtime `f64` angle values.
   [[nodiscard]] Value u(Value q, Value theta, Value phi, Value lambda) const {
     return UOp::create(*rewriter, loc, q, theta, phi, lambda).getOutputQubit(0);
   }
+  /// Emit `u(theta, phi, lambda)` with compile-time scalar angles.
   [[nodiscard]] Value u(Value q, double theta, double phi,
                         double lambda) const {
     return u(q, constF(theta), constF(phi), constF(lambda));
@@ -105,6 +120,10 @@ Value emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
   return q;
 }
 
+/// Materialize an `EulerBasis::XYX` decomposition into `R(theta, phi)` ops
+/// for the `R` emitter: `Rx(theta)` becomes `R(theta, 0)`, `Ry(theta)`
+/// becomes `R(theta, pi/2)`, Pauli `X`/`Y` become `R(pi, *)`, `I` is a
+/// no-op. Returns null on any unsupported abstract gate kind.
 Value emitEulerSequenceR(SingleQubitEmitter e, Value q,
                          const decomposition::QubitGateSequence& seq) {
   for (const auto& gate : seq.gates) {
@@ -136,6 +155,12 @@ Value emitEulerSequenceR(SingleQubitEmitter e, Value q,
   return q;
 }
 
+/// Materialize an Euler decomposition in the two rotation axes named by
+/// `axis` (e.g. `{Rx, Rz}`). Every gate kind that falls outside the two
+/// chosen axes (or has the wrong parameter count) is rejected by returning
+/// a null `Value`; the matrix-based fallback is expected to pick a
+/// different basis in that case. Pauli gates are lowered to the
+/// corresponding `R*(pi)` when their axis is available.
 Value emitEulerSequenceAxisPair(SingleQubitEmitter e, Value q, AxisPair axis,
                                 const decomposition::QubitGateSequence& seq) {
   for (const auto& gate : seq.gates) {
@@ -185,6 +210,10 @@ Value emitEulerSequenceAxisPair(SingleQubitEmitter e, Value q, AxisPair axis,
   return q;
 }
 
+/// Decompose `matrix` numerically into a gate sequence in `basis` with
+/// zero-rotations pruned (`simplify=true`). Pure forwarder around
+/// `EulerDecomposition::generateCircuit` kept as a one-liner to match the
+/// matrix-based fallback call sites in `decomposeTo*`.
 decomposition::QubitGateSequence runEuler(decomposition::EulerBasis basis,
                                           const Eigen::Matrix2cd& matrix) {
   return decomposition::EulerDecomposition::generateCircuit(
@@ -224,10 +253,10 @@ Value decomposeToZSXX(IRRewriter& rewriter, Operation* op, Value inQubit,
 }
 
 Value decomposeToU3(IRRewriter& rewriter, Operation* op, Value inQubit) {
-  SingleQubitEmitter e{.rewriter = &rewriter, .loc = op->getLoc()};
   if (isa<IdOp>(op)) {
-    return e.u(inQubit, 0.0, 0.0, 0.0);
+    return inQubit;
   }
+  SingleQubitEmitter e{.rewriter = &rewriter, .loc = op->getLoc()};
   if (auto u = dyn_cast<UOp>(op)) {
     return u.getOutputQubit(0);
   }
@@ -296,6 +325,13 @@ Value emitSynthesizedSingleQubitFromMatrix(
   case SingleQubitMode::U3: {
     using namespace std::complex_literals;
 
+    // Project `matrix` into SU(2) before running the Euler decomposition.
+    // For a 2x2 unitary, det(U) sits on the unit circle, so dividing by the
+    // square root of det fixes det == 1. We use `arg(det) / 2` (not
+    // `/ 4` as in the 4x4 case) because `sqrt(det) = exp(i * arg(det) / 2)`.
+    // The removed global phase is re-emitted via `emitGPhaseIfNonTrivial`
+    // so the final sequence equals the original unitary, not just SU(2)-up
+    // to global phase.
     Eigen::Matrix2cd m = matrix;
     const auto det = m(0, 0) * m(1, 1) - m(0, 1) * m(1, 0);
     const double phase = std::arg(det) / 2.0;

@@ -23,8 +23,6 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 
-#include <vector>
-
 namespace mlir::qco::native_synth {
 
 /// State for one maximal two-qubit window (plus absorbed one-qubit ops)
@@ -41,17 +39,38 @@ struct TwoQubitBlock {
 };
 
 /// Pre-order walk: every op implementing `UnitaryOpInterface` under `root`.
-void collectUnitaryOpsInPreOrder(Operation* root, std::vector<Operation*>& ops);
+void collectUnitaryOpsInPreOrder(Operation* root,
+                                 llvm::SmallVectorImpl<Operation*>& ops);
 
 /// Tracks overlapping two-qubit windows on a module slice; implemented in
 /// ``NativeSynthesis/PassTwoQubitWindows.cpp``.
 struct TwoQubitWindowConsolidator {
+  /// Append-only list of windows discovered so far; closed windows are kept
+  /// so `materialize()` can still rewrite them.
   llvm::SmallVector<TwoQubitBlock, 0> blocks;
+  /// Maps each currently-open SSA qubit value to the index of the block
+  /// that owns its trailing wire.
   llvm::DenseMap<Value, size_t> wireToBlock;
 
+  /// Mark block `idx` as closed and remove its tracked wires from
+  /// `wireToBlock`. Idempotent: closing an already-closed block is a no-op.
   void closeBlock(size_t idx);
+
+  /// If `v` is currently tracked, close the block that owns it; otherwise
+  /// do nothing. Used at synchronization points (barriers, fan-out, etc.).
   void closeBlockOnWire(Value v);
+
+  /// State-machine step for one IR op, called in pre-order walk order.
+  /// Extends an existing window, starts a fresh one, or closes conflicting
+  /// windows depending on the op's kind and operand use pattern. See the
+  /// definition for the full decision table.
   void process(Operation* op, const NativeProfileSpec& spec);
+
+  /// Rewrite each collected window whose accumulated unitary can be
+  /// realized more cheaply by the native-gate synthesizer.
+  /// Picks the best candidate per block via `selectBestCandidate`,
+  /// gates the replacement on `shouldApplyBlockReplacement`, and emits the
+  /// new sequence through `rewriter`.
   void materialize(IRRewriter& rewriter, const NativeProfileSpec& spec,
                    const ScoreWeights& weights);
 };

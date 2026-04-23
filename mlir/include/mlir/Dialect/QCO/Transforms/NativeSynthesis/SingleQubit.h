@@ -24,16 +24,29 @@
 
 namespace mlir::qco::native_synth {
 
-/// Direct (non-matrix) single-qubit lowering to each single-qubit emission
-/// strategy. Returns the output qubit value, or a null `Value` if no direct
-/// rule applies and a matrix-based fallback must be tried.
+/// Direct (non-matrix) single-qubit lowering to the `ZSXX` emitter
+/// (`{Rz, Sx, X}`). Returns the output qubit value, or a null `Value` if no
+/// direct rule applies and a matrix-based fallback must be tried.
 ///
-/// When `supportsDirectRx` is true, `decomposeToZSXX` also passes `Rx`
-/// through unchanged and lowers `Ry` / `R` via an `rz * rx * rz` sandwich.
+/// When `supportsDirectRx` is true, the emitter also passes `Rx` through
+/// unchanged and lowers `Ry` / `R` via an `rz * rx * rz` sandwich.
 Value decomposeToZSXX(IRRewriter& rewriter, Operation* op, Value inQubit,
                       bool supportsDirectRx);
+
+/// Direct (non-matrix) single-qubit lowering to a `U(theta, phi, lambda)`
+/// output. Returns the output qubit value, or a null `Value` if no direct
+/// rule applies and a matrix-based fallback must be tried.
 Value decomposeToU3(IRRewriter& rewriter, Operation* op, Value inQubit);
+
+/// Direct (non-matrix) single-qubit lowering to the `R(theta, phi)` emitter.
+/// Returns the output qubit value, or a null `Value` if no direct rule
+/// applies and a matrix-based fallback must be tried.
 Value decomposeToR(IRRewriter& rewriter, Operation* op, Value inQubit);
+
+/// Direct (non-matrix) single-qubit lowering to a two-axis emitter
+/// identified by `axisPair` (e.g. `{Rx, Rz}`, `{Ry, Rz}`). Returns the
+/// output qubit value, or a null `Value` if no direct rule applies and a
+/// matrix-based fallback must be tried.
 Value decomposeToAxisPair(IRRewriter& rewriter, Operation* op, Value inQubit,
                           AxisPair axisPair);
 

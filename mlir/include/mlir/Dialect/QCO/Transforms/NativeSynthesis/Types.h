@@ -13,16 +13,17 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 
 #include <cstdint>
-#include <set>
 
 /// Types for native gate synthesis: menu, emitters, candidates, score weights.
 
 namespace mlir::qco::native_synth {
 
-/// Two-axis single-qubit families for `axis-pair-*` profiles.
+/// Two-axis token pairs (`rx`+`rz`, `rx`+`ry`, `ry`+`rz`) that can be selected
+/// as the single-qubit menu in a `NativeProfileSpec`.
 enum class AxisPair : std::uint8_t { RxRz, RxRy, RyRz };
 
 /// Single-qubit emission strategy.
@@ -46,6 +47,9 @@ enum class EntanglerBasis : std::uint8_t { None, Cx, Cz };
 /// Profile-level classification of a native gate. Used both to describe the
 /// menu (`NativeProfileSpec::allowedGates`) and to classify already-lowered
 /// output ops in policy checks. One-to-one with a recognised menu token.
+///
+/// The tokens `rz` and `p` are aliases and both map to `Rz` during menu
+/// resolution (see `NativeSpec.cpp`).
 enum class NativeGateKind : std::uint8_t {
   U,
   X,
@@ -77,7 +81,7 @@ struct SingleQubitEmitterSpec {
 struct NativeProfileSpec {
   bool allowRzz = false;
   /// Flattened menu; used for cheap "is this op already native?" checks.
-  std::set<NativeGateKind> allowedGates;
+  llvm::DenseSet<NativeGateKind> allowedGates;
   llvm::SmallVector<SingleQubitEmitterSpec> singleQubitEmitters;
   llvm::SmallVector<EntanglerBasis> entanglerBases;
 };

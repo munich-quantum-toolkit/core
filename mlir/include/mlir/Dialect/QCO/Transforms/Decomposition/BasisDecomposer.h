@@ -202,9 +202,6 @@ protected:
   [[nodiscard]] static OneQubitGateSequence
   unitaryToGateSequence(const Eigen::Matrix2cd& unitaryMat,
                         const llvm::SmallVector<EulerBasis>& targetBasisList,
-                        QubitId /*qubit*/,
-                        // Reserved for future error-aware synthesis (per-qubit
-                        // op→error maps feeding calculateError()).
                         bool simplify, std::optional<double> atol);
 
   [[nodiscard]] static bool relativeEq(double lhs, double rhs, double epsilon,
