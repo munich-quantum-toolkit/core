@@ -263,6 +263,12 @@ emitTwoQubitGateSequence(IRRewriter& rewriter, Operation* op, Value qubit0,
           rewriter, op->getLoc(), qubit0, qubit1, seq, outQubit0, outQubit1))) {
     return failure();
   }
+  // Match `seq.getUnitaryMatrix()` / `PassTwoQubitWindows` materialization:
+  // residual phase from Weyl + basis decomposition is not represented as 2q
+  // ops in `seq.gates`.
+  if (seq.hasGlobalPhase()) {
+    emitGPhaseIfNonTrivial(rewriter, op->getLoc(), seq.globalPhase);
+  }
   rewriter.replaceOp(op, ValueRange{outQubit0, outQubit1});
   return success();
 }

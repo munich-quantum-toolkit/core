@@ -51,7 +51,9 @@ bool getBlockTwoQubitMatrix(Operation* op, Eigen::Matrix4cd& matrix);
 
 /// Emit `seq` in order: abstract qubit id `0` → `qubit0`, id `1` → `qubit1`;
 /// two-qubit steps become `CtrlOp` with `XOp`/`ZOp` on the target wire (CZ is
-/// symmetric). Does not replace any existing op.
+/// symmetric). Does not replace any existing op and does not emit
+/// ``seq.globalPhase`` (callers that use ``emitTwoQubitGateSequence`` get a
+/// trailing ``qco.gphase`` from that wrapper when needed).
 LogicalResult
 emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,
                               Value qubit1,
@@ -59,6 +61,8 @@ emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,
                               Value& outQubit0, Value& outQubit1);
 
 /// Emit a two-qubit gate sequence and replace `op` with the resulting tails.
+/// Emits a trailing ``qco.gphase`` when ``seq`` carries a non-trivial residual
+/// global phase (same contract as ``seq.getUnitaryMatrix()``).
 LogicalResult
 emitTwoQubitGateSequence(IRRewriter& rewriter, Operation* op, Value qubit0,
                          Value qubit1,
