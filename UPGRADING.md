@@ -4,6 +4,15 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+## [3.5.1]
+
+No breaking changes.
+
+### Component-based CMake installs
+
+Fixed exported `nlohmann_json` CMake metadata so `find_package(mqt-core CONFIG)` no longer propagates an invalid `.../COMPONENT` include directory in component-based installations.
+Anyone relying on an installed version of `mqt-core` shall update from `3.5.0` to `3.5.1`.
+
 ## [3.5.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.4` to `3.5`.
