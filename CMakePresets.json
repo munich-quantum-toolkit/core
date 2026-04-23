@@ -53,7 +53,8 @@
       "inherits": "base-windows",
       "displayName": "Windows Debug config",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "LLVM_ENABLE_ASSERTIONS": "ON"
       }
     },
     {
