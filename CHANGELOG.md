@@ -9,6 +9,12 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-04-23
+
+### Fixed
+
+- 🐛 Fix malformed include directories in exported `nlohmann_json` CMake targets for component-based installs ([#1662]) ([**@burgholzer**])
+
 ## [3.5.0] - 2026-04-21
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#350)._
@@ -317,7 +323,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...HEAD
+[3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.0
 [3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
 [3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
@@ -335,6 +342,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1654]: https://github.com/munich-quantum-toolkit/core/pull/1654
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
