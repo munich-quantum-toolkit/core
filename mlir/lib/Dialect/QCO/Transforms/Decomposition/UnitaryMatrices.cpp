@@ -151,13 +151,16 @@ Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate) {
   }
   if (gate.type == GateKind::U) {
     assert(gate.parameter.size() == 3);
-    // EulerDecomposition stores `U` parameters as {lambda, phi, theta}.
-    return uMatrix(gate.parameter[2], gate.parameter[1], gate.parameter[0]);
+    const double theta = gate.parameter[0];
+    const double phi = gate.parameter[1];
+    const double lambda = gate.parameter[2];
+    return uMatrix(theta, phi, lambda);
   }
   if (gate.type == GateKind::U2) {
     assert(gate.parameter.size() == 2);
-    // `U2` parameters are stored as {lambda, phi}.
-    return u2Matrix(gate.parameter[1], gate.parameter[0]);
+    const double phi = gate.parameter[0];
+    const double lambda = gate.parameter[1];
+    return u2Matrix(phi, lambda);
   }
   if (gate.type == GateKind::H) {
     return H_GATE;

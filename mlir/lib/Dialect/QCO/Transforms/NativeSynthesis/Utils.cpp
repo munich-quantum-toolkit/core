@@ -134,12 +134,19 @@ emitSingleQubitStep(IRRewriter& rewriter, Location loc,
     if (gate.parameter.size() != 3) {
       return failure();
     }
-    // EulerDecomposition emits `U` with parameters = {lambda, phi, theta}
-    // whereas `UOp` takes (theta, phi, lambda); reorder accordingly.
     target =
-        record(UOp::create(rewriter, loc, target, emitConst(gate.parameter[2]),
+        record(UOp::create(rewriter, loc, target, emitConst(gate.parameter[0]),
                            emitConst(gate.parameter[1]),
-                           emitConst(gate.parameter[0])))
+                           emitConst(gate.parameter[2])))
+            .getOutputQubit(0);
+    return success();
+  case decomposition::GateKind::U2:
+    if (gate.parameter.size() != 2) {
+      return failure();
+    }
+    target =
+        record(U2Op::create(rewriter, loc, target, emitConst(gate.parameter[0]),
+                            emitConst(gate.parameter[1])))
             .getOutputQubit(0);
     return success();
   case decomposition::GateKind::SX:
@@ -206,10 +213,37 @@ emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,
       continue;
     }
 
-    const bool isCxOrCz =
-        gate.qubitId.size() == 2 && (gate.type == decomposition::GateKind::X ||
-                                     gate.type == decomposition::GateKind::Z);
-    if (!isCxOrCz) {
+    if (gate.qubitId.size() != 2) {
+      rollbackInsertedOps(rewriter, insertedOps);
+      return failure();
+    }
+
+    if (gate.type == decomposition::GateKind::RZZ) {
+      if (gate.parameter.size() != 1) {
+        rollbackInsertedOps(rewriter, insertedOps);
+        return failure();
+      }
+      const decomposition::QubitId a = gate.qubitId[0];
+      const decomposition::QubitId b = gate.qubitId[1];
+      if (a + b != 1) {
+        rollbackInsertedOps(rewriter, insertedOps);
+        return failure();
+      }
+      const Value va = (a == 0) ? qubit0 : qubit1;
+      const Value vb = (b == 0) ? qubit0 : qubit1;
+      Value thetaVal = createF64Const(rewriter, loc, gate.parameter[0]);
+      insertedOps.push_back(thetaVal.getDefiningOp());
+      auto rzz = RZZOp::create(rewriter, loc, va, vb, thetaVal);
+      insertedOps.push_back(rzz.getOperation());
+      qubit0 = (gate.qubitId[0] == 0) ? rzz.getOutputQubit(0)
+                                      : rzz.getOutputQubit(1);
+      qubit1 = (gate.qubitId[0] == 1) ? rzz.getOutputQubit(0)
+                                      : rzz.getOutputQubit(1);
+      continue;
+    }
+
+    if (gate.type != decomposition::GateKind::X &&
+        gate.type != decomposition::GateKind::Z) {
       rollbackInsertedOps(rewriter, insertedOps);
       return failure();
     }

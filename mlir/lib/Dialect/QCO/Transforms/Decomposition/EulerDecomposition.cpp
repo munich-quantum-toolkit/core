@@ -49,7 +49,7 @@ EulerDecomposition::generateCircuit(EulerBasis targetBasis,
     [[fallthrough]];
   case EulerBasis::U321:
     return OneQubitGateSequence{
-        .gates = {{.type = GateKind::U, .parameter = {lambda, phi, theta}}},
+        .gates = {{.type = GateKind::U, .parameter = {theta, phi, lambda}}},
         .globalPhase = phase - ((phi + lambda) / 2.),
     };
   case EulerBasis::ZSX:
