@@ -119,15 +119,17 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   auto mod = builder.finalize();
   auto func = *(mod->getOps<mlir::func::FuncOp>().begin());
 
+  // Collect wires.
   SmallVector<qco::WireIterator> wires;
   for (qco::AllocOp op : func.getOps<qco::AllocOp>()) {
     wires.emplace_back(op.getResult());
   }
 
+  // Unit-test supporting datastructure.
   SmallVector<DenseSet<Operation*>> readyPerLayer;
 
   // Forward pass.
-  qco::walkProgramGraph<qco::ProgramGraphWalkDirection::Forward>(
+  qco::walkProgramGraph<qco::WireDirection::Forward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
@@ -145,7 +147,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   // Backward pass.
   readyPerLayer.clear();
-  qco::walkProgramGraph<qco::ProgramGraphWalkDirection::Backward>(
+  qco::walkProgramGraph<qco::WireDirection::Backward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {

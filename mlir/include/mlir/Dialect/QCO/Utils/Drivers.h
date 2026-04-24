@@ -101,34 +101,6 @@ using WalkProgramGraphFn =
     function_ref<WalkResult(const ReadyRange&, ReleasedOps&)>;
 
 /**
- * @brief Specifies the layering direction.
- */
-enum class ProgramGraphWalkDirection : bool { Forward, Backward };
-
-namespace impl {
-template <ProgramGraphWalkDirection Dir> struct ProgramGraphWalkTraits;
-
-template <> struct ProgramGraphWalkTraits<ProgramGraphWalkDirection::Forward> {
-  static constexpr std::size_t step() { return 1; }
-
-  static bool proceed(const WireIterator& it) {
-    return it != std::default_sentinel;
-  }
-};
-
-template <> struct ProgramGraphWalkTraits<ProgramGraphWalkDirection::Backward> {
-  static constexpr std::size_t step() { return -1; }
-
-  static bool proceed(const WireIterator& it) {
-    if (it.operation() == nullptr) {
-      return false;
-    }
-    return !isa<qco::AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
-  }
-};
-}; // namespace impl
-
-/**
  * @brief Walk the graph-like circuit IR of QCO dialect programs.
  * @details
  * Depending on the template parameter, the function collects the
@@ -154,11 +126,10 @@ template <> struct ProgramGraphWalkTraits<ProgramGraphWalkDirection::Backward> {
  *     failure(), if the callback returns WalkResult::skipped()
  *     success(), otherwise.
  */
-template <ProgramGraphWalkDirection Dir>
+template <WireDirection Direction>
 LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
                                WalkProgramGraphFn fn) {
-  using Traits = impl::ProgramGraphWalkTraits<Dir>;
-  enum class CircuitWalkResult : std::uint8_t { Advance, Hold, Fail };
+  using Traits = WireTraversalTraits<Direction>;
 
   ReleasedOps released;
 
@@ -174,19 +145,19 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
   while (!curr.empty()) {
     for (std::size_t i : curr) {
       auto& it = wires[i];
-      while (Traits::proceed(it)) {
+      while (Traits::isActive(it)) {
         const auto res =
-            TypeSwitch<Operation*, CircuitWalkResult>(it.operation())
+            TypeSwitch<Operation*, WalkResult>(it.operation())
                 .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
                   // If there are fewer wires than the qubit requires inputs,
                   // it's impossible to release the operation. Hence, fail.
                   if (op.getNumQubits() > wires.size()) {
-                    return CircuitWalkResult::Fail;
+                    return WalkResult::interrupt();
                   }
 
                   if (op.getNumQubits() == 1) {
-                    std::ranges::advance(it, Traits::step());
-                    return CircuitWalkResult::Advance;
+                    std::ranges::advance(it, Traits::stride());
+                    return WalkResult::advance();
                   }
 
                   // Insert the unitary to the pending map.
@@ -200,24 +171,24 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
                   indices.emplace_back(i);
 
-                  return CircuitWalkResult::Hold; // Stop at multi-qubit gate.
+                  return WalkResult::skip(); // Stop at multi-qubit gate.
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp, ResetOp,
                                MeasureOp, SinkOp, qtensor::InsertOp>([&](auto) {
-                  std::ranges::advance(it, Traits::step());
-                  return CircuitWalkResult::Advance;
+                  std::ranges::advance(it, Traits::stride());
+                  return WalkResult::advance();
                 })
                 .Default([&](Operation* op) {
                   const auto name = op->getName().getStringRef();
                   report_fatal_error("unknown op encountered: " + name);
-                  return CircuitWalkResult::Fail;
+                  return WalkResult::interrupt();
                 });
 
-        if (res == CircuitWalkResult::Hold) {
+        if (res.wasSkipped()) {
           break;
         }
 
-        if (res == CircuitWalkResult::Fail) {
+        if (res.wasInterrupted()) {
           return failure();
         }
       }
@@ -236,7 +207,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
       auto& indices = mapIt->second;
       for (std::size_t i : mapIt->second) {
-        std::ranges::advance(wires[i], Traits::step());
+        std::ranges::advance(wires[i], Traits::stride());
         next.emplace_back(i);
       }
 
