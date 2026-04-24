@@ -20,6 +20,9 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
+#include <complex>
+#include <cstddef>
 #include <numbers>
 #include <optional>
 #include <random>
@@ -29,9 +32,8 @@ using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 using namespace mlir::qco::decomposition_test;
 
-namespace {
-
-std::size_t countGatesOfType(const OneQubitGateSequence& seq, GateKind kind) {
+static std::size_t countGatesOfType(const OneQubitGateSequence& seq,
+                                    GateKind kind) {
   std::size_t count = 0;
   for (const auto& gate : seq.gates) {
     if (gate.type == kind) {
@@ -43,14 +45,12 @@ std::size_t countGatesOfType(const OneQubitGateSequence& seq, GateKind kind) {
 
 /// Compare ``seq.getUnitaryMatrix()`` to ``u`` embedded on qubit 0 (4×4
 /// layout).
-bool sequenceMatchesSingleQubitMatrix(const Eigen::Matrix2cd& u,
-                                      const OneQubitGateSequence& seq,
-                                      double tol = 1e-10) {
+static bool sequenceMatchesSingleQubitMatrix(const Eigen::Matrix2cd& u,
+                                             const OneQubitGateSequence& seq,
+                                             double tol = 1e-10) {
   const Eigen::Matrix4cd expanded = expandToTwoQubits(u, 0);
   return expanded.isApprox(seq.getUnitaryMatrix(), tol);
 }
-
-} // namespace
 
 class EulerDecompositionTest
     : public testing::TestWithParam<
@@ -67,12 +67,12 @@ public:
     return matrix;
   }
 
+protected:
   void SetUp() override {
     eulerBasis = std::get<0>(GetParam());
     originalMatrix = std::get<1>(GetParam())();
   }
 
-protected:
   Eigen::Matrix2cd originalMatrix;
   EulerBasis eulerBasis{};
 };

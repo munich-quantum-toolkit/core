@@ -23,7 +23,9 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 
 #include <cassert>
 #include <cmath>

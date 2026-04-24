@@ -21,6 +21,8 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/WalkResult.h>
 
 using namespace mlir;

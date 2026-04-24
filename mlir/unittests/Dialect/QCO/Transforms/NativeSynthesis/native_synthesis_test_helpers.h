@@ -14,9 +14,6 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 
 #include <Eigen/Core>
-#include <llvm/ADT/DenseMap.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>

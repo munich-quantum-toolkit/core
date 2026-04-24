@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -44,6 +45,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
 #include <cstdlib>
@@ -710,9 +712,13 @@ protected:
   void runPipelineAndExpectFailure() const {
     mlir::CompilationRecord record;
     mlir::QuantumCompilerPipeline pipeline(config);
-    EXPECT_TRUE(failed(pipeline.runPipeline(module.get(), &record)));
+    EXPECT_TRUE(mlir::failed(pipeline.runPipeline(module.get(), &record)));
   }
 };
+
+} // namespace
+
+using mqt::test::isEquivalentUpToGlobalPhase;
 
 /// Compute the 4×4 unitary of a two-qubit QCO module whose qubits are
 /// introduced by `qco.static` ops with indices 0 and 1. Handles the op set
@@ -721,7 +727,7 @@ protected:
 /// `qco.x`, `qco.p`, `qco.u`; and `qco.gphase`, which is skipped). Returns
 /// `std::nullopt` if the IR contains an unsupported op or non-constant
 /// parameters.
-std::optional<Eigen::Matrix4cd>
+static std::optional<Eigen::Matrix4cd>
 computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
   if (module == nullptr) {
     return std::nullopt;
@@ -816,10 +822,6 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
 
   return unitary;
 }
-
-using mqt::test::isEquivalentUpToGlobalPhase;
-
-} // namespace
 
 TEST_F(CompilerPipelineNativeSynthesisConfigTest,
        AppliesConfiguredNativeSynthesisProfileInStage5) {
@@ -931,11 +933,6 @@ namespace {
 struct NativeSynthesisProgramTestCase {
   std::string name;
   QCProgramBuilderFn qcProgramBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const NativeSynthesisProgramTestCase& info) {
-    return os << "NativeSynthesisProgram{" << info.name << "}";
-  }
 };
 
 struct NativeSynthesisProfileTestCase {
@@ -943,24 +940,31 @@ struct NativeSynthesisProfileTestCase {
   std::string nativeGates;
   bool expectUInStage5 = false;
   llvm::SmallVector<std::string> nonNativeOpsToEliminate;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const NativeSynthesisProfileTestCase& info) {
-    return os << "NativeSynthesisProfile{" << info.name << "}";
-  }
 };
 
 struct NativeSynthesisStage5TestCase {
   NativeSynthesisProgramTestCase program;
   NativeSynthesisProfileTestCase profile;
-
-  friend std::ostream& operator<<(std::ostream& os,
-                                  const NativeSynthesisStage5TestCase& info) {
-    return os << info.profile << " / " << info.program;
-  }
 };
 
-mlir::OwningOpRef<mlir::ModuleOp>
+} // namespace
+
+static std::ostream& operator<<(std::ostream& os,
+                                const NativeSynthesisProgramTestCase& info) {
+  return os << "NativeSynthesisProgram{" << info.name << "}";
+}
+
+static std::ostream& operator<<(std::ostream& os,
+                                const NativeSynthesisProfileTestCase& info) {
+  return os << "NativeSynthesisProfile{" << info.name << "}";
+}
+
+static std::ostream& operator<<(std::ostream& os,
+                                const NativeSynthesisStage5TestCase& info) {
+  return os << info.profile << " / " << info.program;
+}
+
+static mlir::OwningOpRef<mlir::ModuleOp>
 buildQCModuleForNativeSynthesisProgram(mlir::MLIRContext* context,
                                        const QCProgramBuilderFn builder) {
   auto module = mlir::qc::QCProgramBuilder::build(context, builder.fn);
@@ -968,7 +972,7 @@ buildQCModuleForNativeSynthesisProgram(mlir::MLIRContext* context,
   return module;
 }
 
-mlir::CompilationRecord
+static mlir::CompilationRecord
 runPipelineWithNativeSynthesisConfig(mlir::ModuleOp module,
                                      const std::string& nativeGates) {
   mlir::QuantumCompilerConfig config;
@@ -981,6 +985,8 @@ runPipelineWithNativeSynthesisConfig(mlir::ModuleOp module,
   EXPECT_TRUE(pipeline.runPipeline(module, &record).succeeded());
   return record;
 }
+
+namespace {
 
 class CompilerPipelineNativeSynthesisProgramsTest
     : public testing::TestWithParam<NativeSynthesisStage5TestCase> {

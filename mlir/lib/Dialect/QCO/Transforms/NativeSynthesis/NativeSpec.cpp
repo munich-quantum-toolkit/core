@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 
+#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
 #include <llvm/ADT/DenseSet.h>

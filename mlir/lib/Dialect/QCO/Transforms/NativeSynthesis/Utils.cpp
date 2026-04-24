@@ -10,15 +10,27 @@
 
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 
 #include <Eigen/LU>
 #include <llvm/ADT/APFloat.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
 #include <complex>
+#include <optional>
 
 namespace mlir::qco::native_synth {
 
@@ -104,12 +116,10 @@ bool getBlockTwoQubitMatrix(Operation* op, Eigen::Matrix4cd& matrix) {
   return unitary.getUnitaryMatrix4x4(matrix);
 }
 
-namespace {
-
 /// Emit a single-qubit gate from a decomposition gate, threading `target` and
 /// recording the inserted op (if any) in `insertedOps` so the caller can roll
 /// back on failure.
-LogicalResult
+static LogicalResult
 emitSingleQubitStep(IRRewriter& rewriter, Location loc,
                     const decomposition::Gate& gate, Value& target,
                     llvm::SmallVectorImpl<Operation*>& insertedOps) {
@@ -181,15 +191,14 @@ emitSingleQubitStep(IRRewriter& rewriter, Location loc,
 }
 
 /// Erase all ops tracked in `insertedOps` in reverse insertion order.
-void rollbackInsertedOps(IRRewriter& rewriter,
-                         llvm::SmallVectorImpl<Operation*>& insertedOps) {
+static void
+rollbackInsertedOps(IRRewriter& rewriter,
+                    llvm::SmallVectorImpl<Operation*>& insertedOps) {
   for (Operation* op : llvm::reverse(insertedOps)) {
     rewriter.eraseOp(op);
   }
   insertedOps.clear();
 }
-
-} // namespace
 
 LogicalResult
 emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,

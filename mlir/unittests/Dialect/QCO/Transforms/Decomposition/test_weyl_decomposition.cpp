@@ -9,6 +9,7 @@
  */
 
 #include "decomposition_test_utils.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"

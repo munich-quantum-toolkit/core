@@ -13,10 +13,16 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
 
+#include <algorithm>
 #include <cmath>
+#include <complex>
+#include <numbers>
 
 using namespace mlir;
 
@@ -141,8 +147,9 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
       return false;
     }
     const auto thetaSin = std::sin(*theta / 2.0);
-    const auto m01 = phasedAmplitude(thetaSin, -*phi - (llvm::numbers::pi / 2));
-    const auto m10 = phasedAmplitude(thetaSin, *phi - (llvm::numbers::pi / 2));
+    const auto m01 =
+        phasedAmplitude(thetaSin, -*phi - (std::numbers::pi / 2.0));
+    const auto m10 = phasedAmplitude(thetaSin, *phi - (std::numbers::pi / 2.0));
     const std::complex<double> thetaCos = std::cos(*theta / 2.0);
     out = Eigen::Matrix2cd{{thetaCos, m01}, {m10, thetaCos}};
     return true;

@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
@@ -23,15 +24,17 @@
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
-#include <llvm/Support/Compiler.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <numbers>
 #include <optional>
+#include <tuple>
+#include <utility>
 
 namespace mlir::qco::native_synth {
 
@@ -120,7 +123,7 @@ static bool emitterHasDirectLowering(Operation* op,
   case SingleQubitMode::AxisPair:
     return canDirectlyDecomposeToAxisPair(op, emitter.axisPair);
   }
-  llvm_unreachable("unknown single-qubit mode");
+  return false;
 }
 
 bool gateSequenceFitsMenu(const decomposition::TwoQubitGateSequence& seq,

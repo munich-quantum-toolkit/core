@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Scoring.h"
@@ -24,6 +25,7 @@
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>

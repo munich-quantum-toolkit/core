@@ -35,7 +35,7 @@ TEST(DecompositionHelpersTest, Mod2piWrapsIntoHalfOpenInterval) {
 TEST(DecompositionHelpersTest, TraceToFidelityMatchesFormula) {
   const std::complex<double> x{3.0, 4.0};
   const double absx = 5.0;
-  EXPECT_DOUBLE_EQ(traceToFidelity(x), (4.0 + absx * absx) / 20.0);
+  EXPECT_DOUBLE_EQ(traceToFidelity(x), (4.0 + (absx * absx)) / 20.0);
 }
 
 TEST(DecompositionHelpersTest, GetComplexitySingleQubitAndGphase) {

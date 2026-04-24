@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
@@ -21,6 +22,8 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <random>
@@ -35,14 +38,6 @@ class BasisDecomposerTest
     : public testing::TestWithParam<std::tuple<
           Gate, llvm::SmallVector<EulerBasis>, Eigen::Matrix4cd (*)()>> {
 public:
-  void SetUp() override {
-    basisGate = std::get<0>(GetParam());
-    eulerBases = std::get<1>(GetParam());
-    target = std::get<2>(GetParam())();
-    targetDecomposition = std::make_unique<TwoQubitWeylDecomposition>(
-        TwoQubitWeylDecomposition::create(target, std::optional<double>{1.0}));
-  }
-
   [[nodiscard]] static Eigen::Matrix4cd
   restore(const TwoQubitGateSequence& sequence) {
     Eigen::Matrix4cd matrix = Eigen::Matrix4cd::Identity();
@@ -55,6 +50,14 @@ public:
   }
 
 protected:
+  void SetUp() override {
+    basisGate = std::get<0>(GetParam());
+    eulerBases = std::get<1>(GetParam());
+    target = std::get<2>(GetParam())();
+    targetDecomposition = std::make_unique<TwoQubitWeylDecomposition>(
+        TwoQubitWeylDecomposition::create(target, std::optional<double>{1.0}));
+  }
+
   Eigen::Matrix4cd target;
   Gate basisGate;
   llvm::SmallVector<EulerBasis> eulerBases;
