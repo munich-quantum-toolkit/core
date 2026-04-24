@@ -34,6 +34,34 @@ using namespace mlir;
 
 namespace mlir::qco::native_synth_test {
 
+namespace {
+
+[[nodiscard]] std::optional<Value>
+getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
+  if (index >= op.getNumQubits()) {
+    return std::nullopt;
+  }
+  Value v = op->getOperand(index);
+  if (!llvm::isa<qco::QubitType>(v.getType())) {
+    return std::nullopt;
+  }
+  return v;
+}
+
+[[nodiscard]] std::optional<Value>
+getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
+  if (index >= op.getNumQubits()) {
+    return std::nullopt;
+  }
+  Value v = op->getResult(index);
+  if (!llvm::isa<qco::QubitType>(v.getType())) {
+    return std::nullopt;
+  }
+  return v;
+}
+
+} // namespace
+
 std::complex<double> phasedAmplitude(const double magnitude,
                                      const double phase) {
   return std::complex<double>(magnitude, 0.0) *
@@ -243,7 +271,11 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
         }
 
         if (op.isSingleQubit()) {
-          auto qid = getQubitId(op.getInputQubit(0));
+          const auto qIn = getUnitaryQubitOperand(op, 0);
+          if (!qIn) {
+            return std::nullopt;
+          }
+          auto qid = getQubitId(*qIn);
           if (!qid) {
             return std::nullopt;
           }
@@ -252,13 +284,22 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
             return std::nullopt;
           }
           unitary = qco::decomposition::expandToTwoQubits(oneQ, *qid) * unitary;
-          qubitIds[op.getOutputQubit(0)] = *qid;
+          const auto qOut = getUnitaryQubitResult(op, 0);
+          if (!qOut) {
+            return std::nullopt;
+          }
+          qubitIds[*qOut] = *qid;
           continue;
         }
 
         if (op.isTwoQubit()) {
-          auto q0id = getQubitId(op.getInputQubit(0));
-          auto q1id = getQubitId(op.getInputQubit(1));
+          const auto q0In = getUnitaryQubitOperand(op, 0);
+          const auto q1In = getUnitaryQubitOperand(op, 1);
+          if (!q0In || !q1In) {
+            return std::nullopt;
+          }
+          auto q0id = getQubitId(*q0In);
+          auto q1id = getQubitId(*q1In);
           if (!q0id || !q1id) {
             return std::nullopt;
           }
@@ -268,8 +309,13 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
           }
           unitary =
               expandTwoQToN(twoQ, *q0id, *q1id, /*numQubits=*/2) * unitary;
-          qubitIds[op.getOutputQubit(0)] = *q0id;
-          qubitIds[op.getOutputQubit(1)] = *q1id;
+          const auto q0Out = getUnitaryQubitResult(op, 0);
+          const auto q1Out = getUnitaryQubitResult(op, 1);
+          if (!q0Out || !q1Out) {
+            return std::nullopt;
+          }
+          qubitIds[*q0Out] = *q0id;
+          qubitIds[*q1Out] = *q1id;
           continue;
         }
       }
@@ -393,7 +439,11 @@ computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
         }
 
         if (op.isSingleQubit()) {
-          auto qid = getQubitId(op.getInputQubit(0));
+          const auto qIn = getUnitaryQubitOperand(op, 0);
+          if (!qIn) {
+            return std::nullopt;
+          }
+          auto qid = getQubitId(*qIn);
           if (!qid) {
             return std::nullopt;
           }
@@ -402,13 +452,22 @@ computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
             return std::nullopt;
           }
           unitary = expandOneQToN(oneQ, *qid, numQubits) * unitary;
-          qubitIds[op.getOutputQubit(0)] = *qid;
+          const auto qOut = getUnitaryQubitResult(op, 0);
+          if (!qOut) {
+            return std::nullopt;
+          }
+          qubitIds[*qOut] = *qid;
           continue;
         }
 
         if (op.isTwoQubit()) {
-          auto q0id = getQubitId(op.getInputQubit(0));
-          auto q1id = getQubitId(op.getInputQubit(1));
+          const auto q0In = getUnitaryQubitOperand(op, 0);
+          const auto q1In = getUnitaryQubitOperand(op, 1);
+          if (!q0In || !q1In) {
+            return std::nullopt;
+          }
+          auto q0id = getQubitId(*q0In);
+          auto q1id = getQubitId(*q1In);
           if (!q0id || !q1id) {
             return std::nullopt;
           }
@@ -417,8 +476,13 @@ computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
             return std::nullopt;
           }
           unitary = expandTwoQToN(twoQ, *q0id, *q1id, numQubits) * unitary;
-          qubitIds[op.getOutputQubit(0)] = *q0id;
-          qubitIds[op.getOutputQubit(1)] = *q1id;
+          const auto q0Out = getUnitaryQubitResult(op, 0);
+          const auto q1Out = getUnitaryQubitResult(op, 1);
+          if (!q0Out || !q1Out) {
+            return std::nullopt;
+          }
+          qubitIds[*q0Out] = *q0id;
+          qubitIds[*q1Out] = *q1id;
           continue;
         }
       }
