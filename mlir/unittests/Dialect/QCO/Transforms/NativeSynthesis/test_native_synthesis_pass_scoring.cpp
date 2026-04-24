@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Scoring.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "native_synthesis_pass_test_fixture.h"
 #include "qc_programs.h"
 
