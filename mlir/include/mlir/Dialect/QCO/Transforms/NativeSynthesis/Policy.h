@@ -30,8 +30,7 @@ bool usesCxEntangler(const NativeProfileSpec& spec);
 bool usesCzEntangler(const NativeProfileSpec& spec);
 
 /// Whether an already-lowered single-qubit op is in the menu (i.e. no
-/// further rewrite needed). `BarrierOp` / `GPhaseOp` always pass through
-/// unchanged.
+/// further rewrite needed).
 bool allowsSingleQubitOp(UnitaryOpInterface op, const NativeProfileSpec& spec);
 
 /// Count 1q/2q gates and compute the depth of a gate sequence.

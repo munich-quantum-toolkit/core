@@ -169,8 +169,7 @@ void TwoQubitWindowConsolidator::process(Operation* op,
   }
 
   if (unitary.isTwoQubit()) {
-    // A two-qubit op for which we cannot build a 4x4 matrix (e.g. a
-    // multi-control `CtrlOp` with more than one control) is opaque to the
+    // A two-qubit op for which we cannot build a 4x4 matrix is opaque to the
     // window model; close any blocks on its inputs and bail out.
     Eigen::Matrix4cd opMatrix;
     if (!getBlockTwoQubitMatrix(op, opMatrix)) {

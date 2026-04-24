@@ -29,9 +29,7 @@ constexpr double HALF_PI = PI / 2.0;
 
 /// Whether the given single-qubit emitter can lower a decomposition-IR gate
 /// of `kind` (an intermediate from Euler/Weyl, *not* a `NativeGateKind`) to a
-/// native output sequence. Kept separate from `allowsSingleQubitOp`, which
-/// operates on already-lowered MLIR output ops: some intermediate kinds map
-/// to different native ops (e.g. the `R` emitter lowers RX/RY via `R(θ, φ)`).
+/// native output sequence.
 bool emitterHandlesDecompositionGate(const SingleQubitEmitterSpec& emitter,
                                      decomposition::GateKind kind) {
   if (kind == decomposition::GateKind::I) {
@@ -97,10 +95,7 @@ bool menuAllows(const decomposition::Gate& gate,
   return false;
 }
 
-/// Can `emitter` lower the single-qubit `op` directly (without the matrix
-/// fallback)? Dispatches to the mode-specific `canDirectlyDecomposeTo*`
-/// predicate; these predicates encode which abstract gate kinds each
-/// emitter understands as-is.
+/// Whether `emitter` can lower the single-qubit `op` directly.
 bool emitterHasDirectLowering(Operation* op,
                               const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
@@ -183,8 +178,7 @@ namespace {
 /// Try every `numBasisUses` in `{0, 1, 2, 3}` for the `(entangler, emitter,
 /// basis)` triple, running the Weyl-based basis decomposer for each. Any
 /// resulting gate sequence that both matches `targetMatrix` up to global
-/// phase AND stays inside the native menu is appended to `candidates` (with
-/// a freshly-incremented `enumerationIndex` to keep scoring deterministic).
+/// phase AND stays inside the native menu is appended to `candidates`.
 void tryAddTwoQubitBasisCandidatesForEmitterBasis(
     llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>& candidates,
     unsigned& enumerationIndex, const Eigen::Matrix4cd& targetMatrix,

@@ -108,8 +108,7 @@ namespace {
 
 /// Emit a single-qubit gate from a decomposition gate, threading `target` and
 /// recording the inserted op (if any) in `insertedOps` so the caller can roll
-/// back on failure. Returns `failure()` if the gate kind/parameter count is
-/// unsupported.
+/// back on failure.
 LogicalResult
 emitSingleQubitStep(IRRewriter& rewriter, Location loc,
                     const decomposition::Gate& gate, Value& target,
@@ -126,9 +125,6 @@ emitSingleQubitStep(IRRewriter& rewriter, Location loc,
   };
   switch (gate.type) {
   case decomposition::GateKind::I:
-    // Identity is a no-op; leave the threaded `target` unchanged. Euler
-    // decomposers do not emit explicit identity steps today, so this case is
-    // kept defensively to mirror the handling in `SingleQubit.cpp`.
     return success();
   case decomposition::GateKind::U:
     if (gate.parameter.size() != 3) {
@@ -184,8 +180,7 @@ emitSingleQubitStep(IRRewriter& rewriter, Location loc,
   }
 }
 
-/// Erase all ops tracked in `insertedOps` in reverse insertion order. Clears
-/// the vector on return.
+/// Erase all ops tracked in `insertedOps` in reverse insertion order.
 void rollbackInsertedOps(IRRewriter& rewriter,
                          llvm::SmallVectorImpl<Operation*>& insertedOps) {
   for (Operation* op : llvm::reverse(insertedOps)) {

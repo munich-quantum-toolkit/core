@@ -96,7 +96,7 @@ struct SingleQubitEmitter {
 };
 
 /// Materialize an `EulerBasis::ZSXX` decomposition (`rz` / `sx` / `x`) into
-/// QCO ops. Returns null on unsupported abstract gate kinds.
+/// QCO ops.
 Value emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
                             const decomposition::QubitGateSequence& seq) {
   for (const auto& gate : seq.gates) {
@@ -125,7 +125,7 @@ Value emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
 /// Materialize an `EulerBasis::XYX` decomposition into `R(theta, phi)` ops
 /// for the `R` emitter: `Rx(theta)` becomes `R(theta, 0)`, `Ry(theta)`
 /// becomes `R(theta, pi/2)`, Pauli `X`/`Y` become `R(pi, *)`, `I` is a
-/// no-op. Returns null on any unsupported abstract gate kind.
+/// no-op.
 Value emitEulerSequenceR(SingleQubitEmitter e, Value q,
                          const decomposition::QubitGateSequence& seq) {
   for (const auto& gate : seq.gates) {
@@ -213,9 +213,7 @@ Value emitEulerSequenceAxisPair(SingleQubitEmitter e, Value q, AxisPair axis,
 }
 
 /// Decompose `matrix` numerically into a gate sequence in `basis` with
-/// zero-rotations pruned (`simplify=true`). Pure forwarder around
-/// `EulerDecomposition::generateCircuit` kept as a one-liner to match the
-/// matrix-based fallback call sites in `decomposeTo*`.
+/// zero-rotations pruned (`simplify=true`).
 decomposition::QubitGateSequence runEuler(decomposition::EulerBasis basis,
                                           const Eigen::Matrix2cd& matrix) {
   return decomposition::EulerDecomposition::generateCircuit(
@@ -224,10 +222,6 @@ decomposition::QubitGateSequence runEuler(decomposition::EulerBasis basis,
 
 } // namespace
 
-// Direct emitters only handle the gates listed in the matching
-// `canDirectlyDecomposeTo*` predicate. Everything else is expected to reach the
-// matrix-based Euler fallback, which produces an equivalent native sequence in
-// the same basis.
 Value decomposeToZSXX(IRRewriter& rewriter, Operation* op, Value inQubit,
                       bool supportsDirectRx) {
   if (isa<IdOp>(op)) {

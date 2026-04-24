@@ -27,9 +27,7 @@ llvm::SmallVector<decomposition::EulerBasis>
 getEulerBasesForAxisPair(AxisPair axisPair);
 
 /// Resolve a comma-separated native gate menu (e.g. `"x,sx,rz,cx"`) into a
-/// full `NativeProfileSpec`. Returns `std::nullopt` if the menu is empty,
-/// contains unknown tokens, or cannot be covered by any supported
-/// single-qubit synthesis strategy.
+/// full `NativeProfileSpec`.
 ///
 /// Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`,
 /// `cx`, `cz`, `rzz`.

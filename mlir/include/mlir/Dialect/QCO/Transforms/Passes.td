@@ -147,13 +147,6 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
     `score-weight-twoq * #2q + score-weight-oneq * #1q +
     score-weight-depth * local-depth`. Defaults (`1.0 / 0.1 / 0.01`) favour
     minimising two-qubit count first, then single-qubit count, then depth.
-
-    `qco.ctrl` wrappers whose body is `qco.x` or `qco.z` are left untouched
-    when `cx` or `cz` is on the menu; otherwise they are treated as a `4×4`
-    unitary and go through the same two-qubit search as bare two-qubit gates.
-    `qco.xx_plus_yy` / `qco.xx_minus_yy` are lowered via a dedicated
-    `rzz`-centric rewrite when `rzz` is on the menu, and via the general
-    two-qubit decomposition otherwise.
   }];
   let options =
       [Option<"nativeGates", "native-gates", "std::string", "\"\"",

@@ -39,8 +39,7 @@ bool usesCzEntangler(const NativeProfileSpec& spec) {
 
 namespace {
 /// Map a single-qubit `UnitaryOpInterface` op to the `NativeGateKind` that
-/// must appear in the menu for the op to be a no-op. Two-qubit kinds are
-/// never valid here and therefore not returned.
+/// must appear in the menu for the op to be a no-op.
 std::optional<NativeGateKind> singleQubitNativeGateKind(UnitaryOpInterface op) {
   Operation* raw = op.getOperation();
   if (isa<UOp>(raw)) {

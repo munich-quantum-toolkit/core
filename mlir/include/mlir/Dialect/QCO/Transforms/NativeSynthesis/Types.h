@@ -40,16 +40,12 @@ enum class SingleQubitMode : std::uint8_t {
   AxisPair,
 };
 
-/// Two-qubit entangling basis selected by a profile. `None` means the menu
-/// does not provide any entangler and two-qubit ops cannot be synthesized.
+/// Two-qubit entangling basis selected by a profile.
 enum class EntanglerBasis : std::uint8_t { None, Cx, Cz };
 
 /// Profile-level classification of a native gate. Used both to describe the
 /// menu (`NativeProfileSpec::allowedGates`) and to classify already-lowered
-/// output ops in policy checks. One-to-one with a recognised menu token.
-///
-/// The tokens `rz` and `p` are aliases and both map to `Rz` during menu
-/// resolution (see `NativeSpec.cpp`).
+/// output ops in policy checks.
 enum class NativeGateKind : std::uint8_t {
   U,
   X,
@@ -80,7 +76,6 @@ struct SingleQubitEmitterSpec {
 /// Built by `resolveNativeGatesSpec`.
 struct NativeProfileSpec {
   bool allowRzz = false;
-  /// Flattened menu; used for cheap "is this op already native?" checks.
   llvm::DenseSet<NativeGateKind> allowedGates;
   llvm::SmallVector<SingleQubitEmitterSpec> singleQubitEmitters;
   llvm::SmallVector<EntanglerBasis> entanglerBases;
@@ -113,7 +108,6 @@ enum class CandidateClass : std::uint8_t {
 };
 
 /// Generic candidate wrapper carrying a typed rewrite plan payload.
-/// `enumerationIndex` makes the candidate ordering stable across runs.
 template <typename Payload> struct SynthesisCandidate {
   CandidateClass candidateClass = CandidateClass::NativePassthrough;
   CandidateMetrics metrics;

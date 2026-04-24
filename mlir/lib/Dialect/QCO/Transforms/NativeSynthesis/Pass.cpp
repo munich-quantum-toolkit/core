@@ -201,8 +201,7 @@ Value applyDirectSingleQubitLowering(IRRewriter& rewriter, Operation* op,
 
 /// Lowers unitary QCO ops to a comma-separated native gate menu (single-qubit
 /// fuse, two-qubit windows, synthesis sweeps, seam single-qubit fuse, `rz`
-/// through `ctrl` controls, another single-qubit fuse, optional cleanup sweeps;
-/// fails if anything remains off-menu).
+/// through `ctrl` controls, another single-qubit fuse, optional cleanup sweeps.
 struct NativeGateSynthesisPass
     : impl::NativeGateSynthesisPassBase<NativeGateSynthesisPass> {
   /// Default-construct the pass with the TableGen-generated option defaults.
@@ -260,8 +259,7 @@ struct NativeGateSynthesisPass
     fuseOneQubitRuns(rewriter, spec);
     consolidateTwoQubitBlocks(rewriter, spec, weights);
     // Two-qubit lowering can emit off-menu single-qubit ops (e.g. `rx`/`ry`);
-    // repeat until clean or hit the sweep cap before seam / `rz` cleanup (those
-    // steps assume a mostly on-menu single-qubit surface for best fusion).
+    // repeat until clean or hit the sweep cap before seam / `rz` cleanup.
     constexpr unsigned kMaxSynthesisSweeps = 4;
     for (unsigned i = 0; i < kMaxSynthesisSweeps; ++i) {
       if (failed(synthesizeRemainingOps(rewriter, spec, weights))) {
@@ -280,8 +278,7 @@ struct NativeGateSynthesisPass
       signalPassFailure();
       return;
     }
-    // Fuse single-qubit seams between two-qubit blocks (`maybeFuseRun` cost
-    // gate).
+    // Fuse single-qubit seams between two-qubit blocks.
     fuseOneQubitRuns(rewriter, spec);
     // Fuse `rz` through control wires of `ctrl` (diagonal control phase).
     fuseRzAcrossCtrlControls(rewriter);
@@ -543,8 +540,7 @@ private:
     collectUnitaryOpsInPreOrder(getOperation(), ops);
 
     for (Operation* op : ops) {
-      // Pointers were collected before this loop; erased ops must be skipped
-      // (`getBlock() == nullptr`). Do not rely on pointer identity alone.
+      // Pointers were collected before this loop.
       if (op->getBlock() == nullptr) {
         continue;
       }
@@ -589,8 +585,7 @@ private:
 
   /// Lower one off-menu single-qubit `op`: enumerate all valid rewrite
   /// candidates for the active native profile, pick the best by `weights`,
-  /// emit it, and replace `op`. Returns `failure()` (with a diagnostic) if
-  /// no candidate fits the profile.
+  /// emit it, and replace `op`.
   static LogicalResult rewriteSingleQubit(IRRewriter& rewriter, Operation* op,
                                           UnitaryOpInterface unitary,
                                           const NativeProfileSpec& spec,
@@ -660,8 +655,7 @@ private:
   /// Lower an off-menu generic two-qubit op (`RZZ`, `XXPlusYY`, `XXMinusYY`,
   /// or any arbitrary 4x4 unitary). Handles the `Rzz`-native fast path and
   /// the `XXPlusMinusYY -> Rzz` specialization first, then falls back to the
-  /// Weyl-based basis-decomposer search. Returns `failure()` (with a
-  /// diagnostic) when no candidate fits the profile.
+  /// Weyl-based basis-decomposer search.
   static LogicalResult rewriteTwoQubit(IRRewriter& rewriter, Operation* op,
                                        UnitaryOpInterface unitary,
                                        const NativeProfileSpec& spec,

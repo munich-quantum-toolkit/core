@@ -32,8 +32,7 @@ namespace mlir::qco {
 /// Options for the native gate synthesis pass.
 ///
 /// @p nativeGates is a comma-separated list of gate tokens (see `Passes.td`
-/// for recognised tokens). An empty or whitespace-only string is a no-op (IR
-/// unchanged).
+/// for recognised tokens).
 struct NativeGateSynthesisOptions {
   std::string nativeGates;
   double scoreWeightTwoQ = 1.0;

@@ -22,8 +22,7 @@ namespace mlir::qco::native_synth {
 namespace {
 
 /// Map a single native-gate token (lower-case, no whitespace) to its
-/// `NativeGateKind`. `"p"` is accepted as an alias for `"rz"` since both
-/// lower to `RZOp` in the IR. Returns `std::nullopt` for unknown tokens.
+/// `NativeGateKind`.
 std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
   return llvm::StringSwitch<std::optional<NativeGateKind>>(name)
       .Case("u", NativeGateKind::U)
@@ -40,9 +39,7 @@ std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
 }
 
 /// Parse a comma-separated native-gate menu (e.g. `"u,cx,rzz"`) into the set
-/// of `NativeGateKind`s it names. Whitespace is trimmed and tokens are
-/// lower-cased; empty tokens are skipped silently. Returns `std::nullopt` if
-/// any non-empty token fails to parse.
+/// of `NativeGateKind`s it names.
 std::optional<llvm::DenseSet<NativeGateKind>>
 parseGateSet(llvm::StringRef nativeGates) {
   llvm::DenseSet<NativeGateKind> gates;
@@ -63,9 +60,7 @@ parseGateSet(llvm::StringRef nativeGates) {
 }
 
 /// Build a fully-resolved `SingleQubitEmitterSpec` for `mode`, including the
-/// list of Euler bases the matrix-fallback path is allowed to use. `axisPair`
-/// is only consulted for `SingleQubitMode::AxisPair`; `supportsDirectRx` is
-/// only meaningful for `SingleQubitMode::ZSXX`.
+/// list of Euler bases the matrix-fallback path is allowed to use.
 SingleQubitEmitterSpec makeEmitterSpec(SingleQubitMode mode,
                                        AxisPair axisPair = AxisPair::RxRz,
                                        bool supportsDirectRx = false) {
@@ -93,8 +88,7 @@ SingleQubitEmitterSpec makeEmitterSpec(SingleQubitMode mode,
 }
 
 /// Append a new emitter for `(mode, axisPair, supportsDirectRx)` to
-/// `emitters` iff no equivalent entry is already present. Keeps the resolved
-/// list deduplicated without relying on the caller's ordering.
+/// `emitters` iff no equivalent entry is already present.
 void addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
                         SingleQubitMode mode,
                         AxisPair axisPair = AxisPair::RxRz,
@@ -108,9 +102,7 @@ void addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
   }
 }
 
-/// Enumerate the native gate kinds that `emitter` may actually emit. Used
-/// to build `NativeProfileSpec::allowedGates` so downstream passes can cheaply
-/// test whether a concrete op belongs to the resolved menu.
+/// Enumerate the native gate kinds that `emitter` may actually emit.
 llvm::SmallVector<NativeGateKind, 4>
 allowedGatesForEmitter(const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
@@ -141,7 +133,6 @@ allowedGatesForEmitter(const SingleQubitEmitterSpec& emitter) {
 }
 
 /// Enumerate the native entangling gate kinds that `entangler` may emit.
-/// Returns an empty list for `EntanglerBasis::None`.
 llvm::SmallVector<NativeGateKind, 2>
 allowedGatesForEntangler(EntanglerBasis entangler) {
   switch (entangler) {
@@ -156,9 +147,7 @@ allowedGatesForEntangler(EntanglerBasis entangler) {
 }
 
 /// Rebuild `spec.allowedGates` as the union of the gate kinds produced by
-/// every resolved emitter, entangler, and (optionally) `Rzz`. Idempotent:
-/// clears the set first so calling this on an already-populated spec yields
-/// the same result.
+/// every resolved emitter, entangler, and (optionally) `Rzz`.
 void populateAllowedGates(NativeProfileSpec& spec) {
   spec.allowedGates.clear();
   for (const auto& emitter : spec.singleQubitEmitters) {

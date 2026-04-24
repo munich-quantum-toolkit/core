@@ -33,8 +33,7 @@ bool gateSequenceFitsMenu(const decomposition::TwoQubitGateSequence& seq,
 
 /// Decompose a `4×4` target unitary into a gate sequence targeting the given
 /// entangler basis, using `TwoQubitWeylDecomposition` +
-/// `TwoQubitBasisDecomposer` with the supplied Euler basis and optional
-/// basis-use count.
+/// `TwoQubitBasisDecomposer` with the supplied Euler basis.
 std::optional<decomposition::TwoQubitGateSequence>
 decomposeTwoQubitFromMatrix(const Eigen::Matrix4cd& matrix,
                             EntanglerBasis entangler,
@@ -58,12 +57,10 @@ collectTwoQubitBasisCandidates(UnitaryOpInterface unitary,
                                const NativeProfileSpec& spec);
 
 /// Scoring metrics for the `rewriteXXPlusMinusYYViaRxxRyy` lowering (both
-/// `XXPlusYY` and `XXMinusYY` branches emit the same gate counts). Keep in
-/// sync when changing that rewrite.
+/// `XXPlusYY` and `XXMinusYY` branches emit the same gate counts).
 CandidateMetrics xxPlusMinusYyRzzRewriteScoringMetrics();
 
 /// Rewrite `XXPlusYY` / `XXMinusYY` via two `RZZ` blocks (menus with `rzz`).
-/// Sets `rewriter`'s insertion point to `op` before emitting.
 LogicalResult rewriteXXPlusMinusYYViaRxxRyy(IRRewriter& rewriter,
                                             Operation* op);
 

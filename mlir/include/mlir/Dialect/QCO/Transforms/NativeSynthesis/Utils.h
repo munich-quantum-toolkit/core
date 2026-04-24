@@ -49,17 +49,7 @@ bool getNormalizedTwoQubitMatrix(UnitaryOpInterface unitary,
 /// for barriers, ``gphase``, multi-control, or non-constant matrix parameters.
 bool getBlockTwoQubitMatrix(Operation* op, Eigen::Matrix4cd& matrix);
 
-/// Emit `seq` in order: abstract qubit id `0` → `qubit0`, id `1` → `qubit1`.
-///
-/// Supported two-qubit ``GateKind``s: ``RZZ`` and controlled Pauli ``X``/``Z``
-/// (``CtrlOp`` wrapping ``XOp``/``ZOp``; CZ is symmetric in the controls).
-///
-/// Single-qubit steps support ``I``, ``U``, ``U2``, ``SX``, ``X``, ``RX``,
-/// ``RY``, ``RZ``.
-///
-/// Does not replace any existing op and does not emit ``seq.globalPhase``
-/// (callers that use ``emitTwoQubitGateSequence`` get a trailing ``qco.gphase``
-/// from that wrapper when needed).
+/// Emit `seq` in order.
 LogicalResult
 emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,
                               Value qubit1,
@@ -67,8 +57,6 @@ emitTwoQubitGateSequenceAtLoc(IRRewriter& rewriter, Location loc, Value qubit0,
                               Value& outQubit0, Value& outQubit1);
 
 /// Emit a two-qubit gate sequence and replace `op` with the resulting tails.
-/// Emits a trailing ``qco.gphase`` when ``seq`` carries a non-trivial residual
-/// global phase (same contract as ``seq.getUnitaryMatrix()``).
 LogicalResult
 emitTwoQubitGateSequence(IRRewriter& rewriter, Operation* op, Value qubit0,
                          Value qubit1,

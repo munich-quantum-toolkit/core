@@ -59,12 +59,12 @@ eulerSequenceForMatrixSynthesis(const Eigen::Matrix2cd& matrix,
                                 const SingleQubitEmitterSpec& emitter);
 
 /// Cost estimate in number of emitted ops for fusing a single-qubit unitary
-/// with the given emitter. Returns `SIZE_MAX` if no Euler basis is available.
+/// with the given emitter.
 std::size_t
 computeSynthesizedSingleQubitLength(const Eigen::Matrix2cd& matrix,
                                     const SingleQubitEmitterSpec& emitter);
 
-/// Emit the fused `2×2` unitary as native ops, inserting a `qco.gphase` if the
+/// Emit the fused `2×2` unitary as native ops, inserting a global phase if the
 /// emitted sequence carries a non-trivial residual global phase.
 Value emitSynthesizedSingleQubitFromMatrix(
     IRRewriter& rewriter, Location loc, Value inQubit,

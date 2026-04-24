@@ -53,8 +53,7 @@ CandidateScore scoreCandidate(const SynthesisCandidate<Payload>& candidate,
 }
 
 /// Strict less-than: `true` iff `lhs` is a strictly better candidate than
-/// `rhs`. Weighted costs within `1e-12` are treated as equal, so
-/// floating-point noise does not flip the decision.
+/// `rhs`.
 inline bool isBetterScore(const CandidateScore& lhs,
                           const CandidateScore& rhs) {
   constexpr double scoreTolerance = 1e-12;

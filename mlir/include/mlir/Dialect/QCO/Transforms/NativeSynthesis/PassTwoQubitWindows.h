@@ -9,8 +9,7 @@
  */
 
 /// \file
-/// Helpers for `NativeGateSynthesisPass` two-qubit window consolidation. Not
-/// a stable public API; kept in-tree for reuse by the pass (and its tests).
+/// Helpers for `NativeGateSynthesisPass` two-qubit window consolidation.
 
 #pragma once
 
@@ -42,8 +41,7 @@ struct TwoQubitBlock {
 void collectUnitaryOpsInPreOrder(Operation* root,
                                  llvm::SmallVectorImpl<Operation*>& ops);
 
-/// Tracks overlapping two-qubit windows on a module slice; implemented in
-/// ``NativeSynthesis/PassTwoQubitWindows.cpp``.
+/// Tracks overlapping two-qubit windows on a module slice.
 struct TwoQubitWindowConsolidator {
   /// Append-only list of windows discovered so far; closed windows are kept
   /// so `materialize()` can still rewrite them.
@@ -53,7 +51,7 @@ struct TwoQubitWindowConsolidator {
   llvm::DenseMap<Value, size_t> wireToBlock;
 
   /// Mark block `idx` as closed and remove its tracked wires from
-  /// `wireToBlock`. Idempotent: closing an already-closed block is a no-op.
+  /// `wireToBlock`.
   void closeBlock(size_t idx);
 
   /// If `v` is currently tracked, close the block that owns it; otherwise
@@ -62,8 +60,7 @@ struct TwoQubitWindowConsolidator {
 
   /// State-machine step for one IR op, called in pre-order walk order.
   /// Extends an existing window, starts a fresh one, or closes conflicting
-  /// windows depending on the op's kind and operand use pattern. See the
-  /// definition for the full decision table.
+  /// windows depending on the op's kind and operand use pattern.
   void process(Operation* op, const NativeProfileSpec& spec);
 
   /// Rewrite each collected window whose accumulated unitary can be
