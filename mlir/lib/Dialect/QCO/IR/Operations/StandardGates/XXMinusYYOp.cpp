@@ -51,7 +51,8 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
     }
 
     // Confirm operations act on the same qubits
-    if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
+    if (op.getOutputQubit(0) != nextOp.getInputQubit(0) ||
+        op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
       return failure();
     }
 

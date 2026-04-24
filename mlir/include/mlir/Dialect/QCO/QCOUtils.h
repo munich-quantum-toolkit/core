@@ -62,7 +62,8 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   }
 
   // Confirm operations act on the same qubits
-  if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
+  if (op.getOutputQubit(0) != nextOp.getInputQubit(0) ||
+      op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
     return failure();
   }
 
@@ -156,13 +157,17 @@ mlir::LogicalResult mergeOneTargetOneParameter(OpType op,
     return failure();
   }
 
+  if (nextOp.getInputQubit(0) != op.getOutputQubit(0)) {
+    return failure();
+  }
+
   // Compute and set the new parameter
   auto newParameter = arith::AddFOp::create(
       rewriter, op.getLoc(), op.getOperand(1), nextOp.getOperand(1));
   op->setOperand(1, newParameter.getResult());
 
   // Replace the second operation with the result of the first operation
-  rewriter.replaceOp(nextOp, op.getResult());
+  rewriter.replaceOp(nextOp, op.getOutputQubit(0));
 
   return success();
 }

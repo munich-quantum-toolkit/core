@@ -10,6 +10,7 @@
 
 #include "native_synthesis_test_helpers.h"
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
@@ -34,9 +35,7 @@ using namespace mlir;
 
 namespace mlir::qco::native_synth_test {
 
-namespace {
-
-[[nodiscard]] std::optional<Value>
+[[nodiscard]] static std::optional<Value>
 getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
@@ -48,7 +47,7 @@ getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-[[nodiscard]] std::optional<Value>
+[[nodiscard]] static std::optional<Value>
 getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
@@ -59,8 +58,6 @@ getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
   }
   return v;
 }
-
-} // namespace
 
 std::complex<double> phasedAmplitude(const double magnitude,
                                      const double phase) {
