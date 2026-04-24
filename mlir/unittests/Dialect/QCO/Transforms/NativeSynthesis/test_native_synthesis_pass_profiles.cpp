@@ -9,6 +9,18 @@
  */
 
 #include "native_synthesis_pass_test_fixture.h"
+#include "native_synthesis_test_helpers.h"
+#include "qc_programs.h"
+
+#include <gtest/gtest.h>
+#include <mlir/Conversion/QCToQCO/QCToQCO.h>
+#include <mlir/Dialect/QC/Builder/QCProgramBuilder.h>
+#include <mlir/Dialect/QCO/Transforms/Passes.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -26,6 +38,7 @@ struct NativeSynthMenuRow {
 
 } // namespace
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class NativeSynthesisSwapProfileTest
     : public NativeSynthesisPassTest,
       public testing::WithParamInterface<NativeSynthMenuRow> {
@@ -72,6 +85,7 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.name;
     });
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class NativeSynthesisHstycxMenuTest
     : public NativeSynthesisPassTest,
       public testing::WithParamInterface<NativeSynthMenuRow> {
@@ -101,6 +115,7 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.name;
     });
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class NativeSynthesisCxYOnQ1MenuTest
     : public NativeSynthesisPassTest,
       public testing::WithParamInterface<NativeSynthMenuRow> {
@@ -131,6 +146,7 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.name;
     });
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class NativeSynthesisBroadOneQMenuTest
     : public NativeSynthesisPassTest,
       public testing::WithParamInterface<NativeSynthMenuRow> {
@@ -163,6 +179,7 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.name;
     });
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class NativeSynthesisZeroAngleMenuTest
     : public NativeSynthesisPassTest,
       public testing::WithParamInterface<NativeSynthMenuRow> {

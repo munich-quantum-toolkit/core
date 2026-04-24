@@ -15,12 +15,26 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Scoring.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
 #include "native_synthesis_pass_test_fixture.h"
+#include "qc_programs.h"
 
+#include <gtest/gtest.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
+#include <mlir/Conversion/QCToQCO/QCToQCO.h>
+#include <mlir/Dialect/QC/Builder/QCProgramBuilder.h>
+#include <mlir/Dialect/QCO/IR/QCOInterfaces.h>
+#include <mlir/Dialect/QCO/IR/QCOOps.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <limits>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -31,15 +45,17 @@ namespace {
 /// Dummy payload: scoring helpers do not inspect the type.
 struct ScoringTag {};
 
-std::pair<unsigned, unsigned>
+} // namespace
+
+static std::pair<unsigned, unsigned>
 countSingleAndTwoQubitUnitariesForXxRzzMetrics(ModuleOp module) {
   unsigned numOneQ = 0;
   unsigned numTwoQ = 0;
   module.walk([&](Operation* op) {
-    if (isa<qco::BarrierOp, qco::GPhaseOp>(op)) {
+    if (llvm::isa<qco::BarrierOp, qco::GPhaseOp>(op)) {
       return;
     }
-    if (isa_and_present<qco::CtrlOp>(op->getParentOp())) {
+    if (llvm::isa_and_present<qco::CtrlOp>(op->getParentOp())) {
       return;
     }
     auto unitary = llvm::dyn_cast<qco::UnitaryOpInterface>(op);
@@ -56,8 +72,6 @@ countSingleAndTwoQubitUnitariesForXxRzzMetrics(ModuleOp module) {
   });
   return {numOneQ, numTwoQ};
 }
-
-} // namespace
 
 TEST(NativeSynthesisScoringTest, ValidScoreWeights) {
   using namespace mlir::qco::native_synth;
@@ -202,7 +216,7 @@ TEST(NativeSynthesisScoringTest, SelectBestCandidateHonoursWeightPreferences) {
 
   const ScoreWeights heavyTwoQ{.twoQ = 10.0, .oneQ = 0.01, .depth = 0.0};
   EXPECT_EQ(selectBestCandidate(llvm::ArrayRef(candidates), heavyTwoQ),
-            candidates.data() + 1);
+            &candidates[1]);
 }
 
 TEST(NativeSynthesisScoringTest,
@@ -233,7 +247,7 @@ TEST_F(NativeSynthesisPassTest, XxPlusMinusYyEmittedCountsMatchScoringMetrics) {
 
         Operation* twoQOp = nullptr;
         module->walk([&](Operation* op) {
-          if (isa<qco::XXPlusYYOp, qco::XXMinusYYOp>(op)) {
+          if (llvm::isa<qco::XXPlusYYOp, qco::XXMinusYYOp>(op)) {
             twoQOp = op;
             return WalkResult::interrupt();
           }

@@ -23,7 +23,6 @@
 #include <mlir/Dialect/QC/Builder/QCProgramBuilder.h>
 #include <mlir/Dialect/QCO/IR/QCOOps.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
 

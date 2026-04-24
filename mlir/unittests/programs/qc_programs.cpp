@@ -1281,10 +1281,9 @@ void invCtrlSandwich(QCProgramBuilder& b) {
   });
 }
 
-namespace {
-
-void emitNativeSynthControlledPhase(QCProgramBuilder& b, const double theta,
-                                    mlir::Value ctrl, mlir::Value tgt) {
+static void emitNativeSynthControlledPhase(QCProgramBuilder& b,
+                                           const double theta, mlir::Value ctrl,
+                                           mlir::Value tgt) {
   b.p(theta / 2.0, ctrl);
   b.cx(ctrl, tgt);
   b.p(-theta / 2.0, tgt);
@@ -1292,8 +1291,8 @@ void emitNativeSynthControlledPhase(QCProgramBuilder& b, const double theta,
   b.p(theta / 2.0, tgt);
 }
 
-void emitNativeSynthToffoli(QCProgramBuilder& b, mlir::Value c1, mlir::Value c2,
-                            mlir::Value t) {
+static void emitNativeSynthToffoli(QCProgramBuilder& b, mlir::Value c1,
+                                   mlir::Value c2, mlir::Value t) {
   b.h(t);
   b.cx(c2, t);
   b.tdg(t);
@@ -1314,8 +1313,9 @@ void emitNativeSynthToffoli(QCProgramBuilder& b, mlir::Value c1, mlir::Value c2,
 /// Shared by ``nativeSynthBroadOneQCanonicalization`` and
 /// ``nativeSynthIbmFractionalAllGateFamilies``: wide 1q sweep on two qubits,
 /// ending before any two-qubit primitive.
-void emitNativeSynthFixtureBroad1qPrefix(QCProgramBuilder& b, mlir::Value q0,
-                                         mlir::Value q1) {
+static void emitNativeSynthFixtureBroad1qPrefix(QCProgramBuilder& b,
+                                                mlir::Value q0,
+                                                mlir::Value q1) {
   b.id(q0);
   b.x(q0);
   b.y(q1);
@@ -1334,8 +1334,8 @@ void emitNativeSynthFixtureBroad1qPrefix(QCProgramBuilder& b, mlir::Value q0,
   b.r(0.61, -0.22, q0);
 }
 
-void emitNativeSynthFiveQStressLayers(QCProgramBuilder& b,
-                                      const int numLayers) {
+static void emitNativeSynthFiveQStressLayers(QCProgramBuilder& b,
+                                             const int numLayers) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   const auto q2 = b.allocQubit();
@@ -1374,8 +1374,8 @@ void emitNativeSynthFiveQStressLayers(QCProgramBuilder& b,
   b.p(0.75, q4);
 }
 
-void emitNativeSynthTwoQRzx(QCProgramBuilder& b, const double theta,
-                            const bool controlOnFirstWire) {
+static void emitNativeSynthTwoQRzx(QCProgramBuilder& b, const double theta,
+                                   const bool controlOnFirstWire) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
   if (controlOnFirstWire) {
@@ -1384,8 +1384,6 @@ void emitNativeSynthTwoQRzx(QCProgramBuilder& b, const double theta,
     b.rzx(theta, q1, q0);
   }
 }
-
-} // namespace
 
 void nativeSynthBroadOneQCanonicalization(QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
