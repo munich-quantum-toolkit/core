@@ -20,6 +20,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <memory>

@@ -9,8 +9,11 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/Value.h>
 
 #include <cassert>
