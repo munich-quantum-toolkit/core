@@ -18,10 +18,12 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 
+#include <cassert>
 #include <cmath>
 #include <complex>
 #include <limits>
 #include <numbers>
+#include <optional>
 
 namespace mlir::qco::native_synth {
 namespace {
@@ -289,40 +291,58 @@ Value decomposeToU3(IRRewriter& rewriter, Operation* op, Value inQubit) {
   return {};
 }
 
-std::size_t
-computeSynthesizedSingleQubitLength(const Eigen::Matrix2cd& matrix,
-                                    const SingleQubitEmitterSpec& emitter) {
-  // `U3` always emits a single gate; every other mode maps to a fixed Euler
-  // basis whose decomposition length we can measure directly.
+std::optional<decomposition::QubitGateSequence>
+eulerSequenceForMatrixSynthesis(const Eigen::Matrix2cd& matrix,
+                                const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
   case SingleQubitMode::U3:
-    return 1;
+    return std::nullopt;
   case SingleQubitMode::ZSXX:
-    return runEuler(decomposition::EulerBasis::ZSXX, matrix).gates.size();
+    return runEuler(decomposition::EulerBasis::ZSXX, matrix);
   case SingleQubitMode::R:
-    return runEuler(decomposition::EulerBasis::XYX, matrix).gates.size();
+    return runEuler(decomposition::EulerBasis::XYX, matrix);
   case SingleQubitMode::AxisPair: {
     const auto bases = getEulerBasesForAxisPair(emitter.axisPair);
     if (bases.empty()) {
-      return std::numeric_limits<std::size_t>::max();
+      return std::nullopt;
     }
-    return runEuler(bases.front(), matrix).gates.size();
+    return runEuler(bases.front(), matrix);
   }
   }
   llvm_unreachable("unknown single-qubit mode");
 }
 
+std::size_t
+computeSynthesizedSingleQubitLength(const Eigen::Matrix2cd& matrix,
+                                    const SingleQubitEmitterSpec& emitter) {
+  if (emitter.mode == SingleQubitMode::U3) {
+    return 1;
+  }
+  const auto seq = eulerSequenceForMatrixSynthesis(matrix, emitter);
+  if (!seq) {
+    return std::numeric_limits<std::size_t>::max();
+  }
+  return seq->gates.size();
+}
+
 Value emitSynthesizedSingleQubitFromMatrix(
     IRRewriter& rewriter, Location loc, Value inQubit,
-    const Eigen::Matrix2cd& matrix, const SingleQubitEmitterSpec& emitter) {
+    const Eigen::Matrix2cd& matrix, const SingleQubitEmitterSpec& emitter,
+    const decomposition::QubitGateSequence* reuseEulerSeq) {
   SingleQubitEmitter e{.rewriter = &rewriter, .loc = loc};
   switch (emitter.mode) {
   case SingleQubitMode::ZSXX: {
+    if (reuseEulerSeq != nullptr) {
+      emitGPhaseIfNonTrivial(rewriter, loc, reuseEulerSeq->globalPhase);
+      return emitEulerSequenceZsxx(e, inQubit, *reuseEulerSeq);
+    }
     const auto seq = runEuler(decomposition::EulerBasis::ZSXX, matrix);
     emitGPhaseIfNonTrivial(rewriter, loc, seq.globalPhase);
     return emitEulerSequenceZsxx(e, inQubit, seq);
   }
   case SingleQubitMode::U3: {
+    assert(reuseEulerSeq == nullptr &&
+           "U3 matrix emission does not use a cached Euler sequence");
     using namespace std::complex_literals;
 
     // Project `matrix` into SU(2) before running the Euler decomposition.
@@ -342,6 +362,10 @@ Value emitSynthesizedSingleQubitFromMatrix(
     return e.u(inQubit, angles[0], angles[1], angles[2]);
   }
   case SingleQubitMode::R: {
+    if (reuseEulerSeq != nullptr) {
+      emitGPhaseIfNonTrivial(rewriter, loc, reuseEulerSeq->globalPhase);
+      return emitEulerSequenceR(e, inQubit, *reuseEulerSeq);
+    }
     const auto seq = runEuler(decomposition::EulerBasis::XYX, matrix);
     emitGPhaseIfNonTrivial(rewriter, loc, seq.globalPhase);
     return emitEulerSequenceR(e, inQubit, seq);
@@ -350,6 +374,11 @@ Value emitSynthesizedSingleQubitFromMatrix(
     const auto bases = getEulerBasesForAxisPair(emitter.axisPair);
     if (bases.empty()) {
       return {};
+    }
+    if (reuseEulerSeq != nullptr) {
+      emitGPhaseIfNonTrivial(rewriter, loc, reuseEulerSeq->globalPhase);
+      return emitEulerSequenceAxisPair(e, inQubit, emitter.axisPair,
+                                       *reuseEulerSeq);
     }
     const auto seq = runEuler(bases.front(), matrix);
     emitGPhaseIfNonTrivial(rewriter, loc, seq.globalPhase);

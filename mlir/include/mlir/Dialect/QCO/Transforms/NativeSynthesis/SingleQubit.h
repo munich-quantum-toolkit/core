@@ -17,6 +17,7 @@
 #include <mlir/IR/PatternMatch.h>
 
 #include <cstddef>
+#include <optional>
 
 /// Single-qubit lowering: `decomposeTo*` for symbolic matches, plus
 /// `computeSynthesizedSingleQubitLength` /
@@ -50,6 +51,13 @@ Value decomposeToR(IRRewriter& rewriter, Operation* op, Value inQubit);
 Value decomposeToAxisPair(IRRewriter& rewriter, Operation* op, Value inQubit,
                           AxisPair axisPair);
 
+/// Euler sequence for matrix synthesis for non-`U3` emitters (same basis as
+/// `emitSynthesizedSingleQubitFromMatrix`). `nullopt` for `U3` (single `u`
+/// gate, no cached Euler list) or when the axis pair has no Euler basis.
+std::optional<decomposition::QubitGateSequence>
+eulerSequenceForMatrixSynthesis(const Eigen::Matrix2cd& matrix,
+                                const SingleQubitEmitterSpec& emitter);
+
 /// Cost estimate in number of emitted ops for fusing a single-qubit unitary
 /// with the given emitter. Returns `SIZE_MAX` if no Euler basis is available.
 std::size_t
@@ -60,6 +68,7 @@ computeSynthesizedSingleQubitLength(const Eigen::Matrix2cd& matrix,
 /// emitted sequence carries a non-trivial residual global phase.
 Value emitSynthesizedSingleQubitFromMatrix(
     IRRewriter& rewriter, Location loc, Value inQubit,
-    const Eigen::Matrix2cd& matrix, const SingleQubitEmitterSpec& emitter);
+    const Eigen::Matrix2cd& matrix, const SingleQubitEmitterSpec& emitter,
+    const decomposition::QubitGateSequence* reuseEulerSeq = nullptr);
 
 } // namespace mlir::qco::native_synth

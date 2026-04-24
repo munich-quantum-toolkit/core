@@ -36,7 +36,10 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 
+#include <cassert>
 #include <cstddef>
+#include <limits>
+#include <optional>
 #include <ranges>
 
 namespace mlir::qco {
@@ -53,13 +56,13 @@ using native_synth::collectSingleQubitCandidates;
 using native_synth::collectTwoQubitBasisCandidates;
 using native_synth::collectTwoQubitBasisCandidatesFromMatrix;
 using native_synth::collectUnitaryOpsInPreOrder;
-using native_synth::computeSynthesizedSingleQubitLength;
 using native_synth::decomposeToAxisPair;
 using native_synth::decomposeToR;
 using native_synth::decomposeToU3;
 using native_synth::decomposeToZSXX;
 using native_synth::emitSynthesizedSingleQubitFromMatrix;
 using native_synth::emitTwoQubitGateSequence;
+using native_synth::eulerSequenceForMatrixSynthesis;
 using native_synth::getBlockTwoQubitMatrix;
 using native_synth::NativeGateKind;
 using native_synth::NativeProfileSpec;
@@ -101,17 +104,35 @@ bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
   });
 
   assert(!spec.singleQubitEmitters.empty() && "expected at least one emitter");
-  // Single-qubit fusion intentionally uses only the first emitter: a menu
-  // that declares multiple single-qubit emitters (e.g. ZSXX + U3) picks the
-  // canonical lowering via `front()` for fusion so the rewrite is
-  // deterministic. Picking the cheapest emitter per run would require running
-  // all emitters and comparing their lengths here; today this is the same
-  // tradeoff as elsewhere in the pass, so we keep it simple.
-  const auto& emitter = spec.singleQubitEmitters.front();
 
-  // Fully native runs: fuse only if the emitter shortens the chain.
-  if (!anyNonNative &&
-      computeSynthesizedSingleQubitLength(fused, emitter) >= run.ops.size()) {
+  constexpr auto kInvalidLen = std::numeric_limits<std::size_t>::max();
+  const SingleQubitEmitterSpec* bestEmitter = nullptr;
+  std::size_t bestLen = kInvalidLen;
+  std::optional<decomposition::QubitGateSequence> bestEuler;
+  for (const auto& emitter : spec.singleQubitEmitters) {
+    std::size_t len = 0;
+    std::optional<decomposition::QubitGateSequence> euler;
+    if (emitter.mode == SingleQubitMode::U3) {
+      len = 1;
+    } else {
+      euler = eulerSequenceForMatrixSynthesis(fused, emitter);
+      if (!euler) {
+        continue;
+      }
+      len = euler->gates.size();
+    }
+    if (bestEmitter == nullptr || len < bestLen) {
+      bestLen = len;
+      bestEmitter = &emitter;
+      bestEuler = std::move(euler);
+    }
+  }
+  if (bestEmitter == nullptr) {
+    return false;
+  }
+
+  // Fully native runs: fuse only if some emitter strictly shortens the chain.
+  if (!anyNonNative && bestLen >= run.ops.size()) {
     return false;
   }
 
@@ -120,8 +141,15 @@ bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
   const Value outQubit = run.ops.back().getOutputQubit(0);
 
   rewriter.setInsertionPoint(firstOp);
-  Value replacement = emitSynthesizedSingleQubitFromMatrix(
-      rewriter, firstOp->getLoc(), inQubit, fused, emitter);
+  Value replacement;
+  if (bestEmitter->mode == SingleQubitMode::U3) {
+    replacement = emitSynthesizedSingleQubitFromMatrix(
+        rewriter, firstOp->getLoc(), inQubit, fused, *bestEmitter);
+  } else {
+    assert(bestEuler.has_value());
+    replacement = emitSynthesizedSingleQubitFromMatrix(
+        rewriter, firstOp->getLoc(), inQubit, fused, *bestEmitter, &*bestEuler);
+  }
   if (!replacement) {
     return false;
   }
