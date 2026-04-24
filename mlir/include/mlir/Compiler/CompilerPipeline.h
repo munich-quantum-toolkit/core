@@ -45,17 +45,15 @@ struct QuantumCompilerConfig {
   bool disableMergeSingleQubitRotationGates = false;
 
   /// Comma-separated native gate menu. Recognised tokens: `u`, `x`, `sx`,
-  /// `rz` (or `p`), `rx`, `ry`, `r`, `cx`, `cz`, `rzz`. An empty or
-  /// whitespace-only string leaves native synthesis as a no-op (IR
-  /// unchanged). Illustrative menus (use `cx` or `cz` as the entangler, or
+  /// `rz` (or `p`), `rx`, `ry`, `r`, `cx`, `cz`, `rzz`.
+  /// Illustrative menus (use `cx` or `cz` as the entangler, or
   /// both):
   /// - `"x,sx,rz,cx"` / `"x,sx,rz,cz"` — IBM basic (no fractional 2q)
   /// - `"x,sx,rz,rx,rzz,cx"` / `"...,cz"` — IBM fractional
-  /// - `"u,cx"` / `"u,cz"` — generic single-qubit `qco.u` (menu token `u`, not
-  ///   `u3`)
+  /// - `"u,cx"` / `"u,cz"` — generic single-qubit U3 + CX/CY
   /// - `"r,cz"` — IQM-style default
-  /// - `"rx,rz,cx"`, `"rx,ry,cz"`, `"ry,rz,cx"` — supported `rx`/`ry`/`rz`
-  ///   pairs plus entangler
+  /// - `"rx,rz,cx"`, `"rx,ry,cz"`, `"ry,rz,cx"` — supported RX/RY/RZ pairs plus
+  /// entangler
   std::string nativeGates;
 
   /// Weight for two-qubit gates in local candidate scoring
