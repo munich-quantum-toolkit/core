@@ -130,7 +130,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   SmallVector<DenseSet<Operation*>> readyPerLayer;
 
   // Forward pass.
-  qco::walkProgramGraph<qco::WireDirection::Forward>(
+  auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
@@ -141,6 +141,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
         return WalkResult::advance();
       });
 
+  ASSERT_TRUE(res.succeeded());
   ASSERT_TRUE(readyPerLayer[0].contains(q02.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[0].contains(q21.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
@@ -148,7 +149,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
 
   // Backward pass.
   readyPerLayer.clear();
-  qco::walkProgramGraph<qco::WireDirection::Backward>(
+  res = qco::walkProgramGraph<qco::WireDirection::Backward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
         DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
@@ -159,6 +160,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
         return WalkResult::advance();
       });
 
+  ASSERT_TRUE(res.succeeded());
   ASSERT_TRUE(readyPerLayer[0].contains(q04.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[2].contains(q02.getDefiningOp()));

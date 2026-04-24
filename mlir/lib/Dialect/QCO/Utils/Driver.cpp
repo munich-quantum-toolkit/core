@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 
@@ -85,8 +86,8 @@ void walkProgram(Region& region, WalkProgramFn fn) {
         .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
           for (const auto& [prevV, nextV] :
                llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-            const auto prevQ = cast<TypedValue<QubitType>>(prevV);
-            const auto nextQ = cast<TypedValue<QubitType>>(nextV);
+            const auto prevQ = llvm::cast<TypedValue<QubitType>>(prevV);
+            const auto nextQ = llvm::cast<TypedValue<QubitType>>(nextV);
             qubits.remap(prevQ, nextQ);
           }
         })
