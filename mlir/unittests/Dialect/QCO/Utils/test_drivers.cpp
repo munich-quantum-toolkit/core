@@ -165,4 +165,21 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[2].contains(q02.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[2].contains(q21.getDefiningOp()));
+
+  // Forward, but stop after first layer.
+  readyPerLayer.clear();
+  res = qco::walkProgramGraph<qco::WireDirection::Forward>(
+      wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
+        DenseSet<Operation*> layer;
+        for (const auto& [op, progs] : ready) {
+          layer.insert(op);
+          released.emplace_back(op);
+        }
+        readyPerLayer.emplace_back(layer);
+        return WalkResult::interrupt();
+      });
+
+  ASSERT_TRUE(res.failed());
+  ASSERT_TRUE(readyPerLayer[0].contains(q02.getDefiningOp()));
+  ASSERT_TRUE(readyPerLayer[0].contains(q21.getDefiningOp()));
 }
