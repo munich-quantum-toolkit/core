@@ -15,6 +15,7 @@
 
 #include <mlir/IR/Operation.h>
 
+#include <cstdint>
 #include <iterator>
 
 namespace mlir::qco {
@@ -90,7 +91,7 @@ private:
 /**
  * @brief Categorizes the current traversal direction.
  */
-enum class WireDirection : bool { Forward, Backward };
+enum class WireDirection : std::uint8_t { Forward, Backward };
 
 template <WireDirection Direction> struct WireTraversalTraits {};
 
