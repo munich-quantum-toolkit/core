@@ -98,7 +98,7 @@ template <> struct WireTraversalTraits<WireDirection::Forward> {
   /// @returns the forward increment stride size.
   static constexpr std::ptrdiff_t stride() { return 1; }
 
-  /// @returns true if the wire iterator has reached the forward end.
+  /// @returns true if the wire iterator can continue forward.
   static bool isActive(const WireIterator& it) {
     return it != std::default_sentinel;
   }
@@ -108,7 +108,7 @@ template <> struct WireTraversalTraits<WireDirection::Backward> {
   /// @returns the backward increment stride size.
   static constexpr std::ptrdiff_t stride() { return -1; }
 
-  /// @returns true if the wire iterator has reached the backward end.
+  /// @returns true if the wire iterator can continue backward.
   static bool isActive(const WireIterator& it) {
     if (it.operation() == nullptr) {
       return false;
