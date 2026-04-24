@@ -169,14 +169,14 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
 
 /// Single-qubit op eligible for fusion (constant `2×2`, not under `ctrl`).
 static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
-  auto unitary = dyn_cast<UnitaryOpInterface>(op);
+  auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
   if (!unitary || !unitary.isSingleQubit()) {
     return {};
   }
-  if (isa<BarrierOp, GPhaseOp, CtrlOp>(op)) {
+  if (llvm::isa<BarrierOp, GPhaseOp, CtrlOp>(op)) {
     return {};
   }
-  if (isa_and_present<CtrlOp>(op->getParentOp())) {
+  if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
     return {};
   }
   Eigen::Matrix2cd matrix;
@@ -319,8 +319,8 @@ protected:
       return false;
     }
     Operation* body = ctrl.getBodyUnitary().getOperation();
-    const bool hasCX = isa<XOp>(body);
-    const bool hasCZ = isa<ZOp>(body);
+    const bool hasCX = llvm::isa<XOp>(body);
+    const bool hasCZ = llvm::isa<ZOp>(body);
     if (!hasCX && !hasCZ) {
       return false;
     }
@@ -330,7 +330,7 @@ protected:
   /// Bare two-qubit on-menu: `rzz` when the profile allows it.
   static bool bareTwoQubitMatchesNativeMenu(Operation* op,
                                             const NativeProfileSpec& spec) {
-    return isa<RZZOp>(op) && spec.allowRzz &&
+    return llvm::isa<RZZOp>(op) && spec.allowRzz &&
            spec.allowedGates.contains(NativeGateKind::Rzz);
   }
 
@@ -339,19 +339,19 @@ protected:
   bool hasNonNativeMenuOps(const NativeProfileSpec& spec) {
     const mlir::WalkResult walkResult =
         getOperation()->walk([&](Operation* op) {
-          if (isa<BarrierOp, GPhaseOp>(op)) {
+          if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
             return mlir::WalkResult::advance();
           }
-          if (isa_and_present<CtrlOp>(op->getParentOp())) {
+          if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
             return mlir::WalkResult::advance();
           }
-          if (auto ctrl = dyn_cast<CtrlOp>(op)) {
+          if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
             if (!ctrlMatchesNativeMenu(ctrl, spec)) {
               return mlir::WalkResult::interrupt();
             }
             return mlir::WalkResult::advance();
           }
-          auto unitary = dyn_cast<UnitaryOpInterface>(op);
+          auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
           if (!unitary) {
             return mlir::WalkResult::advance();
           }
@@ -376,13 +376,13 @@ protected:
   bool hasNonNativeSingleQubitOps(const NativeProfileSpec& spec) {
     const mlir::WalkResult walkResult =
         getOperation()->walk([&](Operation* op) {
-          if (isa<BarrierOp, GPhaseOp>(op)) {
+          if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
             return mlir::WalkResult::advance();
           }
-          if (isa_and_present<CtrlOp>(op->getParentOp())) {
+          if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
             return mlir::WalkResult::advance();
           }
-          auto unitary = dyn_cast<UnitaryOpInterface>(op);
+          auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
           if (!unitary || !unitary.isSingleQubit()) {
             return mlir::WalkResult::advance();
           }
@@ -452,11 +452,11 @@ private:
     unsigned hops = 0;
     while (v.hasOneUse()) {
       Operation* user = *v.getUsers().begin();
-      if (auto rz2 = dyn_cast<RZOp>(user); rz2 && rz2.getQubitIn() == v) {
+      if (auto rz2 = llvm::dyn_cast<RZOp>(user); rz2 && rz2.getQubitIn() == v) {
         partner = rz2;
         break;
       }
-      auto ctrl = dyn_cast<CtrlOp>(user);
+      auto ctrl = llvm::dyn_cast<CtrlOp>(user);
       if (!ctrl) {
         return false;
       }
@@ -554,13 +554,13 @@ private:
         continue;
       }
       // Inner `CtrlOp` bodies are handled on the `CtrlOp` itself.
-      if (isa_and_present<CtrlOp>(op->getParentOp())) {
+      if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
         continue;
       }
-      if (isa<BarrierOp, GPhaseOp>(op)) {
+      if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
         continue;
       }
-      auto unitary = dyn_cast<UnitaryOpInterface>(op);
+      auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
       if (!unitary) {
         continue;
       }
@@ -575,7 +575,7 @@ private:
         continue;
       }
 
-      if (auto ctrl = dyn_cast<CtrlOp>(op)) {
+      if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
         if (failed(rewriteControlled(rewriter, ctrl, spec, weights))) {
           return failure();
         }
@@ -627,8 +627,8 @@ private:
       return failure();
     }
     auto* body = ctrl.getBodyUnitary().getOperation();
-    const bool hasCX = isa<XOp>(body);
-    const bool hasCZ = isa<ZOp>(body);
+    const bool hasCX = llvm::isa<XOp>(body);
+    const bool hasCZ = llvm::isa<ZOp>(body);
     if ((usesCxEntangler(spec) && hasCX) || (usesCzEntangler(spec) && hasCZ)) {
       return success();
     }
@@ -640,7 +640,7 @@ private:
         return failure();
       }
     } else {
-      auto u = cast<UnitaryOpInterface>(ctrl.getOperation());
+      auto u = llvm::cast<UnitaryOpInterface>(ctrl.getOperation());
       if (!u.isTwoQubit() || !u.getUnitaryMatrix4x4(matrix)) {
         ctrl.emitError(
             "native synthesis: cannot build a constant 4x4 matrix for this "
@@ -673,10 +673,11 @@ private:
                                        UnitaryOpInterface unitary,
                                        const NativeProfileSpec& spec,
                                        const ScoreWeights& weights) {
-    if (spec.allowRzz && isa<RZZOp>(op)) {
+    if (spec.allowRzz && llvm::isa<RZZOp>(op)) {
       return success();
     }
-    if (spec.allowRzz && (isa<XXPlusYYOp>(op) || isa<XXMinusYYOp>(op))) {
+    if (spec.allowRzz &&
+        (llvm::isa<XXPlusYYOp>(op) || llvm::isa<XXMinusYYOp>(op))) {
       llvm::SmallVector<SynthesisCandidate<bool>> candidates;
       candidates.push_back(SynthesisCandidate<bool>{
           .candidateClass = CandidateClass::XxPlusMinusViaRzz,

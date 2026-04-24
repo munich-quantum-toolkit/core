@@ -34,6 +34,7 @@ using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 using namespace mlir::qco::decomposition_test;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class BasisDecomposerTest
     : public testing::TestWithParam<std::tuple<
           Gate, llvm::SmallVector<EulerBasis>, Eigen::Matrix4cd (*)()>> {

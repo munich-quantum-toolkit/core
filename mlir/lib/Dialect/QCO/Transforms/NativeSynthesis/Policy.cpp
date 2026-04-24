@@ -51,33 +51,33 @@ bool usesCzEntangler(const NativeProfileSpec& spec) {
 static std::optional<NativeGateKind>
 singleQubitNativeGateKind(UnitaryOpInterface op) {
   Operation* raw = op.getOperation();
-  if (isa<UOp>(raw)) {
+  if (llvm::isa<UOp>(raw)) {
     return NativeGateKind::U;
   }
-  if (isa<XOp>(raw)) {
+  if (llvm::isa<XOp>(raw)) {
     return NativeGateKind::X;
   }
-  if (isa<SXOp>(raw)) {
+  if (llvm::isa<SXOp>(raw)) {
     return NativeGateKind::Sx;
   }
-  if (isa<RZOp, POp>(raw)) {
+  if (llvm::isa<RZOp, POp>(raw)) {
     // `p` is a Z-rotation primitive for menu purposes.
     return NativeGateKind::Rz;
   }
-  if (isa<RXOp>(raw)) {
+  if (llvm::isa<RXOp>(raw)) {
     return NativeGateKind::Rx;
   }
-  if (isa<RYOp>(raw)) {
+  if (llvm::isa<RYOp>(raw)) {
     return NativeGateKind::Ry;
   }
-  if (isa<ROp>(raw)) {
+  if (llvm::isa<ROp>(raw)) {
     return NativeGateKind::R;
   }
   return std::nullopt;
 }
 
 bool allowsSingleQubitOp(UnitaryOpInterface op, const NativeProfileSpec& spec) {
-  if (isa<BarrierOp, GPhaseOp>(op.getOperation())) {
+  if (llvm::isa<BarrierOp, GPhaseOp>(op.getOperation())) {
     return true;
   }
   const auto gate = singleQubitNativeGateKind(op);
@@ -118,33 +118,33 @@ computeGateSequenceMetrics(const decomposition::QubitGateSequence& seq) {
 /// over, and (for ZSXX with direct Rx) `Rx`/`Ry`/`R`. Static angles still use
 /// matrix + Euler.
 bool canDirectlyDecomposeToZSXX(Operation* op, bool supportsDirectRx) {
-  if (isa<IdOp, POp>(op)) {
+  if (llvm::isa<IdOp, POp>(op)) {
     return true;
   }
-  return supportsDirectRx && isa<RXOp, RYOp, ROp>(op);
+  return supportsDirectRx && llvm::isa<RXOp, RYOp, ROp>(op);
 }
 
 bool canDirectlyDecomposeToU3(Operation* op) {
-  return isa<IdOp, RXOp, RYOp, RZOp, POp, U2Op, ROp, UOp>(op);
+  return llvm::isa<IdOp, RXOp, RYOp, RZOp, POp, U2Op, ROp, UOp>(op);
 }
 
 bool canDirectlyDecomposeToR(Operation* op) {
-  return isa<IdOp, ROp, RXOp, RYOp>(op);
+  return llvm::isa<IdOp, ROp, RXOp, RYOp>(op);
 }
 
 bool canDirectlyDecomposeToAxisPair(Operation* op, AxisPair axisPair) {
-  if (isa<IdOp>(op)) {
+  if (llvm::isa<IdOp>(op)) {
     return true;
   }
   switch (axisPair) {
   case AxisPair::RxRz:
     // `p` on an Rx/Rz axis pair folds directly to `rz(theta)`.
-    return isa<RXOp, RZOp, POp>(op);
+    return llvm::isa<RXOp, RZOp, POp>(op);
   case AxisPair::RxRy:
     // No cheap symbolic lowering of `p` without `rz` available.
-    return isa<RXOp, RYOp>(op);
+    return llvm::isa<RXOp, RYOp>(op);
   case AxisPair::RyRz:
-    return isa<RYOp, RZOp, POp>(op);
+    return llvm::isa<RYOp, RZOp, POp>(op);
   }
   llvm_unreachable("unknown axis pair");
 }
@@ -152,13 +152,13 @@ bool canDirectlyDecomposeToAxisPair(Operation* op, AxisPair axisPair) {
 CandidateMetrics
 estimateDirectSingleQubitMetrics(Operation* op,
                                  const SingleQubitEmitterSpec& emitter) {
-  if (isa<IdOp>(op)) {
+  if (llvm::isa<IdOp>(op)) {
     return {};
   }
   // ZSXX + direct Rx: `ry`/`r` use a three-gate `rz * rx * rz` sandwich; other
   // direct paths emit a single native op.
   const bool threeGate = emitter.mode == SingleQubitMode::ZSXX &&
-                         emitter.supportsDirectRx && isa<RYOp, ROp>(op);
+                         emitter.supportsDirectRx && llvm::isa<RYOp, ROp>(op);
   const unsigned count = threeGate ? 3U : 1U;
   return {.numOneQ = count, .numTwoQ = 0, .depth = count};
 }

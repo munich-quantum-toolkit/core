@@ -12,8 +12,22 @@
 // circuits for the native-gate synthesis pass.
 
 #include "native_synthesis_pass_test_fixture.h"
+#include "native_synthesis_test_helpers.h"
+#include "qc_programs.h"
 
+#include <gtest/gtest.h>
+#include <llvm/Support/Casting.h>
+#include <mlir/Conversion/QCToQCO/QCToQCO.h>
+#include <mlir/Dialect/QC/Builder/QCProgramBuilder.h>
+#include <mlir/Dialect/QCO/IR/QCOInterfaces.h>
+#include <mlir/Dialect/QCO/IR/QCOOps.h>
+#include <mlir/Dialect/QCO/Transforms/Passes.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cctype>
 #include <cstddef>
@@ -28,7 +42,23 @@ using namespace mlir::qco::native_synth_test;
 
 namespace {
 
-std::vector<std::string> splitCSV(const std::string& s) {
+struct CustomMenuSpec {
+  std::string menuCsv;
+  bool allowCx = false;
+  bool allowCz = false;
+  bool allowU = false;
+  bool allowX = false;
+  bool allowSX = false;
+  bool allowRZ = false;
+  bool allowRX = false;
+  bool allowRY = false;
+  bool allowR = false;
+  bool allowRzz = false;
+};
+
+} // namespace
+
+static std::vector<std::string> splitCSV(const std::string& s) {
   std::vector<std::string> out;
   std::string cur;
   for (const char ch : s) {
@@ -50,21 +80,7 @@ std::vector<std::string> splitCSV(const std::string& s) {
   return out;
 }
 
-struct CustomMenuSpec {
-  std::string menuCsv;
-  bool allowCx = false;
-  bool allowCz = false;
-  bool allowU = false;
-  bool allowX = false;
-  bool allowSX = false;
-  bool allowRZ = false;
-  bool allowRX = false;
-  bool allowRY = false;
-  bool allowR = false;
-  bool allowRzz = false;
-};
-
-CustomMenuSpec parseCustomMenu(const std::string& csv) {
+static CustomMenuSpec parseCustomMenu(const std::string& csv) {
   CustomMenuSpec spec;
   spec.menuCsv = csv;
   for (const auto& tok : splitCSV(csv)) {
@@ -95,87 +111,88 @@ CustomMenuSpec parseCustomMenu(const std::string& csv) {
   return spec;
 }
 
-bool onlyAllowsMenuNativeOps(ModuleOp moduleOp, const CustomMenuSpec& spec) {
+static bool onlyAllowsMenuNativeOps(ModuleOp moduleOp,
+                                    const CustomMenuSpec& spec) {
   bool ok = true;
   moduleOp.walk([&](Operation* op) {
     if (!ok) {
       return;
     }
-    if (!isa<qco::UnitaryOpInterface>(op)) {
+    if (!llvm::isa<qco::UnitaryOpInterface>(op)) {
       return;
     }
     // Non-synthesized helper ops are allowed to remain.
-    if (isa<qco::BarrierOp, qco::GPhaseOp>(op)) {
+    if (llvm::isa<qco::BarrierOp, qco::GPhaseOp>(op)) {
       return;
     }
-    if (isa<qco::IdOp>(op)) {
+    if (llvm::isa<qco::IdOp>(op)) {
       return;
     }
 
     // Treat `p` as a phase/Z-rotation alias when `rz` is allowed.
-    if (isa<qco::POp>(op)) {
+    if (llvm::isa<qco::POp>(op)) {
       ok = spec.allowRZ;
       return;
     }
 
-    if (isa<qco::UOp>(op)) {
+    if (llvm::isa<qco::UOp>(op)) {
       ok = spec.allowU;
       return;
     }
-    if (isa<qco::XOp>(op)) {
+    if (llvm::isa<qco::XOp>(op)) {
       // `cx` is represented as a `qco.ctrl` with a `qco.x` in the body region.
-      if (isa_and_present<qco::CtrlOp>(op->getParentOp())) {
+      if (llvm::isa_and_present<qco::CtrlOp>(op->getParentOp())) {
         ok = spec.allowCx;
       } else {
         ok = spec.allowX;
       }
       return;
     }
-    if (isa<qco::SXOp>(op)) {
+    if (llvm::isa<qco::SXOp>(op)) {
       ok = spec.allowSX;
       return;
     }
-    if (isa<qco::RZOp>(op)) {
+    if (llvm::isa<qco::RZOp>(op)) {
       ok = spec.allowRZ;
       return;
     }
-    if (isa<qco::RXOp>(op)) {
+    if (llvm::isa<qco::RXOp>(op)) {
       // Some decomposition paths treat `rx(pi)` as an `x`-family primitive.
       ok = spec.allowRX || (spec.allowX && spec.allowSX && spec.allowRZ);
       return;
     }
-    if (isa<qco::RYOp>(op)) {
+    if (llvm::isa<qco::RYOp>(op)) {
       ok = spec.allowRY;
       return;
     }
-    if (isa<qco::ZOp>(op)) {
+    if (llvm::isa<qco::ZOp>(op)) {
       // `cz` is represented as a `qco.ctrl` with a `qco.z` in the body region.
-      if (isa_and_present<qco::CtrlOp>(op->getParentOp())) {
+      if (llvm::isa_and_present<qco::CtrlOp>(op->getParentOp())) {
         ok = spec.allowCz;
       } else {
         ok = false;
       }
       return;
     }
-    if (isa<qco::ROp>(op)) {
+    if (llvm::isa<qco::ROp>(op)) {
       ok = spec.allowR;
       return;
     }
-    if (isa<qco::RZZOp>(op)) {
+    if (llvm::isa<qco::RZZOp>(op)) {
       ok = spec.allowRzz;
       return;
     }
-    if (auto ctrl = dyn_cast<qco::CtrlOp>(op)) {
+    if (auto ctrl = llvm::dyn_cast<qco::CtrlOp>(op)) {
       if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
         ok = false;
         return;
       }
       Operation* body = ctrl.getBodyUnitary().getOperation();
-      if (isa<qco::XOp>(body)) {
+      if (llvm::isa<qco::XOp>(body)) {
         ok = spec.allowCx;
         return;
       }
-      if (isa<qco::ZOp>(body)) {
+      if (llvm::isa<qco::ZOp>(body)) {
         ok = spec.allowCz;
         return;
       }
@@ -186,8 +203,6 @@ bool onlyAllowsMenuNativeOps(ModuleOp moduleOp, const CustomMenuSpec& spec) {
   });
   return ok;
 }
-
-} // namespace
 
 TEST_F(NativeSynthesisPassTest, RandomizedCustomMenusAndCircuitsAreEquivalent) {
   // Sample many valid custom menus and generate matching random input circuits.

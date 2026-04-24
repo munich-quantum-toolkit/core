@@ -27,6 +27,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
@@ -330,7 +331,7 @@ LogicalResult rewriteXXPlusMinusYYViaRxxRyy(IRRewriter& rewriter,
   // unitaries; the distinct order and sign below are what makes `XXMinusYY`
   // the "minus" variant and must be preserved even though an order flip
   // alone would also compile.)
-  if (auto xxPlus = dyn_cast<XXPlusYYOp>(op)) {
+  if (auto xxPlus = llvm::dyn_cast<XXPlusYYOp>(op)) {
     Value q0 = xxPlus.getInputQubit(0);
     Value q1 = xxPlus.getInputQubit(1);
     q0 = RZOp::create(rewriter, loc, q0, neg(xxPlus.getBeta()))
@@ -342,7 +343,7 @@ LogicalResult rewriteXXPlusMinusYYViaRxxRyy(IRRewriter& rewriter,
     rewriter.replaceOp(op, ValueRange{q0, q1});
     return success();
   }
-  if (auto xxMinus = dyn_cast<XXMinusYYOp>(op)) {
+  if (auto xxMinus = llvm::dyn_cast<XXMinusYYOp>(op)) {
     Value q0 = xxMinus.getInputQubit(0);
     Value q1 = xxMinus.getInputQubit(1);
     q0 = RZOp::create(rewriter, loc, q0, neg(xxMinus.getBeta()))

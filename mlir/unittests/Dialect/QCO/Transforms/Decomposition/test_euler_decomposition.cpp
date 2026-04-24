@@ -52,6 +52,7 @@ static bool sequenceMatchesSingleQubitMatrix(const Eigen::Matrix2cd& u,
   return expanded.isApprox(seq.getUnitaryMatrix(), tol);
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class EulerDecompositionTest
     : public testing::TestWithParam<
           std::tuple<EulerBasis, Eigen::Matrix2cd (*)()>> {

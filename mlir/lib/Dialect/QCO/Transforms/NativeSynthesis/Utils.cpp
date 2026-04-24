@@ -20,6 +20,7 @@
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Location.h>
@@ -89,27 +90,27 @@ bool getNormalizedTwoQubitMatrix(UnitaryOpInterface unitary,
 }
 
 bool getBlockTwoQubitMatrix(Operation* op, Eigen::Matrix4cd& matrix) {
-  if (isa<BarrierOp, GPhaseOp>(op)) {
+  if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
     return false;
   }
-  if (auto ctrl = dyn_cast<CtrlOp>(op)) {
+  if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
     auto* body = ctrl.getBodyUnitary().getOperation();
-    if (isa<XOp>(body)) {
+    if (llvm::isa<XOp>(body)) {
       // CX matrix in the same 4x4 basis layout as ``getUnitaryMatrix4x4``.
       matrix << 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0;
       return true;
     }
-    if (isa<ZOp>(body)) {
+    if (llvm::isa<ZOp>(body)) {
       matrix = Eigen::Matrix4cd::Identity();
       matrix(3, 3) = -1.0;
       return true;
     }
     return false;
   }
-  auto unitary = dyn_cast<UnitaryOpInterface>(op);
+  auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
   if (!unitary || !unitary.isTwoQubit()) {
     return false;
   }

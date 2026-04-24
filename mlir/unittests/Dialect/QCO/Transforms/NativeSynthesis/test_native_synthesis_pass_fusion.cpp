@@ -15,8 +15,20 @@
 // ``mqt-core-mlir-unittest-native-synthesis``.
 
 #include "native_synthesis_pass_test_fixture.h"
+#include "native_synthesis_test_helpers.h"
+#include "qc_programs.h"
+
+#include <gtest/gtest.h>
+#include <llvm/Support/Casting.h>
+#include <mlir/Dialect/QC/Builder/QCProgramBuilder.h>
+#include <mlir/Dialect/QCO/IR/QCOOps.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OwningOpRef.h>
 
 #include <array>
+#include <cstddef>
 #include <numbers>
 #include <optional>
 
@@ -25,18 +37,6 @@ using namespace mlir::qco;
 using namespace mlir::qco::native_synth_test;
 
 namespace {
-// Count ops of a given MLIR op type across a module; used to assert the
-// effects of the 1q-run-merging pre-synthesis step on concrete programs.
-template <typename... OpTs>
-std::size_t countOpsOfTypeInModule(const OwningOpRef<ModuleOp>& moduleOp) {
-  std::size_t count = 0;
-  moduleOp.get()->walk([&](mlir::Operation* op) {
-    if (isa<OpTs...>(op)) {
-      ++count;
-    }
-  });
-  return count;
-}
 
 struct OneQU3FusionGPhaseRow {
   const char* name;
@@ -49,8 +49,24 @@ struct TwoQBlockEquivGenericU3CxRow {
   void (*program)(mlir::qc::QCProgramBuilder&);
   std::optional<unsigned> expectExactCtrlOpCount;
 };
+
 } // namespace
 
+// Count ops of a given MLIR op type across a module; used to assert the
+// effects of the 1q-run-merging pre-synthesis step on concrete programs.
+template <typename... OpTs>
+static std::size_t
+countOpsOfTypeInModule(const OwningOpRef<ModuleOp>& moduleOp) {
+  std::size_t count = 0;
+  moduleOp.get()->walk([&](Operation* op) {
+    if (llvm::isa<OpTs...>(op)) {
+      ++count;
+    }
+  });
+  return count;
+}
+
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class NativeSynthesisOneQFusionU3GPhaseTest
     : public NativeSynthesisPassTest,
       public testing::WithParamInterface<OneQU3FusionGPhaseRow> {
@@ -81,6 +97,7 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.name;
     });
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class NativeSynthesisTwoQBlockEquivGenericU3CxTest
     : public NativeSynthesisPassTest,
       public testing::WithParamInterface<TwoQBlockEquivGenericU3CxRow> {

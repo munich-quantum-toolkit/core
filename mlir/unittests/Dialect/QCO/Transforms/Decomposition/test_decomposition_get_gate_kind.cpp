@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -28,6 +29,7 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class DecompositionGetGateKindTest : public ::testing::Test {
 protected:
   MLIRContext context;
@@ -53,8 +55,9 @@ TEST_F(DecompositionGetGateKindTest, MapsBareSingleQubitOps) {
     return WalkResult::interrupt();
   });
   ASSERT_TRUE(rx);
-  EXPECT_EQ(helpers::getGateKind(cast<UnitaryOpInterface>(rx.getOperation())),
-            decomposition::GateKind::RX);
+  EXPECT_EQ(
+      helpers::getGateKind(llvm::cast<UnitaryOpInterface>(rx.getOperation())),
+      decomposition::GateKind::RX);
 }
 
 TEST_F(DecompositionGetGateKindTest, MapsCtrlBodyNotWrapper) {
@@ -62,7 +65,7 @@ TEST_F(DecompositionGetGateKindTest, MapsCtrlBodyNotWrapper) {
   Value t = builder.staticQubit(1);
   auto [cOut, tOut] =
       builder.ctrl(ValueRange{c}, ValueRange{t},
-                   [&](ValueRange targets) -> SmallVector<Value> {
+                   [&](ValueRange targets) -> llvm::SmallVector<Value> {
                      return {builder.z(targets[0])};
                    });
   (void)cOut;
@@ -75,6 +78,7 @@ TEST_F(DecompositionGetGateKindTest, MapsCtrlBodyNotWrapper) {
     return WalkResult::interrupt();
   });
   ASSERT_TRUE(ctrl);
-  EXPECT_EQ(helpers::getGateKind(cast<UnitaryOpInterface>(ctrl.getOperation())),
-            decomposition::GateKind::Z);
+  EXPECT_EQ(
+      helpers::getGateKind(llvm::cast<UnitaryOpInterface>(ctrl.getOperation())),
+      decomposition::GateKind::Z);
 }

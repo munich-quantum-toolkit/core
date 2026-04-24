@@ -12,6 +12,14 @@
 // native-gate synthesis pass.
 
 #include "native_synthesis_pass_test_fixture.h"
+#include "native_synthesis_test_helpers.h"
+#include "qc_programs.h"
+
+#include <gtest/gtest.h>
+#include <mlir/Dialect/QC/Builder/QCProgramBuilder.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 
 #include <array>
 
@@ -19,27 +27,28 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::native_synth_test;
 
-namespace {
-
-OwningOpRef<ModuleOp> buildThreeQGhzCircuit(MLIRContext* context) {
+static OwningOpRef<ModuleOp> buildThreeQGhzCircuit(MLIRContext* context) {
   return mlir::qc::QCProgramBuilder::build(
       context, mlir::qc::nativeSynthMultiQThreeQGhz);
 }
 
-OwningOpRef<ModuleOp> buildThreeQToffoliCircuit(MLIRContext* context) {
+static OwningOpRef<ModuleOp> buildThreeQToffoliCircuit(MLIRContext* context) {
   return mlir::qc::QCProgramBuilder::build(
       context, mlir::qc::nativeSynthMultiQThreeQToffoli);
 }
 
-OwningOpRef<ModuleOp> buildThreeQQftCircuit(MLIRContext* context) {
+static OwningOpRef<ModuleOp> buildThreeQQftCircuit(MLIRContext* context) {
   return mlir::qc::QCProgramBuilder::build(
       context, mlir::qc::nativeSynthMultiQThreeQQft);
 }
 
-OwningOpRef<ModuleOp> buildThreeQCliffordTMixCircuit(MLIRContext* context) {
+static OwningOpRef<ModuleOp>
+buildThreeQCliffordTMixCircuit(MLIRContext* context) {
   return mlir::qc::QCProgramBuilder::build(
       context, mlir::qc::nativeSynthMultiQThreeQCliffordTMix);
 }
+
+namespace {
 
 struct ThreeQubitCircuitCase {
   const char* name;
@@ -86,14 +95,10 @@ TEST_F(NativeSynthesisPassTest, ThreeQubitCircuitsEquivalentAcrossProfiles) {
   }
 }
 
-namespace {
-
-OwningOpRef<ModuleOp> buildFiveQubitStressCircuit(MLIRContext* context) {
+static OwningOpRef<ModuleOp> buildFiveQubitStressCircuit(MLIRContext* context) {
   return mlir::qc::QCProgramBuilder::build(
       context, mlir::qc::nativeSynthMultiQFiveQStressFourLayers);
 }
-
-} // namespace
 
 TEST_F(NativeSynthesisPassTest,
        FiveQubitStressCircuitEquivalentAcrossProfiles) {

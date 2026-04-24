@@ -237,23 +237,23 @@ runEuler(decomposition::EulerBasis basis, const Eigen::Matrix2cd& matrix) {
 
 Value decomposeToZSXX(IRRewriter& rewriter, Operation* op, Value inQubit,
                       bool supportsDirectRx) {
-  if (isa<IdOp>(op)) {
+  if (llvm::isa<IdOp>(op)) {
     return inQubit;
   }
   SingleQubitEmitter e{.rewriter = &rewriter, .loc = op->getLoc()};
-  if (auto p = dyn_cast<POp>(op)) {
+  if (auto p = llvm::dyn_cast<POp>(op)) {
     return e.rz(inQubit, p.getTheta());
   }
   if (!supportsDirectRx) {
     return {};
   }
-  if (auto rx = dyn_cast<RXOp>(op)) {
+  if (auto rx = llvm::dyn_cast<RXOp>(op)) {
     return rx.getOutputQubit(0);
   }
-  if (auto ry = dyn_cast<RYOp>(op)) {
+  if (auto ry = llvm::dyn_cast<RYOp>(op)) {
     return e.rz(e.rx(e.rz(inQubit, -HALF_PI), ry.getTheta()), HALF_PI);
   }
-  if (auto r = dyn_cast<ROp>(op)) {
+  if (auto r = llvm::dyn_cast<ROp>(op)) {
     auto negPhi =
         arith::NegFOp::create(rewriter, op->getLoc(), r.getPhi()).getResult();
     return e.rz(e.rx(e.rz(inQubit, negPhi), r.getTheta()), r.getPhi());
@@ -262,29 +262,29 @@ Value decomposeToZSXX(IRRewriter& rewriter, Operation* op, Value inQubit,
 }
 
 Value decomposeToU3(IRRewriter& rewriter, Operation* op, Value inQubit) {
-  if (isa<IdOp>(op)) {
+  if (llvm::isa<IdOp>(op)) {
     return inQubit;
   }
   SingleQubitEmitter e{.rewriter = &rewriter, .loc = op->getLoc()};
-  if (auto u = dyn_cast<UOp>(op)) {
+  if (auto u = llvm::dyn_cast<UOp>(op)) {
     return u.getOutputQubit(0);
   }
-  if (auto rx = dyn_cast<RXOp>(op)) {
+  if (auto rx = llvm::dyn_cast<RXOp>(op)) {
     return e.u(inQubit, rx.getTheta(), e.constF(-HALF_PI), e.constF(HALF_PI));
   }
-  if (auto ry = dyn_cast<RYOp>(op)) {
+  if (auto ry = llvm::dyn_cast<RYOp>(op)) {
     return e.u(inQubit, ry.getTheta(), e.constF(0.0), e.constF(0.0));
   }
-  if (auto rz = dyn_cast<RZOp>(op)) {
+  if (auto rz = llvm::dyn_cast<RZOp>(op)) {
     return e.u(inQubit, e.constF(0.0), e.constF(0.0), rz.getTheta());
   }
-  if (auto p = dyn_cast<POp>(op)) {
+  if (auto p = llvm::dyn_cast<POp>(op)) {
     return e.u(inQubit, e.constF(0.0), e.constF(0.0), p.getTheta());
   }
-  if (auto u2 = dyn_cast<U2Op>(op)) {
+  if (auto u2 = llvm::dyn_cast<U2Op>(op)) {
     return e.u(inQubit, e.constF(HALF_PI), u2.getPhi(), u2.getLambda());
   }
-  if (auto r = dyn_cast<ROp>(op)) {
+  if (auto r = llvm::dyn_cast<ROp>(op)) {
     auto loc = op->getLoc();
     auto phiMinus =
         arith::AddFOp::create(rewriter, loc, r.getPhi(), e.constF(-HALF_PI))
@@ -396,17 +396,17 @@ Value emitSynthesizedSingleQubitFromMatrix(
 }
 
 Value decomposeToR(IRRewriter& rewriter, Operation* op, Value inQubit) {
-  if (isa<IdOp>(op)) {
+  if (llvm::isa<IdOp>(op)) {
     return inQubit;
   }
   SingleQubitEmitter e{.rewriter = &rewriter, .loc = op->getLoc()};
-  if (auto r = dyn_cast<ROp>(op)) {
+  if (auto r = llvm::dyn_cast<ROp>(op)) {
     return r.getOutputQubit(0);
   }
-  if (auto rx = dyn_cast<RXOp>(op)) {
+  if (auto rx = llvm::dyn_cast<RXOp>(op)) {
     return e.r(inQubit, rx.getTheta(), e.constF(0.0));
   }
-  if (auto ry = dyn_cast<RYOp>(op)) {
+  if (auto ry = llvm::dyn_cast<RYOp>(op)) {
     return e.r(inQubit, ry.getTheta(), e.constF(HALF_PI));
   }
   return {};
@@ -414,38 +414,38 @@ Value decomposeToR(IRRewriter& rewriter, Operation* op, Value inQubit) {
 
 Value decomposeToAxisPair(IRRewriter& rewriter, Operation* op, Value inQubit,
                           AxisPair axisPair) {
-  if (isa<IdOp>(op)) {
+  if (llvm::isa<IdOp>(op)) {
     return inQubit;
   }
   SingleQubitEmitter e{.rewriter = &rewriter, .loc = op->getLoc()};
   switch (axisPair) {
   case AxisPair::RxRz:
-    if (auto rx = dyn_cast<RXOp>(op)) {
+    if (auto rx = llvm::dyn_cast<RXOp>(op)) {
       return rx.getOutputQubit(0);
     }
-    if (auto rz = dyn_cast<RZOp>(op)) {
+    if (auto rz = llvm::dyn_cast<RZOp>(op)) {
       return rz.getOutputQubit(0);
     }
-    if (auto p = dyn_cast<POp>(op)) {
+    if (auto p = llvm::dyn_cast<POp>(op)) {
       return e.rz(inQubit, p.getTheta());
     }
     return {};
   case AxisPair::RxRy:
-    if (auto rx = dyn_cast<RXOp>(op)) {
+    if (auto rx = llvm::dyn_cast<RXOp>(op)) {
       return rx.getOutputQubit(0);
     }
-    if (auto ry = dyn_cast<RYOp>(op)) {
+    if (auto ry = llvm::dyn_cast<RYOp>(op)) {
       return ry.getOutputQubit(0);
     }
     return {};
   case AxisPair::RyRz:
-    if (auto ry = dyn_cast<RYOp>(op)) {
+    if (auto ry = llvm::dyn_cast<RYOp>(op)) {
       return ry.getOutputQubit(0);
     }
-    if (auto rz = dyn_cast<RZOp>(op)) {
+    if (auto rz = llvm::dyn_cast<RZOp>(op)) {
       return rz.getOutputQubit(0);
     }
-    if (auto p = dyn_cast<POp>(op)) {
+    if (auto p = llvm::dyn_cast<POp>(op)) {
       return e.rz(inQubit, p.getTheta());
     }
     return {};

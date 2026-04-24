@@ -10,6 +10,7 @@
 
 #include "native_synthesis_test_helpers.h"
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 
@@ -18,11 +19,16 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <numbers>
+#include <optional>
 
 using namespace mlir;
 
@@ -98,7 +104,7 @@ std::optional<double> evaluateConstF64(Value value) {
 /// Extract the 2x2 unitary matrix associated with a single-qubit op.
 bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
                               Eigen::Matrix2cd& out) {
-  if (auto rz = dyn_cast<qco::RZOp>(op.getOperation())) {
+  if (auto rz = llvm::dyn_cast<qco::RZOp>(op.getOperation())) {
     auto theta = evaluateConstF64(rz.getTheta());
     if (!theta) {
       return false;
@@ -106,7 +112,7 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
     out = qco::decomposition::rzMatrix(*theta);
     return true;
   }
-  if (auto rx = dyn_cast<qco::RXOp>(op.getOperation())) {
+  if (auto rx = llvm::dyn_cast<qco::RXOp>(op.getOperation())) {
     auto theta = evaluateConstF64(rx.getTheta());
     if (!theta) {
       return false;
@@ -114,7 +120,7 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
     out = qco::decomposition::rxMatrix(*theta);
     return true;
   }
-  if (auto ry = dyn_cast<qco::RYOp>(op.getOperation())) {
+  if (auto ry = llvm::dyn_cast<qco::RYOp>(op.getOperation())) {
     auto theta = evaluateConstF64(ry.getTheta());
     if (!theta) {
       return false;
@@ -122,7 +128,7 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
     out = qco::decomposition::ryMatrix(*theta);
     return true;
   }
-  if (auto u = dyn_cast<qco::UOp>(op.getOperation())) {
+  if (auto u = llvm::dyn_cast<qco::UOp>(op.getOperation())) {
     auto theta = evaluateConstF64(u.getTheta());
     auto phi = evaluateConstF64(u.getPhi());
     auto lambda = evaluateConstF64(u.getLambda());
@@ -132,7 +138,7 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
     out = u3Matrix(*theta, *phi, *lambda);
     return true;
   }
-  if (auto p = dyn_cast<qco::POp>(op.getOperation())) {
+  if (auto p = llvm::dyn_cast<qco::POp>(op.getOperation())) {
     auto lambda = evaluateConstF64(p.getTheta());
     if (!lambda) {
       return false;
@@ -140,7 +146,7 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
     out = qco::decomposition::pMatrix(*lambda);
     return true;
   }
-  if (auto r = dyn_cast<qco::ROp>(op.getOperation())) {
+  if (auto r = llvm::dyn_cast<qco::ROp>(op.getOperation())) {
     auto theta = evaluateConstF64(r.getTheta());
     auto phi = evaluateConstF64(r.getPhi());
     if (!theta || !phi) {
@@ -167,17 +173,17 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
 
 /// 4×4 unitary for a two-qubit op (same layout as ``getUnitaryMatrix4x4``).
 bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Eigen::Matrix4cd& out) {
-  if (auto ctrl = dyn_cast<qco::CtrlOp>(op.getOperation())) {
+  if (auto ctrl = llvm::dyn_cast<qco::CtrlOp>(op.getOperation())) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
     auto* body = ctrl.getBodyUnitary().getOperation();
-    if (isa<qco::ZOp>(body)) {
+    if (llvm::isa<qco::ZOp>(body)) {
       out = Eigen::Matrix4cd::Identity();
       out(3, 3) = -1.0;
       return true;
     }
-    if (isa<qco::XOp>(body)) {
+    if (llvm::isa<qco::XOp>(body)) {
       out << 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0;
       return true;
     }
@@ -207,7 +213,7 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   for (auto func : module.getOps<func::FuncOp>()) {
     for (auto& block : func.getBlocks()) {
       for (auto& rawOp : block.getOperations()) {
-        if (auto alloc = dyn_cast<qco::AllocOp>(&rawOp)) {
+        if (auto alloc = llvm::dyn_cast<qco::AllocOp>(&rawOp)) {
           if (nextQubitId >= 2) {
             return std::nullopt;
           }
@@ -228,11 +234,11 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   for (auto func : module.getOps<func::FuncOp>()) {
     for (auto& block : func.getBlocks()) {
       for (auto& rawOp : block.getOperations()) {
-        auto op = dyn_cast<qco::UnitaryOpInterface>(&rawOp);
+        auto op = llvm::dyn_cast<qco::UnitaryOpInterface>(&rawOp);
         if (!op) {
           continue;
         }
-        if (isa<qco::BarrierOp, qco::GPhaseOp>(op.getOperation())) {
+        if (llvm::isa<qco::BarrierOp, qco::GPhaseOp>(op.getOperation())) {
           continue;
         }
 
@@ -343,12 +349,12 @@ computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
   for (auto func : module.getOps<func::FuncOp>()) {
     for (auto& block : func.getBlocks()) {
       for (auto& rawOp : block.getOperations()) {
-        if (auto alloc = dyn_cast<qco::AllocOp>(&rawOp)) {
+        if (auto alloc = llvm::dyn_cast<qco::AllocOp>(&rawOp)) {
           if (numQubits >= maxQubits) {
             return std::nullopt;
           }
           qubitIds.try_emplace(alloc.getResult(), numQubits++);
-        } else if (auto staticOp = dyn_cast<qco::StaticOp>(&rawOp)) {
+        } else if (auto staticOp = llvm::dyn_cast<qco::StaticOp>(&rawOp)) {
           const auto idx = static_cast<std::size_t>(staticOp.getIndex());
           if (idx >= maxQubits) {
             return std::nullopt;
@@ -378,11 +384,11 @@ computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
   for (auto func : module.getOps<func::FuncOp>()) {
     for (auto& block : func.getBlocks()) {
       for (auto& rawOp : block.getOperations()) {
-        auto op = dyn_cast<qco::UnitaryOpInterface>(&rawOp);
+        auto op = llvm::dyn_cast<qco::UnitaryOpInterface>(&rawOp);
         if (!op) {
           continue;
         }
-        if (isa<qco::BarrierOp, qco::GPhaseOp>(op.getOperation())) {
+        if (llvm::isa<qco::BarrierOp, qco::GPhaseOp>(op.getOperation())) {
           continue;
         }
 

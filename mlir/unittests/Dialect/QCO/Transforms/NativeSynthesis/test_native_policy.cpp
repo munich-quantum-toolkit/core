@@ -16,13 +16,17 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/WalkResult.h>
 
 using namespace mlir;
@@ -56,6 +60,7 @@ TEST(NativePolicyTest, UsesCxAndCzFromResolvedSpec) {
   EXPECT_TRUE(usesCzEntangler(*both));
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class NativePolicyAllowsOpTest : public ::testing::Test {
 protected:
   MLIRContext context;
@@ -83,8 +88,8 @@ TEST_F(NativePolicyAllowsOpTest, AllowsSingleQubitOpRespectsMenu) {
     return WalkResult::interrupt();
   });
   ASSERT_TRUE(xop);
-  EXPECT_TRUE(
-      allowsSingleQubitOp(cast<UnitaryOpInterface>(xop.getOperation()), *spec));
+  EXPECT_TRUE(allowsSingleQubitOp(
+      llvm::cast<UnitaryOpInterface>(xop.getOperation()), *spec));
 }
 
 TEST_F(NativePolicyAllowsOpTest, CanDirectlyDecomposeToU3OnRxInCircuit) {

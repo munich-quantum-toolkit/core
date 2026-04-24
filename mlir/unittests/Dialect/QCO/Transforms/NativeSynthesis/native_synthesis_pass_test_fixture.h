@@ -21,6 +21,7 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -61,20 +62,20 @@ protected:
     bool ok = true;
     std::ignore = moduleOp->walk([&](mlir::qco::UnitaryOpInterface op) {
       mlir::Operation* raw = op.getOperation();
-      if (mlir::isa_and_present<mlir::qco::CtrlOp>(raw->getParentOp())) {
+      if (llvm::isa_and_present<mlir::qco::CtrlOp>(raw->getParentOp())) {
         return mlir::WalkResult::advance();
       }
-      if (mlir::isa<mlir::qco::BarrierOp, mlir::qco::GPhaseOp>(raw)) {
+      if (llvm::isa<mlir::qco::BarrierOp, mlir::qco::GPhaseOp>(raw)) {
         return mlir::WalkResult::advance();
       }
-      if (auto ctrl = mlir::dyn_cast<mlir::qco::CtrlOp>(raw)) {
+      if (auto ctrl = llvm::dyn_cast<mlir::qco::CtrlOp>(raw)) {
         if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
           ok = false;
           return mlir::WalkResult::interrupt();
         }
         mlir::Operation* body = ctrl.getBodyUnitary().getOperation();
-        const bool isCx = mlir::isa<mlir::qco::XOp>(body);
-        const bool isCz = mlir::isa<mlir::qco::ZOp>(body);
+        const bool isCx = llvm::isa<mlir::qco::XOp>(body);
+        const bool isCz = llvm::isa<mlir::qco::ZOp>(body);
         if ((isCx && allowCx) || (isCz && allowCz)) {
           return mlir::WalkResult::advance();
         }
@@ -82,7 +83,7 @@ protected:
         return mlir::WalkResult::interrupt();
       }
 
-      if (!mlir::isa<Allowed1QOps...>(raw)) {
+      if (!llvm::isa<Allowed1QOps...>(raw)) {
         ok = false;
         return mlir::WalkResult::interrupt();
       }

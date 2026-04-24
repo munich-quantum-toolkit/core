@@ -39,20 +39,20 @@ namespace mlir::qco::native_synth {
 /// entangler, or `Rzz` when `spec.allowRzz` is set. Multi-control and other
 /// two-qubit ops are considered non-native.
 static bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
-  if (auto ctrl = dyn_cast<CtrlOp>(op)) {
+  if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
     auto* body = ctrl.getBodyUnitary().getOperation();
-    if (isa<XOp>(body)) {
+    if (llvm::isa<XOp>(body)) {
       return usesCxEntangler(spec);
     }
-    if (isa<ZOp>(body)) {
+    if (llvm::isa<ZOp>(body)) {
       return usesCzEntangler(spec);
     }
     return false;
   }
-  return spec.allowRzz && isa<RZZOp>(op);
+  return spec.allowRzz && llvm::isa<RZZOp>(op);
 }
 
 /// Decide whether replacing a consolidated window with the candidate
@@ -79,7 +79,7 @@ static void materializeSingleTwoQubitBlock(
     IRRewriter& rewriter, const TwoQubitBlock& block,
     const SynthesisCandidate<TwoQubitRewritePlan>& best) {
   Operation* firstOp = block.ops.front();
-  auto firstUnitary = cast<UnitaryOpInterface>(firstOp);
+  auto firstUnitary = llvm::cast<UnitaryOpInterface>(firstOp);
   const Value inA = firstUnitary.getInputQubit(0);
   const Value inB = firstUnitary.getInputQubit(1);
   const Value outA = block.wireA;
@@ -108,7 +108,7 @@ static void materializeSingleTwoQubitBlock(
 void collectUnitaryOpsInPreOrder(Operation* root,
                                  llvm::SmallVectorImpl<Operation*>& ops) {
   root->walk([&](Operation* op) {
-    if (isa<UnitaryOpInterface>(op)) {
+    if (llvm::isa<UnitaryOpInterface>(op)) {
       ops.push_back(op);
     }
   });
@@ -157,17 +157,17 @@ void TwoQubitWindowConsolidator::process(Operation* op,
   // Skip ops nested inside a `CtrlOp`'s body: those are handled as part of
   // their enclosing controlled op (seen at the parent level), not as
   // independent two-qubit gates.
-  if (isa_and_present<CtrlOp>(op->getParentOp())) {
+  if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
     return;
   }
-  auto unitary = dyn_cast<UnitaryOpInterface>(op);
+  auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
   if (!unitary) {
     return;
   }
   // Barriers and stand-alone global-phase ops are not unitaries we can
   // absorb; they act as synchronization points that force any block
   // touching their operand wires to close.
-  if (isa<BarrierOp, GPhaseOp>(op)) {
+  if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
     for (Value v : op->getOperands()) {
       closeBlockOnWire(v);
     }

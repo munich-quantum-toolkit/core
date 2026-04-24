@@ -25,6 +25,7 @@ using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 using namespace mlir::qco::decomposition_test;
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class WeylDecompositionTest
     : public testing::TestWithParam<Eigen::Matrix4cd (*)()> {
 public:

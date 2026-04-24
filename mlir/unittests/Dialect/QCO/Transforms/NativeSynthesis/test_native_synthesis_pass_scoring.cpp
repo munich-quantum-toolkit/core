@@ -42,7 +42,7 @@ countSingleAndTwoQubitUnitariesForXxRzzMetrics(ModuleOp module) {
     if (isa_and_present<qco::CtrlOp>(op->getParentOp())) {
       return;
     }
-    auto unitary = dyn_cast<qco::UnitaryOpInterface>(op);
+    auto unitary = llvm::dyn_cast<qco::UnitaryOpInterface>(op);
     if (!unitary) {
       return;
     }
