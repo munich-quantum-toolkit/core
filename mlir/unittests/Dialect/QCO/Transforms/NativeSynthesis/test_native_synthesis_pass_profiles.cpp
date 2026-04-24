@@ -236,6 +236,21 @@ TEST_F(NativeSynthesisPassTest, DecomposesRzToAxisPairRxRyCxProfile) {
       "rx,ry,cx", &NativeSynthesisPassTest::onlyAxisPairRxRyCxOps);
 }
 
+/// Single-control / single-target QC→QCO ``ctrl`` shells from
+/// ``allSingleControlledGateFamiliesOneCtrlOneTarget`` must reach the generic
+/// ``u,cx`` menu.
+TEST_F(NativeSynthesisPassTest,
+       AllSingleControlledOneCtrlOneTargetFamiliesReachesU3Cx) {
+  expectNativeAfterSynthesis(
+      [&] {
+        return mlir::qc::QCProgramBuilder::build(
+            context.get(),
+            mlir::qc::
+                nativeSynthAllSingleControlledGateFamiliesOneCtrlOneTarget);
+      },
+      "u,cx", &NativeSynthesisPassTest::onlyGenericU3CxOps);
+}
+
 TEST_F(NativeSynthesisPassTest, GenericProfileMatchesGenericU3CxBehavior) {
   expectEquivalentAndNativeAfterSynthesis(
       [&] {

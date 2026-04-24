@@ -609,8 +609,6 @@ private:
   /// Fast-path: already-native `CX`/`CZ` are kept as-is. Otherwise, lift the
   /// controlled op to its 4x4 matrix (with SU(4) normalization), run the
   /// Weyl-based basis-decomposer search, and emit the best candidate.
-  /// Returns `failure()` for multi-control ops, non-`X`/`Z` bodies, or when
-  /// no candidate fits the profile.
   static LogicalResult rewriteControlled(IRRewriter& rewriter, CtrlOp ctrl,
                                          const NativeProfileSpec& spec,
                                          const ScoreWeights& weights) {
@@ -622,18 +620,24 @@ private:
     auto* body = ctrl.getBodyUnitary().getOperation();
     const bool hasCX = isa<XOp>(body);
     const bool hasCZ = isa<ZOp>(body);
-    if (!hasCX && !hasCZ) {
-      ctrl.emitError("native synthesis currently only supports CX/CZ bodies");
-      return failure();
-    }
     if ((usesCxEntangler(spec) && hasCX) || (usesCzEntangler(spec) && hasCZ)) {
       return success();
     }
     // Otherwise treat as a generic `4×4` (Weyl + basis decomposer + scorer).
     Eigen::Matrix4cd matrix;
-    if (!getBlockTwoQubitMatrix(ctrl.getOperation(), matrix)) {
-      ctrl.emitError("failed to compute 4x4 matrix for CtrlOp");
-      return failure();
+    if (hasCX || hasCZ) {
+      if (!getBlockTwoQubitMatrix(ctrl.getOperation(), matrix)) {
+        ctrl.emitError("failed to compute 4x4 matrix for CtrlOp");
+        return failure();
+      }
+    } else {
+      auto u = cast<UnitaryOpInterface>(ctrl.getOperation());
+      if (!u.isTwoQubit() || !u.getUnitaryMatrix4x4(matrix)) {
+        ctrl.emitError(
+            "native synthesis: cannot build a constant 4x4 matrix for this "
+            "controlled gate (unsupported body or non-constant parameters)");
+        return failure();
+      }
     }
     native_synth::normalizeToSU4(matrix); // SU(4) convention for Weyl
 

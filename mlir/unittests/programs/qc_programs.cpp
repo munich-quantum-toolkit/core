@@ -1799,4 +1799,32 @@ void nativeSynthDeterminismTwoQubitSwap(QCProgramBuilder& b) {
   b.dealloc(q1);
 }
 
+void nativeSynthAllSingleControlledGateFamiliesOneCtrlOneTarget(
+    QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const mlir::Value c = q[0];
+  const mlir::Value t = q[1];
+
+  b.cgphase(0.07, c);
+
+  b.cid(c, t);
+  b.cx(c, t);
+  b.cy(c, t);
+  b.cz(c, t);
+  b.ch(c, t);
+  b.cs(c, t);
+  b.csdg(c, t);
+  b.ct(c, t);
+  b.ctdg(c, t);
+  b.csx(c, t);
+  b.csxdg(c, t);
+
+  b.crx(0.11, c, t);
+  b.cry(0.12, c, t);
+  b.crz(0.13, c, t);
+  b.cp(0.14, c, t);
+  b.cr(0.15, 0.16, c, t);
+  b.cu2(0.17, 0.18, c, t);
+  b.cu(0.19, 0.2, 0.21, c, t);
+}
 } // namespace mlir::qc

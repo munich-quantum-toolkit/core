@@ -1002,4 +1002,9 @@ void nativeSynthScoringXxMinusYyOnly(QCProgramBuilder& b);
 
 /// Two-qubit ``swap`` with explicit ``allocQubit`` / ``dealloc`` ordering.
 void nativeSynthDeterminismTwoQubitSwap(QCProgramBuilder& b);
+
+/// Single-control ops whose QCO lowering uses only 1-control / 1-target
+/// ``ctrl`` shells (native gate synthesis supports these today).
+void nativeSynthAllSingleControlledGateFamiliesOneCtrlOneTarget(
+    QCProgramBuilder& b);
 } // namespace mlir::qc
