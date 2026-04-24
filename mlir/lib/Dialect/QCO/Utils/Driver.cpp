@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <mlir/IR/Value.h>
 
@@ -58,13 +59,43 @@ void Qubits::remove(TypedValue<QubitType> q) {
   hardwareToValue_.erase(index);
 }
 
-TypedValue<QubitType> Qubits::getProgramQubit(std::size_t index) {
+TypedValue<QubitType> Qubits::getProgramQubit(std::size_t index) const {
   assert(programToValue_.contains(index));
   return programToValue_.lookup(index);
 }
 
-TypedValue<QubitType> Qubits::getHardwareQubit(std::size_t index) {
+TypedValue<QubitType> Qubits::getHardwareQubit(std::size_t index) const {
   assert(hardwareToValue_.contains(index));
   return hardwareToValue_.lookup(index);
+}
+
+void walkProgram(Region& region, WalkProgramFn fn) {
+  Qubits qubits;
+  for (Operation& curr : region.getOps()) {
+    if (fn(&curr, qubits).wasInterrupted()) {
+      break;
+    };
+
+    TypeSwitch<Operation*>(&curr)
+        .template Case<StaticOp>(
+            [&](StaticOp op) { qubits.add(op.getQubit(), op.getIndex()); })
+        .template Case<AllocOp>([&](AllocOp op) { qubits.add(op.getResult()); })
+        .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+          for (const auto& [prevV, nextV] :
+               llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
+            const auto prevQ = cast<TypedValue<QubitType>>(prevV);
+            const auto nextQ = cast<TypedValue<QubitType>>(nextV);
+            qubits.remap(prevQ, nextQ);
+          }
+        })
+        .template Case<ResetOp>([&](ResetOp op) {
+          qubits.remap(op.getQubitIn(), op.getQubitOut());
+        })
+        .template Case<MeasureOp>([&](MeasureOp op) {
+          qubits.remap(op.getQubitIn(), op.getQubitOut());
+        })
+        .template Case<SinkOp>(
+            [&](SinkOp op) { qubits.remove(op.getQubit()); });
+  }
 }
 } // namespace mlir::qco

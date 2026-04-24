@@ -810,7 +810,7 @@ private:
     ArrayRef<Operation*>::iterator anchorIt = anchors.begin();
     ArrayRef<SmallVector<IndexGate>>::iterator swapIt = swaps.begin();
 
-    walkUnit(funcBody, [&](Operation* op, Qubits& qubits) {
+    walkProgram(funcBody, [&](Operation* op, Qubits& qubits) {
       // Early exit if we've processed all layers.
       if (anchorIt == anchors.end()) {
         return WalkResult::interrupt();
