@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QCO/Utils/Qubits.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <llvm/ADT/STLExtras.h>

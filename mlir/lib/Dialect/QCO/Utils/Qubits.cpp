@@ -12,8 +12,6 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/IR/Value.h>
 
 #include <cassert>

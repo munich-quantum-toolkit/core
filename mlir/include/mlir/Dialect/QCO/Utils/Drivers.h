@@ -24,6 +24,9 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
+#include <functional>
+#include <iterator>
+#include <numeric>
 #include <utility>
 
 namespace mlir::qco {

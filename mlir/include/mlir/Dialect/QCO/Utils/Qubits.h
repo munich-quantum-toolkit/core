@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <utility>
+#include <cstdint>
 
 namespace mlir::qco {
 class Qubits {
@@ -29,7 +30,7 @@ public:
   /**
    * @brief Add qubit with automatically assigned dynamic index.
    */
-  [[maybe_unused]] void add(TypedValue<QubitType> q);
+  void add(TypedValue<QubitType> q);
 
   /**
    * @brief Add qubit with static index.
