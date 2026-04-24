@@ -132,51 +132,75 @@ std::optional<double> evaluateConstF64(Value value) {
 /// Extract the 2x2 unitary matrix associated with a single-qubit op.
 bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
                               Eigen::Matrix2cd& out) {
-  if (auto rz = llvm::dyn_cast<qco::RZOp>(op.getOperation())) {
-    auto theta = evaluateConstF64(rz.getTheta());
+  if (llvm::isa<qco::RZOp>(op.getOperation())) {
+    auto* raw = op.getOperation();
+    if (raw->getNumOperands() < 2) {
+      return false;
+    }
+    auto theta = evaluateConstF64(raw->getOperand(1));
     if (!theta) {
       return false;
     }
     out = qco::decomposition::rzMatrix(*theta);
     return true;
   }
-  if (auto rx = llvm::dyn_cast<qco::RXOp>(op.getOperation())) {
-    auto theta = evaluateConstF64(rx.getTheta());
+  if (llvm::isa<qco::RXOp>(op.getOperation())) {
+    auto* raw = op.getOperation();
+    if (raw->getNumOperands() < 2) {
+      return false;
+    }
+    auto theta = evaluateConstF64(raw->getOperand(1));
     if (!theta) {
       return false;
     }
     out = qco::decomposition::rxMatrix(*theta);
     return true;
   }
-  if (auto ry = llvm::dyn_cast<qco::RYOp>(op.getOperation())) {
-    auto theta = evaluateConstF64(ry.getTheta());
+  if (llvm::isa<qco::RYOp>(op.getOperation())) {
+    auto* raw = op.getOperation();
+    if (raw->getNumOperands() < 2) {
+      return false;
+    }
+    auto theta = evaluateConstF64(raw->getOperand(1));
     if (!theta) {
       return false;
     }
     out = qco::decomposition::ryMatrix(*theta);
     return true;
   }
-  if (auto u = llvm::dyn_cast<qco::UOp>(op.getOperation())) {
-    auto theta = evaluateConstF64(u.getTheta());
-    auto phi = evaluateConstF64(u.getPhi());
-    auto lambda = evaluateConstF64(u.getLambda());
+  if (llvm::isa<qco::UOp>(op.getOperation())) {
+    auto* raw = op.getOperation();
+    if (raw->getNumOperands() < 4) {
+      return false;
+    }
+    auto theta = evaluateConstF64(raw->getOperand(1));
+    auto phi = evaluateConstF64(raw->getOperand(2));
+    auto lambda = evaluateConstF64(raw->getOperand(3));
     if (!theta || !phi || !lambda) {
       return false;
     }
     out = u3Matrix(*theta, *phi, *lambda);
     return true;
   }
-  if (auto p = llvm::dyn_cast<qco::POp>(op.getOperation())) {
-    auto lambda = evaluateConstF64(p.getTheta());
+  if (llvm::isa<qco::POp>(op.getOperation())) {
+    auto* raw = op.getOperation();
+    if (raw->getNumOperands() < 2) {
+      return false;
+    }
+    auto lambda = evaluateConstF64(raw->getOperand(1));
     if (!lambda) {
       return false;
     }
     out = qco::decomposition::pMatrix(*lambda);
     return true;
   }
-  if (auto r = llvm::dyn_cast<qco::ROp>(op.getOperation())) {
-    auto theta = evaluateConstF64(r.getTheta());
-    auto phi = evaluateConstF64(r.getPhi());
+  if (llvm::isa<qco::ROp>(op.getOperation())) {
+    auto* raw = op.getOperation();
+    if (raw->getNumOperands() < 3) {
+      return false;
+    }
+    auto theta = evaluateConstF64(raw->getOperand(1));
+    auto phi = evaluateConstF64(raw->getOperand(2));
     if (!theta || !phi) {
       return false;
     }
