@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
+
 #include <Eigen/Core>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>

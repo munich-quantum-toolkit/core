@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/PassTwoQubitWindows.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
@@ -29,6 +30,7 @@
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -39,8 +41,10 @@
 #include <cassert>
 #include <cstddef>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <ranges>
+#include <utility>
 
 namespace mlir::qco {
 #define GEN_PASS_DEF_NATIVEGATESYNTHESISPASS
@@ -87,9 +91,11 @@ struct OneQubitRun {
   llvm::SmallVector<UnitaryOpInterface, 4> ops;
 };
 
+} // namespace
+
 /// If profitable, replace the run with one synthesized single-qubit op.
-bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
-                  const NativeProfileSpec& spec) {
+static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
+                         const NativeProfileSpec& spec) {
   Eigen::Matrix2cd fused = Eigen::Matrix2cd::Identity();
   for (UnitaryOpInterface u : run.ops) {
     Eigen::Matrix2cd m;
@@ -162,7 +168,7 @@ bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
 }
 
 /// Single-qubit op eligible for fusion (constant `2×2`, not under `ctrl`).
-UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
+static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   auto unitary = dyn_cast<UnitaryOpInterface>(op);
   if (!unitary || !unitary.isSingleQubit()) {
     return {};
@@ -183,9 +189,9 @@ UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
 /// Dispatch `op`'s direct (non-matrix) single-qubit lowering to the
 /// `decomposeTo*` helper for `emitter.mode`. Returns the output qubit value
 /// or a null `Value` if no direct rule applies for this op.
-Value applyDirectSingleQubitLowering(IRRewriter& rewriter, Operation* op,
-                                     Value in,
-                                     const SingleQubitEmitterSpec& emitter) {
+static Value
+applyDirectSingleQubitLowering(IRRewriter& rewriter, Operation* op, Value in,
+                               const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
   case SingleQubitMode::ZSXX:
     return decomposeToZSXX(rewriter, op, in, emitter.supportsDirectRx);
@@ -198,6 +204,8 @@ Value applyDirectSingleQubitLowering(IRRewriter& rewriter, Operation* op,
   }
   llvm_unreachable("unknown SingleQubitMode");
 }
+
+namespace {
 
 /// Lowers unitary QCO ops to a comma-separated native gate menu (single-qubit
 /// fuse, two-qubit windows, synthesis sweeps, seam single-qubit fuse, `rz`
@@ -222,6 +230,7 @@ struct NativeGateSynthesisPass
     scoreWeightDepth = options.scoreWeightDepth;
   }
 
+protected:
   /// Top-level pass entry point. Validates the score weights and native-gate
   /// menu, then drives the staged rewrite pipeline: one-qubit run fusion,
   /// two-qubit window consolidation, synthesis sweeps until the single-qubit

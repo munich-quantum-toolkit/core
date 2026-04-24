@@ -11,15 +11,23 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerDecomposition.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
 #include <Eigen/Core>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/IR/Operation.h>
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 namespace mlir::qco::native_synth {
 
@@ -37,10 +45,10 @@ bool usesCzEntangler(const NativeProfileSpec& spec) {
   return llvm::is_contained(spec.entanglerBases, EntanglerBasis::Cz);
 }
 
-namespace {
 /// Map a single-qubit `UnitaryOpInterface` op to the `NativeGateKind` that
 /// must appear in the menu for the op to be a no-op.
-std::optional<NativeGateKind> singleQubitNativeGateKind(UnitaryOpInterface op) {
+static std::optional<NativeGateKind>
+singleQubitNativeGateKind(UnitaryOpInterface op) {
   Operation* raw = op.getOperation();
   if (isa<UOp>(raw)) {
     return NativeGateKind::U;
@@ -66,7 +74,6 @@ std::optional<NativeGateKind> singleQubitNativeGateKind(UnitaryOpInterface op) {
   }
   return std::nullopt;
 }
-} // namespace
 
 bool allowsSingleQubitOp(UnitaryOpInterface op, const NativeProfileSpec& spec) {
   if (isa<BarrierOp, GPhaseOp>(op.getOperation())) {

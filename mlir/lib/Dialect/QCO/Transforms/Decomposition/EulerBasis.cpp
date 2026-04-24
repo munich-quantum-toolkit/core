@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
+
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 

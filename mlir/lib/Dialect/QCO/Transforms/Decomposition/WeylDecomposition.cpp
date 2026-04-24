@@ -10,7 +10,9 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
 
+#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerDecomposition.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 
@@ -312,8 +314,8 @@ TwoQubitWeylDecomposition::magicBasisTransform(const Eigen::Matrix4cd& unitary,
 
   const Eigen::Matrix4cd bNonNormalizedDagger{
       {0.5, 0, 0, 0.5},
-      {-0.5i, 0, 0, 0.5i},
-      {0, -0.5i, -0.5i, 0},
+      {std::complex<double>{0.0, -0.5}, 0, 0, std::complex<double>{0.0, 0.5}},
+      {0, std::complex<double>{0.0, -0.5}, std::complex<double>{0.0, -0.5}, 0},
       {0, 0.5, -0.5, 0},
   };
   if (direction == MagicBasisTransform::OutOf) {
@@ -330,7 +332,7 @@ double TwoQubitWeylDecomposition::closestPartialSwap(double a, double b,
   auto m = (a + b + c) / 3.;
   auto [am, bm, cm] = std::array{a - m, b - m, c - m};
   auto [ab, bc, ca] = std::array{a - b, b - c, c - a};
-  return m + (am * bm * cm * (6. + ab * ab + bc * bc + ca * ca) / 18.);
+  return m + (am * bm * cm * (6. + (ab * ab) + (bc * bc) + (ca * ca)) / 18.);
 }
 
 std::pair<Eigen::Matrix4cd, Eigen::Vector4cd>

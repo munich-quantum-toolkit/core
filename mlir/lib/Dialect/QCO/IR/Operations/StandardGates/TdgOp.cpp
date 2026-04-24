@@ -17,6 +17,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
 #include <complex>
 #include <numbers>
 

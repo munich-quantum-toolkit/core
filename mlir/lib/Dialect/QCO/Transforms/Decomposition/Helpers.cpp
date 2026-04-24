@@ -10,12 +10,16 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/IR/Operation.h>
 
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <numbers>
 
 namespace mlir::qco::helpers {
@@ -105,7 +109,7 @@ double traceToFidelity(const std::complex<double>& x) {
   // `F_avg = (d + |tr|^2) / (d * (d + 1))` with `d = 4`, which reduces to the
   // `(4 + |x|^2) / 20` expression below. See e.g. Horodecki/Nielsen.
   auto xAbs = std::abs(x);
-  return (4.0 + xAbs * xAbs) / 20.0;
+  return (4.0 + (xAbs * xAbs)) / 20.0;
 }
 
 std::size_t getComplexity(decomposition::GateKind type,

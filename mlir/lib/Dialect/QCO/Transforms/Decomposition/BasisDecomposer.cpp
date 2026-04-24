@@ -10,9 +10,13 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
 
+#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerDecomposition.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
 
 #include <Eigen/Core>
 #include <llvm/Support/ErrorHandling.h>
@@ -22,8 +26,11 @@
 #include <cassert>
 #include <cmath>
 #include <complex>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <utility>
 
 namespace mlir::qco::decomposition {

@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 

@@ -12,17 +12,28 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/Compiler.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <numbers>
+#include <optional>
 
 namespace mlir::qco::native_synth {
-namespace {
 
 constexpr double PI = std::numbers::pi;
 constexpr double HALF_PI = PI / 2.0;
@@ -30,8 +41,9 @@ constexpr double HALF_PI = PI / 2.0;
 /// Whether the given single-qubit emitter can lower a decomposition-IR gate
 /// of `kind` (an intermediate from Euler/Weyl, *not* a `NativeGateKind`) to a
 /// native output sequence.
-bool emitterHandlesDecompositionGate(const SingleQubitEmitterSpec& emitter,
-                                     decomposition::GateKind kind) {
+static bool
+emitterHandlesDecompositionGate(const SingleQubitEmitterSpec& emitter,
+                                decomposition::GateKind kind) {
   if (kind == decomposition::GateKind::I) {
     return true;
   }
@@ -71,8 +83,8 @@ bool emitterHandlesDecompositionGate(const SingleQubitEmitterSpec& emitter,
 }
 
 /// Check that a single decomposition gate is allowed by the profile menu.
-bool menuAllows(const decomposition::Gate& gate,
-                const NativeProfileSpec& spec) {
+static bool menuAllows(const decomposition::Gate& gate,
+                       const NativeProfileSpec& spec) {
   if (gate.qubitId.size() == 1) {
     return std::ranges::any_of(spec.singleQubitEmitters,
                                [&gate](const SingleQubitEmitterSpec& emitter) {
@@ -96,8 +108,8 @@ bool menuAllows(const decomposition::Gate& gate,
 }
 
 /// Whether `emitter` can lower the single-qubit `op` directly.
-bool emitterHasDirectLowering(Operation* op,
-                              const SingleQubitEmitterSpec& emitter) {
+static bool emitterHasDirectLowering(Operation* op,
+                                     const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
   case SingleQubitMode::ZSXX:
     return canDirectlyDecomposeToZSXX(op, emitter.supportsDirectRx);
@@ -110,8 +122,6 @@ bool emitterHasDirectLowering(Operation* op,
   }
   llvm_unreachable("unknown single-qubit mode");
 }
-
-} // namespace
 
 bool gateSequenceFitsMenu(const decomposition::TwoQubitGateSequence& seq,
                           const NativeProfileSpec& spec) {
@@ -173,13 +183,11 @@ collectSingleQubitCandidates(UnitaryOpInterface unitary,
   return candidates;
 }
 
-namespace {
-
 /// Try every `numBasisUses` in `{0, 1, 2, 3}` for the `(entangler, emitter,
 /// basis)` triple, running the Weyl-based basis decomposer for each. Any
 /// resulting gate sequence that both matches `targetMatrix` up to global
 /// phase AND stays inside the native menu is appended to `candidates`.
-void tryAddTwoQubitBasisCandidatesForEmitterBasis(
+static void tryAddTwoQubitBasisCandidatesForEmitterBasis(
     llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>& candidates,
     unsigned& enumerationIndex, const Eigen::Matrix4cd& targetMatrix,
     const NativeProfileSpec& spec, EntanglerBasis entangler,
@@ -214,8 +222,6 @@ void tryAddTwoQubitBasisCandidatesForEmitterBasis(
     });
   }
 }
-
-} // namespace
 
 llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>
 collectTwoQubitBasisCandidatesFromMatrix(const Eigen::Matrix4cd& targetMatrix,

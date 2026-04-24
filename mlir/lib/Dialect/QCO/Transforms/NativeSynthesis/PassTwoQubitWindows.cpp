@@ -16,21 +16,27 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Scoring.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <ranges>
+#include <utility>
 
 namespace mlir::qco::native_synth {
-namespace {
 
 /// Check whether a two-qubit op `op` is already expressible by the resolved
 /// native menu: a single-control `CX`/`CZ` consistent with the active
 /// entangler, or `Rzz` when `spec.allowRzz` is set. Multi-control and other
 /// two-qubit ops are considered non-native.
-bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
+static bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
   if (auto ctrl = dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
@@ -52,8 +58,8 @@ bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
 /// any non-native op (we have to lower them anyway); otherwise only replace
 /// when the candidate has strictly fewer two-qubit gates, or the same number
 /// with strictly fewer one-qubit gates.
-bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
-                                 const CandidateMetrics& best) {
+static bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
+                                        const CandidateMetrics& best) {
   if (block.anyNonNative) {
     return true;
   }
@@ -62,8 +68,6 @@ bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
   const bool shorterOneQ = best.numOneQ < block.numOneQ;
   return shorterTwoQ || (sameTwoQ && shorterOneQ);
 }
-
-} // namespace
 
 /// Emit the chosen synthesis sequence `best` at the location of the window's
 /// first op, rewire the block's trailing SSA values (`wireA`, `wireB`) to

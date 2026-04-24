@@ -11,25 +11,34 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/SingleQubit.h"
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/EulerDecomposition.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/PatternMatch.h>
 
 #include <cassert>
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <limits>
 #include <numbers>
 #include <optional>
 
 namespace mlir::qco::native_synth {
-namespace {
 
 constexpr double PI = std::numbers::pi;
 constexpr double HALF_PI = PI / 2.0;
+
+namespace {
 
 /// Small convenience wrapper to avoid passing rewriter/loc everywhere. Each
 /// method creates the corresponding QCO op threaded through `q` and returns
@@ -95,10 +104,13 @@ struct SingleQubitEmitter {
   }
 };
 
+} // namespace
+
 /// Materialize an `EulerBasis::ZSXX` decomposition (`rz` / `sx` / `x`) into
 /// QCO ops.
-Value emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
-                            const decomposition::QubitGateSequence& seq) {
+static Value
+emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
+                      const decomposition::QubitGateSequence& seq) {
   for (const auto& gate : seq.gates) {
     switch (gate.type) {
     case decomposition::GateKind::RZ:
@@ -126,8 +138,8 @@ Value emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
 /// for the `R` emitter: `Rx(theta)` becomes `R(theta, 0)`, `Ry(theta)`
 /// becomes `R(theta, pi/2)`, Pauli `X`/`Y` become `R(pi, *)`, `I` is a
 /// no-op.
-Value emitEulerSequenceR(SingleQubitEmitter e, Value q,
-                         const decomposition::QubitGateSequence& seq) {
+static Value emitEulerSequenceR(SingleQubitEmitter e, Value q,
+                                const decomposition::QubitGateSequence& seq) {
   for (const auto& gate : seq.gates) {
     switch (gate.type) {
     case decomposition::GateKind::RX:
@@ -163,8 +175,9 @@ Value emitEulerSequenceR(SingleQubitEmitter e, Value q,
 /// a null `Value`; the matrix-based fallback is expected to pick a
 /// different basis in that case. Pauli gates are lowered to the
 /// corresponding `R*(pi)` when their axis is available.
-Value emitEulerSequenceAxisPair(SingleQubitEmitter e, Value q, AxisPair axis,
-                                const decomposition::QubitGateSequence& seq) {
+static Value
+emitEulerSequenceAxisPair(SingleQubitEmitter e, Value q, AxisPair axis,
+                          const decomposition::QubitGateSequence& seq) {
   for (const auto& gate : seq.gates) {
     switch (gate.type) {
     case decomposition::GateKind::RX:
@@ -214,13 +227,11 @@ Value emitEulerSequenceAxisPair(SingleQubitEmitter e, Value q, AxisPair axis,
 
 /// Decompose `matrix` numerically into a gate sequence in `basis` with
 /// zero-rotations pruned (`simplify=true`).
-decomposition::QubitGateSequence runEuler(decomposition::EulerBasis basis,
-                                          const Eigen::Matrix2cd& matrix) {
+static decomposition::QubitGateSequence
+runEuler(decomposition::EulerBasis basis, const Eigen::Matrix2cd& matrix) {
   return decomposition::EulerDecomposition::generateCircuit(
       basis, matrix, /*simplify=*/true, std::nullopt);
 }
-
-} // namespace
 
 Value decomposeToZSXX(IRRewriter& rewriter, Operation* op, Value inQubit,
                       bool supportsDirectRx) {

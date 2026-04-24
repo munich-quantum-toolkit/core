@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
+
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -17,13 +19,13 @@
 #include <llvm/Support/ErrorHandling.h>
 
 #include <optional>
+#include <utility>
 
 namespace mlir::qco::native_synth {
-namespace {
 
 /// Map a single native-gate token (lower-case, no whitespace) to its
 /// `NativeGateKind`.
-std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
+static std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
   return llvm::StringSwitch<std::optional<NativeGateKind>>(name)
       .Case("u", NativeGateKind::U)
       .Case("x", NativeGateKind::X)
@@ -40,7 +42,7 @@ std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
 
 /// Parse a comma-separated native-gate menu (e.g. `"u,cx,rzz"`) into the set
 /// of `NativeGateKind`s it names.
-std::optional<llvm::DenseSet<NativeGateKind>>
+static std::optional<llvm::DenseSet<NativeGateKind>>
 parseGateSet(llvm::StringRef nativeGates) {
   llvm::DenseSet<NativeGateKind> gates;
   llvm::SmallVector<llvm::StringRef> parts;
@@ -61,9 +63,9 @@ parseGateSet(llvm::StringRef nativeGates) {
 
 /// Build a fully-resolved `SingleQubitEmitterSpec` for `mode`, including the
 /// list of Euler bases the matrix-fallback path is allowed to use.
-SingleQubitEmitterSpec makeEmitterSpec(SingleQubitMode mode,
-                                       AxisPair axisPair = AxisPair::RxRz,
-                                       bool supportsDirectRx = false) {
+static SingleQubitEmitterSpec
+makeEmitterSpec(SingleQubitMode mode, AxisPair axisPair = AxisPair::RxRz,
+                bool supportsDirectRx = false) {
   llvm::SmallVector<decomposition::EulerBasis> bases;
   switch (mode) {
   case SingleQubitMode::ZSXX:
@@ -89,10 +91,10 @@ SingleQubitEmitterSpec makeEmitterSpec(SingleQubitMode mode,
 
 /// Append a new emitter for `(mode, axisPair, supportsDirectRx)` to
 /// `emitters` iff no equivalent entry is already present.
-void addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
-                        SingleQubitMode mode,
-                        AxisPair axisPair = AxisPair::RxRz,
-                        bool supportsDirectRx = false) {
+static void
+addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
+                   SingleQubitMode mode, AxisPair axisPair = AxisPair::RxRz,
+                   bool supportsDirectRx = false) {
   const bool present = llvm::any_of(emitters, [&](const auto& e) {
     return e.mode == mode && e.axisPair == axisPair &&
            e.supportsDirectRx == supportsDirectRx;
@@ -103,7 +105,7 @@ void addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
 }
 
 /// Enumerate the native gate kinds that `emitter` may actually emit.
-llvm::SmallVector<NativeGateKind, 4>
+static llvm::SmallVector<NativeGateKind, 4>
 allowedGatesForEmitter(const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
   case SingleQubitMode::ZSXX: {
@@ -133,7 +135,7 @@ allowedGatesForEmitter(const SingleQubitEmitterSpec& emitter) {
 }
 
 /// Enumerate the native entangling gate kinds that `entangler` may emit.
-llvm::SmallVector<NativeGateKind, 2>
+static llvm::SmallVector<NativeGateKind, 2>
 allowedGatesForEntangler(EntanglerBasis entangler) {
   switch (entangler) {
   case EntanglerBasis::None:
@@ -148,7 +150,7 @@ allowedGatesForEntangler(EntanglerBasis entangler) {
 
 /// Rebuild `spec.allowedGates` as the union of the gate kinds produced by
 /// every resolved emitter, entangler, and (optionally) `Rzz`.
-void populateAllowedGates(NativeProfileSpec& spec) {
+static void populateAllowedGates(NativeProfileSpec& spec) {
   spec.allowedGates.clear();
   for (const auto& emitter : spec.singleQubitEmitters) {
     const auto allowed = allowedGatesForEmitter(emitter);
@@ -162,8 +164,6 @@ void populateAllowedGates(NativeProfileSpec& spec) {
     spec.allowedGates.insert(NativeGateKind::Rzz);
   }
 }
-
-} // namespace
 
 llvm::SmallVector<decomposition::EulerBasis>
 getEulerBasesForAxisPair(AxisPair axisPair) {
