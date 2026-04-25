@@ -236,4 +236,4 @@ std::string captureIR(ModuleOp module) {
 }
 
 } // namespace mlir
-  // auto arch = std::make_shared<qco::Architecture>("RigettiNovera", 9, COUPLING);
+  const static qco::Architecture::CouplingSet COUPLING{
