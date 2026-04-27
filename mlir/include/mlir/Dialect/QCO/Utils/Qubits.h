@@ -16,8 +16,8 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
-#include <utility>
 #include <cstdint>
+#include <utility>
 
 namespace mlir::qco {
 class Qubits {
