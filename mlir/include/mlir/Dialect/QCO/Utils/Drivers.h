@@ -112,13 +112,13 @@ using WalkProgramGraphFn =
  * Depending on the template parameter, the function collects the
  * layers in forward or backward direction, respectively. Towards that end,
  * the function traverses the def-use chain of each qubit until a multi-qubit
- * gate (including barriers) is found. If a multi-qubit gate is visited twice,
- * it is considered ready and inserted into the layer. This process is repeated
- * until no more multi-qubit gates are found anymore.
+ * gate (including barriers) is found. If each input qubit of a multi-qubit gate
+ * is visited, it is considered ready. This process is repeated until no more
+ * multi-qubit gates are found anymore.
  *
  * The signature of the callback function is:
  *
- *     (const ReadyRange&, ReleasedOps&) -> WalkResult
+ *     (const ReadyRange& ready, ReleasedOps& released) -> WalkResult
  *
  * The operations inserted into the parameter "released" determine which
  * multi-qubit gates are released in next iteration.
@@ -177,6 +177,9 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
                   return WalkResult::skip(); // Stop at multi-qubit gate.
                 })
+                // AllocOp, StaticOp, and qtensor::ExtractOp are only reachable
+                // on the forward path; backward isActive() halts before
+                // reaching them (decrementing at a source op is a no-op).
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp, ResetOp,
                                MeasureOp, SinkOp, qtensor::InsertOp>([&](auto) {
                   std::ranges::advance(it, Traits::stride());
