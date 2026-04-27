@@ -178,7 +178,7 @@ static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   if (llvm::isa<BarrierOp, GPhaseOp, CtrlOp>(op)) {
     return {};
   }
-  if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
+  if (op->getParentOfType<CtrlOp>()) {
     return {};
   }
   Eigen::Matrix2cd matrix;
@@ -347,7 +347,7 @@ protected:
           if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
             return mlir::WalkResult::advance();
           }
-          if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
+          if (op->getParentOfType<CtrlOp>()) {
             return mlir::WalkResult::advance();
           }
           if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
@@ -384,7 +384,7 @@ protected:
           if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
             return mlir::WalkResult::advance();
           }
-          if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
+          if (op->getParentOfType<CtrlOp>()) {
             return mlir::WalkResult::advance();
           }
           auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
@@ -564,8 +564,9 @@ private:
       if (erasedOps.contains(op)) {
         continue;
       }
-      // Inner `CtrlOp` bodies are handled on the `CtrlOp` itself.
-      if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
+      // Nested regions under any `CtrlOp` ancestor are handled on the `CtrlOp`
+      // itself (e.g. `ctrl { inv { ... } }`).
+      if (op->getParentOfType<CtrlOp>()) {
         continue;
       }
       if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
