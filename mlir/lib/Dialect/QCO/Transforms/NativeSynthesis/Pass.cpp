@@ -80,6 +80,7 @@ using native_synth::SingleQubitMode;
 using native_synth::SingleQubitRewritePlan;
 using native_synth::SingleQubitRewriteStrategy;
 using native_synth::SynthesisCandidate;
+using native_synth::TwoQubitRewritePlan;
 using native_synth::TwoQubitWindowConsolidator;
 using native_synth::usesCxEntangler;
 using native_synth::usesCzEntangler;
@@ -685,9 +686,10 @@ private:
   }
 
   /// Lower an off-menu generic two-qubit op (`RZZ`, `XXPlusYY`, `XXMinusYY`,
-  /// or any arbitrary 4x4 unitary). Handles the `Rzz`-native fast path and
-  /// the `XXPlusMinusYY -> Rzz` specialization first, then falls back to the
-  /// Weyl-based basis-decomposer search.
+  /// or any arbitrary 4x4 unitary). Handles the `Rzz`-native fast path; for
+  /// `XXPlusYY` / `XXMinusYY` with `rzz` on the menu, scores the dedicated
+  /// `XX±YY -> Rzz` rewrite against Weyl basis candidates and picks the
+  /// cheaper option under `weights`.
   static LogicalResult rewriteTwoQubit(IRRewriter& rewriter, Operation* op,
                                        UnitaryOpInterface unitary,
                                        const NativeProfileSpec& spec,
@@ -697,19 +699,57 @@ private:
     }
     if (spec.allowRzz &&
         (llvm::isa<XXPlusYYOp>(op) || llvm::isa<XXMinusYYOp>(op))) {
-      llvm::SmallVector<SynthesisCandidate<bool>> candidates;
-      candidates.push_back(SynthesisCandidate<bool>{
+      llvm::SmallVector<SynthesisCandidate<std::optional<TwoQubitRewritePlan>>,
+                        8>
+          combined;
+      unsigned nextIndex = 0;
+      combined.push_back(SynthesisCandidate<std::optional<TwoQubitRewritePlan>>{
           .candidateClass = CandidateClass::XxPlusMinusViaRzz,
           .metrics = xxPlusMinusYyRzzRewriteScoringMetrics(),
-          .enumerationIndex = 0,
-          .payload = true,
+          .enumerationIndex = nextIndex++,
+          .payload = std::nullopt,
       });
-      if (selectBestCandidate(llvm::ArrayRef(candidates), weights) != nullptr) {
+      if (!spec.entanglerBases.empty()) {
+        for (const auto& cand : collectTwoQubitBasisCandidates(unitary, spec)) {
+          combined.push_back(
+              SynthesisCandidate<std::optional<TwoQubitRewritePlan>>{
+                  .candidateClass = cand.candidateClass,
+                  .metrics = cand.metrics,
+                  .enumerationIndex = nextIndex++,
+                  .payload = cand.payload,
+              });
+        }
+      }
+      if (const auto* best =
+              selectBestCandidate(llvm::ArrayRef(combined), weights)) {
         rewriter.setInsertionPoint(op);
-        if (succeeded(rewriteXXPlusMinusYYViaRzz(rewriter, op))) {
+        if (best->candidateClass == CandidateClass::XxPlusMinusViaRzz) {
+          if (succeeded(rewriteXXPlusMinusYYViaRzz(rewriter, op))) {
+            return success();
+          }
+          if (!spec.entanglerBases.empty()) {
+            const auto basisCandidates =
+                collectTwoQubitBasisCandidates(unitary, spec);
+            if (const auto* basisBest = selectBestCandidate(
+                    llvm::ArrayRef(basisCandidates), weights)) {
+              if (succeeded(emitTwoQubitGateSequence(
+                      rewriter, op, unitary.getInputQubit(0),
+                      unitary.getInputQubit(1), basisBest->payload.sequence))) {
+                return success();
+              }
+            }
+          }
+          return failure();
+        }
+        if (best->payload.has_value() &&
+            succeeded(emitTwoQubitGateSequence(
+                rewriter, op, unitary.getInputQubit(0),
+                unitary.getInputQubit(1), best->payload->sequence))) {
           return success();
         }
       }
+      op->emitError("unsupported two-qubit operation for selected profile");
+      return failure();
     }
     if (!spec.entanglerBases.empty()) {
       const auto candidates = collectTwoQubitBasisCandidates(unitary, spec);

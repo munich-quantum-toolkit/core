@@ -111,7 +111,7 @@ static LogicalResult materializeSingleTwoQubitBlock(
 void collectUnitaryOpsInPreOrder(Operation* root,
                                  llvm::SmallVectorImpl<Operation*>& ops) {
   root->walk([&](Operation* op) {
-    if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
+    if (op->getParentOfType<CtrlOp>()) {
       return;
     }
     if (llvm::isa<UnitaryOpInterface>(op)) {
@@ -162,10 +162,10 @@ void TwoQubitWindowConsolidator::closeBlockOnWire(Value v) {
 /// multi-use fork -- closes the block.
 void TwoQubitWindowConsolidator::process(Operation* op,
                                          const NativeProfileSpec& spec) {
-  // Skip ops nested inside a `CtrlOp`'s body: those are handled as part of
-  // their enclosing controlled op (seen at the parent level), not as
-  // independent two-qubit gates.
-  if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
+  // Skip ops nested anywhere under a `CtrlOp` (e.g. `ctrl { inv { ... } }`):
+  // those are handled as part of the enclosing controlled op, not as
+  // independent gates for window tracking.
+  if (op->getParentOfType<CtrlOp>()) {
     return;
   }
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
