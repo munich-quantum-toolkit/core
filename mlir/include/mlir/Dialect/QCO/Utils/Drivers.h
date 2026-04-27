@@ -62,7 +62,7 @@ LogicalResult walkProgram(Region& region, WalkProgramFn fn) {
         .template Case<StaticOp>(
             [&](StaticOp op) { qubits.add(op.getQubit(), op.getIndex()); })
         .template Case<AllocOp>([&](AllocOp op) { qubits.add(op.getResult()); })
-        .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+        .template Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
           for (const auto& [prevV, nextV] :
                llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
             const auto prevQ = llvm::cast<TypedValue<QubitType>>(prevV);
@@ -152,7 +152,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       while (Traits::isActive(it)) {
         const auto res =
             TypeSwitch<Operation*, WalkResult>(it.operation())
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
                   // If there are fewer wires than the qubit requires inputs,
                   // it's impossible to release the operation. Hence, fail.
                   if (op.getNumQubits() > wires.size()) {
@@ -214,7 +214,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       }
     }
 
-    for (UnitaryOpInterface op : released) {
+    for (const UnitaryOpInterface& op : released) {
       const auto mapIt = pending.find(op);
       assert(mapIt != pending.end());
 
