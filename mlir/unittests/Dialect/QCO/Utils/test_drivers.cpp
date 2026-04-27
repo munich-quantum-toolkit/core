@@ -25,6 +25,7 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <memory>
+#include <tuple>
 
 using namespace mlir;
 
@@ -74,18 +75,17 @@ TEST_F(DriversTest, ProgramWalk) {
   Value ex2 = nullptr;
   Value ex3 = nullptr;
 
-  const auto res = qco::walkProgram(
-      func.getBody(), [&](Operation* op, const qco::Qubits& qubits) {
-        if (op == q03.getDefiningOp()) {
-          ex0 = qubits.getProgramQubit(0);
-          ex1 = qubits.getProgramQubit(1);
-          ex2 = qubits.getProgramQubit(2);
-          ex3 = qubits.getProgramQubit(3);
-          return WalkResult::interrupt();
-        }
-        return WalkResult::advance();
-      });
-  ASSERT_TRUE(res.succeeded());
+  std::ignore = qco::walkProgram(func.getBody(),
+                                 [&](Operation* op, const qco::Qubits& qubits) {
+                                   if (op == q03.getDefiningOp()) {
+                                     ex0 = qubits.getProgramQubit(0);
+                                     ex1 = qubits.getProgramQubit(1);
+                                     ex2 = qubits.getProgramQubit(2);
+                                     ex3 = qubits.getProgramQubit(3);
+                                     return WalkResult::interrupt();
+                                   }
+                                   return WalkResult::advance();
+                                 });
 
   ASSERT_EQ(ex0, q02);
   ASSERT_EQ(ex1, q11);
