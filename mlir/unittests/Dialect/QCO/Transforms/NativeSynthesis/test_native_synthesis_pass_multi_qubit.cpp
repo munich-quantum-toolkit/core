@@ -22,6 +22,7 @@
 #include <mlir/IR/OwningOpRef.h>
 
 #include <array>
+#include <string>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -64,6 +65,7 @@ const std::array<ThreeQubitCircuitCase, 4> THREE_QUBIT_CIRCUIT_CASES{{
 
 } // namespace
 
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest fixture at global scope
 class NativeSynthesisPassMultiQubitTest : public NativeSynthesisPassTest {
 protected:
   template <typename BuildFn>

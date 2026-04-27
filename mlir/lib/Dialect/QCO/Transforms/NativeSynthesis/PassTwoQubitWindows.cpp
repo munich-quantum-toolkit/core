@@ -21,6 +21,7 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/Operation.h>
@@ -30,7 +31,6 @@
 
 #include <cstddef>
 #include <optional>
-#include <ranges>
 #include <utility>
 
 namespace mlir::qco::native_synth {
@@ -101,7 +101,7 @@ static LogicalResult materializeSingleTwoQubitBlock(
   }
   rewriter.replaceAllUsesWith(outA, newA);
   rewriter.replaceAllUsesWith(outB, newB);
-  for (auto* toErase : std::ranges::reverse_view(block.ops)) {
+  for (auto* toErase : llvm::reverse(block.ops)) {
     rewriter.eraseOp(toErase);
   }
   return success();
