@@ -337,6 +337,12 @@ TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
     if (block.ops.size() < 2) {
       continue;
     }
+    // Rewriting earlier windows can erase ops that were captured while
+    // collecting blocks. Skip stale windows instead of touching dangling ops.
+    if (llvm::any_of(block.ops,
+                     [](Operation* op) { return op->getBlock() == nullptr; })) {
+      continue;
+    }
     // Leave `block.accum` unnormalized: Weyl keeps stripped SU(4) phase in
     // the candidate sequence's `globalPhase`.
     const auto candidates =
