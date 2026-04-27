@@ -1,31 +1,31 @@
-# Getting Started With the MQT Compiler Collection
+# Getting Started
 
-## Installing And Building
+## Setup
 
-Make sure to visit the [installation](../installation.md) page which describes how to download the project as well as install and setup MLIR correctly. Once you have done that you can build the project via your favourite IDE or using the following commands:
+Before we actually get started, make sure to visit the [installation](../installation.md) page. There you will find detailed instructions on how to download the project as well as install and setup MLIR correctly. Once this is done, you can compile the project as follows:
 
 ```console
-% cmake -Bbuild \
+$ cmake -B build \
     -DMLIR_DIR=<path to MLIR> \
     -DLLVM_DIR=<path to LLVM> \
     -DCMAKE_BUILD_TYPE:STRING=Release \
     -DBUILD_MQT_CORE_MLIR=ON
-% cd build && cmake --build . --target mqt-cc
+$ cd build && cmake --build . --target mqt-cc
 ```
 
-You can verify your build by running the following command. If everything worked correctly, it should print an usage message.
+If everything worked correctly, the following command should print an usage message.
 
 ```console
-% ./mlir/tools/mqt-cc/mqt-cc --help
+$ ./mlir/tools/mqt-cc/mqt-cc --help
 ```
 
 ## Fundamentals
 
-This section covers the basics of quantum computing and provides a soft introduction to the Multi-Level Intermediate Representation (MLIR) framework. If you are familiar with both quantum computing and MLIR, you may skip this section.
+To keep this tutorial self-contained, this section reviews the fundamentals of quantum computing and the key concepts of the Multi-Level Intermediate Representation (MLIR) framework. If you are familiar with both quantum computing and MLIR, you may skip this section.
 
 ### Quantum Computing
 
-The computational unit of quantum computing is the _qubit_. Whereas a classical bit is either in the state $0$ or $1$, a qubit can exist in a superposition of both states. Mathematically, we denote a qubit as follows.
+Qubits are the fundamental computational unit of quantum computing. Whereas a classical bit is either in the state $0$ or $1$, a qubit can exist in a superposition of both states. Mathematically, we denote a qubit as follows.
 
 ```{math}
 :label: qubit_equation
@@ -38,7 +38,7 @@ These complex numbers determine the probabilities of the outcome of a _measureme
 to $|0\rangle$ with probability $|\alpha|^2$ and to $|1\rangle$ with probability $|\beta|^2$ and returns the respective classical
 outcome ($0$ or $1$).
 
-Unitary matrices, so-called quantum _gates_, modify the qubit's state. For instance, the Hadamard gate $H$ creates an equal superposition state for which a measurement collapses the state to $|0\rangle$ or $|1\rangle$ with probability $0.5$.
+Quantum gates --- mathematically described by unitary matrices --- modify a qubit's state. For instance, the Hadamard gate $H$ creates the equal superposition state for which a measurement collapses the state to $|0\rangle$ or $|1\rangle$ with probability $0.5$.
 
 ```{math}
 :label: hadamard_gate_ket0
@@ -48,7 +48,7 @@ H|1\rangle &= \frac{1}{\sqrt{2}}|0\rangle - \frac{1}{\sqrt{2}}|1\rangle
 \end{aligned}
 ```
 
-Another important one-qubit gate is the $X$ gate, which simply flips the qubit's state.
+Another example of a one-qubit gate is the $X$ gate, which simply flips the qubit's state.
 
 ```{math}
 :label: x_gate
@@ -58,7 +58,7 @@ X|1\rangle &= |0\rangle
 \end{aligned}
 ```
 
-Multiple qubits can be targeted as well. For example, the controlled-X gate acts on two qubits and executes an X gate on the target qubit whenever the control qubit is in the $|1\rangle$ state:
+A quantum gate may target multiple qubits: The controlled-X gate acts on two qubits and applies an X gate on the target qubit, if the control qubit is in the $|1\rangle$ state:
 
 ```{math}
 :label: cx_gate_action
@@ -70,29 +70,29 @@ Multiple qubits can be targeted as well. For example, the controlled-X gate acts
 \end{aligned}
 ```
 
-where the first qubit is the control.
+where the first qubit acts as the control qubit.
 
-We can describe a quantum computation graphically using a quantum _circuit_.
+Quantum circuits describe a quantum computation graphically:
 
 ```{image} ../_static/bell-circuit.svg
 :width: 50%
 :align: center
 ```
 
-The above quantum circuit computes and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$, where the circuit is read from left to right:
+Read from left to right, the above quantum circuit computes and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$:
 
 1. Initialize both qubits in the $|0\rangle$ state.
 2. Apply a Hadamard gate $H$ to the upper qubit. Consequently, this qubit is now in an equal superposition state.
-3. Apply a controlled-X gate to both qubits. The resulting two-qubit state is $|\Phi^{+}\rangle$.
+3. Apply a controlled-X gate to both qubits. The black dot $\bullet{}$ and the $\oplus{}$ represent the control and target qubits, respectively. The resulting two-qubit state is $|\Phi^{+}\rangle$.
 4. Measure both qubits and receive two classical output bits.
 
-With that, we've covered the fundamental building blocks of quantum computing: qubits, measurements, gates, and the circuits that combine them. In the next section, you will learn about the Multi-Level Intermediate Representation (MLIR) framework, bringing us one step closer to our goal of understanding and building a compiler for quantum computing.
+With that, we've already covered the most fundamental building blocks of quantum computing: qubits, measurements, gates, and finally circuits. In the next section, you will learn about the Multi-Level Intermediate Representation (MLIR) framework, bringing us one step closer to our goal of understanding and building quantum compilers.
 
 ### Multi-Level Intermediate Representation (MLIR)
 
-The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware. Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to _lower_ them from higher to lower levels.
+The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware. Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to lower them from higher to lower levels.
 
-The core concept in MLIR is a _dialect_. A dialect groups operations, types, and attributes under a common namespace. A single program may combine multiple dialects, which facilitates code reuse. For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the arith dialect defines integer and floating-point operations. Another essential dialect is the Func dialect, which lets us define and call functions.
+The core concept in MLIR is a dialect. A dialect groups operations, types, and attributes under a common namespace. A single program may combine multiple dialects, which facilitates code reuse. For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the arith dialect defines integer and floating-point operations. Another essential dialect is the Func dialect, which lets us define and call functions.
 
 The following snippet combines the three dialects into a single program which sums up the numbers from 0 to 100.
 
@@ -113,7 +113,7 @@ func.func @main() {
 ```
 
 - The `func.`, `arith.`, `scf.` specifies the dialect's name. For example, `arith.constant` represents the `constant` operation from the arith dialect.
-- The percentage symbol `%` prefixes static single-assignment (SSA) values - a principle, where each variable is assigned exactly once but never reassigned. For instance, the first `arith.constant` operation produces the `%lb` SSA value.
+- The percentage symbol `%` prefixes static single-assignment (SSA) values --- a principle, where each variable is assigned exactly once but never reassigned. For instance, the first `arith.constant` operation produces the `%lb` SSA value.
 - The `: index` and `: i32` specifies the type, where `i32` represents an 32-bit integer while `index` is a special type for loop bounds. The `arith.index_cast` operation casts the `%iv` variable with the type `index` to `i32`.
 - To return the final values after loop termination, we define loop-carried variables via the `iter_args` construct and the return type with the `->` symbol. Inside the loop body, we specify the value for the next iteration via the `scf.yield` operation.
 
@@ -129,8 +129,8 @@ func.func @select(i32, i32, i1) -> i32 {
 ```
 
 - The `^entry` and `^exit` define a _block_, respectively. In MLIR, a block is a list of operations. Moreover, blocks take a list of arguments in an intuitive, function-like, way.
-- The _terminator_, the last operation inside the block, determines the control flow. For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a`, if the `%cond` is `1`. Otherwise, it uses variable `%b`. The `return` operation is another example of a terminator which returns the control flow to the caller of the function.
-- A _region_ combines multiple blocks and is indicated by curly brackets.
+- The terminator, the last operation inside the block, determines the control flow. For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a`, if the `%cond` is `1`. Otherwise, it uses variable `%b`. The `return` operation is another example of a terminator which returns the control flow to the caller of the function.
+- A region combines multiple blocks and is indicated by curly brackets.
 
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
 
@@ -163,9 +163,9 @@ func.func @main() {
   }
 ```
 
-Luckily, we don't have to perform this _conversion_ - the transformation from one dialect to another - per hand. The MLIR framework already implements this and many other conversions between the built-in dialects. Furthermore, we can develop custom conversions using the conversion framework which defines exactly how a transformation must look like and under what circumstances the resulting IR is considered valid.
+Luckily, we don't have to perform this conversion - the transformation from one dialect to another - per hand. The MLIR framework already implements this and many other conversions between the built-in dialects. Furthermore, we can develop custom conversions using the conversion framework which defines exactly how a transformation must look like and under what circumstances the resulting IR is considered valid.
 
-Conversions are a specific instance of transformation _passes_. More generally, a pass in MLIR traverses the IR and optionally modifies it. An example of a non-rewriting pass are analyses passes, which simply collect statistics of the IR. Moreover, multiple passes can be combined into a _pass pipeline_ which executes a series of passes sequentially.
+Conversions are a specific instance of transformation passes. More generally, a pass in MLIR traverses the IR and optionally modifies it. An example of a non-rewriting pass are analyses passes, which simply collect statistics of the IR. Moreover, multiple passes can be combined into a pass pipeline which executes a series of passes sequentially.
 
 That's it! Now that we've also got all the fundamentals covered, we can move on and explore how the MQT Compiler Collection utilizes MLIR to build a compiler for quantum computing.
 
@@ -175,9 +175,9 @@ The MQT Compiler Collection provides tools to optimize and transpile quantum pro
 
 ### Quantum Dialects
 
-The MQT Compiler Collection defines two dialects in MLIR, each with a distinctive purpose. While the Quantum Circuit (QC) dialect is great for exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is - as the name suggests - specifically designed for optimizations. Let's explore their differences.
+The MQT Compiler Collection defines two dialects in MLIR, each with a distinctive purpose. While the Quantum Circuit (QC) dialect is great for exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is --- as the name suggests --- specifically designed for optimizations. Let's explore their differences.
 
-The following snippet allocates and subsequently deallocates one qubit using the `alloc` and `dealloc` operations, respectively.
+The following snippet allocates and subsequently deallocates a dynamic qubit using the `alloc` operation of the respective dialect. In the QC dialect, we can dealloc dynamic qubits using the `dealloc` operation, whereas in the QCO dialect we define end of a qubit's lifespan with the `sink` operation.
 
 ::::{grid} 2
 :::{grid-item}
@@ -195,13 +195,13 @@ qc.dealloc %q0 : !qc.qubit
 ```mlir
 //            QCO
 %q0_0 = qco.alloc : !qco.qubit
-qco.dealloc %q0_0 : !qco.qubit
+qco.sink %q0_0 : !qco.qubit
 ```
 
 :::
 ::::
 
-Alternatively, we can target specific hardware qubits by using the `static` operation. In the QC dialect, static qubits don't require a deallocation.
+To target specific hardware qubits, we use the `static` operation. While static qubits in the QCO dialect still require a `sink` operation, the `dealloc` is omitted for the QC dialect. There is a sound rationale behind this seemingly obscure design choice: The QCO dialect enforces "linear typing", where each (qubit) SSA value is used _exactly_ once. If there wasn't a `sink` operation for qubits in the QCO dialect, this property would be violated.
 
 ::::{grid} 2
 :::{grid-item}
@@ -218,13 +218,13 @@ Alternatively, we can target specific hardware qubits by using the `static` oper
 ```mlir
 //            QCO
 %q0_0 = qco.static 1 : !qco.qubit
-qco.dealloc %q0_0 : !qco.qubit
+qco.sink %q0_0 : !qco.qubit
 ```
 
 :::
 ::::
 
-So far so good. No visible differences. Next, we want to apply the single-qubit Hadamard gate.
+Let's apply Hadamard gate to a qubit next:
 
 ::::{grid} 2
 :::{grid-item}
@@ -244,15 +244,15 @@ qc.dealloc %q0 : !qc.qubit
 //            QCO
 %q0_0 = qco.alloc : !qco.qubit
 %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
-qco.dealloc %q0_1 : !qco.qubit
+qco.sink %q0_1 : !qco.qubit
 ```
 
 :::
 ::::
 
-Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit. We say that the QC dialect uses _reference semantics_ whereas the QCO dialect uses _value semantics_. Semantically, the unitary operations in the QCO dialect return the new state after modifying it. Furthermore, the QCO dialect imposes _linear typing_: each SSA value is used _exactly_ once.
+Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit. We say that the QC dialect uses "reference semantics" whereas the QCO dialect uses "value semantics". Semantically, the unitary operations in the QCO dialect return the new state after modifying it.
 
-Instead of using the Hadamard directly, we can also apply the transformation in terms of X and Y rotations with parameterized gates.
+Instead of the Hadamard, we can also apply the identical transformation as X and Y rotations with parameterized gates as follows:
 
 ::::{grid} 2
 :::{grid-item}
@@ -280,7 +280,7 @@ qc.dealloc %q0 : !qc.qubit
 %q0_0 = qco.alloc : !qco.qubit
 %q0_1 = qco.ry(%theta) %q0_0 : !qco.qubit -> !qco.qubit
 %q0_2 = qco.rx(%phi) %q0_1 : !qco.qubit -> !qco.qubit
-qco.dealloc %q0_2 : !qco.qubit
+qco.sink %q0_2 : !qco.qubit
 ```
 
 :::
@@ -314,7 +314,7 @@ qco.dealloc %q0_2 : !qco.qubit
 :::
 ::::
 
-Moving on from one-qubit gates, let us apply a controlled-X operation. Towards that end, we allocate another qubit and subsequently use the `ctrl` _modifier_ operation of the respective dialect to implement the controlled-X. Thanks to modifiers, we can represent arbitrary (multi-)controlled gates without having to explicitly define them.
+Moving on from one-qubit gates, let us apply a controlled-X operation. Towards that end, we allocate a second qubit and use the `ctrl` modifier operation of the respective dialect to implement the controlled-X. By using modifiers, arbitrary (multi-)controlled gates can be represented without having to explicitly define them.
 
 ::::{grid} 2
 :::{grid-item}
@@ -365,7 +365,7 @@ qco.dealloc %q1_2 : !qco.qubit
 The `qco.ctrl` operation adds a bit of complexity:
 
 - The input target qubit must be explicitly specified and is aliased to the block argument `%arg0`.
-- The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield`.
+- The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield` to return the control flow to the outer scope.
 - Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
 
 The following figure describes the dataflow graph of the above quantum program in the QCO dialect.
@@ -375,17 +375,17 @@ The following figure describes the dataflow graph of the above quantum program i
 :align: center
 ```
 
-Because of the QCO dialect's value semantics, the dependencies between operations are naturally expressed in the dataflow graph. For instance, in the figure above, the controlled-X operation depends on the application of the Hadamard operation. This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two! Consequently, the expressive dataflow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
+Because of the QCO dialect's value semantics, the dependencies between operations are naturally expressed in the data-flow graph. For instance, in the figure above, the controlled-X operation depends on the application of the Hadamard operation. This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two! Consequently, the expressive dataflow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
 
 ### Compilation Flow
 
-The goal of any compiler is to take a (quantum) program and transform into a more efficient and executable one. The MQT Compiler Collection achieves this using the following compilation architecture.
+The goal of any compiler is to take a (quantum) program and transform into a more efficient and executable one. The MQT Compiler Collection achieves this using the following compilation pipeline:
 
 - First, a program in an input quantum language (e.g. OpenQASM) is translated to the QC dialect.
-- Next, the compiler transforms the program to QCO dialect. Subsequently, we apply optimizations, optionally perform transpilation for a target quantum computer, and finally transform the program back to the QC dialect.
+- Next, the compiler transforms the program to QCO dialect. Subsequently, we apply optimizations, optionally perform transpilation for a target quantum architecture, and finally transform the program back to the QC dialect.
 - Optionally, the optimized and transpiled program can be transformed into an exit dialect such as LLVM using the Quantum Intermediate Representation (QIR) extension.
 
-The figure below describes the compilation flow graphically.
+The figure below illustrates the compilation flow graphically.
 
 ```{image} ../_static/compilation-pipeline.svg
 :width: 55%
