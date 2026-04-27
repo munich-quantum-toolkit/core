@@ -108,6 +108,9 @@ static void materializeSingleTwoQubitBlock(
 void collectUnitaryOpsInPreOrder(Operation* root,
                                  llvm::SmallVectorImpl<Operation*>& ops) {
   root->walk([&](Operation* op) {
+    if (llvm::isa_and_present<CtrlOp>(op->getParentOp())) {
+      return;
+    }
     if (llvm::isa<UnitaryOpInterface>(op)) {
       ops.push_back(op);
     }
