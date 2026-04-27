@@ -155,10 +155,10 @@ decomposeTwoQubitFromMatrix(const Eigen::Matrix4cd& matrix,
       std::nullopt, /*approximate=*/false, numBasisUses);
 }
 
-llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>>
+llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>, 0>
 collectSingleQubitCandidates(UnitaryOpInterface unitary,
                              const NativeProfileSpec& spec) {
-  llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>> candidates;
+  llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>, 0> candidates;
   Operation* op = unitary.getOperation();
   unsigned enumerationIndex = 0;
   const auto addCandidate = [&](CandidateClass klass, CandidateMetrics metrics,

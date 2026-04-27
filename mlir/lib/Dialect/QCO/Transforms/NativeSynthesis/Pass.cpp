@@ -26,6 +26,7 @@
 #include <Eigen/Core>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
@@ -44,7 +45,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <ranges>
 #include <utility>
 
 namespace mlir::qco {
@@ -161,7 +161,7 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
     return false;
   }
   rewriter.replaceAllUsesWith(outQubit, replacement);
-  for (auto& op : std::ranges::reverse_view(run.ops)) {
+  for (auto& op : llvm::reverse(run.ops)) {
     Operation* toErase = op.getOperation();
     rewriter.eraseOp(toErase);
   }
@@ -555,10 +555,12 @@ private:
                                        const ScoreWeights& weights) {
     llvm::SmallVector<Operation*, 32> ops;
     collectUnitaryOpsInPreOrder(getOperation(), ops);
+    llvm::DenseSet<Operation*> erasedOps;
 
     for (Operation* op : ops) {
-      // Pointers were collected before this loop.
-      if (op->getBlock() == nullptr) {
+      // Pointers were collected before this loop; avoid dereferencing ops
+      // erased by earlier rewrites in this same sweep.
+      if (erasedOps.contains(op)) {
         continue;
       }
       // Inner `CtrlOp` bodies are handled on the `CtrlOp` itself.
@@ -579,13 +581,18 @@ private:
                   rewriteSingleQubit(rewriter, op, unitary, spec, weights))) {
             return failure();
           }
+          erasedOps.insert(op);
         }
         continue;
       }
 
       if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
+        const bool wasAlreadyNative = ctrlMatchesNativeMenu(ctrl, spec);
         if (failed(rewriteControlled(rewriter, ctrl, spec, weights))) {
           return failure();
+        }
+        if (!wasAlreadyNative) {
+          erasedOps.insert(op);
         }
         continue;
       }
@@ -594,6 +601,7 @@ private:
         if (failed(rewriteTwoQubit(rewriter, op, unitary, spec, weights))) {
           return failure();
         }
+        erasedOps.insert(op);
         continue;
       }
     }
@@ -660,17 +668,20 @@ private:
 
     const auto candidates =
         collectTwoQubitBasisCandidatesFromMatrix(matrix, spec);
-    if (const auto* best =
-            selectBestCandidate(llvm::ArrayRef(candidates), weights)) {
-      rewriter.setInsertionPoint(ctrl);
-      if (succeeded(emitTwoQubitGateSequence(
-              rewriter, ctrl.getOperation(), ctrl.getInputControl(0),
-              ctrl.getInputTarget(0), best->payload.sequence))) {
-        return success();
-      }
+    const auto* best = selectBestCandidate(llvm::ArrayRef(candidates), weights);
+    if (best == nullptr) {
+      ctrl.emitError("controlled gate not allowed by selected profile");
+      return failure();
     }
-    ctrl.emitError("controlled gate not allowed by selected profile");
-    return failure();
+    rewriter.setInsertionPoint(ctrl);
+    if (failed(emitTwoQubitGateSequence(
+            rewriter, ctrl.getOperation(), ctrl.getInputControl(0),
+            ctrl.getInputTarget(0), best->payload.sequence))) {
+      ctrl.emitError(
+          "failed to emit two-qubit gate sequence for selected candidate");
+      return failure();
+    }
+    return success();
   }
 
   /// Lower an off-menu generic two-qubit op (`RZZ`, `XXPlusYY`, `XXMinusYY`,

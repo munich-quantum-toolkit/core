@@ -41,7 +41,7 @@ decomposeTwoQubitFromMatrix(const Eigen::Matrix4cd& matrix,
                             std::optional<std::uint8_t> numBasisUses);
 
 /// Enumerate all direct + matrix-fallback single-qubit rewrite candidates.
-llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>>
+llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>, 0>
 collectSingleQubitCandidates(UnitaryOpInterface unitary,
                              const NativeProfileSpec& spec);
 

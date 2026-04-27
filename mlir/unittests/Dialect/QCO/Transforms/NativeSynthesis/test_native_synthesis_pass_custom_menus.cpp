@@ -30,6 +30,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <numbers>
 #include <random>
@@ -167,8 +168,24 @@ static bool onlyAllowsMenuNativeOps(ModuleOp moduleOp,
       return;
     }
     if (llvm::isa<qco::RXOp>(op)) {
-      // Some decomposition paths treat `rx(pi)` as an `x`-family primitive.
-      ok = spec.allowRX || (spec.allowX && spec.allowSX && spec.allowRZ);
+      if (spec.allowRX) {
+        ok = true;
+        return;
+      }
+      // If `rx` is not native, only the `rx(±pi)` case is accepted as an
+      // X-equivalent under the IBM-basic family fallback.
+      if (!(spec.allowX && spec.allowSX && spec.allowRZ)) {
+        ok = false;
+        return;
+      }
+      auto rx = llvm::cast<qco::RXOp>(op);
+      const auto theta = evaluateConstF64(rx.getTheta());
+      if (!theta.has_value()) {
+        ok = false;
+        return;
+      }
+      const double rem = std::remainder(*theta, 2.0 * std::numbers::pi);
+      ok = std::abs(std::abs(rem) - std::numbers::pi) <= 1e-10;
       return;
     }
     if (llvm::isa<qco::RYOp>(op)) {

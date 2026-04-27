@@ -8,6 +8,12 @@
  * Licensed under the MIT License
  */
 
+/// \file
+/// Single-qubit native-synthesis lowering helpers.
+/// Covers symbolic `decomposeTo*` rewrites plus matrix-fallback synthesis
+/// utilities (`computeSynthesizedSingleQubitLength`,
+/// `emitSynthesizedSingleQubitFromMatrix`).
+
 #pragma once
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
@@ -19,10 +25,6 @@
 
 #include <cstddef>
 #include <optional>
-
-/// Single-qubit lowering: `decomposeTo*` for symbolic matches, plus
-/// `computeSynthesizedSingleQubitLength` /
-/// `emitSynthesizedSingleQubitFromMatrix` for the Euler matrix fallback.
 
 namespace mlir::qco::native_synth {
 

@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 
+#include <Eigen/Core>
 #include <gtest/gtest.h>
 
 #include <cmath>

@@ -21,6 +21,7 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
@@ -333,14 +334,16 @@ LogicalResult
 TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
                                         const NativeProfileSpec& spec,
                                         const ScoreWeights& weights) {
+  llvm::DenseSet<Operation*> erasedOps;
   for (const auto& block : blocks) {
     if (block.ops.size() < 2) {
       continue;
     }
-    // Rewriting earlier windows can erase ops that were captured while
-    // collecting blocks. Skip stale windows instead of touching dangling ops.
+    // Rewriting earlier windows can erase ops captured in later windows.
+    // Track erased op pointers and skip such windows without dereferencing
+    // potentially dangling `Operation*`.
     if (llvm::any_of(block.ops,
-                     [](Operation* op) { return op->getBlock() == nullptr; })) {
+                     [&](Operation* op) { return erasedOps.contains(op); })) {
       continue;
     }
     // Leave `block.accum` unnormalized: Weyl keeps stripped SU(4) phase in
@@ -356,6 +359,9 @@ TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
     }
     if (failed(materializeSingleTwoQubitBlock(rewriter, block, *best))) {
       return failure();
+    }
+    for (Operation* op : block.ops) {
+      erasedOps.insert(op);
     }
   }
   return success();

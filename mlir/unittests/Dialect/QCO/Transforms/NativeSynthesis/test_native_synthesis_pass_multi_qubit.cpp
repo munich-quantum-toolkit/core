@@ -73,36 +73,27 @@ protected:
                                       const char* circuitName = nullptr) {
     const auto profiles = allNineEquivalenceProfiles();
     for (const auto& profileCase : profiles) {
+      const std::string prefix =
+          circuitName != nullptr ? std::string("circuit=") + circuitName + " "
+                                 : "";
       auto expected = buildFn();
       runQcToQco(expected);
       const auto expectedUnitary = computeNQubitUnitaryFromModule(expected);
       ASSERT_TRUE(expectedUnitary.has_value())
-          << (circuitName != nullptr
-                  ? std::string("circuit=") + circuitName + " "
-                  : "")
-          << "native-gates=" << profileCase.nativeGates;
+          << prefix << "native-gates=" << profileCase.nativeGates;
 
       auto synthesized = buildFn();
       runNativeSynthesis(synthesized, profileCase.nativeGates);
       EXPECT_TRUE(profileCase.isNative(synthesized))
-          << (circuitName != nullptr
-                  ? std::string("circuit=") + circuitName + " "
-                  : "")
-          << "native-gates=" << profileCase.nativeGates;
+          << prefix << "native-gates=" << profileCase.nativeGates;
 
       const auto synthesizedUnitary =
           computeNQubitUnitaryFromModule(synthesized);
       ASSERT_TRUE(synthesizedUnitary.has_value())
-          << (circuitName != nullptr
-                  ? std::string("circuit=") + circuitName + " "
-                  : "")
-          << "native-gates=" << profileCase.nativeGates;
+          << prefix << "native-gates=" << profileCase.nativeGates;
       EXPECT_TRUE(
           isEquivalentUpToGlobalPhase(*expectedUnitary, *synthesizedUnitary))
-          << (circuitName != nullptr
-                  ? std::string("circuit=") + circuitName + " "
-                  : "")
-          << "native-gates=" << profileCase.nativeGates;
+          << prefix << "native-gates=" << profileCase.nativeGates;
     }
   }
 };
