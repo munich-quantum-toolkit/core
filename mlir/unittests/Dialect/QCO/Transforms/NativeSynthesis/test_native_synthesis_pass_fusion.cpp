@@ -128,6 +128,15 @@ TEST_P(NativeSynthesisTwoQBlockEquivGenericU3CxTest,
   EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *synthUnitary));
 }
 
+TEST(NativeSynthesisFusionTest,
+     IsEquivalentUpToGlobalPhaseRejectsNearZeroOverlap) {
+  const Eigen::Matrix2cd lhs = Eigen::Matrix2cd::Identity();
+  const Eigen::Matrix2cd rhs =
+      (Eigen::Matrix2cd() << 1.0, 0.0, 0.0, -1.0).finished();
+  // overlap = trace(rhs^H * lhs) = trace(Z) = 0 -> early false branch.
+  EXPECT_FALSE(isEquivalentUpToGlobalPhase(lhs, rhs, 1e-10));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     TwoQBlockEquivGenericU3CxMatrix,
     NativeSynthesisTwoQBlockEquivGenericU3CxTest,

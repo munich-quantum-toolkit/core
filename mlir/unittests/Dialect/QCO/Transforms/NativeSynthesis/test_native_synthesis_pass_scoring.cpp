@@ -184,6 +184,24 @@ TEST(NativeSynthesisScoringTest, IsBetterScoreTreatsCloseWeightedAsTie) {
   EXPECT_TRUE(isBetterScore(b, a));
 }
 
+TEST(NativeSynthesisScoringTest, IsBetterScoreFallsBackToTupleTieBreak) {
+  using namespace mlir::qco::native_synth;
+  // Within tolerance: force the lexicographic tuple comparison path.
+  const CandidateScore lhs{.weighted = 2.0 + 1e-13,
+                           .numTwoQ = 3,
+                           .depth = 4,
+                           .numOneQ = 5,
+                           .tieBreakClass = 6,
+                           .enumerationIndex = 7};
+  const CandidateScore rhs{.weighted = 2.0,
+                           .numTwoQ = 3,
+                           .depth = 4,
+                           .numOneQ = 5,
+                           .tieBreakClass = 6,
+                           .enumerationIndex = 8};
+  EXPECT_TRUE(isBetterScore(lhs, rhs));
+}
+
 TEST(NativeSynthesisScoringTest, SelectBestCandidateReturnsNullForEmptyInput) {
   using namespace mlir::qco::native_synth;
   const llvm::SmallVector<SynthesisCandidate<ScoringTag>, 0> empty;
