@@ -185,10 +185,9 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
                   std::ranges::advance(it, Traits::stride());
                   return WalkResult::advance();
                 })
-                .Default([&](Operation* op) {
+                .Default([&](Operation* op) -> WalkResult {
                   const auto name = op->getName().getStringRef();
                   report_fatal_error("unknown op encountered: " + name);
-                  return WalkResult::interrupt();
                 });
 
         if (res.wasSkipped()) {
