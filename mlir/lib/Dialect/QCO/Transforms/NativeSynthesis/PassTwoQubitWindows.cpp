@@ -191,6 +191,13 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     }
     const Value v0 = unitary.getInputQubit(0);
     const Value v1 = unitary.getInputQubit(1);
+    // Defensive guard: malformed/degenerated two-qubit ops with identical
+    // input wires cannot be represented by this window model. Treat them as
+    // synchronization points and avoid map-iterator aliasing UB below.
+    if (v0 == v1) {
+      closeBlockOnWire(v0);
+      return;
+    }
     auto it0 = wireToBlock.find(v0);
     auto it1 = wireToBlock.find(v1);
     const bool tracked0 = it0 != wireToBlock.end();
@@ -237,7 +244,9 @@ void TwoQubitWindowConsolidator::process(Operation* op,
         block.anyNonNative = true;
       }
       wireToBlock.erase(it0);
-      wireToBlock.erase(it1);
+      if (it1 != it0) {
+        wireToBlock.erase(it1);
+      }
       Value newA;
       Value newB;
       if (v0 == block.wireA) {
