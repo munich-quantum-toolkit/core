@@ -11,6 +11,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -86,15 +87,13 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::init(false));
 
 /**
- * @brief Load and parse a .qasm file
+ * @brief Load and parse a .qasm file via the legacy QuantumComputation path.
  */
-static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
-                                          MLIRContext* context) {
+static OwningOpRef<ModuleOp> loadQASMFileLegacy(llvm::StringRef filename,
+                                                MLIRContext* context) {
   try {
-    // Parse the input QASM file
     const ::qc::QuantumComputation qc =
         qasm3::Importer::importf(filename.str());
-    // Translate to MLIR dialect QC
     return translateQuantumComputationToQC(context, qc);
   } catch (const qasm3::CompilerError& exception) {
     llvm::errs() << "Failed to parse QASM file '" << filename << "': '"
@@ -104,6 +103,17 @@ static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
                  << exception.what() << "'\n";
   }
   return nullptr;
+}
+
+/**
+ * @brief Load and parse a .qasm file, dispatching to the chosen import path.
+ */
+static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
+                                          MLIRContext* context) {
+  if (directImport) {
+    return mlir::qc::translateQASM3ToQC(context, filename.str());
+  }
+  return loadQASMFileLegacy(filename, context);
 }
 
 /**
