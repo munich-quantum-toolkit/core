@@ -169,6 +169,18 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
   return true;
 }
 
+/// True when `op` lives in a `ctrl`/`inv` region body (not the shell op).
+/// Skips nested unitaries so they are handled via the enclosing modifier.
+static bool isHiddenInsideCtrlOrInvBody(Operation* op) {
+  if (op->getParentOfType<CtrlOp>()) {
+    return true;
+  }
+  if (!llvm::isa<InvOp>(op) && op->getParentOfType<InvOp>()) {
+    return true;
+  }
+  return false;
+}
+
 /// Single-qubit op eligible for fusion (constant `2×2`, not under `ctrl`).
 static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
@@ -178,7 +190,7 @@ static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   if (llvm::isa<BarrierOp, GPhaseOp, CtrlOp>(op)) {
     return {};
   }
-  if (op->getParentOfType<CtrlOp>()) {
+  if (isHiddenInsideCtrlOrInvBody(op)) {
     return {};
   }
   Eigen::Matrix2cd matrix;
@@ -347,7 +359,7 @@ protected:
           if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
             return mlir::WalkResult::advance();
           }
-          if (op->getParentOfType<CtrlOp>()) {
+          if (isHiddenInsideCtrlOrInvBody(op)) {
             return mlir::WalkResult::advance();
           }
           if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
@@ -384,7 +396,7 @@ protected:
           if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
             return mlir::WalkResult::advance();
           }
-          if (op->getParentOfType<CtrlOp>()) {
+          if (isHiddenInsideCtrlOrInvBody(op)) {
             return mlir::WalkResult::advance();
           }
           auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
@@ -493,7 +505,8 @@ private:
     } else {
       newTheta = arith::AddFOp::create(rewriter, loc, theta1, theta2);
     }
-    rz1.getThetaMutable().assign(newTheta);
+    rewriter.modifyOpInPlace(rz1,
+                             [&] { rz1.getThetaMutable().assign(newTheta); });
     rewriter.replaceOp(partner, partner->getOperand(0));
     return true;
   }
@@ -564,9 +577,9 @@ private:
       if (erasedOps.contains(op)) {
         continue;
       }
-      // Nested regions under any `CtrlOp` ancestor are handled on the `CtrlOp`
-      // itself (e.g. `ctrl { inv { ... } }`).
-      if (op->getParentOfType<CtrlOp>()) {
+      // Nested regions under `ctrl` / `inv` are handled on the shell op
+      // (e.g. `ctrl { inv { ... } }`, `inv { ... }`).
+      if (isHiddenInsideCtrlOrInvBody(op)) {
         continue;
       }
       if (llvm::isa<BarrierOp, GPhaseOp>(op)) {

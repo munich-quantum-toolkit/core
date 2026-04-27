@@ -114,6 +114,9 @@ void collectUnitaryOpsInPreOrder(Operation* root,
     if (op->getParentOfType<CtrlOp>()) {
       return;
     }
+    if (!llvm::isa<InvOp>(op) && op->getParentOfType<InvOp>()) {
+      return;
+    }
     if (llvm::isa<UnitaryOpInterface>(op)) {
       ops.push_back(op);
     }
@@ -162,10 +165,13 @@ void TwoQubitWindowConsolidator::closeBlockOnWire(Value v) {
 /// multi-use fork -- closes the block.
 void TwoQubitWindowConsolidator::process(Operation* op,
                                          const NativeProfileSpec& spec) {
-  // Skip ops nested anywhere under a `CtrlOp` (e.g. `ctrl { inv { ... } }`):
-  // those are handled as part of the enclosing controlled op, not as
-  // independent gates for window tracking.
+  // Skip ops nested under `ctrl` / `inv` (e.g. `ctrl { inv { ... } }`,
+  // `inv { ... }`): handled via the shell op, not as independent gates for
+  // window tracking.
   if (op->getParentOfType<CtrlOp>()) {
+    return;
+  }
+  if (!llvm::isa<InvOp>(op) && op->getParentOfType<InvOp>()) {
     return;
   }
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
@@ -245,9 +251,11 @@ void TwoQubitWindowConsolidator::process(Operation* op,
       if (!isNativeTwoQubitOp(op, spec)) {
         block.anyNonNative = true;
       }
-      wireToBlock.erase(it0);
-      if (it1 != it0) {
-        wireToBlock.erase(it1);
+      const Value eraseKeyA = it0->first;
+      const Value eraseKeyB = it1->first;
+      wireToBlock.erase(eraseKeyA);
+      if (eraseKeyA != eraseKeyB) {
+        wireToBlock.erase(eraseKeyB);
       }
       Value newA;
       Value newB;
