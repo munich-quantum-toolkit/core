@@ -60,10 +60,11 @@ inline bool isBetterScore(const CandidateScore& lhs,
   if (std::abs(lhs.weighted - rhs.weighted) > scoreTolerance) {
     return lhs.weighted < rhs.weighted;
   }
-  return std::tie(lhs.numTwoQ, lhs.depth, lhs.numOneQ, lhs.tieBreakClass,
-                  lhs.enumerationIndex) <
-         std::tie(rhs.numTwoQ, rhs.depth, rhs.numOneQ, rhs.tieBreakClass,
-                  rhs.enumerationIndex);
+  const auto lhsTie = std::tie(lhs.numTwoQ, lhs.depth, lhs.numOneQ,
+                               lhs.tieBreakClass, lhs.enumerationIndex);
+  const auto rhsTie = std::tie(rhs.numTwoQ, rhs.depth, rhs.numOneQ,
+                               rhs.tieBreakClass, rhs.enumerationIndex);
+  return lhsTie < rhsTie;
 }
 
 /// Return the best candidate by `isBetterScore`, or `nullptr` on empty input.
