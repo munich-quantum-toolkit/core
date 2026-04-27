@@ -308,18 +308,18 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
 // and swap adjacent pairs in each return vector so ``addEulerDecomposition``
 // maps matrices to the same wires as the upstream decomposer. ``decomp0``
 // cancels to the unswapped formula.
-llvm::SmallVector<Eigen::Matrix2cd, 0>
+TwoQubitLocalUnitaryList
 TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
-  return {
+  return TwoQubitLocalUnitaryList{
       target.k1r() * target.k2r(),
       target.k1l() * target.k2l(),
   };
 }
 
-llvm::SmallVector<Eigen::Matrix2cd, 0> TwoQubitBasisDecomposer::decomp1(
+TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp1(
     const TwoQubitWeylDecomposition& target) const {
   // may not work for z != 0 and c != 0 (not always in Weyl chamber)
-  return {
+  return TwoQubitLocalUnitaryList{
       basisDecomposer.k2l().transpose().conjugate() * target.k2r(),
       basisDecomposer.k2r().transpose().conjugate() * target.k2l(),
       target.k1r() * basisDecomposer.k1l().transpose().conjugate(),
@@ -327,15 +327,14 @@ llvm::SmallVector<Eigen::Matrix2cd, 0> TwoQubitBasisDecomposer::decomp1(
   };
 }
 
-llvm::SmallVector<Eigen::Matrix2cd, 0>
-TwoQubitBasisDecomposer::decomp2Supercontrolled(
+TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp2Supercontrolled(
     const TwoQubitWeylDecomposition& target) const {
   if (!isSuperControlled) {
     llvm::reportFatalInternalError(
         "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
         "- no guarantee for exact decomposition with two basis gates");
   }
-  return {
+  return TwoQubitLocalUnitaryList{
       q2l * target.k2r(),
       q2r * target.k2l(),
       q1la * rzMatrix(-2. * target.a()) * q1lb,
@@ -345,15 +344,14 @@ TwoQubitBasisDecomposer::decomp2Supercontrolled(
   };
 }
 
-llvm::SmallVector<Eigen::Matrix2cd, 0>
-TwoQubitBasisDecomposer::decomp3Supercontrolled(
+TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp3Supercontrolled(
     const TwoQubitWeylDecomposition& target) const {
   if (!isSuperControlled) {
     llvm::reportFatalInternalError(
         "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
         "- no guarantee for exact decomposition with three basis gates");
   }
-  return {
+  return TwoQubitLocalUnitaryList{
       u3l * target.k2r(),
       u3r * target.k2l(),
       u2la * rzMatrix(-2. * target.a()) * u2lb,

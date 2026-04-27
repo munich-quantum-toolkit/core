@@ -22,8 +22,14 @@
 #include <cstdint>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace mlir::qco::decomposition {
+
+/// Intermediate single-qubit ``2×2`` unitaries produced while expanding a
+/// two-qubit basis decomposition.
+using TwoQubitLocalUnitaryList =
+    std::vector<Eigen::Matrix2cd, Eigen::aligned_allocator<Eigen::Matrix2cd>>;
 
 /**
  * Decomposer that must be initialized with a two-qubit basis gate that will
@@ -116,10 +122,10 @@ protected:
    *
    * which is optimal for all targets and bases
    *
-   * @note The inline storage of llvm::SmallVector must be set to 0 to ensure
-   *       correct Eigen alignment via heap allocation
+   * @note Stored in ``TwoQubitLocalUnitaryList`` so each matrix is allocated
+   *       with Eigen's required alignment (portable across hosts / CRTs).
    */
-  [[nodiscard]] static llvm::SmallVector<Eigen::Matrix2cd, 0>
+  [[nodiscard]] static TwoQubitLocalUnitaryList
   decomp0(const decomposition::TwoQubitWeylDecomposition& target);
 
   /**
@@ -136,10 +142,9 @@ protected:
    *
    * which is optimal for all targets and bases with ``z==0`` or ``c==0``.
    *
-   * @note The inline storage of llvm::SmallVector must be set to 0 to ensure
-   *       correct Eigen alignment via heap allocation
+   * @note Stored in ``TwoQubitLocalUnitaryList`` (see ``decomp0``).
    */
-  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd, 0>
+  [[nodiscard]] TwoQubitLocalUnitaryList
   decomp1(const decomposition::TwoQubitWeylDecomposition& target) const;
 
   /**
@@ -165,10 +170,9 @@ protected:
    * and target :math:`\sim U_d(x, y, 0)`. No guarantees for
    * non-supercontrolled basis.
    *
-   * @note The inline storage of llvm::SmallVector must be set to 0 to ensure
-   *       correct Eigen alignment via heap allocation
+   * @note Stored in ``TwoQubitLocalUnitaryList`` (see ``decomp0``).
    */
-  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd, 0> decomp2Supercontrolled(
+  [[nodiscard]] TwoQubitLocalUnitaryList decomp2Supercontrolled(
       const decomposition::TwoQubitWeylDecomposition& target) const;
 
   /**
@@ -180,10 +184,9 @@ protected:
    * :math:`\sim U_d(\pi/4, b, 0)`, all b, and any target. No guarantees for
    * non-supercontrolled basis.
    *
-   * @note The inline storage of llvm::SmallVector must be set to 0 to ensure
-   *       correct Eigen alignment via heap allocation
+   * @note Stored in ``TwoQubitLocalUnitaryList`` (see ``decomp0``).
    */
-  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd, 0> decomp3Supercontrolled(
+  [[nodiscard]] TwoQubitLocalUnitaryList decomp3Supercontrolled(
       const decomposition::TwoQubitWeylDecomposition& target) const;
 
   /**

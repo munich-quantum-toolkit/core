@@ -127,7 +127,9 @@ void TwoQubitWindowConsolidator::closeBlock(size_t idx) {
   }
   block.open = false;
   wireToBlock.erase(block.wireA);
-  wireToBlock.erase(block.wireB);
+  if (block.wireB != block.wireA) {
+    wireToBlock.erase(block.wireB);
+  }
 }
 
 void TwoQubitWindowConsolidator::closeBlockOnWire(Value v) {
