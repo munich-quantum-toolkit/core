@@ -447,12 +447,16 @@ private:
   /// guard intentionally rejects two adjacent `rz`s with nothing in between
   /// -- that case is handled by `fuseOneQubitRuns` above.
   static bool tryFuseRzForwardThroughCtrls(IRRewriter& rewriter, RZOp rz1) {
-    Value v = rz1.getQubitOut();
+    Value v = rz1->getResult(0);
+    if (!llvm::isa<qco::QubitType>(v.getType())) {
+      return false;
+    }
     RZOp partner;
     unsigned hops = 0;
     while (v.hasOneUse()) {
       Operation* user = *v.getUsers().begin();
-      if (auto rz2 = llvm::dyn_cast<RZOp>(user); rz2 && rz2.getQubitIn() == v) {
+      if (auto rz2 = llvm::dyn_cast<RZOp>(user);
+          rz2 && rz2->getOperand(0) == v) {
         partner = rz2;
         break;
       }
@@ -485,7 +489,7 @@ private:
       newTheta = arith::AddFOp::create(rewriter, loc, theta1, theta2);
     }
     rz1.getThetaMutable().assign(newTheta);
-    rewriter.replaceOp(partner, partner.getQubitIn());
+    rewriter.replaceOp(partner, partner->getOperand(0));
     return true;
   }
 
