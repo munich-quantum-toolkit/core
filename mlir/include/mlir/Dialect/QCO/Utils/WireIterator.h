@@ -113,8 +113,7 @@ template <> struct WireTraversalTraits<WireDirection::Backward> {
   static bool isActive(const WireIterator& it) {
     return it.operation() == nullptr
                ? false
-               : !isa<qco::AllocOp, StaticOp, qtensor::ExtractOp>(
-                     it.operation());
+               : !isa<AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
   }
 };
 } // namespace mlir::qco

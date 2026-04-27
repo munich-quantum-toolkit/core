@@ -67,7 +67,7 @@ TEST_F(DriversTest, ProgramWalk) {
   builder.sink(q32);
 
   auto mod = builder.finalize();
-  auto func = *(mod->getOps<mlir::func::FuncOp>().begin());
+  auto func = *(mod->getOps<func::FuncOp>().begin());
 
   Value ex0 = nullptr;
   Value ex1 = nullptr;
@@ -119,7 +119,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   builder.measure(q31);
 
   auto mod = builder.finalize();
-  auto func = *(mod->getOps<mlir::func::FuncOp>().begin());
+  auto func = *(mod->getOps<func::FuncOp>().begin());
 
   // Collect wires.
   SmallVector<qco::WireIterator> wires;
