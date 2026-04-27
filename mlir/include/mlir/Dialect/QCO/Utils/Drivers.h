@@ -48,12 +48,11 @@ using WalkProgramFn = function_ref<WalkResult(Operation*, Qubits&)>;
  * @returns success(), if all operations have been visited.
  */
 template <WalkOrder Order = WalkOrder::PreOrder>
-LogicalResult walkProgram(Region& region, WalkProgramFn fn) {
+LogicalResult walkProgram(Region& region, const WalkProgramFn& fn) {
   Qubits qubits;
   for (Operation& curr : region.getOps()) {
     if constexpr (Order == WalkOrder::PreOrder) {
-      const auto res = fn(&curr, qubits);
-      if (res.wasInterrupted()) {
+      if (fn(&curr, qubits).wasInterrupted()) {
         return failure();
       }
     }
@@ -80,8 +79,7 @@ LogicalResult walkProgram(Region& region, WalkProgramFn fn) {
             [&](SinkOp op) { qubits.remove(op.getQubit()); });
 
     if constexpr (Order == WalkOrder::PostOrder) {
-      const auto res = fn(&curr, qubits);
-      if (res.wasInterrupted()) {
+      if (fn(&curr, qubits).wasInterrupted()) {
         return failure();
       }
     }
