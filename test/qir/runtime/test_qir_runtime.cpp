@@ -30,6 +30,8 @@
 
 namespace qir {
 
+namespace {
+
 class QIRRuntimeTest : public testing::Test {
 protected:
   std::stringstream buffer;
@@ -37,6 +39,8 @@ protected:
   void SetUp() override { old = std::cout.rdbuf(buffer.rdbuf()); }
   void TearDown() override { std::cout.rdbuf(old); }
 };
+
+} // namespace
 
 TEST_F(QIRRuntimeTest, XGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
@@ -501,7 +505,11 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__rt__array_update_reference_count(rArr, -1);
 }
 
+namespace {
+
 class QIRFilesTest : public ::testing::TestWithParam<std::filesystem::path> {};
+
+} // namespace
 
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(

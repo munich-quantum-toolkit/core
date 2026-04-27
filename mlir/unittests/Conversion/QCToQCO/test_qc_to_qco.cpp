@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -22,6 +23,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -34,6 +36,8 @@
 
 using namespace mlir;
 
+namespace {
+
 struct QCToQCOTestCase {
   std::string name;
   mqt::test::NamedBuilder<qc::QCProgramBuilder> programBuilder;
@@ -43,6 +47,14 @@ struct QCToQCOTestCase {
                                   const QCToQCOTestCase& info);
 };
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const QCToQCOTestCase& info) {
+  return os << "QCToQCO{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
+
 class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
@@ -50,20 +62,16 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
-                    func::FuncDialect>();
+    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                    arith::ArithDialect, func::FuncDialect,
+                    memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const QCToQCOTestCase& info) {
-  return os << "QCToQCO{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
+} // namespace
 
 static LogicalResult runQCToQCOConversion(ModuleOp module) {
   PassManager pm(module.getContext());
@@ -81,7 +89,7 @@ TEST_P(QCToQCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -89,7 +97,7 @@ TEST_P(QCToQCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -99,13 +107,40 @@ TEST_P(QCToQCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
+
+/// \name QCToQCO/QubitManagement/StaticOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCStaticOpTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
+                        MQT_NAMED_BUILDER(qco::staticQubits)},
+        QCToQCOTestCase{"StaticQubitsWithOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithOps)},
+        QCToQCOTestCase{"StaticQubitsWithParametricOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithParametricOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithParametricOps)},
+        QCToQCOTestCase{"StaticQubitsWithTwoTargetOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithTwoTargetOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithTwoTargetOps)},
+        QCToQCOTestCase{"StaticQubitsWithCtrl",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithCtrl),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithCtrl)},
+        QCToQCOTestCase{"StaticQubitsWithInv",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithInv),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithInv)},
+        QCToQCOTestCase{"AllocDeallocPair",
+                        MQT_NAMED_BUILDER(qc::allocDeallocPair),
+                        MQT_NAMED_BUILDER(qco::allocSinkPair)}));
+/// @}
 
 /// \name QCToQCO/Modifiers/InvOp.cpp
 /// @{
@@ -186,7 +221,10 @@ INSTANTIATE_TEST_SUITE_P(
                     QCToQCOTestCase{
                         "MultipleControlledH",
                         MQT_NAMED_BUILDER(qc::multipleControlledH),
-                        MQT_NAMED_BUILDER(qco::multipleControlledH)}));
+                        MQT_NAMED_BUILDER(qco::multipleControlledH)},
+                    QCToQCOTestCase{"HWithoutRegister",
+                                    MQT_NAMED_BUILDER(qc::hWithoutRegister),
+                                    MQT_NAMED_BUILDER(qco::hWithoutRegister)}));
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/IdOp.cpp
@@ -575,8 +613,10 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
-            MQT_NAMED_BUILDER(
-                qco::multipleClassicalRegistersAndMeasurements)}));
+            MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
+        QCToQCOTestCase{"MeasurementWithoutRegisters",
+                        MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
+                        MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
 /// @}
 
 /// \name QCToQCO/Operations/ResetOp.cpp

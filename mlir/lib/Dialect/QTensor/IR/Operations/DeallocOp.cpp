@@ -8,21 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
-using namespace mlir::qco;
+using namespace mlir::qtensor;
 
 namespace {
 
 /**
- * @brief Remove matching allocation and deallocation pairs without operations
+ * @brief Remove matching allocation-deallocation pairs without operations
  * between them.
  */
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
@@ -30,15 +28,16 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
 
   LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an AllocOp or a StaticOp
-    auto* defOp = op.getQubit().getDefiningOp();
-    if (!llvm::isa<AllocOp, StaticOp>(defOp)) {
+    // Check whether the tensor is directly defined by a qtensor::AllocOp.
+    auto tensor = op.getTensor();
+    auto allocOp = tensor.getDefiningOp<AllocOp>();
+    if (!allocOp) {
       return failure();
     }
 
-    // Remove the AllocOp/StaticOp and the DeallocOp
+    // Remove the AllocOp and the DeallocOp.
     rewriter.eraseOp(op);
-    rewriter.eraseOp(defOp);
+    rewriter.eraseOp(allocOp);
     return success();
   }
 };

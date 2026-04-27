@@ -8,5 +8,6 @@
 
 add_mlir_dialect(QCOps qc)
 add_mlir_interface(QCInterfaces)
-add_mlir_doc(QCOps MLIRQCDialect Dialects/ -gen-dialect-doc)
-add_mlir_doc(QCInterfaces MLIRQCInterfaces Dialects/ -gen-op-interface-docs -dialect=qc)
+
+add_mlir_doc(QCOps QCDialect Dialects/ -gen-dialect-doc)
+add_mlir_doc(QCInterfaces QCInterfaces Dialects/ -gen-op-interface-docs -dialect=qc)

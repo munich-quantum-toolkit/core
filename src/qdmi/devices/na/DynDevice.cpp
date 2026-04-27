@@ -9,7 +9,8 @@
  */
 
 /**
- * @file This file is a thin wrapper around MQT's Neutral Atom QDMI Device with
+ * @file DynDevice.cpp
+ * @brief This file is a thin wrapper around MQT's Neutral Atom QDMI Device with
  * another prefix.
  */
 
@@ -125,7 +126,7 @@ int MQT_NA_DYN_QDMI_device_session_query_device_property(
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       static_cast<char*>(value)[size - 1] = '\0';
     }
-    if ((sizeRet) != nullptr) {
+    if (sizeRet != nullptr) {
       *sizeRet = 27;
     }
   }

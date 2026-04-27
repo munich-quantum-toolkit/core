@@ -304,12 +304,12 @@ std::size_t std::hash<qc::IfElseOperation>::operator()(
   }
   if (const auto& reg = op.getControlRegister(); reg.has_value()) {
     assert(!op.getControlBit().has_value());
-    qc::hashCombine(seed, std::hash<qc::ClassicalRegister>{}(reg.value()));
+    qc::hashCombine(seed, std::hash<qc::ClassicalRegister>{}(*reg));
     qc::hashCombine(seed, op.getExpectedValueRegister());
   }
   if (const auto& bit = op.getControlBit(); bit.has_value()) {
     assert(!op.getControlRegister().has_value());
-    qc::hashCombine(seed, bit.value());
+    qc::hashCombine(seed, *bit);
     qc::hashCombine(seed, static_cast<std::size_t>(op.getExpectedValueBit()));
   }
   qc::hashCombine(seed, op.getComparisonKind());

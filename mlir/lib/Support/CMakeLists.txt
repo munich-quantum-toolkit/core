@@ -24,7 +24,10 @@ add_mlir_library(
   MLIRLLVMDialect
   MLIRFuncDialect
   MLIRArithDialect
-  DISABLE_INSTALL)
+  MLIRQCTransforms
+  MLIRQIRTransforms
+  MLIRQTensorTransforms
+  MLIRQTensorDialect)
 
 mqt_mlir_target_use_project_options(MLIRSupportMQT)
 

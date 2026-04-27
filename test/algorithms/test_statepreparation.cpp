@@ -27,6 +27,8 @@
 
 constexpr double EPS = 1e-10;
 
+namespace {
+
 class StatePreparation
     : public testing::TestWithParam<std::vector<std::complex<double>>> {
 protected:
@@ -35,6 +37,8 @@ protected:
   void TearDown() override {}
   void SetUp() override { amplitudes = GetParam(); }
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     StatePreparation, StatePreparation,

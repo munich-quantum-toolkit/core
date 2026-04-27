@@ -30,8 +30,7 @@ add_mlir_dialect_library(
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
   PUBLIC
-  Eigen3::Eigen
-  DISABLE_INSTALL)
+  Eigen3::Eigen)
 
 mqt_mlir_target_use_project_options(MLIRQCODialect)
 

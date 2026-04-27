@@ -10,4 +10,4 @@ set(LLVM_TARGET_DEFINITIONS QCToQCO.td)
 mlir_tablegen(QCToQCO.h.inc -gen-pass-decls -name QCToQCO)
 add_public_tablegen_target(QCToQCOIncGen)
 
-add_mlir_doc(QCToQCO MLIRQCToQCO Conversions/ -gen-pass-doc)
+add_mlir_doc(QCToQCO QCToQCO Conversions/ -gen-pass-doc)

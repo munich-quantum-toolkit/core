@@ -16,10 +16,11 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRQCDialect
   MLIRQCODialect
+  MLIRQTensorDialect
   MLIRArithDialect
   MLIRFuncDialect
+  MLIRMemRefDialect
   MLIRTransforms
-  MLIRFuncTransforms
-  DISABLE_INSTALL)
+  MLIRFuncTransforms)
 
 mqt_mlir_target_use_project_options(MLIRQCToQCO)

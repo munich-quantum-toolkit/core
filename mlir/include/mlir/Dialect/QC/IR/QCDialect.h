@@ -52,6 +52,7 @@ public:
     static size_t getNumQubits() { return T; }
     static size_t getNumTargets() { return T; }
     static size_t getNumControls() { return 0; }
+    static ValueRange getControls() { return {}; }
 
     Value getQubit(size_t i) {
       if constexpr (T == 0) {
@@ -71,6 +72,9 @@ public:
       }
       return this->getOperation()->getOperand(i);
     }
+    ValueRange getTargets() {
+      return this->getOperation()->getOperands().slice(0, T);
+    }
 
     static Value getControl([[maybe_unused]] size_t i) {
       llvm::reportFatalUsageError("Operation does not have controls");
@@ -83,6 +87,10 @@ public:
         llvm::reportFatalUsageError("Parameter index out of bounds");
       }
       return this->getOperation()->getOperand(T + i);
+    }
+
+    ValueRange getParameters() {
+      return this->getOperation()->getOperands().slice(T, P);
     }
   };
 };

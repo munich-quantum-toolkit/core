@@ -175,7 +175,7 @@ VectorDD makeBasisState(const std::size_t n,
     }
     f = dd.makeDDNode(v, edges);
   }
-  const vEdge e{f.p, dd.cn.lookup(f.w)};
+  const vEdge e{.p = f.p, .w = dd.cn.lookup(f.w)};
   dd.incRef(e);
   return e;
 }
@@ -260,7 +260,7 @@ VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
 
   const vCachedEdge state = makeStateFromVector(vec.begin(), vec.end(), v, dd);
 
-  const vEdge ret{state.p, dd.cn.lookup(state.w)};
+  const vEdge ret{.p = state.p, .w = dd.cn.lookup(state.w)};
   dd.incRef(ret);
   return ret;
 }
@@ -358,7 +358,7 @@ VectorDD generateRandomState(const std::size_t levels,
   }
 
   // Below only contains one element: the root.
-  vEdge ret{curr.at(0).p, Complex::one()};
+  vEdge ret{.p = curr.at(0).p, .w = Complex::one()};
   dd.incRef(ret);
   return ret;
 }

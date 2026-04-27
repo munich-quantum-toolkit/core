@@ -27,6 +27,20 @@ If you want to cite this article, please use the following BibTeX entry:
 }
 ```
 
+For an overview of the compilation framework built on MLIR, see {cite:p}`MQTCompilerCollection2026`.
+If you want to cite the MQT Compiler Collection, please use the following BibTeX entry:
+
+```bibtex
+@article{MQTCompilerCollection2026,
+  title        = {The {{MQT Compiler Collection}}: {{A}} Blueprint for a Future-Proof Quantum-Classical Compilation Framework},
+  author       = {Burgholzer, Lukas and Haag, Daniel and Stade, Yannick and Rovara, Damian and Hopf, Patrick and Wille, Robert},
+  year         = {2026},
+  booktitle    = {Design, Automation and Test in Europe},
+  eprint       = {2604.08674},
+  eprinttype   = {arxiv},
+}
+```
+
 *MQT Core* is part of the Munich Quantum Toolkit, which is described in {cite:p}`mqt`.
 If you want to cite the Munich Quantum Toolkit, please use the following BibTeX entry:
 

@@ -242,48 +242,4 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
   return success();
 }
 
-/**
- * @brief Remove a trivial one-target, one-parameter operation
- *
- * @tparam OpType The type of the operation to be checked.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the removal.
- */
-template <typename OpType>
-mlir::LogicalResult
-removeTrivialOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
-  const auto param = utils::valueToDouble(op.getOperand(1));
-  if (!param || std::abs(*param) > utils::TOLERANCE) {
-    return failure();
-  }
-
-  // Trivialize operation
-  rewriter.replaceOp(op, op.getInputQubit(0));
-
-  return success();
-}
-
-/**
- * @brief Remove a trivial two-target, one-parameter operation
- *
- * @tparam OpType The type of the operation to be checked.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the removal.
- */
-template <typename OpType>
-mlir::LogicalResult
-removeTrivialTwoTargetOneParameter(OpType op, PatternRewriter& rewriter) {
-  const auto param = utils::valueToDouble(op.getOperand(2));
-  if (!param || std::abs(*param) > utils::TOLERANCE) {
-    return failure();
-  }
-
-  // Trivialize operation
-  rewriter.replaceOp(op, op.getInputQubits());
-
-  return success();
-}
-
 } // namespace mlir::qco

@@ -19,6 +19,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cmath>
 #include <complex>
 #include <optional>
 #include <variant>
@@ -42,18 +43,6 @@ struct MergeSubsequentRZ final : OpRewritePattern<RZOp> {
   }
 };
 
-/**
- * @brief Remove trivial RZ operations.
- */
-struct RemoveTrivialRZ final : OpRewritePattern<RZOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RZOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTrivialOneTargetOneParameter(op, rewriter);
-  }
-};
-
 } // namespace
 
 void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -63,9 +52,17 @@ void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
+OpFoldResult RZOp::fold(FoldAdaptor /*adaptor*/) {
+  if (const auto theta = valueToDouble(getTheta());
+      theta && std::abs(*theta) <= TOLERANCE) {
+    return getInputQubit(0);
+  }
+  return {};
+}
+
 void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<MergeSubsequentRZ, RemoveTrivialRZ>(context);
+  results.add<MergeSubsequentRZ>(context);
 }
 
 std::optional<Eigen::Matrix2cd> RZOp::getUnitaryMatrix() {

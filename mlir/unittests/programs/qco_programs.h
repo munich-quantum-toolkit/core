@@ -33,8 +33,33 @@ void allocLargeRegister(QCOProgramBuilder& b);
 /// Allocates two inline qubits.
 void staticQubits(QCOProgramBuilder& b);
 
-/// Allocates and explicitly deallocates a single qubit.
-void allocDeallocPair(QCOProgramBuilder& b);
+/// Allocates two static qubits and applies operations.
+void staticQubitsWithOps(QCOProgramBuilder& b);
+
+/// Allocates two static qubits and applies parametric gates.
+void staticQubitsWithParametricOps(QCOProgramBuilder& b);
+
+/// Allocates two static qubits and applies a two-target gate.
+void staticQubitsWithTwoTargetOps(QCOProgramBuilder& b);
+
+/// Allocates two static qubits and applies a controlled gate.
+void staticQubitsWithCtrl(QCOProgramBuilder& b);
+
+/// Allocates a static qubit and applies an inverse modifier.
+void staticQubitsWithInv(QCOProgramBuilder& b);
+
+/// Allocates and explicitly sinks a single qubit.
+void allocSinkPair(QCOProgramBuilder& b);
+
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: `qtensor` alloc then
+/// static.
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 
@@ -49,6 +74,10 @@ void repeatedMeasurementToDifferentBits(QCOProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
 void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b);
+
+/// Measures a single qubit into a single classical bit, without explicitly
+/// allocating a quantum or classical register.
+void measurementWithoutRegisters(QCOProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
@@ -215,6 +244,9 @@ void inverseMultipleControlledH(QCOProgramBuilder& b);
 
 /// Creates a circuit with two H gates in a row.
 void twoH(QCOProgramBuilder& b);
+
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QCOProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 
@@ -974,4 +1006,36 @@ void nestedTrueIf(QCOProgramBuilder& b);
 /// Creates a circuit with a nested if operation in the else branch that uses
 /// the same condition.
 void nestedFalseIf(QCOProgramBuilder& b);
+
+// --- QTensor Operations -------------------------------------------------- //
+
+/// Allocates a tensor of size `3`.
+void qtensorAlloc(QCOProgramBuilder& b);
+
+/// Allocates and explicitly deallocates a tensor.
+void qtensorDealloc(QCOProgramBuilder& b);
+
+/// Constructs a tensor with from_elements.
+void qtensorFromElements(QCOProgramBuilder& b);
+
+/// Extracts a qubit from a tensor.
+void qtensorExtract(QCOProgramBuilder& b);
+
+/// Inserts a qubit into a tensor.
+void qtensorInsert(QCOProgramBuilder& b);
+
+/// Extracts a qubit from a tensor and inserts it immediately at a different
+/// index.
+void qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b);
+
+/// Extracts a qubit from a tensor and inserts it immediately at the same index.
+void qtensorExtractInsertSameIndex(QCOProgramBuilder& b);
+
+/// Inserts a qubit into a tensor and extracts it immediately at a different
+/// index.
+void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
+
+/// Inserts a qubit into a tensor and extracts it immediately at the same index.
+void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
+
 } // namespace mlir::qco

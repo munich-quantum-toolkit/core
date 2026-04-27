@@ -2,26 +2,26 @@
 
 ## Internal Conversions
 
-```{include} Conversions/MLIRQCToQCO.md
+```{include} Conversions/QCToQCO.md
 
 ```
 
-```{include} Conversions/MLIRQCOToQC.md
+```{include} Conversions/QCOToQC.md
 
 ```
 
 ## Jeff Conversions
 
-```{include} Conversions/MLIRQCOToJeff.md
+```{include} Conversions/QCOToJeff.md
 
 ```
 
-```{include} Conversions/MLIRJeffToQCO.md
+```{include} Conversions/JeffToQCO.md
 
 ```
 
 ## QIR Conversions
 
-```{include} Conversions/MLIRQCToQIR.md
+```{include} Conversions/QCToQIR.md
 
 ```

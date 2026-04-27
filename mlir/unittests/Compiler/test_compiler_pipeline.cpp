@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -27,6 +28,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -46,6 +48,8 @@ using QCProgramBuilderFn = NamedBuilder<mlir::qc::QCProgramBuilder>;
 using QIRProgramBuilderFn = NamedBuilder<mlir::qir::QIRProgramBuilder>;
 using QuantumComputationBuilderFn = NamedBuilder<::qc::QuantumComputation>;
 
+namespace {
+
 struct CompilerPipelineTestCase {
   std::string name;
   QuantumComputationBuilderFn quantumComputationBuilder;
@@ -56,20 +60,24 @@ struct CompilerPipelineTestCase {
   bool convertToQIR = true;
 
   friend std::ostream& operator<<(std::ostream& os,
-                                  const CompilerPipelineTestCase& info) {
-    os << "CompilerPipeline{" << info.name << ", original=";
-    if (info.startFromQuantumComputation) {
-      os << displayName(info.quantumComputationBuilder.name);
-    } else {
-      os << displayName(info.qcProgramBuilder.name);
-    }
-    os << ", qcReference=" << displayName(info.qcReferenceBuilder.name);
-    if (info.convertToQIR) {
-      os << ", qirReference=" << displayName(info.qirReferenceBuilder.name);
-    }
-    return os << "}";
-  }
+                                  const CompilerPipelineTestCase& info);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os,
+                         const CompilerPipelineTestCase& info) {
+  os << "CompilerPipeline{" << info.name << ", original=";
+  if (info.startFromQuantumComputation) {
+    os << displayName(info.quantumComputationBuilder.name);
+  } else {
+    os << displayName(info.qcProgramBuilder.name);
+  }
+  os << ", qcReference=" << displayName(info.qcReferenceBuilder.name);
+  if (info.convertToQIR) {
+    os << ", qirReference=" << displayName(info.qirReferenceBuilder.name);
+  }
+  return os << "}";
+}
 
 class CompilerPipelineTest
     : public testing::TestWithParam<CompilerPipelineTestCase> {
@@ -79,8 +87,9 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
-                    mlir::arith::ArithDialect, mlir::cf::ControlFlowDialect,
-                    mlir::func::FuncDialect, mlir::scf::SCFDialect,
+                    mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
+                    mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
+                    mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
                     mlir::LLVM::LLVMDialect>();
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
@@ -90,7 +99,7 @@ protected:
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder) const {
     auto module = mlir::qc::QCProgramBuilder::build(context.get(), builder.fn);
-    runCanonicalizationPasses(module.get());
+    EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }
 
@@ -98,7 +107,7 @@ protected:
   buildQIRReference(const QIRProgramBuilderFn builder) const {
     auto module =
         mlir::qir::QIRProgramBuilder::build(context.get(), builder.fn);
-    runCanonicalizationPasses(module.get());
+    EXPECT_TRUE(runQIRCleanupPipeline(module.get()).succeeded());
     return module;
   }
 
@@ -108,9 +117,12 @@ protected:
   }
 
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
+                          const bool disableMergeSingleQubitRotationGates,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
+    config.disableMergeSingleQubitRotationGates =
+        disableMergeSingleQubitRotationGates;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 
@@ -127,6 +139,8 @@ protected:
     EXPECT_TRUE(areModulesEquivalentWithPermutations(actual.get(), expected));
   }
 };
+
+} // namespace
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   const auto& testCase = GetParam();
@@ -152,7 +166,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   EXPECT_TRUE(mlir::verify(*module).succeeded());
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), testCase.convertToQIR, record);
+  runPipeline(module.get(), testCase.convertToQIR, false, record);
 
   ASSERT_TRUE(testCase.qcReferenceBuilder);
   auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
@@ -178,6 +192,33 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   }
 }
 
+/**
+ * @brief Test: Rotation merging pass is invoked during the optimization stage
+ *
+ * @details
+ * The merged U gate parameters are computed via floating-point arithmetic
+ * that is not bit-identical across platforms, so we cannot use
+ * verifyAllStages with hardcoded expected values. Instead, we run the
+ * pipeline once with the pass enabled and compare afterQCOCanon against
+ * afterOptimization to verify the pass transformed the IR.
+ * Correctness of the pass is tested in a dedicated test.
+ */
+TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), [&](mlir::qc::QCProgramBuilder& b) {
+        auto q = b.allocQubit();
+        b.rz(1.0, q);
+        b.rx(1.0, q);
+      });
+  ASSERT_TRUE(module);
+
+  mlir::CompilationRecord record;
+  runPipeline(module.get(), false, false, record);
+
+  // The outputs must differ, proving the pass ran and transformed the IR
+  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     QuantumComputationPipelineProgramsTest, CompilerPipelineTest,
     testing::Values(
@@ -185,23 +226,48 @@ INSTANTIATE_TEST_SUITE_P(
             "StaticQubits", nullptr, MQT_NAMED_BUILDER(mlir::qc::staticQubits),
             MQT_NAMED_BUILDER(mlir::qc::staticQubits),
             MQT_NAMED_BUILDER(mlir::qir::staticQubits), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithOps", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithOps), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithParametricOps", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithParametricOps),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithParametricOps),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithParametricOps), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithTwoTargetOps", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithTwoTargetOps),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithTwoTargetOps),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithTwoTargetOps), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithCtrl", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithCtrl),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithCtrl),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithCtrl), false},
+        CompilerPipelineTestCase{
+            "StaticQubitsWithInv", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithInv),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithInv),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithInv), false},
         CompilerPipelineTestCase{"AllocQubit",
                                  MQT_NAMED_BUILDER(qc::allocQubit), nullptr,
-                                 MQT_NAMED_BUILDER(mlir::qc::allocQubit),
-                                 MQT_NAMED_BUILDER(mlir::qir::allocQubit)},
-        CompilerPipelineTestCase{
-            "AllocQubitRegister", MQT_NAMED_BUILDER(qc::allocQubitRegister),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::allocQubitRegister),
-            MQT_NAMED_BUILDER(mlir::qir::allocQubitRegister)},
+                                 MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+                                 MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
+        CompilerPipelineTestCase{"AllocQubitRegister",
+                                 MQT_NAMED_BUILDER(qc::allocQubitRegister),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+                                 MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
         CompilerPipelineTestCase{
             "AllocMultipleQubitRegisters",
             MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters), nullptr,
-            MQT_NAMED_BUILDER(mlir::qc::allocMultipleQubitRegisters),
-            MQT_NAMED_BUILDER(mlir::qir::allocMultipleQubitRegisters)},
-        CompilerPipelineTestCase{
-            "AllocLargeRegister", MQT_NAMED_BUILDER(qc::allocLargeRegister),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::allocLargeRegister),
-            MQT_NAMED_BUILDER(mlir::qir::allocLargeRegister)},
+            MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+            MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
+        CompilerPipelineTestCase{"AllocLargeRegister",
+                                 MQT_NAMED_BUILDER(qc::allocLargeRegister),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+                                 MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
         CompilerPipelineTestCase{
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit), nullptr,
@@ -225,6 +291,11 @@ INSTANTIATE_TEST_SUITE_P(
                 mlir::qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(
                 mlir::qir::multipleClassicalRegistersAndMeasurements)},
+        CompilerPipelineTestCase{
+            "MeasurementWithoutRegisters", nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
+            MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
+            MQT_NAMED_BUILDER(mlir::qir::measurementWithoutRegisters), false},
         CompilerPipelineTestCase{
             "ResetQubitAfterSingleOp",
             MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp), nullptr,
@@ -301,6 +372,11 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledH", MQT_NAMED_BUILDER(qc::multipleControlledH),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledH),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledH)},
+        CompilerPipelineTestCase{"HWithoutRegister", nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
+                                 MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
+                                 MQT_NAMED_BUILDER(mlir::qir::hWithoutRegister),
+                                 false},
         CompilerPipelineTestCase{"S", MQT_NAMED_BUILDER(qc::s), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::s),
                                  MQT_NAMED_BUILDER(mlir::qir::s)},
@@ -407,8 +483,9 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(mlir::qc::p),
                                  MQT_NAMED_BUILDER(mlir::qir::p)},
         CompilerPipelineTestCase{
-            "SingleControlledP", MQT_NAMED_BUILDER(qc::singleControlledP),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledP),
+            "SingleControlledP",
+            MQT_NAMED_BUILDER(qc::singleControlledP), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledP),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledP)},
         CompilerPipelineTestCase{
             "MultipleControlledP", MQT_NAMED_BUILDER(qc::multipleControlledP),

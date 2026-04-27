@@ -33,6 +33,8 @@
 #include <string>
 #include <vector>
 
+namespace {
+
 class IO : public testing::Test {
 protected:
   void TearDown() override {}
@@ -48,7 +50,6 @@ protected:
   qc::QuantumComputation qc;
 };
 
-namespace {
 void compareFiles(const std::string& file1, const std::string& file2) {
   std::ifstream fstream1(file1);
   std::string str1((std::istreambuf_iterator<char>(fstream1)),
@@ -60,6 +61,7 @@ void compareFiles(const std::string& file1, const std::string& file2) {
   std::erase_if(str2, isspace);
   ASSERT_EQ(str1, str2);
 }
+
 } // namespace
 
 TEST_F(IO, importAndDumpQASM) {

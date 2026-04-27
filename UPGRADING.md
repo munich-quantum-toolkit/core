@@ -37,6 +37,16 @@ The `datastructures` (sub)library has been removed from the MQT Core repository.
 Its functionality has only ever been used in [MQT QMAP] since its inception.
 As a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT Core version that includes this change.
 
+## [3.5.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.4` to `3.5`.
+Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
+
+### `nanobind` updated to version 2.12.0
+
+This release updates the `nanobind` dependency to version 2.12.0, which includes an ABI bump.
+Any existing code that uses the `mqt-core` Python bindings will need to be recompiled with the new `nanobind` version.
+
 ## [3.4.0]
 
 ### Python wheels
@@ -217,7 +227,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.1.0...v3.2.0

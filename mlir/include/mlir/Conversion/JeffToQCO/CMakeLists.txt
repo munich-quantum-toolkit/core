@@ -10,4 +10,4 @@ set(LLVM_TARGET_DEFINITIONS JeffToQCO.td)
 mlir_tablegen(JeffToQCO.h.inc -gen-pass-decls -name JeffToQCO)
 add_public_tablegen_target(JeffToQCOIncGen)
 
-add_mlir_doc(JeffToQCO MLIRJeffToQCO Conversions/ -gen-pass-doc)
+add_mlir_doc(JeffToQCO JeffToQCO Conversions/ -gen-pass-doc)

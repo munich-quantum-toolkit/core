@@ -23,7 +23,7 @@ authors = [
 ]
 keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams", "zx-calculus"]
 license = "MIT"
-license-files = ["LICENSE.md"]
+license-files = ["LICENSE"]
 
 classifiers = [
   "Development Status :: 5 - Production/Stable",
@@ -100,6 +100,13 @@ build.targets = [
   "mqt-core-qdmi-na-device-dyn",
   "mqt-core-qdmi-sc-device",
   "mqt-core-qdmi-sc-device-dyn",
+]
+
+install.components = [
+  "mqt-core_Runtime",
+  "mqt-core_Development",
+  "mqt-core_Python",
+  "qdmi_Development",
 ]
 
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
@@ -198,6 +205,10 @@ unsafe-fixes = true
 show-fixes = true
 src = ["python"]
 
+[tool.ruff.format]
+preview = true
+docstring-code-format = true
+
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
@@ -222,6 +233,7 @@ known-first-party = ["mqt.core"]
 "test/python/**" = ["T20", "INP001"]
 "docs/**" = ["T20", "INP001"]
 "noxfile.py" = ["T20", "TID251", "PLC0415"]
+"mlir/unittests/**/*.py" = ["INP001", "T201"]
 "*.pyi" = ["D418", "E501", "PYI021"]
 "*.ipynb" = [
     "D",    # pydocstyle
@@ -234,9 +246,6 @@ known-first-party = ["mqt.core"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.ruff.format]
-docstring-code-format = true
 
 
 [tool.typos]
@@ -255,14 +264,13 @@ optin = "optin"
 nd = "nd"
 
 
-[tool.repo-review]
-ignore = [
-  "GH200", # We use Renovate instead of Dependabot
-  "MY100", # We use ty instead of mypy
-  "PC140", # We use ty instead of mypy
-  "PC160", # We use a mirror of crate-ci/typos
-  "PC170", # We do not use rST files anymore
-]
+[tool.repo-review.ignore]
+GH200 = "We use Renovate instead of Dependabot"
+MY100 = "We use ty instead of mypy"
+PC111 = "We use ruff instead of blacken-docs"
+PC140 = "We use ty instead of mypy"
+PC160 = "We use a mirror of crate-ci/typos"
+PC170 = "We do not use rST files anymore"
 
 
 [tool.cibuildwheel]
@@ -272,8 +280,7 @@ archs = "auto64"
 test-groups = ["test"]
 test-sources = ["test/python", "json/na"]
 test-command = "pytest test/python"
-build-frontend = "build[uv]"
-enable = ["cpython-freethreading"]
+build-frontend = "uv"
 test-skip = [
   "cp3??t-*", # no freethreading qiskit wheels
   "cp*-win_arm64", # no numpy, qiskit, ... wheels
@@ -360,5 +367,5 @@ dev = [
   {include-group = "test"},
   "lit>=18.1.8",
   "nox>=2025.11.12",
-  "ty==0.0.19",
+  "ty==0.0.31",
 ]

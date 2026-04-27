@@ -162,15 +162,15 @@ template struct CachedEdge<mNode>;
 
 } // namespace dd
 
-namespace std {
 template <class Node>
-auto hash<dd::CachedEdge<Node>>::operator()(
+auto std::hash<dd::CachedEdge<Node>>::operator()(
     const dd::CachedEdge<Node>& e) const noexcept -> std::size_t {
   const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
   const auto h2 = std::hash<dd::ComplexValue>{}(e.w);
   return qc::combineHash(h1, h2);
 }
 
-template struct hash<dd::CachedEdge<dd::vNode>>;
-template struct hash<dd::CachedEdge<dd::mNode>>;
-} // namespace std
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
+template struct std::hash<dd::CachedEdge<dd::vNode>>;
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
+template struct std::hash<dd::CachedEdge<dd::mNode>>;

@@ -1364,6 +1364,8 @@ void CircuitOptimizer::backpropagateOutputPermutation(QuantumComputation& qc) {
   qc.initialLayout = permutation;
 }
 
+namespace {
+
 /**
  * @brief Disjoint Set Union data structure for qubits
  *
@@ -1470,6 +1472,8 @@ struct DSU {
     }
   }
 };
+
+} // namespace
 
 void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
                                      const std::size_t maxBlockSize) {
@@ -1625,6 +1629,8 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
   removeIdentities(qc);
 }
 
+namespace {
+
 /**
  * @brief Block of Clifford operations
  * @details This structure is used to collect Clifford operations that can be
@@ -1657,8 +1663,8 @@ struct CliffordBlock {
    * @param maxBlockSize Maximum allowed block size
    */
   [[nodiscard]] bool
-  checkExceedsMaxBlockSize(const std::set<Qubit>& used,
-                           const std::size_t maxBlockSize) const noexcept {
+  checkFitsWithinMaxBlockSize(const std::set<Qubit>& used,
+                              const std::size_t maxBlockSize) const noexcept {
     std::size_t extra = 0;
     for (const auto q : used) {
       if (!blockQubits.contains(q)) {
@@ -1753,6 +1759,8 @@ struct CliffordBlock {
   }
 };
 
+} // namespace
+
 void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
                                              const std::size_t maxBlockSize) {
   if (qc.size() <= 1) {
@@ -1809,7 +1817,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
       if (!block.checkBlocked(used)) {
         continue;
       }
-      if (!block.checkExceedsMaxBlockSize(used, maxBlockSize)) {
+      if (!block.checkFitsWithinMaxBlockSize(used, maxBlockSize)) {
         continue;
       }
 

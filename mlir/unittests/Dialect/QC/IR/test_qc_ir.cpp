@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -30,6 +31,8 @@
 using namespace mlir;
 using namespace mlir::qc;
 
+namespace {
+
 struct QCTestCase {
   std::string name;
   mqt::test::NamedBuilder<QCProgramBuilder> programBuilder;
@@ -38,6 +41,14 @@ struct QCTestCase {
   friend std::ostream& operator<<(std::ostream& os, const QCTestCase& info);
 };
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const QCTestCase& info) {
+  return os << "QC{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
+
 class QCTest : public testing::TestWithParam<QCTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
@@ -45,20 +56,16 @@ protected:
   void SetUp() override;
 };
 
+} // namespace
+
 void QCTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
-  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect>();
+  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
-}
-
-std::ostream& operator<<(std::ostream& os, const QCTestCase& info) {
-  return os << "QC{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 TEST_P(QCTest, ProgramEquivalence) {
@@ -71,7 +78,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -80,12 +87,30 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedStaticThenDynamicQubit(builder);
+      },
+      "Cannot mix static and dynamic qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedDynamicRegisterThenStaticQubit(builder);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
 }
 
 /// \name QC/Modifiers/CtrlOp.cpp
@@ -894,6 +919,24 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(emptyQC)},
         QCTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
                    MQT_NAMED_BUILDER(emptyQC)},
+        QCTestCase{"StaticQubitsWithOps",
+                   MQT_NAMED_BUILDER(staticQubitsWithOps),
+                   MQT_NAMED_BUILDER(staticQubitsWithOps)},
+        QCTestCase{"StaticQubitsWithParametricOps",
+                   MQT_NAMED_BUILDER(staticQubitsWithParametricOps),
+                   MQT_NAMED_BUILDER(staticQubitsWithParametricOps)},
+        QCTestCase{"StaticQubitsWithTwoTargetOps",
+                   MQT_NAMED_BUILDER(staticQubitsWithTwoTargetOps),
+                   MQT_NAMED_BUILDER(staticQubitsWithTwoTargetOps)},
+        QCTestCase{"StaticQubitsWithCtrl",
+                   MQT_NAMED_BUILDER(staticQubitsWithCtrl),
+                   MQT_NAMED_BUILDER(staticQubitsWithCtrl)},
+        QCTestCase{"StaticQubitsWithInv",
+                   MQT_NAMED_BUILDER(staticQubitsWithInv),
+                   MQT_NAMED_BUILDER(staticQubitsWithInv)},
+        QCTestCase{"StaticQubitsWithDuplicates",
+                   MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
+                   MQT_NAMED_BUILDER(staticQubitsCanonical)},
         QCTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                    MQT_NAMED_BUILDER(emptyQC)}));
 /// @}

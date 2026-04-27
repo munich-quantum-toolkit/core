@@ -33,8 +33,40 @@ void allocLargeRegister(QCProgramBuilder& b);
 /// Allocates two inline qubits.
 void staticQubits(QCProgramBuilder& b);
 
+/// Allocates two static qubits and applies operations.
+void staticQubitsWithOps(QCProgramBuilder& b);
+
+/// Allocates two static qubits and applies parametric gates.
+void staticQubitsWithParametricOps(QCProgramBuilder& b);
+
+/// Allocates two static qubits and applies a two-target gate.
+void staticQubitsWithTwoTargetOps(QCProgramBuilder& b);
+
+/// Allocates two static qubits and applies a controlled gate.
+void staticQubitsWithCtrl(QCProgramBuilder& b);
+
+/// Allocates a static qubit and applies an inverse modifier.
+void staticQubitsWithInv(QCProgramBuilder& b);
+
+/// Allocates duplicate static qubits and applies operations on both.
+void staticQubitsWithDuplicates(QCProgramBuilder& b);
+
+/// Same as `staticQubitsWithDuplicates`, but with canonical static qubit
+/// retrievals.
+void staticQubitsCanonical(QCProgramBuilder& b);
+
 /// Allocates and explicitly deallocates a single qubit.
 void allocDeallocPair(QCProgramBuilder& b);
+
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
+/// alloc.
+void mixedStaticThenDynamicQubit(QCProgramBuilder& b);
+
+/// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
+/// static.
+void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 
@@ -49,6 +81,10 @@ void repeatedMeasurementToDifferentBits(QCProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
 void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b);
+
+/// Measures a single qubit into a single classical bit, without explicitly
+/// allocating a quantum or classical register.
+void measurementWithoutRegisters(QCProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
@@ -209,6 +245,9 @@ void inverseH(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled H gate.
 void inverseMultipleControlledH(QCProgramBuilder& b);
+
+/// Creates a circuit with just an H gate and no qubit register.
+void hWithoutRegister(QCProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 

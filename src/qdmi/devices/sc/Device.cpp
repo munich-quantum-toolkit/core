@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-/** @file
+/** @file Device.cpp
  * @brief The MQT QDMI device implementation for superconducting devices.
  */
 
@@ -92,7 +92,7 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                     couplingMap_, prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_SC_QDMI_Operation,
                     operations_, prop, size, value, sizeRet)
-  if (prop == (QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS)) {
+  if (prop == QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS) {
     if (value != nullptr && size > 0) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }

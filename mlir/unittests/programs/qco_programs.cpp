@@ -27,8 +27,8 @@ void allocQubit(QCOProgramBuilder& b) { b.allocQubit(); }
 void allocQubitRegister(QCOProgramBuilder& b) { b.allocQubitRegister(2); }
 
 void allocMultipleQubitRegisters(QCOProgramBuilder& b) {
-  b.allocQubitRegister(2, "reg0");
-  b.allocQubitRegister(3, "reg1");
+  b.allocQubitRegister(2);
+  b.allocQubitRegister(3);
 }
 
 void allocLargeRegister(QCOProgramBuilder& b) { b.allocQubitRegister(100); }
@@ -38,9 +38,52 @@ void staticQubits(QCOProgramBuilder& b) {
   b.staticQubit(1);
 }
 
-void allocDeallocPair(QCOProgramBuilder& b) {
+void staticQubitsWithOps(QCOProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  q0 = b.h(q0);
+  q1 = b.h(q1);
+}
+
+void staticQubitsWithParametricOps(QCOProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  q0 = b.rx(std::numbers::pi / 4., q0);
+  q1 = b.p(std::numbers::pi / 2., q1);
+}
+
+void staticQubitsWithTwoTargetOps(QCOProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
+}
+
+void staticQubitsWithCtrl(QCOProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  std::tie(q0, q1) = b.cx(q0, q1);
+}
+
+void staticQubitsWithInv(QCOProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  q0 = b.inv({q0}, [&](auto targets) -> llvm::SmallVector<Value> {
+    return {b.t(targets[0])};
+  })[0];
+}
+
+void allocSinkPair(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
-  b.dealloc(q);
+  b.sink(q);
+}
+
+void mixedStaticThenDynamicQubit(QCOProgramBuilder& b) {
+  b.staticQubit(0);
+  b.allocQubit();
+}
+
+void mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b) {
+  b.qtensorAlloc(2);
+  b.staticQubit(0);
 }
 
 void singleMeasurementToSingleBit(QCOProgramBuilder& b) {
@@ -74,6 +117,11 @@ void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
   b.measure(q[2], c1[1]);
 }
 
+void measurementWithoutRegisters(QCOProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.measure(q);
+}
+
 void resetQubitWithoutOp(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   q = b.reset(q);
@@ -93,9 +141,9 @@ void repeatedResetWithoutOp(QCOProgramBuilder& b) {
 }
 
 void resetQubitAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
@@ -107,11 +155,11 @@ void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
 }
 
 void repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
-  q = b.reset(q);
-  q = b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void globalPhase(QCOProgramBuilder& b) { b.gphase(0.123); }
@@ -410,6 +458,11 @@ void twoH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.h(q[0]);
+}
+
+void hWithoutRegister(QCOProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
 }
 
 void s(QCOProgramBuilder& b) {
@@ -2071,7 +2124,7 @@ void ifElse(QCOProgramBuilder& b) {
 void constantTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
-      true, q,
+      true, q.qubits,
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
@@ -2085,7 +2138,7 @@ void constantTrueIf(QCOProgramBuilder& b) {
 void constantFalseIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
-      false, q,
+      false, q.qubits,
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
@@ -2133,4 +2186,61 @@ void nestedFalseIf(QCOProgramBuilder& b) {
         return llvm::to_vector(innerResult);
       });
 }
+
+void qtensorAlloc(QCOProgramBuilder& b) { b.qtensorAlloc(3); }
+
+void qtensorDealloc(QCOProgramBuilder& b) {
+  auto qtensor = b.qtensorAlloc(3);
+  b.qtensorDealloc(qtensor);
+}
+
+void qtensorFromElements(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto q1 = b.allocQubit();
+  auto q2 = b.allocQubit();
+  b.qtensorFromElements({q0, q1, q2});
+}
+
+void qtensorExtract(QCOProgramBuilder& b) {
+  auto qtensor = b.qtensorAlloc(3);
+  b.qtensorExtract(qtensor, 0);
+}
+
+void qtensorInsert(QCOProgramBuilder& b) {
+  auto qtensor = b.qtensorAlloc(3);
+  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
+  auto q1 = b.h(q0);
+  b.qtensorInsert(q1, extractOutTensor, 0);
+}
+
+void qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b) {
+  auto qtensor = b.qtensorAlloc(3);
+  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
+  b.qtensorInsert(q0, extractOutTensor, 1);
+}
+
+void qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
+  auto qtensor = b.qtensorAlloc(3);
+  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
+  b.qtensorInsert(q0, extractOutTensor, 0);
+}
+
+void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
+  auto qtensor = b.qtensorAlloc(3);
+  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
+  auto q1 = b.h(q0);
+  auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
+  auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 1);
+  b.qtensorInsert(q2, extractOutTensor1, 0);
+}
+
+void qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
+  auto qtensor = b.qtensorAlloc(3);
+  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
+  auto q1 = b.h(q0);
+  auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
+  auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 0);
+  b.qtensorInsert(q2, extractOutTensor1, 0);
+}
+
 } // namespace mlir::qco

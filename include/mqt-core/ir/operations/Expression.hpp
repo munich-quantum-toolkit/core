@@ -842,7 +842,7 @@ template <typename T, typename U> struct std::hash<sym::Expression<T, U>> {
     qc::hashCombine(seed, std::hash<U>{}(expr.getConst()));
     return seed;
   }
-}; // namespace std
+};
 
 namespace qc {
 using Symbolic = sym::Expression<fp, fp>;

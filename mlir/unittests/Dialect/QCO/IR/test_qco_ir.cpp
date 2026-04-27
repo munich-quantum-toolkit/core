@@ -12,6 +12,8 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -32,6 +34,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+namespace {
+
 struct QCOTestCase {
   std::string name;
   mqt::test::NamedBuilder<QCOProgramBuilder> programBuilder;
@@ -40,6 +44,14 @@ struct QCOTestCase {
   friend std::ostream& operator<<(std::ostream& os, const QCOTestCase& info);
 };
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
+  return os << "QCO{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
+
 class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
@@ -47,19 +59,14 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
 };
-
-std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
-  return os << "QCO{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
+} // namespace
 
 TEST_P(QCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
@@ -70,7 +77,8 @@ TEST_P(QCOTest, ProgramEquivalence) {
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
-  runCanonicalizationPasses(program.get());
+
+  EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -79,7 +87,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
@@ -87,32 +95,55 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedStaticThenDynamicQubit(builder);
+      },
+      "Cannot mix static and dynamic qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedDynamicRegisterThenStaticQubit(builder);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
+}
+
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
-  auto q0 = AllocOp::create(builder);
-  auto q1 = HOp::create(builder, q0);
+  auto c0 = arith::ConstantIndexOp::create(builder, 0);
+  auto c1 = arith::ConstantIndexOp::create(builder, 1);
+  auto r0 = qtensor::AllocOp::create(builder, c1);
+  auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
+  auto q1 = HOp::create(builder, extractOp.getResult());
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp =
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
                    [&](ValueRange qubits) -> llvm::SmallVector<Value> {
                      auto innerQubit = XOp::create(builder, qubits[0]);
-                     return llvm::SmallVector<mlir::Value>{innerQubit};
+                     return llvm::SmallVector<Value>{innerQubit};
                    });
-  DeallocOp::create(builder, ifOp.getResult(0));
+  auto r2 = qtensor::InsertOp::create(builder, ifOp.getResult(0),
+                                      extractOp.getOutTensor(), c0);
+  qtensor::DeallocOp::create(builder, r2);
 
   auto directBuilder = builder.finalize();
   ASSERT_TRUE(directBuilder);
   EXPECT_TRUE(verify(*directBuilder).succeeded());
-  runCanonicalizationPasses(directBuilder.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(directBuilder.get()).succeeded());
   EXPECT_TRUE(verify(*directBuilder).succeeded());
 
   auto refBuilder =
       QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
-  runCanonicalizationPasses(refBuilder.get());
+  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
   EXPECT_TRUE(verify(*refBuilder).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),
@@ -1052,6 +1083,21 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
                     MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
+        QCOTestCase{"StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithOps)},
+        QCOTestCase{"StaticQubitsWithParametricOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithParametricOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithParametricOps)},
+        QCOTestCase{"StaticQubitsWithTwoTargetOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithTwoTargetOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithTwoTargetOps)},
+        QCOTestCase{"StaticQubitsWithCtrl",
+                    MQT_NAMED_BUILDER(staticQubitsWithCtrl),
+                    MQT_NAMED_BUILDER(staticQubitsWithCtrl)},
+        QCOTestCase{"StaticQubitsWithInv",
+                    MQT_NAMED_BUILDER(staticQubitsWithInv),
+                    MQT_NAMED_BUILDER(staticQubitsWithInv)},
+        QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}

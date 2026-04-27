@@ -57,6 +57,11 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
 }
 
 void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
+  if (metadata.useDynamicQubit && metadata.numQubits != 0) {
+    llvm::reportFatalUsageError(
+        "Cannot use dynamic qubit allocation if static qubits are allocated");
+  }
+
   OpBuilder builder(main.getBody());
   llvm::SmallVector<Attribute> attributes;
 
@@ -73,17 +78,26 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   attributes.emplace_back(builder.getStrArrayAttr(
       {"required_num_results", std::to_string(metadata.numResults)}));
 
-  // QIR version (Base Profile spec requires version 2.0)
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_major_version", "2"}));
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_minor_version", "0"}));
+  // Management model or resource requirements
+  if (metadata.useDynamicQubit) {
+    attributes.emplace_back(
+        builder.getStrArrayAttr({"dynamic_qubit_management", "true"}));
+  } else {
+    attributes.emplace_back(builder.getStrArrayAttr(
+        {"required_num_qubits", std::to_string(metadata.numQubits)}));
+  }
 
-  // Management model
-  attributes.emplace_back(
-      builder.getStrArrayAttr({"dynamic_qubit_management",
-                               metadata.useDynamicQubit ? "true" : "false"}));
-  attributes.emplace_back(
-      builder.getStrArrayAttr({"dynamic_result_management",
-                               metadata.useDynamicResult ? "true" : "false"}));
+  if (metadata.useDynamicResult) {
+    attributes.emplace_back(
+        builder.getStrArrayAttr({"dynamic_result_management", "true"}));
+  } else {
+    attributes.emplace_back(builder.getStrArrayAttr(
+        {"required_num_results", std::to_string(metadata.numResults)}));
+  }
+
+  // QIR version (Base Profile spec requires version 2.1)
+  attributes.emplace_back(builder.getStrArrayAttr({"qir_major_version", "2"}));
+  attributes.emplace_back(builder.getStrArrayAttr({"qir_minor_version", "1"}));
 
   main->setAttr("passthrough", builder.getArrayAttr(attributes));
 }

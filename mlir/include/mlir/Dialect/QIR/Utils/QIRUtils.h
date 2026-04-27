@@ -34,11 +34,27 @@ namespace mlir::qir {
 
 // QIR function names
 
+inline constexpr auto QIR_QUBIT_ARRAY_ALLOC =
+    "__quantum__rt__qubit_array_allocate";
+inline constexpr auto QIR_QUBIT_ARRAY_RELEASE =
+    "__quantum__rt__qubit_array_release";
+
+inline constexpr auto QIR_QUBIT_ALLOC = "__quantum__rt__qubit_allocate";
+inline constexpr auto QIR_QUBIT_RELEASE = "__quantum__rt__qubit_release";
+
+inline constexpr auto QIR_RESULT_ARRAY_ALLOC =
+    "__quantum__rt__result_array_allocate";
+inline constexpr auto QIR_RESULT_ARRAY_RELEASE =
+    "__quantum__rt__result_array_release";
+
+inline constexpr auto QIR_RESULT_ALLOC = "__quantum__rt__result_allocate";
+inline constexpr auto QIR_RESULT_RELEASE = "__quantum__rt__result_release";
+
 inline constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
 inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
-    "__quantum__rt__array_record_output";
+    "__quantum__rt__result_array_record_output";
 inline constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 
 inline constexpr auto QIR_GPHASE = "__quantum__qis__gphase__body";
@@ -164,7 +180,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op);
  * - `required_num_qubits`: Number of qubits used
  * - `required_num_results`: Number of measurement results
  * - `qir_major_version`: 2
- * - `qir_minor_version`: 0
+ * - `qir_minor_version`: 1
  * - `dynamic_qubit_management`: true/false
  * - `dynamic_result_management`: true/false
  *

@@ -154,7 +154,7 @@ LogicalResult CtrlOp::verify() {
         "last operation in body region must be a yield operation");
   }
   auto iter = ++block.rbegin();
-  if (!llvm::isa<UnitaryOpInterface>(*(iter))) {
+  if (!llvm::isa<UnitaryOpInterface>(*iter)) {
     return emitOpError(
         "second to last operation in body region must be a unitary operation");
   }

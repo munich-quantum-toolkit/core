@@ -12,10 +12,10 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MLIRLLVMDialect
+  MLIRMemRefDialect
   MLIRQIRUtils
   MLIRIR
-  MLIRSupport
-  DISABLE_INSTALL)
+  MLIRSupport)
 
 mqt_mlir_target_use_project_options(MLIRQIRProgramBuilder)
 

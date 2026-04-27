@@ -28,6 +28,8 @@
 using namespace mlir;
 using namespace qir;
 
+namespace {
+
 struct QIRTestCase {
   std::string name;
   mqt::test::NamedBuilder<QIRProgramBuilder> programBuilder;
@@ -35,6 +37,14 @@ struct QIRTestCase {
 
   friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
+  return os << "QIR{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
 
 class QIRTest : public testing::TestWithParam<QIRTestCase> {
 protected:
@@ -49,12 +59,7 @@ protected:
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
-  return os << "QIR{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
+} // namespace
 
 TEST_P(QIRTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
@@ -66,7 +71,7 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  runCanonicalizationPasses(program.get());
+  EXPECT_TRUE(runQIRCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -75,12 +80,30 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQIRCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedStaticThenDynamicQubit(builder);
+      },
+      "Cannot mix static and dynamic qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        mixedDynamicRegisterThenStaticQubit(builder);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
 }
 
 /// \name QIR/Operations/StandardGates/DcxOp.cpp
@@ -517,17 +540,34 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QIRQubitManagementTest, QIRTest,
-    testing::Values(QIRTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubit),
-                                MQT_NAMED_BUILDER(allocQubit)},
-                    QIRTestCase{"AllocQubitRegister",
-                                MQT_NAMED_BUILDER(allocQubitRegister),
-                                MQT_NAMED_BUILDER(allocQubitRegister)},
-                    QIRTestCase{"AllocMultipleQubitRegisters",
-                                MQT_NAMED_BUILDER(allocMultipleQubitRegisters),
-                                MQT_NAMED_BUILDER(allocMultipleQubitRegisters)},
-                    QIRTestCase{"AllocLargeRegister",
-                                MQT_NAMED_BUILDER(allocLargeRegister),
-                                MQT_NAMED_BUILDER(allocLargeRegister)},
-                    QIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
-                                MQT_NAMED_BUILDER(staticQubits)}));
+    testing::Values(
+        QIRTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubit),
+                    MQT_NAMED_BUILDER(allocQubit)},
+        QIRTestCase{"AllocQubitRegister", MQT_NAMED_BUILDER(allocQubitRegister),
+                    MQT_NAMED_BUILDER(allocQubitRegister)},
+        QIRTestCase{"AllocMultipleQubitRegisters",
+                    MQT_NAMED_BUILDER(allocMultipleQubitRegisters),
+                    MQT_NAMED_BUILDER(allocMultipleQubitRegisters)},
+        QIRTestCase{"AllocLargeRegister", MQT_NAMED_BUILDER(allocLargeRegister),
+                    MQT_NAMED_BUILDER(allocLargeRegister)},
+        QIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
+                    MQT_NAMED_BUILDER(staticQubits)},
+        QIRTestCase{"StaticQubitsWithOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithOps)},
+        QIRTestCase{"StaticQubitsWithParametricOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithParametricOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithParametricOps)},
+        QIRTestCase{"StaticQubitsWithTwoTargetOps",
+                    MQT_NAMED_BUILDER(staticQubitsWithTwoTargetOps),
+                    MQT_NAMED_BUILDER(staticQubitsWithTwoTargetOps)},
+        QIRTestCase{"StaticQubitsWithCtrl",
+                    MQT_NAMED_BUILDER(staticQubitsWithCtrl),
+                    MQT_NAMED_BUILDER(staticQubitsWithCtrl)},
+        QIRTestCase{"StaticQubitsWithInv",
+                    MQT_NAMED_BUILDER(staticQubitsWithInv),
+                    MQT_NAMED_BUILDER(staticQubitsWithInv)},
+        QIRTestCase{"StaticQubitsWithDuplicates",
+                    MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
+                    MQT_NAMED_BUILDER(staticQubitsCanonical)}));
 /// @}

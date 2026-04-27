@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -29,6 +30,8 @@
 #include <ostream>
 #include <string>
 
+namespace {
+
 struct QuantumComputationTranslationTestCase {
   std::string name;
   mqt::test::NamedBuilder<::qc::QuantumComputation> programBuilder;
@@ -36,13 +39,17 @@ struct QuantumComputationTranslationTestCase {
 
   friend std::ostream&
   operator<<(std::ostream& os,
-             const QuantumComputationTranslationTestCase& test) {
-    return os << "QuantumComputationTranslation{" << test.name << ", original="
-              << mqt::test::displayName(test.programBuilder.name)
-              << ", reference="
-              << mqt::test::displayName(test.referenceBuilder.name) << "}";
-  }
+             const QuantumComputationTranslationTestCase& test);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os,
+                         const QuantumComputationTranslationTestCase& test) {
+  return os << "QuantumComputationTranslation{" << test.name
+            << ", original=" << mqt::test::displayName(test.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(test.referenceBuilder.name) << "}";
+}
 
 class QuantumComputationTranslationTest
     : public testing::TestWithParam<QuantumComputationTranslationTestCase> {
@@ -52,12 +59,14 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mlir::qc::QCDialect, mlir::arith::ArithDialect,
-                    mlir::func::FuncDialect>();
+                    mlir::func::FuncDialect, mlir::memref::MemRefDialect>();
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
 };
+
+} // namespace
 
 TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
@@ -72,7 +81,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(translated.get(), "Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
-  runCanonicalizationPasses(translated.get());
+  EXPECT_TRUE(runQCCleanupPipeline(translated.get()).succeeded());
   printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
@@ -82,7 +91,7 @@ TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
-  runCanonicalizationPasses(reference.get());
+  EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
