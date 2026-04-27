@@ -21,6 +21,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LogicalResult.h>
 
 namespace mlir::qco::native_synth {
 
@@ -68,8 +69,8 @@ struct TwoQubitWindowConsolidator {
   /// Picks the best candidate per block via `selectBestCandidate`,
   /// gates the replacement on `shouldApplyBlockReplacement`, and emits the
   /// new sequence through `rewriter`.
-  void materialize(IRRewriter& rewriter, const NativeProfileSpec& spec,
-                   const ScoreWeights& weights);
+  LogicalResult materialize(IRRewriter& rewriter, const NativeProfileSpec& spec,
+                            const ScoreWeights& weights);
 };
 
 } // namespace mlir::qco::native_synth

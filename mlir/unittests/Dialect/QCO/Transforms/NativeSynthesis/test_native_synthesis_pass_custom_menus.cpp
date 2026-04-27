@@ -60,22 +60,31 @@ struct CustomMenuSpec {
 
 static std::vector<std::string> splitCSV(const std::string& s) {
   std::vector<std::string> out;
-  std::string cur;
-  for (const char ch : s) {
-    if (ch == ',') {
-      if (!cur.empty()) {
-        out.push_back(cur);
-        cur.clear();
+  std::size_t tokenStart = 0;
+  while (tokenStart <= s.size()) {
+    const auto tokenEnd = s.find(',', tokenStart);
+    const auto end = (tokenEnd == std::string::npos) ? s.size() : tokenEnd;
+    std::size_t left = tokenStart;
+    while (left < end &&
+           std::isspace(static_cast<unsigned char>(s[left])) != 0) {
+      ++left;
+    }
+    std::size_t right = end;
+    while (right > left &&
+           std::isspace(static_cast<unsigned char>(s[right - 1])) != 0) {
+      --right;
+    }
+    if (left < right) {
+      std::string token = s.substr(left, right - left);
+      for (char& ch : token) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
       }
-      continue;
+      out.push_back(std::move(token));
     }
-    if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
-      cur.push_back(
-          static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    if (tokenEnd == std::string::npos) {
+      break;
     }
-  }
-  if (!cur.empty()) {
-    out.push_back(cur);
+    tokenStart = tokenEnd + 1;
   }
   return out;
 }

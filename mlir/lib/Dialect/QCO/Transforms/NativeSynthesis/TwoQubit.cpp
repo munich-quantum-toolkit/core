@@ -248,13 +248,13 @@ collectTwoQubitBasisCandidatesFromMatrix(const Eigen::Matrix4cd& targetMatrix,
 }
 
 CandidateMetrics xxPlusMinusYyRzzRewriteScoringMetrics() {
-  // Tallies for `rewriteXXPlusMinusYYViaRxxRyy` (identical for `XXPlusYY` and
+  // Tallies for `rewriteXXPlusMinusYYViaRzz` (identical for `XXPlusYY` and
   // `XXMinusYY`): leading/final `rz` on `q0` (2) + `ryy` via `rzz` (four 1q +
   // one `rzz`) + `rxx` via `rzz` (four `(rz, sx, rz)` per wire around each
   // `rzz`, i.e. twelve 1q + one `rzz`).
   constexpr unsigned numOneQ = 18;
   constexpr unsigned numTwoQ = 2;
-  constexpr unsigned depth = 10;
+  constexpr unsigned depth = 12;
   return {.numOneQ = numOneQ, .numTwoQ = numTwoQ, .depth = depth};
 }
 
@@ -268,8 +268,7 @@ collectTwoQubitBasisCandidates(UnitaryOpInterface unitary,
   return collectTwoQubitBasisCandidatesFromMatrix(target, spec);
 }
 
-LogicalResult rewriteXXPlusMinusYYViaRxxRyy(IRRewriter& rewriter,
-                                            Operation* op) {
+LogicalResult rewriteXXPlusMinusYYViaRzz(IRRewriter& rewriter, Operation* op) {
   rewriter.setInsertionPoint(op);
   const auto loc = op->getLoc();
   const auto constF = [&](double v) {

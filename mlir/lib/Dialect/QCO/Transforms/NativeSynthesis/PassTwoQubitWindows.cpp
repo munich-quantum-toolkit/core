@@ -29,6 +29,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
+#include <optional>
 #include <ranges>
 #include <utility>
 
@@ -75,7 +76,7 @@ static bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
 /// first op, rewire the block's trailing SSA values (`wireA`, `wireB`) to
 /// the newly emitted outputs, and erase the replaced ops in reverse order
 /// so def-use edges are cleared before their defining ops disappear.
-static void materializeSingleTwoQubitBlock(
+static LogicalResult materializeSingleTwoQubitBlock(
     IRRewriter& rewriter, const TwoQubitBlock& block,
     const SynthesisCandidate<TwoQubitRewritePlan>& best) {
   Operation* firstOp = block.ops.front();
@@ -92,7 +93,7 @@ static void materializeSingleTwoQubitBlock(
                                            inB, best.payload.sequence, newA,
                                            newB))) {
     firstOp->emitError("failed to emit synthesized two-qubit gate sequence");
-    return;
+    return failure();
   }
   if (best.payload.sequence.hasGlobalPhase()) {
     emitGPhaseIfNonTrivial(rewriter, firstOp->getLoc(),
@@ -103,6 +104,7 @@ static void materializeSingleTwoQubitBlock(
   for (auto* toErase : std::ranges::reverse_view(block.ops)) {
     rewriter.eraseOp(toErase);
   }
+  return success();
 }
 
 void collectUnitaryOpsInPreOrder(Operation* root,
@@ -192,12 +194,17 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     auto it1 = wireToBlock.find(v1);
     const bool tracked0 = it0 != wireToBlock.end();
     const bool tracked1 = it1 != wireToBlock.end();
+    const std::optional<size_t> idx0 =
+        tracked0 ? std::optional(it0->second) : std::nullopt;
+    const std::optional<size_t> idx1 =
+        tracked1 ? std::optional(it1->second) : std::nullopt;
     // "Same block" means the two input wires are currently the (wireA,
     // wireB) pair of one existing block -- i.e. this op operates on the
     // same pair as the previous two-qubit op in that block. Otherwise the
     // op either extends into a *new* pair (merging two blocks, which we
     // don't support) or starts a fresh block.
-    const bool sameBlock = tracked0 && tracked1 && it0->second == it1->second;
+    const bool sameBlock =
+        idx0.has_value() && idx1.has_value() && *idx0 == *idx1;
     const bool singleUse = v0.hasOneUse() && v1.hasOneUse();
 
     // ---- Case A: extend the existing block ---------------------------
@@ -205,7 +212,7 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     // them. Absorb the new gate into the block's accumulated unitary and
     // advance the tracked wires to this op's outputs.
     if (sameBlock && singleUse) {
-      const size_t idx = it0->second;
+      const size_t idx = *idx0;
       auto& block = blocks[idx];
       // `block.accum` is the composite 4x4 unitary of the gates absorbed so
       // far, with qubit 0 == `wireA` and qubit 1 == `wireB`. The incoming
@@ -253,11 +260,11 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     // inconsistent -- note the second `if` guards against double-closing
     // the same block when both inputs happened to live in it but `sameBlock
     // && singleUse` was false (e.g. only fan-out violated).
-    if (tracked0) {
-      closeBlock(it0->second);
+    if (idx0.has_value()) {
+      closeBlock(*idx0);
     }
-    if (tracked1 && (!tracked0 || it0->second != it1->second)) {
-      closeBlock(it1->second);
+    if (idx1.has_value() && (!idx0.has_value() || *idx0 != *idx1)) {
+      closeBlock(*idx1);
     }
     TwoQubitBlock nb;
     nb.wireA = unitary.getOutputQubit(0);
@@ -322,9 +329,10 @@ void TwoQubitWindowConsolidator::process(Operation* op,
   }
 }
 
-void TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
-                                             const NativeProfileSpec& spec,
-                                             const ScoreWeights& weights) {
+LogicalResult
+TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
+                                        const NativeProfileSpec& spec,
+                                        const ScoreWeights& weights) {
   for (const auto& block : blocks) {
     if (block.ops.size() < 2) {
       continue;
@@ -340,8 +348,11 @@ void TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
     if (!shouldApplyBlockReplacement(block, best->metrics)) {
       continue;
     }
-    materializeSingleTwoQubitBlock(rewriter, block, *best);
+    if (failed(materializeSingleTwoQubitBlock(rewriter, block, *best))) {
+      return failure();
+    }
   }
+  return success();
 }
 
 } // namespace mlir::qco::native_synth

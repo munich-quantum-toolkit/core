@@ -56,12 +56,11 @@ llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>
 collectTwoQubitBasisCandidates(UnitaryOpInterface unitary,
                                const NativeProfileSpec& spec);
 
-/// Scoring metrics for the `rewriteXXPlusMinusYYViaRxxRyy` lowering (both
+/// Scoring metrics for the `rewriteXXPlusMinusYYViaRzz` lowering (both
 /// `XXPlusYY` and `XXMinusYY` branches emit the same gate counts).
 CandidateMetrics xxPlusMinusYyRzzRewriteScoringMetrics();
 
 /// Rewrite `XXPlusYY` / `XXMinusYY` via two `RZZ` blocks (menus with `rzz`).
-LogicalResult rewriteXXPlusMinusYYViaRxxRyy(IRRewriter& rewriter,
-                                            Operation* op);
+LogicalResult rewriteXXPlusMinusYYViaRzz(IRRewriter& rewriter, Operation* op);
 
 } // namespace mlir::qco::native_synth

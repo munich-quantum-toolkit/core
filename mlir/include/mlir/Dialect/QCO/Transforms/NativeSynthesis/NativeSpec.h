@@ -17,9 +17,6 @@
 
 #include <optional>
 
-/// Parses the pass `native-gates` string into a `NativeProfileSpec` (emitters,
-/// entanglers, `allowedGates`). Token set matches `Passes.td` on this pass.
-
 namespace mlir::qco::native_synth {
 
 /// Euler bases that can reconstruct a two-axis single-qubit unitary.
@@ -28,6 +25,10 @@ getEulerBasesForAxisPair(AxisPair axisPair);
 
 /// Resolve a comma-separated native gate menu (e.g. `"x,sx,rz,cx"`) into a
 /// full `NativeProfileSpec`.
+///
+/// Parses the pass `native-gates` string into a `NativeProfileSpec`
+/// (single-qubit emitters, entangler bases, and `allowedGates`). Token set
+/// matches `Passes.td` on this pass.
 ///
 /// Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`,
 /// `cx`, `cz`, `rzz`.

@@ -92,6 +92,23 @@ TEST_F(NativePolicyAllowsOpTest, AllowsSingleQubitOpRespectsMenu) {
       llvm::cast<UnitaryOpInterface>(xop.getOperation()), *spec));
 }
 
+TEST_F(NativePolicyAllowsOpTest, RejectsSingleQubitOpNotInMenu) {
+  const auto spec = resolveNativeGatesSpec("u,cx");
+  ASSERT_TRUE(spec);
+  Value q = builder.staticQubit(0);
+  q = builder.x(q);
+  auto mod = builder.finalize();
+  ASSERT_TRUE(mod);
+  XOp xop;
+  mod->walk([&](XOp op) {
+    xop = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(xop);
+  EXPECT_FALSE(allowsSingleQubitOp(
+      llvm::cast<UnitaryOpInterface>(xop.getOperation()), *spec));
+}
+
 TEST_F(NativePolicyAllowsOpTest, CanDirectlyDecomposeToU3OnRxInCircuit) {
   Value q = builder.staticQubit(0);
   q = builder.rx(0.1, q);
@@ -104,4 +121,18 @@ TEST_F(NativePolicyAllowsOpTest, CanDirectlyDecomposeToU3OnRxInCircuit) {
   });
   ASSERT_TRUE(rx);
   EXPECT_TRUE(canDirectlyDecomposeToU3(rx.getOperation()));
+}
+
+TEST_F(NativePolicyAllowsOpTest, CannotDirectlyDecomposeHToU3) {
+  Value q = builder.staticQubit(0);
+  q = builder.h(q);
+  auto mod = builder.finalize();
+  ASSERT_TRUE(mod);
+  HOp hop;
+  mod->walk([&](HOp op) {
+    hop = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(hop);
+  EXPECT_FALSE(canDirectlyDecomposeToU3(hop.getOperation()));
 }

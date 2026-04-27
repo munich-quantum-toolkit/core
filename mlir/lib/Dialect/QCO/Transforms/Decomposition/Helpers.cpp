@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
@@ -31,61 +32,37 @@ decomposition::GateKind getGateKind(UnitaryOpInterface op) {
     // Controlled operations encode the physical gate in the body region.
     raw = ctrl.getBodyUnitary().getOperation();
   }
-  if (llvm::isa<IdOp>(raw)) {
-    return decomposition::GateKind::I;
-  }
-  if (llvm::isa<HOp>(raw)) {
-    return decomposition::GateKind::H;
-  }
-  if (llvm::isa<POp>(raw)) {
-    return decomposition::GateKind::P;
-  }
-  if (llvm::isa<UOp>(raw)) {
-    return decomposition::GateKind::U;
-  }
-  if (llvm::isa<U2Op>(raw)) {
-    return decomposition::GateKind::U2;
-  }
-  if (llvm::isa<XOp>(raw)) {
-    return decomposition::GateKind::X;
-  }
-  if (llvm::isa<YOp>(raw)) {
-    return decomposition::GateKind::Y;
-  }
-  if (llvm::isa<ZOp>(raw)) {
-    return decomposition::GateKind::Z;
-  }
-  if (llvm::isa<SXOp>(raw)) {
-    return decomposition::GateKind::SX;
-  }
-  if (llvm::isa<RXOp>(raw)) {
-    return decomposition::GateKind::RX;
-  }
-  if (llvm::isa<RYOp>(raw)) {
-    return decomposition::GateKind::RY;
-  }
-  if (llvm::isa<RZOp>(raw)) {
-    return decomposition::GateKind::RZ;
-  }
-  if (llvm::isa<ROp>(raw)) {
-    return decomposition::GateKind::R;
-  }
-  if (llvm::isa<RXXOp>(raw)) {
-    return decomposition::GateKind::RXX;
-  }
-  if (llvm::isa<RYYOp>(raw)) {
-    return decomposition::GateKind::RYY;
-  }
-  if (llvm::isa<RZZOp>(raw)) {
-    return decomposition::GateKind::RZZ;
-  }
-  if (llvm::isa<GPhaseOp>(raw)) {
-    return decomposition::GateKind::GPhase;
-  }
-  llvm::reportFatalInternalError("Unsupported QCO unitary operation kind");
+  return llvm::TypeSwitch<Operation*, decomposition::GateKind>(raw)
+      .Case<IdOp>([](auto) { return decomposition::GateKind::I; })
+      .Case<HOp>([](auto) { return decomposition::GateKind::H; })
+      .Case<POp>([](auto) { return decomposition::GateKind::P; })
+      .Case<UOp>([](auto) { return decomposition::GateKind::U; })
+      .Case<U2Op>([](auto) { return decomposition::GateKind::U2; })
+      .Case<XOp>([](auto) { return decomposition::GateKind::X; })
+      .Case<YOp>([](auto) { return decomposition::GateKind::Y; })
+      .Case<ZOp>([](auto) { return decomposition::GateKind::Z; })
+      .Case<SXOp>([](auto) { return decomposition::GateKind::SX; })
+      .Case<RXOp>([](auto) { return decomposition::GateKind::RX; })
+      .Case<RYOp>([](auto) { return decomposition::GateKind::RY; })
+      .Case<RZOp>([](auto) { return decomposition::GateKind::RZ; })
+      .Case<ROp>([](auto) { return decomposition::GateKind::R; })
+      .Case<RXXOp>([](auto) { return decomposition::GateKind::RXX; })
+      .Case<RYYOp>([](auto) { return decomposition::GateKind::RYY; })
+      .Case<RZZOp>([](auto) { return decomposition::GateKind::RZZ; })
+      .Case<GPhaseOp>([](auto) { return decomposition::GateKind::GPhase; })
+      .Default([](Operation*) -> decomposition::GateKind {
+        llvm::reportFatalInternalError(
+            "Unsupported QCO unitary operation kind");
+        llvm_unreachable("unsupported gate kind");
+      });
 }
 
 double remEuclid(double a, double b) {
+  if (b == 0.0) {
+    llvm::reportFatalInternalError(
+        "remEuclid expects non-zero divisor; callers like mod2pi pass positive "
+        "constants");
+  }
   auto r = std::fmod(a, b);
   return (r < 0.0) ? r + std::abs(b) : r;
 }

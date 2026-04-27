@@ -96,8 +96,15 @@ computeGateSequenceMetrics(const decomposition::QubitGateSequence& seq) {
   for (const auto& gate : seq.gates) {
     if (gate.qubitId.size() == 2) {
       ++metrics.numTwoQ;
-      const auto gateDepth = std::max(qubitDepths[0], qubitDepths[1]) + 1;
-      qubitDepths[0] = qubitDepths[1] = gateDepth;
+      const unsigned q0 = gate.qubitId[0];
+      const unsigned q1 = gate.qubitId[1];
+      const unsigned neededSize = std::max(q0, q1) + 1;
+      if (neededSize > qubitDepths.size()) {
+        qubitDepths.resize(neededSize, 0);
+      }
+      const auto gateDepth = std::max(qubitDepths[q0], qubitDepths[q1]) + 1;
+      qubitDepths[q0] = gateDepth;
+      qubitDepths[q1] = gateDepth;
       metrics.depth = std::max(metrics.depth, gateDepth);
     } else if (gate.qubitId.size() == 1) {
       ++metrics.numOneQ;

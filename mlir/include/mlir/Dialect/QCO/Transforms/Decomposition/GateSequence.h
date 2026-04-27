@@ -56,8 +56,12 @@ struct QubitGateSequence {
 };
 
 /// Documents intent only; same type as `QubitGateSequence`.
+/// `QubitGateSequence::getUnitaryMatrix()` still returns an `Eigen::Matrix4cd`
+/// in the shared two-qubit workspace convention, even for one-qubit sequences.
 using OneQubitGateSequence = QubitGateSequence;
 /// Documents intent only; same type as `QubitGateSequence`.
+/// `QubitGateSequence::getUnitaryMatrix()` returns an `Eigen::Matrix4cd`
+/// in the two-qubit workspace convention.
 using TwoQubitGateSequence = QubitGateSequence;
 
 } // namespace mlir::qco::decomposition

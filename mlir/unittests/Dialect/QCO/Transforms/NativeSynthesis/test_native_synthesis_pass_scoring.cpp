@@ -275,7 +275,7 @@ TEST_F(NativeSynthesisPassTest, XxPlusMinusYyEmittedCountsMatchScoringMetrics) {
         ASSERT_NE(twoQOp, nullptr);
 
         IRRewriter rewriter(context.get());
-        ASSERT_TRUE(succeeded(rewriteXXPlusMinusYYViaRxxRyy(rewriter, twoQOp)));
+        ASSERT_TRUE(succeeded(rewriteXXPlusMinusYYViaRzz(rewriter, twoQOp)));
 
         const auto expected = xxPlusMinusYyRzzRewriteScoringMetrics();
         const auto [numOneQ, numTwoQ] =

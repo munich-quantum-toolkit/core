@@ -75,7 +75,8 @@ TEST_P(WeylDecompositionTest, TestApproximation) {
       << restoredMatrix << '\n';
 }
 
-TEST(WeylDecompositionTest, CnotProducesValidWeylParametersAndUnitaryLocals) {
+TEST(WeylDecompositionStandalone,
+     CnotProducesValidWeylParametersAndUnitaryLocals) {
   Eigen::Matrix4cd cnot = Eigen::Matrix4cd::Zero();
   cnot(0, 0) = 1.0;
   cnot(1, 1) = 1.0;
@@ -96,7 +97,7 @@ TEST(WeylDecompositionTest, CnotProducesValidWeylParametersAndUnitaryLocals) {
   EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k2r()));
 }
 
-TEST(WeylDecompositionTest, Random) {
+TEST(WeylDecompositionStandalone, Random) {
   constexpr auto maxIterations = 5000;
   std::mt19937 rng{1234567UL};
 

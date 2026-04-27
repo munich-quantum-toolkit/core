@@ -172,7 +172,8 @@ Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate) {
       "unsupported gate type for single qubit matrix");
 }
 
-// TODO: remove? only used for verification of circuit and in unittests
+// Reconstruct a two-qubit workspace matrix for a decomposition `Gate`.
+// Used by sequence verification and `QubitGateSequence::getUnitaryMatrix()`.
 Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
   if (gate.qubitId.empty()) {
     return Eigen::Matrix4cd::Identity();
@@ -181,18 +182,26 @@ Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
     return expandToTwoQubits(getSingleQubitMatrix(gate), gate.qubitId[0]);
   }
   if (gate.qubitId.size() == 2) {
+    const bool validPair01 =
+        gate.qubitId == llvm::SmallVector<QubitId, 2>{0, 1};
+    const bool validPair10 =
+        gate.qubitId == llvm::SmallVector<QubitId, 2>{1, 0};
+    if (!validPair01 && !validPair10) {
+      llvm::reportFatalInternalError(
+          "Invalid two-qubit gate qubit IDs: expected {0,1} or {1,0}");
+    }
     if (gate.type == GateKind::X) {
       // Controlled-X. The two matrices below are the *same* CX gate written in
       // the two possible operand orderings used by `Gate::qubitId`: qubit 0 is
       // the MSB of the 4x4 computational basis (matching
       // `UnitaryOpInterface::getUnitaryMatrix4x4`), so swapping
       // control/target wires produces a different basis-layout matrix.
-      if (gate.qubitId == llvm::SmallVector<QubitId, 2>{0, 1}) {
+      if (validPair01) {
         // control = wire 0 (MSB), target = wire 1.
         return Eigen::Matrix4cd{
             {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
       }
-      if (gate.qubitId == llvm::SmallVector<QubitId, 2>{1, 0}) {
+      if (validPair10) {
         // control = wire 1, target = wire 0 (MSB).
         return Eigen::Matrix4cd{
             {1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 0}};

@@ -106,8 +106,8 @@ TEST(BasisDecomposerTest, Random) {
       EulerBasis::XYX, EulerBasis::ZXZ, EulerBasis::ZYZ, EulerBasis::XZX};
   std::uniform_int_distribution<std::size_t> distBasisGate{
       0, basisGates.size() - 1};
-  std::uniform_int_distribution<std::size_t> distEulerBases{
-      1, eulerBases.size() - 1};
+  std::uniform_int_distribution<std::size_t> distEulerBases{1,
+                                                            eulerBases.size()};
 
   auto selectRandomEulerBases = [&]() {
     auto tmp = eulerBases;

@@ -84,19 +84,19 @@ static cl::opt<std::string> nativeGates(
     cl::value_desc("csv"), cl::init(""));
 
 static cl::opt<double> nativeGateScoreWeightTwoQ(
-    "native-gate-score-two-q",
+    "score-weight-twoq",
     cl::desc(
         "Weight for two-qubit gates in native synthesis candidate scoring"),
     cl::init(1.0));
 
 static cl::opt<double> nativeGateScoreWeightOneQ(
-    "native-gate-score-one-q",
+    "score-weight-oneq",
     cl::desc("Weight for single-qubit gates in native synthesis candidate "
              "scoring"),
     cl::init(0.1));
 
 static cl::opt<double> nativeGateScoreWeightDepth(
-    "native-gate-score-depth",
+    "score-weight-depth",
     cl::desc("Weight for local depth in native synthesis candidate scoring"),
     cl::init(0.01));
 

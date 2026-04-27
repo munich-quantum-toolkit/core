@@ -242,7 +242,12 @@ Value decomposeToZSXX(IRRewriter& rewriter, Operation* op, Value inQubit,
   }
   SingleQubitEmitter e{.rewriter = &rewriter, .loc = op->getLoc()};
   if (auto p = llvm::dyn_cast<POp>(op)) {
-    return e.rz(inQubit, p.getTheta());
+    auto q = e.rz(inQubit, p.getTheta());
+    auto halfTheta = arith::MulFOp::create(rewriter, op->getLoc(), p.getTheta(),
+                                           e.constF(0.5))
+                         .getResult();
+    GPhaseOp::create(rewriter, op->getLoc(), halfTheta);
+    return q;
   }
   if (!supportsDirectRx) {
     return {};
@@ -276,7 +281,12 @@ Value decomposeToU3(IRRewriter& rewriter, Operation* op, Value inQubit) {
     return e.u(inQubit, ry.getTheta(), e.constF(0.0), e.constF(0.0));
   }
   if (auto rz = llvm::dyn_cast<RZOp>(op)) {
-    return e.u(inQubit, e.constF(0.0), e.constF(0.0), rz.getTheta());
+    auto out = e.u(inQubit, e.constF(0.0), e.constF(0.0), rz.getTheta());
+    auto halfTheta = arith::MulFOp::create(rewriter, op->getLoc(),
+                                           rz.getTheta(), e.constF(-0.5))
+                         .getResult();
+    GPhaseOp::create(rewriter, op->getLoc(), halfTheta);
+    return out;
   }
   if (auto p = llvm::dyn_cast<POp>(op)) {
     return e.u(inQubit, e.constF(0.0), e.constF(0.0), p.getTheta());
@@ -363,9 +373,9 @@ Value emitSynthesizedSingleQubitFromMatrix(
     const auto det = m(0, 0) * m(1, 1) - m(0, 1) * m(1, 0);
     const double phase = std::arg(det) / 2.0;
     m *= std::exp(1i * (-phase));
-    emitGPhaseIfNonTrivial(rewriter, loc, phase);
     const auto angles = decomposition::EulerDecomposition::anglesFromUnitary(
         m, decomposition::EulerBasis::ZYZ);
+    emitGPhaseIfNonTrivial(rewriter, loc, phase);
     return e.u(inQubit, angles[0], angles[1], angles[2]);
   }
   case SingleQubitMode::R: {
@@ -427,7 +437,12 @@ Value decomposeToAxisPair(IRRewriter& rewriter, Operation* op, Value inQubit,
       return rz.getOutputQubit(0);
     }
     if (auto p = llvm::dyn_cast<POp>(op)) {
-      return e.rz(inQubit, p.getTheta());
+      auto q = e.rz(inQubit, p.getTheta());
+      auto halfTheta = arith::MulFOp::create(rewriter, op->getLoc(),
+                                             p.getTheta(), e.constF(0.5))
+                           .getResult();
+      GPhaseOp::create(rewriter, op->getLoc(), halfTheta);
+      return q;
     }
     return {};
   case AxisPair::RxRy:
@@ -446,7 +461,12 @@ Value decomposeToAxisPair(IRRewriter& rewriter, Operation* op, Value inQubit,
       return rz.getOutputQubit(0);
     }
     if (auto p = llvm::dyn_cast<POp>(op)) {
-      return e.rz(inQubit, p.getTheta());
+      auto q = e.rz(inQubit, p.getTheta());
+      auto halfTheta = arith::MulFOp::create(rewriter, op->getLoc(),
+                                             p.getTheta(), e.constF(0.5))
+                           .getResult();
+      GPhaseOp::create(rewriter, op->getLoc(), halfTheta);
+      return q;
     }
     return {};
   }

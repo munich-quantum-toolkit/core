@@ -72,7 +72,7 @@ using native_synth::getBlockTwoQubitMatrix;
 using native_synth::NativeGateKind;
 using native_synth::NativeProfileSpec;
 using native_synth::resolveNativeGatesSpec;
-using native_synth::rewriteXXPlusMinusYYViaRxxRyy;
+using native_synth::rewriteXXPlusMinusYYViaRzz;
 using native_synth::ScoreWeights;
 using native_synth::selectBestCandidate;
 using native_synth::SingleQubitEmitterSpec;
@@ -267,7 +267,10 @@ protected:
     IRRewriter rewriter(&getContext());
 
     fuseOneQubitRuns(rewriter, spec);
-    consolidateTwoQubitBlocks(rewriter, spec, weights);
+    if (failed(consolidateTwoQubitBlocks(rewriter, spec, weights))) {
+      signalPassFailure();
+      return;
+    }
     // Two-qubit lowering can emit off-menu single-qubit ops (e.g. `rx`/`ry`);
     // repeat until clean or hit the sweep cap before seam / `rz` cleanup.
     constexpr unsigned kMaxSynthesisSweeps = 4;
@@ -514,16 +517,16 @@ private:
 
   /// Two-qubit windows with absorbed single-qubit ops: replace when a cheaper
   /// native sequence exists.
-  void consolidateTwoQubitBlocks(IRRewriter& rewriter,
-                                 const NativeProfileSpec& spec,
-                                 const ScoreWeights& weights) {
+  LogicalResult consolidateTwoQubitBlocks(IRRewriter& rewriter,
+                                          const NativeProfileSpec& spec,
+                                          const ScoreWeights& weights) {
     llvm::SmallVector<Operation*, 32> ops;
     collectUnitaryOpsInPreOrder(getOperation(), ops);
     TwoQubitWindowConsolidator consolidator;
     for (Operation* op : ops) {
       consolidator.process(op, spec);
     }
-    consolidator.materialize(rewriter, spec, weights);
+    return consolidator.materialize(rewriter, spec, weights);
   }
 
   /// Lower one single-qubit rewrite plan; null `Value` on failure.
@@ -692,7 +695,7 @@ private:
       });
       if (selectBestCandidate(llvm::ArrayRef(candidates), weights) != nullptr) {
         rewriter.setInsertionPoint(op);
-        if (succeeded(rewriteXXPlusMinusYYViaRxxRyy(rewriter, op))) {
+        if (succeeded(rewriteXXPlusMinusYYViaRzz(rewriter, op))) {
           return success();
         }
       }

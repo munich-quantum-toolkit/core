@@ -81,7 +81,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // 2. QC cleanup
   // 3. QC-to-QCO conversion
   // 4. QCO cleanup
-  // 5. Optimization passes
+  // 5. Optimization and Native Gate Synthesis
   // 6. QCO cleanup
   // 7. QCO-to-QC conversion
   // 8. QC cleanup

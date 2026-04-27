@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
 #include <Eigen/Core>

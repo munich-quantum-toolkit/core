@@ -57,3 +57,8 @@ TEST(DecompositionHelpersTest, IsUnitaryMatrixRejectsNonUnitary) {
   m << 2.0, 0.0, 0.0, 2.0;
   EXPECT_FALSE(isUnitaryMatrix(m));
 }
+
+TEST(DecompositionHelpersTest, IsUnitaryMatrixAcceptsUnitary) {
+  const Eigen::Matrix2cd m = Eigen::Matrix2cd::Identity();
+  EXPECT_TRUE(isUnitaryMatrix(m));
+}

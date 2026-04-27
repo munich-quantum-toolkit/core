@@ -50,7 +50,7 @@ struct QuantumCompilerConfig {
   /// both):
   /// - `"x,sx,rz,cx"` / `"x,sx,rz,cz"` — IBM basic (no fractional 2q)
   /// - `"x,sx,rz,rx,rzz,cx"` / `"...,cz"` — IBM fractional
-  /// - `"u,cx"` / `"u,cz"` — generic single-qubit U3 + CX/CY
+  /// - `"u,cx"` / `"u,cz"` — generic single-qubit U3 + CX/CZ
   /// - `"r,cz"` — IQM-style default
   /// - `"rx,rz,cx"`, `"rx,ry,cz"`, `"ry,rz,cx"` — supported RX/RY/RZ pairs plus
   /// entangler

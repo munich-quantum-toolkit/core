@@ -64,34 +64,52 @@ const std::array<ThreeQubitCircuitCase, 4> THREE_QUBIT_CIRCUIT_CASES{{
 
 } // namespace
 
-TEST_F(NativeSynthesisPassTest, ThreeQubitCircuitsEquivalentAcrossProfiles) {
-  const auto profiles = NativeSynthesisPassTest::allNineEquivalenceProfiles();
-
-  for (const auto& circuitCase : THREE_QUBIT_CIRCUIT_CASES) {
+class NativeSynthesisPassMultiQubitTest : public NativeSynthesisPassTest {
+protected:
+  template <typename BuildFn>
+  void verifyEquivalentAcrossProfiles(BuildFn buildFn,
+                                      const char* circuitName = nullptr) {
+    const auto profiles = allNineEquivalenceProfiles();
     for (const auto& profileCase : profiles) {
-      auto expected = circuitCase.build(context.get());
+      auto expected = buildFn();
       runQcToQco(expected);
       const auto expectedUnitary = computeNQubitUnitaryFromModule(expected);
       ASSERT_TRUE(expectedUnitary.has_value())
-          << "circuit=" << circuitCase.name
-          << " native-gates=" << profileCase.nativeGates;
+          << (circuitName != nullptr
+                  ? std::string("circuit=") + circuitName + " "
+                  : "")
+          << "native-gates=" << profileCase.nativeGates;
 
-      auto synthesized = circuitCase.build(context.get());
+      auto synthesized = buildFn();
       runNativeSynthesis(synthesized, profileCase.nativeGates);
       EXPECT_TRUE(profileCase.isNative(synthesized))
-          << "circuit=" << circuitCase.name
-          << " native-gates=" << profileCase.nativeGates;
+          << (circuitName != nullptr
+                  ? std::string("circuit=") + circuitName + " "
+                  : "")
+          << "native-gates=" << profileCase.nativeGates;
 
       const auto synthesizedUnitary =
           computeNQubitUnitaryFromModule(synthesized);
       ASSERT_TRUE(synthesizedUnitary.has_value())
-          << "circuit=" << circuitCase.name
-          << " native-gates=" << profileCase.nativeGates;
+          << (circuitName != nullptr
+                  ? std::string("circuit=") + circuitName + " "
+                  : "")
+          << "native-gates=" << profileCase.nativeGates;
       EXPECT_TRUE(
           isEquivalentUpToGlobalPhase(*expectedUnitary, *synthesizedUnitary))
-          << "circuit=" << circuitCase.name
-          << " native-gates=" << profileCase.nativeGates;
+          << (circuitName != nullptr
+                  ? std::string("circuit=") + circuitName + " "
+                  : "")
+          << "native-gates=" << profileCase.nativeGates;
     }
+  }
+};
+
+TEST_F(NativeSynthesisPassMultiQubitTest,
+       ThreeQubitCircuitsEquivalentAcrossProfiles) {
+  for (const auto& circuitCase : THREE_QUBIT_CIRCUIT_CASES) {
+    verifyEquivalentAcrossProfiles(
+        [&] { return circuitCase.build(context.get()); }, circuitCase.name);
   }
 }
 
@@ -100,27 +118,8 @@ static OwningOpRef<ModuleOp> buildFiveQubitStressCircuit(MLIRContext* context) {
       context, mlir::qc::nativeSynthMultiQFiveQStressFourLayers);
 }
 
-TEST_F(NativeSynthesisPassTest,
+TEST_F(NativeSynthesisPassMultiQubitTest,
        FiveQubitStressCircuitEquivalentAcrossProfiles) {
-  const auto profiles = NativeSynthesisPassTest::allNineEquivalenceProfiles();
-
-  for (const auto& profileCase : profiles) {
-    auto expected = buildFiveQubitStressCircuit(context.get());
-    runQcToQco(expected);
-    const auto expectedUnitary = computeNQubitUnitaryFromModule(expected);
-    ASSERT_TRUE(expectedUnitary.has_value())
-        << "native-gates=" << profileCase.nativeGates;
-
-    auto synthesized = buildFiveQubitStressCircuit(context.get());
-    runNativeSynthesis(synthesized, profileCase.nativeGates);
-    EXPECT_TRUE(profileCase.isNative(synthesized))
-        << "native-gates=" << profileCase.nativeGates;
-
-    const auto synthesizedUnitary = computeNQubitUnitaryFromModule(synthesized);
-    ASSERT_TRUE(synthesizedUnitary.has_value())
-        << "native-gates=" << profileCase.nativeGates;
-    EXPECT_TRUE(
-        isEquivalentUpToGlobalPhase(*expectedUnitary, *synthesizedUnitary))
-        << "native-gates=" << profileCase.nativeGates;
-  }
+  verifyEquivalentAcrossProfiles(
+      [&] { return buildFiveQubitStressCircuit(context.get()); });
 }

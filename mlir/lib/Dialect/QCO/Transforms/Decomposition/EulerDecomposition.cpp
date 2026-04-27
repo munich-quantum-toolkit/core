@@ -115,7 +115,9 @@ EulerDecomposition::paramsZyz(const Eigen::Matrix2cd& matrix) {
 std::array<double, 4>
 EulerDecomposition::paramsZxz(const Eigen::Matrix2cd& matrix) {
   // Convert from the Z-Y-Z parameterization via the standard basis-change
-  // identity RX(a) = RZ(pi/2) RY(a) RZ(-pi/2).
+  // identity RY(a) = RZ(pi/2) RX(a) RZ(-pi/2), i.e.
+  // RZ(phi) RY(theta) RZ(lambda) =
+  // RZ(phi + pi/2) RX(theta) RZ(lambda - pi/2).
   const auto [theta, phi, lam, phase] = paramsZyz(matrix);
   return {theta, phi + (std::numbers::pi / 2.0), lam - (std::numbers::pi / 2.0),
           phase};

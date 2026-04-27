@@ -8,5 +8,5 @@
 
 add_subdirectory(Decomposition)
 add_subdirectory(Mapping)
-add_subdirectory(Optimizations)
 add_subdirectory(NativeSynthesis)
+add_subdirectory(Optimizations)

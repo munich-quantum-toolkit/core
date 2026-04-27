@@ -21,7 +21,6 @@ add_mlir_library(
   MLIRQCOToQC
   MLIRQCOTransforms
   MLIRQCToQIR
-  MLIRQCOTransforms
   MQT::MLIRSupport)
 
 mqt_mlir_target_use_project_options(MQTCompilerPipeline)
