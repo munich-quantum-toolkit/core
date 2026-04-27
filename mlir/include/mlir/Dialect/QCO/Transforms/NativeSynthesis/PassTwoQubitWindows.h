@@ -16,12 +16,15 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
 #include <Eigen/Core>
+#include <Eigen/StdVector>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <vector>
 
 namespace mlir::qco::native_synth {
 
@@ -46,7 +49,7 @@ void collectUnitaryOpsInPreOrder(Operation* root,
 struct TwoQubitWindowConsolidator {
   /// Append-only list of windows discovered so far; closed windows are kept
   /// so `materialize()` can still rewrite them.
-  llvm::SmallVector<TwoQubitBlock, 0> blocks;
+  std::vector<TwoQubitBlock, Eigen::aligned_allocator<TwoQubitBlock>> blocks;
   /// Maps each currently-open SSA qubit value to the index of the block
   /// that owns its trailing wire.
   llvm::DenseMap<Value, size_t> wireToBlock;
