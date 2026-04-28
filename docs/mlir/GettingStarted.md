@@ -408,30 +408,29 @@ The figure below illustrates the compilation flow graphically.
 
 ### Directory Layout
 
-Wrapping one's head around the folder structure of MLIR projects can be quite confusing in the beginning. 
-To help you navigate the project, the following paragraphs provide a brief introduction to its directory layout. 
+Wrapping one's head around the folder structure of MLIR projects can be quite confusing in the beginning.
+To help you navigate the project, the following paragraphs provide a brief introduction to its directory layout.
 
 #### `core/mlir/include/mlir/`
 
-This folder contains `.h` header files and tablegen `.td` specifications. 
+This folder contains `.h` header files and tablegen `.td` specifications.
 It consists of the following sub-directories:
 
-| Directory | Description |
-| --- | --- |
-| `Compiler` | Defines the compiler pipeline. |
-| `Conversion` | Defines conversions from or to other MLIR dialects. |
-| `Dialect` | Defines (among others) the QC and QCO dialects. Contains the Tablegen files. |
-| `Support` | Defines utilities. |
+| Directory    | Description                                                                  |
+| ------------ | ---------------------------------------------------------------------------- |
+| `Compiler`   | Defines the compiler pipeline.                                               |
+| `Conversion` | Defines conversions from or to other MLIR dialects.                          |
+| `Dialect`    | Defines (among others) the QC and QCO dialects. Contains the Tablegen files. |
+| `Support`    | Defines utilities.                                                           |
 
 Each of the dialects follows a consistent structure:
 
-| Directory | Description |
-| --- | --- |
-| `Builder` | Defines the program builder. |
-| `IR` | Defines the dialect, operations, and types in Tablegen. |
-| `Transforms` | Defines transformations on the dialect. |
-| `Utils` | Defines utilities. |
-
+| Directory    | Description                                             |
+| ------------ | ------------------------------------------------------- |
+| `Builder`    | Defines the program builder.                            |
+| `IR`         | Defines the dialect, operations, and types in Tablegen. |
+| `Transforms` | Defines transformations on the dialect.                 |
+| `Utils`      | Defines utilities.                                      |
 
 #### `core/mlir/lib/`
 
@@ -504,12 +503,12 @@ module {
 }
 ```
 
-Note that only three instead of four qubits are allocated. 
+Note that only three instead of four qubits are allocated.
 Thus, the optimizer has successfully removed the unused qubit.
 
 ### Emitting Quantum Intermediate Representation (QIR)
 
-Now that your quantum program is optimized, you want to simulate it using a classical simulator via the MQT QIR Runtime. 
+Now that your quantum program is optimized, you want to simulate it using a classical simulator via the MQT QIR Runtime.
 To transform the program to the QIR, you can supply the `--emit-qir` command-line option:
 
 ```console
