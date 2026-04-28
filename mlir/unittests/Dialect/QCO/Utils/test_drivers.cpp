@@ -75,6 +75,10 @@ TEST_F(DriversTest, ProgramWalk) {
   Value ex2 = nullptr;
   Value ex3 = nullptr;
 
+  // Walk until the first measurement operation is encountered and stop.
+  // Since WalkOrder::PreOrder is used here, the state of the qubits is not yet
+  // updated with the SSA values of the measurement op.
+  // Consequently, the program qubits point at the outputs of the controlled-Xs. 
   std::ignore = qco::walkProgram(func.getBody(),
                                  [&](Operation* op, const qco::Qubits& qubits) {
                                    if (op == q03.getDefiningOp()) {
