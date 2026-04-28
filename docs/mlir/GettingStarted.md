@@ -376,11 +376,13 @@ For instance, the controlled-X operation depends on the application of the Hadam
 This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two! 
 Consequently, the expressive dataflow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
 
-The `qco.ctrl` operation adds a bit of complexity:
+However, with that expressiveness complexity increases also. This is best seen for the `qco.ctrl` operation:
 
 - The input target qubit must be explicitly specified and is aliased to the block argument `%arg0`.
 - The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield` to return the control flow to the outer scope.
 - Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
+
+The following figure depicts the data-flow of the `ctrl` modifier.
 
 ```{image} ../_static/mlir/ctrl-modifier.svg
 :width: 75%
@@ -398,9 +400,50 @@ The goal of any compiler is to take a (quantum) program and transform into a mor
 The figure below illustrates the compilation flow graphically.
 
 ```{image} ../_static/mlir/compiler-collection-pipeline.svg
-:width: 75%
+:width: 70%
 :align: center
 ```
+
+## Writing Your First Optimization Pass
+
+### Directory Layout
+
+Wrapping one's head around the folder structure of MLIR projects can be quite confusing in the beginning. 
+To help you navigate the project, the following paragraphs provide a brief introduction to its directory layout. 
+
+#### `core/mlir/include/mlir/`
+
+This folder contains `.h` header files and tablegen `.td` specifications. 
+It consists of the following sub-directories:
+
+| Directory | Description |
+| --- | --- |
+| `Compiler` | Defines the compiler pipeline. |
+| `Conversion` | Defines conversions from or to other MLIR dialects. |
+| `Dialect` | Defines (among others) the QC and QCO dialects. Contains the Tablegen files. |
+| `Support` | Defines utilities. |
+
+Each of the dialects follows a consistent structure:
+
+| Directory | Description |
+| --- | --- |
+| `Builder` | Defines the program builder. |
+| `IR` | Defines the dialect, operations, and types in Tablegen. |
+| `Transforms` | Defines transformations on the dialect. |
+| `Utils` | Defines utilities. |
+
+
+#### `core/mlir/lib/`
+
+The accompanying `.cpp` files for the headers. Follows the same folder structure as the include directory.
+
+#### `core/mlir/tools/`
+
+In this folder resides the entry point function for the `mqt-cc` executable.
+
+#### `core/mlir/unittests/`
+
+This folder contains unit-tests for the MQT Compiler Collection.
 
 ## Using the MQT Compiler Collection Tool
 
@@ -417,9 +460,11 @@ include "qelib1.inc";
 
 qreg q[4];
 creg c[4];
+
 h q[0];
 cx q[0], q[1];
 cx q[1], q[2];
+
 measure q[0] -> c[0];
 measure q[1] -> c[1];
 measure q[2] -> c[2];
@@ -431,7 +476,7 @@ The program defines four qubits, but uses only three. Next, execute the MQT Comp
 % mqt-cc ghz.qasm
 ```
 
-The MQT Compiler Collection Tool will output the following IR on stdout:
+The MQT Compiler Collection Tool will print the following IR:
 
 ```{code-block} mlir
 :lineno-start: 0
@@ -459,11 +504,13 @@ module {
 }
 ```
 
-Note how in the IR only three instead of four qubits are allocated. Consequently, the optimizer has successfully removed the unused qubit.
+Note that only three instead of four qubits are allocated. 
+Thus, the optimizer has successfully removed the unused qubit.
 
 ### Emitting Quantum Intermediate Representation (QIR)
 
-Now that your quantum program is optimized, you want to simulate it using a classical simulator via the MQT QIR Runtime. To transform the program to the QIR, you can supply the `--emit-qir` command-line option:
+Now that your quantum program is optimized, you want to simulate it using a classical simulator via the MQT QIR Runtime. 
+To transform the program to the QIR, you can supply the `--emit-qir` command-line option:
 
 ```console
 % mqt-cc ghz.qasm --emit-qir
