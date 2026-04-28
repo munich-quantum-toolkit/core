@@ -201,7 +201,7 @@ qco.sink %q0_0 : !qco.qubit
 :::
 ::::
 
-To target specific hardware qubits, we use the `static` operation. While static qubits in the QCO dialect still require a `sink` operation, the `dealloc` is omitted for the QC dialect. There is a sound rationale behind this seemingly obscure design choice: The QCO dialect enforces "linear typing", where each (qubit) SSA value is used _exactly_ once. If there wasn't a `sink` operation for qubits in the QCO dialect, this property would be violated.
+To target specific hardware qubits, we use the `static` operation. While static qubits in the QCO dialect still require a `sink` operation, the `dealloc` is omitted for the QC dialect. There is a sound rationale behind this seemingly obscure design choice: The QCO dialect enforces "linear typing", where each (qubit) SSA value is used _exactly_ once. If there wasn't a `sink` operation for static qubits in the QCO dialect, this property would be violated.
 
 ::::{grid} 2
 :::{grid-item}
@@ -224,7 +224,7 @@ qco.sink %q0_0 : !qco.qubit
 :::
 ::::
 
-Let's apply Hadamard gate to a qubit next:
+Let's apply an Hadamard gate to a qubit next:
 
 ::::{grid} 2
 :::{grid-item}
@@ -286,7 +286,7 @@ qco.sink %q0_2 : !qco.qubit
 :::
 ::::
 
-To measure qubits, use the `measure` operation. In the QCO dialect, the measurement operation returns not only the classical measurement outcome but also the state after measurement.
+To measure qubits, we use the `measure` operation. In the QCO dialect, the measurement operation returns not only the classical measurement outcome but also the state after measurement.
 
 ::::{grid} 2
 :::{grid-item}
@@ -308,13 +308,15 @@ qc.dealloc %q0 : !qc.qubit
 %q0_0 = qco.alloc : !qco.qubit
 %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
 %q0_2, %c0 = qco.measure %q0_1 : !qco.qubit
-qco.dealloc %q0_2 : !qco.qubit
+qco.sink %q0_2 : !qco.qubit
 ```
 
 :::
 ::::
 
-Moving on from one-qubit gates, let us apply a controlled-X operation. Towards that end, we allocate a second qubit and use the `ctrl` modifier operation of the respective dialect to implement the controlled-X. By using modifiers, arbitrary (multi-)controlled gates can be represented without having to explicitly define them.
+Moving on from one-qubit gates, let us apply a controlled-X operation. 
+Towards that end, we allocate a second qubit and use the `ctrl` modifier operation of the respective dialect to implement the controlled-X. 
+By using modifiers, arbitrary (multi-)controlled gates can be represented without having to explicitly define them.
 
 ::::{grid} 2
 :::{grid-item}
@@ -355,12 +357,24 @@ qc.dealloc %q1 : !qc.qubit
 %q0_3, %c0 = qco.measure %q0_2 : !qco.qubit
 %q1_2, %c1 = qco.measure %q1_1 : !qco.qubit
 
-qco.dealloc %q0_3 : !qco.qubit
-qco.dealloc %q1_2 : !qco.qubit
+qco.sink %q0_3 : !qco.qubit
+qco.sink %q1_2 : !qco.qubit
 ```
 
 :::
 ::::
+
+The figure below illustrates the data-flow graph of the above textual intermediate representation graphically.
+
+```{image} ../_static/mlir/data-flow.svg
+:width: 75%
+:align: center
+```
+
+The dependencies between operations are naturally express because the QCO dialect models quantum computations as directed acyclic "data-flow" graphs (DAG).
+For instance, the controlled-X operation depends on the application of the Hadamard operation. 
+This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two! 
+Consequently, the expressive dataflow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
 
 The `qco.ctrl` operation adds a bit of complexity:
 
@@ -368,14 +382,10 @@ The `qco.ctrl` operation adds a bit of complexity:
 - The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield` to return the control flow to the outer scope.
 - Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
 
-The following figure describes the dataflow graph of the above quantum program in the QCO dialect.
-
-```{image} ../_static/qco-dataflow.svg
-:width: 85%
+```{image} ../_static/mlir/ctrl-modifier.svg
+:width: 75%
 :align: center
 ```
-
-Because of the QCO dialect's value semantics, the dependencies between operations are naturally expressed in the data-flow graph. For instance, in the figure above, the controlled-X operation depends on the application of the Hadamard operation. This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two! Consequently, the expressive dataflow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
 
 ### Compilation Flow
 
@@ -387,14 +397,14 @@ The goal of any compiler is to take a (quantum) program and transform into a mor
 
 The figure below illustrates the compilation flow graphically.
 
-```{image} ../_static/compilation-pipeline.svg
-:width: 55%
+```{image} ../_static/mlir/compiler-collection-pipeline.svg
+:width: 75%
 :align: center
 ```
 
-## Examples Using the MQT Compiler Collection Tool
+## Using the MQT Compiler Collection Tool
 
-This section contains examples showing you how to use the MQT Compiler Collection Tool.
+This section shows you how to use the MQT Compiler Collection Tool (`mqt-cc`).
 
 ### Optimizing an OpenQASM Program
 
