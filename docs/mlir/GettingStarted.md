@@ -314,8 +314,8 @@ qco.sink %q0_2 : !qco.qubit
 :::
 ::::
 
-Moving on from one-qubit gates, let us apply a controlled-X operation. 
-Towards that end, we allocate a second qubit and use the `ctrl` modifier operation of the respective dialect to implement the controlled-X. 
+Moving on from one-qubit gates, let us apply a controlled-X operation.
+Towards that end, we allocate a second qubit and use the `ctrl` modifier operation of the respective dialect to implement the controlled-X.
 By using modifiers, arbitrary (multi-)controlled gates can be represented without having to explicitly define them.
 
 ::::{grid} 2
@@ -372,8 +372,8 @@ The figure below illustrates the data-flow graph of the above textual intermedia
 ```
 
 The dependencies between operations are naturally express because the QCO dialect models quantum computations as directed acyclic "data-flow" graphs (DAG).
-For instance, the controlled-X operation depends on the application of the Hadamard operation. 
-This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two! 
+For instance, the controlled-X operation depends on the application of the Hadamard operation.
+This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two!
 Consequently, the expressive dataflow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
 
 However, with that expressiveness complexity increases also. This is best seen for the `qco.ctrl` operation:
