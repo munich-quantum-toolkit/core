@@ -2,8 +2,8 @@
 
 ## Setup
 
-Before we actually get started, make sure to visit the [installation](../installation.md) page. 
-There you will find detailed instructions on how to download the project as well as install and set up the Multi-Level Intermediate Representation (MLIR) framework correctly. 
+Before we actually get started, make sure to visit the [installation](../installation.md) page.
+There you will find detailed instructions on how to download the project as well as install and set up the Multi-Level Intermediate Representation (MLIR) framework correctly.
 Once this is done, you can compile the project as follows:
 
 ```console
@@ -23,12 +23,12 @@ $ ./mlir/tools/mqt-cc/mqt-cc --help
 
 ## Fundamentals
 
-To keep this tutorial self-contained, this section reviews the fundamentals of quantum computing and the key concepts of MLIR. 
+To keep this tutorial self-contained, this section reviews the fundamentals of quantum computing and the key concepts of MLIR.
 If you are familiar with both quantum computing and MLIR, you may skip this section.
 
 ### Quantum Computing
 
-Qubits are the fundamental computational unit of quantum computing. 
+Qubits are the fundamental computational unit of quantum computing.
 Whereas a classical bit is either in the state $0$ or $1$, a qubit can exist in a superposition of both states.
 Mathematically, we denote a qubit as follows.
 
@@ -39,10 +39,10 @@ Mathematically, we denote a qubit as follows.
 
 where $\alpha$ and $\beta$ are complex numbers such that $|\alpha|^2 + |\beta|^2 = 1$.
 
-These complex numbers determine the probabilities of the outcome of a _measurement_. 
+These complex numbers determine the probabilities of the outcome of a _measurement_.
 A measurement collapses the qubit's state to $|0\rangle$ with probability $|\alpha|^2$ and to $|1\rangle$ with probability $|\beta|^2$ and returns the respective classical outcome ($0$ or $1$).
 
-Quantum gates --- mathematically described by unitary matrices --- modify a qubit's state. 
+Quantum gates --- mathematically described by unitary matrices --- modify a qubit's state.
 For instance, the Hadamard gate H creates the equal superposition state for which a measurement collapses the state to $|0\rangle$ or $|1\rangle$ with probability $0.5$.
 
 ```{math}
@@ -91,18 +91,18 @@ Read from left to right, the above quantum circuit computes and measures the [Be
 3. Apply a controlled-X gate to both qubits. The black dot $\bullet{}$ and the $\oplus{}$ represent the control and target qubits, respectively. The resulting two-qubit state is $|\Phi^{+}\rangle$.
 4. Measure both qubits and receive two classical output bits.
 
-With that, we've already covered the most fundamental building blocks of quantum computing: qubits, measurements, gates, and finally circuits. 
+With that, we've already covered the most fundamental building blocks of quantum computing: qubits, measurements, gates, and finally circuits.
 In the next section, you will learn about the Multi-Level Intermediate Representation (MLIR) framework, bringing us one step closer to our goal of understanding and building quantum compilers.
 
 ### Multi-Level Intermediate Representation (MLIR)
 
-The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware. 
+The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware.
 Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to lower them from higher to lower levels.
 
-The core concept in MLIR is a dialect. 
-A dialect groups operations, types, and attributes under a common namespace. 
-A single program may combine multiple dialects, which facilitates code reuse. 
-For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the `arith` dialect defines integer and floating-point operations. 
+The core concept in MLIR is a dialect.
+A dialect groups operations, types, and attributes under a common namespace.
+A single program may combine multiple dialects, which facilitates code reuse.
+For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the `arith` dialect defines integer and floating-point operations.
 Another essential dialect is the `func` dialect, which lets us define and call functions.
 
 The following snippet combines the three dialects into a single program which sums up the numbers from 0 to 100.
@@ -150,9 +150,9 @@ The following figure illustrates the interplay of operations, blocks, and region
 :align: center
 ```
 
-The control flow dialect (`cf`) is the lower-level equivalent of the structured control flow dialect (`scf`). 
-For each IR that uses the SCF dialect there is an equivalent one in the CF dialect. 
-For example, the IR below is semantically equivalent to the one above that sums up the numbers from 0 to 100. 
+The control flow dialect (`cf`) is the lower-level equivalent of the structured control flow dialect (`scf`).
+For each IR that uses the SCF dialect there is an equivalent one in the CF dialect.
+For example, the IR below is semantically equivalent to the one above that sums up the numbers from 0 to 100.
 However, it uses the CF instead of the SCF dialect.
 
 ```mlir
@@ -177,8 +177,8 @@ func.func @main() {
   }
 ```
 
-Luckily, we don't have to perform this conversion --- the transformation from one dialect to another --- per hand. 
-The MLIR framework already implements this and many other conversions between the built-in dialects. 
+Luckily, we don't have to perform this conversion --- the transformation from one dialect to another --- per hand.
+The MLIR framework already implements this and many other conversions between the built-in dialects.
 Furthermore, we can develop custom conversions using the conversion framework which defines exactly how a transformation must look like and under what circumstances the resulting IR is considered valid.
 
 Conversions are a specific instance of transformation passes. More generally, a pass in MLIR traverses the IR and optionally modifies it. An example of a non-rewriting pass are analyses passes, which simply collect statistics of the IR. Moreover, multiple passes can be combined into a pass pipeline which executes a series of passes sequentially.
@@ -187,16 +187,16 @@ That's it! Now that we've also got all the fundamentals covered, we can move on 
 
 ## The MQT Compiler Collection
 
-The MQT Compiler Collection (`mqt-cc`) provides tools to optimize and transpile quantum programs. 
+The MQT Compiler Collection (`mqt-cc`) provides tools to optimize and transpile quantum programs.
 This section outlines how we utilize the MLIR framework as well as its compilation infrastructure to implement these tasks.
 
 ### Quantum Dialects
 
-The MQT Compiler Collection defines two dialects in MLIR, each with a distinctive purpose. 
-While the Quantum Circuit (QC) dialect is great for exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is --- as the name suggests --- specifically designed for optimizations. 
+The MQT Compiler Collection defines two dialects in MLIR, each with a distinctive purpose.
+While the Quantum Circuit (QC) dialect is great for exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is --- as the name suggests --- specifically designed for optimizations.
 Let's explore their differences.
 
-The following snippet allocates and subsequently deallocates a dynamic qubit using the `alloc` operation of the respective dialect. 
+The following snippet allocates and subsequently deallocates a dynamic qubit using the `alloc` operation of the respective dialect.
 In the QC dialect, we can dealloc dynamic qubits using the `dealloc` operation, whereas in the QCO dialect we define end of a qubit's lifespan with the `sink` operation.
 
 ::::{grid} 2
@@ -221,9 +221,9 @@ qco.sink %q0_0 : !qco.qubit
 :::
 ::::
 
-To target specific hardware qubits, we use the `static` operation. 
-While static qubits in the QCO dialect still require a `sink` operation, the `dealloc` is omitted for the QC dialect. 
-There is a sound rationale behind this seemingly obscure design choice: The QCO dialect enforces "linear typing", where each (qubit) SSA value is used _exactly_ once. 
+To target specific hardware qubits, we use the `static` operation.
+While static qubits in the QCO dialect still require a `sink` operation, the `dealloc` is omitted for the QC dialect.
+There is a sound rationale behind this seemingly obscure design choice: The QCO dialect enforces "linear typing", where each (qubit) SSA value is used _exactly_ once.
 If there wasn't a `sink` operation for static qubits in the QCO dialect, this property would be violated.
 
 ::::{grid} 2
@@ -273,8 +273,8 @@ qco.sink %q0_1 : !qco.qubit
 :::
 ::::
 
-Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit. 
-We say that the QC dialect uses "reference semantics" whereas the QCO dialect uses "value semantics". 
+Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit.
+We say that the QC dialect uses "reference semantics" whereas the QCO dialect uses "value semantics".
 Semantically, the unitary operations in the QCO dialect return the new state after modifying it.
 
 Instead of the Hadamard, we can also apply the identical transformation as X and Y rotations with parameterized gates as follows:
@@ -311,7 +311,7 @@ qco.sink %q0_2 : !qco.qubit
 :::
 ::::
 
-To measure qubits, we use the `measure` operation. 
+To measure qubits, we use the `measure` operation.
 In the QCO dialect, the measurement operation returns not only the classical measurement outcome but also the state after measurement.
 
 ::::{grid} 2
@@ -442,22 +442,21 @@ To help you navigate the project, the following paragraphs provide a brief intro
 This folder contains `.h` header files and TableGen `.td` specifications.
 It consists of the following sub-directories:
 
-| Directory | Description |
-| --- | --- |
-| `Compiler/` | Defines the compiler pipeline. |
-| `Conversion/` | Defines conversions from or to other MLIR dialects. |
-| `Dialect/` | Defines (among others) the QC and QCO dialects. Contains the TableGen files. |
-| `Support/` | Defines utilities. |
+| Directory     | Description                                                                  |
+| ------------- | ---------------------------------------------------------------------------- |
+| `Compiler/`   | Defines the compiler pipeline.                                               |
+| `Conversion/` | Defines conversions from or to other MLIR dialects.                          |
+| `Dialect/`    | Defines (among others) the QC and QCO dialects. Contains the TableGen files. |
+| `Support/`    | Defines utilities.                                                           |
 
 Each of the dialects follows a consistent structure:
 
-| Directory | Description |
-| --- | --- |
-| `Builder/` | Defines the program builder. |
-| `IR/` | Defines the dialect, operations, and types in TableGen. |
-| `Transforms/` | Defines transformations on the dialect. |
-| `Utils/` | Defines utilities. |
-
+| Directory     | Description                                             |
+| ------------- | ------------------------------------------------------- |
+| `Builder/`    | Defines the program builder.                            |
+| `IR/`         | Defines the dialect, operations, and types in TableGen. |
+| `Transforms/` | Defines transformations on the dialect.                 |
+| `Utils/`      | Defines utilities.                                      |
 
 **`core/mlir/lib/`**
 
