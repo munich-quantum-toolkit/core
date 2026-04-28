@@ -17,7 +17,6 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
 
 #include <cassert>
 #include <iterator>

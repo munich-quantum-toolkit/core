@@ -12,12 +12,7 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
@@ -28,6 +23,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
@@ -953,7 +949,7 @@ private:
    */
   void
   createCallOp(const llvm::SmallVector<std::variant<double, Value>>& parameters,
-               ValueRange controls, const SmallVector<Value>& targets,
+               ValueRange controls, const llvm::SmallVector<Value>& targets,
                llvm::StringRef fnName);
 
   /**

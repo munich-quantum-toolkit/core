@@ -24,7 +24,6 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <cassert>

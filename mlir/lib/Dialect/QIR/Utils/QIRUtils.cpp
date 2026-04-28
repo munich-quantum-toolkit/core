@@ -24,7 +24,6 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>

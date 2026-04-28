@@ -14,9 +14,9 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdlib>

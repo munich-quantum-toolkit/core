@@ -19,7 +19,6 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 // The following headers are needed for some template instantiations.

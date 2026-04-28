@@ -31,7 +31,6 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>

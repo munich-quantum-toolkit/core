@@ -29,7 +29,6 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdint>
