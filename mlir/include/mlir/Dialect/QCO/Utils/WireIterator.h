@@ -10,8 +10,12 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+
 #include <mlir/IR/Operation.h>
 
+#include <cstdint>
 #include <iterator>
 
 namespace mlir::qco {
@@ -82,5 +86,34 @@ private:
   mlir::Operation* op_;
   mlir::Value qubit_;
   bool isSentinel_;
+};
+
+/**
+ * @brief Categorizes the current traversal direction.
+ */
+enum class WireDirection : std::uint8_t { Forward, Backward };
+
+template <WireDirection Direction> struct WireTraversalTraits {};
+
+template <> struct WireTraversalTraits<WireDirection::Forward> {
+  /// @returns the forward increment stride size.
+  static constexpr std::ptrdiff_t stride() { return 1; }
+
+  /// @returns true if the wire iterator can continue forward.
+  static bool isActive(const WireIterator& it) {
+    return it != std::default_sentinel;
+  }
+};
+
+template <> struct WireTraversalTraits<WireDirection::Backward> {
+  /// @returns the backward increment stride size.
+  static constexpr std::ptrdiff_t stride() { return -1; }
+
+  /// @returns true if the wire iterator can continue backward.
+  static bool isActive(const WireIterator& it) {
+    return it.operation() == nullptr
+               ? false
+               : !isa<AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
+  }
 };
 } // namespace mlir::qco
