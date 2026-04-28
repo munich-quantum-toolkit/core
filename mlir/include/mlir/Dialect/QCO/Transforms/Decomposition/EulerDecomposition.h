@@ -53,19 +53,19 @@ public:
   anglesFromUnitary(const Eigen::Matrix2cd& matrix, EulerBasis basis);
 
 private:
-  /// Extract parameters for a `RZ(phi) RY(theta) RZ(lambda)` factorization.
+  /// Extract parameters for a `RZ(phi) . RY(theta) . RZ(lambda)` factorization.
   [[nodiscard]] static std::array<double, 4>
   paramsZyz(const Eigen::Matrix2cd& matrix);
 
-  /// Extract parameters for a `RZ(phi) RX(theta) RZ(lambda)` factorization.
+  /// Extract parameters for a `RZ(phi) . RX(theta) . RZ(lambda)` factorization.
   [[nodiscard]] static std::array<double, 4>
   paramsZxz(const Eigen::Matrix2cd& matrix);
 
-  /// Extract parameters for a `RX(phi) RY(theta) RX(lambda)` factorization.
+  /// Extract parameters for a `RX(phi) . RY(theta) . RX(lambda)` factorization.
   [[nodiscard]] static std::array<double, 4>
   paramsXyx(const Eigen::Matrix2cd& matrix);
 
-  /// Extract parameters for a `RX(phi) RZ(theta) RX(lambda)` factorization.
+  /// Extract parameters for a `RX(phi) . RZ(theta) . RX(lambda)` factorization.
   [[nodiscard]] static std::array<double, 4>
   paramsXzx(const Eigen::Matrix2cd& matrix);
 
