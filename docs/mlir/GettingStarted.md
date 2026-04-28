@@ -411,37 +411,37 @@ The figure below illustrates the compilation flow graphically.
 Wrapping one's head around the folder structure of MLIR projects can be quite confusing in the beginning. 
 To help you navigate the project, the following paragraphs provide a brief introduction to its directory layout. 
 
-#### `core/mlir/include/mlir/`
+**`core/mlir/include/mlir/`**
 
 This folder contains `.h` header files and tablegen `.td` specifications. 
 It consists of the following sub-directories:
 
 | Directory | Description |
 | --- | --- |
-| `Compiler` | Defines the compiler pipeline. |
-| `Conversion` | Defines conversions from or to other MLIR dialects. |
-| `Dialect` | Defines (among others) the QC and QCO dialects. Contains the Tablegen files. |
-| `Support` | Defines utilities. |
+| `Compiler/` | Defines the compiler pipeline. |
+| `Conversion/` | Defines conversions from or to other MLIR dialects. |
+| `Dialect/` | Defines (among others) the QC and QCO dialects. Contains the Tablegen files. |
+| `Support/` | Defines utilities. |
 
 Each of the dialects follows a consistent structure:
 
 | Directory | Description |
 | --- | --- |
-| `Builder` | Defines the program builder. |
-| `IR` | Defines the dialect, operations, and types in Tablegen. |
-| `Transforms` | Defines transformations on the dialect. |
-| `Utils` | Defines utilities. |
+| `Builder/` | Defines the program builder. |
+| `IR/` | Defines the dialect, operations, and types in Tablegen. |
+| `Transforms/` | Defines transformations on the dialect. |
+| `Utils/` | Defines utilities. |
 
 
-#### `core/mlir/lib/`
+**`core/mlir/lib/`**
 
 The accompanying `.cpp` files for the headers. Follows the same folder structure as the include directory.
 
-#### `core/mlir/tools/`
+**`core/mlir/tools/`**
 
 In this folder resides the entry point function for the `mqt-cc` executable.
 
-#### `core/mlir/unittests/`
+**`core/mlir/unittests/`**
 
 This folder contains unit-tests for the MQT Compiler Collection.
 
