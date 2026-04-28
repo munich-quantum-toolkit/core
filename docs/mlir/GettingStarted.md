@@ -39,7 +39,7 @@ Mathematically, we denote a qubit as follows.
 
 where $\alpha$ and $\beta$ are complex numbers such that $|\alpha|^2 + |\beta|^2 = 1$.
 
-These complex numbers determine the probabilities of the outcome of a _measurement_.
+These complex numbers determine the probabilities of the outcome of a measurement.
 A measurement collapses the qubit's state to $|0\rangle$ with probability $|\alpha|^2$ and to $|1\rangle$ with probability $|\beta|^2$ and returns the respective classical outcome ($0$ or $1$).
 
 Quantum gates --- mathematically described by unitary matrices --- modify a qubit's state.
@@ -87,7 +87,7 @@ Quantum circuits describe a quantum computation graphically:
 Read from left to right, the above quantum circuit computes and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$:
 
 1. Initialize both qubits in the $|0\rangle$ state.
-2. Apply a Hadamard gate $H$ to the upper qubit. Consequently, this qubit is now in an equal superposition state.
+2. Apply a Hadamard gate H to the upper qubit. Consequently, this qubit is now in an equal superposition state.
 3. Apply a controlled-X gate to both qubits. The black dot $\bullet{}$ and the $\oplus{}$ represent the control and target qubits, respectively. The resulting two-qubit state is $|\Phi^{+}\rangle$.
 4. Measure both qubits and receive two classical output bits.
 
@@ -139,7 +139,7 @@ func.func @select(i32, i32, i1) -> i32 {
 }
 ```
 
-- The `^entry` and `^exit` define a _block_, respectively. In MLIR, a block is a list of operations. Moreover, blocks take a list of arguments in an intuitive, function-like, way.
+- The `^entry` and `^exit` define a block, respectively. In MLIR, a block is a list of operations. Moreover, blocks take a list of arguments in an intuitive, function-like, way.
 - The terminator, the last operation inside the block, determines the control flow. For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a`, if the `%cond` is `1`. Otherwise, it uses variable `%b`. The `return` operation is another example of a terminator which returns the control flow to the caller of the function.
 - A region combines multiple blocks and is indicated by curly brackets.
 
@@ -392,9 +392,12 @@ qco.sink %q1_2 : !qco.qubit
 
 The figure below illustrates the data-flow graph of the above textual intermediate representation graphically.
 
-```{image} ../_static/mlir/data-flow.svg
+```{figure} ../_static/mlir/data-flow.svg
 :width: 75%
 :align: center
+:name: fig:data-flow 
+
+The data-flow graph of the IR shown above.
 ```
 
 The dependencies between operations are naturally express because the QCO dialect models quantum computations as directed acyclic "data-flow" graphs (DAG).
@@ -410,10 +413,99 @@ However, with that expressiveness complexity increases also. This is best seen f
 
 The following figure depicts the data-flow of the `ctrl` modifier.
 
-```{image} ../_static/mlir/ctrl-modifier.svg
+```{figure} ../_static/mlir/ctrl-modifier.svg
 :width: 75%
 :align: center
+:name: fig:ctrl-modifier
+
+The data-flow of the `ctrl` modifier.
 ```
+
+In many front-end quantum languages, there is a concept describing a register (a collection) of qubits. 
+The QC and QCO dialect use the `memref` and `qtensor` dialects to describe these constructs, respectively, where the latter is part of the MQT Compiler Collection.
+The following snippets construct the [GHZ](https://en.wikipedia.org/wiki/Greenberger–Horne–Zeilinger_state) state in the QC and QCO dialect. 
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+%i0 = arith.constant 0 : index
+%i1 = arith.constant 1 : index
+%i2 = arith.constant 2 : index
+
+
+%r0 = memref.alloc() : memref<3x!qc.qubit>
+
+%q0 = memref.load %r0[%i0] : memref<3x!qc.qubit>
+%q1 = memref.load %r0[%i1] : memref<3x!qc.qubit>
+%q2 = memref.load %r0[%i2] : memref<3x!qc.qubit>
+
+qc.h %q0 : !qc.qubit 
+qc.h %q1 : !qc.qubit 
+qc.h %q2 : !qc.qubit 
+
+qc.ctrl(%q0) {
+    qc.x %q1 : !qc.qubit
+
+} : !qc.qubit  
+
+qc.ctrl(%q0) {
+    qc.x %q2 : !qc.qubit
+
+} : !qc.qubit 
+
+
+
+
+
+memref.dealloc %r0 : memref<3x!qc.qubit>
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+%i0 = arith.constant 0 : index
+%i1 = arith.constant 1 : index
+%i2 = arith.constant 2 : index
+
+%sz = arith.constant 3 : index
+%r0_0 = qtensor.alloc(%sz) : tensor<3x!qco.qubit>
+
+%r0_1, %q0_0 = qtensor.extract %r0_0[%i0] : tensor<3x!qco.qubit>
+%r0_2, %q1_0 = qtensor.extract %r0_1[%c1] : tensor<3x!qco.qubit>
+%r0_3, %q2_0 = qtensor.extract %r0_2[%c2] : tensor<3x!qco.qubit>
+
+%q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+%q1_1 = qco.h %q1_0 : !qco.qubit -> !qco.qubit
+%q2_1 = qco.h %q2_0 : !qco.qubit -> !qco.qubit
+
+%q0_2, %q1_2 = qco.ctrl(%q0_1) targets (%arg0 = %q1_1) {
+  %q1_2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+  qco.yield %q1_2
+} : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+
+%q0_3, %q2_2 = qco.ctrl(%q0_2) targets (%arg0 = %q2_1) {
+  %q2_2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+  qco.yield %q2_2
+} : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+
+%r0_4 = qtensor.insert %targets_out into %r0_3[%c1] : tensor<3x!qco.qubit>
+%r0_5 = qtensor.insert %targets_out_5 into %r0_4[%c2] : tensor<3x!qco.qubit>
+%r0_6 = qtensor.insert %controls_out_4 into %r0_5[%c0] : tensor<3x!qco.qubit>
+
+qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
+```
+
+:::
+::::
+
+Similarly to the argument above, to satisfy linear typing, the QCO dialect requires `insert` operations for the qubit SSA values. 
+Moreover, the QCO dialect also enforces this property for registers (`%r0_1`, `%r0_2`, etc.).
+Consequently, in the QCO dialect the SSA value of a register represents its state.
 
 ### Compilation Flow
 
@@ -425,9 +517,12 @@ The goal of any compiler is to take a (quantum) program and transform into a mor
 
 The figure below illustrates the compilation flow graphically.
 
-```{image} ../_static/mlir/compiler-collection-pipeline.svg
+```{figure} ../_static/mlir/compiler-collection-pipeline.svg
 :width: 70%
 :align: center
+:name: fig:compiler-collection-pipeline
+
+The compilation pipeline of the MQT Compiler Collection.
 ```
 
 ## Writing Your First Optimization Pass
