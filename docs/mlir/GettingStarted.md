@@ -507,10 +507,10 @@ Similarly to the argument above, to satisfy linear typing, the QCO dialect requi
 Moreover, the QCO dialect also enforces this property for registers (`%r0_1`, `%r0_2`, etc.).
 Consequently, in the QCO dialect the SSA value of a register represents its state.
 
-What if we wanted to construct a four-qubit GHZ state? 
-A straight forward solution would be to simply increase the size of the register and add another controlled-X. 
+What if we wanted to construct a four-qubit GHZ state?
+A straight forward solution would be to simply increase the size of the register and add another controlled-X.
 However, there is a more expressive and elegant solution using structured control flow (SCF) operations; in particular, a loop.
-To do so, we leverage MLIR's built-in `scf` dialect. 
+To do so, we leverage MLIR's built-in `scf` dialect.
 
 ::::{grid} 2
 :::{grid-item}
@@ -532,7 +532,7 @@ TODO: Loops
 :::
 ::::
 
-What if we wanted to construct a generic N-qubit GHZ state? 
+What if we wanted to construct a generic N-qubit GHZ state?
 Naturally, a function taking N as parameter seems like an appropriate choice.
 
 ::::{grid} 2
