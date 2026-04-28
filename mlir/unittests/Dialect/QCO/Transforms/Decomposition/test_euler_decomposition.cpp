@@ -175,8 +175,12 @@ TEST(EulerDecompositionTest, ZsxxPauliXUsesSingleXGate) {
   pauliX << 0.0, 1.0, 1.0, 0.0;
   const auto seq = EulerDecomposition::generateCircuit(EulerBasis::ZSXX, pauliX,
                                                        true, std::nullopt);
+  EXPECT_EQ(seq.gates.size(), 1U);
   EXPECT_EQ(countGatesOfType(seq, GateKind::X), 1U);
+  EXPECT_EQ(countGatesOfType(seq, GateKind::RZ), 0U);
   EXPECT_EQ(countGatesOfType(seq, GateKind::SX), 0U);
+  EXPECT_EQ(countGatesOfType(seq, GateKind::H), 0U);
+  EXPECT_EQ(countGatesOfType(seq, GateKind::U), 0U);
   EXPECT_TRUE(sequenceMatchesSingleQubitMatrix(pauliX, seq));
 }
 

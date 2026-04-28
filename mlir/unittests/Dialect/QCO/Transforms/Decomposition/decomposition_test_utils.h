@@ -26,6 +26,8 @@ template <typename MatrixType>
   static_assert(MatrixType::RowsAtCompileTime != Eigen::Dynamic &&
                     MatrixType::ColsAtCompileTime != Eigen::Dynamic,
                 "randomUnitaryMatrix requires fixed-size matrices");
+  static_assert(MatrixType::RowsAtCompileTime == MatrixType::ColsAtCompileTime,
+                "randomUnitaryMatrix requires square matrices");
   std::normal_distribution<double> normalDist(0.0, 1.0);
   MatrixType randomMatrix;
   for (auto& x : randomMatrix.reshaped()) {
