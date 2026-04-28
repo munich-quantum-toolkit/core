@@ -149,6 +149,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
       });
 
   ASSERT_TRUE(res.succeeded());
+  ASSERT_GE(readyPerLayer.size(), 3);
   ASSERT_TRUE(readyPerLayer[0].contains(q02.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[0].contains(q21.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
@@ -168,6 +169,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
       });
 
   ASSERT_TRUE(res.succeeded());
+  ASSERT_GE(readyPerLayer.size(), 3);
   ASSERT_TRUE(readyPerLayer[0].contains(q04.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[2].contains(q02.getDefiningOp()));
@@ -187,6 +189,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
       });
 
   ASSERT_TRUE(res.succeeded());
+  ASSERT_GE(readyPerLayer.size(), 3);
   ASSERT_TRUE(readyPerLayer[0].contains(q02.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[0].contains(q21.getDefiningOp()));
   ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
@@ -206,6 +209,6 @@ TEST_F(DriversTest, ProgramGraphWalk) {
       });
 
   ASSERT_TRUE(res.failed());
-  ASSERT_TRUE(readyPerLayer[0].contains(q04.getDefiningOp()));
   ASSERT_EQ(readyPerLayer.size(), 1);
+  ASSERT_TRUE(readyPerLayer[0].contains(q04.getDefiningOp()));
 }
