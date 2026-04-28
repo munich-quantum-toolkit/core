@@ -395,7 +395,7 @@ The figure below illustrates the data-flow graph of the above textual intermedia
 ```{figure} ../_static/mlir/data-flow.svg
 :width: 75%
 :align: center
-:name: fig:data-flow 
+:name: fig:data-flow
 
 The data-flow graph of the IR shown above.
 ```
@@ -421,9 +421,9 @@ The following figure depicts the data-flow of the `ctrl` modifier.
 The data-flow of the `ctrl` modifier.
 ```
 
-In many front-end quantum languages, there is a concept describing a register (a collection) of qubits. 
+In many front-end quantum languages, there is a concept describing a register (a collection) of qubits.
 The QC and QCO dialect use the `memref` and `qtensor` dialects to describe these constructs, respectively, where the latter is part of the MQT Compiler Collection.
-The following snippets construct the [GHZ](https://en.wikipedia.org/wiki/Greenberger–Horne–Zeilinger_state) state in the QC and QCO dialect. 
+The following snippets construct the [GHZ](https://en.wikipedia.org/wiki/Greenberger–Horne–Zeilinger_state) state in the QC and QCO dialect.
 
 ::::{grid} 2
 :::{grid-item}
@@ -441,19 +441,19 @@ The following snippets construct the [GHZ](https://en.wikipedia.org/wiki/Greenbe
 %q1 = memref.load %r0[%i1] : memref<3x!qc.qubit>
 %q2 = memref.load %r0[%i2] : memref<3x!qc.qubit>
 
-qc.h %q0 : !qc.qubit 
-qc.h %q1 : !qc.qubit 
-qc.h %q2 : !qc.qubit 
+qc.h %q0 : !qc.qubit
+qc.h %q1 : !qc.qubit
+qc.h %q2 : !qc.qubit
 
 qc.ctrl(%q0) {
     qc.x %q1 : !qc.qubit
 
-} : !qc.qubit  
+} : !qc.qubit
 
 qc.ctrl(%q0) {
     qc.x %q2 : !qc.qubit
 
-} : !qc.qubit 
+} : !qc.qubit
 
 
 
@@ -503,7 +503,7 @@ qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
 :::
 ::::
 
-Similarly to the argument above, to satisfy linear typing, the QCO dialect requires `insert` operations for the qubit SSA values. 
+Similarly to the argument above, to satisfy linear typing, the QCO dialect requires `insert` operations for the qubit SSA values.
 Moreover, the QCO dialect also enforces this property for registers (`%r0_1`, `%r0_2`, etc.).
 Consequently, in the QCO dialect the SSA value of a register represents its state.
 
