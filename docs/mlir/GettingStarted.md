@@ -423,7 +423,7 @@ The data-flow of the `ctrl` modifier.
 
 In many front-end quantum languages, there is a concept describing a register (a collection) of qubits.
 The QC and QCO dialect use the `memref` and `qtensor` dialects to describe these constructs, respectively, where the latter is part of the MQT Compiler Collection.
-The following snippets construct the [GHZ](https://en.wikipedia.org/wiki/Greenberger–Horne–Zeilinger_state) state in the QC and QCO dialect.
+The following snippets construct the three-qubit [GHZ](https://en.wikipedia.org/wiki/Greenberger–Horne–Zeilinger_state) state in the QC and QCO dialect.
 
 ::::{grid} 2
 :::{grid-item}
@@ -506,6 +506,54 @@ qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
 Similarly to the argument above, to satisfy linear typing, the QCO dialect requires `insert` operations for the qubit SSA values.
 Moreover, the QCO dialect also enforces this property for registers (`%r0_1`, `%r0_2`, etc.).
 Consequently, in the QCO dialect the SSA value of a register represents its state.
+
+What if we wanted to construct a four-qubit GHZ state? 
+A straight forward solution would be to simply increase the size of the register and add another controlled-X. 
+However, there is a more expressive and elegant solution using structured control flow (SCF) operations; in particular, a loop.
+To do so, we leverage MLIR's built-in `scf` dialect. 
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+TODO: Loops
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+TODO: Loops
+```
+
+:::
+::::
+
+What if we wanted to construct a generic N-qubit GHZ state? 
+Naturally, a function taking N as parameter seems like an appropriate choice.
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+TODO: function with parameter
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+TODO: function with parameter
+```
+
+:::
+::::
 
 ### Compilation Flow
 
