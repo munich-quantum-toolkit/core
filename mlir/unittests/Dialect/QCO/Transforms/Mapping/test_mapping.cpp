@@ -19,7 +19,9 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -28,6 +30,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <cassert>
@@ -56,14 +59,14 @@ public:
   static bool isExecutable(OwningOpRef<ModuleOp>& moduleOp,
                            const Architecture& arch) {
     auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
-    DenseMap<Value, std::size_t> mappings;
+    llvm::DenseMap<Value, std::size_t> mappings;
     for_each(entry.getOps<qc::StaticOp>(), [&](qc::StaticOp op) {
       mappings.try_emplace(op.getQubit(), op.getIndex());
     });
 
     bool executable = true;
     std::ignore = moduleOp->walk([&](qc::UnitaryOpInterface op) {
-      if (isa<qc::BarrierOp>(op)) {
+      if (llvm::isa<qc::BarrierOp>(op)) {
         return WalkResult::advance();
       }
       if (op.getNumQubits() > 1) {

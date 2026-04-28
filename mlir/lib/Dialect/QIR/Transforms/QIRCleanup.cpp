@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -111,7 +112,7 @@ static void normalizeQIRMetadata(ModuleOp module) {
   }
 
   OpBuilder builder(module.getContext());
-  SmallVector<Attribute> updatedMetadata;
+  llvm::SmallVector<Attribute> updatedMetadata;
   updatedMetadata.reserve(passthroughAttr.size() + 2);
 
   for (const auto attr : passthroughAttr) {

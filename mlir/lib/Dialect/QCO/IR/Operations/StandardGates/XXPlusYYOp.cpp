@@ -12,6 +12,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -88,7 +89,7 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
-                               SmallVectorImpl<OpFoldResult>& results) {
+                               llvm::SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
       theta && std::abs(*theta) <= TOLERANCE) {
     results.emplace_back(getInputQubit(0));

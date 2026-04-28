@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -24,6 +25,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <cassert>
@@ -83,7 +85,7 @@ protected:
   static std::optional<double> toDouble(mlir::Value v) {
     if (auto constOp = v.getDefiningOp<mlir::arith::ConstantOp>()) {
       if (auto floatAttr =
-              mlir::dyn_cast<mlir::FloatAttr>(constOp.getValue())) {
+              llvm::dyn_cast<mlir::FloatAttr>(constOp.getValue())) {
         return floatAttr.getValueAsDouble();
       }
     }

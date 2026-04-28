@@ -88,9 +88,9 @@ LogicalResult walkProgram(Region& region, const WalkProgramFn& fn) {
   return success();
 }
 
-using ReleasedOps = SmallVector<UnitaryOpInterface, 8>;
+using ReleasedOps = llvm::SmallVector<UnitaryOpInterface, 8>;
 using PendingWiresMap =
-    DenseMap<UnitaryOpInterface, SmallVector<std::size_t, 2>>;
+    DenseMap<UnitaryOpInterface, llvm::SmallVector<std::size_t, 2>>;
 
 struct IsReady {
   bool operator()(PendingWiresMap::value_type& kv) const {
@@ -138,10 +138,10 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
   PendingWiresMap pending;
   pending.reserve(wires.size());
 
-  SmallVector<std::size_t> curr(wires.size());
+  llvm::SmallVector<std::size_t> curr(wires.size());
   std::iota(curr.begin(), curr.end(), 0UL);
 
-  SmallVector<std::size_t> next;
+  llvm::SmallVector<std::size_t> next;
   next.reserve(wires.size());
 
   while (!curr.empty()) {
@@ -149,7 +149,7 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       auto& it = wires[i];
       while (Traits::isActive(it)) {
         const auto res =
-            TypeSwitch<Operation*, WalkResult>(it.operation())
+            llvm::TypeSwitch<Operation*, WalkResult>(it.operation())
                 .template Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
                   // If there are fewer wires than the qubit requires inputs,
                   // it's impossible to release the operation. Hence, fail.

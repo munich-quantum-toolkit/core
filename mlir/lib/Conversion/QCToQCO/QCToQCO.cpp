@@ -101,7 +101,7 @@ enum class AllocationMode : std::uint8_t {
 struct LoweringState {
   struct ModifierFrame {
     /// QC qubits yielded from the current modifier region, in yield order.
-    SmallVector<Value> yieldOrder;
+    llvm::SmallVector<Value> yieldOrder;
 
     /// Latest QCO SSA values for QC qubits that are remapped inside the
     /// modifier region.
@@ -123,7 +123,7 @@ struct LoweringState {
   llvm::DenseMap<Region*, llvm::DenseMap<Value, QubitInfo>> qubitInfoMap;
 
   /// Stack of active modifier regions
-  SmallVector<ModifierFrame> modifierFrames;
+  llvm::SmallVector<ModifierFrame> modifierFrames;
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -279,7 +279,7 @@ static void assignMappedTensor(LoweringState& state, Operation* anchor,
 
 /** @brief Resolves a range of QC qubits to their latest QCO values. */
 template <typename Range>
-[[nodiscard]] static SmallVector<Value>
+[[nodiscard]] static llvm::SmallVector<Value>
 resolveMappedQubits(LoweringState& state, Operation* anchor,
                     const Range& qcQubits) {
   return llvm::to_vector(llvm::map_range(qcQubits, [&](Value qcQubit) {

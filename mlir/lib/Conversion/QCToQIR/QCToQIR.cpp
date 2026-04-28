@@ -16,9 +16,11 @@
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -76,10 +78,10 @@ enum class AllocationMode : std::uint8_t {
  */
 struct LoweringState : QIRMetadata {
   /// Cache static qubit pointers for reuse
-  DenseMap<int64_t, Value> staticQubits;
+  llvm::DenseMap<int64_t, Value> staticQubits;
 
   /// Cache MemRef sizes for reuse
-  DenseMap<Value, Value> memrefSizes;
+  llvm::DenseMap<Value, Value> memrefSizes;
 
   /// Map from register name to result-array pointer
   llvm::StringMap<Value> resultArrays;
@@ -88,11 +90,11 @@ struct LoweringState : QIRMetadata {
   llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> loadedResults;
 
   /// Map from index to result pointer for non-register results
-  DenseMap<int64_t, Value> resultPtrs;
+  llvm::DenseMap<int64_t, Value> resultPtrs;
 
   /// Modifier information
   int64_t inCtrlOp = 0;
-  DenseMap<int64_t, SmallVector<Value>> controls;
+  llvm::DenseMap<int64_t, llvm::SmallVector<Value>> controls;
 
   /// Allocator and StringSaver for stable StringRefs
   llvm::BumpPtrAllocator allocator;
@@ -168,16 +170,16 @@ template <typename QCOpType, typename QCOpAdaptorType>
 static LogicalResult
 convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
                        ConversionPatternRewriter& rewriter, MLIRContext* ctx,
-                       LoweringState& state, StringRef fnName,
+                       LoweringState& state, llvm::StringRef fnName,
                        size_t numTargets, size_t numParams) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> controls =
-      inCtrlOp != 0 ? state.controls[inCtrlOp] : SmallVector<Value>{};
+  const llvm::SmallVector<Value> controls =
+      inCtrlOp != 0 ? state.controls[inCtrlOp] : llvm::SmallVector<Value>{};
   const size_t numCtrls = controls.size();
 
   // Define argument types
-  SmallVector<Type> argumentTypes;
+  llvm::SmallVector<Type> argumentTypes;
   argumentTypes.reserve(numParams + numCtrls + numTargets);
   const auto ptrType = LLVM::LLVMPointerType::get(ctx);
   const auto floatType = Float64Type::get(ctx);
@@ -202,7 +204,7 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   const auto fnDecl =
       getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
 
-  SmallVector<Value> operands;
+  llvm::SmallVector<Value> operands;
   operands.reserve(numParams + numCtrls + numTargets);
   operands.append(controls.begin(), controls.end());
   operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
@@ -865,8 +867,8 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
     // Update modifier information
     auto& state = getState();
     state.inCtrlOp++;
-    const SmallVector<Value> controls(adaptor.getControls().begin(),
-                                      adaptor.getControls().end());
+    const llvm::SmallVector<Value> controls(adaptor.getControls().begin(),
+                                            adaptor.getControls().end());
     state.controls[state.inCtrlOp] = controls;
 
     // Inline region and remove operation
@@ -996,12 +998,13 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     // Move operations to appropriate blocks
     for (auto it = bodyBlock->begin(); it != bodyBlock->end();) {
       // Ensure iterator remains valid after potential move
-      if (auto& op = *it++; isa<LLVM::ReturnOp>(op)) {
+      if (auto& op = *it++; llvm::isa<LLVM::ReturnOp>(op)) {
         // Move return to output block
         outputBlockOps.splice(outputBlock->end(), bodyBlockOps,
                               Block::iterator(op));
-      } else if (isa<memref::AllocOp>(op) || isa<memref::LoadOp>(op) ||
-                 isa<AllocOp>(op) || op.hasTrait<OpTrait::ConstantLike>()) {
+      } else if (llvm::isa<memref::AllocOp>(op) ||
+                 llvm::isa<memref::LoadOp>(op) || llvm::isa<AllocOp>(op) ||
+                 op.hasTrait<OpTrait::ConstantLike>()) {
         // Move allocations and constant-like operations to entry block
         entryBlock->getOperations().splice(entryBlock->end(), bodyBlockOps,
                                            Block::iterator(op));

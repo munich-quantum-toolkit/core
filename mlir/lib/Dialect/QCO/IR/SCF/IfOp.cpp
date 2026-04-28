@@ -13,6 +13,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -50,13 +51,13 @@ void IfOp::build(
   // Add the block arguments and insert the yield operation
   thenBlock.addArguments(
       qubits.getTypes(),
-      SmallVector<Location>(qubits.size(), odsState.location));
+      llvm::SmallVector<Location>(qubits.size(), odsState.location));
   odsBuilder.setInsertionPointToStart(&thenBlock);
   qco::YieldOp::create(odsBuilder, odsState.location,
                        thenBuilder(thenBlock.getArguments()));
   elseBlock.addArguments(
       qubits.getTypes(),
-      SmallVector<Location>(qubits.size(), odsState.location));
+      llvm::SmallVector<Location>(qubits.size(), odsState.location));
   odsBuilder.setInsertionPointToStart(&elseBlock);
   if (elseBuilder) {
     qco::YieldOp::create(odsBuilder, odsState.location,
@@ -70,8 +71,8 @@ void IfOp::build(
 // Adjusted from
 // https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
-void IfOp::getSuccessorRegions(RegionBranchPoint point,
-                               SmallVectorImpl<RegionSuccessor>& regions) {
+void IfOp::getSuccessorRegions(
+    RegionBranchPoint point, llvm::SmallVectorImpl<RegionSuccessor>& regions) {
   // The `then` and the `else` region branch back to the parent operation or
   // one of the recursive parent operations (early exit case).
   if (!point.isParent()) {
@@ -91,10 +92,11 @@ void IfOp::getSuccessorRegions(RegionBranchPoint point,
   }
 }
 
-void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
-                                    SmallVectorImpl<RegionSuccessor>& regions) {
+void IfOp::getEntrySuccessorRegions(
+    ArrayRef<Attribute> operands,
+    llvm::SmallVectorImpl<RegionSuccessor>& regions) {
   FoldAdaptor adaptor(operands, *this);
-  auto boolAttr = dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
+  auto boolAttr = llvm::dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
   if (!boolAttr || boolAttr.getValue()) {
     regions.emplace_back(&getThenRegion());
   }
@@ -111,7 +113,7 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void IfOp::getRegionInvocationBounds(
     ArrayRef<Attribute> operands,
-    SmallVectorImpl<InvocationBounds>& invocationBounds) {
+    llvm::SmallVectorImpl<InvocationBounds>& invocationBounds) {
   if (auto cond = llvm::dyn_cast_or_null<BoolAttr>(operands[0])) {
     // If the condition is known, then one region is known to be executed once
     // and the other zero times.
@@ -290,7 +292,7 @@ LogicalResult IfOp::verify() {
                          "input qubit types.");
     }
   }
-  SmallPtrSet<Value, 4> uniqueQubitsIn;
+  llvm::SmallPtrSet<Value, 4> uniqueQubitsIn;
   for (auto qubit : inputQubits) {
     if (!uniqueQubitsIn.insert(qubit).second) {
       return emitOpError("Input qubits must be unique.");

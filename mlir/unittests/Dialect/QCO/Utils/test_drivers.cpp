@@ -16,6 +16,8 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -127,18 +129,18 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   auto func = *(mod->getOps<func::FuncOp>().begin());
 
   // Collect wires.
-  SmallVector<qco::WireIterator> wires;
+  llvm::SmallVector<qco::WireIterator> wires;
   for (qco::AllocOp op : func.getOps<qco::AllocOp>()) {
     wires.emplace_back(op.getResult());
   }
 
   // Unit-test supporting datastructure.
-  SmallVector<DenseSet<Operation*>> readyPerLayer;
+  llvm::SmallVector<llvm::DenseSet<Operation*>> readyPerLayer;
 
   // Forward pass.
   auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
+        llvm::DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
           released.emplace_back(op);
@@ -158,7 +160,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Backward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
+        llvm::DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
           released.emplace_back(op);
@@ -178,7 +180,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Forward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps&) {
-        DenseSet<Operation*> layer;
+        llvm::DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
         }
@@ -198,7 +200,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Backward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
+        llvm::DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
           released.emplace_back(op);

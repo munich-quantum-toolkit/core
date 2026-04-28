@@ -13,6 +13,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -289,7 +290,7 @@ LogicalResult CtrlOp::verify() {
     }
   }
 
-  SmallPtrSet<Value, 4> uniqueQubitsIn;
+  llvm::SmallPtrSet<Value, 4> uniqueQubitsIn;
   for (const auto& control : getControlsIn()) {
     if (!uniqueQubitsIn.insert(control).second) {
       return emitOpError("duplicate control qubit found");
@@ -323,7 +324,7 @@ LogicalResult CtrlOp::verify() {
     }
   }
 
-  SmallPtrSet<Value, 4> uniqueQubitsOut;
+  llvm::SmallPtrSet<Value, 4> uniqueQubitsOut;
   for (const auto& control : getControlsOut()) {
     if (!uniqueQubitsOut.insert(control).second) {
       return emitOpError("duplicate control qubit found");

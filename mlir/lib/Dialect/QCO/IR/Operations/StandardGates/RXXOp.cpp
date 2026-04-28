@@ -13,6 +13,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -67,7 +68,7 @@ void RXXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult RXXOp::fold(FoldAdaptor /*adaptor*/,
-                          SmallVectorImpl<OpFoldResult>& results) {
+                          llvm::SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
       theta && std::abs(*theta) <= TOLERANCE) {
     results.emplace_back(getInputQubit(0));

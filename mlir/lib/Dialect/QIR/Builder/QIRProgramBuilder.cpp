@@ -154,7 +154,8 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+llvm::SmallVector<Value>
+QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Dynamic);
 
@@ -170,7 +171,7 @@ SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  SmallVector<Value> qubits;
+  llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
 
   auto allocFnSignature = LLVM::LLVMFunctionType::get(
@@ -334,8 +335,9 @@ QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 void QIRProgramBuilder::createCallOp(
-    const SmallVector<std::variant<double, Value>>& parameters,
-    ValueRange controls, const SmallVector<Value>& targets, StringRef fnName) {
+    const llvm::SmallVector<std::variant<double, Value>>& parameters,
+    ValueRange controls, const llvm::SmallVector<Value>& targets,
+    StringRef fnName) {
   checkFinalized();
 
   // Save current insertion point
@@ -344,7 +346,7 @@ void QIRProgramBuilder::createCallOp(
   // Insert constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  SmallVector<Value> parameterOperands;
+  llvm::SmallVector<Value> parameterOperands;
   parameterOperands.reserve(parameters.size());
   for (const auto& parameter : parameters) {
     Value parameterOperand;
@@ -360,7 +362,7 @@ void QIRProgramBuilder::createCallOp(
   setInsertionPoint(bodyBlock->getTerminator());
 
   // Define argument types
-  SmallVector<Type> argumentTypes;
+  llvm::SmallVector<Type> argumentTypes;
   argumentTypes.reserve(parameters.size() + controls.size() + targets.size());
   const auto floatType = Float64Type::get(getContext());
   // Add control pointers
@@ -383,7 +385,7 @@ void QIRProgramBuilder::createCallOp(
   auto fnDecl =
       getOrCreateFunctionDeclaration(*this, module, fnName, fnSignature);
 
-  SmallVector<Value> operands;
+  llvm::SmallVector<Value> operands;
   operands.reserve(parameters.size() + controls.size() + targets.size());
   operands.append(controls.begin(), controls.end());
   operands.append(targets.begin(), targets.end());

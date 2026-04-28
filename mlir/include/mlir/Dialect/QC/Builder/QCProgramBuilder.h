@@ -104,7 +104,7 @@ public:
     /// The MemRef value representing the qubit register
     Value value;
     /// The allocated qubit values
-    SmallVector<Value> qubits;
+    llvm::SmallVector<Value> qubits;
 
     /**
      * @brief Access a specific qubit in the register

@@ -12,8 +12,11 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
+#include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Math/IR/Math.h>
@@ -22,6 +25,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
@@ -76,7 +80,7 @@ struct MergeSingleQubitRotationGatesPattern final
 
   /// Returns whether an operation is considered mergeable
   static bool isMergeable(Operation* op) {
-    return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
+    return llvm::isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
   }
 
   /// Checks if two gates a and b are mergeable via quaternion-based merging.
@@ -113,20 +117,21 @@ struct MergeSingleQubitRotationGatesPattern final
   static Constants createConstants(Location loc, PatternRewriter& rewriter) {
     return {
         .negOne = arith::ConstantFloatOp::create(
-            rewriter, loc, rewriter.getF64Type(), APFloat(-1.0)),
+            rewriter, loc, rewriter.getF64Type(), llvm::APFloat(-1.0)),
         .zero = arith::ConstantFloatOp::create(
-            rewriter, loc, rewriter.getF64Type(), APFloat(0.0)),
+            rewriter, loc, rewriter.getF64Type(), llvm::APFloat(0.0)),
         .one = arith::ConstantFloatOp::create(
-            rewriter, loc, rewriter.getF64Type(), APFloat(1.0)),
+            rewriter, loc, rewriter.getF64Type(), llvm::APFloat(1.0)),
         .two = arith::ConstantFloatOp::create(
-            rewriter, loc, rewriter.getF64Type(), APFloat(2.0)),
+            rewriter, loc, rewriter.getF64Type(), llvm::APFloat(2.0)),
         // Tolerance for gimbal-lock detection in quaternion-to-Euler
         // conversion. Value from reference implementation:
         // https://github.com/evbernardes/quaternion_to_euler/blob/main/euler_from_quat.py
         .eps = arith::ConstantFloatOp::create(
-            rewriter, loc, rewriter.getF64Type(), APFloat(1e-12)),
-        .pi = arith::ConstantFloatOp::create(
-            rewriter, loc, rewriter.getF64Type(), APFloat(std::numbers::pi)),
+            rewriter, loc, rewriter.getF64Type(), llvm::APFloat(1e-12)),
+        .pi =
+            arith::ConstantFloatOp::create(rewriter, loc, rewriter.getF64Type(),
+                                           llvm::APFloat(std::numbers::pi)),
     };
   }
 
@@ -367,7 +372,7 @@ struct MergeSingleQubitRotationGatesPattern final
         })
         .Case<UOp, U2Op>([&](auto) -> std::optional<Value> {
           // phi is at different indexes for UOp and U2Op
-          auto phiIdx = isa<UOp>(op.getOperation()) ? 1U : 0U;
+          auto phiIdx = llvm::isa<UOp>(op.getOperation()) ? 1U : 0U;
           auto sum =
               arith::AddFOp::create(rewriter, loc, op.getParameter(phiIdx),
                                     op.getParameter(phiIdx + 1));
@@ -408,16 +413,16 @@ struct MergeSingleQubitRotationGatesPattern final
    * @param start The chain head (must satisfy isChainStart)
    * @return The chain of operations in circuit order (first applied to last)
    */
-  static SmallVector<UnitaryOpInterface>
+  static llvm::SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
-    SmallVector<UnitaryOpInterface> chain = {start};
+    llvm::SmallVector<UnitaryOpInterface> chain = {start};
     auto current = start;
     while (true) {
       auto* userOp = *current->getUsers().begin();
       if (!areQuaternionMergeable(*current.getOperation(), *userOp)) {
         break;
       }
-      current = chain.emplace_back(cast<UnitaryOpInterface>(userOp));
+      current = chain.emplace_back(llvm::cast<UnitaryOpInterface>(userOp));
     }
     return chain;
   }

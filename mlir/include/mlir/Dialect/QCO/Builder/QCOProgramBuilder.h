@@ -112,7 +112,7 @@ public:
     /// The QTensor value representing the qubit register
     Value value;
     /// The allocated qubit values
-    SmallVector<Value> qubits;
+    llvm::SmallVector<Value> qubits;
 
     /**
      * @brief Access a specific qubit in the register
@@ -1155,7 +1155,7 @@ public:
    * ```c++
    * {controls_out, targets_out} =
    *   builder.ctrl(q0_in, q1_in,
-   *     [&](ValueRange targets) -> SmallVector<Value> {
+   *     [&](ValueRange targets) -> llvm::SmallVector<Value> {
    *       return {builder.x(targets[0])};
    *   });
    * ```
@@ -1180,7 +1180,7 @@ public:
    * @par Example:
    * ```c++
    * qubits_out = builder.inv(q0_in,
-   *   [&](ValueRange qubits) -> SmallVector<Value> {
+   *   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
    *     return {builder.s(qubits[0])};
    *   }
    * );
@@ -1244,7 +1244,7 @@ public:
    * ```c++
    * auto result =
    *   builder.qcoIf(condition, q0,
-   *     [&](ValueRange args) -> SmallVector<Value> {
+   *     [&](ValueRange args) -> llvm::SmallVector<Value> {
    *       auto q1 = builder.h(args[0]);
    *       return {q1};
    *     });

@@ -20,6 +20,7 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -226,7 +227,7 @@ template <typename QCOOpType>
 static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                            LoweringState& state, ValueRange targets,
                            ValueRange params, const bool isAdjoint,
-                           StringRef name) {
+                           llvm::StringRef name) {
   auto* const it = llvm::find(state.strings, name);
   if (it == state.strings.end()) {
     state.strings.emplace_back(name);

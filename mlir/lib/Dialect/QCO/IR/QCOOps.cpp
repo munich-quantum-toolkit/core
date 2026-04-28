@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
@@ -34,16 +35,16 @@ using namespace mlir::qco;
 // Custom Parsers
 //===----------------------------------------------------------------------===//
 
-static ParseResult
-parseTargetAliasing(OpAsmParser& parser, Region& region,
-                    SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+static ParseResult parseTargetAliasing(
+    OpAsmParser& parser, Region& region,
+    llvm::SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
   // 1. Parse the opening parenthesis
   if (parser.parseLParen()) {
     return failure();
   }
 
   // Temporary storage for block arguments we are about to create
-  SmallVector<OpAsmParser::Argument> blockArgs;
+  llvm::SmallVector<OpAsmParser::Argument> blockArgs;
 
   // 2. Prepare to parse the list
   if (failed(parser.parseOptionalRParen())) {
@@ -114,9 +115,9 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
   printer.printRegion(region, false);
 }
 
-static ParseResult
-parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
-                  SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+static ParseResult parseIfOpAliasing(
+    OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
+    llvm::SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
   // Parse the qubits keyword
   if (parser.parseKeyword("qubits")) {
     return failure();
