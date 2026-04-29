@@ -145,9 +145,10 @@ func.func @select(i32, i32, i1) -> i32 {
 
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
 
-```{image} ../_static/mlir-regions-blocks-ops.svg
+```{figure} ../_static/mlir/mlir-ir-structure.svg
 :width: 70%
 :align: center
+:name: fig:mlir-ir-structure
 ```
 
 The control flow dialect (`cf`) is the lower-level equivalent of the structured control flow dialect (`scf`).
