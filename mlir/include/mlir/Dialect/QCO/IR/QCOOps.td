@@ -1044,7 +1044,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
 def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
   let summary = "Yield from a modifier region";
   let description = [{
-        Terminates a modifier region, yielding the transformed target qubits back to the enclosing modifier operation.
+        Terminates a modifier region, yielding the transformed target qubit and qtensor values back to the enclosing modifier operation.
         The targets must match the expected output signature of the modifier region.
 
         Example:
@@ -1227,10 +1227,10 @@ def IfOp
   let summary = "If-then-else operation for linear (qubit) types";
   let description = [{
         The `qco.if` operation is an if-then-else construct similar to the standard scf.if operation.
-        In addition to the condition, the operation takes a variadic number of qubits as inputs that are
-        required in the bodies of both branches. These qubits are passed down to the individual regions
+        In addition to the condition, the operation takes a variadic number of qubits and qtensors as inputs that are
+        required in the bodies of both branches. These values are passed down to the individual regions
         as block arguments. The number of results and the type of the results must be equivalent to the
-        number and types of the input qubits.
+        number and types of the input qubit and qtensor values.
 
         Example:
         ```mlir

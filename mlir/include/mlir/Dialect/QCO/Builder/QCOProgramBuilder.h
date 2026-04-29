@@ -1220,10 +1220,10 @@ public:
    *
    * @details
    * Constructs an if operation that takes a bool Value and a range of qubit
-   * values that are used in the then/else region of this operation. The qubit
-   * values are passed down as block arguments to each region. Qubits that were
-   * extracted from a tensor that is used as an argument for this operation are
-   * automatically inserted before the operation is constructed.
+   * and qtensor values that are used in the then/else region of this operation.
+   * The values are passed down as block arguments to each region. Qubits that
+   * were extracted from a tensor that is used as an argument for this operation
+   * are automatically inserted before the operation is constructed.
    *
    * @param condition Bool condition
    * @param initArgs Initial arguments for the if branches
@@ -1262,8 +1262,8 @@ public:
    *
    * @details
    * Constructs a scf.for operation with the given loop boundaries and stepsize
-   * and a range of qubit values for its iter args. Qubits that were extracted
-   * from a tensor that is used as an argument for this operation are
+   * and a range of qubit and qtensor values for its iter args. Qubits that were
+   * extracted from a tensor that is used as an argument for this operation are
    * automatically inserted before the operation is constructed.
    *
    * @param lowerbound Lower bound of the loop
@@ -1303,10 +1303,10 @@ public:
    * @brief Construct a scf.while operation
    *
    * @details
-   * Constructs a scf.while with a range of qubit values for its iter args.
-   * Qubits that were extracted from a tensor that is used as an argument for
-   * this operation are automatically inserted before the operation is
-   * constructed.
+   * Constructs a scf.while with a range of qubit and qtensor values for its
+   * iter args. Qubits that were extracted from a tensor that is used as an
+   * argument for this operation are automatically inserted before the operation
+   * is constructed.
    *
    * @param initArgs Arguments for the while loop
    * @param beforeBody Function that builds the before body of the while

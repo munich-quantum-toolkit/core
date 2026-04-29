@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
@@ -202,8 +201,7 @@ void IfOp::print(OpAsmPrinter& p) {
   printQubitsBlock(getThenRegion(), getQubits());
   // Print result types
   p << "-> (";
-  llvm::interleaveComma(getThenRegion().front().getArgumentTypes(), p,
-                        [&](Type t) { p.printType(t); });
+  llvm::interleaveComma(getResultTypes(), p, [&](Type t) { p.printType(t); });
   p << ") ";
   p.printRegion(getThenRegion(), /*printEntryBlockArgs=*/false);
 

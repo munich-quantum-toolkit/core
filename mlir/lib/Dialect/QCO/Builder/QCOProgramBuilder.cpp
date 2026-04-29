@@ -222,7 +222,12 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
   for (auto initArg : initArgs) {
     if (!isa<QubitType>(initArg.getType())) {
       validateTensorValue(initArg);
-      tensorRegIds.insert(validTensors.find(initArg)->second.regId);
+      const auto tensorId = validTensors.find(initArg)->second.regId;
+      if (tensorRegIds.contains(tensorId)) {
+        llvm::reportFatalUsageError(
+            "Same tensor cannot be passed to the same operation twice");
+      }
+      tensorRegIds.insert(tensorId);
     }
   }
 
