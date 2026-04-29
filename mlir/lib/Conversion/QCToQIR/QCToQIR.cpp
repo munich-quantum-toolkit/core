@@ -16,11 +16,12 @@
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
@@ -31,7 +32,6 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -86,7 +86,7 @@ struct LoweringState : QIRMetadata {
   llvm::StringMap<Value> resultArrays;
 
   /// Map from (register name, index) to loaded result
-  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> loadedResults;
+  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
 
   /// Map from index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
@@ -339,7 +339,7 @@ struct QCToQIRTypeConverter final : LLVMTypeConverter {
         [ctx](QubitType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
 
     addConversion([ctx](MemRefType type) -> Type {
-      if (llvm::isa<QubitType>(type.getElementType())) {
+      if (isa<QubitType>(type.getElementType())) {
         return LLVM::LLVMPointerType::get(ctx);
       }
       return type;
@@ -1085,21 +1085,11 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     builder.setInsertionPoint(&outputBlock.back());
 
     if (!resultPtrs.empty()) {
-      // Sort result pointers for deterministic output
-      llvm::SmallVector<std::pair<int64_t, Value>> sortedPtrs;
-      for (const auto& [index, resultPtr] : resultPtrs) {
-        sortedPtrs.emplace_back(index, resultPtr);
-      }
-      llvm::sort(sortedPtrs, [](const auto& a, const auto& b) {
-        return a.first < b.first;
-      });
-
-      // Create output recording for each result pointer
       auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
       auto fnDec = getOrCreateFunctionDeclaration(builder, main,
                                                   QIR_RECORD_OUTPUT, fnSig);
-
-      for (const auto& [index, ptr] : sortedPtrs) {
+      // Create output recording for each result pointer
+      for (const auto& [index, ptr] : resultPtrs) {
         auto label = createResultLabel(builder, main,
                                        "__unnamed__" + std::to_string(index))
                          .getResult();
@@ -1109,25 +1099,14 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     }
 
     if (!resultArrays.empty()) {
-      // Sort registers by name for deterministic output
-      SmallVector<std::pair<StringRef, Value>> sortedRegisters;
-      for (auto& [name, results] : resultArrays) {
-        sortedRegisters.emplace_back(name, results);
-      }
-      llvm::sort(sortedRegisters, [](const auto& a, const auto& b) {
-        return a.first < b.first;
-      });
-
       auto fnSig = LLVM::LLVMFunctionType::get(
           voidType, {builder.getI64Type(), ptrType, ptrType});
       auto fnDec = getOrCreateFunctionDeclaration(
           builder, main, QIR_ARRAY_RECORD_OUTPUT, fnSig);
-
       // Generate output recording for each register
-      for (auto& [name, results] : sortedRegisters) {
+      for (const auto& [name, results] : resultArrays) {
         auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
         auto label = createResultLabel(builder, main, name).getResult();
-
         LLVM::CallOp::create(builder, main->getLoc(), fnDec,
                              ValueRange{size, results, label});
       }

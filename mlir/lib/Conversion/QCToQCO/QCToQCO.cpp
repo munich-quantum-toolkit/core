@@ -20,11 +20,8 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -113,11 +110,11 @@ struct LoweringState {
 
     /// Latest QCO SSA values for QC qubits that are remapped inside the
     /// modifier region.
-    llvm::DenseMap<Value, Value> currentQubits;
+    DenseMap<Value, Value> currentQubits;
 
     /// Latest QCO SSA values for QC memrefs that are remapped inside the
     /// modifier region.
-    llvm::DenseMap<Value, Value> currentRegisters;
+    DenseMap<Value, Value> currentRegisters;
   };
 
   /// Per-region map from original QC qubit reference to its latest QCO SSA
@@ -125,14 +122,14 @@ struct LoweringState {
   ///
   /// @details Keys are `Operation::getParentRegion()` for ops being converted
   /// (typically a `func.func` body or a modifier region).
-  llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
+  DenseMap<Region*, DenseMap<Value, Value>> qubitMap;
 
   /// Per-region map from original QC register to its latest QTensor SSA value
-  llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> tensorMap;
+  DenseMap<Region*, DenseMap<Value, Value>> tensorMap;
 
   /// Per-region map from original QC qubit reference to its register
   /// information
-  llvm::DenseMap<Region*, llvm::DenseMap<Value, QubitInfo>> qubitInfoMap;
+  DenseMap<Region*, DenseMap<Value, QubitInfo>> qubitInfoMap;
 
   /// Per-region map from original QC register to its extracted QC qubits
   llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::SetVector<Value>>>
@@ -213,8 +210,8 @@ currentModifierFrame(LoweringState& state) {
  * returns the pair containing the map and a mutable reference to the value in
  * the map.
  */
-[[nodiscard]] static std::pair<llvm::DenseMap<Value, Value>*, Value*>
-findRegionLocalMap(llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>>& map,
+[[nodiscard]] static std::pair<DenseMap<Value, Value>*, Value*>
+findRegionLocalMap(DenseMap<Region*, DenseMap<Value, Value>>& map,
                    Operation* anchor, Value reference) {
   for (auto* current = anchor->getParentRegion(); current != nullptr;
        current = current->getParentRegion()) {
@@ -584,9 +581,9 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     // Build return values from qubitMap and collect live qubit information.
     // A qubit from the current scope is considered alive if it is returned from
     // the function. Otherwise, it is considered dead.
-    llvm::SmallVector<Value> returnValues;
+    SmallVector<Value> returnValues;
     returnValues.reserve(op.getNumOperands());
-    llvm::DenseSet<Value> liveQubits;
+    DenseSet<Value> liveQubits;
     for (auto [qcOperand, adaptorOperand] :
          llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
       if (auto it = map.find(qcOperand); it != map.end()) {
@@ -654,7 +651,7 @@ struct ConvertMemRefAllocOp final
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!llvm::isa<qc::QubitType>(op.getType().getElementType())) {
+    if (!isa<qc::QubitType>(op.getType().getElementType())) {
       return failure();
     }
 
@@ -705,7 +702,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto memref = op.getMemref();
-    if (!llvm::isa<qc::QubitType>(memref.getType().getElementType())) {
+    if (!isa<qc::QubitType>(memref.getType().getElementType())) {
       return failure();
     }
 
@@ -769,7 +766,7 @@ struct ConvertMemRefDeallocOp final
   matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto memref = op.getMemref();
-    if (!llvm::isa<qc::QubitType>(memref.getType().getElementType())) {
+    if (!isa<qc::QubitType>(memref.getType().getElementType())) {
       return failure();
     }
 
@@ -1584,8 +1581,8 @@ protected:
 
     target.addDynamicallyLegalDialect<memref::MemRefDialect>([](Operation* op) {
       auto isQubitMemref = [](Type t) {
-        auto mt = llvm::dyn_cast<MemRefType>(t);
-        return mt && llvm::isa<qc::QubitType>(mt.getElementType());
+        auto mt = dyn_cast<MemRefType>(t);
+        return mt && isa<qc::QubitType>(mt.getElementType());
       };
       return llvm::none_of(op->getOperandTypes(), isQubitMemref) &&
              llvm::none_of(op->getResultTypes(), isQubitMemref);

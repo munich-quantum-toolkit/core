@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "mlir/Support/LogicalResult.h"
+#include <mlir/Support/LLVM.h>
 
 namespace mlir {
 class ModuleOp;

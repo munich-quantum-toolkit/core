@@ -19,8 +19,7 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/Support/Casting.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -30,9 +29,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
@@ -62,10 +59,10 @@ using namespace qco;
  * returns its results
  */
 template <typename JeffOpType>
-static void createModified(
-    JeffOpType& op, ConversionPatternRewriter& rewriter, ValueRange controls,
-    ValueRange targets,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> lambda) {
+static void
+createModified(JeffOpType& op, ConversionPatternRewriter& rewriter,
+               ValueRange controls, ValueRange targets,
+               function_ref<SmallVector<Value>(ValueRange)> lambda) {
   auto loc = op.getLoc();
   if (op.getNumCtrls() != 0) {
     CtrlOp ctrlOp;
@@ -74,12 +71,12 @@ static void createModified(
     } else {
       ctrlOp = CtrlOp::create(
           rewriter, loc, controls, targets,
-          [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+          [&](ValueRange ctrlTargets) -> SmallVector<Value> {
             auto invOp = InvOp::create(rewriter, loc, ctrlTargets, lambda);
             return invOp.getQubitsOut();
           });
     }
-    llvm::SmallVector<Value> results;
+    SmallVector<Value> results;
     llvm::append_range(results, ctrlOp.getTargetsOut());
     llvm::append_range(results, ctrlOp.getControlsOut());
     rewriter.replaceOp(op, results);
@@ -122,7 +119,7 @@ createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
     return success();
   }
 
-  auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
+  auto lambda = [&](ValueRange innerTargets) -> SmallVector<Value> {
     auto qcoOp =
         QCOOpType::create(rewriter, op.getLoc(), innerTargets[TargetIndices]...,
                           parameters[ParamIndices]...);
@@ -166,7 +163,7 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<BarrierOp>(op, targets);
   } else {
-    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
+    auto lambda = [&](ValueRange innerTargets) -> SmallVector<Value> {
       auto qcoOp = BarrierOp::create(rewriter, op.getLoc(), innerTargets);
       return qcoOp.getQubitsOut();
     };
@@ -177,8 +174,8 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
 /**
  * @brief Gets the name of the entry point from the module attributes
  */
-static llvm::StringRef getEntryPointName(Operation* op) {
-  auto module = llvm::dyn_cast<ModuleOp>(op);
+static StringRef getEntryPointName(Operation* op) {
+  auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
     llvm::reportFatalInternalError("Expected a module operation");
   }
@@ -188,20 +185,20 @@ static llvm::StringRef getEntryPointName(Operation* op) {
     llvm::reportFatalInternalError(
         "Module is missing 'jeff.entrypoint' attribute");
   }
-  auto entryPoint = llvm::cast<IntegerAttr>(entryPointAttr).getUInt();
+  auto entryPoint = cast<IntegerAttr>(entryPointAttr).getUInt();
 
   auto stringsAttr = module->getAttr("jeff.strings");
   if (!stringsAttr) {
     llvm::reportFatalInternalError(
         "Module is missing 'jeff.strings' attribute");
   }
-  auto strings = llvm::cast<ArrayAttr>(stringsAttr);
+  auto strings = cast<ArrayAttr>(stringsAttr);
 
   if (entryPoint >= strings.size()) {
     llvm::reportFatalInternalError("Entry point index is out of bounds");
   }
 
-  return llvm::cast<mlir::StringAttr>(strings[entryPoint]).getValue();
+  return cast<StringAttr>(strings[entryPoint]).getValue();
 }
 
 /**
@@ -211,7 +208,7 @@ static llvm::StringRef getEntryPointName(Operation* op) {
  * @return LogicalResult Success or failure of the cleanup
  */
 static LogicalResult cleanUp(Operation* op) {
-  auto module = llvm::dyn_cast<ModuleOp>(op);
+  auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
     return failure();
   }
@@ -250,8 +247,8 @@ struct ConvertJeffQuregAllocOpToQCO final
   matchAndRewrite(jeff::QuregAllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto sizeValue = getConstantIntValue(adaptor.getNumQubits());
-    auto tensorType = llvm::cast<RankedTensorType>(
-        getTypeConverter()->convertType(op.getType()));
+    auto tensorType =
+        cast<RankedTensorType>(getTypeConverter()->convertType(op.getType()));
     Value size;
     if (sizeValue.has_value()) {
       size = arith::ConstantOp::create(rewriter, op.getLoc(),
@@ -523,7 +520,7 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
     if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
       rewriter.replaceOpWithNewOp<GPhaseOp>(op, op.getRotation());
     } else {
-      auto lambda = [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {
+      auto lambda = [&](ValueRange /*targets*/) -> SmallVector<Value> {
         GPhaseOp::create(rewriter, op.getLoc(), op.getRotation());
         return {};
       };
@@ -849,7 +846,7 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
     auto* block = &op.getBlocks().front();
 
     auto* returnOp = block->getTerminator();
-    if (!llvm::isa<func::ReturnOp>(returnOp)) {
+    if (!isa<func::ReturnOp>(returnOp)) {
       return failure();
     }
 

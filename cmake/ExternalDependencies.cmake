@@ -98,13 +98,13 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_VERSION 1.2.2
+set(QDMI_VERSION 1.3.0
         CACHE STRING "QDMI version")
-set(QDMI_REV "5bcf32f57158beea34d2839a41d218ed46a41516" # v1.2.x
+set(QDMI_REV "0f7e08c58b72800d1022a01cfb618af67b9a9c30" # v1.3.0
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
-cmake_dependent_option(QDMI_INSTALL "Install QDMI library" ON "MQT_CORE_INSTALL" OFF)
+cmake_dependent_option(INSTALL_QDMI "Install QDMI library" ON "MQT_CORE_INSTALL" OFF)
 # cmake-format: on
 FetchContent_Declare(
   qdmi
@@ -191,12 +191,7 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
-  install(
-    TARGETS nlohmann_json
-    EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME}
-    INCLUDES
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  install(TARGETS nlohmann_json EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME})
 
   install(
     EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME}

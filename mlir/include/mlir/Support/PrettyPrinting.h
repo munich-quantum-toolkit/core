@@ -10,10 +10,8 @@
 
 #pragma once
 
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Support/LLVM.h>
 
 namespace mlir {
 
@@ -29,7 +27,7 @@ class ModuleOp;
  * @param str The string to measure
  * @return The display width in columns
  */
-int calculateDisplayWidth(llvm::StringRef str);
+int calculateDisplayWidth(StringRef str);
 
 /**
  * @brief Wrap a long line into multiple lines that fit within the box
@@ -45,30 +43,29 @@ int calculateDisplayWidth(llvm::StringRef str);
  * @param indent Number of spaces to indent wrapped lines
  * @param result Output vector to store wrapped lines
  */
-void wrapLine(llvm::StringRef line, int maxWidth,
-              llvm::SmallVectorImpl<llvm::SmallString<128>>& result,
-              int indent = 0);
+void wrapLine(StringRef line, int maxWidth,
+              SmallVectorImpl<SmallString<128>>& result, int indent = 0);
 
 /**
  * @brief Print top border of a box
  *
  * @param os Output stream to write to
  */
-void printBoxTop(llvm::raw_ostream& os = llvm::errs());
+void printBoxTop(raw_ostream& os = llvm::errs());
 
 /**
  * @brief Print middle separator of a box
  *
  * @param os Output stream to write to
  */
-void printBoxMiddle(llvm::raw_ostream& os = llvm::errs());
+void printBoxMiddle(raw_ostream& os = llvm::errs());
 
 /**
  * @brief Print bottom border of a box
  *
  * @param os Output stream to write to
  */
-void printBoxBottom(llvm::raw_ostream& os = llvm::errs());
+void printBoxBottom(raw_ostream& os = llvm::errs());
 
 /**
  * @brief Print a box line with text and proper padding
@@ -80,8 +77,8 @@ void printBoxBottom(llvm::raw_ostream& os = llvm::errs());
  * @param indent Number of spaces to indent the text (0 for left-aligned)
  * @param os Output stream to write to
  */
-void printBoxLine(llvm::StringRef text, int indent = 0,
-                  llvm::raw_ostream& os = llvm::errs());
+void printBoxLine(StringRef text, int indent = 0,
+                  raw_ostream& os = llvm::errs());
 
 /**
  * @brief Print multiple lines of text within the box, with line wrapping
@@ -94,8 +91,8 @@ void printBoxLine(llvm::StringRef text, int indent = 0,
  * @param indent Number of spaces to indent the text
  * @param os Output stream to write to
  */
-void printBoxText(llvm::StringRef text, int indent = 0,
-                  llvm::raw_ostream& os = llvm::errs());
+void printBoxText(StringRef text, int indent = 0,
+                  raw_ostream& os = llvm::errs());
 
 /**
  * @brief Pretty print an MLIR module with a header and box formatting
@@ -104,7 +101,7 @@ void printBoxText(llvm::StringRef text, int indent = 0,
  * @param header Optional header text to display above the module
  * @param os Output stream to write to
  */
-void printProgram(ModuleOp module, llvm::StringRef header = "",
-                  llvm::raw_ostream& os = llvm::errs());
+void printProgram(ModuleOp module, StringRef header = "",
+                  raw_ostream& os = llvm::errs());
 
 } // namespace mlir

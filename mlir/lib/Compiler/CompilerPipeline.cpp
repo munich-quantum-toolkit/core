@@ -13,14 +13,14 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <string>
 
@@ -34,7 +34,7 @@ namespace mlir {
  * @param stageNumber Current stage number
  * @param totalStages Total number of stages (for progress indication)
  */
-static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
+static void prettyPrintStage(ModuleOp module, const StringRef stageName,
                              const int stageNumber, const int totalStages) {
   llvm::errs() << "\n";
 
@@ -136,9 +136,11 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
   }
   // Stage 5: Optimization passes
-  // TODO: Add optimization passes
-  if (failed(
-          runStage([&](PassManager& pm) { populateQCOCleanupPipeline(pm); }))) {
+  if (failed(runStage([&](PassManager& pm) {
+        if (!config_.disableMergeSingleQubitRotationGates) {
+          pm.addPass(qco::createMergeSingleQubitRotationGates());
+        }
+      }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {

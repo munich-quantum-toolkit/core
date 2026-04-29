@@ -10,25 +10,27 @@
 
 #pragma once
 
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
 #include <variant>
 
-namespace mlir::qc {
+namespace mlir {
+
+// Forward declarations
+class MLIRContext;
+class ModuleOp;
+class Operation;
+class ValueRange;
+
+namespace qc {
 
 /**
  * @brief Builder API for constructing quantum programs in the QC dialect
@@ -116,12 +118,7 @@ public:
      * @param index The index of the qubit to access
      * @return The specified qubit value
      */
-    Value operator[](size_t index) const {
-      if (index >= qubits.size()) {
-        llvm::report_fatal_error("Qubit index out of bounds");
-      }
-      return qubits[index];
-    }
+    Value operator[](size_t index) const;
 
     /**
      * @brief Conversion to the backing MemRef value
@@ -226,16 +223,7 @@ public:
      * @param index The index of the bit to access (must be less than size)
      * @return A Bit structure representing the specified bit
      */
-    Bit operator[](const int64_t index) const {
-      if (index < 0 || index >= size) {
-        const std::string msg = "Bit index " + std::to_string(index) +
-                                " out of bounds for register '" + name +
-                                "' of size " + std::to_string(size);
-        llvm::reportFatalUsageError(msg.c_str());
-      }
-      return {
-          .registerName = name, .registerSize = size, .registerIndex = index};
-    }
+    Bit operator[](const int64_t index) const;
   };
 
   /**
@@ -916,8 +904,7 @@ public:
    * } : !qc.qubit
    * ```
    */
-  QCProgramBuilder& ctrl(ValueRange controls,
-                         const llvm::function_ref<void()>& body);
+  QCProgramBuilder& ctrl(ValueRange controls, const function_ref<void()>& body);
 
   /**
    * @brief Apply an inverse (i.e., adjoint) operation.
@@ -936,7 +923,7 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& inv(const llvm::function_ref<void()>& body);
+  QCProgramBuilder& inv(const function_ref<void()>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -1099,19 +1086,19 @@ public:
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc);
+        const function_ref<void(QCProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
 
   MLIRContext* ctx{};
-  ModuleOp module;
+  Operation* module;
 
   /// Track allocated qubits for automatic deallocation
-  llvm::DenseSet<Value> allocatedQubits;
+  DenseSet<Value> allocatedQubits;
 
   /// Track allocated MemRefs for automatic deallocation
-  llvm::DenseSet<Value> allocatedMemrefs;
+  DenseSet<Value> allocatedMemrefs;
 
   /// Per-region map of memrefs and their loaded indices
   llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::DenseSet<Value>>>
@@ -1129,4 +1116,5 @@ private:
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
 };
-} // namespace mlir::qc
+} // namespace qc
+} // namespace mlir
