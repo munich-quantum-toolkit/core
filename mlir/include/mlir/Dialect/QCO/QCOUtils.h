@@ -10,10 +10,9 @@
 
 #pragma once
 
-#include "mlir/Dialect/Utils/Utils.h"
-
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 
 namespace mlir::qco {
 
@@ -27,7 +26,7 @@ namespace mlir::qco {
  * @return LogicalResult Success or failure of the removal.
  */
 template <typename InverseOpType, typename OpType>
-mlir::LogicalResult
+LogicalResult
 removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the inverse operation
   auto nextOp =
@@ -52,7 +51,7 @@ removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
  * @return LogicalResult Success or failure of the removal.
  */
 template <typename InverseOpType, typename OpType>
-mlir::LogicalResult
+LogicalResult
 removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the inverse operation
   auto nextOp =
@@ -82,7 +81,7 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
  * @return LogicalResult Success or failure of the removal.
  */
 template <typename OpType>
-mlir::LogicalResult
+LogicalResult
 removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
                                                    PatternRewriter& rewriter) {
   // Check if the successor is the same operation
@@ -118,8 +117,8 @@ removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
  * @return LogicalResult Success or failure of the merge.
  */
 template <typename SquareOpType, typename OpType>
-mlir::LogicalResult mergeOneTargetZeroParameter(OpType op,
-                                                PatternRewriter& rewriter) {
+LogicalResult mergeOneTargetZeroParameter(OpType op,
+                                          PatternRewriter& rewriter) {
   // Check if the successor is the same operation
   auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
@@ -148,8 +147,7 @@ mlir::LogicalResult mergeOneTargetZeroParameter(OpType op,
  * @return LogicalResult Success or failure of the merge.
  */
 template <typename OpType>
-mlir::LogicalResult mergeOneTargetOneParameter(OpType op,
-                                               PatternRewriter& rewriter) {
+LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation
   auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
@@ -179,8 +177,7 @@ mlir::LogicalResult mergeOneTargetOneParameter(OpType op,
  * @return LogicalResult Success or failure of the merge.
  */
 template <typename OpType>
-mlir::LogicalResult mergeTwoTargetOneParameter(OpType op,
-                                               PatternRewriter& rewriter) {
+LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation
   auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
@@ -217,7 +214,7 @@ mlir::LogicalResult mergeTwoTargetOneParameter(OpType op,
  * @return LogicalResult Success or failure of the merge.
  */
 template <typename OpType>
-mlir::LogicalResult
+LogicalResult
 mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
                                              PatternRewriter& rewriter) {
   // Check if the successor is the same operation

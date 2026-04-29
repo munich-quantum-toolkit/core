@@ -13,8 +13,6 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/Twine.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
@@ -64,7 +62,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] llvm::ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
+  [[nodiscard]] ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the

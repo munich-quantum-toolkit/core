@@ -10,16 +10,9 @@
 
 #pragma once
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -27,7 +20,15 @@
 #include <utility>
 #include <variant>
 
-namespace mlir::qco {
+namespace mlir {
+
+// Forward declarations
+class MLIRContext;
+class ModuleOp;
+class Operation;
+class ValueRange;
+
+namespace qco {
 
 /**
  * @brief Builder API for constructing quantum programs in the QCO dialect
@@ -122,12 +123,7 @@ public:
      * @param index The index of the qubit to access
      * @return The specified qubit value
      */
-    Value& operator[](size_t index) {
-      if (index >= qubits.size()) {
-        llvm::reportFatalUsageError("Qubit index out of bounds");
-      }
-      return qubits[index];
-    }
+    Value& operator[](size_t index);
 
     /**
      * @brief Conversion to the backing QTensor value
@@ -210,16 +206,7 @@ public:
      * @param index The index of the bit to access (must be less than size)
      * @return A Bit structure representing the specified bit
      */
-    Bit operator[](const int64_t index) const {
-      if (index < 0 || index >= size) {
-        const std::string msg = "Bit index " + std::to_string(index) +
-                                " out of bounds for register '" + name +
-                                "' of size " + std::to_string(size);
-        llvm::reportFatalUsageError(msg.c_str());
-      }
-      return {
-          .registerName = name, .registerSize = size, .registerIndex = index};
-    }
+    Bit operator[](int64_t index) const;
   };
 
   /**
@@ -1171,7 +1158,7 @@ public:
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       llvm::function_ref<SmallVector<Value>(ValueRange)> body);
+       function_ref<SmallVector<Value>(ValueRange)> body);
 
   /**
    * @brief Apply an inverse operation
@@ -1196,7 +1183,7 @@ public:
    * ```
    */
   ValueRange inv(ValueRange qubits,
-                 llvm::function_ref<SmallVector<Value>(ValueRange)> body);
+                 function_ref<SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -1263,8 +1250,8 @@ public:
    */
   ValueRange
   qcoIf(const std::variant<bool, Value>& condition, ValueRange qubits,
-        llvm::function_ref<SmallVector<Value>(ValueRange)> thenBody,
-        llvm::function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
+        function_ref<SmallVector<Value>(ValueRange)> thenBody,
+        function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -1294,13 +1281,13 @@ public:
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc);
+        const function_ref<void(QCOProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
 
   MLIRContext* ctx{};
-  ModuleOp module;
+  Operation* module;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
@@ -1340,7 +1327,7 @@ private:
   /// Only values present in this map are valid for use in operations.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseMap<Value, QubitInfo> validQubits;
+  DenseMap<Value, QubitInfo> validQubits;
 
   /**
    * @brief Validate that a tensor value is valid and unconsumed. This also
@@ -1370,7 +1357,7 @@ private:
   /// Only values present in this map are valid for use in operations.
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseMap<Value, TensorInfo> validTensors;
+  DenseMap<Value, TensorInfo> validTensors;
 
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -1378,4 +1365,5 @@ private:
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
 };
-} // namespace mlir::qco
+} // namespace qco
+} // namespace mlir

@@ -18,7 +18,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -30,7 +29,6 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -136,7 +134,7 @@ public:
     });
 
     addConversion([ctx](RankedTensorType type) -> Type {
-      if (llvm::isa<qco::QubitType>(type.getElementType())) {
+      if (isa<qco::QubitType>(type.getElementType())) {
         return MemRefType::get(type.getShape(), qc::QubitType::get(ctx));
       }
       return type;
@@ -168,7 +166,7 @@ struct ConvertQTensorAllocOp final
       return failure();
     }
     auto qubitType = qc::QubitType::get(op.getContext());
-    auto tensorType = llvm::cast<RankedTensorType>(op.getResult().getType());
+    auto tensorType = cast<RankedTensorType>(op.getResult().getType());
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
 
     if (tensorType.hasStaticShape()) {
