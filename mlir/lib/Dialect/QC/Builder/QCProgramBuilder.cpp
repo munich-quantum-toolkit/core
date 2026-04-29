@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -124,6 +123,17 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
+}
+
+QCProgramBuilder::Bit
+QCProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
+  if (index < 0 || index >= size) {
+    const std::string msg = "Bit index " + std::to_string(index) +
+                            " out of bounds for register '" + name +
+                            "' of size " + std::to_string(size);
+    llvm::reportFatalUsageError(msg.c_str());
+    return {.registerName = name, .registerSize = size, .registerIndex = index};
+  }
 }
 
 Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
@@ -482,7 +492,7 @@ QCProgramBuilder&
 QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
                          const std::variant<int64_t, Value>& upperbound,
                          const std::variant<int64_t, Value>& step,
-                         const llvm::function_ref<void(Value)>& body) {
+                         const function_ref<void(Value)>& body) {
   checkFinalized();
 
   auto loc = getLoc();
@@ -505,8 +515,8 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
 }
 
 QCProgramBuilder&
-QCProgramBuilder::scfWhile(const llvm::function_ref<void()>& beforeBody,
-                           const llvm::function_ref<void()>& afterBody) {
+QCProgramBuilder::scfWhile(const function_ref<void()>& beforeBody,
+                           const function_ref<void()>& afterBody) {
   checkFinalized();
 
   scf::WhileOp::create(
@@ -534,13 +544,13 @@ QCProgramBuilder::scfWhile(const llvm::function_ref<void()>& beforeBody,
 
 QCProgramBuilder&
 QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
-                        const llvm::function_ref<void()>& thenBody,
-                        const llvm::function_ref<void()>& elseBody) {
+                        const function_ref<void()>& thenBody,
+                        const function_ref<void()>& elseBody) {
   checkFinalized();
 
   auto condition = utils::variantToValue(*this, getLoc(), cond);
 
-  auto buildRegion = [&](const llvm::function_ref<void()>& body) {
+  auto buildRegion = [&](const function_ref<void()>& body) {
     return [&, body](OpBuilder& b, Location loc) {
       const OpBuilder::InsertionGuard guard(*this);
       auto* insertionBlock = b.getInsertionBlock();

@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
@@ -980,7 +979,7 @@ public:
   QCProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
                            const std::variant<int64_t, Value>& upperbound,
                            const std::variant<int64_t, Value>& step,
-                           const llvm::function_ref<void(Value)>& body);
+                           const function_ref<void(Value)>& body);
 
   /**
    * @brief Construct a scf.while operation
@@ -1009,8 +1008,8 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& scfWhile(const llvm::function_ref<void()>& beforeBody,
-                             const llvm::function_ref<void()>& afterBody);
+  QCProgramBuilder& scfWhile(const function_ref<void()>& beforeBody,
+                             const function_ref<void()>& afterBody);
 
   /**
    * @brief Construct a scf.if operation
@@ -1039,8 +1038,8 @@ public:
    * ```
    */
   QCProgramBuilder& scfIf(const std::variant<bool, Value>& condition,
-                          const llvm::function_ref<void()>& thenBody,
-                          const llvm::function_ref<void()>& elseBody = nullptr);
+                          const function_ref<void()>& thenBody,
+                          const function_ref<void()>& elseBody = nullptr);
 
   /**
    * @brief Construct a scf.condition operation
@@ -1101,11 +1100,10 @@ private:
   DenseSet<Value> allocatedMemrefs;
 
   /// Per-region map of memrefs and their loaded indices
-  llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::DenseSet<Value>>>
-      loadedQubits;
+  DenseMap<Region*, DenseMap<Value, DenseSet<Value>>> loadedQubits;
 
   /// Stack of the nested regions where the insertion point of the builder is
-  llvm::SmallVector<Region*> regionStack;
+  SmallVector<Region*> regionStack;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

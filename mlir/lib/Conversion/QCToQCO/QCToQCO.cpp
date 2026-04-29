@@ -18,10 +18,8 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -132,14 +130,14 @@ struct LoweringState {
   DenseMap<Region*, DenseMap<Value, QubitInfo>> qubitInfoMap;
 
   /// Per-region map from original QC register to its extracted QC qubits
-  llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::SetVector<Value>>>
+  DenseMap<Region*, DenseMap<Value, SetVector<Value>>>
       extractedQubits;
 
   /// Map from an operation to its used QC qubits inside its regions
-  llvm::DenseMap<Operation*, llvm::SetVector<Value>> regionQubitMap;
+  DenseMap<Operation*, SetVector<Value>> regionQubitMap;
 
   /// Map from an operation to its used QC memrefs inside its regions
-  llvm::DenseMap<Operation*, llvm::SetVector<Value>> regionRegisterMap;
+  DenseMap<Operation*, SetVector<Value>> regionRegisterMap;
 
   /// Stack of active modifier regions
   SmallVector<ModifierFrame> modifierFrames;
@@ -497,10 +495,10 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
  *
  * @param op The operation that is currently traversed
  * @param state The lowering state
- * @return Pair of llvm::SetVector<Value> of unique QC qubits and memref
+ * @return Pair of SetVector<Value> of unique QC qubits and memref
  * references
  */
-static std::pair<llvm::SetVector<Value>, llvm::SetVector<Value>>
+static std::pair<SetVector<Value>, SetVector<Value>>
 collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
   // Get the regions of the current operation
   const auto& regions = op->getRegions();

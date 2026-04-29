@@ -1234,10 +1234,10 @@ public:
    * @par Example:
    * ```c++
    * result = builder.qcoIf(condition, initArgs, [&](ValueRange args)
-   * -> llvm::SmallVector<Value> {
+   * -> SmallVector<Value> {
    *   auto q1 = builder.x(args[0]);
    *   return {q1};
-   * }, [&](ValueRange args) -> llvm::SmallVector<Value> {
+   * }, [&](ValueRange args) -> SmallVector<Value> {
    *   auto q2 = builder.z(args[0]);
    *   return {q2};
    * });
@@ -1276,7 +1276,7 @@ public:
    * @par Example:
    * ```c++
    * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs)
-   * -> llvm::SmallVector<Value> {
+   * -> SmallVector<Value> {
    *   auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
    *   auto q1 = b.h(q0);
    *   auto insert = b.qtensorInsert(q1, t0, iv);
@@ -1293,11 +1293,11 @@ public:
    * }
    * ```
    */
-  ValueRange
-  scfFor(const std::variant<int64_t, Value>& lowerbound,
-         const std::variant<int64_t, Value>& upperbound,
-         const std::variant<int64_t, Value>& step, ValueRange initArgs,
-         llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body);
+  ValueRange scfFor(const std::variant<int64_t, Value>& lowerbound,
+                    const std::variant<int64_t, Value>& upperbound,
+                    const std::variant<int64_t, Value>& step,
+                    ValueRange initArgs,
+                    function_ref<SmallVector<Value>(Value, ValueRange)> body);
 
   /**
    * @brief Construct a scf.while operation
@@ -1317,11 +1317,11 @@ public:
    * @par Example:
    * ```c++
    * builder.scfWhile(initArgs, [&](ValueRange iterArgs) ->
-   * llvm::SmallVector<Value> {
+   * SmallVector<Value> {
    *   auto [q0, cond] = builder.measure(iterArgs[0]);
    *   builder.scfCondition(cond, q0);
    *   return {q0};
-   * }, [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
+   * }, [&](ValueRange iterArgs) -> SmallVector<Value> {
    *   auto q0 = builder.h(iterArgs[0]);
    *   return {q0};
    * });
@@ -1337,10 +1337,9 @@ public:
    * }
    * ```
    */
-  ValueRange
-  scfWhile(ValueRange initArgs,
-           llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
-           llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody);
+  ValueRange scfWhile(ValueRange initArgs,
+                      function_ref<SmallVector<Value>(ValueRange)> beforeBody,
+                      function_ref<SmallVector<Value>(ValueRange)> afterBody);
 
   /**
    * @brief Construct a scf.condition operation with yielded values

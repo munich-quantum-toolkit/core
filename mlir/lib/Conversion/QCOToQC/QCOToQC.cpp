@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -63,11 +64,11 @@ enum class AllocationMode : std::uint8_t {
  */
 struct LoweringState {
   /// Per-region map from from QC registers to its already extracted indices
-  llvm::DenseMap<Region*, llvm::DenseMap<Value, SetVector<Value>>>
+  DenseMap<Region*, DenseMap<Value, SetVector<Value>>>
       extractedIndices;
   /// Per-region map from a register to its QC qubit indices and the qubit
   /// values
-  llvm::DenseMap<Region*, llvm::DenseMap<Value, llvm::DenseMap<Value, Value>>>
+  DenseMap<Region*, DenseMap<Value, DenseMap<Value, Value>>>
       qubitValues;
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -720,7 +721,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   LogicalResult
   matchAndRewrite(qco::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (llvm::isa<scf::IfOp>(op->getParentOp())) {
+    if (isa<scf::IfOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
     } else {
       rewriter.replaceOpWithNewOp<qc::YieldOp>(op);
@@ -980,10 +981,10 @@ protected:
         return TypeSwitch<Type, bool>(t)
             .Case<qc::QubitType, qco::QubitType>([](auto) { return true; })
             .Case<MemRefType>([](MemRefType t) {
-              return llvm::isa<qc::QubitType>(t.getElementType());
+              return isa<qc::QubitType>(t.getElementType());
             })
             .Case<RankedTensorType>([](RankedTensorType t) {
-              return llvm::isa<qco::QubitType>(t.getElementType());
+              return isa<qco::QubitType>(t.getElementType());
             })
             .Default([](auto) { return false; });
       };
