@@ -18,7 +18,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -40,11 +40,11 @@ static bool originatesFromQTensorAlloc(qtensor::ExtractOp extractOp) {
   }
 
   while (auto* definingOp = current.getDefiningOp()) {
-    if (llvm::isa<qtensor::AllocOp>(definingOp)) {
+    if (isa<qtensor::AllocOp>(definingOp)) {
       return true;
     }
 
-    if (auto nestedExtractOp = llvm::dyn_cast<qtensor::ExtractOp>(definingOp)) {
+    if (auto nestedExtractOp = dyn_cast<qtensor::ExtractOp>(definingOp)) {
       auto nestedExtractIndex = nestedExtractOp.getIndex();
       if (!getConstantIntValue(nestedExtractIndex)) {
         return false;
@@ -56,7 +56,7 @@ static bool originatesFromQTensorAlloc(qtensor::ExtractOp extractOp) {
       continue;
     }
 
-    if (auto insertOp = llvm::dyn_cast<qtensor::InsertOp>(definingOp)) {
+    if (auto insertOp = dyn_cast<qtensor::InsertOp>(definingOp)) {
       auto insertIndex = insertOp.getIndex();
       if (!getConstantIntValue(insertIndex)) {
         return false;

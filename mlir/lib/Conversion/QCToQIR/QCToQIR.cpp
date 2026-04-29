@@ -33,7 +33,6 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -47,6 +46,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
@@ -78,23 +78,23 @@ enum class AllocationMode : std::uint8_t {
  */
 struct LoweringState : QIRMetadata {
   /// Cache static qubit pointers for reuse
-  llvm::DenseMap<int64_t, Value> staticQubits;
+  DenseMap<int64_t, Value> staticQubits;
 
   /// Cache MemRef sizes for reuse
-  llvm::DenseMap<Value, Value> memrefSizes;
+  DenseMap<Value, Value> memrefSizes;
 
   /// Map from register name to result-array pointer
   llvm::StringMap<Value> resultArrays;
 
   /// Map from (register name, index) to loaded result
-  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> loadedResults;
+  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
 
   /// Map from index to result pointer for non-register results
-  llvm::DenseMap<int64_t, Value> resultPtrs;
+  DenseMap<int64_t, Value> resultPtrs;
 
   /// Modifier information
   int64_t inCtrlOp = 0;
-  llvm::DenseMap<int64_t, llvm::SmallVector<Value>> controls;
+  DenseMap<int64_t, SmallVector<Value>> controls;
 
   /// Allocator and StringSaver for stable StringRefs
   llvm::BumpPtrAllocator allocator;
@@ -170,16 +170,16 @@ template <typename QCOpType, typename QCOpAdaptorType>
 static LogicalResult
 convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
                        ConversionPatternRewriter& rewriter, MLIRContext* ctx,
-                       LoweringState& state, llvm::StringRef fnName,
+                       LoweringState& state, StringRef fnName,
                        size_t numTargets, size_t numParams) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
-  const llvm::SmallVector<Value> controls =
-      inCtrlOp != 0 ? state.controls[inCtrlOp] : llvm::SmallVector<Value>{};
+  const SmallVector<Value> controls =
+      inCtrlOp != 0 ? state.controls[inCtrlOp] : SmallVector<Value>{};
   const size_t numCtrls = controls.size();
 
   // Define argument types
-  llvm::SmallVector<Type> argumentTypes;
+  SmallVector<Type> argumentTypes;
   argumentTypes.reserve(numParams + numCtrls + numTargets);
   const auto ptrType = LLVM::LLVMPointerType::get(ctx);
   const auto floatType = Float64Type::get(ctx);
@@ -204,7 +204,7 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   const auto fnDecl =
       getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
 
-  llvm::SmallVector<Value> operands;
+  SmallVector<Value> operands;
   operands.reserve(numParams + numCtrls + numTargets);
   operands.append(controls.begin(), controls.end());
   operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
@@ -340,7 +340,7 @@ struct QCToQIRTypeConverter final : LLVMTypeConverter {
         [ctx](QubitType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
 
     addConversion([ctx](MemRefType type) -> Type {
-      if (llvm::isa<QubitType>(type.getElementType())) {
+      if (isa<QubitType>(type.getElementType())) {
         return LLVM::LLVMPointerType::get(ctx);
       }
       return type;
@@ -867,8 +867,8 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
     // Update modifier information
     auto& state = getState();
     state.inCtrlOp++;
-    const llvm::SmallVector<Value> controls(adaptor.getControls().begin(),
-                                            adaptor.getControls().end());
+    const SmallVector<Value> controls(adaptor.getControls().begin(),
+                                      adaptor.getControls().end());
     state.controls[state.inCtrlOp] = controls;
 
     // Inline region and remove operation
@@ -998,13 +998,12 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     // Move operations to appropriate blocks
     for (auto it = bodyBlock->begin(); it != bodyBlock->end();) {
       // Ensure iterator remains valid after potential move
-      if (auto& op = *it++; llvm::isa<LLVM::ReturnOp>(op)) {
+      if (auto& op = *it++; isa<LLVM::ReturnOp>(op)) {
         // Move return to output block
         outputBlockOps.splice(outputBlock->end(), bodyBlockOps,
                               Block::iterator(op));
-      } else if (llvm::isa<memref::AllocOp>(op) ||
-                 llvm::isa<memref::LoadOp>(op) || llvm::isa<AllocOp>(op) ||
-                 op.hasTrait<OpTrait::ConstantLike>()) {
+      } else if (isa<memref::AllocOp>(op) || isa<memref::LoadOp>(op) ||
+                 isa<AllocOp>(op) || op.hasTrait<OpTrait::ConstantLike>()) {
         // Move allocations and constant-like operations to entry block
         entryBlock->getOperations().splice(entryBlock->end(), bodyBlockOps,
                                            Block::iterator(op));

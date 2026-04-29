@@ -11,14 +11,13 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cassert>
 
@@ -38,7 +37,7 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, Value size) {
 }
 
 LogicalResult AllocOp::verify() {
-  auto resultType = llvm::cast<RankedTensorType>(getResult().getType());
+  auto resultType = cast<RankedTensorType>(getResult().getType());
   auto sizeValue = getConstantIntValue(getSize());
   auto resultSize = resultType.getShape()[0];
 

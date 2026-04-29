@@ -22,6 +22,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <limits>
@@ -96,7 +97,7 @@ TEST_F(UtilsTest, valueToDoubleCastFromMaxUnsignedInteger) {
   auto op = arith::ConstantOp::create(
       *builder,
       builder->getIntegerAttr(builder->getIntegerType(bitCount, false),
-                              llvm::APInt::getMaxValue(bitCount)));
+                              APInt::getMaxValue(bitCount)));
   ASSERT_TRUE(op);
 
   const auto stdValue = utils::valueToDouble(op.getResult());
@@ -126,11 +127,11 @@ TEST_F(UtilsTest, valueToDoubleFoldedConstant) {
   auto op = createAddition(1.5, 2.0);
   ASSERT_TRUE(op);
 
-  llvm::SmallVector<Value> tmp;
-  llvm::SmallVector<Operation*> newConstants;
+  SmallVector<Value> tmp;
+  SmallVector<Operation*> newConstants;
   ASSERT_TRUE(builder->tryFold(op, tmp, &newConstants).succeeded());
   ASSERT_EQ(newConstants.size(), 1);
-  auto cst = llvm::dyn_cast<arith::ConstantOp>(newConstants[0]);
+  auto cst = dyn_cast<arith::ConstantOp>(newConstants[0]);
   ASSERT_TRUE(cst);
   const auto stdValue = utils::valueToDouble(cst.getResult());
   ASSERT_TRUE(stdValue.has_value());

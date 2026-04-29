@@ -18,7 +18,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cmath>
 #include <complex>
@@ -55,7 +55,7 @@ void RZXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult RZXOp::fold(FoldAdaptor /*adaptor*/,
-                          llvm::SmallVectorImpl<OpFoldResult>& results) {
+                          SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
       theta && std::abs(*theta) <= TOLERANCE) {
     results.emplace_back(getInputQubit(0));

@@ -19,7 +19,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <numbers>
 
@@ -38,7 +38,7 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp invOp,
                                 PatternRewriter& rewriter) const override {
     auto bodyUnitary = invOp.getBodyUnitary();
-    auto innerCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    auto innerCtrlOp = dyn_cast<CtrlOp>(bodyUnitary.getOperation());
     if (!innerCtrlOp) {
       return failure();
     }
@@ -66,8 +66,7 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
-    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(
-            innerOp)) {
+    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(innerOp)) {
       return failure();
     }
 
@@ -90,7 +89,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
-    return llvm::TypeSwitch<Operation*, LogicalResult>(innerOp)
+    return TypeSwitch<Operation*, LogicalResult>(innerOp)
         .Case<GPhaseOp>([&](auto g) {
           Value negTheta =
               arith::NegFOp::create(rewriter, op.getLoc(), g.getTheta());
@@ -239,7 +238,7 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp invOp,
                                 PatternRewriter& rewriter) const override {
     auto innerUnitary = invOp.getBodyUnitary();
-    auto innerInvOp = llvm::dyn_cast<InvOp>(innerUnitary.getOperation());
+    auto innerInvOp = dyn_cast<InvOp>(innerUnitary.getOperation());
     if (!innerInvOp) {
       return failure();
     }
@@ -260,11 +259,11 @@ UnitaryOpInterface InvOp::getBodyUnitary() {
   // also contain constants and arithmetic operations, e.g., created as part of
   // canonicalization. Thus, the only safe way to access the unitary operation
   // is to get the second operation from the back of the region.
-  return llvm::cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+  return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  const llvm::function_ref<void()>& bodyBuilder) {
+                  const function_ref<void()>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(odsBuilder);
   auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();
@@ -279,17 +278,17 @@ LogicalResult InvOp::verify() {
   if (block.getOperations().size() < 2) {
     return emitOpError("body region must have at least two operations");
   }
-  if (!llvm::isa<YieldOp>(block.back())) {
+  if (!isa<YieldOp>(block.back())) {
     return emitOpError(
         "last operation in body region must be a yield operation");
   }
   auto iter = ++block.rbegin();
-  if (!llvm::isa<UnitaryOpInterface>(*iter)) {
+  if (!isa<UnitaryOpInterface>(*iter)) {
     return emitOpError(
         "second to last operation in body region must be a unitary operation");
   }
   for (auto it = ++iter; it != block.rend(); ++it) {
-    if (llvm::isa<UnitaryOpInterface>(*it)) {
+    if (isa<UnitaryOpInterface>(*it)) {
       return emitOpError("body region may only contain a single unitary op");
     }
   }

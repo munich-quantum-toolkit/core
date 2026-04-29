@@ -29,6 +29,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
@@ -48,7 +49,7 @@ QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
 
 void QCProgramBuilder::initialize() {
   // Set insertion point to the module body
-  setInsertionPointToStart(llvm::cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, {getI64Type()});
@@ -110,7 +111,7 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   auto memref = memref::AllocOp::create(*this, memrefType);
   allocatedMemrefs.insert(memref);
 
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(size);
   for (int64_t i = 0; i < size; ++i) {
     auto index = arith::ConstantIndexOp::create(*this, i);
@@ -447,16 +448,14 @@ QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-QCProgramBuilder&
-QCProgramBuilder::ctrl(ValueRange controls,
-                       const llvm::function_ref<void()>& body) {
+QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
+                                         const function_ref<void()>& body) {
   checkFinalized();
   CtrlOp::create(*this, controls, body);
   return *this;
 }
 
-QCProgramBuilder&
-QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
+QCProgramBuilder& QCProgramBuilder::inv(const function_ref<void()>& body) {
   checkFinalized();
   InvOp::create(*this, body);
   return *this;
@@ -469,7 +468,7 @@ QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
 QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   checkFinalized();
 
-  if (llvm::isa_and_nonnull<memref::LoadOp>(qubit.getDefiningOp())) {
+  if (isa_and_nonnull<memref::LoadOp>(qubit.getDefiningOp())) {
     llvm::reportFatalUsageError(
         "Register-backed qubits cannot be deallocated manually");
   }
@@ -524,7 +523,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
-  for (auto op : llvm::cast<ModuleOp>(module).getOps<func::FuncOp>()) {
+  for (auto op : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
     if (op.getName() == "main") {
       mainFunc = op;
       break;
@@ -540,7 +539,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   }
 
   for (auto qubit : allocatedQubits) {
-    if (!llvm::isa<memref::LoadOp>(qubit.getDefiningOp())) {
+    if (!isa<memref::LoadOp>(qubit.getDefiningOp())) {
       DeallocOp::create(*this, qubit);
     }
   }
@@ -561,12 +560,12 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   ctx = nullptr;
 
   // Transfer ownership to the caller
-  return llvm::cast<ModuleOp>(module);
+  return cast<ModuleOp>(module);
 }
 
 OwningOpRef<ModuleOp> QCProgramBuilder::build(
     MLIRContext* context,
-    const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc) {
+    const function_ref<void(QCProgramBuilder&)>& buildFunc) {
   QCProgramBuilder builder(context);
   builder.initialize();
   buildFunc(builder);

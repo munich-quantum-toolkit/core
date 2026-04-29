@@ -23,6 +23,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <memory>
@@ -129,18 +130,18 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   auto func = *(mod->getOps<func::FuncOp>().begin());
 
   // Collect wires.
-  llvm::SmallVector<qco::WireIterator> wires;
+  SmallVector<qco::WireIterator> wires;
   for (qco::AllocOp op : func.getOps<qco::AllocOp>()) {
     wires.emplace_back(op.getResult());
   }
 
   // Unit-test supporting datastructure.
-  llvm::SmallVector<llvm::DenseSet<Operation*>> readyPerLayer;
+  SmallVector<DenseSet<Operation*>> readyPerLayer;
 
   // Forward pass.
   auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
-        llvm::DenseSet<Operation*> layer;
+        DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
           released.emplace_back(op);
@@ -160,7 +161,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Backward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
-        llvm::DenseSet<Operation*> layer;
+        DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
           released.emplace_back(op);
@@ -180,7 +181,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Forward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps&) {
-        llvm::DenseSet<Operation*> layer;
+        DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
         }
@@ -200,7 +201,7 @@ TEST_F(DriversTest, ProgramGraphWalk) {
   readyPerLayer.clear();
   res = qco::walkProgramGraph<qco::WireDirection::Backward>(
       wires, [&](const qco::ReadyRange& ready, qco::ReleasedOps& released) {
-        llvm::DenseSet<Operation*> layer;
+        DenseSet<Operation*> layer;
         for (const auto& [op, progs] : ready) {
           layer.insert(op);
           released.emplace_back(op);

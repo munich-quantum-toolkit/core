@@ -19,7 +19,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
 using namespace mlir;
@@ -31,8 +31,8 @@ static void addSimplificationPasses(PassManager& pm) {
 
 static LogicalResult
 runWithPassManager(ModuleOp module,
-                   const llvm::function_ref<void(PassManager&)> populatePasses,
-                   const llvm::StringRef errorMessage) {
+                   const function_ref<void(PassManager&)> populatePasses,
+                   const StringRef errorMessage) {
   PassManager pm(module.getContext());
   populatePasses(pm);
   if (pm.run(module).failed()) {

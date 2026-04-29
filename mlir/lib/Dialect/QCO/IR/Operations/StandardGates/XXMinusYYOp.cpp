@@ -16,11 +16,10 @@
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cmath>
 #include <complex>
@@ -44,8 +43,7 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
   LogicalResult matchAndRewrite(XXMinusYYOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the successor is the same operation
-    auto nextOp =
-        llvm::dyn_cast<XXMinusYYOp>(*op.getOutputQubit(0).user_begin());
+    auto nextOp = dyn_cast<XXMinusYYOp>(*op.getOutputQubit(0).user_begin());
     if (!nextOp) {
       return failure();
     }
@@ -90,7 +88,7 @@ void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult XXMinusYYOp::fold(FoldAdaptor /*adaptor*/,
-                                llvm::SmallVectorImpl<OpFoldResult>& results) {
+                                SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
       theta && std::abs(*theta) <= TOLERANCE) {
     results.emplace_back(getInputQubit(0));

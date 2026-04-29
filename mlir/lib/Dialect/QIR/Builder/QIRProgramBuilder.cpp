@@ -29,6 +29,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -49,7 +50,7 @@ QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
 
 void QIRProgramBuilder::initialize() {
   // Set insertion point to the module body
-  setInsertionPointToStart(llvm::cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function: () -> i64
   auto funcType = LLVM::LLVMFunctionType::get(getI64Type(), {});
@@ -154,8 +155,7 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-llvm::SmallVector<Value>
-QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Dynamic);
 
@@ -171,7 +171,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(size);
 
   auto allocFnSignature = LLVM::LLVMFunctionType::get(
@@ -346,9 +346,8 @@ QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 void QIRProgramBuilder::createCallOp(
-    const llvm::SmallVector<std::variant<double, Value>>& parameters,
-    ValueRange controls, const llvm::SmallVector<Value>& targets,
-    StringRef fnName) {
+    const SmallVector<std::variant<double, Value>>& parameters,
+    ValueRange controls, const SmallVector<Value>& targets, StringRef fnName) {
   checkFinalized();
 
   // Save current insertion point
@@ -357,7 +356,7 @@ void QIRProgramBuilder::createCallOp(
   // Insert constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  llvm::SmallVector<Value> parameterOperands;
+  SmallVector<Value> parameterOperands;
   parameterOperands.reserve(parameters.size());
   for (const auto& parameter : parameters) {
     Value parameterOperand;
@@ -373,7 +372,7 @@ void QIRProgramBuilder::createCallOp(
   setInsertionPoint(bodyBlock->getTerminator());
 
   // Define argument types
-  llvm::SmallVector<Type> argumentTypes;
+  SmallVector<Type> argumentTypes;
   argumentTypes.reserve(parameters.size() + controls.size() + targets.size());
   const auto floatType = Float64Type::get(getContext());
   // Add control pointers
@@ -396,7 +395,7 @@ void QIRProgramBuilder::createCallOp(
   auto fnDecl =
       getOrCreateFunctionDeclaration(*this, module, fnName, fnSignature);
 
-  llvm::SmallVector<Value> operands;
+  SmallVector<Value> operands;
   operands.reserve(parameters.size() + controls.size() + targets.size());
   operands.append(controls.begin(), controls.end());
   operands.append(targets.begin(), targets.end());
@@ -745,17 +744,17 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
     LLVM::CallOp::create(*this, dec, ValueRange{size, array});
   }
 
-  auto mainFuncOp = llvm::cast<LLVM::LLVMFuncOp>(mainFunc);
+  auto mainFuncOp = cast<LLVM::LLVMFuncOp>(mainFunc);
   setQIRAttributes(mainFuncOp, metadata_);
 
   isFinalized = true;
 
-  return llvm::cast<ModuleOp>(module);
+  return cast<ModuleOp>(module);
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(
     MLIRContext* context,
-    const llvm::function_ref<void(QIRProgramBuilder&)>& buildFunc) {
+    const function_ref<void(QIRProgramBuilder&)>& buildFunc) {
   QIRProgramBuilder builder(context);
   builder.initialize();
   buildFunc(builder);

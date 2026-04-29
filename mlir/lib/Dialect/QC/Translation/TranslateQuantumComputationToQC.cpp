@@ -22,11 +22,10 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -49,12 +48,12 @@ namespace {
  */
 struct QregInfo {
   const ::qc::QuantumRegister* qregPtr;
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
 };
 
 // (register ref, localIdx)
 using BitMemInfo = std::pair<QCProgramBuilder::ClassicalRegister, size_t>;
-using BitIndexVec = llvm::SmallVector<BitMemInfo>;
+using BitIndexVec = SmallVector<BitMemInfo>;
 
 } // namespace
 
@@ -71,11 +70,11 @@ using BitIndexVec = llvm::SmallVector<BitMemInfo>;
  * @param quantumComputation The quantum computation to translate
  * @return Vector containing information about all quantum registers
  */
-static llvm::SmallVector<QregInfo>
+static SmallVector<QregInfo>
 allocateQregs(QCProgramBuilder& builder,
               const ::qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
-  llvm::SmallVector<const ::qc::QuantumRegister*> qregPtrs;
+  SmallVector<const ::qc::QuantumRegister*> qregPtrs;
   qregPtrs.reserve(quantumComputation.getQuantumRegisters().size() +
                    quantumComputation.getAncillaRegisters().size());
   for (const auto& qreg :
@@ -94,7 +93,7 @@ allocateQregs(QCProgramBuilder& builder,
   });
 
   // Allocate quantum registers using the builder
-  llvm::SmallVector<QregInfo> qregs;
+  SmallVector<QregInfo> qregs;
   for (const auto* qregPtr : qregPtrs) {
     auto qubitRegister =
         builder.allocQubitRegister(static_cast<int64_t>(qregPtr->getSize()));
@@ -116,10 +115,10 @@ allocateQregs(QCProgramBuilder& builder,
  * @param qregs Vector containing information about all quantum registers
  * @return Flat vector of qubit values indexed by physical qubit index
  */
-static llvm::SmallVector<Value>
+static SmallVector<Value>
 buildQubitMap(const ::qc::QuantumComputation& quantumComputation,
-              const llvm::SmallVector<QregInfo>& qregs) {
-  llvm::SmallVector<Value> flatQubits;
+              const SmallVector<QregInfo>& qregs) {
+  SmallVector<Value> flatQubits;
   const auto maxPhys = quantumComputation.getHighestPhysicalQubitIndex();
   flatQubits.resize(static_cast<size_t>(maxPhys) + 1);
 
@@ -149,7 +148,7 @@ static BitIndexVec
 allocateClassicalRegisters(QCProgramBuilder& builder,
                            const ::qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
-  llvm::SmallVector<const ::qc::ClassicalRegister*> cregPtrs;
+  SmallVector<const ::qc::ClassicalRegister*> cregPtrs;
   cregPtrs.reserve(quantumComputation.getClassicalRegisters().size());
   for (const auto& reg :
        quantumComputation.getClassicalRegisters() | std::views::values) {
@@ -191,7 +190,7 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
  */
 static void addMeasureOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
-                         const llvm::SmallVector<Value>& qubits,
+                         const SmallVector<Value>& qubits,
                          const BitIndexVec& bitMap) {
   const auto& measureOp =
       dynamic_cast<const ::qc::NonUnitaryOperation&>(operation);
@@ -221,7 +220,7 @@ static void addMeasureOp(QCProgramBuilder& builder,
  */
 static void addResetOp(QCProgramBuilder& builder,
                        const ::qc::Operation& operation,
-                       const llvm::SmallVector<Value>& qubits) {
+                       const SmallVector<Value>& qubits) {
   for (const auto& target : operation.getTargets()) {
     auto qubit = qubits[target];
     builder.reset(qubit);
@@ -239,10 +238,9 @@ static void addResetOp(QCProgramBuilder& builder,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  * @return Vector of qubit values corresponding to positive controls
  */
-static llvm::SmallVector<Value>
-getControls(const ::qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  llvm::SmallVector<Value> controls;
+static SmallVector<Value> getControls(const ::qc::Operation& operation,
+                                      const SmallVector<Value>& qubits) {
+  SmallVector<Value> controls;
   for (const auto& [control, type] : operation.getControls()) {
     if (type == ::qc::Control::Type::Neg) {
       llvm::reportFatalInternalError(
@@ -269,7 +267,7 @@ getControls(const ::qc::Operation& operation,
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const llvm::SmallVector<Value>& qubits) {       \
+                               const SmallVector<Value>& qubits) {             \
     const auto& target = qubits[operation.getTargets()[0]];                    \
     if (const auto& controls = getControls(operation, qubits);                 \
         controls.empty()) {                                                    \
@@ -309,7 +307,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdg, sxdg)
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const llvm::SmallVector<Value>& qubits) {       \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param = operation.getParameter()[0];                           \
     const auto& target = qubits[operation.getTargets()[0]];                    \
     if (const auto& controls = getControls(operation, qubits);                 \
@@ -341,7 +339,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p)
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const llvm::SmallVector<Value>& qubits) {       \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& target = qubits[operation.getTargets()[0]];                    \
@@ -374,7 +372,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2)
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const llvm::SmallVector<Value>& qubits) {       \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& param3 = operation.getParameter()[2];                          \
@@ -407,7 +405,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u)
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const llvm::SmallVector<Value>& qubits) {       \
+                               const SmallVector<Value>& qubits) {             \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
     if (const auto& controls = getControls(operation, qubits);                 \
@@ -441,7 +439,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const llvm::SmallVector<Value>& qubits) {       \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param = operation.getParameter()[0];                           \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
@@ -476,7 +474,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz)
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const llvm::SmallVector<Value>& qubits) {       \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
@@ -498,8 +496,8 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXminusYY, xx_minus_yy)
 
 static void addBarrierOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
-                         const llvm::SmallVector<Value>& qubits) {
-  llvm::SmallVector<Value> targets;
+                         const SmallVector<Value>& qubits) {
+  SmallVector<Value> targets;
   for (const auto& targetIdx : operation.getTargets()) {
     targets.push_back(qubits[targetIdx]);
   }
@@ -527,7 +525,7 @@ static void addBarrierOp(QCProgramBuilder& builder,
 static LogicalResult
 translateOperations(QCProgramBuilder& builder,
                     const ::qc::QuantumComputation& quantumComputation,
-                    const llvm::SmallVector<Value>& qubits,
+                    const SmallVector<Value>& qubits,
                     const BitIndexVec& bitMap) {
   if (quantumComputation.hasGlobalPhase()) {
     builder.gphase(quantumComputation.getGlobalPhase());

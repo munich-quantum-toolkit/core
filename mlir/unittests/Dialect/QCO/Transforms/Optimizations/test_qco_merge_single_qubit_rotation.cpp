@@ -16,7 +16,6 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -25,7 +24,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <cassert>
@@ -56,7 +55,7 @@ protected:
    */
   struct RotationGate {
     GateType type;
-    llvm::SmallVector<double, 4> angles;
+    SmallVector<double, 4> angles;
   };
 
   MergeSingleQubitRotationGatesTest() : builder(&context) {}
@@ -80,12 +79,11 @@ protected:
   }
 
   /**
-   * @brief Extract constant floating point value from a mlir::Value
+   * @brief Extract constant floating point value from a Value
    */
-  static std::optional<double> toDouble(mlir::Value v) {
-    if (auto constOp = v.getDefiningOp<mlir::arith::ConstantOp>()) {
-      if (auto floatAttr =
-              llvm::dyn_cast<mlir::FloatAttr>(constOp.getValue())) {
+  static std::optional<double> toDouble(Value v) {
+    if (auto constOp = v.getDefiningOp<arith::ConstantOp>()) {
+      if (auto floatAttr = dyn_cast<FloatAttr>(constOp.getValue())) {
         return floatAttr.getValueAsDouble();
       }
     }
@@ -102,7 +100,7 @@ protected:
     module->walk([&](UOp op) {
       uOp = op;
       // stop after finding first UOp
-      return mlir::WalkResult::interrupt();
+      return WalkResult::interrupt();
     });
 
     if (!uOp) {
@@ -143,7 +141,7 @@ protected:
     GPhaseOp gOp = nullptr;
     module->walk([&](GPhaseOp op) {
       gOp = op;
-      return mlir::WalkResult::interrupt();
+      return WalkResult::interrupt();
     });
 
     if (!gOp) {
@@ -163,7 +161,7 @@ protected:
     EXPECT_NEAR(*param, expected, tolerance);
   }
 
-  Value buildRotations(llvm::ArrayRef<RotationGate> rotations, Value& q) {
+  Value buildRotations(ArrayRef<RotationGate> rotations, Value& q) {
     auto qubit = q;
 
     for (const auto& gate : rotations) {
@@ -208,7 +206,7 @@ protected:
    * builder api to build a small quantum circuit, where a qubit is fed through
    * all rotations in the list.
    */
-  LogicalResult testGateMerge(llvm::ArrayRef<RotationGate> rotations) {
+  LogicalResult testGateMerge(ArrayRef<RotationGate> rotations) {
     auto q = builder.allocQubitRegister(1);
 
     buildRotations(rotations, q[0]);

@@ -14,10 +14,10 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cassert>
 #include <iterator>
@@ -25,7 +25,7 @@
 namespace mlir::qco {
 mlir::Value WireIterator::qubit() const {
   // A sink/deallocation doesn't have an OpResult.
-  if (op_ != nullptr && llvm::isa<SinkOp>(op_)) {
+  if (op_ != nullptr && isa<SinkOp>(op_)) {
     return nullptr;
   }
   return qubit_;
@@ -42,12 +42,12 @@ void WireIterator::forward() {
   op_ = *(qubit_.getUsers().begin());
 
   // A sink op defines the end of the qubit wire (dynamic and static).
-  if (llvm::isa<SinkOp>(op_)) {
+  if (isa<SinkOp>(op_)) {
     isSentinel_ = true;
     return;
   }
 
-  if (!(llvm::isa<AllocOp, StaticOp>(op_))) {
+  if (!(isa<AllocOp, StaticOp>(op_))) {
     // Find the output from the input qubit SSA value.
     mlir::TypeSwitch<mlir::Operation*>(op_)
         .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
@@ -71,14 +71,14 @@ void WireIterator::backward() {
 
   // For sinks/deallocations, qubit_ is an OpOperand. Hence, only get the
   // def-op.
-  if (llvm::isa<SinkOp>(op_)) {
+  if (isa<SinkOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     return;
   }
 
   // Allocations or static definitions define the start of the qubit wire.
   // Consequently, stop and early exit.
-  if (llvm::isa<AllocOp, StaticOp>(op_)) {
+  if (isa<AllocOp, StaticOp>(op_)) {
     return;
   }
 

@@ -19,7 +19,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cmath>
 #include <complex>
@@ -43,8 +43,7 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
   LogicalResult matchAndRewrite(XXPlusYYOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the successor is the same operation
-    auto nextOp =
-        llvm::dyn_cast<XXPlusYYOp>(*op.getOutputQubit(0).user_begin());
+    auto nextOp = dyn_cast<XXPlusYYOp>(*op.getOutputQubit(0).user_begin());
     if (!nextOp) {
       return failure();
     }
@@ -89,7 +88,7 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
-                               llvm::SmallVectorImpl<OpFoldResult>& results) {
+                               SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
       theta && std::abs(*theta) <= TOLERANCE) {
     results.emplace_back(getInputQubit(0));

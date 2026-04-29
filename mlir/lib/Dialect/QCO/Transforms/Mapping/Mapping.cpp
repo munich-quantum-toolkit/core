@@ -35,7 +35,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
@@ -50,7 +50,6 @@
 #include <queue>
 #include <random>
 #include <string>
-#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -69,8 +68,8 @@ private:
   using QubitValue = TypedValue<QubitType>;
   using IndexType = std::size_t;
   using IndexGate = std::pair<IndexType, IndexType>;
-  using IndexGateSet = llvm::DenseSet<IndexGate>;
-  using Layer = llvm::DenseSet<IndexGate>;
+  using IndexGateSet = DenseSet<IndexGate>;
+  using Layer = DenseSet<IndexGate>;
 
   /**
    * @brief Specifies the layering direction.
@@ -110,7 +109,7 @@ private:
      * @return The random layout.
      */
     static Layout random(const std::size_t nqubits, const std::size_t seed) {
-      llvm::SmallVector<IndexType> mapping(nqubits);
+      SmallVector<IndexType> mapping(nqubits);
       std::iota(mapping.begin(), mapping.end(), IndexType{0});
       std::ranges::shuffle(mapping, std::mt19937_64{seed});
 
@@ -204,12 +203,12 @@ private:
     /**
      * @brief Maps a program qubit index to its hardware index.
      */
-    llvm::SmallVector<IndexType> programToHardware_;
+    SmallVector<IndexType> programToHardware_;
 
     /**
      * @brief Maps a hardware qubit index to its program index.
      */
-    llvm::SmallVector<IndexType> hardwareToProgram_;
+    SmallVector<IndexType> hardwareToProgram_;
 
   private:
     friend class MappingPass::LayoutInfo;
@@ -223,15 +222,15 @@ private:
    * @brief The layers of a circuit and the respective IR anchor for each.
    */
   struct [[nodiscard]] LayeringResult {
-    llvm::SmallVector<Layer> layers;
-    llvm::SmallVector<Operation*> anchors;
+    SmallVector<Layer> layers;
+    SmallVector<Operation*> anchors;
   };
 
   /**
    * @brief Required to use Layout as a key for LLVM maps and sets.
    */
   class [[nodiscard]] LayoutInfo {
-    using Info = llvm::DenseMapInfo<llvm::SmallVector<IndexType>>;
+    using Info = DenseMapInfo<SmallVector<IndexType>>;
 
   public:
     static Layout getEmptyKey() {
@@ -271,7 +270,7 @@ private:
     }
 
     float alpha;
-    llvm::SmallVector<float> decay;
+    SmallVector<float> decay;
   };
 
   /**
@@ -301,7 +300,7 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node.
      */
-    Node(Node* parent, IndexGate swap, llvm::ArrayRef<Layer> layers,
+    Node(Node* parent, IndexGate swap, ArrayRef<Layer> layers,
          const Architecture& arch, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
@@ -341,8 +340,7 @@ private:
      * that a naive router would insert to route the layers (with a constant
      * layout).
      */
-    [[nodiscard]] float h(llvm::ArrayRef<Layer> layers,
-                          const Architecture& arch,
+    [[nodiscard]] float h(ArrayRef<Layer> layers, const Architecture& arch,
                           const Parameters& params) const {
       float costs{0};
       for (const auto& [decay, layer] : zip(params.decay, layers)) {
@@ -362,7 +360,7 @@ private:
     /// @brief The computed initial layout.
     Layout layout;
     /// @brief A vector of SWAPs for each layer.
-    llvm::SmallVector<llvm::SmallVector<IndexGate>> swaps;
+    SmallVector<SmallVector<IndexGate>> swaps;
     /// @brief The number of inserted SWAPs.
     std::size_t nswaps{};
   };
@@ -396,7 +394,7 @@ protected:
 
       // Create trials. Currently this includes `ntrials` many random layouts.
 
-      llvm::SmallVector<Layout> trials;
+      SmallVector<Layout> trials;
       trials.reserve(this->ntrials);
       for (std::size_t i = 0; i < this->ntrials; ++i) {
         trials.emplace_back(Layout::random(arch.nqubits(), rng()));
@@ -405,7 +403,7 @@ protected:
       // Execute each of the trials (possibly in parallel). Collect the results
       // and find the one with the fewest SWAPs.
 
-      llvm::SmallVector<std::optional<TrialResult>> results(trials.size());
+      SmallVector<std::optional<TrialResult>> results(trials.size());
       parallelForEach(
           &getContext(), enumerate(trials), [&, this](auto indexedTrial) {
             auto [idx, layout] = indexedTrial;
@@ -433,7 +431,7 @@ private:
    * @returns the best trial result or nullptr if no result is valid.
    */
   [[nodiscard]] static TrialResult*
-  findBestTrial(llvm::MutableArrayRef<std::optional<TrialResult>> results) {
+  findBestTrial(MutableArrayRef<std::optional<TrialResult>> results) {
     TrialResult* best = nullptr;
     for (auto& opt : results) {
       if (opt.has_value()) {
@@ -452,8 +450,8 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns the trial result or failure() on failure.
    */
-  FailureOr<TrialResult> runMappingTrial(llvm::ArrayRef<Layer> ltr,
-                                         llvm::ArrayRef<Layer> rtl,
+  FailureOr<TrialResult> runMappingTrial(ArrayRef<Layer> ltr,
+                                         ArrayRef<Layer> rtl,
                                          const Architecture& arch,
                                          const Parameters& params,
                                          Layout& layout) {
@@ -470,7 +468,7 @@ private:
     TrialResult result(layout); // Copies the final initial layout.
 
     // Helper function that adds the SWAPs to the trial result.
-    const auto collectSwaps = [&](llvm::ArrayRef<IndexGate> swaps) {
+    const auto collectSwaps = [&](ArrayRef<IndexGate> swaps) {
       result.nswaps += swaps.size();
       result.swaps.emplace_back(swaps);
     };
@@ -487,9 +485,9 @@ private:
    * @brief Collect dynamic qubits contained in the given function body.
    * @returns a vector of SSA values produced by qco.alloc operations.
    */
-  [[nodiscard]] static llvm::SmallVector<QubitValue>
+  [[nodiscard]] static SmallVector<QubitValue>
   collectDynamicQubits(Region& funcBody) {
-    return llvm::SmallVector<QubitValue>(map_range(
+    return SmallVector<QubitValue>(map_range(
         funcBody.getOps<AllocOp>(), [](AllocOp op) { return op.getResult(); }));
   }
 
@@ -498,7 +496,7 @@ private:
    * @returns a pair of vectors of layers, where [0]=forward and [1]=backward.
    */
   [[nodiscard]] static std::pair<LayeringResult, LayeringResult>
-  computeBidirectionalLayers(llvm::ArrayRef<QubitValue> dyn) {
+  computeBidirectionalLayers(ArrayRef<QubitValue> dyn) {
     auto wires = toWires(dyn);
     const auto ltr = collectLayers<Direction::Forward>(wires);
     const auto rtl = collectLayers<Direction::Backward>(wires);
@@ -522,9 +520,9 @@ private:
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
-  [[nodiscard]] static FailureOr<llvm::SmallVector<IndexGate>>
-  search(llvm::ArrayRef<Layer> layers, const Layout& layout,
-         const Architecture& arch, const Parameters& params) {
+  [[nodiscard]] static FailureOr<SmallVector<IndexGate>>
+  search(ArrayRef<Layer> layers, const Layout& layout, const Architecture& arch,
+         const Parameters& params) {
     constexpr std::size_t cap = 25'000'000UL;
     const std::size_t b = arch.maxDegree() * ((arch.nqubits() + 1) / 2);
     const std::size_t budget = std::min(b * b * b, cap);
@@ -535,12 +533,12 @@ private:
 
     Node* root = std::construct_at(arena.Allocate(), layout);
     if (root->isGoal(layers.front(), arch)) {
-      return llvm::SmallVector<IndexGate>{};
+      return SmallVector<IndexGate>{};
     }
     frontier.emplace(root);
 
-    llvm::DenseMap<Layout, std::size_t, LayoutInfo> bestDepth;
-    llvm::DenseSet<IndexGate> expansionSet;
+    DenseMap<Layout, std::size_t, LayoutInfo> bestDepth;
+    DenseSet<IndexGate> expansionSet;
 
     std::size_t i = 0;
     while (!frontier.empty() && i < budget) {
@@ -568,7 +566,7 @@ private:
       // of SWAPs from this node to the root.
 
       if (curr->isGoal(layers.front(), arch)) {
-        llvm::SmallVector<IndexGate> seq(curr->depth);
+        SmallVector<IndexGate> seq(curr->depth);
         std::size_t j = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
           seq[j] = n->swap;
@@ -608,8 +606,8 @@ private:
    * @returns a vector of wire iterators.
    */
   template <typename QubitRange>
-  static llvm::SmallVector<WireIterator> toWires(QubitRange qubits) {
-    return llvm::SmallVector<WireIterator>(
+  static SmallVector<WireIterator> toWires(QubitRange qubits) {
+    return SmallVector<WireIterator>(
         map_range(qubits, [](auto q) { return WireIterator(q); }));
   }
 
@@ -621,7 +619,7 @@ private:
     if constexpr (d == Direction::Forward) {
       return it != std::default_sentinel;
     } else {
-      return !llvm::isa<AllocOp>(it.operation());
+      return !isa<AllocOp>(it.operation());
     }
   }
 
@@ -636,7 +634,7 @@ private:
 
     const auto advanceUntilTwoQubitOp = [&](WireIterator& it) {
       while (proceedOnWire<d>(it)) {
-        if (auto op = llvm::dyn_cast<UnitaryOpInterface>(it.operation())) {
+        if (auto op = dyn_cast<UnitaryOpInterface>(it.operation())) {
           if (op.getNumQubits() > 1) {
             break;
           }
@@ -675,19 +673,18 @@ private:
    * @returns a vector of layers.
    */
   template <Direction d>
-  static LayeringResult
-  collectLayers(llvm::MutableArrayRef<WireIterator> wires) {
+  static LayeringResult collectLayers(MutableArrayRef<WireIterator> wires) {
     constexpr auto step = d == Direction::Forward ? 1 : -1;
 
     LayeringResult result;
-    llvm::DenseMap<UnitaryOpInterface, std::size_t> visited;
+    DenseMap<UnitaryOpInterface, std::size_t> visited;
     while (true) {
       Layer layer{};
       Operation* anchor = nullptr;
       for (const auto [index, it] : enumerate(wires)) {
         while (proceedOnWire<d>(it)) {
           const auto res =
-              llvm::TypeSwitch<Operation*, WalkResult>(it.operation())
+              TypeSwitch<Operation*, WalkResult>(it.operation())
                   .Case<BarrierOp>([&](auto) {
                     std::ranges::advance(it, step);
                     return WalkResult::advance();
@@ -761,7 +758,7 @@ private:
    * @returns failure() if A* search isn't able to find a solution.
    */
   template <typename OnSwaps>
-  LogicalResult route(llvm::ArrayRef<Layer> layers, const Architecture& arch,
+  LogicalResult route(ArrayRef<Layer> layers, const Architecture& arch,
                       const Parameters& params, Layout& layout,
                       OnSwaps&& onSwaps) {
     auto&& callback = std::forward<OnSwaps>(onSwaps);
@@ -789,7 +786,7 @@ private:
    * @details Replaces dynamic with static qubits. Extends the computation with
    * as many static qubits as the architecture supports.
    */
-  static void place(llvm::ArrayRef<QubitValue> dynQubits, const Layout& layout,
+  static void place(ArrayRef<QubitValue> dynQubits, const Layout& layout,
                     Region& funcBody, IRRewriter& rewriter) {
     // 1. Replace existing dynamic allocations with mapped static ones.
     for (const auto [p, q] : enumerate(dynQubits)) {
@@ -811,12 +808,11 @@ private:
   /**
    * @brief Inserts SWAPs into the IR.
    */
-  void commit(llvm::ArrayRef<llvm::SmallVector<IndexGate>> swaps,
-              llvm::ArrayRef<Operation*> anchors, Region& funcBody,
+  void commit(ArrayRef<SmallVector<IndexGate>> swaps,
+              ArrayRef<Operation*> anchors, Region& funcBody,
               IRRewriter& rewriter) {
-    llvm::ArrayRef<Operation*>::iterator anchorIt = anchors.begin();
-    llvm::ArrayRef<llvm::SmallVector<IndexGate>>::iterator swapIt =
-        swaps.begin();
+    ArrayRef<Operation*>::iterator anchorIt = anchors.begin();
+    ArrayRef<SmallVector<IndexGate>>::iterator swapIt = swaps.begin();
 
     walkProgram(funcBody, [&](Operation* op, Qubits& qubits) {
       // Early exit if we've processed all layers.

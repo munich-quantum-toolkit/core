@@ -20,7 +20,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -35,16 +35,16 @@ using namespace mlir::qco;
 // Custom Parsers
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseTargetAliasing(
-    OpAsmParser& parser, Region& region,
-    llvm::SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+static ParseResult
+parseTargetAliasing(OpAsmParser& parser, Region& region,
+                    SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
   // 1. Parse the opening parenthesis
   if (parser.parseLParen()) {
     return failure();
   }
 
   // Temporary storage for block arguments we are about to create
-  llvm::SmallVector<OpAsmParser::Argument> blockArgs;
+  SmallVector<OpAsmParser::Argument> blockArgs;
 
   // 2. Prepare to parse the list
   if (failed(parser.parseOptionalRParen())) {
@@ -115,9 +115,9 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
   printer.printRegion(region, false);
 }
 
-static ParseResult parseIfOpAliasing(
-    OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
-    llvm::SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+static ParseResult
+parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
+                  SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
   // Parse the qubits keyword
   if (parser.parseKeyword("qubits")) {
     return failure();
@@ -160,7 +160,7 @@ static ParseResult parseIfOpAliasing(
   }
 
   // Remove duplicate operands
-  llvm::DenseSet<llvm::StringRef> seen;
+  DenseSet<StringRef> seen;
   llvm::erase_if(operands,
                  [&](const auto& op) { return !seen.insert(op.name).second; });
 

@@ -24,7 +24,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cassert>
 #include <cstddef>
@@ -51,8 +51,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    auto bodyCtrlOp =
-        llvm::dyn_cast<CtrlOp>(op.getBodyUnitary().getOperation());
+    auto bodyCtrlOp = dyn_cast<CtrlOp>(op.getBodyUnitary().getOperation());
     if (!bodyCtrlOp) {
       return failure();
     }
@@ -66,7 +65,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, newControls, newTargets,
-        [&](ValueRange newTargetArgs) -> llvm::SmallVector<Value> {
+        [&](ValueRange newTargetArgs) -> SmallVector<Value> {
           IRMapping mapping;
           auto* innerBody = bodyCtrlOp.getBody();
           for (size_t i = 0; i < bodyCtrlOp.getNumTargets(); ++i) {
@@ -92,7 +91,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
                                 PatternRewriter& rewriter) const override {
     auto* bodyUnitary = op.getBodyUnitary().getOperation();
     // Inline ops from empty control modifiers, IdOp and BarrierOp
-    if (op.getNumControls() == 0 || llvm::isa<IdOp, BarrierOp>(bodyUnitary)) {
+    if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(bodyUnitary)) {
       rewriter.moveOpBefore(bodyUnitary, op);
       bodyUnitary->setOperands(0, op.getNumTargets(), op.getTargetsIn());
       rewriter.replaceAllUsesWith(op.getControlsOut(), op.getControlsIn());
@@ -103,7 +102,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // The remaining code explicitly handles GPhaseOp and nothing else
-    auto gPhaseOp = llvm::dyn_cast<GPhaseOp>(bodyUnitary);
+    auto gPhaseOp = dyn_cast<GPhaseOp>(bodyUnitary);
     if (!gPhaseOp) {
       return failure();
     }
@@ -136,7 +135,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
         POp::create(rewriter, gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
 
     // Add the results of the POp to the yield operation
-    auto yieldOp = llvm::cast<YieldOp>(op.getBody()->back());
+    auto yieldOp = cast<YieldOp>(op.getBody()->back());
     yieldOp->setOperands(pOp->getResults());
 
     // erase the GPhaseOp
@@ -154,7 +153,7 @@ UnitaryOpInterface CtrlOp::getBodyUnitary() {
   // also contain constants and arithmetic operations, e.g., created as part of
   // canonicalization. Thus, the only safe way to access the unitary operation
   // is to get the second operation from the back of the region.
-  return llvm::cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+  return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
 Value CtrlOp::getInputQubit(const size_t i) {
@@ -235,10 +234,9 @@ Value CtrlOp::getOutputForInput(Value input) {
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
-void CtrlOp::build(
-    OpBuilder& odsBuilder, OperationState& odsState, ValueRange controls,
-    ValueRange targets,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   ValueRange controls, ValueRange targets,
+                   function_ref<SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
 
@@ -270,7 +268,7 @@ LogicalResult CtrlOp::verify() {
              << i << " does not match target type";
     }
   }
-  if (!llvm::isa<YieldOp>(block.back())) {
+  if (!isa<YieldOp>(block.back())) {
     return emitOpError(
         "last operation in body region must be a yield operation");
   }
@@ -280,17 +278,17 @@ LogicalResult CtrlOp::verify() {
            << numTargets << " values, but found " << numYieldOperands;
   }
   auto iter = ++block.rbegin();
-  if (!llvm::isa<UnitaryOpInterface>(*iter)) {
+  if (!isa<UnitaryOpInterface>(*iter)) {
     return emitOpError(
         "second to last operation in body region must be a unitary operation");
   }
   for (auto it = ++iter; it != block.rend(); ++it) {
-    if (llvm::isa<UnitaryOpInterface>(*it)) {
+    if (isa<UnitaryOpInterface>(*it)) {
       return emitOpError("body region may only contain a single unitary op");
     }
   }
 
-  llvm::SmallPtrSet<Value, 4> uniqueQubitsIn;
+  SmallPtrSet<Value, 4> uniqueQubitsIn;
   for (const auto& control : getControlsIn()) {
     if (!uniqueQubitsIn.insert(control).second) {
       return emitOpError("duplicate control qubit found");
@@ -324,7 +322,7 @@ LogicalResult CtrlOp::verify() {
     }
   }
 
-  llvm::SmallPtrSet<Value, 4> uniqueQubitsOut;
+  SmallPtrSet<Value, 4> uniqueQubitsOut;
   for (const auto& control : getControlsOut()) {
     if (!uniqueQubitsOut.insert(control).second) {
       return emitOpError("duplicate control qubit found");

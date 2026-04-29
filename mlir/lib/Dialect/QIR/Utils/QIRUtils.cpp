@@ -14,7 +14,6 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -25,6 +24,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
@@ -32,7 +32,7 @@
 namespace mlir::qir {
 
 LLVM::LLVMFuncOp getMainFunction(Operation* op) {
-  auto module = llvm::dyn_cast<ModuleOp>(op);
+  auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
     module = op->getParentOfType<ModuleOp>();
   }
@@ -47,7 +47,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
       continue;
     }
     if (llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = llvm::dyn_cast<StringAttr>(attr);
+          const auto strAttr = dyn_cast<StringAttr>(attr);
           return strAttr && strAttr.getValue() == "entry_point";
         })) {
       return funcOp;
@@ -63,7 +63,7 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   }
 
   OpBuilder builder(main.getBody());
-  llvm::SmallVector<Attribute> attributes;
+  SmallVector<Attribute> attributes;
 
   // Core QIR attributes
   attributes.emplace_back(builder.getStringAttr("entry_point"));
@@ -114,7 +114,7 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     const OpBuilder::InsertionGuard guard(builder);
 
     // Create the declaration at the end of the module
-    auto module = llvm::dyn_cast<ModuleOp>(op);
+    auto module = dyn_cast<ModuleOp>(op);
     if (!module) {
       module = op->getParentOfType<ModuleOp>();
     }
@@ -131,7 +131,7 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     }
   }
 
-  return llvm::cast<LLVM::LLVMFuncOp>(fnDecl);
+  return cast<LLVM::LLVMFuncOp>(fnDecl);
 }
 
 LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
@@ -140,7 +140,7 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   // Save current insertion point
   const OpBuilder::InsertionGuard guard(builder);
 
-  auto module = llvm::dyn_cast<ModuleOp>(op);
+  auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
     module = op->getParentOfType<ModuleOp>();
   }

@@ -13,6 +13,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Support/LLVM.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -35,12 +36,12 @@ std::size_t Architecture::distanceBetween(std::size_t u, std::size_t v) const {
   if (dist_[u][v] == UINT64_MAX) {
     report_fatal_error("Floyd-warshall failed to compute the distance "
                        "between qubits " +
-                       llvm::Twine(u) + " and " + llvm::Twine(v));
+                       Twine(u) + " and " + Twine(v));
   }
   return dist_[u][v];
 }
 
-llvm::SmallVector<std::size_t, 4>
+SmallVector<std::size_t, 4>
 Architecture::neighboursOf(const std::size_t u) const {
   return neighbours_[u];
 }

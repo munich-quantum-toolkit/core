@@ -20,7 +20,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
@@ -45,7 +45,7 @@ namespace mlir::qtensor {
  * @brief Mark a single live index.
  */
 [[nodiscard]] static LogicalResult markLiveIndex(const int64_t index,
-                                                 llvm::BitVector& liveIndices) {
+                                                 BitVector& liveIndices) {
   if (index < 0 || std::cmp_greater_equal(index, liveIndices.size())) {
     return failure();
   }
@@ -58,21 +58,21 @@ namespace mlir::qtensor {
  */
 [[nodiscard]] static LogicalResult remapTensorOperand(Operation* op, Value from,
                                                       Value to) {
-  if (auto extractOp = llvm::dyn_cast<ExtractOp>(op)) {
+  if (auto extractOp = dyn_cast<ExtractOp>(op)) {
     if (extractOp.getTensor() != from) {
       return failure();
     }
     extractOp->setOperand(0, to);
     return success();
   }
-  if (auto insertOp = llvm::dyn_cast<InsertOp>(op)) {
+  if (auto insertOp = dyn_cast<InsertOp>(op)) {
     if (insertOp.getDest() != from) {
       return failure();
     }
     insertOp->setOperand(1, to);
     return success();
   }
-  if (auto deallocOp = llvm::dyn_cast<DeallocOp>(op)) {
+  if (auto deallocOp = dyn_cast<DeallocOp>(op)) {
     if (deallocOp.getTensor() != from) {
       return failure();
     }
@@ -85,9 +85,8 @@ namespace mlir::qtensor {
 /**
  * @brief Walk alloc->dealloc and collect all touched indices.
  */
-[[nodiscard]] static LogicalResult collectLiveIndices(AllocOp allocOp,
-                                                      llvm::BitVector& live,
-                                                      DeallocOp& deallocOp) {
+[[nodiscard]] static LogicalResult
+collectLiveIndices(AllocOp allocOp, BitVector& live, DeallocOp& deallocOp) {
   auto tensor = allocOp.getResult();
   while (true) {
     auto* user = getLinearTensorUser(tensor);
@@ -95,7 +94,7 @@ namespace mlir::qtensor {
       return failure();
     }
 
-    if (auto currentDealloc = llvm::dyn_cast<DeallocOp>(user)) {
+    if (auto currentDealloc = dyn_cast<DeallocOp>(user)) {
       if (currentDealloc.getTensor() != tensor) {
         return failure();
       }
@@ -103,7 +102,7 @@ namespace mlir::qtensor {
       return success();
     }
 
-    if (auto extractOp = llvm::dyn_cast<ExtractOp>(user)) {
+    if (auto extractOp = dyn_cast<ExtractOp>(user)) {
       if (extractOp.getTensor() != tensor) {
         return failure();
       }
@@ -115,7 +114,7 @@ namespace mlir::qtensor {
       continue;
     }
 
-    if (auto insertOp = llvm::dyn_cast<InsertOp>(user)) {
+    if (auto insertOp = dyn_cast<InsertOp>(user)) {
       if (insertOp.getDest() != tensor) {
         return failure();
       }
@@ -147,7 +146,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
       return failure();
     }
 
-    llvm::BitVector live(static_cast<size_t>(*oldSize), false);
+    BitVector live(static_cast<size_t>(*oldSize), false);
     DeallocOp oldDeallocOp{};
     if (failed(collectLiveIndices(allocOp, live, oldDeallocOp))) {
       return failure();
@@ -157,8 +156,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
       return failure();
     }
 
-    llvm::SmallVector<int64_t> newIndexByOldIndex(static_cast<size_t>(*oldSize),
-                                                  -1);
+    SmallVector<int64_t> newIndexByOldIndex(static_cast<size_t>(*oldSize), -1);
     int64_t newSize = 0;
     for (int64_t index = 0; index < *oldSize; ++index) {
       if (live.test(static_cast<size_t>(index))) {
@@ -184,7 +182,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         return failure();
       }
 
-      if (auto deallocOp = llvm::dyn_cast<DeallocOp>(currentOp)) {
+      if (auto deallocOp = dyn_cast<DeallocOp>(currentOp)) {
         if (deallocOp != oldDeallocOp || deallocOp.getTensor() != oldTensor) {
           return failure();
         }
@@ -194,7 +192,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         break;
       }
 
-      if (auto extractOp = llvm::dyn_cast<ExtractOp>(currentOp)) {
+      if (auto extractOp = dyn_cast<ExtractOp>(currentOp)) {
         if (extractOp.getTensor() != oldTensor) {
           return failure();
         }
@@ -230,7 +228,7 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
         continue;
       }
 
-      if (auto insertOp = llvm::dyn_cast<InsertOp>(currentOp)) {
+      if (auto insertOp = dyn_cast<InsertOp>(currentOp)) {
         if (insertOp.getDest() != oldTensor) {
           return failure();
         }

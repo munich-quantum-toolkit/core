@@ -19,7 +19,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 
@@ -39,13 +39,13 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
     const auto& qubitsIn = op.getQubitsIn();
 
     auto anythingToMerge = false;
-    llvm::DenseMap<size_t, Value> newQubitsOutMap;
+    DenseMap<size_t, Value> newQubitsOutMap;
 
-    llvm::SmallVector<Value> newQubitsIn;
-    llvm::SmallVector<size_t> indicesToFill;
+    SmallVector<Value> newQubitsIn;
+    SmallVector<size_t> indicesToFill;
 
     for (size_t i = 0; i < qubitsIn.size(); ++i) {
-      if (llvm::isa<BarrierOp>(
+      if (isa<BarrierOp>(
               *op.getOutputForInput(qubitsIn[i]).getUsers().begin())) {
         anythingToMerge = true;
         newQubitsOutMap[i] = qubitsIn[i];
@@ -65,7 +65,7 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
       newQubitsOutMap[indicesToFill[i]] = newBarrier.getQubitsOut()[i];
     }
 
-    llvm::SmallVector<Value> newQubitsOut;
+    SmallVector<Value> newQubitsOut;
     newQubitsOut.reserve(op.getQubitsIn().size());
     for (size_t i = 0; i < op.getQubitsIn().size(); ++i) {
       newQubitsOut.push_back(newQubitsOutMap[i]);
@@ -112,7 +112,7 @@ Value BarrierOp::getOutputForInput(Value input) {
 
 void BarrierOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                       ValueRange qubits) {
-  llvm::SmallVector<Type> resultTypes;
+  SmallVector<Type> resultTypes;
   resultTypes.reserve(qubits.size());
   for (auto qubit : qubits) {
     resultTypes.push_back(qubit.getType());
