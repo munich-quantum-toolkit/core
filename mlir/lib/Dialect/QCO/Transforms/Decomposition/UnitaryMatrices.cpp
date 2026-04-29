@@ -161,7 +161,11 @@ Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate) {
 // Used by sequence verification and `QubitGateSequence::getUnitaryMatrix()`.
 Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
   if (gate.qubitId.empty()) {
-    return Eigen::Matrix4cd::Identity();
+    if (gate.type == GateKind::I) {
+      return Eigen::Matrix4cd::Identity();
+    }
+    llvm::reportFatalInternalError(
+        "Invalid gate: empty qubit IDs are only allowed for identity");
   }
   if (gate.qubitId.size() == 1) {
     return expandToTwoQubits(getSingleQubitMatrix(gate), gate.qubitId[0]);
