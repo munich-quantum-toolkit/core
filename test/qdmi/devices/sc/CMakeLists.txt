@@ -20,8 +20,7 @@ if(TARGET MQT::CoreQDMIScDeviceGen
   # Add dependency to enforce implementation of all interface functions
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_sc_device_defs)
   # Link further libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceGen
-                                               nlohmann_json::nlohmann_json)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceGen MQT::nlohmann_json)
   # Set the executable path and version information
   target_compile_definitions(
     ${TARGET_NAME}

@@ -1,0 +1,11 @@
+name: boost_mp
+upstream_url: https://github.com/boostorg/multiprecision
+version: 1.89.0
+license: BSL-1.0
+license_file: LICENSE
+source_snapshot:
+  kind: release
+  tag: Boost_1_89_0
+vendored_files:
+  - include/boost/**
+local_patches: []

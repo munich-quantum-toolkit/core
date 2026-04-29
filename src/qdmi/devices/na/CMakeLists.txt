@@ -26,8 +26,8 @@ if(NOT TARGET ${TARGET_NAME})
   # Link nlohmann_json and spdlog
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE spdlog::spdlog)
+    PUBLIC MQT::nlohmann_json
+    PRIVATE MQT::spdlog)
 
   # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
@@ -53,7 +53,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Link Generator library
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMINaDeviceGen MQT::ProjectOptions
-                                               MQT::ProjectWarnings spdlog::spdlog)
+                                               MQT::ProjectWarnings MQT::spdlog)
 
   # set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
@@ -121,7 +121,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${QDMI_HDRS})
 
   # add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries
@@ -176,7 +176,7 @@ if(NOT TARGET ${TARGET_NAME})
     # add link libraries
     target_link_libraries(
       ${DYN_TARGET_NAME} PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions
-                                 MQT::ProjectWarnings spdlog::spdlog)
+                                 MQT::ProjectWarnings MQT::spdlog)
     # set c++ standard
     target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
     # set versioning information

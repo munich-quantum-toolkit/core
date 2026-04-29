@@ -13,20 +13,12 @@
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 
 include(CMakeFindDependencyMacro)
-find_dependency(nlohmann_json)
-find_dependency(spdlog)
+find_dependency(Threads)
 find_dependency(qdmi)
 
 option(MQT_CORE_WITH_GMP "Library is configured to use GMP" @MQT_CORE_WITH_GMP@)
 if(MQT_CORE_WITH_GMP)
   find_dependency(GMP)
-endif()
-
-option(MQT_CORE_ZX_SYSTEM_BOOST
-       "Library is configured to use system Boost instead of the bundled Boost::multiprecision"
-       @MQT_CORE_ZX_SYSTEM_BOOST@)
-if(MQT_CORE_ZX_SYSTEM_BOOST)
-  find_dependency(Boost @BOOST_MIN_VERSION@)
 endif()
 
 if(TARGET MQT::Core)
@@ -38,6 +30,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/Cache.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/PackageAddTest.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/PreventInSourceBuilds.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/StandardProjectSettings.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-third-party-targets.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-targets.cmake")
 
 if(NOT mqt-core_FIND_QUIETLY)

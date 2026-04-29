@@ -1,0 +1,12 @@
+name: nlohmann_json
+upstream_url: https://github.com/nlohmann/json
+version: 3.12.0
+license: MIT
+license_file: LICENSE.MIT
+source_snapshot:
+  kind: release
+  tag: v3.12.0
+vendored_files:
+  - single_include/nlohmann/json.hpp
+  - single_include/nlohmann/json_fwd.hpp
+local_patches: []

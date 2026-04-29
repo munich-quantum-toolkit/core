@@ -1,0 +1,12 @@
+name: spdlog
+upstream_url: https://github.com/gabime/spdlog
+version: 1.17.0
+license: MIT
+license_file: LICENSE
+source_snapshot:
+  kind: release
+  tag: v1.17.0
+vendored_files:
+  - include/**
+  - src/**
+local_patches: []

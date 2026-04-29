@@ -7,42 +7,6 @@
 # Licensed under the MIT License
 
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-zx)
-  # make sure the MQT::multiprecision target is available
-  if(NOT TARGET MQT::Multiprecision)
-    # handle the case for a complete Boost installation
-    if(NOT TARGET Boost::multiprecision)
-      add_library(multiprecision INTERFACE)
-      target_link_libraries(multiprecision INTERFACE Boost::headers)
-      add_library(MQT::Multiprecision ALIAS multiprecision)
-      set(MQT_CORE_ZX_SYSTEM_BOOST
-          TRUE
-          CACHE BOOL "Whether a system version of Boost was used")
-    else()
-      # Boost::multiprecision does not provide its own installation instructions. As a consequence,
-      # this needs a workaround.
-
-      # first, we get the include directory of the multiprecision library
-      get_target_property(MULTIPRECISION_INCLUDE_DIR Boost::multiprecision
-                          INTERFACE_INCLUDE_DIRECTORIES)
-
-      # then, we create a target that will be used to export the include directory
-      add_library(multiprecision INTERFACE)
-      target_include_directories(multiprecision SYSTEM
-                                 INTERFACE $<BUILD_INTERFACE:${MULTIPRECISION_INCLUDE_DIR}>)
-      add_library(MQT::Multiprecision ALIAS multiprecision)
-
-      # add headers using file sets
-      file(GLOB_RECURSE MULTIPRECISION_HEADERS ${MULTIPRECISION_INCLUDE_DIR}/*.hpp)
-
-      target_sources(multiprecision PUBLIC FILE_SET HEADERS BASE_DIRS ${MULTIPRECISION_INCLUDE_DIR}
-                                           FILES ${MULTIPRECISION_HEADERS})
-
-      set(MQT_CORE_ZX_SYSTEM_BOOST
-          FALSE
-          CACHE BOOL "Whether a system version of Boost was used")
-    endif()
-  endif()
-
   # collect headers and source files
   file(GLOB_RECURSE ZX_HEADERS ${MQT_CORE_INCLUDE_BUILD_DIR}/zx/*.hpp)
   file(GLOB_RECURSE ZX_SOURCES **.cpp)
@@ -81,6 +45,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-zx)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-zx multiprecision
+      ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-zx
       PARENT_SCOPE)
 endif()

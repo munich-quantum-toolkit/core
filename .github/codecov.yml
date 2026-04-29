@@ -2,6 +2,7 @@ ignore:
   - "**/python"
   - "test/**/*"
   - "mlir/unittests/**/*"
+  - "third_party/**/*"
 
 coverage:
   range: 60..90

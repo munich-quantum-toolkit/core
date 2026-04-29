@@ -4,6 +4,18 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### Vendored C++ dependencies
+
+MQT Core now vendors `nlohmann_json` (single-include headers), `spdlog`, and
+`boost_mp` under `third_party/` and exports them through `mqt-core`'s package
+configuration.
+
+Downstream projects should use the exported MQT targets:
+
+- `MQT::nlohmann_json`
+- `MQT::spdlog`
+- `MQT::Multiprecision`
+
 ### MLIR enabled by default for C++ builds
 
 The MLIR-based functionality within MQT Core has long been experimental and opt-in.

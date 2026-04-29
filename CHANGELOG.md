@@ -22,6 +22,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+- 📦 Vendor `nlohmann_json`, `spdlog`, and `boost_mp` under `third_party/` and export them as MQT CMake targets.
 
 ### Removed
 

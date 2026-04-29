@@ -33,6 +33,7 @@
     ".*\\.real",
     ".*\\.tex",
     "uv\\.lock",
+    "^third_party/",
     "py\\.typed",
     ".*build.*",
     "(^|/)LICENSE$"

@@ -23,7 +23,7 @@ authors = [
 ]
 keywords = ["MQT", "quantum-computing", "design-automation", "decision-diagrams", "zx-calculus"]
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "third_party/**/LICENSE*"]
 
 classifiers = [
   "Development Status :: 5 - Production/Stable",
