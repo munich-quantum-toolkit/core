@@ -29,8 +29,7 @@ template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the inverse operation
-  auto nextOp =
-      llvm::dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -54,8 +53,7 @@ template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the inverse operation
-  auto nextOp =
-      llvm::dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -85,7 +83,7 @@ LogicalResult
 removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
                                                    PatternRewriter& rewriter) {
   // Check if the successor is the same operation
-  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -120,7 +118,7 @@ template <typename SquareOpType, typename OpType>
 LogicalResult mergeOneTargetZeroParameter(OpType op,
                                           PatternRewriter& rewriter) {
   // Check if the successor is the same operation
-  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -149,7 +147,7 @@ LogicalResult mergeOneTargetZeroParameter(OpType op,
 template <typename OpType>
 LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation
-  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -179,7 +177,7 @@ LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
 template <typename OpType>
 LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation
-  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
@@ -218,7 +216,7 @@ LogicalResult
 mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
                                              PatternRewriter& rewriter) {
   // Check if the successor is the same operation
-  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }

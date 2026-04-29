@@ -12,9 +12,9 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 namespace mlir::qtensor {
 
@@ -40,17 +40,17 @@ inline bool areEquivalentIndices(Value lhs, Value rhs) {
  * @brief Tensor-transforming ops in a scalar extract/insert chain.
  */
 inline bool isTensorChainOp(Operation* op) {
-  return llvm::isa<InsertOp, ExtractOp>(op);
+  return isa<InsertOp, ExtractOp>(op);
 }
 
 /**
  * @brief Returns the tensor input of a tensor-transforming op.
  */
 inline Value getTensorChainInput(Operation* op) {
-  if (auto insertOp = llvm::dyn_cast<InsertOp>(op)) {
+  if (auto insertOp = dyn_cast<InsertOp>(op)) {
     return insertOp.getDest();
   }
-  if (auto extractOp = llvm::dyn_cast<ExtractOp>(op)) {
+  if (auto extractOp = dyn_cast<ExtractOp>(op)) {
     return extractOp.getTensor();
   }
   return nullptr;
@@ -60,10 +60,10 @@ inline Value getTensorChainInput(Operation* op) {
  * @brief Returns the tensor output of a tensor-transforming op.
  */
 inline Value getTensorChainOutput(Operation* op) {
-  if (auto insertOp = llvm::dyn_cast<InsertOp>(op)) {
+  if (auto insertOp = dyn_cast<InsertOp>(op)) {
     return insertOp.getResult();
   }
-  if (auto extractOp = llvm::dyn_cast<ExtractOp>(op)) {
+  if (auto extractOp = dyn_cast<ExtractOp>(op)) {
     return extractOp.getOutTensor();
   }
   return nullptr;
@@ -73,11 +73,11 @@ inline Value getTensorChainOutput(Operation* op) {
  * @brief Rewire the tensor input of a tensor-transforming op.
  */
 inline void setTensorChainInput(Operation* op, Value tensor) {
-  if (llvm::isa<InsertOp>(op)) {
+  if (isa<InsertOp>(op)) {
     op->setOperand(1, tensor);
     return;
   }
-  if (llvm::isa<ExtractOp>(op)) {
+  if (isa<ExtractOp>(op)) {
     op->setOperand(0, tensor);
   }
 }
