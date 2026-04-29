@@ -130,8 +130,7 @@ struct LoweringState {
   DenseMap<Region*, DenseMap<Value, QubitInfo>> qubitInfoMap;
 
   /// Per-region map from original QC register to its extracted QC qubits
-  DenseMap<Region*, DenseMap<Value, SetVector<Value>>>
-      extractedQubits;
+  DenseMap<Region*, DenseMap<Value, SetVector<Value>>> extractedQubits;
 
   /// Map from an operation to its used QC qubits inside its regions
   DenseMap<Operation*, SetVector<Value>> regionQubitMap;

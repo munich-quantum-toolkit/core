@@ -64,12 +64,10 @@ enum class AllocationMode : std::uint8_t {
  */
 struct LoweringState {
   /// Per-region map from from QC registers to its already extracted indices
-  DenseMap<Region*, DenseMap<Value, SetVector<Value>>>
-      extractedIndices;
+  DenseMap<Region*, DenseMap<Value, SetVector<Value>>> extractedIndices;
   /// Per-region map from a register to its QC qubit indices and the qubit
   /// values
-  DenseMap<Region*, DenseMap<Value, DenseMap<Value, Value>>>
-      qubitValues;
+  DenseMap<Region*, DenseMap<Value, DenseMap<Value, Value>>> qubitValues;
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
 
