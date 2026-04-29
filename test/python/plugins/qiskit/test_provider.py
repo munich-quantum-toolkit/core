@@ -49,12 +49,16 @@ def test_provider_backends_filter_by_substring() -> None:
     # Filter by "QDMI" substring (should match "MQT Core DDSIM QDMI Device")
     filtered = provider.backends(name="QDMI")
     assert len(filtered) > 0
-    assert all("QDMI" in b.name for b in filtered)
+    for backend in filtered:
+        assert backend.name is not None
+        assert "QDMI" in backend.name
 
     # Filter by "DDSIM" substring
     filtered_ddsim = provider.backends(name="DDSIM")
     assert len(filtered_ddsim) > 0
-    assert all("DDSIM" in b.name for b in filtered_ddsim)
+    for backend in filtered_ddsim:
+        assert backend.name is not None
+        assert "DDSIM" in backend.name
 
 
 def test_provider_backends_filter_nonexistent_name() -> None:

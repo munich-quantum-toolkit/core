@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QCO/Utils/Qubits.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -64,7 +65,7 @@ using namespace mlir::qtensor;
 
 LogicalResult isExecutable(Region& region, const Architecture& arch) {
   bool executable = true;
-  walkUnit(region, [&](Operation* curr, const Qubits& qubits) {
+  walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
     if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
       if (isa<BarrierOp>(op)) {
         return WalkResult::advance();
@@ -402,8 +403,8 @@ protected:
       }
 
       // Perform hot routing by inserting SWAPs into the IR.
-      const auto res = route<RoutingMode::Hot>(wires, WalkDirection::Forward,
-                                               best->layout, &rewriter);
+      const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
+          wires, best->layout, &rewriter);
       if (failed(res)) {
         func.emitError() << "failed to map the function";
         signalPassFailure();
@@ -525,11 +526,11 @@ private:
 
     std::size_t nswaps{0};
     for (std::size_t i = 0; i < niterations; ++i) {
-      if (failed(route(wires, WalkDirection::Forward, layout))) {
+      if (failed(route<WireDirection::Forward>(wires, layout))) {
         return failure();
       }
 
-      const auto resB = route(wires, WalkDirection::Backward, layout);
+      const auto resB = route<WireDirection::Backward>(wires, layout);
       if (failed(resB)) {
         return failure();
       }
@@ -557,16 +558,15 @@ private:
       for_each(func.getOps<StaticOp>(),
                [&](auto op) { wires.emplace_back(op.getQubit()); });
 
-      std::ignore =
-          walkCircuitGraph(wires, WalkDirection::Forward,
-                           [&](const ReadyRange& ready, ReleasedOps&) {
-                             for (const auto& [op, indices] : ready) {
-                               if (isa<SWAPOp>(op)) {
-                                 readyToAbsorb.emplace_back(op);
-                               }
-                             }
-                             return WalkResult::interrupt();
-                           });
+      std::ignore = walkProgramGraph<WireDirection::Forward>(
+          wires, [&](const ReadyRange& ready, ReleasedOps&) {
+            for (const auto& [op, indices] : ready) {
+              if (isa<SWAPOp>(op)) {
+                readyToAbsorb.emplace_back(op);
+              }
+            }
+            return WalkResult::interrupt();
+          });
 
       if (readyToAbsorb.empty()) {
         break;
@@ -717,34 +717,23 @@ private:
    * operation is found. If the two-qubit operation is equivalent, continue.
    * Otherwise stop.
    */
-  static void skipQubitPairBlock(WireIterator& w0, WireIterator& w1,
-                                 WalkDirection direction) {
-    const auto step = direction == WalkDirection::Forward ? 1 : -1;
-    const auto proceed = [&](const WireIterator& it) {
-      if (direction == WalkDirection::Forward) {
-        return it != std::default_sentinel;
-      }
-
-      if (it.operation() == nullptr) {
-        return false;
-      }
-
-      return !isa<qco::AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
-    };
+  template <WireDirection Direction>
+  static void skipQubitPairBlock(WireIterator& w0, WireIterator& w1) {
+    using Traits = WireTraversalTraits<Direction>;
 
     WireIterator curr0(w0);
     WireIterator curr1(w1);
     while (true) {
-      while (proceed(curr0)) {
-        std::ranges::advance(curr0, step);
+      while (Traits::isActive(curr0)) {
+        std::ranges::advance(curr0, Traits::stride());
       }
 
       if (curr0 == std::default_sentinel) {
         return;
       }
 
-      while (proceed(curr1)) {
-        std::ranges::advance(curr1, step);
+      while (Traits::isActive(curr0)) {
+        std::ranges::advance(curr1, Traits::stride());
       }
 
       if (curr1 == std::default_sentinel) {
@@ -774,13 +763,14 @@ private:
    * is 1 + nlookahead.
    * @returns window of layers.
    */
-  Window getWindow(ArrayRef<WireIterator> baseWires, WalkDirection direction) {
+  template <WireDirection Direction>
+  Window getWindow(ArrayRef<WireIterator> baseWires) {
     Window window;
     window.reserve(1 + nlookahead);
 
     SmallVector<WireIterator> wires(baseWires);
-    std::ignore = walkCircuitGraph(
-        wires, direction, [&](const ReadyRange& ready, ReleasedOps& released) {
+    std::ignore = walkProgramGraph<Direction>(
+        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
@@ -798,7 +788,7 @@ private:
               return WalkResult::interrupt();
             }
 
-            skipQubitPairBlock(wires[p0], wires[p1], direction);
+            skipQubitPairBlock<Direction>(wires[p0], wires[p1]);
             released.emplace_back(wires[p0].operation());
           }
 
@@ -813,10 +803,11 @@ private:
    * @details Traverses the multi-qubit gates of the circuit until no more
    * executable gates are found.
    */
-  void skipExecutableGates(MutableArrayRef<WireIterator> wires, Layout& layout,
-                           WalkDirection direction) {
-    std::ignore = walkCircuitGraph(
-        wires, direction, [&](const ReadyRange& ready, ReleasedOps& released) {
+  template <WireDirection Direction>
+  void skipExecutableGates(MutableArrayRef<WireIterator> wires,
+                           Layout& layout) {
+    std::ignore = walkProgramGraph<Direction>(
+        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
@@ -853,16 +844,15 @@ private:
    * @returns failure() if A* search isn't able to find a solution, the number
    * of SWAPs otherwise.
    */
-  template <RoutingMode mode = RoutingMode::Cold>
+  template <WireDirection Direction, RoutingMode mode = RoutingMode::Cold>
   FailureOr<std::size_t> route(MutableArrayRef<WireIterator> wires,
-                               const WalkDirection& direction, Layout& layout,
-                               IRRewriter* rewriter = nullptr) {
+                               Layout& layout, IRRewriter* rewriter = nullptr) {
     std::size_t nswaps{0};
 
     while (true) {
-      skipExecutableGates(wires, layout, direction);
+      skipExecutableGates<Direction>(wires, layout);
 
-      const auto window = getWindow(wires, direction);
+      const auto window = getWindow<Direction>(wires);
       if (window.empty()) {
         break;
       }
