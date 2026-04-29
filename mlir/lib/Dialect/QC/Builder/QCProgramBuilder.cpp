@@ -132,8 +132,8 @@ QCProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
                             " out of bounds for register '" + name +
                             "' of size " + std::to_string(size);
     llvm::reportFatalUsageError(msg.c_str());
-    return {.registerName = name, .registerSize = size, .registerIndex = index};
   }
+    return {.registerName = name, .registerSize = size, .registerIndex = index};
 }
 
 Value QCProgramBuilder::memrefLoad(Value memref, Value index) {

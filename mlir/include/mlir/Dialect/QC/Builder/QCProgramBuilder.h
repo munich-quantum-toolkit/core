@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>

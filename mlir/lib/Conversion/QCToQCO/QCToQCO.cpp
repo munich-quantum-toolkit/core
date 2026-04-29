@@ -536,13 +536,13 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
       }
       // Add the QC qubit and memref operands to the maps
       for (const auto& operand : operation.getOperands()) {
-        if (llvm::isa<qc::QubitType>(operand.getType())) {
+        if (isa<qc::QubitType>(operand.getType())) {
           if (!qubitInfoMap.contains(operand)) {
             regionQubitMap.insert(operand);
           }
         }
         if (auto memref = dyn_cast<MemRefType>(operand.getType())) {
-          if (llvm::isa<qc::QubitType>(memref.getElementType())) {
+          if (isa<qc::QubitType>(memref.getElementType())) {
             regionRegisterMap.insert(operand);
           }
         }
@@ -1489,7 +1489,7 @@ struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     insertAllExtractedQubits(state, op.getOperation(), rewriter);
     SmallVector<Value> targets = resolveAllValues(state, operation);
 
-    if (llvm::isa<qco::IfOp>(op->getParentOp())) {
+    if (isa<qco::IfOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
     } else {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
@@ -1597,7 +1597,7 @@ protected:
             return TypeSwitch<Type, bool>(t)
                 .Case<qco::QubitType>([](auto) { return true; })
                 .Case<RankedTensorType>([](RankedTensorType t) {
-                  return llvm::isa<qco::QubitType>(t.getElementType());
+                  return isa<qco::QubitType>(t.getElementType());
                 })
                 .Default([](auto) { return false; });
           };
