@@ -28,6 +28,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <iterator>
 #include <numbers>
 #include <optional>
 #include <utility>
