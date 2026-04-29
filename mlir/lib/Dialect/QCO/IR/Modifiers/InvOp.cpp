@@ -13,9 +13,7 @@
 
 #include <Eigen/Core>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -25,7 +23,6 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
 #include <numbers>
@@ -46,7 +43,7 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp invOp,
                                 PatternRewriter& rewriter) const override {
     auto bodyUnitary = invOp.getBodyUnitary();
-    auto innerCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    auto innerCtrlOp = dyn_cast<CtrlOp>(bodyUnitary.getOperation());
     if (!innerCtrlOp) {
       return failure();
     }
@@ -59,10 +56,10 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
 
     rewriter.replaceOpWithNewOp<CtrlOp>(
         invOp, controls, targets,
-        [&](ValueRange newTargetArgs) -> llvm::SmallVector<Value> {
+        [&](ValueRange newTargetArgs) -> SmallVector<Value> {
           return InvOp::create(
                      rewriter, invOp.getLoc(), newTargetArgs,
-                     [&](ValueRange invArgs) -> llvm::SmallVector<Value> {
+                     [&](ValueRange invArgs) -> SmallVector<Value> {
                        IRMapping mapping;
                        auto* innerBody = innerCtrlOp.getBody();
                        for (size_t i = 0; i < innerCtrlOp.getNumTargets();
@@ -93,8 +90,7 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
-    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(
-            innerOp)) {
+    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(innerOp)) {
       return failure();
     }
 
@@ -118,7 +114,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
-    return llvm::TypeSwitch<Operation*, LogicalResult>(innerOp)
+    return TypeSwitch<Operation*, LogicalResult>(innerOp)
         .Case<GPhaseOp>([&](auto g) {
           Value negTheta =
               arith::NegFOp::create(rewriter, op.getLoc(), g.getTheta());
@@ -263,7 +259,7 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
     auto* innerUnitary = op.getBodyUnitary().getOperation();
-    auto innerInvOp = llvm::dyn_cast<InvOp>(innerUnitary);
+    auto innerInvOp = dyn_cast<InvOp>(innerUnitary);
     if (!innerInvOp) {
       return failure();
     }
@@ -285,7 +281,7 @@ UnitaryOpInterface InvOp::getBodyUnitary() {
   // also contain constants and arithmetic operations, e.g., created as part of
   // canonicalization. Thus, the only safe way to access the unitary operation
   // is to get the second operation from the back of the region.
-  return llvm::cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+  return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
 Value InvOp::getInputQubit(const size_t i) {
@@ -320,9 +316,9 @@ Value InvOp::getOutputForInput(Value input) {
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
-void InvOp::build(
-    OpBuilder& odsBuilder, OperationState& odsState, ValueRange qubits,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {
+void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                  ValueRange qubits,
+                  function_ref<SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, qubits);
   auto& block = odsState.regions.front()->emplaceBlock();
 
@@ -354,7 +350,7 @@ LogicalResult InvOp::verify() {
              << i << " does not match target type";
     }
   }
-  if (!llvm::isa<YieldOp>(block.back())) {
+  if (!isa<YieldOp>(block.back())) {
     return emitOpError(
         "last operation in body region must be a yield operation");
   }
@@ -364,12 +360,12 @@ LogicalResult InvOp::verify() {
            << numTargets << " values, but found " << numYieldOperands;
   }
   auto iter = ++block.rbegin();
-  if (!llvm::isa<UnitaryOpInterface>(*iter)) {
+  if (!isa<UnitaryOpInterface>(*iter)) {
     return emitOpError(
         "second to last operation in body region must be a unitary operation");
   }
   for (auto it = ++iter; it != block.rend(); ++it) {
-    if (llvm::isa<UnitaryOpInterface>(*it)) {
+    if (isa<UnitaryOpInterface>(*it)) {
       return emitOpError("body region may only contain a single unitary op");
     }
   }

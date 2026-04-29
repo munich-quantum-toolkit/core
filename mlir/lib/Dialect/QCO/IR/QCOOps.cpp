@@ -14,13 +14,13 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -160,7 +160,7 @@ parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
   }
 
   // Remove duplicate operands
-  llvm::DenseSet<llvm::StringRef> seen;
+  DenseSet<StringRef> seen;
   llvm::erase_if(operands,
                  [&](const auto& op) { return !seen.insert(op.name).second; });
 

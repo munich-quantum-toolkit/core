@@ -17,11 +17,9 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/raw_ostream.h>
@@ -34,7 +32,9 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -53,7 +53,7 @@ QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
 
 void QCOProgramBuilder::initialize() {
   // Set insertion point to the module body
-  setInsertionPointToStart(module.getBody());
+  setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, {getI64Type()});
@@ -71,6 +71,13 @@ void QCOProgramBuilder::initialize() {
 Value QCOProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value& QCOProgramBuilder::QubitRegister::operator[](const size_t index) {
+  if (index >= qubits.size()) {
+    llvm::reportFatalUsageError("Qubit index out of bounds");
+  }
+  return qubits[index];
 }
 
 Value QCOProgramBuilder::allocQubit() {
@@ -109,7 +116,7 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
 
   auto qtensor = qtensorAlloc(size);
 
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(size);
   for (int64_t i = 0; i < size; ++i) {
     auto [qtensorOut, qubit] = qtensorExtract(qtensor, i);
@@ -118,6 +125,17 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   return {.value = qtensor, .qubits = std::move(qubits)};
+}
+
+QCOProgramBuilder::Bit
+QCOProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
+  if (index < 0 || index >= size) {
+    const std::string msg = "Bit index " + std::to_string(index) +
+                            " out of bounds for register '" + name +
+                            "' of size " + std::to_string(size);
+    llvm::reportFatalUsageError(msg.c_str());
+  }
+  return {.registerName = name, .registerSize = size, .registerIndex = index};
 }
 
 QCOProgramBuilder::ClassicalRegister
@@ -170,11 +188,11 @@ void QCOProgramBuilder::validateTensorValue(Value tensor) const {
         "Invalid tensor value used (either consumed or not tracked)");
   }
 
-  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
+  auto tensorType = dyn_cast<RankedTensorType>(tensor.getType());
   if (!tensorType || tensorType.getRank() != 1) {
     llvm::reportFatalUsageError("Tensor must be of 1-D RankedTensorType!");
   }
-  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
+  if (!isa<QubitType>(tensorType.getElementType())) {
     llvm::reportFatalUsageError("Elements must be of QubitType!");
   }
 }
@@ -220,7 +238,7 @@ Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
   }
 
   for (auto element : elements) {
-    if (!llvm::isa<QubitType>(element.getType())) {
+    if (!isa<QubitType>(element.getType())) {
       llvm::reportFatalUsageError("Elements must be QubitType!");
     }
     validateQubitValue(element);
@@ -339,12 +357,10 @@ Value QCOProgramBuilder::reset(Value qubit) {
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto controlsOut =                                                   \
-        ctrl(control, {},                                                      \
-             [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {         \
-               OP_NAME(param);                                                 \
-               return {};                                                      \
-             })                                                                \
-            .first;                                                            \
+        ctrl(control, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> {  \
+          OP_NAME(param);                                                      \
+          return {};                                                           \
+        }).first;                                                              \
     return controlsOut[0];                                                     \
   }                                                                            \
   ValueRange QCOProgramBuilder::mc##OP_NAME(                                   \
@@ -352,12 +368,10 @@ Value QCOProgramBuilder::reset(Value qubit) {
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto controlsOut =                                                   \
-        ctrl(controls, {},                                                     \
-             [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {         \
-               OP_NAME(param);                                                 \
-               return {};                                                      \
-             })                                                                \
-            .first;                                                            \
+        ctrl(controls, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> { \
+          OP_NAME(param);                                                      \
+          return {};                                                           \
+        }).first;                                                              \
     return controlsOut;                                                        \
   }
 
@@ -378,8 +392,8 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   std::pair<Value, Value> QCOProgramBuilder::c##OP_NAME(Value control,         \
                                                         Value target) {        \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
           return {OP_NAME(targets[0])};                                        \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -388,10 +402,9 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
       ValueRange controls, Value target) {                                     \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target,                                                 \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               return {OP_NAME(targets[0])};                                   \
-             });                                                               \
+        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
+          return {OP_NAME(targets[0])};                                        \
+        });                                                                    \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -425,8 +438,8 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       Value target) {                                                          \
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
           return {OP_NAME(param, targets[0])};                                 \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -437,10 +450,9 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target,                                                 \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               return {OP_NAME(param, targets[0])};                            \
-             });                                                               \
+        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
+          return {OP_NAME(param, targets[0])};                                 \
+        });                                                                    \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -470,8 +482,8 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     checkFinalized();                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
           return {OP_NAME(param1, param2, targets[0])};                        \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -484,10 +496,9 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target,                                                 \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               return {OP_NAME(param1, param2, targets[0])};                   \
-             });                                                               \
+        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
+          return {OP_NAME(param1, param2, targets[0])};                        \
+        });                                                                    \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -519,8 +530,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
           return {OP_NAME(param1, param2, param3, targets[0])};                \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -535,10 +546,9 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target,                                                 \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               return {OP_NAME(param1, param2, param3, targets[0])};           \
-             });                                                               \
+        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
+          return {OP_NAME(param1, param2, param3, targets[0])};                \
+        });                                                                    \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -564,7 +574,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] = OP_NAME(targets[0], targets[1]);                \
                return {q0, q1};                                                \
              });                                                               \
@@ -576,7 +586,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] = OP_NAME(targets[0], targets[1]);                \
                return {q0, q1};                                                \
              });                                                               \
@@ -610,7 +620,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] = OP_NAME(param, targets[0], targets[1]);         \
                return {q0, q1};                                                \
              });                                                               \
@@ -624,7 +634,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] = OP_NAME(param, targets[0], targets[1]);         \
                return {q0, q1};                                                \
              });                                                               \
@@ -662,7 +672,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] =                                                 \
                    OP_NAME(param1, param2, targets[0], targets[1]);            \
                return {q0, q1};                                                \
@@ -679,7 +689,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
-             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] =                                                 \
                    OP_NAME(param1, param2, targets[0], targets[1]);            \
                return {q0, q1};                                                \
@@ -709,9 +719,9 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
-    ValueRange controls, ValueRange targets,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
+std::pair<ValueRange, ValueRange>
+QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
+                        function_ref<SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
 
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
@@ -746,9 +756,9 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
   return {controlsOut, targetsOut};
 }
 
-ValueRange QCOProgramBuilder::inv(
-    ValueRange qubits,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
+ValueRange
+QCOProgramBuilder::inv(ValueRange qubits,
+                       function_ref<SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
 
   auto invOp = InvOp::create(*this, qubits);
@@ -803,8 +813,8 @@ QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
 
 ValueRange QCOProgramBuilder::qcoIf(
     const std::variant<bool, Value>& condition, ValueRange qubits,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
+    function_ref<SmallVector<Value>(ValueRange)> thenBody,
+    function_ref<SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
 
   auto conditionValue = variantToValue(*this, getLoc(), condition);
@@ -828,7 +838,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   const auto thenResult = thenBody(thenBlock.getArguments());
   YieldOp::create(*this, thenResult);
   setInsertionPointToStart(&elseBlock);
-  llvm::SmallVector<Value> elseResult;
+  SmallVector<Value> elseResult;
   if (elseBody) {
     elseResult = elseBody(elseBlock.getArguments());
     YieldOp::create(*this, elseResult);
@@ -902,7 +912,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
-  for (auto op : module.getOps<func::FuncOp>()) {
+  for (auto op : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
     if (op.getName() == "main") {
       mainFunc = op;
       break;
@@ -917,13 +927,12 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  llvm::DenseSet<int64_t> validTensorIds;
+  DenseSet<int64_t> validTensorIds;
   for (const auto& [tensor, info] : validTensors) {
     validTensorIds.insert(info.regId);
   }
 
-  llvm::DenseMap<int64_t, llvm::SmallVector<std::pair<Value, QubitInfo>>>
-      qubitsByRegister;
+  DenseMap<int64_t, SmallVector<std::pair<Value, QubitInfo>>> qubitsByRegister;
   for (auto [qubit, info] : validQubits) {
     if (info.regId == -1 || !validTensorIds.contains(info.regId)) {
       // Automatically deallocate all still-allocated qubits
@@ -958,12 +967,12 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
-  return module;
+  return cast<ModuleOp>(module);
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::build(
     MLIRContext* context,
-    const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc) {
+    const function_ref<void(QCOProgramBuilder&)>& buildFunc) {
   QCOProgramBuilder builder(context);
   builder.initialize();
   buildFunc(builder);

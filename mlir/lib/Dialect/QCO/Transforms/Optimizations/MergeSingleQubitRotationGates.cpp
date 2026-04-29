@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -93,7 +94,7 @@ struct MergeSingleQubitRotationGatesPattern final
    *         RXOp, RYOp, or RZOp.
    */
   static std::optional<RotationAxis> getRotationAxis(Operation* op) {
-    return llvm::TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
+    return TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
         .Case<RXOp>([](auto) { return RotationAxis::X; })
         .Case<RYOp>([](auto) { return RotationAxis::Y; })
         .Case<RZOp, POp>([](auto) { return RotationAxis::Z; })
@@ -325,7 +326,7 @@ struct MergeSingleQubitRotationGatesPattern final
     }
 
     // Multi-parameter gates each need their own conversion
-    return llvm::TypeSwitch<Operation*, Quaternion>(op.getOperation())
+    return TypeSwitch<Operation*, Quaternion>(op.getOperation())
         .Case<ROp>(
             [&](ROp o) { return quaternionFromROp(o, constants, rewriter); })
         .Case<U2Op>(
@@ -359,7 +360,7 @@ struct MergeSingleQubitRotationGatesPattern final
                                             const Constants& constants,
                                             Location loc,
                                             PatternRewriter& rewriter) {
-    return llvm::TypeSwitch<Operation*, std::optional<Value>>(op.getOperation())
+    return TypeSwitch<Operation*, std::optional<Value>>(op.getOperation())
         .Case<RXOp, RYOp, RZOp, ROp>(
             [&](auto) -> std::optional<Value> { return std::nullopt; })
         .Case<POp>([&](auto) -> std::optional<Value> {
@@ -411,7 +412,7 @@ struct MergeSingleQubitRotationGatesPattern final
    */
   static SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
-    SmallVector<UnitaryOpInterface> chain = {start};
+    SmallVector chain = {start};
     auto current = start;
     while (true) {
       auto* userOp = *current->getUsers().begin();

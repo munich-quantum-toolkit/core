@@ -17,6 +17,8 @@
 #include "mlir/Dialect/QCO/Utils/Qubits.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -46,7 +48,6 @@
 #include <queue>
 #include <random>
 #include <string>
-#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>

@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>

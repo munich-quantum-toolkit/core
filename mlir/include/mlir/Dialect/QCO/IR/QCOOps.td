@@ -1132,7 +1132,7 @@ def CtrlOp
            build($_builder, $_state, controls.getTypes(), targets.getTypes(), controls, targets);
         }]>,
                   OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets,
-                      "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)"
+                      "function_ref<SmallVector<Value>(ValueRange)"
                       ">":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
@@ -1202,7 +1202,7 @@ def InvOp
            build($_builder, $_state, qubits.getTypes(), qubits);
         }]>,
                   OpBuilder<(ins "ValueRange":$qubits,
-                      "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)"
+                      "function_ref<SmallVector<Value>(ValueRange)"
                       ">":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
@@ -1256,15 +1256,14 @@ def IfOp
         `{` type($results) `}`
     }];
 
-  let builders =
-      [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
+  let builders = [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
            build($_builder, $_state, qubits.getTypes(), condition, qubits);
         }]>,
-       OpBuilder<(ins "Value":$condition, "ValueRange":$qubits,
-           "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)"
-           ">":$thenBuilder,
-           CArg<"llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>",
-                "nullptr">:$elseBuilder)>];
+                  OpBuilder<(ins "Value":$condition, "ValueRange":$qubits,
+                      "function_ref<SmallVector<Value>(ValueRange)"
+                      ">":$thenBuilder,
+                      CArg<"function_ref<SmallVector<Value>(ValueRange)>",
+                           "nullptr">:$elseBuilder)>];
 
   let extraClassDeclaration = [{
         Block *thenBlock() {

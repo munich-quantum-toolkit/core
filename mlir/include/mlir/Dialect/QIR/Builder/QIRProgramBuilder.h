@@ -12,22 +12,14 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <string>
@@ -35,11 +27,14 @@
 #include <variant>
 
 namespace mlir {
+// Forward declarations
 class Block;
+class MLIRContext;
+class ModuleOp;
 class Operation;
-} // namespace mlir
+class ValueRange;
 
-namespace mlir::qir {
+namespace qir {
 
 /**
  * @brief Builder API for constructing QIR (Quantum Intermediate
@@ -196,7 +191,7 @@ public:
    * %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
    * ```
    */
-  llvm::SmallVector<Value> allocQubitRegister(int64_t size);
+  SmallVector<Value> allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -204,7 +199,7 @@ public:
    */
   struct Bit {
     /// Name of the register containing this bit
-    llvm::StringRef registerName;
+    StringRef registerName;
     /// Size of the register containing this bit
     int64_t registerSize{};
     /// Index of this bit within the register
@@ -225,16 +220,7 @@ public:
      * @param index The index of the bit to access (must be less than size)
      * @return A Bit structure representing the specified bit
      */
-    Bit operator[](const int64_t index) const {
-      if (index < 0 || index >= size) {
-        const std::string msg = "Bit index " + std::to_string(index) +
-                                " out of bounds for register '" + name +
-                                "' of size " + std::to_string(size);
-        llvm::reportFatalUsageError(msg.c_str());
-      }
-      return {
-          .registerName = name, .registerSize = size, .registerIndex = index};
-    }
+    Bit operator[](const int64_t index) const;
   };
 
   /**
@@ -889,13 +875,13 @@ public:
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const llvm::function_ref<void(QIRProgramBuilder&)>& buildFunc);
+        const function_ref<void(QIRProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
 
   /// The main module
-  ModuleOp module;
+  Operation* module{};
 
   /// The main function
   Operation* mainFunc{};
@@ -917,22 +903,22 @@ private:
   Value exitCode;
 
   /// Cache static qubit pointers for reuse
-  llvm::DenseMap<int64_t, Value> staticQubits;
+  DenseMap<int64_t, Value> staticQubits;
 
   /// Set of qubit pointers
-  llvm::DenseSet<Value> qubits;
+  DenseSet<Value> qubits;
 
   /// Set of qubit-array pointers
-  llvm::DenseSet<Value> qubitArrays;
+  DenseSet<Value> qubitArrays;
 
   /// Map from register name to result-array pointer
   llvm::StringMap<Value> resultArrays;
 
   /// Map from (register name, index) to loaded result
-  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> loadedResults;
+  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
 
   /// Map from result index to result pointer for non-register results
-  llvm::DenseMap<int64_t, Value> resultPtrs;
+  DenseMap<int64_t, Value> resultPtrs;
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
@@ -951,10 +937,9 @@ private:
    * @param targets Target qubits
    * @param fnName Name of the QIR function to call
    */
-  void
-  createCallOp(const llvm::SmallVector<std::variant<double, Value>>& parameters,
-               ValueRange controls, const SmallVector<Value>& targets,
-               llvm::StringRef fnName);
+  void createCallOp(const SmallVector<std::variant<double, Value>>& parameters,
+                    ValueRange controls, const SmallVector<Value>& targets,
+                    StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block
@@ -977,4 +962,5 @@ private:
   void ensureAllocationMode(AllocationMode requestedMode);
 };
 
-} // namespace mlir::qir
+} // namespace qir
+} // namespace mlir
