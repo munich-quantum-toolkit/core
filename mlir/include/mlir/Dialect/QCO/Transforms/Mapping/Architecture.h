@@ -32,8 +32,8 @@ public:
                         CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
         couplingSet_(std::move(couplingSet)), neighbours_(nqubits),
-        dist_(nqubits, SmallVector(nqubits, UINT64_MAX)),
-        prev_(nqubits, SmallVector(nqubits, UINT64_MAX)) {
+        dist_(nqubits, SmallVector<size_t>(nqubits, UINT64_MAX)),
+        prev_(nqubits, SmallVector<size_t>(nqubits, UINT64_MAX)) {
     floydWarshallWithPathReconstruction();
     collectNeighbours();
   }
