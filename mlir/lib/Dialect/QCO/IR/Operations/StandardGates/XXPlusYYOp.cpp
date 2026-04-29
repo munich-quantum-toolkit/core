@@ -12,8 +12,6 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>

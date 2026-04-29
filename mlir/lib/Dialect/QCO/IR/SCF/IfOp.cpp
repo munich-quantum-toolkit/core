@@ -13,9 +13,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>

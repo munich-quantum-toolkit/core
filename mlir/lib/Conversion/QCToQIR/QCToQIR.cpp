@@ -22,7 +22,6 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>

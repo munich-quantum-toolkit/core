@@ -11,9 +11,6 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallPtrSet.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>

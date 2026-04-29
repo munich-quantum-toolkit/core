@@ -11,10 +11,8 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
 
-#include <llvm/ADT/BitVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Operation.h>

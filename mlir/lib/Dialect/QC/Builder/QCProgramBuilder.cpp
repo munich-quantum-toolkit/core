@@ -14,9 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -31,6 +29,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>

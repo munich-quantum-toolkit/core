@@ -12,7 +12,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>

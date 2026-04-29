@@ -11,9 +11,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>

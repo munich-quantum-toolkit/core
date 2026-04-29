@@ -19,12 +19,10 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
