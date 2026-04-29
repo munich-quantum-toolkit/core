@@ -135,11 +135,18 @@ std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
+  const auto safePolarSigned = [](double radius, double angle) {
+    if (radius < 0.0) {
+      return std::polar(-radius, angle + std::numbers::pi);
+    }
+    return std::polar(radius, angle);
+  };
+
   const auto c = std::cos(*theta / 2.0);
   const auto s = std::sin(*theta / 2.0);
   const auto m00 = c + 0i;
-  const auto m01 = s * std::exp(1i * (*lambda + std::numbers::pi));
-  const auto m10 = s * std::exp(1i * (*phi));
-  const auto m11 = c * std::exp(1i * (*phi + *lambda));
+  const auto m01 = safePolarSigned(s, *lambda + std::numbers::pi);
+  const auto m10 = safePolarSigned(s, *phi);
+  const auto m11 = safePolarSigned(c, *phi + *lambda);
   return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
 }

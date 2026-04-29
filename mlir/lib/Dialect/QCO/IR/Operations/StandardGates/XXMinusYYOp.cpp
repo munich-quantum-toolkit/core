@@ -114,12 +114,19 @@ std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
+  const auto safePolarSigned = [](double radius, double angle) {
+    if (radius < 0.0) {
+      return std::polar(-radius, angle + std::numbers::pi);
+    }
+    return std::polar(radius, angle);
+  };
+
   const auto m0 = 0.0 + 0i;
   const auto m1 = 1.0 + 0i;
   const auto mc = std::cos(*theta / 2.0) + 0i;
   const auto s = std::sin(*theta / 2.0);
-  const auto msp = s * std::exp(1i * (*beta - (std::numbers::pi / 2.0)));
-  const auto msm = s * std::exp(1i * (-*beta - (std::numbers::pi / 2.0)));
+  const auto msp = safePolarSigned(s, *beta - (std::numbers::pi / 2.0));
+  const auto msm = safePolarSigned(s, -*beta - (std::numbers::pi / 2.0));
   return Eigen::Matrix4cd{{mc, m0, m0, msm},  // row 0
                           {m0, m1, m0, m0},   // row 1
                           {m0, m0, m1, m0},   // row 2

@@ -17,7 +17,6 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cmath>
 #include <complex>
 #include <numbers>
 
@@ -58,8 +57,6 @@ void TOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Eigen::Matrix2cd TOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
-  const auto m11 = std::exp(1i * (std::numbers::pi / 4.0));
+  const auto m11 = std::polar(1.0, std::numbers::pi / 4.0);
   return Eigen::Matrix2cd{{1.0, 0.0}, {0.0, m11}};
 }

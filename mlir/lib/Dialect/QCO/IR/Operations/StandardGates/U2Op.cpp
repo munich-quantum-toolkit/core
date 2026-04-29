@@ -114,10 +114,10 @@ std::optional<Eigen::Matrix2cd> U2Op::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  const auto invSqrt2 = 1.0 / std::numbers::sqrt2;
-  const auto m00 = invSqrt2 + 0i;
-  const auto m01 = invSqrt2 * std::exp(1i * (*lambda + std::numbers::pi));
-  const auto m10 = invSqrt2 * std::exp(1i * (*phi));
-  const auto m11 = invSqrt2 * std::exp(1i * (*phi + *lambda));
+  const auto m00 = 1.0 / std::numbers::sqrt2 + 0i;
+  const auto m01 =
+      std::polar(1.0 / std::numbers::sqrt2, *lambda + std::numbers::pi);
+  const auto m10 = std::polar(1.0 / std::numbers::sqrt2, *phi);
+  const auto m11 = std::polar(1.0 / std::numbers::sqrt2, *phi + *lambda);
   return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
 }
