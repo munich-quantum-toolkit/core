@@ -432,17 +432,9 @@ private:
    */
   static void place(func::FuncOp func, const Layout& layout,
                     IRRewriter& rewriter) {
-    // 0. Materialize to avoid iterator invalidation after replacement.
-    const auto qubitAllocs = to_vector(func.getOps<AllocOp>());
-
-    const auto tensorAllocs = to_vector(func.getOps<qtensor::AllocOp>());
-    const auto tensorDeallocs = to_vector(func.getOps<qtensor::DeallocOp>());
-    auto tensorExtracts = to_vector(func.getOps<ExtractOp>());
-    const auto tensorInserts = to_vector(func.getOps<InsertOp>());
-
     // 1. Replace existing dynamic allocations with mapped static ones.
     std::size_t p = 0;
-    for (AllocOp op : qubitAllocs) {
+    for (auto op : llvm::make_early_inc_range(func.getOps<AllocOp>())) {
       const auto hw = layout.getHardwareIndex(p);
       rewriter.setInsertionPoint(op);
       rewriter.replaceOpWithNewOp<StaticOp>(op, hw);
@@ -450,28 +442,31 @@ private:
     }
 
     // 1.1 Handle tensors.
-    for (qtensor::DeallocOp op : tensorDeallocs) {
+    for (auto op :
+         llvm::make_early_inc_range(func.getOps<qtensor::DeallocOp>())) {
       rewriter.eraseOp(op);
     }
 
-    for (InsertOp op : reverse(tensorInserts)) {
+    const auto inserts = to_vector(func.getOps<InsertOp>());
+    for (auto op : llvm::reverse(inserts)) {
       rewriter.setInsertionPoint(op);
       SinkOp::create(rewriter, op.getLoc(), op.getScalar());
       rewriter.eraseOp(op);
     }
 
-    for (auto [i, extractOp] : enumerate(reverse(tensorExtracts))) {
-      const auto hw =
-          layout.getHardwareIndex(p + tensorExtracts.size() - 1 - i);
+    auto extracts = to_vector(func.getOps<ExtractOp>());
+    for (auto [i, extractOp] : enumerate(reverse(extracts))) {
+      const auto hw = layout.getHardwareIndex(p + extracts.size() - 1 - i);
       rewriter.setInsertionPoint(extractOp);
       auto op = StaticOp::create(rewriter, extractOp.getLoc(), hw);
       rewriter.replaceAllUsesWith(extractOp.getResult(), op.getQubit());
       rewriter.eraseOp(extractOp);
     }
 
-    p += tensorExtracts.size();
+    p += extracts.size();
 
-    for (qtensor::AllocOp op : tensorAllocs) {
+    for (qtensor::AllocOp op :
+         llvm::make_early_inc_range(func.getOps<qtensor::AllocOp>())) {
       rewriter.eraseOp(op);
     }
 
