@@ -991,6 +991,9 @@ void ifTwoQubits(QCOProgramBuilder& b);
 /// Creates a circuit with an if operation with an else branch.
 void ifElse(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with one qubit and one register.
+void ifOneQubitOneTensor(QCOProgramBuilder& b);
+
 /// Creates a circuit with an if operation that uses a constant true as
 /// condition.
 void constantTrueIf(QCOProgramBuilder& b);

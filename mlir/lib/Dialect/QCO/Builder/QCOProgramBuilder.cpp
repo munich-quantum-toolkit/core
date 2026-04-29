@@ -1149,8 +1149,15 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     }
   }
 
+  // Sort the tensors by their id
+  SmallVector<std::pair<Value, TensorInfo>> sortedTensors(validTensors.begin(),
+                                                          validTensors.end());
+  sort(sortedTensors, [](const auto& a, const auto& b) {
+    return a.second.regId < b.second.regId;
+  });
+
   // Automatically deallocate all still-allocated tensors
-  for (auto& [tensor, tensorInfo] : validTensors) {
+  for (auto& [tensor, tensorInfo] : sortedTensors) {
     auto currentTensor = tensor;
     // Filter out qubits belonging to this tensor
     for (auto& [qubit, qubitInfo] : qubitsByRegister[tensorInfo.regId]) {

@@ -159,18 +159,23 @@ TEST_F(QCOTest, IfOpParser) {
             %c0 = arith.constant 0 : index
             %c1 = arith.constant 1 : index
             %c0_i64 = arith.constant 0 : i64
-            %t0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
-            %t1, %q0 = qtensor.extract %t0[%c0] : tensor<1x!qco.qubit>
-            %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
-            %q2, %cond = qco.measure %q1 : !qco.qubit
-            %q4 = qco.if %cond qubits(%arg0 = %q2) -> (!qco.qubit) {
-                %q3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-                qco.yield %q3 : !qco.qubit
-            } else qubits(%arg0 = %q2) {
-                qco.yield %arg0 : !qco.qubit
+            %t0_0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+            %t0_1, %q0_0 = qtensor.extract %t0_0[%c0] : tensor<1x!qco.qubit>
+            %t1_0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+            %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+            %q0_2, %cond = qco.measure %q0_1 : !qco.qubit
+            %q0_4, %t1_3 = qco.if %cond qubits(%arg0 = %q0_2, %arg1 = %t1_0) -> (!qco.qubit, tensor<1x!qco.qubit>) {
+                %q0_3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+                %t1_1, %q1_0 = qtensor.extract %arg1[%c0] : tensor<1x!qco.qubit>
+                %q1_1 = qco.x %q1_0 : !qco.qubit -> !qco.qubit
+                %t1_2 = qtensor.insert %q1_1 into %t1_1[%c0] : tensor<1x!qco.qubit>
+                qco.yield %q0_3, %t1_2 : !qco.qubit, tensor<1x!qco.qubit>
+            } else qubits(%arg0 = %q0_2, %arg1 = %t1_0) {
+                qco.yield %arg0, %arg1 : !qco.qubit, tensor<1x!qco.qubit>
             }
-            %t2 = qtensor.insert %q4 into %t1[%c0] : tensor<1x!qco.qubit>
-            qtensor.dealloc %t2 : tensor<1x!qco.qubit>
+            %t0_2 = qtensor.insert %q0_4 into %t0_1[%c0] : tensor<1x!qco.qubit>
+            qtensor.dealloc %t0_2 : tensor<1x!qco.qubit>
+            qtensor.dealloc %t1_3 : tensor<1x!qco.qubit>
             return %c0_i64 : i64
         }
     })";
@@ -182,8 +187,8 @@ TEST_F(QCOTest, IfOpParser) {
   EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
   EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
 
-  auto refBuilder =
-      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
+  auto refBuilder = QCOProgramBuilder::build(
+      context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());

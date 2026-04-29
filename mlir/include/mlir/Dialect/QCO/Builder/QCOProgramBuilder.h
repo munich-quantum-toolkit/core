@@ -1277,9 +1277,9 @@ public:
    * ```c++
    * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs)
    * -> SmallVector<Value> {
-   *   auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-   *   auto q1 = b.h(q0);
-   *   auto insert = b.qtensorInsert(q1, t0, iv);
+   *   auto [t0, q0] = builder.qtensorExtract(iterArgs[0], iv);
+   *   auto q1 = builder.h(q0);
+   *   auto insert = builder.qtensorInsert(q1, t0, iv);
    *   return {insert};
    * });
    * ```
