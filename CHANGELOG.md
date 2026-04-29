@@ -13,9 +13,9 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407]) ([**@J4MMlE**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637]) ([**@denialhaag**])
-- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588]) ([**@MatthiasReumann**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1664]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
-  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635])
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1673])
   ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
 
 ### Changed
@@ -27,6 +27,12 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+## [3.5.1] - 2026-04-23
+
+### Fixed
+
+- 🐛 Fix malformed include directories in exported `nlohmann_json` CMake targets for component-based installs ([#1662]) ([**@burgholzer**])
 
 ## [3.5.0] - 2026-04-21
 
@@ -216,6 +222,8 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
 
 ## [3.2.0] - 2025-07-31
 
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#320)._
+
 ### Added
 
 - 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
@@ -334,7 +342,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...HEAD
+[3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.0
 [3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
 [3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
@@ -352,6 +361,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1673]: https://github.com/munich-quantum-toolkit/core/pull/1673
+[#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
+[#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637
 [#1635]: https://github.com/munich-quantum-toolkit/core/pull/1635

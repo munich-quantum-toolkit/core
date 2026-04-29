@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 

@@ -10,10 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -30,7 +29,7 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
   LogicalResult matchAndRewrite(SinkOp op,
                                 PatternRewriter& rewriter) const override {
     auto* defOp = op.getQubit().getDefiningOp();
-    if (!llvm::isa_and_nonnull<AllocOp, StaticOp>(defOp)) {
+    if (!isa_and_nonnull<AllocOp, StaticOp>(defOp)) {
       return failure();
     }
 

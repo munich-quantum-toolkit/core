@@ -14,8 +14,11 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QCO/Utils/Qubits.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -45,7 +48,6 @@
 #include <queue>
 #include <random>
 #include <string>
-#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -810,7 +812,7 @@ private:
     ArrayRef<Operation*>::iterator anchorIt = anchors.begin();
     ArrayRef<SmallVector<IndexGate>>::iterator swapIt = swaps.begin();
 
-    walkUnit(funcBody, [&](Operation* op, Qubits& qubits) {
+    walkProgram(funcBody, [&](Operation* op, Qubits& qubits) {
       // Early exit if we've processed all layers.
       if (anchorIt == anchors.end()) {
         return WalkResult::interrupt();

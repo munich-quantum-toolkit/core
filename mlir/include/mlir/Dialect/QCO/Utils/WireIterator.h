@@ -10,8 +10,12 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+
 #include <mlir/IR/Operation.h>
 
+#include <cstdint>
 #include <iterator>
 
 namespace mlir::qco {
@@ -26,20 +30,20 @@ class [[nodiscard]] WireIterator {
 public:
   using iterator_category = std::bidirectional_iterator_tag;
   using difference_type = std::ptrdiff_t;
-  using value_type = mlir::Operation*;
+  using value_type = Operation*;
 
   WireIterator() : op_(nullptr), qubit_(nullptr), isSentinel_(false) {}
-  explicit WireIterator(mlir::Value qubit)
+  explicit WireIterator(Value qubit)
       : op_(qubit.getDefiningOp()), qubit_(qubit), isSentinel_(false) {}
 
   /// @returns the operation the iterator points to.
-  [[nodiscard]] mlir::Operation* operation() const { return op_; }
+  [[nodiscard]] Operation* operation() const { return op_; }
 
   /// @returns the operation the iterator points to.
-  [[nodiscard]] mlir::Operation* operator*() const { return operation(); }
+  [[nodiscard]] Operation* operator*() const { return operation(); }
 
   /// @returns the qubit the iterator points to.
-  [[nodiscard]] mlir::Value qubit() const;
+  [[nodiscard]] Value qubit() const;
 
   WireIterator& operator++() {
     forward();
@@ -79,8 +83,37 @@ private:
   /// @brief Move to the previous operation on the qubit wire.
   void backward();
 
-  mlir::Operation* op_;
-  mlir::Value qubit_;
+  Operation* op_;
+  Value qubit_;
   bool isSentinel_;
+};
+
+/**
+ * @brief Categorizes the current traversal direction.
+ */
+enum class WireDirection : std::uint8_t { Forward, Backward };
+
+template <WireDirection Direction> struct WireTraversalTraits {};
+
+template <> struct WireTraversalTraits<WireDirection::Forward> {
+  /// @returns the forward increment stride size.
+  static constexpr std::ptrdiff_t stride() { return 1; }
+
+  /// @returns true if the wire iterator can continue forward.
+  static bool isActive(const WireIterator& it) {
+    return it != std::default_sentinel;
+  }
+};
+
+template <> struct WireTraversalTraits<WireDirection::Backward> {
+  /// @returns the backward increment stride size.
+  static constexpr std::ptrdiff_t stride() { return -1; }
+
+  /// @returns true if the wire iterator can continue backward.
+  static bool isActive(const WireIterator& it) {
+    return it.operation() == nullptr
+               ? false
+               : !isa<AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
+  }
 };
 } // namespace mlir::qco

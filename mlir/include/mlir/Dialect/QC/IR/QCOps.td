@@ -960,7 +960,7 @@ def CtrlOp
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$controls,
-      "const llvm::function_ref<void()>&":$bodyBuilder)>];
+      "const function_ref<void()>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -1002,8 +1002,7 @@ def InvOp : QCOp<"inv",
         static StringRef getBaseSymbol() { return "inv"; }
     }];
 
-  let builders = [OpBuilder<(ins
-      "const llvm::function_ref<void()>&":$bodyBuilder)>];
+  let builders = [OpBuilder<(ins "const function_ref<void()>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

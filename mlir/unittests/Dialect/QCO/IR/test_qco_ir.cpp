@@ -19,12 +19,12 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 
 #include <iosfwd>
 #include <memory>
@@ -125,9 +125,9 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp =
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
-                   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
+                   [&](ValueRange qubits) -> SmallVector<Value> {
                      auto innerQubit = XOp::create(builder, qubits[0]);
-                     return llvm::SmallVector<Value>{innerQubit};
+                     return SmallVector<Value>{innerQubit};
                    });
   auto r2 = qtensor::InsertOp::create(builder, ifOp.getResult(0),
                                       extractOp.getOutTensor(), c0);

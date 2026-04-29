@@ -12,10 +12,8 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -50,7 +48,7 @@ QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
 
 void QIRProgramBuilder::initialize() {
   // Set insertion point to the module body
-  setInsertionPointToStart(module.getBody());
+  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function: () -> i64
   auto funcType = LLVM::LLVMFunctionType::get(getI64Type(), {});
@@ -196,6 +194,17 @@ SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   return qubits;
+}
+
+QIRProgramBuilder::Bit
+QIRProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
+  if (index < 0 || index >= size) {
+    const std::string msg = "Bit index " + std::to_string(index) +
+                            " out of bounds for register '" + name +
+                            "' of size " + std::to_string(size);
+    llvm::reportFatalUsageError(msg.c_str());
+  }
+  return {.registerName = name, .registerSize = size, .registerIndex = index};
 }
 
 QIRProgramBuilder::ClassicalRegister
@@ -733,17 +742,17 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
     LLVM::CallOp::create(*this, dec, ValueRange{size, array});
   }
 
-  auto mainFuncOp = llvm::cast<LLVM::LLVMFuncOp>(mainFunc);
+  auto mainFuncOp = cast<LLVM::LLVMFuncOp>(mainFunc);
   setQIRAttributes(mainFuncOp, metadata_);
 
   isFinalized = true;
 
-  return module;
+  return cast<ModuleOp>(module);
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(
     MLIRContext* context,
-    const llvm::function_ref<void(QIRProgramBuilder&)>& buildFunc) {
+    const function_ref<void(QIRProgramBuilder&)>& buildFunc) {
   QIRProgramBuilder builder(context);
   builder.initialize();
   buildFunc(builder);
