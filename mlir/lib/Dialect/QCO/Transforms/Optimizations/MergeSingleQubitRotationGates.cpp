@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -411,15 +412,18 @@ struct MergeSingleQubitRotationGatesPattern final
    */
   static SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
-    SmallVector<UnitaryOpInterface> chain = {start};
-    auto current = start;
-    while (true) {
-      auto* userOp = *current->getUsers().begin();
-      if (!areQuaternionMergeable(*current.getOperation(), *userOp)) {
+    SmallVector<UnitaryOpInterface> chain{start};
+
+    WireIterator prev(start.getOutputQubit(0));
+    for (auto curr = std::next(prev); curr != std::default_sentinel; ++curr) {
+      if (!areQuaternionMergeable(*prev.operation(), *curr.operation())) {
         break;
       }
-      current = chain.emplace_back(cast<UnitaryOpInterface>(userOp));
+
+      chain.emplace_back(cast<UnitaryOpInterface>(*curr.operation()));
+      prev = curr;
     }
+
     return chain;
   }
 
