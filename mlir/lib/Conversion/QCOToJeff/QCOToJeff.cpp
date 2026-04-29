@@ -20,7 +20,7 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
+#include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
@@ -29,11 +29,10 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -73,15 +72,15 @@ struct LoweringState {
   bool inInvOp = false;
   CtrlOp ctrlOp;
   InvOp invOp;
-  llvm::SmallVector<Value> controlsIn;
-  llvm::SmallVector<Value> controlsOut;
-  llvm::SmallVector<Value> targetsIn;
-  llvm::SmallVector<Value> targetsOut;
+  SmallVector<Value> controlsIn;
+  SmallVector<Value> controlsOut;
+  SmallVector<Value> targetsIn;
+  SmallVector<Value> targetsOut;
 
   [[nodiscard]] bool inModifier() const { return inCtrlOp || inInvOp; }
 
   // Module information
-  llvm::SmallVector<std::string> strings;
+  SmallVector<std::string> strings;
   std::string entryPointName;
 
   /// The qubit allocation mode used in the module
@@ -258,7 +257,7 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 template <typename QCOOpType>
 static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                         LoweringState& state, ValueRange targets,
-                        const llvm::SmallVector<int32_t>& pauliGates) {
+                        const SmallVector<int32_t>& pauliGates) {
   auto pauliGatesAttr =
       DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
 
@@ -286,7 +285,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
     return failure();
   }
 
-  auto module = llvm::dyn_cast<ModuleOp>(op);
+  auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
     return failure();
   }
@@ -312,7 +311,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   module->setAttr("jeff.entrypoint",
                   builder.getIntegerAttr(uint16Type, entryPoint));
 
-  llvm::SmallVector<llvm::StringRef> stringRefs;
+  SmallVector<StringRef> stringRefs;
   stringRefs.reserve(state.strings.size());
   for (const auto& str : state.strings) {
     stringRefs.emplace_back(str);
@@ -1019,7 +1018,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
     }
 
     if (!llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = llvm::dyn_cast<StringAttr>(attr);
+          const auto strAttr = dyn_cast<StringAttr>(attr);
           return strAttr && strAttr.getValue() == "entry_point";
         })) {
       return failure();
@@ -1031,7 +1030,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
     auto* block = &op.getBlocks().front();
 
     auto* returnOp = block->getTerminator();
-    if (!llvm::isa<func::ReturnOp>(returnOp)) {
+    if (!isa<func::ReturnOp>(returnOp)) {
       return failure();
     }
 
@@ -1070,7 +1069,7 @@ public:
     });
 
     addConversion([ctx](RankedTensorType type) -> Type {
-      if (llvm::isa<QubitType>(type.getElementType())) {
+      if (isa<QubitType>(type.getElementType())) {
         return jeff::QuregType::get(ctx, type.getShape()[0]);
       }
       return type;
