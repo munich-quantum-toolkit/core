@@ -53,19 +53,19 @@ public:
   anglesFromUnitary(const Eigen::Matrix2cd& matrix, EulerBasis basis);
 
 private:
-  /// Extract parameters for a `RZ(phi) . RY(theta) . RZ(lambda)` factorization.
+  /// Extract parameters for a `rz(phi) · ry(theta) · rz(lambda)` factorization.
   [[nodiscard]] static std::array<double, 4>
   paramsZyz(const Eigen::Matrix2cd& matrix);
 
-  /// Extract parameters for a `RZ(phi) . RX(theta) . RZ(lambda)` factorization.
+  /// Extract parameters for a `rz(phi) · rx(theta) · rz(lambda)` factorization.
   [[nodiscard]] static std::array<double, 4>
   paramsZxz(const Eigen::Matrix2cd& matrix);
 
-  /// Extract parameters for a `RX(phi) . RY(theta) . RX(lambda)` factorization.
+  /// Extract parameters for a `rx(phi) · ry(theta) · rx(lambda)` factorization.
   [[nodiscard]] static std::array<double, 4>
   paramsXyx(const Eigen::Matrix2cd& matrix);
 
-  /// Extract parameters for a `RX(phi) . RZ(theta) . RX(lambda)` factorization.
+  /// Extract parameters for a `rx(phi) · rz(theta) · rx(lambda)` factorization.
   [[nodiscard]] static std::array<double, 4>
   paramsXzx(const Eigen::Matrix2cd& matrix);
 
@@ -124,7 +124,7 @@ private:
    * `sx` gate for `theta ~= pi/2`, and two `sx` gates otherwise.
    *
    * When `allowXShortcut` is true (i.e. for `ZSXX`), the general-case 2-`sx`
-   * path additionally collapses `sx . rz(+/- pi) . sx` into a single `x`
+   * path additionally collapses `sx · rz(+/- pi) · sx` into a single `x`
    * gate when the middle rotation is congruent to +/- pi modulo 2 pi.
    *
    * @note Adapted from `circuit_psx_gen` in the IBM Qiskit framework.

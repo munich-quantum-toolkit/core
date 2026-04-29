@@ -176,11 +176,13 @@ Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
           "Invalid two-qubit gate qubit IDs: expected {0,1} or {1,0}");
     }
     if (gate.type == GateKind::X) {
-      // Controlled-X. The two matrices below are the *same* CX gate written in
-      // the two possible operand orderings used by `Gate::qubitId`: qubit 0 is
-      // the MSB of the 4x4 computational basis (matching
-      // `UnitaryOpInterface::getUnitaryMatrix4x4`), so swapping
-      // control/target wires produces a different basis-layout matrix.
+      // Controlled-X (`cx`) is directional: swapping `{control, target}`
+      // changes the operator. We therefore handle both orderings explicitly.
+      //
+      // The two matrices below represent `cx` for the two possible
+      // `Gate::qubitId` orderings. Qubit 0 is the MSB of the 4x4 computational
+      // basis (matching `UnitaryOpInterface::getUnitaryMatrix4x4`), so
+      // `{0,1}` and `{1,0}` lead to different basis-layout matrices.
       if (validPair01) {
         // control = wire 0 (MSB), target = wire 1.
         return Eigen::Matrix4cd{
@@ -194,7 +196,9 @@ Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
       llvm::reportFatalInternalError("Invalid qubit IDs for CX gate");
     }
     if (gate.type == GateKind::Z) {
-      // controlled Z (CZ)
+      // Controlled-Z (`cz`) is symmetric in its two qubits; swapping `{0,1}`
+      // and
+      // `{1,0}` yields the same operator, so one matrix is sufficient.
       return Eigen::Matrix4cd{
           {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, -1}};
     }

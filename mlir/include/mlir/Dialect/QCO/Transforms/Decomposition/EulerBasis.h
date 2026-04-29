@@ -39,7 +39,7 @@ enum class EulerBasis : std::uint8_t {
   ZXZ = 4,  ///< `rz · rx · rz`.
   XZX = 5,  ///< `rx · rz · rx`.
   XYX = 6,  ///< `rx · ry · rx`.
-  ZSXX = 7, ///< `rz · sx` chain, with `sx · rz(±π) · sx` collapsed to `x`.
+  ZSXX = 7, ///< `rz · sx` chain, with `sx · rz(+/- pi) · sx` collapsed to `x`.
   ZSX = 8,  ///< Like `ZSXX` but without the `x` shortcut.
 };
 

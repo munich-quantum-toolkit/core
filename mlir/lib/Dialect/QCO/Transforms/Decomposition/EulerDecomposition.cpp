@@ -115,9 +115,9 @@ EulerDecomposition::paramsZyz(const Eigen::Matrix2cd& matrix) {
 std::array<double, 4>
 EulerDecomposition::paramsZxz(const Eigen::Matrix2cd& matrix) {
   // Convert from the Z-Y-Z parameterization via the standard basis-change
-  // identity RY(a) = RZ(pi/2) . RX(a) . RZ(-pi/2), i.e.
-  // RZ(phi) . RY(theta) . RZ(lambda) =
-  // RZ(phi + pi/2) . RX(theta) . RZ(lambda - pi/2).
+  // identity `ry(a) = rz(pi/2) · rx(a) · rz(-pi/2)`, i.e.
+  // `rz(phi) · ry(theta) · rz(lambda) =
+  // rz(phi + pi/2) · rx(theta) · rz(lambda - pi/2)`.
   const auto [theta, phi, lam, phase] = paramsZyz(matrix);
   return {theta, phi + (std::numbers::pi / 2.0), lam - (std::numbers::pi / 2.0),
           phase};
@@ -195,8 +195,8 @@ EulerDecomposition::decomposeKAK(double theta, double phi, double lambda,
       .globalPhase = phase - ((phi + lambda) / 2.),
   };
   if (std::abs(theta) <= angleZeroEpsilon) {
-    // A(0) vanishes, so K(lambda) . A(0) . K(phi) collapses to
-    // K(lambda + phi).
+    // `A(0)` vanishes, so `K(lambda) · A(0) · K(phi)` collapses to
+    // `K(lambda + phi)`.
     lambda += phi;
     lambda = helpers::mod2pi(lambda);
     if (std::abs(lambda) > angleZeroEpsilon) {
@@ -251,7 +251,7 @@ EulerDecomposition::decomposePsxGen(double theta, double phi, double lambda,
       .globalPhase = phase,
   };
 
-  // Append `RZ(angle)` and add `angle / 2` to `globalPhase` so the combined
+  // Append `rz(angle)` and add `angle / 2` to `globalPhase` so the combined
   // effect matches the `rz`/`sx` bookkeeping used here (RZ vs scalar phase).
   // Small angles after `mod2pi` are dropped when simplification is enabled.
   auto emitRzAsP = [&](double angle) {
@@ -263,16 +263,16 @@ EulerDecomposition::decomposePsxGen(double theta, double phi, double lambda,
     }
   };
 
-  // Zero-`sx` decomposition: RZ(phi) . I . RZ(lambda) collapses to a single
-  // phase gate RZ(lambda + phi) (plus the matching phase correction).
+  // Zero-`sx` decomposition: `rz(phi) · I · rz(lambda)` collapses to a single
+  // phase gate `rz(lambda + phi)` (plus the matching phase correction).
   if (std::abs(theta) < angleZeroEpsilon) {
     emitRzAsP(lambda + phi);
     return sequence;
   }
 
   // Single-`sx` decomposition:
-  //   RZ(phi) . RY(pi/2) . RZ(lambda)
-  //     = P(phi + pi/2) . SX . P(lambda - pi/2) . e^{-i * pi / 4}
+  //   `rz(phi) · ry(pi/2) · rz(lambda)
+  //     = `p(phi + pi/2) · sx · p(lambda - pi/2) · e^{-i * pi / 4}`
   if (std::abs(theta - (std::numbers::pi / 2.0)) < angleZeroEpsilon) {
     emitRzAsP(lambda - (std::numbers::pi / 2.0));
     sequence.gates.push_back({.type = GateKind::SX});
@@ -294,17 +294,17 @@ EulerDecomposition::decomposePsxGen(double theta, double phi, double lambda,
     sequence.globalPhase -= theta;
   }
   // Shift theta and phi to turn the decomposition from
-  //   RZ(phi) . RY(theta) . RZ(lambda)
-  //     = RZ(phi) . RX(-pi/2) . RZ(theta) . RX(+pi/2) . RZ(lambda)
-  // into P(phi + pi) . SX . P(theta + pi) . SX . P(lambda).
+  //   `rz(phi) · ry(theta) · rz(lambda)
+  //     = `rz(phi) · rx(-pi/2) · rz(theta) · rx(+pi/2) · rz(lambda)`
+  // into `p(phi + pi) · sx · p(theta + pi) · sx · p(lambda)`.
   theta += std::numbers::pi;
   phi += std::numbers::pi;
   sequence.globalPhase -= std::numbers::pi / 2.0;
 
   emitRzAsP(lambda);
   if (allowXShortcut && std::abs(helpers::mod2pi(theta)) < angleZeroEpsilon) {
-    // `SX . P(theta) . SX` with `theta` congruent to `+/- pi` simplifies to
-    // a bare `X` gate (up to the already-tracked global phase).
+    // `sx · p(theta) · sx` with `theta` congruent to `+/- pi` simplifies to
+    // a bare `x` gate (up to the already-tracked global phase).
     sequence.gates.push_back({.type = GateKind::X});
   } else {
     sequence.gates.push_back({.type = GateKind::SX});

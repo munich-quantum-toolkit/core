@@ -41,7 +41,7 @@ getGateTypesForEulerBasis(EulerBasis eulerBasis) {
     // `ZSX` only emits `rz` and `sx`.
     return {GateKind::RZ, GateKind::SX};
   case EulerBasis::ZSXX:
-    // `ZSXX` additionally allows a bare `X` when the middle rotation is
+    // `ZSXX` additionally allows a bare `x` when the middle rotation is
     // +/- pi, staying within the `{rz, sx, x}` alphabet.
     return {GateKind::RZ, GateKind::SX, GateKind::X};
   }
