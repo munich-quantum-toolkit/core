@@ -98,10 +98,9 @@ private:
   using QubitValue = TypedValue<QubitType>;
   using IndexType = std::size_t;
   using IndexPairType = std::pair<IndexType, IndexType>;
+  using Window = SmallVector<IndexPairType>;
 
   enum class RoutingMode : std::uint8_t { Cold, Hot };
-
-  using Window = SmallVector<IndexPairType>;
 
   /**
    * @brief A qubit layout that maps program and hardware indices without
@@ -358,6 +357,10 @@ public:
 
 protected:
   void runOnOperation() override {
+    assert(alpha > 0 && "runOnOperation: expected alpha > 0");
+    assert(niterations > 0 && "runOnOperation: expected niterations > 0");
+    assert(ntrials > 0 && "runOnOperation: expected ntrials > 0");
+
     std::mt19937_64 rng{seed};
     IRRewriter rewriter(&getContext());
 
@@ -384,12 +387,12 @@ protected:
 
       Trial* best = findBestTrial(trials);
       if (best == nullptr) {
-        func.emitError() << "failed to find a best initial layout trial";
+        func.emitError() << "failed to find the best layout trial";
         signalPassFailure();
         return;
       }
 
-      // Perform placement and hot routing.
+      // Perform placement.
       place(func, best->layout, rewriter);
 
       // Collect wire iterators for static qubits.
@@ -405,12 +408,13 @@ protected:
       const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
           wires, best->layout, &rewriter);
       if (failed(res)) {
-        func.emitError() << "failed to map the function";
+        func.emitError() << "failed to map the " << func->getName()
+                         << " function";
         signalPassFailure();
       }
 
       // Collect statistics.
-      numSwaps = *res - absorbSWAPs(func, rewriter);
+      numSwaps = *res;
 
       // Fix SSA Dominance issues.
       for_each(func.getFunctionBody().getBlocks(),
@@ -452,7 +456,7 @@ private:
 
     for (InsertOp op : reverse(tensorInserts)) {
       rewriter.setInsertionPoint(op);
-      rewriter.create<SinkOp>(op.getLoc(), op.getScalar());
+      SinkOp::create(rewriter, op.getLoc(), op.getScalar());
       rewriter.eraseOp(op);
     }
 
@@ -510,10 +514,6 @@ private:
    * @returns failure() if routing fails.
    */
   FailureOr<std::size_t> refineLayout(func::FuncOp func, Layout& layout) {
-    if (niterations == 0) {
-      return 0;
-    }
-
     SmallVector<WireIterator> wires;
     for (auto op : func.getOps<AllocOp>()) {
       wires.emplace_back(op.getResult());
@@ -537,75 +537,6 @@ private:
     }
 
     return nswaps;
-  }
-
-  /**
-   * @brief Absorb front layer SWAPs by swapping static qubit ops.
-   * @returns the number of absorbed SWAP gates.
-   */
-  [[nodiscard]] static std::size_t absorbSWAPs(func::FuncOp func,
-                                               IRRewriter& rewriter) {
-
-    SmallVector<WireIterator> wires;
-    wires.reserve(range_size(func.getOps<StaticOp>()));
-
-    SmallVector<SWAPOp> readyToAbsorb;
-    readyToAbsorb.reserve((wires.size() + 1) / 2);
-
-    std::size_t nabsorbed{0};
-    while (true) {
-      for_each(func.getOps<StaticOp>(),
-               [&](auto op) { wires.emplace_back(op.getQubit()); });
-
-      std::ignore = walkProgramGraph<WireDirection::Forward>(
-          wires, [&](const ReadyRange& ready, ReleasedOps&) {
-            for (const auto& [op, indices] : ready) {
-              if (isa<SWAPOp>(op)) {
-                readyToAbsorb.emplace_back(op);
-              }
-            }
-            return WalkResult::interrupt();
-          });
-
-      if (readyToAbsorb.empty()) {
-        break;
-      }
-
-      for (auto swapOp : readyToAbsorb) {
-        WireIterator w0(swapOp.getQubit0In());
-        while (!isa<StaticOp>(w0.operation())) {
-          --w0;
-        }
-
-        WireIterator w1(swapOp.getQubit1In());
-        while (!isa<StaticOp>(w1.operation())) {
-          --w1;
-        }
-
-        StaticOp op0 = cast<StaticOp>(w0.operation());
-        StaticOp op1 = cast<StaticOp>(w1.operation());
-        auto i0 = op0.getIndex();
-        auto i1 = op1.getIndex();
-
-        rewriter.replaceAllUsesWith(swapOp.getQubit0Out(),
-                                    swapOp.getQubit1In());
-        rewriter.replaceAllUsesWith(swapOp.getQubit1Out(),
-                                    swapOp.getQubit0In());
-
-        rewriter.replaceOpWithNewOp<StaticOp>(op0, i1);
-        rewriter.replaceOpWithNewOp<StaticOp>(op1, i0);
-
-        rewriter.eraseOp(swapOp);
-      }
-
-      nabsorbed += readyToAbsorb.size();
-
-      // Clear for next iteration.
-      readyToAbsorb.clear();
-      wires.clear();
-    }
-
-    return nabsorbed;
   }
 
   /**
@@ -846,8 +777,9 @@ private:
   template <WireDirection Direction, RoutingMode mode = RoutingMode::Cold>
   FailureOr<std::size_t> route(MutableArrayRef<WireIterator> wires,
                                Layout& layout, IRRewriter* rewriter = nullptr) {
-    std::size_t nswaps{0};
+    using Traits = WireTraversalTraits<Direction>;
 
+    std::size_t nswaps{0};
     while (true) {
       skipExecutableGates<Direction>(wires, layout);
 
@@ -865,10 +797,9 @@ private:
         // must ensure the insertion point is before the multi-qubit gates.
 
         for (auto& it : wires) {
-          if (it == std::default_sentinel) {
-            --it;
-          }
-          --it;
+          std::ranges::advance(it, it == std::default_sentinel
+                                       ? -2 * Traits::stride()
+                                       : -Traits::stride());
         }
       }
 
@@ -918,7 +849,8 @@ private:
         // of the current or subsequent layer or to a sink (and thus
         // std::default_sentinel).
 
-        for_each(wires, [](auto& it) { ++it; });
+        for_each(wires,
+                 [](auto& it) { std::ranges::advance(it, Traits::stride()); });
       }
 
       nswaps += swaps->size();
