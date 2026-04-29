@@ -411,6 +411,7 @@ protected:
         func.emitError() << "failed to map the " << func->getName()
                          << " function";
         signalPassFailure();
+        return;
       }
 
       // Collect statistics.
@@ -657,7 +658,7 @@ private:
         return;
       }
 
-      while (Traits::isActive(curr0)) {
+      while (Traits::isActive(curr1)) {
         std::ranges::advance(curr1, Traits::stride());
       }
 

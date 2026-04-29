@@ -70,7 +70,8 @@ TypedValue<QubitType> Qubits::getHardwareQubit(std::size_t index) const {
 }
 
 std::size_t Qubits::getIndex(TypedValue<QubitType> q) const {
+  assert(valueToIndex_.contains(q));
   const auto& res = valueToIndex_.lookup(q);
   return res.second;
-};
+}
 } // namespace mlir::qco
