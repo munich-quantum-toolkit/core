@@ -25,10 +25,8 @@
 #include "qasm3/passes/ConstEvalPass.hpp"
 #include "qasm3/passes/TypeCheckPass.hpp"
 
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -37,6 +35,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -60,8 +59,8 @@ namespace {
 /// Signature: (builder, gate-operands, evaluated-parameters).
 /// For gates with implicit controls (cx, ccx, ...) all qubits including
 /// the controls are in the qubits array, matching QASM3 operand order.
-using GateFn = std::function<void(QCProgramBuilder&, llvm::ArrayRef<Value>,
-                                  llvm::ArrayRef<double>)>;
+using GateFn =
+    std::function<void(QCProgramBuilder&, ArrayRef<Value>, ArrayRef<double>)>;
 
 /**
  * Build the static gate-name → GateFn dispatch table.
@@ -189,7 +188,7 @@ static const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 
 /// Local qubit scope used during compound gate body expansion.
 /// Maps argument name → vector of MLIR qubit Values.
-using QubitScope = llvm::StringMap<llvm::SmallVector<Value>>;
+using QubitScope = llvm::StringMap<SmallVector<Value>>;
 
 /** AST visitor that translates a QASM3 program directly into the QC dialect.
  *
@@ -232,7 +231,7 @@ private:
 
   /// Measurement result tracking: register name → vector of i1 Values.
   /// Updated each time a measure is emitted. Used for if/else conditions.
-  llvm::StringMap<llvm::SmallVector<Value>> bitValues;
+  llvm::StringMap<SmallVector<Value>> bitValues;
 
   /// Gate library: standard gates + user-defined compound gates
   std::map<std::string, std::shared_ptr<qasm3::Gate>> gates;
@@ -309,7 +308,7 @@ private:
     switch (sizedTy->type) {
     case qasm3::Qubit: {
       auto reg = builder.allocQubitRegister(size);
-      llvm::SmallVector<Value> qubits;
+      SmallVector<Value> qubits;
       qubits.reserve(static_cast<size_t>(size));
       for (int64_t i = 0; i < size; ++i) {
         qubits.push_back(reg[static_cast<size_t>(i)]);
@@ -450,7 +449,7 @@ private:
 
   void visitBarrierStatement(
       std::shared_ptr<qasm3::BarrierStatement> stmt) override {
-    llvm::SmallVector<Value> qubits;
+    SmallVector<Value> qubits;
     for (const auto& gate : stmt->gates) {
       auto resolved = resolveGateOperand(gate, stmt->debugInfo);
       qubits.append(resolved.begin(), resolved.end());
@@ -551,7 +550,7 @@ private:
     bool invert = false;
     size_t nModifierControls = 0;
     // (count, isPositive) per ctrl modifier, in order
-    llvm::SmallVector<std::pair<size_t, bool>> ctrlSpec;
+    SmallVector<std::pair<size_t, bool>> ctrlSpec;
     for (const auto& mod : stmt->modifiers) {
       if (std::dynamic_pointer_cast<qasm3::InvGateModifier>(mod)) {
         invert = !invert;
@@ -570,7 +569,7 @@ private:
     }
 
     // Expand each operand to its qubit Values
-    std::vector<llvm::SmallVector<Value>> expandedOperands;
+    std::vector<SmallVector<Value>> expandedOperands;
     expandedOperands.reserve(stmt->operands.size());
     for (const auto& operand : stmt->operands) {
       expandedOperands.push_back(
@@ -578,8 +577,8 @@ private:
     }
 
     // First nModifierControls slots are modifier-derived controls
-    llvm::SmallVector<Value> posControls;
-    llvm::SmallVector<Value> negControls;
+    SmallVector<Value> posControls;
+    SmallVector<Value> negControls;
     size_t ctrlIdx = 0;
     for (const auto& [n, positive] : ctrlSpec) {
       for (size_t i = 0; i < n; ++i, ++ctrlIdx) {
@@ -608,7 +607,7 @@ private:
     const size_t totalCtrlCount = nModifierControls + implicitCompatControls;
 
     // Remaining slots are the gate's own operands (may broadcast)
-    std::vector<llvm::SmallVector<Value>> gateOperands(
+    std::vector<SmallVector<Value>> gateOperands(
         expandedOperands.begin() + static_cast<std::ptrdiff_t>(totalCtrlCount),
         expandedOperands.end());
 
@@ -654,7 +653,7 @@ private:
     }
 
     for (size_t b = 0; b < broadcastWidth; ++b) {
-      llvm::SmallVector<Value> iterQubits;
+      SmallVector<Value> iterQubits;
       iterQubits.reserve(gateOperands.size());
       for (const auto& ops : gateOperands) {
         iterQubits.push_back(ops.size() > 1 ? ops[b] : ops[0]);
@@ -677,15 +676,14 @@ private:
   }
 
   /// Emit a single gate application, wrapping with ctrl/inv as needed.
-  void emitGate(const GateFn& gateFn, llvm::ArrayRef<Value> qubits,
-                llvm::ArrayRef<double> params,
-                llvm::ArrayRef<Value> posControls,
-                llvm::ArrayRef<Value> negControls, bool invert) {
+  void emitGate(const GateFn& gateFn, ArrayRef<Value> qubits,
+                ArrayRef<double> params, ArrayRef<Value> posControls,
+                ArrayRef<Value> negControls, bool invert) {
     auto inner = [&] { gateFn(builder, qubits, params); };
 
     auto withInv = [&] {
       if (invert) {
-        builder.inv(llvm::function_ref<void()>(inner));
+        builder.inv(function_ref<void()>(inner));
       } else {
         inner();
       }
@@ -700,23 +698,21 @@ private:
     for (auto q : negControls) {
       builder.x(q);
     }
-    llvm::SmallVector<Value> allControls(posControls.begin(),
-                                         posControls.end());
+    SmallVector<Value> allControls(posControls.begin(), posControls.end());
     allControls.append(negControls.begin(), negControls.end());
-    builder.ctrl(allControls, llvm::function_ref<void()>(withInv));
+    builder.ctrl(allControls, function_ref<void()>(withInv));
     for (auto q : negControls) {
       builder.x(q);
     }
   }
 
   /// Inline-expand a compound (user-defined) gate.
-  void
-  applyCompoundGate(const qasm3::CompoundGate& gate,
-                    const std::vector<llvm::SmallVector<Value>>& gateOperands,
-                    llvm::ArrayRef<Value> posControls,
-                    llvm::ArrayRef<Value> negControls,
-                    llvm::ArrayRef<double> params, bool invert,
-                    const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
+  void applyCompoundGate(const qasm3::CompoundGate& gate,
+                         const std::vector<SmallVector<Value>>& gateOperands,
+                         ArrayRef<Value> posControls,
+                         ArrayRef<Value> negControls, ArrayRef<double> params,
+                         bool invert,
+                         const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
     if (gate.targetNames.size() != gateOperands.size()) {
       throw qasm3::CompilerError("Compound gate operand count mismatch.",
                                  debugInfo);
@@ -729,8 +725,8 @@ private:
     // Build local scope: argument name → Values
     QubitScope localScope;
     for (size_t i = 0; i < gate.targetNames.size(); ++i) {
-      localScope[gate.targetNames[i]] = llvm::SmallVector<Value>(
-          gateOperands[i].begin(), gateOperands[i].end());
+      localScope[gate.targetNames[i]] =
+          SmallVector<Value>(gateOperands[i].begin(), gateOperands[i].end());
     }
 
     // Bind parameters as constants
@@ -748,7 +744,7 @@ private:
         } else if (const auto barrier =
                        std::dynamic_pointer_cast<qasm3::BarrierStatement>(
                            bodyStmt)) {
-          llvm::SmallVector<Value> qubits;
+          SmallVector<Value> qubits;
           for (const auto& g : barrier->gates) {
             auto resolved =
                 resolveGateOperandInScope(g, localScope, barrier->debugInfo);
@@ -768,7 +764,7 @@ private:
 
     auto withInv = [&] {
       if (invert) {
-        builder.inv(llvm::function_ref<void()>(bodyFn));
+        builder.inv(function_ref<void()>(bodyFn));
       } else {
         bodyFn();
       }
@@ -780,10 +776,9 @@ private:
       for (auto q : negControls) {
         builder.x(q);
       }
-      llvm::SmallVector<Value> allControls(posControls.begin(),
-                                           posControls.end());
+      SmallVector<Value> allControls(posControls.begin(), posControls.end());
       allControls.append(negControls.begin(), negControls.end());
-      builder.ctrl(allControls, llvm::function_ref<void()>(withInv));
+      builder.ctrl(allControls, function_ref<void()>(withInv));
       for (auto q : negControls) {
         builder.x(q);
       }
@@ -1011,7 +1006,7 @@ private:
   //===--- Operand resolution helpers ------------------------------------===//
 
   /// Resolve a gate operand against the top-level qubit register map.
-  llvm::SmallVector<Value>
+  SmallVector<Value>
   resolveGateOperand(const std::shared_ptr<qasm3::GateOperand>& operand,
                      const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
     return resolveGateOperandInScope(operand, qubitRegisters, debugInfo);
@@ -1021,7 +1016,7 @@ private:
    * compound-gate local argument scope). Returns the MLIR Values for the
    * qubit(s) named by \p operand — a full register or a single indexed qubit.
    */
-  llvm::SmallVector<Value> resolveGateOperandInScope(
+  SmallVector<Value> resolveGateOperandInScope(
       const std::shared_ptr<qasm3::GateOperand>& operand,
       const QubitScope& scope,
       const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
