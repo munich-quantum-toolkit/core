@@ -13,6 +13,7 @@
 #include "GateKind.h"
 
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 
@@ -49,7 +50,7 @@ enum class EulerBasis : std::uint8_t {
  * The result describes the basis alphabet, not the exact gate count. Some
  * decompositions emit fewer than three gates after simplification.
  */
-[[nodiscard]] llvm::SmallVector<GateKind, 3>
+[[nodiscard]] SmallVector<GateKind>
 getGateTypesForEulerBasis(EulerBasis eulerBasis);
 
 } // namespace mlir::qco::decomposition

@@ -13,7 +13,6 @@
 #include "Gate.h"
 
 #include <Eigen/Core>
-#include <llvm/ADT/SmallVector.h>
 
 /// Standard-basis matrix factories for the decomposition layer. Two-qubit
 /// matrices use the same computational-basis index bit order as

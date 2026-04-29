@@ -12,12 +12,12 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Support/LLVM.h>
 
 namespace mlir::qco::decomposition {
 
-[[nodiscard]] llvm::SmallVector<GateKind, 3>
+[[nodiscard]] SmallVector<GateKind>
 getGateTypesForEulerBasis(EulerBasis eulerBasis) {
   switch (eulerBasis) {
   case EulerBasis::ZYZ:

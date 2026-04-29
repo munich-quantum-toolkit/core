@@ -13,6 +13,7 @@
 #include "GateKind.h"
 
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 
@@ -32,10 +33,10 @@ struct Gate {
   GateKind type{GateKind::I};
 
   /// Gate parameters in operation-specific order.
-  llvm::SmallVector<double, 3> parameter;
+  SmallVector<double> parameter;
 
   /// Logical qubit ids used by the gate, in operand order.
-  llvm::SmallVector<QubitId, 2> qubitId = {0};
+  SmallVector<QubitId> qubitId = {0};
 };
 
 } // namespace mlir::qco::decomposition

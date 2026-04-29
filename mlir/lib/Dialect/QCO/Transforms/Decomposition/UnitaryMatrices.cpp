@@ -14,8 +14,8 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 
 #include <Eigen/Core>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cassert>
 #include <cmath>
@@ -171,10 +171,8 @@ Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
     return expandToTwoQubits(getSingleQubitMatrix(gate), gate.qubitId[0]);
   }
   if (gate.qubitId.size() == 2) {
-    const bool validPair01 =
-        gate.qubitId == llvm::SmallVector<QubitId, 2>{0, 1};
-    const bool validPair10 =
-        gate.qubitId == llvm::SmallVector<QubitId, 2>{1, 0};
+    const bool validPair01 = gate.qubitId == SmallVector<QubitId>{0, 1};
+    const bool validPair10 = gate.qubitId == SmallVector<QubitId>{1, 0};
     if (!validPair01 && !validPair10) {
       llvm::reportFatalInternalError(
           "Invalid two-qubit gate qubit IDs: expected {0,1} or {1,0}");

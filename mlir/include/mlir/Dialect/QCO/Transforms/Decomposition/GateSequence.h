@@ -14,6 +14,7 @@
 
 #include <Eigen/Core>
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 
@@ -29,11 +30,8 @@ namespace mlir::qco::decomposition {
  * `helpers::globalPhaseFactor`).
  */
 struct QubitGateSequence {
-  /// Expected short decomposition length; `SmallVector` inline storage size.
-  static constexpr unsigned GATES_INLINE_CAPACITY = 8;
-
   /// Gates in execution order (see struct comment).
-  llvm::SmallVector<Gate, GATES_INLINE_CAPACITY> gates;
+  SmallVector<Gate> gates;
 
   /// Residual global phase in radians, not represented by explicit gates.
   double globalPhase{};
