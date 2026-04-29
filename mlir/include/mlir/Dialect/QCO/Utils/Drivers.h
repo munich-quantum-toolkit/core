@@ -37,8 +37,6 @@ namespace mlir::qco {
 
 using WalkProgramFn = function_ref<WalkResult(Operation*, Qubits&)>;
 
-using WalkUnitFn = function_ref<WalkResult(Operation*, const Qubits&)>;
-
 /**
  * @brief Perform top-down non-recursive walk of all operations within a
  * region of a quantum program and apply a callback function.
