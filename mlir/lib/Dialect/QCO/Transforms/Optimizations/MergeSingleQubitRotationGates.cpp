@@ -82,8 +82,8 @@ struct MergeSingleQubitRotationGatesPattern final
   }
 
   /// Checks if two gates a and b are mergeable via quaternion-based merging.
-  [[nodiscard]] static bool areQuaternionMergeable(Operation& a, Operation& b) {
-    return isMergeable(&a) && isMergeable(&b);
+  [[nodiscard]] static bool areQuaternionMergeable(Operation* a, Operation* b) {
+    return isMergeable(a) && isMergeable(b);
   }
 
   /**
@@ -395,10 +395,8 @@ struct MergeSingleQubitRotationGatesPattern final
     if (!isMergeable(op.getOperation())) {
       return false;
     }
-    auto input = op.getInputQubit(0);
-    auto* defOp = input.getDefiningOp();
-    return defOp == nullptr ||
-           !areQuaternionMergeable(*defOp, *op.getOperation());
+    Operation* defOp = op.getInputQubit(0).getDefiningOp();
+    return defOp == nullptr || !areQuaternionMergeable(defOp, op);
   }
 
   /**
@@ -416,7 +414,7 @@ struct MergeSingleQubitRotationGatesPattern final
 
     WireIterator prev(start.getOutputQubit(0));
     for (auto curr = std::next(prev); curr != std::default_sentinel; ++curr) {
-      if (!areQuaternionMergeable(*prev.operation(), *curr.operation())) {
+      if (!areQuaternionMergeable(prev.operation(), curr.operation())) {
         break;
       }
 
