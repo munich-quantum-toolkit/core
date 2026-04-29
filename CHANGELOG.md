@@ -28,6 +28,12 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
 
+## [3.5.1] - 2026-04-23
+
+### Fixed
+
+- 🐛 Fix malformed include directories in exported `nlohmann_json` CMake targets for component-based installs ([#1662]) ([**@burgholzer**])
+
 ## [3.5.0] - 2026-04-21
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#350)._
@@ -216,6 +222,8 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
 
 ## [3.2.0] - 2025-07-31
 
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#320)._
+
 ### Added
 
 - 🐍 Build Python 3.14 wheels ([#1076]) ([**@denialhaag**])
@@ -334,7 +342,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...HEAD
+[3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.0
 [3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
 [3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
@@ -353,6 +362,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
+[#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637
 [#1635]: https://github.com/munich-quantum-toolkit/core/pull/1635
