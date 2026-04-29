@@ -17,11 +17,10 @@
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 
 #include <string>
 
@@ -35,7 +34,7 @@ namespace mlir {
  * @param stageNumber Current stage number
  * @param totalStages Total number of stages (for progress indication)
  */
-static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
+static void prettyPrintStage(ModuleOp module, const StringRef stageName,
                              const int stageNumber, const int totalStages) {
   llvm::errs() << "\n";
 

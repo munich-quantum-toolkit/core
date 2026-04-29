@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -63,7 +62,7 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   }
 
   OpBuilder builder(main.getBody());
-  llvm::SmallVector<Attribute> attributes;
+  SmallVector<Attribute> attributes;
 
   // Core QIR attributes
   attributes.emplace_back(builder.getStringAttr("entry_point"));

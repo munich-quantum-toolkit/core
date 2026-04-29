@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 

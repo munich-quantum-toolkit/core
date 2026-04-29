@@ -10,15 +10,15 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Casting.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
 
@@ -44,7 +44,7 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
     SmallVector<size_t> indicesToFill;
 
     for (size_t i = 0; i < qubitsIn.size(); ++i) {
-      if (llvm::isa<BarrierOp>(
+      if (isa<BarrierOp>(
               *op.getOutputForInput(qubitsIn[i]).getUsers().begin())) {
         anythingToMerge = true;
         newQubitsOutMap[i] = qubitsIn[i];

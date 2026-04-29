@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
@@ -19,7 +18,6 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qtensor;
@@ -69,7 +67,7 @@ static ExtractOp findMatchingExtractInTensorChain(InsertOp insertOp) {
   }
 
   while (auto* definingOp = current.getDefiningOp()) {
-    if (auto nestedInsertOp = llvm::dyn_cast<InsertOp>(definingOp)) {
+    if (auto nestedInsertOp = dyn_cast<InsertOp>(definingOp)) {
       auto nestedInsertIndex = nestedInsertOp.getIndex();
       if (!getConstantIntValue(nestedInsertIndex)) {
         return nullptr;
@@ -81,7 +79,7 @@ static ExtractOp findMatchingExtractInTensorChain(InsertOp insertOp) {
       current = nestedInsertOp.getDest();
       continue;
     }
-    if (auto extractOp = llvm::dyn_cast<ExtractOp>(definingOp)) {
+    if (auto extractOp = dyn_cast<ExtractOp>(definingOp)) {
       auto extractIndex = extractOp.getIndex();
       if (!getConstantIntValue(extractIndex)) {
         return nullptr;

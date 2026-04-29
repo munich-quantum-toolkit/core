@@ -12,8 +12,8 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -22,7 +22,6 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <utility>
@@ -33,20 +32,20 @@ namespace mlir::qir {
 #include "mlir/Dialect/QIR/Transforms/Passes.h.inc"
 
 [[nodiscard]] static StringAttr getMetadataKey(const Attribute attr) {
-  auto pair = llvm::dyn_cast<ArrayAttr>(attr);
+  auto pair = dyn_cast<ArrayAttr>(attr);
   if (!pair || pair.size() != 2) {
     return {};
   }
-  auto key = llvm::dyn_cast<StringAttr>(pair[0]);
-  if (!key || !llvm::isa<StringAttr>(pair[1])) {
+  auto key = dyn_cast<StringAttr>(pair[0]);
+  if (!key || !isa<StringAttr>(pair[1])) {
     return {};
   }
   return key;
 }
 
-[[nodiscard]] static llvm::StringRef getCalleeName(LLVM::CallOp callOp) {
+[[nodiscard]] static StringRef getCalleeName(LLVM::CallOp callOp) {
   auto calleeAttr = callOp.getCalleeAttr();
-  auto flatRef = llvm::dyn_cast_or_null<FlatSymbolRefAttr>(calleeAttr);
+  auto flatRef = dyn_cast_or_null<FlatSymbolRefAttr>(calleeAttr);
   if (!flatRef) {
     return {};
   }
@@ -105,9 +104,9 @@ static void normalizeQIRMetadata(ModuleOp module) {
       continue;
     }
     if (key.getValue() == "required_num_qubits") {
-      requiredNumQubitsAttr = llvm::cast<ArrayAttr>(attr);
+      requiredNumQubitsAttr = cast<ArrayAttr>(attr);
     } else if (key.getValue() == "required_num_results") {
-      requiredNumResultsAttr = llvm::cast<ArrayAttr>(attr);
+      requiredNumResultsAttr = cast<ArrayAttr>(attr);
     }
   }
 
@@ -166,7 +165,7 @@ struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
 
     LLVM::CallOp allocCall = nullptr;
     for (Operation* user : allocaOp.getResult().getUsers()) {
-      auto callOp = llvm::dyn_cast<LLVM::CallOp>(user);
+      auto callOp = dyn_cast<LLVM::CallOp>(user);
       if (!callOp) {
         return failure();
       }
