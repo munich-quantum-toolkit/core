@@ -22,6 +22,7 @@
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -446,14 +447,14 @@ private:
       rewriter.eraseOp(op);
     }
 
-    const auto inserts = to_vector(func.getOps<InsertOp>());
+    const auto inserts = llvm::to_vector(func.getOps<InsertOp>());
     for (auto op : llvm::reverse(inserts)) {
       rewriter.setInsertionPoint(op);
       SinkOp::create(rewriter, op.getLoc(), op.getScalar());
       rewriter.eraseOp(op);
     }
 
-    auto extracts = to_vector(func.getOps<ExtractOp>());
+    auto extracts = llvm::to_vector(func.getOps<ExtractOp>());
     for (auto [i, extractOp] : enumerate(reverse(extracts))) {
       const auto hw = layout.getHardwareIndex(p + extracts.size() - 1 - i);
       rewriter.setInsertionPoint(extractOp);
