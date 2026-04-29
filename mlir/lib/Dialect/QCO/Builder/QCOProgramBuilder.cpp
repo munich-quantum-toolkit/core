@@ -53,7 +53,7 @@ QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
 
 void QCOProgramBuilder::initialize() {
   // Set insertion point to the module body
-  setInsertionPointToStart(module.getBody());
+  setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, {getI64Type()});
@@ -71,6 +71,13 @@ void QCOProgramBuilder::initialize() {
 Value QCOProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value& QCOProgramBuilder::QubitRegister::operator[](const size_t index) {
+  if (index >= qubits.size()) {
+    llvm::reportFatalUsageError("Qubit index out of bounds");
+  }
+  return qubits[index];
 }
 
 Value QCOProgramBuilder::allocQubit() {
@@ -118,6 +125,17 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   return {.value = qtensor, .qubits = std::move(qubits)};
+}
+
+QCOProgramBuilder::Bit
+QCOProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
+  if (index < 0 || index >= size) {
+    const std::string msg = "Bit index " + std::to_string(index) +
+                            " out of bounds for register '" + name +
+                            "' of size " + std::to_string(size);
+    llvm::reportFatalUsageError(msg.c_str());
+  }
+  return {.registerName = name, .registerSize = size, .registerIndex = index};
 }
 
 QCOProgramBuilder::ClassicalRegister
@@ -902,7 +920,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
-  for (auto op : module.getOps<func::FuncOp>()) {
+  for (auto op : llvm::cast<ModuleOp>(module).getOps<func::FuncOp>()) {
     if (op.getName() == "main") {
       mainFunc = op;
       break;
@@ -958,7 +976,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
-  return module;
+  return llvm::cast<ModuleOp>(module);
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::build(

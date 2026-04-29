@@ -49,7 +49,7 @@ QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
 
 void QIRProgramBuilder::initialize() {
   // Set insertion point to the module body
-  setInsertionPointToStart(module.getBody());
+  setInsertionPointToStart(llvm::cast<ModuleOp>(module).getBody());
 
   // Create main function: () -> i64
   auto funcType = LLVM::LLVMFunctionType::get(getI64Type(), {});
@@ -196,6 +196,17 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   }
 
   return qubits;
+}
+
+QIRProgramBuilder::Bit
+QIRProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
+  if (index < 0 || index >= size) {
+    const std::string msg = "Bit index " + std::to_string(index) +
+                            " out of bounds for register '" + name +
+                            "' of size " + std::to_string(size);
+    llvm::reportFatalUsageError(msg.c_str());
+  }
+  return {.registerName = name, .registerSize = size, .registerIndex = index};
 }
 
 QIRProgramBuilder::ClassicalRegister
@@ -739,7 +750,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
   isFinalized = true;
 
-  return module;
+  return llvm::cast<ModuleOp>(module);
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(

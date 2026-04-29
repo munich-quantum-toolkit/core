@@ -30,20 +30,20 @@ class [[nodiscard]] WireIterator {
 public:
   using iterator_category = std::bidirectional_iterator_tag;
   using difference_type = std::ptrdiff_t;
-  using value_type = mlir::Operation*;
+  using value_type = Operation*;
 
   WireIterator() : op_(nullptr), qubit_(nullptr), isSentinel_(false) {}
-  explicit WireIterator(mlir::Value qubit)
+  explicit WireIterator(Value qubit)
       : op_(qubit.getDefiningOp()), qubit_(qubit), isSentinel_(false) {}
 
   /// @returns the operation the iterator points to.
-  [[nodiscard]] mlir::Operation* operation() const { return op_; }
+  [[nodiscard]] Operation* operation() const { return op_; }
 
   /// @returns the operation the iterator points to.
-  [[nodiscard]] mlir::Operation* operator*() const { return operation(); }
+  [[nodiscard]] Operation* operator*() const { return operation(); }
 
   /// @returns the qubit the iterator points to.
-  [[nodiscard]] mlir::Value qubit() const;
+  [[nodiscard]] Value qubit() const;
 
   WireIterator& operator++() {
     forward();
@@ -83,8 +83,8 @@ private:
   /// @brief Move to the previous operation on the qubit wire.
   void backward();
 
-  mlir::Operation* op_;
-  mlir::Value qubit_;
+  Operation* op_;
+  Value qubit_;
   bool isSentinel_;
 };
 

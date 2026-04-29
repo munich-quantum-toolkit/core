@@ -12,7 +12,7 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <string>
@@ -25,15 +25,15 @@ namespace mlir::qco {
  */
 class [[nodiscard]] Architecture {
 public:
-  using CouplingSet = llvm::DenseSet<std::pair<std::size_t, std::size_t>>;
-  using NeighbourVector = llvm::SmallVector<llvm::SmallVector<std::size_t>>;
+  using CouplingSet = DenseSet<std::pair<std::size_t, std::size_t>>;
+  using NeighbourVector = SmallVector<SmallVector<std::size_t, 4>>;
 
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
         couplingSet_(std::move(couplingSet)), neighbours_(nqubits),
-        dist_(nqubits, llvm::SmallVector<std::size_t>(nqubits, UINT64_MAX)),
-        prev_(nqubits, llvm::SmallVector<std::size_t>(nqubits, UINT64_MAX)) {
+        dist_(nqubits, SmallVector(nqubits, UINT64_MAX)),
+        prev_(nqubits, SmallVector(nqubits, UINT64_MAX)) {
     floydWarshallWithPathReconstruction();
     collectNeighbours();
   }
@@ -61,8 +61,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] llvm::SmallVector<std::size_t>
-  neighboursOf(std::size_t u) const;
+  [[nodiscard]] SmallVector<std::size_t, 4> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the
@@ -71,7 +70,7 @@ public:
   [[nodiscard]] std::size_t maxDegree() const;
 
 private:
-  using Matrix = llvm::SmallVector<llvm::SmallVector<std::size_t>>;
+  using Matrix = SmallVector<SmallVector<std::size_t, 0>, 0>;
 
   /**
    * @brief Find all shortest paths in the coupling map between two qubits.
