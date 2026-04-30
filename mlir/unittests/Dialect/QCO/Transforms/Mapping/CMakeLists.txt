@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(target_name mqt-core-mlir-unittest-mapping)
-add_executable(${target_name} test_mapping.cpp)
+add_executable(${target_name} test_mapping.cpp test_swap_absorb.cpp)
 
 target_link_libraries(
   ${target_name}
