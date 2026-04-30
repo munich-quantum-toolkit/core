@@ -35,13 +35,10 @@ if(BUILD_MQT_CORE_MLIR)
   list(APPEND FETCH_PACKAGES Eigen)
 
   # Fetch jeff-mlir
-  set(BUILD_JEFF_MLIR_TRANSLATION
-      OFF
-      CACHE BOOL "Disable building the translation submodule of jeff-mlir")
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG v0.1.0)
+    GIT_TAG improve-cmake)
   list(APPEND FETCH_PACKAGES jeff-mlir)
 endif()
 
