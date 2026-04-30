@@ -32,7 +32,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
-- 🐛 Fix malformed include directories in exported `nlohmann_json` CMake targets for component-based installs ([#1662]) ([**@burgholzer**])
+- � Fix malformed include directories in exported `nlohmann_json` CMake targets for component-based installs ([#1662]) ([**@burgholzer**])
 
 ## [3.5.0] - 2026-04-21
 

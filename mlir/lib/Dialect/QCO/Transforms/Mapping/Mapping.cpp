@@ -822,8 +822,8 @@ private:
         rewriter.setInsertionPoint(*anchorIt);
 
         for (const auto& [hw0, hw1] : *swapIt) {
-          const auto in0 = qubits.getQubit(hw0);
-          const auto in1 = qubits.getQubit(hw1);
+          const auto in0 = qubits.getHardwareQubit(hw0);
+          const auto in1 = qubits.getHardwareQubit(hw1);
 
           auto insertedOp = SWAPOp::create(rewriter, op->getLoc(), in0, in1);
 

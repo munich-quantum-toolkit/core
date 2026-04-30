@@ -236,4 +236,3 @@ std::string captureIR(ModuleOp module) {
 }
 
 } // namespace mlir
-  const static qco::Architecture::CouplingSet COUPLING{

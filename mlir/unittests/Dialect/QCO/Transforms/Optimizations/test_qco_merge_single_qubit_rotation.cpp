@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -54,7 +55,7 @@ protected:
    */
   struct RotationGate {
     GateType type;
-    SmallVector<double, 4> angles;
+    llvm::SmallVector<double, 4> angles;
   };
 
   MergeSingleQubitRotationGatesTest() : builder(&context) {}
@@ -78,11 +79,12 @@ protected:
   }
 
   /**
-   * @brief Extract constant floating point value from a Value
+   * @brief Extract constant floating point value from a mlir::Value
    */
-  static std::optional<double> toDouble(Value v) {
-    if (auto constOp = v.getDefiningOp<arith::ConstantOp>()) {
-      if (auto floatAttr = dyn_cast<FloatAttr>(constOp.getValue())) {
+  static std::optional<double> toDouble(mlir::Value v) {
+    if (auto constOp = v.getDefiningOp<mlir::arith::ConstantOp>()) {
+      if (auto floatAttr =
+              mlir::dyn_cast<mlir::FloatAttr>(constOp.getValue())) {
         return floatAttr.getValueAsDouble();
       }
     }
@@ -99,7 +101,7 @@ protected:
     module->walk([&](UOp op) {
       uOp = op;
       // stop after finding first UOp
-      return WalkResult::interrupt();
+      return mlir::WalkResult::interrupt();
     });
 
     if (!uOp) {
@@ -140,7 +142,7 @@ protected:
     GPhaseOp gOp = nullptr;
     module->walk([&](GPhaseOp op) {
       gOp = op;
-      return WalkResult::interrupt();
+      return mlir::WalkResult::interrupt();
     });
 
     if (!gOp) {
@@ -160,7 +162,7 @@ protected:
     EXPECT_NEAR(*param, expected, tolerance);
   }
 
-  Value buildRotations(ArrayRef<RotationGate> rotations, Value& q) {
+  Value buildRotations(llvm::ArrayRef<RotationGate> rotations, Value& q) {
     auto qubit = q;
 
     for (const auto& gate : rotations) {
@@ -205,7 +207,7 @@ protected:
    * builder api to build a small quantum circuit, where a qubit is fed through
    * all rotations in the list.
    */
-  LogicalResult testGateMerge(ArrayRef<RotationGate> rotations) {
+  LogicalResult testGateMerge(llvm::ArrayRef<RotationGate> rotations) {
     auto q = builder.allocQubitRegister(1);
 
     buildRotations(rotations, q[0]);
