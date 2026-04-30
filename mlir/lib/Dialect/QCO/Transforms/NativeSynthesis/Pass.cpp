@@ -37,6 +37,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/Pass.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 
@@ -713,8 +714,7 @@ private:
     }
     if (spec.allowRzz &&
         (llvm::isa<XXPlusYYOp>(op) || llvm::isa<XXMinusYYOp>(op))) {
-      llvm::SmallVector<SynthesisCandidate<std::optional<TwoQubitRewritePlan>>,
-                        8>
+      SmallVector<SynthesisCandidate<std::optional<TwoQubitRewritePlan>>, 0>
           combined;
       unsigned nextIndex = 0;
       combined.push_back(SynthesisCandidate<std::optional<TwoQubitRewritePlan>>{
