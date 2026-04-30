@@ -17,6 +17,7 @@
 #include <llvm/ADT/SmallVector.h>
 
 #include <cstdint>
+#include <memory>
 
 /// Types for native gate synthesis: menu, emitters, candidates, score weights.
 
@@ -134,7 +135,7 @@ struct SingleQubitRewritePlan {
 /// by `TwoQubitBasisDecomposer` plus the single-qubit emitter and entangler
 /// basis used when materializing the sequence back into MLIR.
 struct TwoQubitRewritePlan {
-  decomposition::TwoQubitGateSequence sequence;
+  std::shared_ptr<decomposition::TwoQubitGateSequence> sequence;
   SingleQubitEmitterSpec emitter;
   EntanglerBasis entanglerBasis = EntanglerBasis::None;
 };

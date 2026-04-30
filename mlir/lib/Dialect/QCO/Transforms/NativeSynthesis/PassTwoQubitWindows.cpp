@@ -80,6 +80,9 @@ static bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
 static LogicalResult materializeSingleTwoQubitBlock(
     IRRewriter& rewriter, const TwoQubitBlock& block,
     const SynthesisCandidate<TwoQubitRewritePlan>& best) {
+  if (!best.payload.sequence) {
+    return failure();
+  }
   Operation* firstOp = block.ops.front();
   auto firstUnitary = llvm::cast<UnitaryOpInterface>(firstOp);
   const Value inA = firstUnitary.getInputQubit(0);
@@ -91,14 +94,14 @@ static LogicalResult materializeSingleTwoQubitBlock(
   Value newA;
   Value newB;
   if (failed(emitTwoQubitGateSequenceAtLoc(rewriter, firstOp->getLoc(), inA,
-                                           inB, best.payload.sequence, newA,
+                                           inB, *best.payload.sequence, newA,
                                            newB))) {
     firstOp->emitError("failed to emit synthesized two-qubit gate sequence");
     return failure();
   }
-  if (best.payload.sequence.hasGlobalPhase()) {
+  if (best.payload.sequence->hasGlobalPhase()) {
     emitGPhaseIfNonTrivial(rewriter, firstOp->getLoc(),
-                           best.payload.sequence.globalPhase);
+                           best.payload.sequence->globalPhase);
   }
   rewriter.replaceAllUsesWith(outA, newA);
   rewriter.replaceAllUsesWith(outB, newB);

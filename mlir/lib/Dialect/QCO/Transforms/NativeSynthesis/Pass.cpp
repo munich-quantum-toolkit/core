@@ -689,10 +689,14 @@ private:
       ctrl.emitError("controlled gate not allowed by selected profile");
       return failure();
     }
+    if (!best->payload.sequence) {
+      ctrl.emitError("internal error: missing two-qubit rewrite sequence");
+      return failure();
+    }
     rewriter.setInsertionPoint(ctrl);
     if (failed(emitTwoQubitGateSequence(
             rewriter, ctrl.getOperation(), ctrl.getInputControl(0),
-            ctrl.getInputTarget(0), best->payload.sequence))) {
+            ctrl.getInputTarget(0), *best->payload.sequence))) {
       ctrl.emitError(
           "failed to emit two-qubit gate sequence for selected candidate");
       return failure();
@@ -746,19 +750,23 @@ private:
                 collectTwoQubitBasisCandidates(unitary, spec);
             if (const auto* basisBest = selectBestCandidate(
                     llvm::ArrayRef(basisCandidates), weights)) {
+              if (!basisBest->payload.sequence) {
+                return failure();
+              }
               if (succeeded(emitTwoQubitGateSequence(
                       rewriter, op, unitary.getInputQubit(0),
-                      unitary.getInputQubit(1), basisBest->payload.sequence))) {
+                      unitary.getInputQubit(1),
+                      *basisBest->payload.sequence))) {
                 return success();
               }
             }
           }
           return failure();
         }
-        if (best->payload.has_value() &&
+        if (best->payload.has_value() && best->payload->sequence &&
             succeeded(emitTwoQubitGateSequence(
                 rewriter, op, unitary.getInputQubit(0),
-                unitary.getInputQubit(1), best->payload->sequence))) {
+                unitary.getInputQubit(1), *best->payload->sequence))) {
           return success();
         }
       }
@@ -769,10 +777,14 @@ private:
       const auto candidates = collectTwoQubitBasisCandidates(unitary, spec);
       if (const auto* best =
               selectBestCandidate(llvm::ArrayRef(candidates), weights)) {
+        if (!best->payload.sequence) {
+          op->emitError("internal error: missing two-qubit rewrite sequence");
+          return failure();
+        }
         rewriter.setInsertionPoint(op);
         if (succeeded(emitTwoQubitGateSequence(
                 rewriter, op, unitary.getInputQubit(0),
-                unitary.getInputQubit(1), best->payload.sequence))) {
+                unitary.getInputQubit(1), *best->payload.sequence))) {
           return success();
         }
       }

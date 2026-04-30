@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <numbers>
 #include <optional>
 #include <tuple>
@@ -220,7 +221,9 @@ static void tryAddTwoQubitBasisCandidatesForEmitterBasis(
         .candidateClass = CandidateClass::TwoQubitBasisRewrite,
         .metrics = computeGateSequenceMetrics(*seq),
         .enumerationIndex = enumerationIndex++,
-        .payload = {.sequence = *seq,
+        .payload = {.sequence =
+                        std::make_shared<decomposition::TwoQubitGateSequence>(
+                            std::move(*seq)),
                     .emitter = emitter,
                     .entanglerBasis = entangler},
     });
