@@ -22,8 +22,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
-#include <utility>
 #include <cstddef>
+#include <utility>
 
 namespace mlir::qco {
 #define GEN_PASS_DEF_SWAPABSORPTIONPASS
@@ -33,6 +33,7 @@ namespace {
 struct SwapAbsorption : impl::SwapAbsorptionPassBase<SwapAbsorption> {
 public:
   using SwapAbsorptionPassBase::SwapAbsorptionPassBase;
+
 protected:
   void runOnOperation() override {
     ModuleOp anchor = getOperation();
