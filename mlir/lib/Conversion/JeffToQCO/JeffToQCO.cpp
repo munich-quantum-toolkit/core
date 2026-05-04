@@ -48,10 +48,10 @@ using namespace qco;
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h.inc"
 
 /**
- * @brief Creates a modified QCO operation from a Jeff operation
+ * @brief Creates a modified QCO operation from a jeff operation
  *
- * @tparam JeffOpType The operation type of the Jeff operation
- * @param op The Jeff operation instance to convert
+ * @tparam JeffOpType The operation type of the jeff operation
+ * @param op The jeff operation instance to convert
  * @param rewriter The pattern rewriter
  * @param controls The control qubits of the operation
  * @param targets The target qubits of the operation
@@ -87,7 +87,7 @@ createModified(JeffOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 /**
- * @brief Creates a (potentially modified) QCO operation from a Jeff operation.
+ * @brief Creates a (potentially modified) QCO operation from a jeff operation.
  *
  * @details
  * This helper centralizes the "direct vs. ctrl/inv-wrapped" decision and uses
@@ -95,11 +95,11 @@ createModified(JeffOpType& op, ConversionPatternRewriter& rewriter,
  * the QCO op builder.
  *
  * @tparam QCOOpType The QCO operation type to create
- * @tparam JeffOpType The Jeff operation type to convert from
+ * @tparam JeffOpType The jeff operation type to convert from
  * @tparam TargetIndices Indices of target operands to forward
  * @tparam ParamIndices Indices of parameters to forward
  *
- * @param op The Jeff operation instance to convert
+ * @param op The jeff operation instance to convert
  * @param rewriter The pattern rewriter
  * @param controls The control qubits (type-converted) of the operation
  * @param targets The target qubits (type-converted) of the operation
@@ -137,11 +137,11 @@ createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
                         ValueRange parameters = {}) {
   if (targets.size() != NumTargets) {
     return rewriter.notifyMatchFailure(
-        op, "Unexpected number of target qubits for Jeff-to-QCO conversion");
+        op, "Unexpected number of target qubits for jeff-to-QCO conversion");
   }
   if (parameters.size() != NumParams) {
     return rewriter.notifyMatchFailure(
-        op, "Unexpected number of parameters for Jeff-to-QCO conversion");
+        op, "Unexpected number of parameters for jeff-to-QCO conversion");
   }
 
   return createGateFromJeff<QCOOpType, JeffOpType>(
@@ -532,10 +532,10 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
 };
 
 /**
- * @brief Converts one-target, zero-parameter Jeff gate to QCO
+ * @brief Converts one-target, zero-parameter jeff gate to QCO
  *
  * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
+ * @tparam JeffOpType The operation type of the jeff operation
  *
  * @par Example:
  * ```mlir
@@ -566,10 +566,10 @@ struct ConvertJeffOneTargetZeroParameterToQCO final
 };
 
 /**
- * @brief Converts one-target, one-parameter Jeff gate to QCO
+ * @brief Converts one-target, one-parameter jeff gate to QCO
  *
  * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
+ * @tparam JeffOpType The operation type of the jeff operation
  *
  * @par Example:
  * ```mlir
@@ -814,7 +814,7 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
 };
 
 /**
- * @brief Converts the Jeff-style main function to a QCO-style main function
+ * @brief Converts the jeff-style main function to a QCO-style main function
  *
  * @par Example:
  * ```mlir
@@ -873,7 +873,7 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
 };
 
 /**
- * @brief Type converter for Jeff-to-QCO conversion
+ * @brief Type converter for jeff-to-QCO conversion
  *
  * @details
  * Converts `!jeff.qubit` to `!qco.qubit` and `!jeff.qureg` to
@@ -896,7 +896,7 @@ public:
 };
 
 /**
- * @brief Pass for converting Jeff operations to QCO operations
+ * @brief Pass for converting jeff operations to QCO operations
  */
 struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
   using JeffToQCOBase::JeffToQCOBase;
