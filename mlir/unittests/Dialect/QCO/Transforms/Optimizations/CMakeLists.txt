@@ -7,7 +7,8 @@
 # Licensed under the MIT License
 
 set(target_name mqt-core-mlir-unittest-optimizations)
-add_executable(${target_name} test_qco_merge_single_qubit_rotation.cpp)
+add_executable(${target_name} test_qco_merge_single_qubit_rotation.cpp
+  test_cancel_consecutive_hermitian_gates.cpp)
 
 target_link_libraries(
   ${target_name}

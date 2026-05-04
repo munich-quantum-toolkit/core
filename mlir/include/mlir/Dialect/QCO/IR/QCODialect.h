@@ -124,4 +124,8 @@ public:
   };
 };
 
+template <typename ConcreteType>
+class HermitianTrait : public OpTrait::TraitBase<ConcreteType, HermitianTrait> {
+};
+
 } // namespace mlir::qco

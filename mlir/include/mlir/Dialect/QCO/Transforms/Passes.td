@@ -40,6 +40,16 @@ def MergeSingleQubitRotationGates
   }];
 }
 
+def CancelConsecutiveHermitianGates : Pass<"cancel-consecutive-hermitian-gates", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Cancel consecutive hermitian gates";
+  let description = [{
+    Cancels consecutive hermitian gates acting on the same qubit, reducing circuit depth and gate count. 
+    
+    The pass visits all unitary operations and removes a pair of adjacent unitaries on a wire, if both operations have the `HermitianTrait`. 
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
