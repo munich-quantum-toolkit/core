@@ -11,11 +11,9 @@
 #pragma once
 
 #include <Eigen/Core>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
 #include <complex>
 #include <cstddef>

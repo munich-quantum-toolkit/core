@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Support/LLVM.h>
 
 #include <numbers>
 #include <tuple>
@@ -66,7 +67,7 @@ void staticQubitsWithCtrl(QCOProgramBuilder& b) {
 
 void staticQubitsWithInv(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
-  q0 = b.inv({q0}, [&](auto targets) -> llvm::SmallVector<Value> {
+  q0 = b.inv({q0}, [&](auto targets) -> SmallVector<Value> {
     return {b.t(targets[0])};
   })[0];
 }
@@ -175,19 +176,18 @@ void multipleControlledGlobalPhase(QCOProgramBuilder& b) {
 }
 
 void inverseGlobalPhase(QCOProgramBuilder& b) {
-  b.inv({}, [&](mlir::ValueRange /*qubits*/) {
+  b.inv({}, [&](ValueRange /*qubits*/) {
     b.gphase(-0.123);
-    return llvm::SmallVector<mlir::Value>{};
+    return SmallVector<Value>{};
   });
 }
 
 void inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1], qubits[2]};
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
+    SmallVector controls{qubits[0], qubits[1], qubits[2]};
     auto controlsOut = b.mcgphase(-0.123, controls);
-    return llvm::SmallVector<mlir::Value>(controlsOut.begin(),
-                                          controlsOut.end());
+    return SmallVector<Value>(controlsOut.begin(), controlsOut.end());
   });
 }
 
@@ -208,13 +208,13 @@ void multipleControlledIdentity(QCOProgramBuilder& b) {
 
 void nestedControlledIdentity(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.id(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.id(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -225,18 +225,17 @@ void trivialControlledIdentity(QCOProgramBuilder& b) {
 
 void inverseIdentity(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.id(qubits[0])};
-  });
+  b.inv({q[0]},
+        [&](ValueRange qubits) { return SmallVector{b.id(qubits[0])}; });
 }
 
 void inverseMultipleControlledIdentity(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcid({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -257,13 +256,13 @@ void multipleControlledX(QCOProgramBuilder& b) {
 
 void nestedControlledX(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.x(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.x(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -274,18 +273,16 @@ void trivialControlledX(QCOProgramBuilder& b) {
 
 void inverseX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.x(qubits[0])};
-  });
+  b.inv({q[0]}, [&](ValueRange qubits) { return SmallVector{b.x(qubits[0])}; });
 }
 
 void inverseMultipleControlledX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcx({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -312,13 +309,13 @@ void multipleControlledY(QCOProgramBuilder& b) {
 
 void nestedControlledY(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.y(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.y(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -329,18 +326,16 @@ void trivialControlledY(QCOProgramBuilder& b) {
 
 void inverseY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.y(qubits[0])};
-  });
+  b.inv({q[0]}, [&](ValueRange qubits) { return SmallVector{b.y(qubits[0])}; });
 }
 
 void inverseMultipleControlledY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcy({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -367,13 +362,13 @@ void multipleControlledZ(QCOProgramBuilder& b) {
 
 void nestedControlledZ(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.z(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.z(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -384,18 +379,16 @@ void trivialControlledZ(QCOProgramBuilder& b) {
 
 void inverseZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.z(qubits[0])};
-  });
+  b.inv({q[0]}, [&](ValueRange qubits) { return SmallVector{b.z(qubits[0])}; });
 }
 
 void inverseMultipleControlledZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcz({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -422,13 +415,13 @@ void multipleControlledH(QCOProgramBuilder& b) {
 
 void nestedControlledH(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.h(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.h(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -439,18 +432,16 @@ void trivialControlledH(QCOProgramBuilder& b) {
 
 void inverseH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.h(qubits[0])};
-  });
+  b.inv({q[0]}, [&](ValueRange qubits) { return SmallVector{b.h(qubits[0])}; });
 }
 
 void inverseMultipleControlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mch({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -482,13 +473,13 @@ void multipleControlledS(QCOProgramBuilder& b) {
 
 void nestedControlledS(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.s(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.s(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -499,18 +490,16 @@ void trivialControlledS(QCOProgramBuilder& b) {
 
 void inverseS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.s(qubits[0])};
-  });
+  b.inv({q[0]}, [&](ValueRange qubits) { return SmallVector{b.s(qubits[0])}; });
 }
 
 void inverseMultipleControlledS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcs({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -543,13 +532,13 @@ void multipleControlledSdg(QCOProgramBuilder& b) {
 
 void nestedControlledSdg(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.sdg(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.sdg(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -560,18 +549,17 @@ void trivialControlledSdg(QCOProgramBuilder& b) {
 
 void inverseSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.sdg(qubits[0])};
-  });
+  b.inv({q[0]},
+        [&](ValueRange qubits) { return SmallVector{b.sdg(qubits[0])}; });
 }
 
 void inverseMultipleControlledSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcsdg({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -604,13 +592,13 @@ void multipleControlledT(QCOProgramBuilder& b) {
 
 void nestedControlledT(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.t(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.t(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -621,18 +609,16 @@ void trivialControlledT(QCOProgramBuilder& b) {
 
 void inverseT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.t(qubits[0])};
-  });
+  b.inv({q[0]}, [&](ValueRange qubits) { return SmallVector{b.t(qubits[0])}; });
 }
 
 void inverseMultipleControlledT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mct({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -665,13 +651,13 @@ void multipleControlledTdg(QCOProgramBuilder& b) {
 
 void nestedControlledTdg(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.tdg(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.tdg(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -682,18 +668,17 @@ void trivialControlledTdg(QCOProgramBuilder& b) {
 
 void inverseTdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.tdg(qubits[0])};
-  });
+  b.inv({q[0]},
+        [&](ValueRange qubits) { return SmallVector{b.tdg(qubits[0])}; });
 }
 
 void inverseMultipleControlledTdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mctdg({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -726,13 +711,13 @@ void multipleControlledSx(QCOProgramBuilder& b) {
 
 void nestedControlledSx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.sx(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.sx(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -743,18 +728,17 @@ void trivialControlledSx(QCOProgramBuilder& b) {
 
 void inverseSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.sx(qubits[0])};
-  });
+  b.inv({q[0]},
+        [&](ValueRange qubits) { return SmallVector{b.sx(qubits[0])}; });
 }
 
 void inverseMultipleControlledSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcsx({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -787,13 +771,13 @@ void multipleControlledSxdg(QCOProgramBuilder& b) {
 
 void nestedControlledSxdg(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.sxdg(innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.sxdg(innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -804,18 +788,17 @@ void trivialControlledSxdg(QCOProgramBuilder& b) {
 
 void inverseSxdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.sxdg(qubits[0])};
-  });
+  b.inv({q[0]},
+        [&](ValueRange qubits) { return SmallVector{b.sxdg(qubits[0])}; });
 }
 
 void inverseMultipleControlledSxdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcsxdg({qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -848,13 +831,13 @@ void multipleControlledRx(QCOProgramBuilder& b) {
 
 void nestedControlledRx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.rx(0.123, innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.rx(0.123, innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -865,18 +848,18 @@ void trivialControlledRx(QCOProgramBuilder& b) {
 
 void inverseRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.rx(-0.123, qubits[0])};
+  b.inv({q[0]}, [&](ValueRange qubits) {
+    return SmallVector{b.rx(-0.123, qubits[0])};
   });
 }
 
 void inverseMultipleControlledRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcrx(-0.123, {qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -908,13 +891,13 @@ void multipleControlledRy(QCOProgramBuilder& b) {
 
 void nestedControlledRy(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.ry(0.456, innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.ry(0.456, innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -925,18 +908,18 @@ void trivialControlledRy(QCOProgramBuilder& b) {
 
 void inverseRy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.ry(-0.456, qubits[0])};
+  b.inv({q[0]}, [&](ValueRange qubits) {
+    return SmallVector{b.ry(-0.456, qubits[0])};
   });
 }
 
 void inverseMultipleControlledRy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcry(-0.456, {qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 void twoRyOppositePhase(QCOProgramBuilder& b) {
@@ -967,13 +950,13 @@ void multipleControlledRz(QCOProgramBuilder& b) {
 
 void nestedControlledRz(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.rz(0.789, innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.rz(0.789, innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -984,18 +967,18 @@ void trivialControlledRz(QCOProgramBuilder& b) {
 
 void inverseRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.rz(-0.789, qubits[0])};
+  b.inv({q[0]}, [&](ValueRange qubits) {
+    return SmallVector{b.rz(-0.789, qubits[0])};
   });
 }
 
 void inverseMultipleControlledRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcrz(-0.789, {qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -1022,13 +1005,13 @@ void multipleControlledP(QCOProgramBuilder& b) {
 
 void nestedControlledP(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.p(0.123, innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.p(0.123, innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1039,18 +1022,17 @@ void trivialControlledP(QCOProgramBuilder& b) {
 
 void inverseP(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.p(-0.123, qubits[0])};
-  });
+  b.inv({q[0]},
+        [&](ValueRange qubits) { return SmallVector{b.p(-0.123, qubits[0])}; });
 }
 
 void inverseMultipleControlledP(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcp(-0.123, {qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -1077,14 +1059,13 @@ void multipleControlledR(QCOProgramBuilder& b) {
 
 void nestedControlledR(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{
-              b.r(0.123, 0.456, innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.r(0.123, 0.456, innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1095,18 +1076,18 @@ void trivialControlledR(QCOProgramBuilder& b) {
 
 void inverseR(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.r(-0.123, 0.456, qubits[0])};
+  b.inv({q[0]}, [&](ValueRange qubits) {
+    return SmallVector{b.r(-0.123, 0.456, qubits[0])};
   });
 }
 
 void inverseMultipleControlledR(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcr(-0.123, 0.456, {qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -1137,14 +1118,13 @@ void multipleControlledU2(QCOProgramBuilder& b) {
 
 void nestedControlledU2(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{
-              b.u2(0.234, 0.567, innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.u2(0.234, 0.567, innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1156,20 +1136,19 @@ void trivialControlledU2(QCOProgramBuilder& b) {
 void inverseU2(QCOProgramBuilder& b) {
   constexpr double pi = std::numbers::pi;
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{
-        b.u2(-0.567 + pi, -0.234 - pi, qubits[0])};
+  b.inv({q[0]}, [&](ValueRange qubits) {
+    return SmallVector{b.u2(-0.567 + pi, -0.234 - pi, qubits[0])};
   });
 }
 
 void inverseMultipleControlledU2(QCOProgramBuilder& b) {
   constexpr double pi = std::numbers::pi;
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcu2(-0.567 + pi, -0.234 - pi, {qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 void canonicalizeU2ToH(QCOProgramBuilder& b) {
@@ -1203,14 +1182,13 @@ void multipleControlledU(QCOProgramBuilder& b) {
 
 void nestedControlledU(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{
-              b.u(0.1, 0.2, 0.3, innerTargets[0])};
+        b.ctrl({targets[0]}, {targets[1]}, [&](ValueRange innerTargets) {
+          return SmallVector{b.u(0.1, 0.2, 0.3, innerTargets[0])};
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1221,18 +1199,18 @@ void trivialControlledU(QCOProgramBuilder& b) {
 
 void inverseU(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.u(-0.1, -0.3, -0.2, qubits[0])};
+  b.inv({q[0]}, [&](ValueRange qubits) {
+    return SmallVector{b.u(-0.1, -0.3, -0.2, qubits[0])};
   });
 }
 
 void inverseMultipleControlledU(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetOut] =
         b.mcu(-0.1, -0.3, -0.2, {qubits[0], qubits[1]}, qubits[2]);
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
+        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
   });
 }
 
@@ -1273,15 +1251,14 @@ void multipleControlledSwap(QCOProgramBuilder& b) {
 
 void nestedControlledSwap(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.swap(innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res = b.swap(innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1292,20 +1269,19 @@ void trivialControlledSwap(QCOProgramBuilder& b) {
 
 void inverseSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.swap(qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
         b.mcswap({qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1338,15 +1314,14 @@ void multipleControlledIswap(QCOProgramBuilder& b) {
 
 void nestedControlledIswap(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.iswap(innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res = b.iswap(innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1357,20 +1332,19 @@ void trivialControlledIswap(QCOProgramBuilder& b) {
 
 void inverseIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.iswap(qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
         b.mciswap({qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1391,15 +1365,14 @@ void multipleControlledDcx(QCOProgramBuilder& b) {
 
 void nestedControlledDcx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.dcx(innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res = b.dcx(innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1410,20 +1383,19 @@ void trivialControlledDcx(QCOProgramBuilder& b) {
 
 void inverseDcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[1], q[0]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[1], q[0]}, [&](ValueRange qubits) {
     auto res = b.dcx(qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledDcx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[3], q[2]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[3], q[2]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
         b.mcdcx({qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1456,15 +1428,14 @@ void multipleControlledEcr(QCOProgramBuilder& b) {
 
 void nestedControlledEcr(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.ecr(innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res = b.ecr(innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1475,20 +1446,19 @@ void trivialControlledEcr(QCOProgramBuilder& b) {
 
 void inverseEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.ecr(qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
         b.mcecr({qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1515,15 +1485,14 @@ void multipleControlledRxx(QCOProgramBuilder& b) {
 
 void nestedControlledRxx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.rxx(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res = b.rxx(0.123, innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1534,20 +1503,19 @@ void trivialControlledRxx(QCOProgramBuilder& b) {
 
 void inverseRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.rxx(-0.123, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
         b.mcrxx(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1604,15 +1572,14 @@ void multipleControlledRyy(QCOProgramBuilder& b) {
 
 void nestedControlledRyy(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.ryy(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res = b.ryy(0.123, innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1623,20 +1590,19 @@ void trivialControlledRyy(QCOProgramBuilder& b) {
 
 void inverseRyy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.ryy(-0.123, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledRyy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
         b.mcryy(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1683,15 +1649,14 @@ void multipleControlledRzx(QCOProgramBuilder& b) {
 
 void nestedControlledRzx(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.rzx(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res = b.rzx(0.123, innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1702,20 +1667,19 @@ void trivialControlledRzx(QCOProgramBuilder& b) {
 
 void inverseRzx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.rzx(-0.123, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledRzx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
         b.mcrzx(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1742,15 +1706,14 @@ void multipleControlledRzz(QCOProgramBuilder& b) {
 
 void nestedControlledRzz(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.rzz(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res = b.rzz(0.123, innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1761,20 +1724,19 @@ void trivialControlledRzz(QCOProgramBuilder& b) {
 
 void inverseRzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.rzz(-0.123, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledRzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] =
         b.mcrzz(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1821,16 +1783,15 @@ void multipleControlledXxPlusYY(QCOProgramBuilder& b) {
 
 void nestedControlledXxPlusYY(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.xx_plus_yy(0.123, 0.456, innerTargets[0],
-                                         innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res =
+              b.xx_plus_yy(0.123, 0.456, innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1841,20 +1802,19 @@ void trivialControlledXxPlusYY(QCOProgramBuilder& b) {
 
 void inverseXxPlusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.xx_plus_yy(-0.123, 0.456, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] = b.mcxx_plus_yy(
         -0.123, 0.456, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1881,16 +1841,15 @@ void multipleControlledXxMinusYY(QCOProgramBuilder& b) {
 
 void nestedControlledXxMinusYY(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.xx_minus_yy(0.123, 0.456, innerTargets[0],
-                                          innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto res =
+              b.xx_minus_yy(0.123, 0.456, innerTargets[0], innerTargets[1]);
+          return SmallVector{res.first, res.second};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1901,20 +1860,19 @@ void trivialControlledXxMinusYY(QCOProgramBuilder& b) {
 
 void inverseXxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     auto res = b.xx_minus_yy(-0.123, 0.456, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+    return SmallVector{res.first, res.second};
   });
 }
 
 void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
+  b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     const auto& [controlsOut, targetsOut] = b.mcxx_minus_yy(
         -0.123, 0.456, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
+    SmallVector<Value, 2> targets{targetsOut.first, targetsOut.second};
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targets));
   });
 }
 
@@ -1941,15 +1899,15 @@ void barrierMultipleQubits(QCOProgramBuilder& b) {
 
 void singleControlledBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl({q[1]}, {q[0]}, [&](mlir::ValueRange targets) {
-    return llvm::SmallVector<mlir::Value>{b.barrier(targets[0])};
+  b.ctrl({q[1]}, {q[0]}, [&](ValueRange targets) {
+    return SmallVector<Value>{b.barrier(targets[0])};
   });
 }
 
 void inverseBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.barrier(qubits[0])};
+  b.inv({q[0]}, [&](ValueRange qubits) {
+    return SmallVector<Value>{b.barrier(qubits[0])};
   });
 }
 
@@ -1963,124 +1921,119 @@ void twoBarrier(QCOProgramBuilder& b) {
 
 void trivialCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl({}, {q[0], q[1]}, [&](mlir::ValueRange targets) {
+  b.ctrl({}, {q[0], q[1]}, [&](ValueRange targets) {
     auto [q0, q1] = b.rxx(0.123, targets[0], targets[1]);
-    return llvm::SmallVector<mlir::Value>{q0, q1};
+    return SmallVector{q0, q1};
   });
 }
 
 void nestedCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto [q0, q1] = b.rxx(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{q0, q1};
-               });
+  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+        {targets[0]}, {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto [q0, q1] = b.rxx(0.123, innerTargets[0], innerTargets[1]);
+          return SmallVector{q0, q1};
+        });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
 void tripleNestedCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
-  b.ctrl({q[0]}, {q[1], q[2], q[3], q[4]}, [&](mlir::ValueRange targets) {
+  b.ctrl({q[0]}, {q[1], q[2], q[3], q[4]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         {targets[0]}, {targets[1], targets[2], targets[3]},
-        [&](mlir::ValueRange innerTargets) {
+        [&](ValueRange innerTargets) {
           const auto& [innerInnerControlsOut, innerInnerTargetsOut] =
               b.ctrl({innerTargets[0]}, {innerTargets[1], innerTargets[2]},
-                     [&](mlir::ValueRange innerInnerTargets) {
+                     [&](ValueRange innerInnerTargets) {
                        auto [q0, q1] = b.rxx(0.123, innerInnerTargets[0],
                                              innerInnerTargets[1]);
-                       return llvm::SmallVector<mlir::Value>{q0, q1};
+                       return SmallVector{q0, q1};
                      });
-          return llvm::to_vector(llvm::concat<mlir::Value>(
-              innerInnerControlsOut, innerInnerTargetsOut));
+          return llvm::to_vector(
+              llvm::concat<Value>(innerInnerControlsOut, innerInnerTargetsOut));
         });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
 void doubleNestedCtrlTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(6);
-  b.ctrl({q[0], q[1]}, {q[2], q[3], q[4], q[5]}, [&](mlir::ValueRange targets) {
+  b.ctrl({q[0], q[1]}, {q[2], q[3], q[4], q[5]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] =
         b.ctrl({targets[0], targets[1]}, {targets[2], targets[3]},
-               [&](mlir::ValueRange innerTargets) {
+               [&](ValueRange innerTargets) {
                  auto [q0, q1] = b.rxx(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{q0, q1};
+                 return SmallVector{q0, q1};
                });
     return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
 void ctrlInvSandwich(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](mlir::ValueRange targets) {
+  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange targets) {
     auto inner = b.inv(
-        {targets[0], targets[1], targets[2]},
-        [&](mlir::ValueRange innerTargets) {
+        {targets[0], targets[1], targets[2]}, [&](ValueRange innerTargets) {
           auto [innerControlsOut, innerTargetsOut] =
               b.ctrl({innerTargets[0]}, {innerTargets[1], innerTargets[2]},
-                     [&](mlir::ValueRange innerInnerTargets) {
+                     [&](ValueRange innerInnerTargets) {
                        auto [q0, q1] = b.rxx(-0.123, innerInnerTargets[0],
                                              innerInnerTargets[1]);
-                       return llvm::SmallVector<mlir::Value>{q0, q1};
+                       return SmallVector{q0, q1};
                      });
           return llvm::to_vector(
-              llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+              llvm::concat<Value>(innerControlsOut, innerTargetsOut));
         });
-    return llvm::SmallVector<mlir::Value>{inner};
+    return SmallVector<Value>{inner};
   });
 }
 
 void nestedInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto inner =
-        b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange innerQubits) {
-          auto [q0, q1] = b.rxx(0.123, innerQubits[0], innerQubits[1]);
-          return llvm::SmallVector<mlir::Value>{q0, q1};
-        });
-    return llvm::SmallVector<mlir::Value>{inner};
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
+    auto inner = b.inv({qubits[0], qubits[1]}, [&](ValueRange innerQubits) {
+      auto [q0, q1] = b.rxx(0.123, innerQubits[0], innerQubits[1]);
+      return SmallVector{q0, q1};
+    });
+    return SmallVector<Value>{inner};
   });
 }
 
 void tripleNestedInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto inner1 =
-        b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange innerQubits) {
-          auto inner2 = b.inv({innerQubits[0], innerQubits[1]},
-                              [&](mlir::ValueRange innerInnerQubits) {
-                                auto [q0, q1] =
-                                    b.rxx(-0.123, innerInnerQubits[0],
-                                          innerInnerQubits[1]);
-                                return llvm::SmallVector<mlir::Value>{q0, q1};
-                              });
-          return llvm::SmallVector<mlir::Value>{inner2};
-        });
-    return llvm::SmallVector<mlir::Value>{inner1};
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
+    auto inner1 = b.inv({qubits[0], qubits[1]}, [&](ValueRange innerQubits) {
+      auto inner2 = b.inv(
+          {innerQubits[0], innerQubits[1]}, [&](ValueRange innerInnerQubits) {
+            auto [q0, q1] =
+                b.rxx(-0.123, innerInnerQubits[0], innerInnerQubits[1]);
+            return SmallVector{q0, q1};
+          });
+      return SmallVector<Value>{inner2};
+    });
+    return SmallVector<Value>{inner1};
   });
 }
 
 void invCtrlSandwich(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] = b.ctrl(
-        {qubits[0]}, {qubits[1], qubits[2]}, [&](mlir::ValueRange targets) {
-          auto inner = b.inv(
-              {targets[0], targets[1]}, [&](mlir::ValueRange innerQubits) {
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
+    const auto& [controlsOut, targetsOut] =
+        b.ctrl({qubits[0]}, {qubits[1], qubits[2]}, [&](ValueRange targets) {
+          auto inner =
+              b.inv({targets[0], targets[1]}, [&](ValueRange innerQubits) {
                 auto [q0, q1] = b.rxx(0.123, innerQubits[0], innerQubits[1]);
-                return llvm::SmallVector<mlir::Value>{q0, q1};
+                return SmallVector{q0, q1};
               });
-          return llvm::SmallVector<mlir::Value>{inner};
+          return SmallVector<Value>{inner};
         });
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targetsOut));
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targetsOut));
   });
 }
 
@@ -2088,9 +2041,9 @@ void simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange qubits) {
+  b.qcoIf(measureResult, measuredQubit, [&](ValueRange qubits) {
     auto innerQubit = b.x(qubits[0]);
-    return llvm::SmallVector<mlir::Value>{innerQubit};
+    return SmallVector{innerQubit};
   });
 }
 
@@ -2098,10 +2051,10 @@ void ifTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  b.qcoIf(measureResult, {measuredQubit, q[1]}, [&](mlir::ValueRange qubits) {
+  b.qcoIf(measureResult, {measuredQubit, q[1]}, [&](ValueRange qubits) {
     auto innerQubit0 = b.x(qubits[0]);
     auto innerQubit1 = b.x(qubits[1]);
-    return llvm::SmallVector<mlir::Value>{innerQubit0, innerQubit1};
+    return SmallVector{innerQubit0, innerQubit1};
   });
 }
 
@@ -2111,13 +2064,13 @@ void ifElse(QCOProgramBuilder& b) {
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
       measureResult, {measuredQubit},
-      [&](mlir::ValueRange qubits) {
+      [&](ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
+        return SmallVector{innerQubit};
       },
-      [&](mlir::ValueRange qubits) {
+      [&](ValueRange qubits) {
         auto innerQubit = b.z(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
+        return SmallVector{innerQubit};
       });
 }
 
@@ -2125,13 +2078,13 @@ void constantTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
       true, q.qubits,
-      [&](mlir::ValueRange qubits) {
+      [&](ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
+        return SmallVector{innerQubit};
       },
-      [&](mlir::ValueRange qubits) {
+      [&](ValueRange qubits) {
         auto innerQubit = b.z(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
+        return SmallVector{innerQubit};
       });
 }
 
@@ -2139,13 +2092,13 @@ void constantFalseIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
       false, q.qubits,
-      [&](mlir::ValueRange qubits) {
+      [&](ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
+        return SmallVector{innerQubit};
       },
-      [&](mlir::ValueRange qubits) {
+      [&](ValueRange qubits) {
         auto innerQubit = b.z(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
+        return SmallVector{innerQubit};
       });
 }
 
@@ -2153,11 +2106,11 @@ void nestedTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange outerQubits) {
+  b.qcoIf(measureResult, measuredQubit, [&](ValueRange outerQubits) {
     auto innerResult =
-        b.qcoIf(measureResult, outerQubits, [&](mlir::ValueRange innerQubits) {
+        b.qcoIf(measureResult, outerQubits, [&](ValueRange innerQubits) {
           auto innerQubit = b.x(innerQubits[0]);
-          return llvm::SmallVector<mlir::Value>{innerQubit};
+          return SmallVector{innerQubit};
         });
     return llvm::to_vector(innerResult);
   });
@@ -2169,19 +2122,19 @@ void nestedFalseIf(QCOProgramBuilder& b) {
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
       measureResult, measuredQubit,
-      [&](mlir::ValueRange qubits) {
+      [&](ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
+        return SmallVector{innerQubit};
       },
-      [&](mlir::ValueRange outerQubits) {
+      [&](ValueRange outerQubits) {
         auto innerResult = b.qcoIf(
             measureResult, outerQubits,
-            [&](mlir::ValueRange innerQubits) {
+            [&](ValueRange innerQubits) {
               return llvm::to_vector(innerQubits);
             },
-            [&](mlir::ValueRange innerQubits) {
+            [&](ValueRange innerQubits) {
               auto innerQubit = b.z(innerQubits[0]);
-              return llvm::SmallVector<mlir::Value>{innerQubit};
+              return SmallVector{innerQubit};
             });
         return llvm::to_vector(innerResult);
       });

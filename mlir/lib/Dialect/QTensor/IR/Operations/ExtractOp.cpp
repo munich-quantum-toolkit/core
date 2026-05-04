@@ -14,7 +14,6 @@
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qtensor;

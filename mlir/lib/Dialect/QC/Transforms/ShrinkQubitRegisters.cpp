@@ -11,16 +11,14 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Transforms/Passes.h"
 
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cstddef>
@@ -59,12 +57,12 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
       return failure();
     }
 
-    auto memRefType = llvm::dyn_cast<MemRefType>(op.getMemref().getType());
+    auto memRefType = dyn_cast<MemRefType>(op.getMemref().getType());
     if (!memRefType || memRefType.getRank() != 1 ||
         !memRefType.hasStaticShape()) {
       return failure();
     }
-    if (!llvm::isa<QubitType>(memRefType.getElementType())) {
+    if (!isa<QubitType>(memRefType.getElementType())) {
       return failure();
     }
     if (!memRefType.getLayout().isIdentity()) {
@@ -74,15 +72,15 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
       return failure();
     }
 
-    llvm::SmallVector<memref::LoadOp> loadOps;
-    llvm::SmallVector<int64_t> liveIndices;
-    llvm::DenseMap<int64_t, size_t> newIndexByOldIndex;
+    SmallVector<memref::LoadOp> loadOps;
+    SmallVector<int64_t> liveIndices;
+    DenseMap<int64_t, size_t> newIndexByOldIndex;
 
     for (auto* user : op.getMemref().getUsers()) {
       if (user == op.getOperation()) {
         continue;
       }
-      auto loadOp = llvm::dyn_cast<memref::LoadOp>(user);
+      auto loadOp = dyn_cast<memref::LoadOp>(user);
       if (!loadOp) {
         return failure();
       }

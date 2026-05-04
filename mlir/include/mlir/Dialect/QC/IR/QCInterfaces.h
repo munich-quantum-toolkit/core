@@ -10,9 +10,7 @@
 
 #pragma once
 
-#include <llvm/ADT/StringRef.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 
