@@ -101,7 +101,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   EXPECT_TRUE(verify(*program).succeeded());
 
   EXPECT_TRUE(succeeded(convertQCOToJeff(program.get())));
-  printer.record(program.get(), "Converted Jeff IR" + name);
+  printer.record(program.get(), "Converted jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   PassManager pm(context.get());
@@ -110,7 +110,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   pm.addPass(createRemoveDeadValuesPass());
   EXPECT_TRUE(pm.run(program.get()).succeeded());
 
-  printer.record(program.get(), "Canonicalized Converted Jeff IR" + name);
+  printer.record(program.get(), "Canonicalized Converted jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   // Serialize and deserialize to ensure the jeff program is valid
