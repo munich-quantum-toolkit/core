@@ -170,13 +170,13 @@ template <size_t NumParams, typename OpAdaptor>
 }
 
 /**
- * @brief Lowers QCO gates to matching Jeff ops.
+ * @brief Lowers QCO gates to matching jeff ops.
  *
  * @details Uses `getEffectiveTargetOperands` and forwards target and parameter
  * indices into `JeffOpType::create`.
  *
  * @tparam QCOOpType The QCO gate op type
- * @tparam JeffOpType The Jeff op type
+ * @tparam JeffOpType The jeff op type
  * @tparam ExtraAdjoint Whether to XOR the adjoint flag
  * @tparam TargetIndices QCO target indices to forward
  * @tparam ParamIndices QCO parameter indices to forward
@@ -201,7 +201,7 @@ convertJeffGate(QCOOpType op, typename QCOOpType::Adaptor adaptor,
       /*is_adjoint=*/state.inInvOp ^ ExtraAdjoint,
       /*power=*/1);
 
-  // Jeff well-known gates: leading results are transformed targets, then ctrl
+  // jeff well-known gates: leading results are transformed targets, then ctrl
   // outs (same ordering as `getOutQubit` / `getOutCtrlQubits` accessors).
   constexpr std::size_t numTargets = sizeof...(TargetIndices);
   auto results = jeffOp->getResults();
@@ -490,10 +490,10 @@ struct ConvertQCOAllocOpToJeff final : StatefulOpConversionPattern<AllocOp> {
  * @brief Converts qco.static to jeff.qubit_alloc
  *
  * @details
- * The Jeff dialect does not model hardware-mapped or fixed-index static
+ * The jeff dialect does not model hardware-mapped or fixed-index static
  * qubits yet. As a temporary workaround (see discussion on #1626), this
  * lowers `qco.static` to the same `jeff.qubit_alloc` operation used for
- * `qco.alloc`. The static index is not represented in Jeff IR; if Jeff gains
+ * `qco.alloc`. The static index is not represented in jeff IR; if jeff gains
  * static qubit support, this conversion should be revisited.
  *
  * @par Example:
@@ -628,10 +628,10 @@ struct ConvertQCOGPhaseOpToJeff final : StatefulOpConversionPattern<GPhaseOp> {
 };
 
 /**
- * @brief Converts a QCO gate that lowers to a well-known Jeff op.
+ * @brief Converts a QCO gate that lowers to a well-known jeff op.
  *
  * @tparam QCOOpType QCO operation type.
- * @tparam JeffOpType Jeff op type passed to `convertJeffGate` /
+ * @tparam JeffOpType jeff op type passed to `convertJeffGate` /
  * `JeffOpType::create`.
  * @tparam NumTargets Number of target operands (1 or 2 for supported gates).
  * @tparam NumParams Number of real parameters on the QCO op.
@@ -727,7 +727,7 @@ struct ConvertQCOCustomGateToJeff final
       if (adaptor.getOperands().size() != expected) {
         return op.emitOpError()
                << "expected " << expected
-               << " operands (targets + parameters) for QCO→Jeff custom gate "
+               << " operands (targets + parameters) for QCO→jeff custom gate "
                   "conversion, got "
                << adaptor.getOperands().size();
       }
@@ -855,7 +855,7 @@ struct ConvertQCOBarrierOpToJeff final
 };
 
 /**
- * @brief Converts qco.ctrl to Jeff by inlining the region
+ * @brief Converts qco.ctrl to jeff by inlining the region
  *
  * @par Example:
  * ```mlir
@@ -905,7 +905,7 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
 };
 
 /**
- * @brief Converts qco.inv to Jeff by inlining the region
+ * @brief Converts qco.inv to jeff by inlining the region
  *
  * @par Example:
  * ```mlir
@@ -990,7 +990,7 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
 };
 
 /**
- * @brief Converts the QCO-style main function to a Jeff-style main function
+ * @brief Converts the QCO-style main function to a jeff-style main function
  *
  * @par Example:
  * ```mlir
@@ -1052,7 +1052,7 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
 };
 
 /**
- * @brief Type converter for QCO-to-Jeff conversion
+ * @brief Type converter for QCO-to-jeff conversion
  *
  * @details
  * Converts `!qco.qubit` to `!jeff.qubit` and `tensor<?x!qco.qubit>` to
@@ -1086,9 +1086,9 @@ public:
  */
 template <auto...> struct AlwaysFalse : std::false_type {};
 
-/** @brief QCO→Jeff gate lowering category. */
+/** @brief QCO→jeff gate lowering category. */
 enum class JeffKind : std::uint8_t {
-  /// Lower to a Jeff gate from the standard `WellKnownGate` set (Jeff spec:
+  /// Lower to a jeff gate from the standard `WellKnownGate` set (jeff spec:
   /// `QubitGate.gate.wellKnown`).
   WellKnown,
   Custom,       //!< Lower to jeff.custom with a name string.
@@ -1105,20 +1105,20 @@ struct PPRPaulis {
 } // namespace
 
 /**
- * @brief Registers one QCO→Jeff rewrite pattern for a gate described at compile
+ * @brief Registers one QCO→jeff rewrite pattern for a gate described at compile
  * time.
  *
- * @tparam Kind How to lower: well-known Jeff op, `jeff.custom`, `jeff.ppr`, or
+ * @tparam Kind How to lower: well-known jeff op, `jeff.custom`, `jeff.ppr`, or
  *        special-case `qco.u2` → `jeff.u`.
  * @tparam Targets Number of target qubits for the QCO op.
  * @tparam Params Number of real parameters on the QCO op.
  * @tparam QCOOpType MLIR QCO operation type.
- * @tparam JeffOpType Jeff operation type for `JeffKind::WellKnown` (or `void`
+ * @tparam JeffOpType jeff operation type for `JeffKind::WellKnown` (or `void`
  * for custom/PPR paths that do not use it).
- * @tparam JeffBaseAdjoint For well-known ops: whether the Jeff op represents
+ * @tparam JeffBaseAdjoint For well-known ops: whether the jeff op represents
  * the adjoint of the QCO base gate (e.g. S† as `jeff.s` with adjoint set).
  * @param patterns Pattern set to add to.
- * @param typeConverter QCO→Jeff type converter passed to patterns.
+ * @param typeConverter QCO→jeff type converter passed to patterns.
  * @param context MLIR context.
  * @param state Shared lowering state pointer target (patterns store `&state`).
  * @param customName Custom gate name when `Kind` is `JeffKind::Custom` (ignored
@@ -1172,7 +1172,7 @@ static void addQCOToJeffGatePattern(RewritePatternSet& patterns,
 namespace {
 
 /**
- * @brief Pass for converting QCO operations to Jeff operations
+ * @brief Pass for converting QCO operations to jeff operations
  */
 struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
   using QCOToJeffBase::QCOToJeffBase;
