@@ -412,8 +412,7 @@ struct MergeSingleQubitRotationGatesPattern final
    */
   static SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
-    SmallVector<UnitaryOpInterface> chain{start};
-
+    SmallVector chain{start};
     WireIterator prev(start.getOutputQubit(0));
     for (auto curr = std::next(prev); curr != std::default_sentinel; ++curr) {
       if (!areQuaternionMergeable(prev.operation(), curr.operation())) {
@@ -423,7 +422,6 @@ struct MergeSingleQubitRotationGatesPattern final
       chain.emplace_back(cast<UnitaryOpInterface>(*curr.operation()));
       prev = curr;
     }
-
     return chain;
   }
 
