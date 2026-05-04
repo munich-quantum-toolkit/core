@@ -212,7 +212,8 @@ def GPhaseOp
   let hasCanonicalizer = 1;
 }
 
-def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter, HermitianTrait]> {
+def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+                                 HermitianTrait]> {
   let summary = "Apply an Id gate to a qubit";
   let description = [{
         Applies an Id gate to a qubit and returns the transformed qubit.
@@ -236,7 +237,8 @@ def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter, Her
   let hasCanonicalizer = 1;
 }
 
-def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter, HermitianTrait]> {
+def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+                               HermitianTrait]> {
   let summary = "Apply an X gate to a qubit";
   let description = [{
         Applies an X gate to a qubit and returns the transformed qubit.
@@ -260,7 +262,8 @@ def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter, Hermi
   let hasCanonicalizer = 1;
 }
 
-def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter, HermitianTrait]> {
+def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+                               HermitianTrait]> {
   let summary = "Apply a Y gate to a qubit";
   let description = [{
         Applies a Y gate to a qubit and returns the transformed qubit.
@@ -284,7 +287,8 @@ def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter, Hermi
   let hasCanonicalizer = 1;
 }
 
-def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter, HermitianTrait]> {
+def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+                               HermitianTrait]> {
   let summary = "Apply a Z gate to a qubit";
   let description = [{
         Applies a Z gate to a qubit and returns the transformed qubit.
@@ -308,7 +312,8 @@ def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter, Hermi
   let hasCanonicalizer = 1;
 }
 
-def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter, HermitianTrait]> {
+def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+                               HermitianTrait]> {
   let summary = "Apply a H gate to a qubit";
   let description = [{
         Applies a H gate to a qubit and returns the transformed qubit.
@@ -687,8 +692,8 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
   let hasCanonicalizer = 1;
 }
 
-def SWAPOp
-    : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter, HermitianTrait]> {
+def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
+                                     HermitianTrait]> {
   let summary = "Apply a SWAP gate to two qubits";
   let description = [{
         Applies a SWAP gate to two qubits and returns the transformed qubits.
