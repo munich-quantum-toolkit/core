@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 
