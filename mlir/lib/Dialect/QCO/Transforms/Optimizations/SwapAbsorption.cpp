@@ -38,7 +38,6 @@ protected:
   void runOnOperation() override {
     ModuleOp anchor = getOperation();
     IRRewriter rewriter(&getContext());
-    insertStatics(anchor, rewriter);
 
     for (auto func : anchor.getOps<func::FuncOp>()) {
       SmallVector<WireIterator> wires;
@@ -75,48 +74,6 @@ protected:
         rewriter.replaceAllUsesWith(out0, op1.getQubit());
         rewriter.replaceAllUsesWith(out1, op0.getQubit());
         rewriter.eraseOp(swapOp);
-      }
-    }
-  }
-
-private:
-  static void insertStatics(ModuleOp anchor, IRRewriter& rewriter) {
-    for (auto func : anchor.getOps<func::FuncOp>()) {
-      SmallVector<Operation*> worklist;
-      for (Operation& op : func.getOps()) {
-        worklist.emplace_back(&op);
-      }
-
-      std::size_t n = llvm::range_size(func.getOps<qtensor::ExtractOp>()) - 1;
-      for (Operation* op : llvm::reverse(worklist)) {
-        rewriter.setInsertionPoint(op);
-
-        if (auto tensorDealloc = dyn_cast<qtensor::DeallocOp>(op)) {
-          rewriter.eraseOp(tensorDealloc);
-          continue;
-        }
-
-        if (auto tensorInsert = dyn_cast<qtensor::InsertOp>(op)) {
-          auto q = tensorInsert.getScalar();
-          rewriter.create<qco::SinkOp>(rewriter.getUnknownLoc(), q);
-          rewriter.eraseOp(tensorInsert);
-          continue;
-        }
-
-        if (auto tensorExtract = dyn_cast<qtensor::ExtractOp>(op)) {
-          auto q = tensorExtract.getResult();
-          auto staticOp =
-              rewriter.create<qco::StaticOp>(rewriter.getUnknownLoc(), n);
-          rewriter.replaceAllUsesWith(q, staticOp.getQubit());
-          rewriter.eraseOp(tensorExtract);
-          n--;
-          continue;
-        }
-
-        if (auto tensorAlloc = dyn_cast<qtensor::AllocOp>(op)) {
-          rewriter.eraseOp(tensorAlloc);
-          continue;
-        }
       }
     }
   }
