@@ -61,9 +61,9 @@ TEST_F(SwapAbsorbPassTest, PassDoesNotChangeSwaplessProgram) {
   qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  const auto q00 = builder.allocQubit();
-  const auto q10 = builder.allocQubit();
-
+  const auto q00 = builder.staticQubit(0);
+  const auto q10 = builder.staticQubit(1);
+  
   const auto q01 = builder.h(q00);
   const auto [q02, q11] = builder.cx(q01, q10);
 
