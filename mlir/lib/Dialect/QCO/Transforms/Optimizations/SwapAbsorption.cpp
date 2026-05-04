@@ -8,8 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
@@ -17,13 +15,15 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+
+#include <utility>
+#include <cstddef>
 
 namespace mlir::qco {
 #define GEN_PASS_DEF_SWAPABSORPTIONPASS
@@ -33,7 +33,7 @@ namespace {
 struct SwapAbsorption : impl::SwapAbsorptionPassBase<SwapAbsorption> {
 public:
   using SwapAbsorptionPassBase::SwapAbsorptionPassBase;
-
+protected:
   void runOnOperation() override {
     ModuleOp anchor = getOperation();
     IRRewriter rewriter(&getContext());
