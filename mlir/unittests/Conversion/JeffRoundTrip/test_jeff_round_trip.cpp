@@ -115,7 +115,7 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
 
   // Serialize and deserialize to ensure the jeff program is valid
   auto data = serialize(*program);
-  program = deserialize(context.get(), *data);
+  program = deserialize(context.get(), data);
 
   EXPECT_TRUE(succeeded(convertJeffToQCO(program.get())));
   printer.record(program.get(), "Converted QCO IR" + name);
