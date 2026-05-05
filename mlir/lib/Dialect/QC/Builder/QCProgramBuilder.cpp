@@ -114,12 +114,13 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 
   SmallVector<Value> qubits;
   qubits.reserve(size);
+  auto& loadedQubitsForRegion = loadedQubits[memref->getParentRegion()][memref];
   for (int64_t i = 0; i < size; ++i) {
     auto index = arith::ConstantIndexOp::create(*this, i);
     auto load = memref::LoadOp::create(*this, memref, index.getResult());
     const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
-    loadedQubits[load->getParentRegion()][memref].insert(index);
+    loadedQubitsForRegion.insert(index);
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
@@ -496,21 +497,18 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
   checkFinalized();
 
   auto loc = getLoc();
-  auto lb = utils::variantToValue(*this, loc, lowerbound);
-  auto ub = utils::variantToValue(*this, loc, upperbound);
-  auto stepSize = utils::variantToValue(*this, loc, step);
+  auto lb = variantToValue(*this, loc, lowerbound);
+  auto ub = variantToValue(*this, loc, upperbound);
+  auto stepSize = variantToValue(*this, loc, step);
 
   scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
-                     [&](OpBuilder& b, Location, Value iv, ValueRange) {
-                       const OpBuilder::InsertionGuard guard(*this);
-                       auto* insertionBlock = b.getInsertionBlock();
-                       setInsertionPointToStart(insertionBlock);
-                       regionStack.emplace_back(insertionBlock->getParent());
+                     [&](OpBuilder& b, Location l, Value iv, ValueRange) {
+                       regionStack.emplace_back(
+                           b.getInsertionBlock()->getParent());
                        body(iv);
-                       scf::YieldOp::create(b, loc);
+                       scf::YieldOp::create(b, l);
                        regionStack.pop_back();
                      });
-
   return *this;
 }
 
@@ -522,18 +520,12 @@ QCProgramBuilder::scfWhile(const function_ref<void()>& beforeBody,
   scf::WhileOp::create(
       *this, TypeRange{}, ValueRange{},
       [&](OpBuilder& b, Location, ValueRange) {
-        const OpBuilder::InsertionGuard guard(*this);
-        auto* insertionBlock = b.getInsertionBlock();
-        setInsertionPointToStart(insertionBlock);
-        regionStack.emplace_back(insertionBlock->getParent());
+        regionStack.emplace_back(b.getInsertionBlock()->getParent());
         beforeBody();
         regionStack.pop_back();
       },
       [&](OpBuilder& b, Location loc, ValueRange) {
-        const OpBuilder::InsertionGuard guard(*this);
-        auto* insertionBlock = b.getInsertionBlock();
-        setInsertionPointToStart(insertionBlock);
-        regionStack.emplace_back(insertionBlock->getParent());
+        regionStack.emplace_back(b.getInsertionBlock()->getParent());
         afterBody();
         scf::YieldOp::create(b, loc);
         regionStack.pop_back();
@@ -548,14 +540,11 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
                         const function_ref<void()>& elseBody) {
   checkFinalized();
 
-  auto condition = utils::variantToValue(*this, getLoc(), cond);
+  auto condition = variantToValue(*this, getLoc(), cond);
 
   auto buildRegion = [&](const function_ref<void()>& body) {
     return [&, body](OpBuilder& b, Location loc) {
-      const OpBuilder::InsertionGuard guard(*this);
-      auto* insertionBlock = b.getInsertionBlock();
-      setInsertionPointToStart(insertionBlock);
-      regionStack.emplace_back(insertionBlock->getParent());
+      regionStack.emplace_back(b.getInsertionBlock()->getParent());
       body();
       scf::YieldOp::create(b, loc);
       regionStack.pop_back();
@@ -573,7 +562,6 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 
 QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
   checkFinalized();
-
   scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
 }
