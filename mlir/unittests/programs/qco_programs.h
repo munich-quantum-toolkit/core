@@ -969,6 +969,22 @@ void doubleNestedCtrlTwoQubits(QCOProgramBuilder& b);
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
 void ctrlInvSandwich(QCOProgramBuilder& b);
 
+/// Creates a circuit with two consecutive equivalent ctrl modifiers with one
+/// target qubit.
+void evenConsecutiveCtrlsOneTarget(QCOProgramBuilder& b);
+
+/// Creates a circuit with three consecutive equivalent ctrl modifiers with one
+/// target qubit.
+void oddConsecutiveCtrlsOneTarget(QCOProgramBuilder& b);
+
+/// Creates a circuit with two consecutive equivalent ctrl modifiers with two
+/// target qubits.
+void evenConsecutiveCtrlsTwoTargets(QCOProgramBuilder& b);
+
+/// Creates a circuit with three consecutive equivalent ctrl modifiers with two
+/// target qubits.
+void oddConsecutiveCtrlsTwoTargets(QCOProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with nested inverse modifiers.

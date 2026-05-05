@@ -9,11 +9,13 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -33,6 +35,70 @@ using namespace mlir;
 using namespace mlir::qco;
 
 namespace {
+
+/**
+ * @brief Remove subsequent equivalent ctrl operation on the same qubits.
+ */
+struct RemoveSubsequentEquivalentCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    assert(!op.use_empty() && "linear typing assumption violated!");
+
+    // All uses point to the same operation.
+    if (!llvm::all_equal(op->getUsers())) {
+      return failure();
+    }
+
+    // The CtrlOp has a removable body unitary.
+    UnitaryOpInterface bodyU = op.getBodyUnitary();
+    if (!isa<XOp, YOp, ZOp, HOp, SWAPOp>(bodyU)) {
+      return failure();
+    }
+
+    // The next operation is also a CtrlOp.
+    auto nextOp = dyn_cast<CtrlOp>(*(op->getUsers().begin()));
+    if (!nextOp) {
+      return failure();
+    }
+
+    // The next operation applies the equivalent body unitary.
+    if (nextOp.getBodyUnitary()->getName() != bodyU->getName()) {
+      return failure();
+    }
+
+    // Both operations have the same number of controls and targets.
+    if (op.getNumQubits() != nextOp.getNumQubits() ||
+        op.getNumControls() != nextOp.getNumControls()) {
+      return failure();
+    }
+
+    // Both operations have the same orientation for the control qubits:
+    // The i-th output is the i-th input of the next op.
+    for (const auto& [opOut, nextOpIn] :
+         llvm::zip_equal(op.getControlsOut(), nextOp.getControlsIn())) {
+      if (opOut != nextOpIn) {
+        return failure();
+      }
+    }
+
+    // Both operations have the same orientation for the target qubits:
+    // The i-th output is the i-th input of the next op.
+    for (const auto& [opOut, nextOpIn] :
+         llvm::zip_equal(op.getTargetsOut(), nextOp.getTargetsIn())) {
+      if (opOut != nextOpIn) {
+        return failure();
+      }
+    }
+
+    // Remove both ops and rewire accordingly.
+    rewriter.replaceOp(nextOp, op.getInputQubits());
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
 
 /**
  * @brief Merge nested control modifiers into a single one.
@@ -337,7 +403,8 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl>(context);
+  results.add<RemoveSubsequentEquivalentCtrl, MergeNestedCtrl, ReduceCtrl>(
+      context);
 }
 
 std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {

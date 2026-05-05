@@ -175,19 +175,30 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOCtrlOpTest, QCOTest,
-    testing::Values(QCOTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
-                                MQT_NAMED_BUILDER(rxx)},
-                    QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
-                                MQT_NAMED_BUILDER(multipleControlledRxx)},
-                    QCOTestCase{"TripleNestedCtrl",
-                                MQT_NAMED_BUILDER(tripleNestedCtrl),
-                                MQT_NAMED_BUILDER(tripleControlledRxx)},
-                    QCOTestCase{"CtrlInvSandwich",
-                                MQT_NAMED_BUILDER(ctrlInvSandwich),
-                                MQT_NAMED_BUILDER(multipleControlledRxx)},
-                    QCOTestCase{"DoubleNestedCtrlTwoQubits",
-                                MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
-                                MQT_NAMED_BUILDER(fourControlledRxx)}));
+    testing::Values(
+        QCOTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
+                    MQT_NAMED_BUILDER(rxx)},
+        QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
+                    MQT_NAMED_BUILDER(multipleControlledRxx)},
+        QCOTestCase{"TripleNestedCtrl", MQT_NAMED_BUILDER(tripleNestedCtrl),
+                    MQT_NAMED_BUILDER(tripleControlledRxx)},
+        QCOTestCase{"CtrlInvSandwich", MQT_NAMED_BUILDER(ctrlInvSandwich),
+                    MQT_NAMED_BUILDER(multipleControlledRxx)},
+        QCOTestCase{"DoubleNestedCtrlTwoQubits",
+                    MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
+                    MQT_NAMED_BUILDER(fourControlledRxx)},
+        QCOTestCase{"EvenConsecutiveCtrlsOneTarget",
+                    MQT_NAMED_BUILDER(evenConsecutiveCtrlsOneTarget),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"OddConsecutiveCtrlsOneTarget",
+                    MQT_NAMED_BUILDER(oddConsecutiveCtrlsOneTarget),
+                    MQT_NAMED_BUILDER(singleControlledX)},
+        QCOTestCase{"EvenConsecutiveCtrlsTwoTarget",
+                    MQT_NAMED_BUILDER(evenConsecutiveCtrlsTwoTargets),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"OddConsecutiveCtrlsTwoTarget",
+                    MQT_NAMED_BUILDER(oddConsecutiveCtrlsTwoTargets),
+                    MQT_NAMED_BUILDER(singleControlledSwap)}));
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp

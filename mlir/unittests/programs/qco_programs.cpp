@@ -1994,6 +1994,41 @@ void ctrlInvSandwich(QCOProgramBuilder& b) {
   });
 }
 
+void evenConsecutiveCtrlsOneTarget(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto& [q01, q11] = b.cx(q[0], q[1]);
+  std::ignore = b.cx(q01, q11);
+}
+
+void oddConsecutiveCtrlsOneTarget(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto& [q01, q11] = b.cx(q[0], q[1]);
+  const auto& [q02, q12] = b.cx(q01, q11);
+  std::ignore = b.cx(q02, q12);
+}
+
+void evenConsecutiveCtrlsTwoTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  const auto out0 = b.cswap(q[0], q[1], q[2]);
+  const auto q01 = out0.first;
+  const auto [q11, q21] = out0.second;
+
+  std::ignore = b.cswap(q01, q11, q21);
+}
+
+void oddConsecutiveCtrlsTwoTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  const auto out0 = b.cswap(q[0], q[1], q[2]);
+  const auto q01 = out0.first;
+  const auto [q11, q21] = out0.second;
+
+  const auto out1 = b.cswap(q01, q11, q21);
+  const auto q02 = out1.first;
+  const auto [q12, q22] = out1.second;
+
+  std::ignore = b.cswap(q02, q12, q22);
+}
+
 void nestedInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) {
