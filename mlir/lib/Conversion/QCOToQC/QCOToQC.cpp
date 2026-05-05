@@ -843,11 +843,11 @@ struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
  * }
  * ```
  */
-struct ConvertQCOIfOp final : OpConversionPattern<qco::IfOp> {
+struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::IfOp op, OpAdaptor adaptor,
+  matchAndRewrite(IfOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new if operation
     auto newIf = scf::IfOp::create(rewriter, op.getLoc(), TypeRange{},
