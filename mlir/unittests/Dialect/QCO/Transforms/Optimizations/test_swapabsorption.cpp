@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
@@ -77,4 +78,27 @@ TEST_F(SwapAbsorbPassTest, PassDoesNotChangeSwaplessProgram) {
   ASSERT_TRUE(mlir::OperationEquivalence::isEquivalentTo(
       moduleThroughPass.get(), originalModule,
       mlir::OperationEquivalence::Flags::IgnoreLocations));
+}
+
+TEST_F(SwapAbsorbPassTest, PassReordersTwoQubitCircuitWithLeadingSwap) {
+
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto q00 = builder.staticQubit(0);
+  const auto q10 = builder.staticQubit(1);
+  
+  const auto [q01, q11] = builder.swap(q00, q10);
+
+  const auto q02 = builder.id(q01);
+  const auto q12 = builder.id(q11);
+
+  builder.sink(q02);
+  builder.sink(q12);
+
+  auto moduleThroughPass = builder.finalize();
+  applySwapAbsorb(moduleThroughPass);
+
+  ASSERT_EQ(q10, ((IdOp)q02.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q00, ((IdOp)q12.getDefiningOp()).getInputQubit(0));
 }
