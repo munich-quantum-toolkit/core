@@ -422,13 +422,15 @@ static void insertAllExtractedQubits(LoweringState& state, Operation* target,
   }
 
   // Iterate over all used memrefs
+  auto& qubitsFromRegion = state.extractedQubits[region];
+  auto& qubitInfoFromRegion = state.qubitInfoMap[region];
   for (auto memref : memrefs) {
-    auto& extractedQubits = state.extractedQubits[region][memref];
+    auto& extractedQubits = qubitsFromRegion[memref];
     // Insert all extracted qubits
     for (auto qubit : extractedQubits) {
       auto tensor = lookupMappedTensor(state, anchor, memref);
       auto qcoQubit = lookupMappedQubit(state, anchor, qubit);
-      auto index = state.qubitInfoMap[region][qubit].index;
+      auto index = qubitInfoFromRegion[qubit].index;
       auto insertOp = qtensor::InsertOp::create(rewriter, target->getLoc(),
                                                 qcoQubit, tensor, index);
       // Update the tensor
@@ -451,12 +453,14 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
     anchor = target;
   }
   // Iterate over all used memrefs
+  auto& qubitsFromRegion = state.extractedQubits[region];
+  auto& qubitInfoFromRegion = state.qubitInfoMap[region];
   for (auto& memref : memrefs) {
-    auto& extractedQubits = state.extractedQubits[region][memref];
+    auto& extractedQubits = qubitsFromRegion[memref];
     // Extract all inserted qubits
     for (auto qubit : extractedQubits) {
       auto tensor = lookupMappedTensor(state, anchor, memref);
-      auto index = state.qubitInfoMap[region][qubit].index;
+      auto index = qubitInfoFromRegion[qubit].index;
       auto insertOp =
           qtensor::ExtractOp::create(rewriter, target->getLoc(), tensor, index);
       assignMappedTensor(state, anchor, memref, insertOp.getOutTensor());
@@ -490,7 +494,7 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
 
 /**
  * @brief Collects all the QC qubit and memref references used by an scf
- * operation and store them in the maps
+ * operation and stores them in the maps
  *
  * @param op The operation that is currently traversed
  * @param state The lowering state
@@ -501,8 +505,6 @@ static std::pair<SetVector<Value>, SetVector<Value>>
 collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
   // Get the regions of the current operation
   const auto& regions = op->getRegions();
-  SetVector<Value> uniqueQubits;
-  SetVector<Value> uniqueRegisters;
   auto& regionQubitMap = state->regionQubitMap[op];
   auto& regionRegisterMap = state->regionRegisterMap[op];
 
@@ -854,11 +856,11 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
  * qco.sink %q_final : !qco.qubit
  * ```
  */
-struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
+struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::DeallocOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto& qubitMap = state.qubitMap[op->getParentRegion()];
@@ -1337,7 +1339,7 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
     auto& newBeforeRegion = newWhileOp.getBefore();
     auto& newAfterRegion = newWhileOp.getAfter();
 
-    const SmallVector<Location> locs(qcoTargets.size(), op->getLoc());
+    const SmallVector locs(qcoTargets.size(), op->getLoc());
 
     // Create the new blocks and move the contents from the old blocks into the
     // new ones
@@ -1411,8 +1413,8 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new IfOp
-    auto newIfOp = qco::IfOp::create(rewriter, op->getLoc(), op.getCondition(),
-                                     qcoTargets);
+    auto newIfOp =
+        IfOp::create(rewriter, op->getLoc(), op.getCondition(), qcoTargets);
     assignMappedTensors(state, op.getOperation(), registerMap,
                         newIfOp.getResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubitMap,
@@ -1425,7 +1427,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     auto& thenRegion = newIfOp.getThenRegion();
     auto& elseRegion = newIfOp.getElseRegion();
 
-    const SmallVector<Location> locs(qcoTargets.size(), op->getLoc());
+    const SmallVector locs(qcoTargets.size(), op->getLoc());
 
     // Create the new blocks and move the contents from the old blocks into the
     // new ones
@@ -1489,7 +1491,7 @@ struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     insertAllExtractedQubits(state, op.getOperation(), rewriter);
     SmallVector<Value> targets = resolveAllValues(state, operation);
 
-    if (isa<qco::IfOp>(op->getParentOp())) {
+    if (isa<IfOp>(op->getParentOp())) {
       rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
     } else {
       rewriter.replaceOpWithNewOp<scf::YieldOp>(op, targets);
@@ -1606,8 +1608,7 @@ protected:
               llvm::any_of(parentOp->getOperandTypes(), isQCOType);
           const auto terminatorHasQubitTypes =
               llvm::any_of(op->getOperandTypes(), isQCOType);
-          return !parentHasQubitTypes ||
-                 (parentHasQubitTypes && terminatorHasQubitTypes);
+          return !parentHasQubitTypes || terminatorHasQubitTypes;
         });
 
     // Register operation conversion patterns with state tracking.
