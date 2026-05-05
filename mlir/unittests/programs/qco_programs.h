@@ -997,7 +997,6 @@ void consecutiveCtrlsInequivalentControlCnt(QCOProgramBuilder& b);
 /// target qubit order.
 void consecutiveCtrlsInequivalentTargetOrder(QCOProgramBuilder& b);
 
-
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with nested inverse modifiers.
