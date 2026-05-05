@@ -915,9 +915,9 @@ ValueRange QCOProgramBuilder::scfFor(
   checkFinalized();
 
   auto loc = getLoc();
-  auto lb = utils::variantToValue(*this, loc, lowerbound);
-  auto ub = utils::variantToValue(*this, loc, upperbound);
-  auto stepSize = utils::variantToValue(*this, loc, step);
+  auto lb = variantToValue(*this, loc, lowerbound);
+  auto ub = variantToValue(*this, loc, upperbound);
+  auto stepSize = variantToValue(*this, loc, step);
   // Get the updated arguments after inserting the extracted qubits
   auto updatedArgs = insertExtractedQubits(initArgs);
 
@@ -927,7 +927,7 @@ ValueRange QCOProgramBuilder::scfFor(
   auto iv = forBody->getArgument(0);
   auto iterArgs = forBody->getArguments().drop_front();
 
-  const OpBuilder::InsertionGuard guard(*this);
+  const InsertionGuard guard(*this);
   setInsertionPointToStart(forBody);
 
   // Update the qubit values to the iter args
@@ -960,42 +960,36 @@ ValueRange QCOProgramBuilder::scfWhile(
   // Create the empty while operation
   auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), updatedArgs);
 
-  const SmallVector<Location> locs(initArgs.size(), getLoc());
-  const OpBuilder::InsertionGuard guard(*this);
+  const SmallVector locs(initArgs.size(), getLoc());
+  const InsertionGuard guard(*this);
 
-  // Construct the blocks
-  auto* beforeBlock =
-      createBlock(&whileOp.getBefore(), {}, initArgs.getTypes(), locs);
-  auto* afterBlock =
-      createBlock(&whileOp.getAfter(), {}, initArgs.getTypes(), locs);
-
-  // Create the body regions
+  // Helper for creating the body regions
   auto createBody =
       [&](Block* block, function_ref<SmallVector<Value>(ValueRange)> body,
-          ValueRange initArgs, bool createYield) -> SmallVector<Value> {
+          ValueRange innerInitArgs, bool createYield) -> SmallVector<Value> {
     auto blockArgs = block->getArguments();
-    auto* region = block->getParent();
-    setInsertionPointToStart(block);
-
     // Update the qubit values to the block args
-    updateQubitValueTracking(initArgs, blockArgs);
+    updateQubitValueTracking(innerInitArgs, blockArgs);
     // Construct the body
     const auto& results = body(blockArgs);
 
-    if (results.size() != initArgs.size()) {
+    if (results.size() != innerInitArgs.size()) {
       llvm::reportFatalUsageError(
           "scf.while body must return exactly one value per iter arg");
     }
-
-    // Create the yield operation, the scf.condition operation is created
-    // separately
     if (createYield) {
       scf::YieldOp::create(*this, results);
     }
     return results;
   };
 
+  // Construct the blocks
+  auto* beforeBlock =
+      createBlock(&whileOp.getBefore(), {}, initArgs.getTypes(), locs);
   auto beforeResults = createBody(beforeBlock, beforeBody, updatedArgs, false);
+
+  auto* afterBlock =
+      createBlock(&whileOp.getAfter(), {}, initArgs.getTypes(), locs);
   auto afterResults = createBody(afterBlock, afterBody, beforeResults, true);
 
   // Update the qubit tracking
@@ -1015,20 +1009,13 @@ ValueRange QCOProgramBuilder::qcoIf(
   // Create the empty if operation
   auto ifOp = IfOp::create(*this, conditionValue, updatedArgs);
 
-  const SmallVector<Location> locs(initArgs.size(), getLoc());
+  const SmallVector locs(initArgs.size(), getLoc());
   const InsertionGuard guard(*this);
 
-  // Create the then and else block
+  // Create the then block
   auto* thenBlock =
       createBlock(&ifOp.getThenRegion(), {}, initArgs.getTypes(), locs);
-  auto* elseBlock =
-      createBlock(&ifOp.getElseRegion(), {}, initArgs.getTypes(), locs);
   auto thenArgs = thenBlock->getArguments();
-  auto elseArgs = elseBlock->getArguments();
-
-  // Construct the bodies of the regions
-  setInsertionPointToStart(thenBlock);
-
   updateQubitValueTracking(updatedArgs, thenArgs);
   const auto thenResult = thenBody(thenArgs);
   if (thenResult.size() != updatedArgs.size()) {
@@ -1037,24 +1024,23 @@ ValueRange QCOProgramBuilder::qcoIf(
   }
   YieldOp::create(*this, thenResult);
 
-  setInsertionPointToStart(elseBlock);
-  SmallVector<Value> elseResult;
-
-  updateQubitValueTracking(thenResult, elseArgs);
+  // Create the else block
+  auto* elseBlock =
+      createBlock(&ifOp.getElseRegion(), {}, initArgs.getTypes(), locs);
+  auto elseArgs = elseBlock->getArguments();
   if (elseBody) {
-    elseResult = elseBody(elseArgs);
+    updateQubitValueTracking(thenResult, elseArgs);
+    auto elseResult = elseBody(elseArgs);
     if (elseResult.size() != updatedArgs.size()) {
       llvm::reportFatalUsageError(
           "Else body must return exactly one value per input value");
     }
     YieldOp::create(*this, elseResult);
+    updateQubitValueTracking(elseResult, ifOp->getResults());
   } else {
-    elseResult.assign(elseArgs.begin(), elseArgs.end());
     YieldOp::create(*this, elseArgs);
+    updateQubitValueTracking(thenResult, ifOp->getResults());
   }
-
-  // Update the qubit tracking
-  updateQubitValueTracking(elseResult, ifOp->getResults());
 
   return ifOp->getResults();
 }
@@ -1075,7 +1061,6 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
   }
 
   scf::ConditionOp::create(*this, condition, yieldedValues);
-
   return *this;
 }
 
@@ -1149,15 +1134,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     }
   }
 
-  // Sort the tensors by their id
-  SmallVector<std::pair<Value, TensorInfo>> sortedTensors(validTensors.begin(),
-                                                          validTensors.end());
-  sort(sortedTensors, [](const auto& a, const auto& b) {
-    return a.second.regId < b.second.regId;
-  });
-
   // Automatically deallocate all still-allocated tensors
-  for (auto& [tensor, tensorInfo] : sortedTensors) {
+  for (auto& [tensor, tensorInfo] : validTensors) {
     auto currentTensor = tensor;
     // Filter out qubits belonging to this tensor
     for (auto& [qubit, qubitInfo] : qubitsByRegister[tensorInfo.regId]) {
