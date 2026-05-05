@@ -985,6 +985,19 @@ void evenConsecutiveCtrlsTwoTargets(QCOProgramBuilder& b);
 /// target qubits.
 void oddConsecutiveCtrlsTwoTargets(QCOProgramBuilder& b);
 
+/// Creates a circuit with two consecutive ctrl modifiers with inequivalent body
+/// unitaries.
+void consecutiveCtrlsInequivalentBody(QCOProgramBuilder& b);
+
+/// Creates a circuit with two consecutive ctrl modifiers with an inequivalent
+/// number of controls.
+void consecutiveCtrlsInequivalentControlCnt(QCOProgramBuilder& b);
+
+/// Creates a circuit with two consecutive ctrl modifiers with an inequivalent
+/// target qubit order.
+void consecutiveCtrlsInequivalentTargetOrder(QCOProgramBuilder& b);
+
+
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with nested inverse modifiers.

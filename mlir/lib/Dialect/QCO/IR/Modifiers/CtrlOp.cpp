@@ -15,7 +15,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -74,16 +73,19 @@ struct RemoveSubsequentEquivalentCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Both operations have the same orientation for the control qubits:
-    // The i-th output is the i-th input of the next op.
-    for (const auto& [opOut, nextOpIn] :
-         llvm::zip_equal(op.getControlsOut(), nextOp.getControlsIn())) {
-      if (opOut != nextOpIn) {
-        return failure();
-      }
+    // Make sure that there is a bijective mapping between output (op) and input
+    // (nextOp) control qubits.
+    llvm::SmallDenseSet<Value> outs(op.getControlsOut().begin(),
+                                    op.getControlsOut().end());
+    for (const auto& in : nextOp.getControlsIn()) {
+      outs.erase(in);
     }
 
-    // Both operations have the same orientation for the target qubits:
+    if (!outs.empty()) {
+      return failure();
+    }
+
+    // Both operations have the same order for the target qubits:
     // The i-th output is the i-th input of the next op.
     for (const auto& [opOut, nextOpIn] :
          llvm::zip_equal(op.getTargetsOut(), nextOp.getTargetsIn())) {

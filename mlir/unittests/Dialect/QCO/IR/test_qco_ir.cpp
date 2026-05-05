@@ -198,7 +198,17 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"OddConsecutiveCtrlsTwoTarget",
                     MQT_NAMED_BUILDER(oddConsecutiveCtrlsTwoTargets),
-                    MQT_NAMED_BUILDER(singleControlledSwap)}));
+                    MQT_NAMED_BUILDER(singleControlledSwap)},
+        QCOTestCase{"ConsecutiveCtrlsInequivalentBody",
+                    MQT_NAMED_BUILDER(consecutiveCtrlsInequivalentBody),
+                    MQT_NAMED_BUILDER(consecutiveCtrlsInequivalentBody)},
+        QCOTestCase{"ConsecutiveCtrlsInequivalentControls",
+                    MQT_NAMED_BUILDER(consecutiveCtrlsInequivalentControlCnt),
+                    MQT_NAMED_BUILDER(consecutiveCtrlsInequivalentControlCnt)},
+        QCOTestCase{
+            "ConsecutiveCtrlsInequivalentTargetOrder",
+            MQT_NAMED_BUILDER(consecutiveCtrlsInequivalentTargetOrder),
+            MQT_NAMED_BUILDER(consecutiveCtrlsInequivalentTargetOrder)}));
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp

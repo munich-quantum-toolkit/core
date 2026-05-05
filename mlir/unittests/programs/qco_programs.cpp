@@ -2029,6 +2029,32 @@ void oddConsecutiveCtrlsTwoTargets(QCOProgramBuilder& b) {
   std::ignore = b.cswap(q02, q12, q22);
 }
 
+void consecutiveCtrlsInequivalentBody(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto& [q01, q11] = b.cx(q[0], q[1]);
+  std::ignore = b.cy(q01, q11);
+}
+
+void consecutiveCtrlsInequivalentControlCnt(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  const auto& [q01, q11] = b.cx(q[0], q[1]);
+  std::ignore = b.ctrl({q01, q11}, {q[2]}, [&](ValueRange targets) {
+    const auto q21 = b.x(targets[0]);
+    return SmallVector{q21};
+  });
+}
+
+void consecutiveCtrlsInequivalentTargetOrder(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  const auto out0 = b.cswap(q[0], q[1], q[2]);
+  const auto q01 = out0.first;
+  const auto [q11, q21] = out0.second;
+
+  const auto out1 = b.cswap(q11, q01, q21);
+  const auto q02 = out1.first;
+  const auto [q12, q22] = out1.second;
+}
+
 void nestedInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) {
