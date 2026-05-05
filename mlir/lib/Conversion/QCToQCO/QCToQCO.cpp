@@ -1033,7 +1033,7 @@ protected:
              ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
             typeConverter, context, &state);
 
-    // Not part of the central gate table (no Jeff/QIR lowering).
+    // Not part of the central gate table.
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(
         typeConverter, context, &state);
 

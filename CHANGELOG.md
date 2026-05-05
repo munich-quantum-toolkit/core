@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407]) ([**@J4MMlE**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637]) ([**@denialhaag**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
@@ -362,6 +362,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
+[#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674
 [#1673]: https://github.com/munich-quantum-toolkit/core/pull/1673
 [#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
