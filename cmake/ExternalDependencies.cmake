@@ -38,7 +38,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG dcc5fd71) # improve-cmake
+    GIT_TAG 4c3bd9cd) # improve-cmake
   list(APPEND FETCH_PACKAGES jeff-mlir)
 endif()
 
