@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
