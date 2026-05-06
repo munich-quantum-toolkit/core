@@ -1384,10 +1384,10 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
  * ```
  * is converted to
  * ```mlir
- * %targets_out = qco.if %cond qubits(%arg0 = %q0) -> (!qco.qubit) {
+ * %targets_out = qco.if %cond args(%arg0 = %q0) -> (!qco.qubit) {
  *   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
  *   qco.yield %q1 : !qco.qubit
- * } else {
+ * } else args(%arg0 = %q0) {
  *   qco.yield %arg0 : !qco.qubit
  * }
  * ```

@@ -164,13 +164,13 @@ TEST_F(QCOTest, IfOpParser) {
             %t1_0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
             %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
             %q0_2, %cond = qco.measure %q0_1 : !qco.qubit
-            %q0_4, %t1_3 = qco.if %cond qubits(%arg0 = %q0_2, %arg1 = %t1_0) -> (!qco.qubit, tensor<1x!qco.qubit>) {
+            %q0_4, %t1_3 = qco.if %cond args(%arg0 = %q0_2, %arg1 = %t1_0) -> (!qco.qubit, tensor<1x!qco.qubit>) {
                 %q0_3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
                 %t1_1, %q1_0 = qtensor.extract %arg1[%c0] : tensor<1x!qco.qubit>
                 %q1_1 = qco.x %q1_0 : !qco.qubit -> !qco.qubit
                 %t1_2 = qtensor.insert %q1_1 into %t1_1[%c0] : tensor<1x!qco.qubit>
                 qco.yield %q0_3, %t1_2 : !qco.qubit, tensor<1x!qco.qubit>
-            } else qubits(%arg0 = %q0_2, %arg1 = %t1_0) {
+            } else args(%arg0 = %q0_2, %arg1 = %t1_0) {
                 qco.yield %arg0, %arg1 : !qco.qubit, tensor<1x!qco.qubit>
             }
             %t0_2 = qtensor.insert %q0_4 into %t0_1[%c0] : tensor<1x!qco.qubit>

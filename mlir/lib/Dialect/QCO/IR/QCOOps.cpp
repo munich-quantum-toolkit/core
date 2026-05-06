@@ -106,7 +106,7 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   SmallVector<OpAsmParser::UnresolvedOperand> thenOperands;
   SmallVector<OpAsmParser::UnresolvedOperand> elseOperands;
 
-  if (parser.parseKeyword("qubits")) {
+  if (parser.parseKeyword("args")) {
     return failure();
   }
   // Parse the then block assignment list
@@ -135,7 +135,7 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   if (parser.parseKeyword("else")) {
     return failure();
   }
-  if (parser.parseKeyword("qubits")) {
+  if (parser.parseKeyword("args")) {
     return failure();
   }
   // Parse the else block assignment list
@@ -184,7 +184,7 @@ void IfOp::print(OpAsmPrinter& p) {
   p.printOperand(getCondition());
   // Print assignment list
   auto printQubitsBlock = [&](Region& region, OperandRange operands) {
-    p << " qubits(";
+    p << " args(";
     if (!region.empty()) {
       Block& entry = region.front();
       llvm::interleaveComma(

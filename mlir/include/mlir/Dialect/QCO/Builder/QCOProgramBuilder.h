@@ -1243,10 +1243,10 @@ public:
    * });
    * ```
    * ```mlir
-   * %q3 = qco.if %condition qubits(%arg0 = %q0) -> (!qco.qubit) {
+   * %q3 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
    *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
    *   qco.yield %q1 : !qco.qubit
-   * } else qubits(%arg0 = %q0) {
+   * } else args(%arg0 = %q0) {
    *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
    *   qco.yield %q2 : !qco.qubit
    * }

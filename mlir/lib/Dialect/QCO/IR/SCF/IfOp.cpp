@@ -178,10 +178,10 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
  * Allow the true region of an if to assume the condition is true
  * and vice versa. For example:
  *
- *   qco.if %cmp qubits(%arg0 = %q0) -> (!qco.qubit) {
+ *   qco.if %cmp args(%arg0 = %q0) -> (!qco.qubit) {
  *      print(true)
  *      ...
- *   } else (%arg = %q0) {
+ *   } else args(%arg = %q0) {
  *      print(false)
  *      ...
  *   }

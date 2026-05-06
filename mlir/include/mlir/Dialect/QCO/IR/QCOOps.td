@@ -1234,10 +1234,10 @@ def IfOp
 
         Example:
         ```mlir
-        %result = qco.if %condition qubits(%arg0 = %q0) {
+        %result = qco.if %condition args(%arg0 = %q0) {
             %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
             qco.yield %q1 : !qco.qubit
-         } else qubits(%arg0 = %q0) {
+         } else args(%arg0 = %q0) {
             qco.yield %arg0 : !qco.qubit
         } : {i1, !qco.qubit} -> {!qco.qubit}
         ```
