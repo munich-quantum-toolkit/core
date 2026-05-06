@@ -1258,10 +1258,10 @@ public:
         function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
 
   /**
-   * @brief Construct a scf.for operation
+   * @brief Construct an scf.for operation
    *
    * @details
-   * Constructs a scf.for operation with the given loop boundaries and stepsize
+   * Constructs an scf.for operation with the given loop boundaries and stepsize
    * and a range of qubit and qtensor values for its iter args. Qubits that were
    * extracted from a tensor that is used as an argument for this operation are
    * automatically inserted before the operation is constructed.
@@ -1300,10 +1300,10 @@ public:
                     function_ref<SmallVector<Value>(Value, ValueRange)> body);
 
   /**
-   * @brief Construct a scf.while operation
+   * @brief Construct an scf.while operation
    *
    * @details
-   * Constructs a scf.while with a range of qubit and qtensor values for its
+   * Constructs an scf.while with a range of qubit and qtensor values for its
    * iter args. Qubits that were extracted from a tensor that is used as an
    * argument for this operation are automatically inserted before the operation
    * is constructed.
@@ -1342,7 +1342,7 @@ public:
                       function_ref<SmallVector<Value>(ValueRange)> afterBody);
 
   /**
-   * @brief Construct a scf.condition operation with yielded values
+   * @brief Construct an scf.condition operation with yielded values
    *
    * @param condition Condition for the condition operation
    * @param yieldedValues ValueRange of the yieldedValues

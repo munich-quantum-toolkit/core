@@ -1216,7 +1216,6 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
  * scf.for %iv = %lb to %ub step %step {
  *   %q0 = qc.load %memref[%iv] : !memref<3x!qc.qubit>
  *   qc.h %q0 : !qc.qubit
- *   scf.yield
  * }
  * ```
  * is converted to
@@ -1381,7 +1380,6 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
  * ```mlir
  * scf.if %cond {
  *   qc.h %q0 : !qc.qubit
- *   scf.yield
  * }
  * ```
  * is converted to

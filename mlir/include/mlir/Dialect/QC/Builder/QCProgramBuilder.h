@@ -951,7 +951,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Construct a scf.for operation
+   * @brief Construct an scf.for operation
    *
    * @param lowerbound Lower bound of the loop
    * @param upperbound Upper bound of the loop
@@ -970,7 +970,6 @@ public:
    * scf.for %iv = %lb to %ub step %step {
    *   %q0 = memref.load %memref[%iv] : memref<3x!qc.qubit>
    *   qc.h %q0 : !qc.qubit
-   *   scf.yield
    * }
    * ```
    */
@@ -980,7 +979,7 @@ public:
                            const function_ref<void(Value)>& body);
 
   /**
-   * @brief Construct a scf.while operation
+   * @brief Construct an scf.while operation
    *
    * @param beforeBody Function that builds the before body of the while
    * operation
@@ -1010,7 +1009,7 @@ public:
                              const function_ref<void()>& afterBody);
 
   /**
-   * @brief Construct a scf.if operation
+   * @brief Construct an scf.if operation
    *
    * @param condition Condition for the if operation
    * @param thenBody Function that builds the then body of the if operation
@@ -1028,10 +1027,8 @@ public:
    * ```mlir
    * scf.if %condition {
    *   qc.x %q0 : !qc.qubit
-   *   scf.yield
    * } else {
    *   qc.z %q0 : !qc.qubit
-   *   scf.yield
    * }
    * ```
    */
@@ -1040,7 +1037,7 @@ public:
                           const function_ref<void()>& elseBody = nullptr);
 
   /**
-   * @brief Construct a scf.condition operation
+   * @brief Construct an scf.condition operation
    *
    * @param condition Condition for the condition operation
    * @return Reference to this builder for method chaining
