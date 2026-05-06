@@ -29,6 +29,14 @@ public:
   using CouplingSet = DenseSet<std::pair<std::size_t, std::size_t>>;
   using NeighbourVector = SmallVector<SmallVector<std::size_t, 4>>;
 
+  /**
+   * @brief Constructs an empty architecture.
+   */
+  Architecture() : nqubits_(0) {}
+
+  /**
+   * @brief Constructs a well-defined architecture.
+   */
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
@@ -73,9 +81,6 @@ public:
 private:
   using Matrix = SmallVector<SmallVector<std::size_t, 0>, 0>;
 
-  Architecture() : nqubits_(0) {}
-  friend Architecture getEmptyArchitecture();
-
   /**
    * @brief Find all shortest paths in the coupling map between two qubits.
    * @details Vertices are the qubits. Edges connected two qubits. Has a time
@@ -98,10 +103,5 @@ private:
   Matrix dist_;
   Matrix prev_;
 };
-
-/**
- * @brief Return an empty architecture with no qubits and no coupling.
- */
-[[nodiscard]] Architecture getEmptyArchitecture();
 
 } // namespace mlir::qco

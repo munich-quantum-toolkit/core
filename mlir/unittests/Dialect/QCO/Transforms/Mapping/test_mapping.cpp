@@ -41,13 +41,6 @@ struct ArchitectureParam {
   std::shared_ptr<Architecture> (*factory)();
 };
 
-TEST(ArchitectureTest, EmptyArchitecture) {
-  const auto arch = getEmptyArchitecture();
-  EXPECT_TRUE(arch.name().empty());
-  EXPECT_EQ(arch.nqubits(), 0U);
-  EXPECT_EQ(arch.maxDegree(), 0U);
-}
-
 class MappingPassTest : public testing::Test,
                         public testing::WithParamInterface<ArchitectureParam> {
 public:

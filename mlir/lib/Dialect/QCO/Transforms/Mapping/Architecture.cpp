@@ -24,8 +24,6 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-Architecture mlir::qco::getEmptyArchitecture() { return {}; }
-
 std::string_view Architecture::name() const { return name_; }
 
 std::size_t Architecture::nqubits() const { return nqubits_; }

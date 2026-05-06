@@ -344,12 +344,11 @@ private:
   };
 
 public:
-  explicit MappingPass()
-      : arch(std::make_shared<Architecture>(getEmptyArchitecture())) {}
+  explicit MappingPass() : arch(std::make_shared<Architecture>()) {}
 
   explicit MappingPass(MappingPassOptions options)
       : MappingPassBase<MappingPass>(options),
-        arch(std::make_shared<Architecture>(getEmptyArchitecture())) {}
+        arch(std::make_shared<Architecture>()) {}
 
   explicit MappingPass(std::shared_ptr<Architecture> arch,
                        MappingPassOptions options)
@@ -415,7 +414,7 @@ protected:
       }
 
       // Collect statistics.
-      numSwaps = *res;
+      numSwaps += *res;
 
       // Fix SSA Dominance issues.
       for_each(func.getFunctionBody().getBlocks(),
