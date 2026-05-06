@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
@@ -41,7 +40,7 @@ std::size_t Architecture::distanceBetween(std::size_t u, std::size_t v) const {
   return dist_[u][v];
 }
 
-llvm::ArrayRef<std::size_t> Architecture::neighboursOf(std::size_t u) const {
+ArrayRef<std::size_t> Architecture::neighboursOf(std::size_t u) const {
   return neighbours_[u];
 }
 

@@ -41,8 +41,8 @@ public:
                         CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
         couplingSet_(std::move(couplingSet)), neighbours_(nqubits),
-        dist_(nqubits, SmallVector<std::size_t>(nqubits, UINT64_MAX)),
-        prev_(nqubits, SmallVector<std::size_t>(nqubits, UINT64_MAX)) {
+        dist_(nqubits, SmallVector<size_t>(nqubits, UINT64_MAX)),
+        prev_(nqubits, SmallVector<size_t>(nqubits, UINT64_MAX)) {
     floydWarshallWithPathReconstruction();
     collectNeighbours();
   }
@@ -70,7 +70,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] llvm::ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
+  [[nodiscard]] ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the
@@ -103,5 +103,4 @@ private:
   Matrix dist_;
   Matrix prev_;
 };
-
 } // namespace mlir::qco
