@@ -102,3 +102,35 @@ TEST_F(SwapAbsorbPassTest, PassReordersTwoQubitCircuitWithLeadingSwap) {
   ASSERT_EQ(q10, ((IdOp)q02.getDefiningOp()).getInputQubit(0));
   ASSERT_EQ(q00, ((IdOp)q12.getDefiningOp()).getInputQubit(0));
 }
+
+TEST_F(SwapAbsorbPassTest, PassAbsorbsTwoIndependentSwaps) {
+
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto q00 = builder.staticQubit(0);
+  const auto q10 = builder.staticQubit(1);
+  const auto q20 = builder.staticQubit(2);
+  const auto q30 = builder.staticQubit(3);
+
+  const auto [q01, q11] = builder.swap(q00, q10);
+  const auto [q21, q31] = builder.swap(q20, q30);
+
+  const auto q02 = builder.id(q01);
+  const auto q12 = builder.id(q11);
+  const auto q22 = builder.id(q21);
+  const auto q32 = builder.id(q31);
+
+  builder.sink(q02);
+  builder.sink(q12);
+  builder.sink(q22);
+  builder.sink(q32);
+
+  auto moduleThroughPass = builder.finalize();
+  applySwapAbsorb(moduleThroughPass);
+
+  ASSERT_EQ(q10, ((IdOp)q02.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q00, ((IdOp)q12.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q30, ((IdOp)q22.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q20, ((IdOp)q32.getDefiningOp()).getInputQubit(0));
+}
