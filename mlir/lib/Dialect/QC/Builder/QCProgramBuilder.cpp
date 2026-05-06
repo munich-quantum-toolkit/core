@@ -520,8 +520,14 @@ QCProgramBuilder::scfWhile(const function_ref<void()>& beforeBody,
   scf::WhileOp::create(
       *this, TypeRange{}, ValueRange{},
       [&](OpBuilder& b, Location, ValueRange) {
-        regionStack.emplace_back(b.getInsertionBlock()->getParent());
+        auto* insertionBlock = b.getInsertionBlock();
+        regionStack.emplace_back(insertionBlock->getParent());
         beforeBody();
+        if (!isa_and_nonnull<scf::ConditionOp>(
+                insertionBlock->getTerminator())) {
+          llvm::reportFatalUsageError(
+              "scf.while beforeBody must terminate with scf.condition");
+        }
         regionStack.pop_back();
       },
       [&](OpBuilder& b, Location loc, ValueRange) {

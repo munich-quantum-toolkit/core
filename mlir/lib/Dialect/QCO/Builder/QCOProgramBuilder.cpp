@@ -979,6 +979,17 @@ ValueRange QCOProgramBuilder::scfWhile(
     }
     if (createYield) {
       scf::YieldOp::create(*this, results);
+    } else {
+      auto* terminator = block->getTerminator();
+      if (!isa_and_nonnull<scf::ConditionOp>(terminator)) {
+        llvm::reportFatalUsageError(
+            "scf.while beforeBody must terminate with scf.condition");
+      }
+      auto conditionOp = cast<scf::ConditionOp>(terminator);
+      if (conditionOp.getArgs() != results) {
+        llvm::reportFatalUsageError(
+            "scf.while beforeBody must return the args of scf.condition");
+      }
     }
     return results;
   };

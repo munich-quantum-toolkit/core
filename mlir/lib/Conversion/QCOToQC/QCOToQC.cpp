@@ -849,7 +849,7 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new if operation
     auto newIf = scf::IfOp::create(rewriter, op.getLoc(), TypeRange{},
-                                   op.getCondition(), false);
+                                   adaptor.getCondition(), false);
     auto& newThenRegion = newIf.getThenRegion();
     auto& oldElseRegion = op.getElseRegion();
     // Erase the default empty then block
@@ -916,9 +916,9 @@ struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, adaptor.getCondition(),
                                                   ValueRange{});
 
     return success();
