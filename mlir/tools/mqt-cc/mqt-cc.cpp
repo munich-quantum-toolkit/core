@@ -36,6 +36,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <exception>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -43,6 +44,10 @@ using namespace llvm;
 using namespace mlir;
 
 // Command-line options
+static cl::opt<std::optional<std::string>>
+    arch("arch", cl::desc("Specify the target architecture"),
+         cl::init(std::nullopt));
+
 static cl::opt<std::string> inputFilename(cl::Positional,
                                           cl::desc("<input .mlir/.qasm file>"),
                                           cl::init("-"));
@@ -176,6 +181,17 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = printIRAfterAllStages;
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
+
+  if (arch != std::nullopt) {
+    /// TODO:
+    // 1) Load the dynamic device libraries with the given name
+    //      e.g. <arch>_device.dylib
+    //    or raise error if the library is not found.
+    // 2) Set the device handle in the QuantumCompilerConfig
+    //    Individual passes use the device handle to query properties.
+    //
+    // Also: Make sure that everything still works if the arch options isn't supplied.
+  }
 
   // Run the compilation pipeline
   CompilationRecord record;

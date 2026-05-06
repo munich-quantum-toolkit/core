@@ -43,6 +43,9 @@ struct QuantumCompilerConfig {
 
   /// Disable quaternion-based single-qubit rotation gate merging
   bool disableMergeSingleQubitRotationGates = false;
+
+  /// (TODO:) Pointer to a QDMI device
+  void* device = nullptr;
 };
 
 /**
@@ -60,6 +63,8 @@ struct CompilationRecord {
   std::string afterQCOCanon;
   std::string afterOptimization;
   std::string afterOptimizationCanon;
+  std::string afterTranspilation;
+  std::string afterTranspilationCanon;
   std::string afterQCConversion;
   std::string afterQCCanon;
   std::string afterQIRConversion;
@@ -80,10 +85,12 @@ struct CompilationRecord {
  * 4. QCO cleanup pipeline
  * 5. Quantum optimization passes
  * 6. QCO cleanup pipeline
- * 7. QC dialect - converted back for backend lowering
- * 8. QC cleanup pipeline
- * 9. QIR (Quantum Intermediate Representation) - optional final lowering
- * 10. QIR cleanup pipeline
+ * 7. Quantum transpilation passes - optional fit to hardware constraints
+ * 8. QCO cleanup pipeline
+ * 9. QC dialect - converted back for backend lowering
+ * 10. QC cleanup pipeline
+ * 11. QIR (Quantum Intermediate Representation) - optional final lowering
+ * 12. QIR cleanup pipeline
  *
  * Following MLIR best practices, simplification and dead-value cleanup are
  * run after each major transformation stage.
