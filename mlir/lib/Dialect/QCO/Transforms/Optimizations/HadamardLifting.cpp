@@ -17,7 +17,6 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
@@ -106,8 +105,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
     // op needs to be in front of a Hadamard gate
     auto hadamardGate = dyn_cast<HOp>(*op->getUsers().begin());
 
-    if (!hadamardGate ||
-        op.getOutputTarget(0) != hadamardGate.getInputTarget(0)) {
+    if (!hadamardGate) {
       return failure();
     }
 
@@ -121,131 +119,21 @@ struct LiftHadamardsAbovePauliGatesPattern final
  * the new control.
  *
  * If there is a Hadamard gate between the target qubit of a CNOT and a
- * measurement, we flip the CNOT and apply a hadamard gate to the incoming and
+ * measurement, we flip the CNOT and apply a Hadamard gate to the incoming and
  * outcoming qubits. As H * H = id, the measurement is then the direct successor
- * of a CNOT control, which is beneficial for the qubit reuse routine. After the
- * application of LiftHadamardAboveCNOTPattern, a measurement will follow
- * directly after a control. In that case, measurement lifting (a routine of
- * qubit reuse) can remove the multi-qubit gate by lifting the measurement in
- * front of the control and changing the qubit-controlled Pauli-X to a
- * classically controlled Pauli-X.
+ * of a CNOT control, which is beneficial for the qubit reuse routine. In that
+ * case, measurement lifting (a routine of qubit reuse) can remove the
+ * multi-qubit gate by lifting the measurement in front of the control and
+ * changing the qubit-controlled Pauli-X to a classically-controlled Pauli-X.
  *
- * The procedure also works if there are additional ctrls. Only the target
- * and ctrl involved in the transformation get hadamard gates assigned.
+ * The procedure also works if there are additional controls. Only the target
+ * and control involved in the transformation get Hadamard gates assigned.
  * The involved ctrl to be flipped with the target is chosen randomly.
  */
 struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
 
   explicit LiftHadamardAboveCNOTPattern(MLIRContext* context)
       : OpRewritePattern(context) {}
-
-  /**
-   * @brief This method swaps two operand usages in an operation.
-   *
-   * @param op The operation on with the operand usage should be swapped.
-   * @param a The operand value to be swapped with b.
-   * @param b The operand value to be swapped with a.
-   */
-  static void swapOperandsInOp(Operation* op, const Value a, const Value b) {
-    for (OpOperand& operand :
-         llvm::make_filter_range(op->getOpOperands(), [&](const OpOperand& o) {
-           const Value valueOfOperand = o.get();
-           return valueOfOperand == a || valueOfOperand == b;
-         })) {
-      const bool operandValueIsA = operand.get() == a;
-      operand.set(operandValueIsA ? b : a);
-    }
-  }
-
-  /**
-   * @brief This method swaps two qubits on a gate.
-   *
-   * This method swaps two qubits on a gate. Input and output are exchanged.
-   *
-   * @param gate The gate that the qubits belong to.
-   * @param inputQubit1 The input qubit of the qubit to be exchanged with 2.
-   * @param inputQubit2 The input qubit of the qubit to be exchanged with 1.
-   * @param succeedingOp1 The operation succeeding gate on the corresponding
-   * output of inputQubit1.
-   * @param succeedingOp2 The operation succeeding gate on the corresponding
-   * output of inputQubit2.
-   * @param rewriter The used rewriter.
-   */
-  static void swapQubits(CtrlOp gate, const Value inputQubit1,
-                         const Value inputQubit2, Operation* succeedingOp1,
-                         Operation* succeedingOp2, PatternRewriter& rewriter) {
-    const Value outputQubit1 = gate.getOutputForInput(inputQubit1);
-    const Value outputQubit2 = gate.getOutputForInput(inputQubit2);
-
-    rewriter.modifyOpInPlace(
-        gate, [&] { swapOperandsInOp(gate, inputQubit1, inputQubit2); });
-
-    rewriter.modifyOpInPlace(succeedingOp1, [&] {
-      swapOperandsInOp(succeedingOp1, outputQubit1, outputQubit2);
-    });
-
-    rewriter.modifyOpInPlace(succeedingOp2, [&] {
-      swapOperandsInOp(succeedingOp2, outputQubit1, outputQubit2);
-    });
-  }
-
-  /**
-   * @brief This method adds Hadamard gates before a given gate.
-   *
-   * @param gate The gate before which Hadamard gates should be applied.
-   * @param inputQubits The input qubits of gate before which Hadamard gates
-   * should be applied.
-   * @param rewriter The used rewriter.
-   * @returns One of the created Hadamard gates.
-   */
-  static HOp addHadamardGatesBeforeGate(const CtrlOp gate,
-                                        const ValueRange inputQubits,
-                                        PatternRewriter& rewriter) {
-    HOp newHOp;
-    for (const Value inputQubit : inputQubits) {
-
-      const ValueRange inQubits(inputQubit);
-
-      newHOp = HOp::create(rewriter, gate->getLoc(), inQubits);
-
-      rewriter.moveOpBefore(newHOp, gate);
-
-      rewriter.modifyOpInPlace(gate, [&] {
-        swapOperandsInOp(gate, inputQubit, newHOp.getOutputTarget(0));
-      });
-    }
-    return newHOp;
-  }
-
-  /**
-   * @brief This method adds Hadamard gates after a given gate.
-   *
-   * @param gate The gate after which Hadamard gates should be applied.
-   * @param outputQubits The output qubits of gate after which Hadamard gates
-   * should be applied.
-   * @param rewriter The used rewriter.
-   * @returns One of the created Hadamard gates.
-   */
-  static HOp addHadamardGatesAfterGate(const CtrlOp gate,
-                                       const ValueRange outputQubits,
-                                       PatternRewriter& rewriter) {
-    HOp newHOp;
-    for (Value outputQubit : outputQubits) {
-
-      const ValueRange inQubit(outputQubit);
-
-      newHOp = HOp::create(rewriter, gate->getLoc(), inQubit);
-
-      rewriter.moveOpAfter(newHOp, gate);
-
-      rewriter.replaceUsesWithIf(
-          newHOp.getInputTarget(0), newHOp.getOutputTarget(0),
-          [&](const OpOperand& operand) {
-            return operand.getOwner() != gate && operand.getOwner() != newHOp;
-          });
-    }
-    return newHOp;
-  }
 
   /**
    * @brief This pattern removes an H gate between a CNOT and a measurement,
@@ -274,17 +162,16 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     if (!cnotGate) {
       return failure();
     }
-    if (cnotGate.getNumTargets() != 1 ||
-        cnotGate.getOutputTarget(0) != inQubitHadamard ||
-        !isa<XOp>(cnotGate.getBodyUnitary())) {
+    if (!isa<XOp>(cnotGate.getBodyUnitary()) ||
+        cnotGate.getOutputTarget(0) != inQubitHadamard) {
       return failure();
     }
-    // Determine the index of the control that will become the new target. The
-    // control must not be succeeded by a measurement.
+
+    // Find a control qubit not followed by a measurement.
+    // If there is no such control, the transformation cannot be applied.
     unsigned int controlIndex = 0;
     for (unsigned int i = 0; i < cnotGate.getNumControls(); i++) {
-      if (dyn_cast<MeasureOp>(
-              *cnotGate.getOutputControl(i).getUsers().begin())) {
+      if (isa<MeasureOp>(*cnotGate.getOutputControl(i).getUsers().begin())) {
         if (i == cnotGate.getNumControls() - 1) {
           return failure();
         }
@@ -294,27 +181,33 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
       }
     }
 
-    // Remove the Hadamard gate
-    for (const auto outQubit : hadamardGate.getOutputQubits()) {
-      rewriter.replaceAllUsesWith(outQubit,
-                                  hadamardGate.getInputForOutput(outQubit));
-    }
-    rewriter.eraseOp(hadamardGate);
+    // Save all SSA values that will be needed after in-place modifications.
+    const Value origTgtIn = cnotGate.getInputTarget(0);
+    const Value origCtrlIn = cnotGate.getInputControl(controlIndex);
+    const Value origCtrlOut = cnotGate.getOutputControl(controlIndex);
 
-    // Add Hadamard gates to the other in- and output gates of CNOT
-    addHadamardGatesBeforeGate(
-        cnotGate,
-        {cnotGate.getInputTarget(0), cnotGate.getInputControl(controlIndex)},
-        rewriter);
+    // Add Hadamard gates before the CNOT.
+    rewriter.setInsertionPoint(cnotGate);
+    auto h1 = HOp::create(rewriter, cnotGate->getLoc(), origTgtIn);
+    auto h2 = HOp::create(rewriter, cnotGate->getLoc(), origCtrlIn);
 
-    const HOp newHOPAfterCtrl = addHadamardGatesAfterGate(
-        cnotGate,
-        cnotGate.getOutputForInput(cnotGate.getInputControl(controlIndex)),
-        rewriter);
+    // Rewire the CNOT operands in-place so that the roles are swapped
+    rewriter.modifyOpInPlace(cnotGate, [&]() {
+      cnotGate->setOperand(controlIndex, h1.getOutputTarget(0));
+      cnotGate->setOperand(cnotGate.getNumControls(), h2.getOutputTarget(0));
+    });
 
-    // Flip CNOT targets and ctrl
-    swapQubits(cnotGate, cnotGate.getInputControl(controlIndex),
-               cnotGate.getInputTarget(0), op, newHOPAfterCtrl, rewriter);
+    // Move hadamardGate immediately after the CNOT so that it dominates any
+    // downstream user of origCtrlOut that might appear before hadamardGate.
+    rewriter.moveOpAfter(hadamardGate, cnotGate);
+
+    // Feed the MeasureOp directly from origCtrlOut (the new control output).
+    rewriter.modifyOpInPlace(op, [&]() { op->setOperand(0, origCtrlOut); });
+
+    // Every other downstream user of origCtrlOut except for the MeasureOp
+    // should now see hadamardGate's output.
+    rewriter.replaceAllUsesExcept(origCtrlOut, hadamardGate.getOutputTarget(0),
+                                  op);
 
     return success();
   }
