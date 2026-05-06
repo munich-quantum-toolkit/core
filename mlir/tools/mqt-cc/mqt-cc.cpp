@@ -190,7 +190,8 @@ int main(int argc, char** argv) {
     // 2) Set the device handle in the QuantumCompilerConfig
     //    Individual passes use the device handle to query properties.
     //
-    // Also: Make sure that everything still works if the arch options isn't supplied.
+    // Also: Make sure that everything still works if the arch options isn't
+    // supplied.
   }
 
   // Run the compilation pipeline
