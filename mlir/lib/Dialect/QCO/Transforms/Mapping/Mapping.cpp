@@ -63,8 +63,7 @@ using namespace mlir::qtensor;
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 LogicalResult isExecutable(Region& region, const Architecture& arch) {
-  bool executable = true;
-  walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
+  return walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
     if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
       if (isa<BarrierOp>(op)) {
         return WalkResult::advance();
@@ -75,7 +74,6 @@ LogicalResult isExecutable(Region& region, const Architecture& arch) {
         const auto i0 = qubits.getIndex(q0);
         const auto i1 = qubits.getIndex(q1);
         if (!arch.areAdjacent(i0, i1)) {
-          executable = false;
           return WalkResult::interrupt();
         }
       }
@@ -83,20 +81,13 @@ LogicalResult isExecutable(Region& region, const Architecture& arch) {
 
     return WalkResult::advance();
   });
-
-  if (executable) {
-    return success();
-  }
-
-  return failure();
 }
 
 namespace {
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
-  using QubitValue = TypedValue<QubitType>;
-  using IndexType = std::size_t;
+  using IndexType = size_t;
   using IndexPairType = std::pair<IndexType, IndexType>;
   using Window = SmallVector<IndexPairType>;
 
@@ -118,9 +109,9 @@ private:
      * @param nqubits The number of qubits.
      * @return The identity layout.
      */
-    static Layout identity(const std::size_t nqubits) {
+    static Layout identity(const size_t nqubits) {
       Layout layout(nqubits);
-      for (std::size_t i = 0; i < nqubits; ++i) {
+      for (size_t i = 0; i < nqubits; ++i) {
         layout.add(i, i);
       }
       return layout;
@@ -132,7 +123,7 @@ private:
      * @param seed A seed for randomization.
      * @return The random layout.
      */
-    static Layout random(const std::size_t nqubits, const std::size_t seed) {
+    static Layout random(const size_t nqubits, const size_t seed) {
       SmallVector<IndexType> mapping(nqubits);
       std::iota(mapping.begin(), mapping.end(), IndexType{0});
       std::ranges::shuffle(mapping, std::mt19937_64{seed});
@@ -200,7 +191,7 @@ private:
      */
     template <typename... HwIndices>
       requires(sizeof...(HwIndices) > 0) &&
-              ((std::is_convertible_v<HwIndices, std::size_t>) && ...)
+              ((std::is_convertible_v<HwIndices, size_t>) && ...)
     [[nodiscard]] auto getProgramIndices(HwIndices... hws) const {
       return std::tuple{getProgramIndex(static_cast<IndexType>(hws))...};
     }
@@ -219,9 +210,7 @@ private:
     /**
      * @returns the number of qubits managed by the layout.
      */
-    [[nodiscard]] std::size_t nqubits() const {
-      return programToHardware_.size();
-    }
+    [[nodiscard]] size_t nqubits() const { return programToHardware_.size(); }
 
     /**
      * @returns the program to hardware mapping.
@@ -242,7 +231,7 @@ private:
     SmallVector<IndexType> hardwareToProgram_;
 
   private:
-    explicit Layout(const std::size_t nqubits)
+    explicit Layout(const size_t nqubits)
         : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
   };
 
@@ -250,7 +239,7 @@ private:
     explicit Trial(Layout layout) : layout(std::move(layout)) {}
 
     Layout layout;
-    std::size_t nswaps{};
+    size_t nswaps{};
     bool success{false};
   };
 
@@ -275,7 +264,7 @@ private:
     Layout layout;
     IndexPairType swap;
     Node* parent;
-    std::size_t depth;
+    size_t depth;
     float f;
 
     /**
@@ -301,7 +290,7 @@ private:
      * @returns true if the current SWAP sequence makes all gates in the front
      * executable.
      */
-    [[nodiscard]] bool isGoal(IndexPairType front,
+    [[nodiscard]] bool isGoal(const IndexPairType& front,
                               const Architecture& arch) const {
       return arch.areAdjacent(layout.getHardwareIndex(front.first),
                               layout.getHardwareIndex(front.second));
@@ -335,7 +324,7 @@ private:
       for (const auto& [i, progs] : enumerate(window)) {
         const auto [prog0, prog1] = progs;
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
+        const size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
       }
@@ -344,16 +333,14 @@ private:
   };
 
 public:
-  explicit MappingPass()
-      : arch(std::make_shared<Architecture>(getEmptyArchitecture())) {}
+  explicit MappingPass() : arch(std::make_shared<Architecture>()) {}
 
-  explicit MappingPass(MappingPassOptions options)
-      : MappingPassBase<MappingPass>(options),
-        arch(std::make_shared<Architecture>(getEmptyArchitecture())) {}
+  explicit MappingPass(const MappingPassOptions& options)
+      : MappingPassBase(options), arch(std::make_shared<Architecture>()) {}
 
   explicit MappingPass(std::shared_ptr<Architecture> arch,
-                       MappingPassOptions options)
-      : MappingPassBase<MappingPass>(options), arch(std::move(arch)) {}
+                       const MappingPassOptions& options)
+      : MappingPassBase(options), arch(std::move(arch)) {}
 
 protected:
   void runOnOperation() override {
@@ -367,19 +354,18 @@ protected:
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       // TODO: Check if num-qubits > arch.nqubits
 
-      // Create trials for initial layout refining. Currently this includes
+      // Create trials for initial layout refining. Currently, this includes
       // `ntrials` many random layouts.
       SmallVector<Trial> trials;
       trials.reserve(ntrials);
-      for (std::size_t i = 0; i < ntrials; ++i) {
+      for (size_t i = 0; i < ntrials; ++i) {
         trials.emplace_back(Layout::random(arch->nqubits(), rng()));
       }
 
       // Execute each of the trials (possibly in parallel). Collect the results
       // and find the one with the fewest SWAPs on the final backwards pass.
       parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-        const auto res = refineLayout(func, trial.layout);
-        if (succeeded(res)) {
+        if (const auto res = refineLayout(func, trial.layout); succeeded(res)) {
           trial.success = true;
           trial.nswaps = *res;
         }
@@ -397,8 +383,9 @@ protected:
 
       // Collect wire iterators for static qubits.
       // The i-th wire iterator belongs to the i-th program qubit.
-      SmallVector<WireIterator> wires(range_size(func.getOps<StaticOp>()));
-      for (StaticOp op : func.getOps<StaticOp>()) {
+      auto staticOps = func.getOps<StaticOp>();
+      SmallVector<WireIterator> wires(range_size(staticOps));
+      for (StaticOp op : staticOps) {
         const auto hw = op.getIndex();
         const auto prog = best->layout.getProgramIndex(hw);
         wires[prog] = WireIterator(op.getQubit());
@@ -408,7 +395,7 @@ protected:
       const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
           wires, best->layout, &rewriter);
       if (failed(res)) {
-        func.emitError() << "failed to map the " << func->getName()
+        func.emitError() << "failed to map the " << func.getName()
                          << " function";
         signalPassFailure();
         return;
@@ -434,7 +421,7 @@ private:
   static void place(func::FuncOp func, const Layout& layout,
                     IRRewriter& rewriter) {
     // 1. Replace existing dynamic allocations with mapped static ones.
-    std::size_t p = 0;
+    size_t p = 0;
     for (auto op : llvm::make_early_inc_range(func.getOps<AllocOp>())) {
       const auto hw = layout.getHardwareIndex(p);
       rewriter.setInsertionPoint(op);
@@ -472,7 +459,7 @@ private:
     }
 
     // 2. Create static qubits for the remaining (unused) hardware indices.
-    const auto location = rewriter.getInsertionPoint()->getLoc();
+    const auto location = func.getLoc();
     for (; p < layout.nqubits(); ++p) {
       rewriter.setInsertionPointToStart(&func.getFunctionBody().front());
       const auto hw = layout.getHardwareIndex(p);
@@ -509,7 +496,7 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns failure() if routing fails.
    */
-  FailureOr<std::size_t> refineLayout(func::FuncOp func, Layout& layout) {
+  FailureOr<size_t> refineLayout(func::FuncOp func, Layout& layout) {
     SmallVector<WireIterator> wires;
     for (auto op : func.getOps<AllocOp>()) {
       wires.emplace_back(op.getResult());
@@ -519,8 +506,8 @@ private:
       wires.emplace_back(op.getResult());
     }
 
-    std::size_t nswaps{0};
-    for (std::size_t i = 0; i < niterations; ++i) {
+    size_t nswaps{0};
+    for (size_t i = 0; i < niterations; ++i) {
       if (failed(route<WireDirection::Forward>(wires, layout))) {
         return failure();
       }
@@ -554,10 +541,10 @@ private:
    */
   [[nodiscard]] FailureOr<SmallVector<IndexPairType>>
   search(const Window& window, const Layout& layout) {
-    constexpr std::size_t cap = 25'000'000UL;
+    constexpr size_t cap = 25'000'000UL;
 
-    const std::size_t b = arch->maxDegree() * ((arch->nqubits() + 1) / 2);
-    const std::size_t budget = std::min(b * b * b, cap);
+    const size_t b = arch->maxDegree() * ((arch->nqubits() + 1) / 2);
+    const size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -573,10 +560,10 @@ private:
 
     frontier.emplace(root);
 
-    DenseMap<ArrayRef<IndexType>, std::size_t> bestDepth;
+    DenseMap<ArrayRef<IndexType>, size_t> bestDepth;
     DenseSet<IndexPairType> expansionSet;
 
-    std::size_t i = 0;
+    size_t i = 0;
     while (!frontier.empty() && i < budget) {
       Node* curr = frontier.top();
       frontier.pop();
@@ -603,7 +590,7 @@ private:
 
       if (curr->isGoal(window.front(), *arch)) {
         SmallVector<IndexPairType> seq(curr->depth);
-        std::size_t j = seq.size() - 1;
+        size_t j = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
           seq[j] = n->swap;
           --j;
@@ -771,11 +758,11 @@ private:
    * of SWAPs otherwise.
    */
   template <WireDirection Direction, RoutingMode mode = RoutingMode::Cold>
-  FailureOr<std::size_t> route(MutableArrayRef<WireIterator> wires,
-                               Layout& layout, IRRewriter* rewriter = nullptr) {
+  FailureOr<size_t> route(MutableArrayRef<WireIterator> wires, Layout& layout,
+                          IRRewriter* rewriter = nullptr) {
     using Traits = WireTraversalTraits<Direction>;
 
-    std::size_t nswaps{0};
+    size_t nswaps{0};
     while (true) {
       skipExecutableGates<Direction>(wires, layout);
 

@@ -29,12 +29,13 @@ public:
   using CouplingSet = DenseSet<std::pair<std::size_t, std::size_t>>;
   using NeighbourVector = SmallVector<SmallVector<std::size_t, 4>>;
 
+  Architecture() : nqubits_(0) {}
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
         couplingSet_(std::move(couplingSet)), neighbours_(nqubits),
-        dist_(nqubits, SmallVector<std::size_t>(nqubits, UINT64_MAX)),
-        prev_(nqubits, SmallVector<std::size_t>(nqubits, UINT64_MAX)) {
+        dist_(nqubits, SmallVector<size_t>(nqubits, UINT64_MAX)),
+        prev_(nqubits, SmallVector<size_t>(nqubits, UINT64_MAX)) {
     floydWarshallWithPathReconstruction();
     collectNeighbours();
   }
@@ -62,7 +63,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] llvm::ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
+  [[nodiscard]] ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the
@@ -72,9 +73,6 @@ public:
 
 private:
   using Matrix = SmallVector<SmallVector<std::size_t, 0>, 0>;
-
-  Architecture() : nqubits_(0) {}
-  friend Architecture getEmptyArchitecture();
 
   /**
    * @brief Find all shortest paths in the coupling map between two qubits.
@@ -98,10 +96,4 @@ private:
   Matrix dist_;
   Matrix prev_;
 };
-
-/**
- * @brief Return an empty architecture with no qubits and no coupling.
- */
-[[nodiscard]] Architecture getEmptyArchitecture();
-
 } // namespace mlir::qco

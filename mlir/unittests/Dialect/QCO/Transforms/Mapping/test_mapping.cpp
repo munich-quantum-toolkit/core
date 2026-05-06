@@ -42,7 +42,7 @@ struct ArchitectureParam {
 };
 
 TEST(ArchitectureTest, EmptyArchitecture) {
-  const auto arch = getEmptyArchitecture();
+  const auto arch = Architecture();
   EXPECT_TRUE(arch.name().empty());
   EXPECT_EQ(arch.nqubits(), 0U);
   EXPECT_EQ(arch.maxDegree(), 0U);
