@@ -81,7 +81,7 @@ Quantum circuits describe a quantum computation graphically:
 
 ```{figure} ../_static/mlir/bell-circuit.svg
 :align: center
-:width: 60%
+:width: 50%
 :figclass: only-light
 :name: fig:mlir-ir-structure
 
@@ -90,7 +90,7 @@ A circuit constructing the first Bell state.
 
 ```{figure} ../_static/mlir/bell-circuit-dark.svg
 :align: center
-:width: 60%
+:width: 50%
 :figclass: only-dark
 :name: fig:mlir-ir-structure
 
@@ -559,7 +559,26 @@ To do so, we leverage MLIR's built-in `scf` dialect.
 
 ```{code-block} mlir
 //          QC
-TODO: Loops
+%i0 = arith.constant 0 : index
+
+%lb = arith.constant 1 : index
+%ub = arith.constant 4 : index
+%step = arith.constant 1 : index
+
+%r0 = memref.alloc() : memref<4x!qc.qubit>
+
+%q0 = memref.load %r0[%i0] : memref<4x!qc.qubit>
+qc.h %q0 : !qc.qubit
+
+scf.for %iv = %lb to %ub step %step {
+  %qi = memref.load %r0[%iv] : memref<4x!qc.qubit>
+  qc.h %qi : !qc.qubit
+  qc.ctrl(%q0) {
+    qc.x %qi : !qc.qubit
+  } : !qc.qubit
+}
+
+memref.dealloc %r0 : memref<4x!qc.qubit>
 ```
 
 :::
@@ -673,10 +692,11 @@ auto program = builder.finalize();
 
 ### Compilation Flow
 
-The goal of any compiler is to take a (quantum) program and transform into a more efficient and executable one. The MQT Compiler Collection achieves this using the following compilation pipeline:
+The goal of any compiler is to take a (quantum) program and transform into a more efficient and executable one. 
+The MQT Compiler Collection achieves this using the following compilation pipeline:
 
 - First, a program in an frontend quantum language (e.g. OpenQASM) is translated to the QC dialect.
-- Next, the compiler transforms the program to QCO dialect. Subsequently, we apply optimizations, optionally perform transpilation for a target quantum architecture, and finally transform the program back to the QC dialect.
+- Next, the compiler transforms the program to QCO dialect and subsequently applies hardware-agnostic and optionally hardware-dependent passes. Finally the program is transformed back to the QC dialect.
 - Optionally, the optimized and transpiled program can be transformed into an exit dialect such as LLVM using the Quantum Intermediate Representation (QIR) extension.
 
 The figure below illustrates the compilation flow graphically.
