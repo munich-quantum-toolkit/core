@@ -146,9 +146,21 @@ func.func @select(i32, i32, i1) -> i32 {
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
 
 ```{figure} ../_static/mlir/mlir-ir-structure.svg
-:width: 70%
 :align: center
+:width: 70%
+:figclass: only-light
 :name: fig:mlir-ir-structure
+
+The data-flow graph of the IR shown above.
+```
+
+```{figure} ../_static/mlir/mlir-ir-structure-dark.svg
+:align: center
+:width: 70%
+:figclass: only-dark
+:name: fig:mlir-ir-structure
+
+The data-flow graph of the IR shown above.
 ```
 
 The control flow dialect (`cf`) is the lower-level equivalent of the structured control flow dialect (`scf`).
@@ -394,9 +406,17 @@ qco.sink %q1_2 : !qco.qubit
 The figure below illustrates the data-flow graph of the above textual intermediate representation graphically.
 
 ```{figure} ../_static/mlir/data-flow.svg
-:width: 75%
 :align: center
-:name: fig:data-flow
+:width: 75%
+:figclass: only-light
+
+The data-flow graph of the IR shown above.
+```
+
+```{figure} ../_static/mlir/data-flow-dark.svg
+:align: center
+:width: 75%
+:figclass: only-dark
 
 The data-flow graph of the IR shown above.
 ```
@@ -415,9 +435,17 @@ However, with that expressiveness complexity increases also. This is best seen f
 The following figure depicts the data-flow of the `ctrl` modifier.
 
 ```{figure} ../_static/mlir/ctrl-modifier.svg
-:width: 75%
 :align: center
-:name: fig:ctrl-modifier
+:width: 75%
+:figclass: only-light
+
+The data-flow of the `ctrl` modifier.
+```
+
+```{figure} ../_static/mlir/ctrl-modifier-dark.svg
+:align: center
+:width: 75%
+:figclass: only-dark
 
 The data-flow of the `ctrl` modifier.
 ```
@@ -642,9 +670,17 @@ The goal of any compiler is to take a (quantum) program and transform into a mor
 The figure below illustrates the compilation flow graphically.
 
 ```{figure} ../_static/mlir/compiler-collection-pipeline.svg
-:width: 70%
 :align: center
-:name: fig:compiler-collection-pipeline
+:width: 70%
+:figclass: only-light
+
+The compilation pipeline of the MQT Compiler Collection.
+```
+
+```{figure} ../_static/mlir/compiler-collection-pipeline-dark.svg
+:align: center
+:width: 70%
+:figclass: only-dark
 
 The compilation pipeline of the MQT Compiler Collection.
 ```
