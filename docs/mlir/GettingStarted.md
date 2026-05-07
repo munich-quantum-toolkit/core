@@ -556,11 +556,86 @@ TODO: function with parameter
 :::
 ::::
 
+### Building Programs Programmatically
+
+Sometimes it can be useful to create an in-memory representation of a quantum program. 
+For instance, a unit-test might want to build a quantum program, perform some actions, and then verify if the resulting quantum program matches the expected outcome. 
+
+To create quantum programs, the MQT Compiler Collection provides the `QCProgramBuilder` and `QCOProgramBuilder` classes, respectively.
+The following code snippets illustrate their usage. 
+
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} cpp
+qc::QCProgramBuilder builder(/*MLIRContext*/ &ctx);
+builder.initialize();
+
+const auto q0 = builder.allocQubit();
+const auto q1 = builder.allocQubit();
+
+builder.h(q0);
+builder.ctrl(q0, [&] { builder.x(q1); });
+
+
+
+
+
+
+builder.barrier({q0, q1});
+
+
+
+const auto c0 = builder.measure(q0);
+const auto c1 = builder.measure(q1);
+
+builder.dealloc(q0);
+builder.dealloc(q1);
+
+auto program = builder.finalize();
+```
+
+:::
+
+:::{grid-item}
+
+```{code-block} cpp
+qco::QCOProgramBuilder builder(&ctx);
+builder.initialize();
+
+const auto q0_0 = builder.allocQubit();
+const auto q1_0 = builder.allocQubit();
+
+const auto q0_1 = builder.h(q0_0);
+const auto [ctrlsOut, targOut] = builder.ctrl(q0_0, q1_0,
+  [&](ValueRange targets) -> SmallVector<Value> {
+   return {builder.x(targets[0])};
+});
+const auto q0_2 = ctrlsOut[0];
+const auto q1_1 = targOut[0];
+
+const auto barrierOut = builder.barrier({q0_2, q1_1});
+const auto q0_3 = barrierOut[0];
+const auto q1_2 = barrierOut[1];
+
+const auto [q0_4, c0] = builder.measure(q0_3);
+const auto [q1_3, c1] = builder.measure(q1_2);
+
+builder.sink(q0_4);
+builder.sink(q1_3);
+
+auto program = builder.finalize();
+```
+
+:::
+::::
+
 ### Compilation Flow
 
 The goal of any compiler is to take a (quantum) program and transform into a more efficient and executable one. The MQT Compiler Collection achieves this using the following compilation pipeline:
 
-- First, a program in an input quantum language (e.g. OpenQASM) is translated to the QC dialect.
+- First, a program in an frontend quantum language (e.g. OpenQASM) is translated to the QC dialect.
 - Next, the compiler transforms the program to QCO dialect. Subsequently, we apply optimizations, optionally perform transpilation for a target quantum architecture, and finally transform the program back to the QC dialect.
 - Optionally, the optimized and transpiled program can be transformed into an exit dialect such as LLVM using the Quantum Intermediate Representation (QIR) extension.
 
@@ -574,7 +649,16 @@ The figure below illustrates the compilation flow graphically.
 The compilation pipeline of the MQT Compiler Collection.
 ```
 
+Let's think about this for a moment:
+Theoretically, any frontend quantum language (today's and tomorrow's!) that translates their abstract syntax tree to the QC dialect can leverage all passes developed and maintained within the MQT Compiler Collection.
+This approach has been a success story in the classical compiler world, where instead of relying on proprietary compilation stacks, programming languages such as C++, Rust, and Go utilize LLVM as optimization driver. 
+The MQT Compiler Collection attempts to establish this design philosophy in the quantum world.
+
+
+
 ## Writing Your First Optimization Pass
+
+TODO
 
 ### Directory Layout
 
@@ -622,7 +706,7 @@ This section shows you how to use the MQT Compiler Collection Tool (`mqt-cc`).
 
 Lets say you want to optimize the following OpenQASM program. Create a `.qasm` file and name it `ghz.qasm`:
 
-```{code-block} OpenQASM
+```{code-block} 
 :lineno-start: 0
 OPENQASM 2.0;
 include "qelib1.inc";
