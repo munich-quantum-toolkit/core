@@ -79,9 +79,22 @@ where the first qubit acts as the control qubit.
 
 Quantum circuits describe a quantum computation graphically:
 
-```{image} ../_static/bell-circuit.svg
-:width: 50%
+```{figure} ../_static/mlir/bell-circuit.svg
 :align: center
+:width: 60%
+:figclass: only-light
+:name: fig:mlir-ir-structure
+
+A circuit constructing the first Bell state.
+```
+
+```{figure} ../_static/mlir/bell-circuit-dark.svg
+:align: center
+:width: 60%
+:figclass: only-dark
+:name: fig:mlir-ir-structure
+
+A circuit constructing the first Bell state.
 ```
 
 Read from left to right, the above quantum circuit computes and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$:
