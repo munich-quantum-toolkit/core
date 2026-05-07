@@ -37,7 +37,7 @@ namespace {
  * This pattern swaps a Pauli gate with a Hadamard gate. This is done using the
  * commutation rules of Pauli and Hadamard gates, which are:
  * - X - H - = - H - Z -
- * - Y - H - = - H - Y - G(pi) -
+ * - Y - H - = - H - Y -, while adding a gPhase(pi)
  * - Z - H - = - H - X -
  * This is applied to uncontrolled gates.
  * In case of Pauli-Y, a global phase is applied, as HY = -YH.
@@ -53,7 +53,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
    * This method swaps a Pauli gate with a Hadamard gate. This is done using the
    * commutation rules of Pauli and Hadamard gates, which are:
    * - X - H - = - H - Z -
-   * - Y - H - = - H - Y - gPhase(pi) -
+   * - Y - H - = - H - Y -, while adding a gPhase(pi)
    * - Z - H - = - H - X -
    *
    * @param gate The Pauli gate.
