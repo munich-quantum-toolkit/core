@@ -89,9 +89,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "The alpha factor in the cost function. Must be > 0.">,
                  Option<"lambda", "lambda", "float", "0.5F",
                         "The lambda factor in the cost function.">,
-                 Option<"niterations", "niterations", "std::size_t", "2",
+                 Option<"niterations", "niterations", "std::size_t", "1",
                         "The number of forwards and backwards traversal to "
-                        "improve the initial layout.">,
+                        "improve the initial layout. Must be > 0.">,
                  Option<"ntrials", "ntrials", "std::size_t", "4",
                         "The number of (possibly parallel) random trials of "
                         "the forwards and backwards mechanism. Must be > 0.">,
