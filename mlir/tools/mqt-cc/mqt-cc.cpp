@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
@@ -150,6 +151,8 @@ int main(int argc, char** argv) {
   registry.insert<memref::MemRefDialect>();
   registry.insert<scf::SCFDialect>();
   registry.insert<LLVM::LLVMDialect>();
+  registry.insert<mlir::memref::MemRefDialect>();
+  registry.insert<qtensor::QTensorDialect>();
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();

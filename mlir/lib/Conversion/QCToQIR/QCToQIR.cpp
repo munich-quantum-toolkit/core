@@ -16,11 +16,12 @@
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
@@ -31,7 +32,6 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -86,7 +86,7 @@ struct LoweringState : QIRMetadata {
   llvm::StringMap<Value> resultArrays;
 
   /// Map from (register name, index) to loaded result
-  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> loadedResults;
+  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
 
   /// Map from index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
@@ -339,7 +339,7 @@ struct QCToQIRTypeConverter final : LLVMTypeConverter {
         [ctx](QubitType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
 
     addConversion([ctx](MemRefType type) -> Type {
-      if (llvm::isa<QubitType>(type.getElementType())) {
+      if (isa<QubitType>(type.getElementType())) {
         return LLVM::LLVMPointerType::get(ctx);
       }
       return type;

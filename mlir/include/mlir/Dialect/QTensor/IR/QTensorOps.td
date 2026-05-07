@@ -86,8 +86,8 @@ def FromElementsOp
            TypesMatchWith<
                "operand types match result element type", "result", "elements",
                "SmallVector<Type, 2>("
-               "::llvm::cast<RankedTensorType>($_self).getNumElements(), "
-               "::llvm::cast<RankedTensorType>($_self).getElementType())">]> {
+               "cast<RankedTensorType>($_self).getNumElements(), "
+               "cast<RankedTensorType>($_self).getElementType())">]> {
   let summary = "Create a tensor from a range of values";
   let description = [{
         The `qtensor.from_elements` operation is a wrapper operation of the `tensor.from_elements` operation.
@@ -110,14 +110,13 @@ def FromElementsOp
 }
 
 def ExtractOp
-    : QTensorOp<
-          "extract",
-          [Pure,
-           TypesMatchWith<"result type matches element type of tensor",
-                          "tensor", "result",
-                          "::llvm::cast<TensorType>($_self).getElementType()">,
-           TypesMatchWith<"returned tensor type matches input tensor", "tensor",
-                          "out_tensor", "$_self">]> {
+    : QTensorOp<"extract",
+                [Pure,
+                 TypesMatchWith<"result type matches element type of tensor",
+                                "tensor", "result",
+                                "cast<TensorType>($_self).getElementType()">,
+                 TypesMatchWith<"returned tensor type matches input tensor",
+                                "tensor", "out_tensor", "$_self">]> {
   let summary = "Extract element from tensor";
   let description = [{
         The `qtensor.extract` operation is the modified version of the standard `tensor.extract`
@@ -138,14 +137,13 @@ def ExtractOp
 }
 
 def InsertOp
-    : QTensorOp<
-          "insert",
-          [Pure,
-           TypesMatchWith<"result type matches type of dest", "dest", "result",
-                          "$_self">,
-           TypesMatchWith<
-               "scalar type matches element type of dest", "dest", "scalar",
-               "::llvm::cast<TensorType>($_self).getElementType()">]> {
+    : QTensorOp<"insert", [Pure,
+                           TypesMatchWith<"result type matches type of dest",
+                                          "dest", "result", "$_self">,
+                           TypesMatchWith<
+                               "scalar type matches element type of dest",
+                               "dest", "scalar",
+                               "cast<TensorType>($_self).getElementType()">]> {
   let summary = "Insert element into tensor";
   let description = [{
         The `qtensor.insert` operation is a wrapper operation for the `tensor.insert` operation of the tensor dialect.

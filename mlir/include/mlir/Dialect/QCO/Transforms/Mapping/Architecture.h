@@ -10,10 +10,9 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/Twine.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
@@ -27,15 +26,23 @@ namespace mlir::qco {
  */
 class [[nodiscard]] Architecture {
 public:
-  using CouplingSet = mlir::DenseSet<std::pair<std::size_t, std::size_t>>;
-  using NeighbourVector = mlir::SmallVector<mlir::SmallVector<std::size_t, 4>>;
+  using CouplingSet = DenseSet<std::pair<std::size_t, std::size_t>>;
+  using NeighbourVector = SmallVector<SmallVector<std::size_t, 4>>;
 
+  /**
+   * @brief Constructs an empty architecture.
+   */
+  Architecture() : nqubits_(0) {}
+
+  /**
+   * @brief Constructs a well-defined architecture.
+   */
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
         couplingSet_(std::move(couplingSet)), neighbours_(nqubits),
-        dist_(nqubits, mlir::SmallVector<std::size_t>(nqubits, UINT64_MAX)),
-        prev_(nqubits, mlir::SmallVector<std::size_t>(nqubits, UINT64_MAX)) {
+        dist_(nqubits, SmallVector<size_t>(nqubits, UINT64_MAX)),
+        prev_(nqubits, SmallVector<size_t>(nqubits, UINT64_MAX)) {
     floydWarshallWithPathReconstruction();
     collectNeighbours();
   }
@@ -63,8 +70,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] mlir::SmallVector<std::size_t, 4>
-  neighboursOf(std::size_t u) const;
+  [[nodiscard]] ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the
@@ -73,7 +79,7 @@ public:
   [[nodiscard]] std::size_t maxDegree() const;
 
 private:
-  using Matrix = mlir::SmallVector<mlir::SmallVector<std::size_t, 0>, 0>;
+  using Matrix = SmallVector<SmallVector<std::size_t, 0>, 0>;
 
   /**
    * @brief Find all shortest paths in the coupling map between two qubits.
@@ -97,5 +103,4 @@ private:
   Matrix dist_;
   Matrix prev_;
 };
-
 } // namespace mlir::qco
