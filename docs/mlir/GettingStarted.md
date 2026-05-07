@@ -558,12 +558,11 @@ TODO: function with parameter
 
 ### Building Programs Programmatically
 
-Sometimes it can be useful to create an in-memory representation of a quantum program. 
-For instance, a unit-test might want to build a quantum program, perform some actions, and then verify if the resulting quantum program matches the expected outcome. 
+Sometimes it can be useful to create an in-memory representation of a quantum program.
+For instance, a unit-test might want to build a quantum program, perform some actions, and then verify if the resulting quantum program matches the expected outcome.
 
 To create quantum programs, the MQT Compiler Collection provides the `QCProgramBuilder` and `QCOProgramBuilder` classes, respectively.
-The following code snippets illustrate their usage. 
-
+The following code snippets illustrate their usage.
 
 ::::{grid} 2
 :::{grid-item}
@@ -651,10 +650,8 @@ The compilation pipeline of the MQT Compiler Collection.
 
 Let's think about this for a moment:
 Theoretically, any frontend quantum language (today's and tomorrow's!) that translates their abstract syntax tree to the QC dialect can leverage all passes developed and maintained within the MQT Compiler Collection.
-This approach has been a success story in the classical compiler world, where instead of relying on proprietary compilation stacks, programming languages such as C++, Rust, and Go utilize LLVM as optimization driver. 
+This approach has been a success story in the classical compiler world, where instead of relying on proprietary compilation stacks, programming languages such as C++, Rust, and Go utilize LLVM as optimization driver.
 The MQT Compiler Collection attempts to establish this design philosophy in the quantum world.
-
-
 
 ## Writing Your First Optimization Pass
 
@@ -706,7 +703,7 @@ This section shows you how to use the MQT Compiler Collection Tool (`mqt-cc`).
 
 Lets say you want to optimize the following OpenQASM program. Create a `.qasm` file and name it `ghz.qasm`:
 
-```{code-block} 
+```{code-block}
 :lineno-start: 0
 OPENQASM 2.0;
 include "qelib1.inc";
