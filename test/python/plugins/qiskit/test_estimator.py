@@ -37,11 +37,6 @@ def _get_ndarray_field(data: object, field: str) -> np.ndarray:
     return value
 
 
-pytestmark = [
-    pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
-]
-
-
 def test_estimator_instantiation(backend_with_mock_jobs: QDMIBackend) -> None:
     """Estimator can be instantiated with a backend."""
     estimator = QDMIEstimator(backend_with_mock_jobs)

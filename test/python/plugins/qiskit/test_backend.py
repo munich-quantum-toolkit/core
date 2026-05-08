@@ -50,12 +50,6 @@ if TYPE_CHECKING:
     ZonedDevice = _FomacDeviceLike
 
 
-pytestmark = [
-    pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
-    pytest.mark.filterwarnings("ignore:Device does not define a measurement operation.*:UserWarning"),
-]
-
-
 def test_backend_instantiation(real_backend: QDMIBackend) -> None:
     """Backend exposes target qubit count."""
     assert real_backend.target.num_qubits > 0

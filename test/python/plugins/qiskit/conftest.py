@@ -414,7 +414,7 @@ def site_specific_device(mock_qdmi_device_factory: type[MockQDMIDevice]) -> Mock
     operations = [
         _build_site_specific_operation(mock_cls, "h", 1, sites),
         _build_site_specific_operation(mock_cls, "cz", 2, sites),
-        mock_cls.MockOperation("measure"),
+        _build_site_specific_operation(mock_cls, "measure", 1, sites),
     ]
     device = mock_cls(name="Site-Specific Device", num_qubits=3)
     device._operations = operations  # noqa: SLF001

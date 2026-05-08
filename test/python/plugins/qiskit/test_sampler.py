@@ -14,7 +14,6 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 import numpy as np
-import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, Parameter
 from qiskit.primitives import BaseSamplerV2
@@ -35,11 +34,6 @@ def _get_bit_array(data: object, register: str) -> BitArray:
     bit_array = getattr(data, register, None)
     assert isinstance(bit_array, BitArray)
     return bit_array
-
-
-pytestmark = [
-    pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
-]
 
 
 def test_sampler_instantiation(backend_with_mock_jobs: QDMIBackend) -> None:
