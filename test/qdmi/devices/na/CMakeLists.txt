@@ -11,7 +11,7 @@ if(TARGET MQT::CoreQDMINaDeviceGen
    AND TARGET MQT::CoreQDMINaDevice)
   # Set QDMI prefix again for the tests
   set(QDMI_PREFIX "MQT_NA")
-  generate_device_defs_executable(${QDMI_PREFIX})
+  generate_device_defs_executable(${QDMI_PREFIX} TARGET MQT::CoreQDMINaDevice)
   # Set test target name
   set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-test)
   # Add the test executable

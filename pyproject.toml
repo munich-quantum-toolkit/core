@@ -97,9 +97,7 @@ build.targets = [
   "mqt-core-na-bindings",
   "mqt-core-qdmi-ddsim-device",
   "mqt-core-qdmi-na-device",
-  "mqt-core-qdmi-na-device-dyn",
   "mqt-core-qdmi-sc-device",
-  "mqt-core-qdmi-sc-device-dyn",
 ]
 
 install.components = [

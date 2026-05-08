@@ -11,6 +11,8 @@ macro(PACKAGE_ADD_TEST testname linklibs)
   if(NOT TARGET ${testname})
     # create an executable in which the tests will be stored
     add_executable(${testname} ${ARGN})
+    # Ensure test executables remain runnable from the build tree during GoogleTest discovery
+    set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
     # link the Google test infrastructure and a default main function to the test executable.
     target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
                                               MQT::ProjectOptions MQT::ProjectWarnings)
@@ -30,6 +32,8 @@ macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory
   if(NOT TARGET ${testname})
     # create an executable in which the tests will be stored
     add_executable(${testname} ${ARGN})
+    # Ensure test executables remain runnable from the build tree during GoogleTest discovery
+    set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
     # link the Google test infrastructure and a default main function to the test executable.
     target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
                                               MQT::ProjectOptions MQT::ProjectWarnings)

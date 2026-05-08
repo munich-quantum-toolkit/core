@@ -9,7 +9,7 @@
 if(TARGET MQT::CoreQDMI_DDSIM_Device)
   # Set QDMI prefix again for the tests
   set(QDMI_PREFIX "MQT_DDSIM")
-  generate_device_defs_executable(${QDMI_PREFIX})
+  generate_device_defs_executable(${QDMI_PREFIX} TARGET MQT::CoreQDMI_DDSIM_Device)
   # Set test target name
   set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-ddsim-device-test)
   # Add the test executable
