@@ -162,9 +162,6 @@ enum class SessionStatus : uint8_t {
  */
 struct QDMI_Device_impl_d {
 private:
-  // Since we treat this struct as a class, we apply also the naming scheme for
-  // classes, i.e., an underscore at the end of member names.
-
   /**
    * @brief The device library that provides the device interface functions.
    * @note This must be a pointer type as we need access to dynamic and static
@@ -249,9 +246,6 @@ public:
  */
 struct QDMI_Job_impl_d {
 private:
-  // Since we treat this struct as a class, we apply also the naming scheme for
-  // classes, i.e., an underscore at the end of member names.
-
   /// @brief The device job handle.
   QDMI_Device_Job deviceJob_ = nullptr;
   /// @brief The device associated with the job.
@@ -334,8 +328,6 @@ public:
 /**
  * @brief Definition of the QDMI Session.
  */
-// Since we treat this struct as a class, we apply also the naming scheme for
-// classes, i.e., an underscore at the end of member names.
 struct QDMI_Session_impl_d {
 private:
   /// @brief The status of the session.
