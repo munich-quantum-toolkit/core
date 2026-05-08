@@ -13,13 +13,18 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices via FoMaC.
 
 from __future__ import annotations
 
+import inspect
 import itertools
 import warnings
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
 from qiskit.circuit import QuantumCircuit
-from qiskit.circuit.library import get_standard_gate_name_mapping
+from qiskit.circuit.library import (
+    MCPhaseGate,
+    MCXGate,
+    get_standard_gate_name_mapping,
+)
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
@@ -69,6 +74,13 @@ def _build_gate_mappings_for_backend(
     """
     # Get Qiskit's standard gate name mapping as our canonical source
     canonical_gates = get_standard_gate_name_mapping()
+
+    # Augment the canonical mapping with any additional gates that may not be in Qiskit's standard library
+    canonical_gates.update({
+        "mcx": MCXGate,
+        "mcphase": MCPhaseGate,
+        "mcp": MCPhaseGate,
+    })
 
     qiskit_to_qdmi: dict[str, set[str]] = {}
     operation_to_gate: dict[str, Instruction] = {}
@@ -125,9 +137,21 @@ class QDMIBackend(BackendV2):
         "p": {"phase"},  # Phase gate can also be called 'phase'
         "r": {"prx"},  # R gate can also be called 'prx' (IQM naming)
         "u": {"u3"},  # U and U3 are the same gate
+        "cu": {"cu3"},  # CU and CU3 are the same gate
         "cx": {"cnot"},  # CX and CNOT are the same gate
         "global_phase": {"gphase"},  # Qiskit canonical name
         "gphase": {"global_phase"},  # OpenQASM canonical name
+        "mcphase": {"mcp"},  # Qiskit canonical name
+        "mcp": {"mcphase"},  # OpenQASM canonical name
+    }
+
+    _QDMI_TO_QISKIT_GATE_MAP: ClassVar[dict[str, str]] = {
+        "i": "id",
+        "prx": "r",
+        "mcp": "mcphase",
+        "u3": "u",
+        "gphase": "global_phase",
+        "cu3": "cu",
     }
 
     _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
@@ -210,6 +234,9 @@ class QDMIBackend(BackendV2):
             if op_name.lower() in {"barrier", "if_else"}:
                 continue
 
+            if op_name in self._QDMI_TO_QISKIT_GATE_MAP:
+                op_name = self._QDMI_TO_QISKIT_GATE_MAP[op_name]
+
             gate = self._map_operation_to_gate(op_name)
             if gate is None:
                 warnings.warn(
@@ -218,15 +245,21 @@ class QDMIBackend(BackendV2):
                     stacklevel=2,
                 )
                 continue
+            is_class = inspect.isclass(gate)
 
             # Skip if we've already added this Qiskit gate to the target
-            gate_name = gate.name
+            gate_name = op_name if is_class else gate.name
             if gate_name in seen_gate_names:
                 continue
             seen_gate_names.add(gate_name)
 
             # Determine which qubits this operation applies to
             qargs = self._get_operation_qargs(op)
+
+            # Globally supported gates (such as MCX) must specify a name and no properties
+            if is_class:
+                target.add_instruction(gate, name=op_name)
+                continue
 
             # If qargs is [None], it means the operation is available on all qubits
             if qargs == [None]:
@@ -280,7 +313,7 @@ class QDMIBackend(BackendV2):
         # Check if the measurement operation is defined
         if "measure" not in seen_gate_names:
             warnings.warn(
-                "Device does not define a measurement operation. This may limit practical usage.",
+                f"{self._device.name()} does not define a measurement operation. This may limit practical usage.",
                 UserWarning,
                 stacklevel=2,
             )

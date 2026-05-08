@@ -866,6 +866,19 @@ def test_backend_validation_uses_inverse_mapping(
 
 
 def test_zoned_operation_rejected_at_backend_init(zoned_operation_device: ZonedDevice) -> None:
+def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> None:
+    """Backend executes multi-controlled gates (e.g., MCX) and returns counts."""
+    qc = QuantumCircuit(3)
+    qc.mcx([0, 1], 2)  # Toffoli gate
+    qc.mcp(1.5708, [0, 1], 2)  # Multi-controlled Phase
+    qc.measure_all()
+
+    job = ddsim_backend.run(qc, shots=100)
+    counts = job.result().get_counts()
+    assert sum(counts.values()) == 100
+
+
+def test_zoned_operation_rejected_at_backend_init() -> None:
     """Backend rejects devices exposing zoned operations."""
     with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
         QDMIBackend(device=cast("fomac.Device", zoned_operation_device))
