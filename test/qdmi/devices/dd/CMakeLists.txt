@@ -32,4 +32,13 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
   # Set the executable path and version information
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
   target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+  # On Windows, we need to copy the DLL to the test executable directory
+  if(WIN32)
+    add_custom_command(
+      TARGET ${TARGET_NAME}
+      PRE_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>
+              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+  endif()
 endif()

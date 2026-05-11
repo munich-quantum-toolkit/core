@@ -16,6 +16,7 @@
 #include <qdmi/device.h>
 #include <spdlog/spdlog.h>
 
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -31,13 +32,59 @@
 
 #ifdef _WIN32
 #include <windows.h>
+
+#include <filesystem>
 #else
 #include <dlfcn.h>
 #endif // _WIN32
 
 namespace qdmi {
 #ifdef _WIN32
-#define DL_OPEN(lib) LoadLibraryA((lib))
+namespace {
+/// Returns the directory of the currently loaded driver library.
+[[nodiscard]] auto getDriverDirectory() -> std::filesystem::path {
+  HMODULE module = nullptr;
+  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         reinterpret_cast<LPCWSTR>(&getDriverDirectory),
+                         &module) == 0) {
+    return {};
+  }
+
+  std::wstring buffer(MAX_PATH, L'\0');
+  DWORD size = 0;
+  while (true) {
+    size = GetModuleFileNameW(module, buffer.data(),
+                              static_cast<DWORD>(buffer.size()));
+    if (size == 0) {
+      return {};
+    }
+    if (size < buffer.size()) {
+      buffer.resize(size);
+      break;
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+
+  return std::filesystem::path(buffer).parent_path();
+}
+
+/// Loads the device library with the given name, searching in the driver
+/// directory if no path is specified.
+[[nodiscard]] auto loadDeviceLibrary(const std::string& libName) -> HMODULE {
+  const auto requested = std::filesystem::path(libName);
+
+  const std::filesystem::path path = requested.has_parent_path()
+                                         ? requested
+                                         : getDriverDirectory() / requested;
+
+  return LoadLibraryExW(path.wstring().c_str(), nullptr,
+                        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                            LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+}
+} // namespace
+
+#define DL_OPEN(lib) loadDeviceLibrary((lib))
 #define DL_SYM(lib, sym)                                                       \
   reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>((lib)), (sym)))
 #define DL_CLOSE(lib) FreeLibrary(static_cast<HMODULE>((lib)))

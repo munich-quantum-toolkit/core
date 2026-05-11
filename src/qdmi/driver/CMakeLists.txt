@@ -30,15 +30,27 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE
-      "DYN_DEV_LIBS=std::array{ std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMINaDevice>\", \"MQT_NA\"}, std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"} }"
+      "DYN_DEV_LIBS=std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMINaDevice>\", \"MQT_NA\"}, std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE_NAME:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"}"
   )
 
   # Ensure the driver can find the device libraries at runtime
   if(WIN32)
-    # On Windows, ensure the driver depends on the device libraries so they are found when loading
-    # the driver DLL.
-    target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMINaDevice MQT::CoreQDMIScDevice
-                                                 MQT::CoreQDMI_DDSIM_Device)
+    # On Windows, we need to copy the device DLLs to the library directory
+    add_custom_command(
+      TARGET ${TARGET_NAME}
+      PRE_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMIScDevice>
+              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+    add_custom_command(
+      TARGET ${TARGET_NAME}
+      PRE_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMINaDevice>
+              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+    add_custom_command(
+      TARGET ${TARGET_NAME}
+      PRE_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>
+              $<TARGET_FILE_DIR:${TARGET_NAME}>)
   else()
     target_link_options(
       ${TARGET_NAME}
