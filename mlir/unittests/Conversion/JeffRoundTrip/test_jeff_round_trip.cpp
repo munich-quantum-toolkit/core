@@ -19,6 +19,8 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <jeff/Translation/Deserialize.hpp>
+#include <jeff/Translation/Serialize.hpp>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -110,6 +112,10 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
 
   printer.record(program.get(), "Canonicalized Converted jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
+
+  // Serialize and deserialize to ensure the jeff program is valid
+  auto data = serialize(*program);
+  program = deserialize(context.get(), data);
 
   EXPECT_TRUE(succeeded(convertJeffToQCO(program.get())));
   printer.record(program.get(), "Converted QCO IR" + name);
