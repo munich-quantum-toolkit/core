@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Support/LLVM.h>
@@ -28,6 +29,14 @@ public:
   using CouplingSet = DenseSet<std::pair<std::size_t, std::size_t>>;
   using NeighbourVector = SmallVector<SmallVector<std::size_t, 4>>;
 
+  /**
+   * @brief Constructs an empty architecture.
+   */
+  Architecture() : nqubits_(0) {}
+
+  /**
+   * @brief Constructs a well-defined architecture.
+   */
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
@@ -61,7 +70,7 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] SmallVector<std::size_t, 4> neighboursOf(std::size_t u) const;
+  [[nodiscard]] ArrayRef<std::size_t> neighboursOf(std::size_t u) const;
 
   /**
    * @brief Return the maximum degree (connectivity) of any qubit in the
@@ -94,5 +103,4 @@ private:
   Matrix dist_;
   Matrix prev_;
 };
-
 } // namespace mlir::qco

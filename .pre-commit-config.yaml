@@ -28,7 +28,7 @@ repos:
 
   ## Check JSON schemata
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.37.1
+    rev: 0.37.2
     hooks:
       - id: check-github-workflows
         priority: 0
@@ -52,7 +52,7 @@ repos:
 
   ## Ensure uv.lock is up to date
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.7
+    rev: 0.11.8
     hooks:
       - id: uv-lock
         priority: 0
@@ -69,7 +69,7 @@ repos:
 
   ## Check for typos
   - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.45.1
+    rev: v1.46.0
     hooks:
       - id: typos
         priority: 3
