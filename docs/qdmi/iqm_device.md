@@ -86,3 +86,4 @@ estimator = backend.estimator(default_precision=0.0)
 
 The {code}`iqm-qdmi` project still ships its own direct wrapper at {code}`iqm.qdmi.qiskit`.
 The MQT Core integration in {py:mod}`mqt.core.plugins.qiskit.iqm` exists to provide a first-class MQT-side import path and an installation flow based on {code}`mqt-core[iqm]`.
+See the [IQM QDMI Documentation](https://iqm-finland.github.io/QDMI-on-IQM/) for more details on authentication, device capabilities, and error handling.

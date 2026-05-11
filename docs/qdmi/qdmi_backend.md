@@ -126,6 +126,8 @@ If you omit these parameters, {py:class}`~mqt.core.plugins.qiskit.iqm.IQMBackend
 
 Once instantiated, the IQM backend behaves like every other QDMI-backed Qiskit backend in MQT Core and supports the same {py:meth}`~mqt.core.plugins.qiskit.iqm.IQMBackend.sampler` and {py:meth}`~mqt.core.plugins.qiskit.iqm.IQMBackend.estimator` helper methods.
 
+See the [IQM QDMI Documentation](https://iqm-finland.github.io/QDMI-on-IQM/) for more details on authentication, device capabilities, and error handling.
+
 ## Authentication
 
 The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` supports authentication for accessing QDMI devices that require credentials.
