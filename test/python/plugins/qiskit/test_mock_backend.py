@@ -172,7 +172,7 @@ class MockQDMIDevice:
                 Dictionary mapping measurement outcomes to counts.
             """
             if self._num_clbits == 0:
-                return {}
+                return {"": self._shots}
 
             if self._counts is None:
                 # Generate random counts with uniform distribution
@@ -186,7 +186,7 @@ class MockQDMIDevice:
 
                 # Create dictionary, including only non-zero counts
                 self._counts = {
-                    outcome: count for outcome, count in zip(outcomes, counts_list, strict=False) if count > 0
+                    outcome: count for outcome, count in zip(outcomes, counts_list, strict=True) if count > 0
                 }
 
             return self._counts

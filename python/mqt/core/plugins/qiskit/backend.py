@@ -227,11 +227,11 @@ class QDMIBackend(BackendV2):
         # Add operations from device
         for op in self._device.operations():
             # Map known operations to Qiskit gates
-            op_name = op.name()
+            op_name = op.name().lower()
 
             # Skip control flow operations that don't belong in the Target
             # (barrier is handled separately by Qiskit, if_else is a circuit construct)
-            if op_name.lower() in {"barrier", "if_else"}:
+            if op_name in {"barrier", "if_else"}:
                 continue
 
             if op_name in self._QDMI_TO_QISKIT_GATE_MAP:
