@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@MatthiasReumann**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
@@ -40,7 +40,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#350)._
 
 ### Added
 
-- ✨ Add support for multi-controlled gates to ZX package ([#1380]) ([**@keefehuang**])
+- ✨ Add support for multi-controlled gates to ZX package ([#1380]) ([**@keefehuang**], [**@denialhaag**])
 - ✨ Add Sampler and Estimator primitives to the QDMI-Qiskit interface ([#1507]) ([**@marcelwa**])
 
 ### Changed
