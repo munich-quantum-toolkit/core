@@ -2234,7 +2234,7 @@ void simpleDoWhileReset(QCOProgramBuilder& b) {
         b.scfCondition(measureResult, q2);
         return SmallVector{q2};
       },
-      [&](ValueRange iterArgs) { return SmallVector<Value>{iterArgs}; });
+      [&](ValueRange iterArgs) { return llvm::to_vector(iterArgs); });
 }
 
 void simpleForLoop(QCOProgramBuilder& b) {
