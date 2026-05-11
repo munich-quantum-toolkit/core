@@ -6,7 +6,6 @@ However, because (quantum) compilers are complex programs by nature, it can some
 
 This page guides you through the labyrinth of concepts and provides you with a solid understanding of the project's quantum compilation infrastructure and the underlying design decisions.
 
-
 ## Setup
 
 Before we actually get started, make sure to visit the [installation](../installation.md) page.
