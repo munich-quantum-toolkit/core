@@ -2075,10 +2075,10 @@ void ifElse(QCOProgramBuilder& b) {
 }
 
 void ifOneQubitOneTensor(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
+  auto q0 = b.allocQubit();
   auto t0 = b.allocQubitRegister(1);
-  auto q0 = b.h(q[0]);
-  auto [measuredQubit, measureResult] = b.measure(q0);
+  auto q1 = b.h(q0);
+  auto [measuredQubit, measureResult] = b.measure(q1);
   b.qcoIf(measureResult, {measuredQubit, t0.value}, [&](ValueRange args) {
     auto innerQubit0 = b.x(args[0]);
     auto [t1, innerQubit1] = b.qtensorExtract(args[1], 0);
