@@ -184,14 +184,14 @@ TEST_F(QCOTest, IfOpParser) {
   EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
   EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
-  parsedSourceModule->print(llvm::outs());
+
   auto refBuilder = QCOProgramBuilder::build(
       context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
   EXPECT_TRUE(verify(*refBuilder).succeeded());
-  refBuilder->print(llvm::outs());
+
   EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
                                                    refBuilder.get()));
 }
