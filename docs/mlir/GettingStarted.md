@@ -1,5 +1,12 @@
 # Getting Started
 
+The MQT Compiler Collection (`mqt-cc`) establishes a "classical-first" approach in the quantum compilation world.
+Following an open-source philosophy, the project thrives on external contributions.
+However, because (quantum) compilers are complex programs by nature, it can sometimes be difficult to know where and how to start.
+
+This page guides you through the labyrinth of concepts and provides you with a solid understanding of the project's quantum compilation infrastructure and the underlying design decisions.
+
+
 ## Setup
 
 Before we actually get started, make sure to visit the [installation](../installation.md) page.
@@ -23,7 +30,7 @@ $ ./mlir/tools/mqt-cc/mqt-cc --help
 
 ## Fundamentals
 
-To keep this tutorial self-contained, this section reviews the fundamentals of quantum computing and the key concepts of MLIR.
+To keep this guide self-contained, this section reviews the fundamentals of quantum computing and the key concepts of MLIR.
 If you are familiar with both quantum computing and MLIR, you may skip this section.
 
 ### Quantum Computing
@@ -63,7 +70,7 @@ X|1\rangle &= |0\rangle
 \end{aligned}
 ```
 
-A quantum gate may target multiple qubits: The controlled-X gate acts on two qubits and applies an X gate on the target qubit, if the control qubit is in the $|1\rangle$ state:
+A quantum gate may target multiple qubits: The controlled-X gate acts on two qubits and applies an X gate to the target qubit if the control qubit is in the $|1\rangle$ state:
 
 ```{math}
 :label: cx_gate_action
@@ -97,7 +104,7 @@ A circuit constructing the first Bell state.
 A circuit constructing the first Bell state.
 ```
 
-Read from left to right, the above quantum circuit computes and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$:
+Read from left to right, the above quantum circuit prepares and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$:
 
 1. Initialize both qubits in the $|0\rangle$ state.
 2. Apply a Hadamard gate H to the upper qubit. Consequently, this qubit is now in an equal superposition state.
@@ -112,13 +119,13 @@ In the next section, you will learn about the Multi-Level Intermediate Represent
 The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware.
 Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to lower them from higher to lower levels.
 
-The core concept in MLIR is a dialect.
+The core concept in MLIR is the dialect.
 A dialect groups operations, types, and attributes under a common namespace.
 A single program may combine multiple dialects, which facilitates code reuse.
 For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the `arith` dialect defines integer and floating-point operations.
 Another essential dialect is the `func` dialect, which lets us define and call functions.
 
-The following snippet combines the three dialects into a single program which sums up the numbers from 0 to 100.
+The following snippet combines the three dialects into a single program that sums the numbers from 0 to 100.
 
 ```mlir
 func.func @main() {
@@ -137,11 +144,11 @@ func.func @main() {
 ```
 
 - The `func`, `arith`, and `scf` prefixes specify the dialect's name. For example, `arith.constant` represents the `constant` operation from the `arith` dialect.
-- The percentage symbol `%` prefixes static single-assignment (SSA) values --- a principle, where each variable is assigned exactly once but never reassigned. For instance, the first `arith.constant` operation produces the `%lb` SSA value.
-- The `: index` and `: i32` specifies the type, where `i32` represents an 32-bit integer while `index` is a special type for loop bounds. The `arith.index_cast` operation casts the `%iv` variable with the type `index` to `i32`.
+- The percentage symbol `%` prefixes static single-assignment (SSA) values, a principle in which each variable is assigned exactly once and never reassigned. For instance, the first `arith.constant` operation produces the `%lb` SSA value.
+- The `: index` and `: i32` annotations specify the types, where `i32` represents a 32-bit integer while `index` is a special type for loop bounds. The `arith.index_cast` operation casts the `%iv` value from `index` to `i32`.
 - To return the final values after loop termination, we define loop-carried variables via the `iter_args` construct and the return type with the `->` symbol. Inside the loop body, we specify the value for the next iteration via the `scf.yield` operation.
 
-Moving beyond, the function below returns either `%a` or `%b` depending on the conditional `%cond`.
+The function below returns either `%a` or `%b` depending on the condition `%cond`.
 
 ```mlir
 func.func @select(i32, i32, i1) -> i32 {
@@ -152,8 +159,8 @@ func.func @select(i32, i32, i1) -> i32 {
 }
 ```
 
-- The `^entry` and `^exit` define a block, respectively. In MLIR, a block is a list of operations. Moreover, blocks take a list of arguments in an intuitive, function-like, way.
-- The terminator, the last operation inside the block, determines the control flow. For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a`, if the `%cond` is `1`. Otherwise, it uses variable `%b`. The `return` operation is another example of a terminator which returns the control flow to the caller of the function.
+- The `^entry` and `^exit` labels define blocks, respectively. In MLIR, a block is a list of operations. Moreover, blocks take a list of arguments in an intuitive, function-like way.
+- The terminator, the last operation inside the block, determines the control flow. For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a` if `%cond` is true. Otherwise, it uses variable `%b`. The `return` operation is another example of a terminator that returns control to the caller of the function.
 - A region combines multiple blocks and is indicated by curly brackets.
 
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
@@ -176,10 +183,10 @@ The data-flow graph of the IR shown above.
 The data-flow graph of the IR shown above.
 ```
 
-The control flow dialect (`cf`) is the lower-level equivalent of the structured control flow dialect (`scf`).
-For each IR that uses the SCF dialect there is an equivalent one in the CF dialect.
-For example, the IR below is semantically equivalent to the one above that sums up the numbers from 0 to 100.
-However, it uses the CF instead of the SCF dialect.
+The control-flow dialect (`cf`) is the lower-level equivalent of the structured control-flow dialect (`scf`).
+For each IR that uses the SCF dialect, there is an equivalent one in the CF dialect.
+For example, the IR below is semantically equivalent to the one above that sums the numbers from 0 to 100.
+However, it uses the CF dialect instead of the SCF dialect.
 
 ```mlir
 func.func @main() {
@@ -203,27 +210,27 @@ func.func @main() {
   }
 ```
 
-Luckily, we don't have to perform this conversion --- the transformation from one dialect to another --- per hand.
+Luckily, we don't have to perform this conversion --- the transformation from one dialect to another --- by hand.
 The MLIR framework already implements this and many other conversions between the built-in dialects.
-Furthermore, we can develop custom conversions using the conversion framework which defines exactly how a transformation must look like and under what circumstances the resulting IR is considered valid.
+Furthermore, we can develop custom conversions using the conversion framework, which defines exactly how a transformation must look and under what circumstances the resulting IR is considered valid.
 
-Conversions are a specific instance of transformation passes. More generally, a pass in MLIR traverses the IR and optionally modifies it. An example of a non-rewriting pass are analyses passes, which simply collect statistics of the IR. Moreover, multiple passes can be combined into a pass pipeline which executes a series of passes sequentially.
+Conversions are a specific instance of transformation passes. More generally, a pass in MLIR traverses the IR and optionally modifies it. An example of a non-rewriting pass is an analysis pass, which simply collects statistics about the IR. Moreover, multiple passes can be combined into a pass pipeline that executes a series of passes sequentially.
 
-That's it! Now that we've also got all the fundamentals covered, we can move on and explore how the MQT Compiler Collection utilizes MLIR to build a compiler for quantum computing.
+That's it! Now that we've covered the fundamentals, we can move on and explore how the MQT Compiler Collection utilizes MLIR to build a compiler for quantum computing.
 
 ## The MQT Compiler Collection
 
 The MQT Compiler Collection (`mqt-cc`) provides tools to optimize and transpile quantum programs.
-This section outlines how we utilize the MLIR framework as well as its compilation infrastructure to implement these tasks.
+This section outlines how we use the MLIR framework and its compilation infrastructure to implement these tasks.
 
 ### Quantum Dialects
 
-The MQT Compiler Collection defines two dialects in MLIR, each with a distinctive purpose.
+The MQT Compiler Collection defines two dialects in MLIR, each with a distinct purpose.
 While the Quantum Circuit (QC) dialect is great for exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is --- as the name suggests --- specifically designed for optimizations.
 Let's explore their differences.
 
 The following snippet allocates and subsequently deallocates a dynamic qubit using the `alloc` operation of the respective dialect.
-In the QC dialect, we can dealloc dynamic qubits using the `dealloc` operation, whereas in the QCO dialect we define end of a qubit's lifespan with the `sink` operation.
+In the QC dialect, we can deallocate dynamic qubits using the `dealloc` operation, whereas in the QCO dialect we mark the end of a qubit's lifespan with the `sink` operation.
 
 ::::{grid} 2
 :::{grid-item}
@@ -249,8 +256,8 @@ qco.sink %q0_0 : !qco.qubit
 
 To target specific hardware qubits, we use the `static` operation.
 While static qubits in the QCO dialect still require a `sink` operation, the `dealloc` is omitted for the QC dialect.
-There is a sound rationale behind this seemingly obscure design choice: The QCO dialect enforces "linear typing", where each (qubit) SSA value is used _exactly_ once.
-If there wasn't a `sink` operation for static qubits in the QCO dialect, this property would be violated.
+There is a sound rationale behind this seemingly obscure design choice: The QCO dialect enforces "linear typing", where each qubit SSA value is used _exactly_ once.
+If there were no `sink` operation for static qubits in the QCO dialect, this property would be violated.
 
 ::::{grid} 2
 :::{grid-item}
@@ -273,7 +280,7 @@ qco.sink %q0_0 : !qco.qubit
 :::
 ::::
 
-Let's apply an Hadamard gate to a qubit next:
+Let's apply a Hadamard gate to a qubit next:
 
 ::::{grid} 2
 :::{grid-item}
@@ -303,7 +310,7 @@ Notice how the Hadamard operation in the QCO dialect consumes and produces SSA v
 We say that the QC dialect uses "reference semantics" whereas the QCO dialect uses "value semantics".
 Semantically, the unitary operations in the QCO dialect return the new state after modifying it.
 
-Instead of the Hadamard, we can also apply the identical transformation as X and Y rotations with parameterized gates as follows:
+Instead of the Hadamard, we can also achieve the same transformation with X and Y rotations using parameterized gates as follows:
 
 ::::{grid} 2
 :::{grid-item}
@@ -367,7 +374,7 @@ qco.sink %q0_2 : !qco.qubit
 ::::
 
 Moving on from one-qubit gates, let us apply a controlled-X operation.
-Towards that end, we allocate a second qubit and use the `ctrl` modifier operation of the respective dialect to implement the controlled-X.
+To that end, we allocate a second qubit and use the `ctrl` modifier operation of the respective dialect to implement the controlled-X.
 By using modifiers, arbitrary (multi-)controlled gates can be represented without having to explicitly define them.
 
 ::::{grid} 2
@@ -434,15 +441,15 @@ The data-flow graph of the IR shown above.
 The data-flow graph of the IR shown above.
 ```
 
-The dependencies between operations are naturally express because the QCO dialect models quantum computations as directed acyclic "data-flow" graphs (DAG).
+The dependencies between operations are naturally expressed because the QCO dialect models quantum computations as directed acyclic "data-flow" graphs (DAGs).
 For instance, the controlled-X operation depends on the application of the Hadamard operation.
-This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two!
-Consequently, the expressive dataflow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
+This is especially useful for gate cancellation: if one gate is the inverse of another, cancel both.
+Consequently, the expressive data-flow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
 
-However, with that expressiveness complexity increases also. This is best seen for the `qco.ctrl` operation:
+However, that expressiveness also increases complexity. This is best seen in the `qco.ctrl` operation:
 
 - The input target qubit must be explicitly specified and is aliased to the block argument `%arg0`.
-- The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield` to return the control flow to the outer scope.
+- The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield` to return the resulting values to the outer scope.
 - Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
 
 The following figure depicts the data-flow of the `ctrl` modifier.
@@ -463,8 +470,8 @@ The data-flow of the `ctrl` modifier.
 The data-flow of the `ctrl` modifier.
 ```
 
-In many front-end quantum languages, there is a concept describing a register (a collection) of qubits.
-The QC and QCO dialect use the `memref` and `qtensor` dialects to describe these constructs, respectively, where the latter is part of the MQT Compiler Collection.
+In many front-end quantum languages, there is a concept describing a register, that is, a collection of qubits.
+The QC and QCO dialects use the `memref` and `qtensor` dialects to describe these constructs, respectively, where the latter is part of the MQT Compiler Collection.
 The following snippets construct the three-qubit [GHZ](https://en.wikipedia.org/wiki/Greenberger–Horne–Zeilinger_state) state in the QC and QCO dialect.
 
 ::::{grid} 2
@@ -513,9 +520,9 @@ memref.dealloc %r0 : memref<3x!qc.qubit>
 %i0 = arith.constant 0 : index
 %i1 = arith.constant 1 : index
 %i2 = arith.constant 2 : index
+%N = arith.constant 3 : index
 
-%sz = arith.constant 3 : index
-%r0_0 = qtensor.alloc(%sz) : tensor<3x!qco.qubit>
+%r0_0 = qtensor.alloc(%N) : tensor<3x!qco.qubit>
 
 %r0_1, %q0_0 = qtensor.extract %r0_0[%i0] : tensor<3x!qco.qubit>
 %r0_2, %q1_0 = qtensor.extract %r0_1[%c1] : tensor<3x!qco.qubit>
@@ -535,9 +542,9 @@ memref.dealloc %r0 : memref<3x!qc.qubit>
   qco.yield %q2_2
 } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
 
-%r0_4 = qtensor.insert %targets_out into %r0_3[%c1] : tensor<3x!qco.qubit>
-%r0_5 = qtensor.insert %targets_out_5 into %r0_4[%c2] : tensor<3x!qco.qubit>
-%r0_6 = qtensor.insert %controls_out_4 into %r0_5[%c0] : tensor<3x!qco.qubit>
+%r0_4 = qtensor.insert %q1_2 into %r0_3[%c1] : tensor<3x!qco.qubit>
+%r0_5 = qtensor.insert %q2_2 into %r0_4[%c2] : tensor<3x!qco.qubit>
+%r0_6 = qtensor.insert %q0_3 into %r0_5[%c0] : tensor<3x!qco.qubit>
 
 qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
 ```
@@ -545,12 +552,12 @@ qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
 :::
 ::::
 
-Similarly to the argument above, to satisfy linear typing, the QCO dialect requires `insert` operations for the qubit SSA values.
+Similarly to the argument above, to satisfy linear typing, the QCO dialect requires `insert` operations for qubit SSA values.
 Moreover, the QCO dialect also enforces this property for registers (`%r0_1`, `%r0_2`, etc.).
 Consequently, in the QCO dialect the SSA value of a register represents its state.
 
 What if we wanted to construct a four-qubit GHZ state?
-A straight forward solution would be to simply increase the size of the register and add another controlled-X.
+A straightforward solution would be to simply increase the size of the register and add another controlled-X.
 However, there is a more expressive and elegant solution using structured control flow (SCF) operations; in particular, a loop.
 To do so, we leverage MLIR's built-in `scf` dialect.
 
@@ -559,18 +566,17 @@ To do so, we leverage MLIR's built-in `scf` dialect.
 
 ```{code-block} mlir
 //          QC
-%i0 = arith.constant 0 : index
-
-%lb = arith.constant 1 : index
-%ub = arith.constant 4 : index
-%step = arith.constant 1 : index
+%N = arith.constant 4 : index
 
 %r0 = memref.alloc() : memref<4x!qc.qubit>
 
+%i0 = arith.constant 0 : index
 %q0 = memref.load %r0[%i0] : memref<4x!qc.qubit>
 qc.h %q0 : !qc.qubit
 
-scf.for %iv = %lb to %ub step %step {
+%lb = arith.constant 1 : index
+%step = arith.constant 1 : index
+scf.for %iv = %lb to %N step %step {
   %qi = memref.load %r0[%iv] : memref<4x!qc.qubit>
   qc.h %qi : !qc.qubit
   qc.ctrl(%q0) {
@@ -587,7 +593,7 @@ memref.dealloc %r0 : memref<4x!qc.qubit>
 
 ```mlir
 //            QCO
-TODO: Loops
+TODO
 ```
 
 :::
@@ -601,7 +607,28 @@ Naturally, a function taking N as parameter seems like an appropriate choice.
 
 ```{code-block} mlir
 //          QC
-TODO: function with parameter
+func.func @ghz(%N: index) {
+  %r0 = memref.alloc() : memref<4x!qc.qubit>
+
+  %i0 = arith.constant 0 : index
+  %q0 = memref.load %r0[%i0] : memref<4x!qc.qubit>
+  qc.h %q0 : !qc.qubit
+
+  %lb = arith.constant 1 : index
+  %step = arith.constant 1 : index
+  scf.for %iv = %lb to %N step %step {
+    %qi = memref.load %r0[%iv] : memref<4x!qc.qubit>
+    qc.h %qi : !qc.qubit
+    qc.ctrl(%q0) {
+      qc.x %qi : !qc.qubit
+    } : !qc.qubit
+
+  }
+
+  memref.dealloc %r0 : memref<4x!qc.qubit>
+
+  return
+}
 ```
 
 :::
@@ -610,7 +637,7 @@ TODO: function with parameter
 
 ```mlir
 //            QCO
-TODO: function with parameter
+TODO
 ```
 
 :::
@@ -619,7 +646,7 @@ TODO: function with parameter
 ### Building Programs Programmatically
 
 Sometimes it can be useful to create an in-memory representation of a quantum program.
-For instance, a unit-test might want to build a quantum program, perform some actions, and then verify if the resulting quantum program matches the expected outcome.
+For instance, a unit test might want to build a quantum program, perform some actions, and then verify that the resulting quantum program matches the expected outcome.
 
 To create quantum programs, the MQT Compiler Collection provides the `QCProgramBuilder` and `QCOProgramBuilder` classes, respectively.
 The following code snippets illustrate their usage.
@@ -692,12 +719,12 @@ auto program = builder.finalize();
 
 ### Compilation Flow
 
-The goal of any compiler is to take a (quantum) program and transform into a more efficient and executable one. 
+The goal of any compiler is to take a (quantum) program and transform it into a more efficient and executable one.
 The MQT Compiler Collection achieves this using the following compilation pipeline:
 
-- First, a program in an frontend quantum language (e.g. OpenQASM) is translated to the QC dialect.
-- Next, the compiler transforms the program to QCO dialect and subsequently applies hardware-agnostic and optionally hardware-dependent passes. Finally the program is transformed back to the QC dialect.
-- Optionally, the optimized and transpiled program can be transformed into an exit dialect such as LLVM using the Quantum Intermediate Representation (QIR) extension.
+- First, a program in a front-end quantum language (e.g. OpenQASM) is translated to the QC dialect.
+- Next, the compiler transforms the program to the QCO dialect and subsequently applies hardware-agnostic and optionally hardware-dependent passes. Finally, the program is transformed back to the QC dialect.
+- Optionally, the optimized and transpiled program can be transformed into a target dialect such as LLVM using the Quantum Intermediate Representation (QIR) extension.
 
 The figure below illustrates the compilation flow graphically.
 
@@ -718,8 +745,8 @@ The compilation pipeline of the MQT Compiler Collection.
 ```
 
 Let's think about this for a moment:
-Theoretically, any frontend quantum language (today's and tomorrow's!) that translates their abstract syntax tree to the QC dialect can leverage all passes developed and maintained within the MQT Compiler Collection.
-This approach has been a success story in the classical compiler world, where instead of relying on proprietary compilation stacks, programming languages such as C++, Rust, and Go utilize LLVM as optimization driver.
+Theoretically, any front-end quantum language (today's and tomorrow's!) that translates its abstract syntax tree to the QC dialect can leverage all passes developed and maintained within the MQT Compiler Collection.
+This approach has been a success story in the classical compiler world, where, instead of relying on proprietary compilation stacks, programming languages such as C++, Rust, and Go utilize LLVM as an optimization driver.
 The MQT Compiler Collection attempts to establish this design philosophy in the quantum world.
 
 ## Writing Your First Optimization Pass
@@ -728,13 +755,13 @@ TODO
 
 ### Directory Layout
 
-Wrapping one's head around the folder structure of MLIR projects can be quite confusing in the beginning.
+Wrapping one's head around the folder structure of MLIR projects can be quite confusing at the beginning.
 To help you navigate the project, the following paragraphs provide a brief introduction to its directory layout.
 
 **`core/mlir/include/mlir/`**
 
 This folder contains `.h` header files and TableGen `.td` specifications.
-It consists of the following sub-directories:
+It consists of the following subdirectories:
 
 | Directory     | Description                                                                  |
 | ------------- | ---------------------------------------------------------------------------- |
@@ -743,7 +770,7 @@ It consists of the following sub-directories:
 | `Dialect/`    | Defines (among others) the QC and QCO dialects. Contains the TableGen files. |
 | `Support/`    | Defines utilities.                                                           |
 
-Each of the dialects follows a consistent structure:
+Each dialect follows a consistent structure:
 
 | Directory     | Description                                             |
 | ------------- | ------------------------------------------------------- |
@@ -754,11 +781,11 @@ Each of the dialects follows a consistent structure:
 
 **`core/mlir/lib/`**
 
-The accompanying `.cpp` files for the headers. Follows the same folder structure as the include directory.
+The accompanying `.cpp` files for the headers. It follows the same folder structure as the include directory.
 
 **`core/mlir/tools/`**
 
-In this folder resides the entry point function for the `mqt-cc` executable.
+This folder contains the entry-point function for the `mqt-cc` executable.
 
 **`core/mlir/unittests/`**
 
@@ -766,11 +793,11 @@ This folder contains unit-tests for the MQT Compiler Collection.
 
 ## Using the MQT Compiler Collection Tool
 
-This section shows you how to use the MQT Compiler Collection Tool (`mqt-cc`).
+This section shows you how to use the MQT Compiler Collection tool (`mqt-cc`).
 
 ### Optimizing an OpenQASM Program
 
-Lets say you want to optimize the following OpenQASM program. Create a `.qasm` file and name it `ghz.qasm`:
+Let's say you want to optimize the following OpenQASM program. Create a `.qasm` file and name it `ghz.qasm`:
 
 ```{code-block}
 :lineno-start: 0
@@ -835,7 +862,7 @@ To transform the program to the QIR, you can supply the `--emit-qir` command-lin
 % mqt-cc ghz.qasm --emit-qir
 ```
 
-Using the `mlir-translate` tool, store the file as LLVM file (`.ll`) as follows.
+Using the `mlir-translate` tool, store the file as an LLVM file (`.ll`) as follows.
 
 ```console
 % mqt-cc ghz.qasm --emit-qir | mlir-translate --mlir-to-llvmir > ghz.ll
