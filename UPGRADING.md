@@ -17,6 +17,12 @@ If you were previously using the shared library wrappers, you should switch to u
 The QDMI Qiskit converter now supports a broader range of operations, including multi-controlled gates such as `mcx`, `mcz`, `mcrx`, and more.
 As a consequence, these operations can now be directly used without requiring decomposition, for example, with the builtin `DDSIM` QDMI device.
 
+### Minimum supported Qiskit version
+
+From this release onwards, MQT Core requires Qiskit version `1.1.0` or higher.
+This is due to the fact that we are relying on some fixes to Qiskit primitives that were introduced in that version.
+If you are using MQT Core with Qiskit, please ensure that you have updated to Qiskit `1.1.0` or higher to avoid any compatibility issues.
+
 ### MLIR enabled by default for C++ builds
 
 The MLIR-based functionality within MQT Core has long been experimental and opt-in.

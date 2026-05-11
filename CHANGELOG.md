@@ -23,6 +23,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ♻️ Build all builtin QDMI devices as shared libraries ([#1694]) ([**@burgholzer**])
+- ⬆️ Update the minimum supported Qiskit version to `1.1.0` ([#1694]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 

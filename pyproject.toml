@@ -49,7 +49,7 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 qiskit = [
-  "qiskit[qasm3-import]>=1.0.0",
+  "qiskit[qasm3-import]>=1.1.0",
 ]
 
 [project.scripts]
@@ -356,7 +356,7 @@ test = [
   "pytest-cov>=7.0.0",
   "pytest-sugar>=1.1.1",
   "pytest-xdist>=3.8.0",
-  "qiskit[qasm3-import]>=1.0.0",
+  "qiskit[qasm3-import]>=1.1.0",
   "numpy>=2.1; python_version >= '3.13'",
   "numpy>=2.3.2; python_version >= '3.14'",
 ]
