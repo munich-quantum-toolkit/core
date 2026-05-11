@@ -68,6 +68,9 @@ print(f"Results: {counts}")
 The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` discovers QDMI devices available through the FoMaC layer.
 Backends should always be obtained through the provider rather than instantiated directly.
 
+The IQM QDMI device is the main exception to that rule.
+It is loaded explicitly through {py:class}`~mqt.core.plugins.qiskit.iqm.IQMBackend` rather than auto-discovered by {py:class}`~mqt.core.plugins.qiskit.QDMIProvider`, which keeps external device loading opt-in.
+
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import QDMIProvider
 
@@ -99,6 +102,29 @@ filtered_ddsim = provider.backends(name="DDSIM")  # Matches "MQT Core DDSIM QDMI
 # Filter by full name also works
 exact = provider.backends(name="MQT Core DDSIM QDMI Device")
 ```
+
+## External IQM Backend
+
+The IQM integration is exposed from a dedicated module so the optional {code}`iqm-qdmi` dependency is only loaded when requested explicitly.
+
+```python
+from mqt.core.plugins.qiskit.iqm import IQMBackend
+
+backend = IQMBackend(
+    base_url="https://resonance.iqm.tech",
+    qc_alias="emerald:mock",
+)
+```
+
+If you omit these parameters, {py:class}`~mqt.core.plugins.qiskit.iqm.IQMBackend` falls back to the following environment variables:
+
+- {code}`IQM_BASE_URL`
+- {code}`IQM_TOKEN` or {code}`RESONANCE_API_KEY`
+- {code}`IQM_TOKENS_FILE`
+- {code}`IQM_QC_ID`
+- {code}`IQM_QC_ALIAS`
+
+Once instantiated, the IQM backend behaves like every other QDMI-backed Qiskit backend in MQT Core and supports the same {py:meth}`~mqt.core.plugins.qiskit.iqm.IQMBackend.sampler` and {py:meth}`~mqt.core.plugins.qiskit.iqm.IQMBackend.estimator` helper methods.
 
 ## Authentication
 
