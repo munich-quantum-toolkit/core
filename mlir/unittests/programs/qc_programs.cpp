@@ -1309,12 +1309,14 @@ void nestedIfOpForLoop(QCProgramBuilder& b) {
   auto q0 = b.allocQubit();
   b.h(q0);
   auto cond = b.measure(q0);
-  b.scfIf(cond, [&] {
-    b.scfFor(0, 3, 1, [&](Value iv) {
-      auto q1 = b.memrefLoad(reg.value, iv);
-      b.h(q1);
-    });
-  });
+  b.scfIf(
+      cond, [&] { b.h(q0); },
+      [&] {
+        b.scfFor(0, 3, 1, [&](Value iv) {
+          auto q1 = b.memrefLoad(reg.value, iv);
+          b.h(q1);
+        });
+      });
 }
 
 void simpleWhileReset(QCProgramBuilder& b) {
