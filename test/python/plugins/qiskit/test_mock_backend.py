@@ -171,6 +171,9 @@ class MockQDMIDevice:
             Returns:
                 Dictionary mapping measurement outcomes to counts.
             """
+            if self._num_clbits == 0:
+                return {}
+
             if self._counts is None:
                 # Generate random counts with uniform distribution
                 num_outcomes = 2**self._num_clbits

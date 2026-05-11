@@ -1689,7 +1689,7 @@ docs = [
     { name = "mlir-pygments", specifier = ">=1.0.0" },
     { name = "myst-nb", specifier = ">=1.3.0" },
     { name = "openqasm-pygments", specifier = ">=0.2.0" },
-    { name = "qiskit", extras = ["qasm3-import", "visualization"], specifier = ">=1.0.0" },
+    { name = "qiskit", extras = ["qasm3-import", "visualization"], specifier = ">=1.1.0" },
     { name = "setuptools-scm", specifier = ">=9.2.2" },
     { name = "sphinx", specifier = ">=8.1.3" },
     { name = "sphinx", marker = "python_full_version >= '3.11'", specifier = ">=8.2.3" },
