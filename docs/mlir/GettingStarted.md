@@ -123,7 +123,7 @@ A single program may combine multiple dialects, which facilitates code reuse.
 For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the `arith` dialect defines integer and floating-point operations.
 Another essential dialect is the `func` dialect, which lets us define and call functions.
 
-The following snippet contains a function `@main` that defines and adds two 32-bit integers. 
+The following snippet contains a function `@main` that defines and adds two 32-bit integers.
 
 ```mlir
 func.func @main() {
@@ -135,14 +135,14 @@ func.func @main() {
 }
 ```
 
-The `func` and `arith` prefixes specify the dialect's name. For example, `arith.constant` represents the `constant` operation from the `arith` dialect. 
-Moreover, the `%` prefixes variables that store values just like in other programming language. 
-However, variables in MLIR adhere to the Static Single-Assignment (SSA) principle, where each variable is assigned exactly once and never reassigned. 
+The `func` and `arith` prefixes specify the dialect's name. For example, `arith.constant` represents the `constant` operation from the `arith` dialect.
+Moreover, the `%` prefixes variables that store values just like in other programming language.
+However, variables in MLIR adhere to the Static Single-Assignment (SSA) principle, where each variable is assigned exactly once and never reassigned.
 For instance, the first `arith.constant` operation produces the `%c1` SSA variable.
 Analogous to functional programming, the `arith.addi` operation produces a new SSA variable `%c3` representing the sum of its operands.
 Lastly, the `: i32` annotations specify the type, where `i32` represents a 32-bit integer.
 
-MLIR also provides dialects for structured control flow such as loops and conditionals in the `scf` dialect. 
+MLIR also provides dialects for structured control flow such as loops and conditionals in the `scf` dialect.
 To demonstrate this, the snippet below sums the numbers from 0 to 100 using the `scf.for` operation.
 
 ```{code-block} mlir
@@ -162,8 +162,8 @@ func.func @main() {
 }
 ```
 
-We already know what the first three operations do: Define constants of the type `index` using the `arith.constant` operation! 
-Semantically, the `index` type is much alike the `std::size_t` datatype in C++. 
+We already know what the first three operations do: Define constants of the type `index` using the `arith.constant` operation!
+Semantically, the `index` type is much alike the `std::size_t` datatype in C++.
 Namely, both represent a value that is "big enough" to index any memory location on the target architecture.
 
 Then, usually we would implement the loop as follows.
@@ -180,12 +180,12 @@ To represent this loop in MLIR, we must utilize _loop-carried variables_, which 
 These variables are passed from one iteration to another, maintaining SSA form.
 In the example above, the `scf.yield` operation carries the SSA variable `%2` to the next iteration and returns it after the final iteration, where the final result is stored in `%sum`.
 
-Because MLIR uses a strongly typed system, we must specify the type of the loop-carried variable using the `->` symbol. 
+Because MLIR uses a strongly typed system, we must specify the type of the loop-carried variable using the `->` symbol.
 Thus, in summary, the `iter_args(%sum_iter = %sum_0) -> (i32)` specifies the loop-carried variable `%sum_iter` with datatype `i32`.
 Moreover, because the `%iv` variable is of datatype `index`, a cast to `i32` using the `arith.index_cast` operation is required for the subsequent addition operation.
 
-Earlier we stated that we can represent programs at multiple levels of abstraction in MLIR. 
-So, how exactly is this achieved? 
+Earlier we stated that we can represent programs at multiple levels of abstraction in MLIR.
+So, how exactly is this achieved?
 Even though the `scf` dialect provides a `scf.if` operation, the following snippet uses the `cf` (control flow) dialect to implement a conditional on a lower abstraction level.
 Particularly, the function `@select` returns either `%a` or `%b` depending on the condition `%cond`.
 
@@ -197,9 +197,9 @@ func.func @select(%a: i32, %b: i32, %cond: i1) -> i32 {
 }
 ```
 
-The `^exit` label defines a _block_ which takes a 32-bit integer as variable and consists of the `return` operation. 
-There is another implicit block hidden in the snippet above. 
-Internally, the `@select` function is represented as follows. 
+The `^exit` label defines a _block_ which takes a 32-bit integer as variable and consists of the `return` operation.
+There is another implicit block hidden in the snippet above.
+Internally, the `@select` function is represented as follows.
 
 ```{code-block} mlir
 func.func @select(i32, i32, i1) -> i32 {
@@ -210,15 +210,13 @@ func.func @select(i32, i32, i1) -> i32 {
 }
 ```
 
-
-The _terminator_ --- the last operation inside a block --- determines the control flow. 
-For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a` if `%cond` is true. 
-Otherwise, it uses variable `%b`. 
+The _terminator_ --- the last operation inside a block --- determines the control flow.
+For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a` if `%cond` is true.
+Otherwise, it uses variable `%b`.
 The `return` operation is another example of a terminator that returns control to the caller of the function.
 Generally, a block consists of multiple operations, where the final one is the terminator.
 
 Note that the `@select` function body consists of two blocks.
-
 
 A region combines multiple blocks and is indicated by curly brackets.
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
@@ -229,7 +227,7 @@ The following figure illustrates the interplay of operations, blocks, and region
 :figclass: only-light
 :name: fig:mlir-ir-structure
 
-The nested substructures of an IR. 
+The nested substructures of an IR.
 ```
 
 ```{figure} ../_static/mlir/mlir-ir-structure-dark.svg
@@ -238,7 +236,7 @@ The nested substructures of an IR.
 :figclass: only-dark
 :name: fig:mlir-ir-structure
 
-The nested substructures of an IR. 
+The nested substructures of an IR.
 ```
 
 The `cf` dialect is the lower-level equivalent of the `scf` dialect.
@@ -267,7 +265,6 @@ func.func @main() {
     return
   }
 ```
-
 
 Luckily, we don't have to perform this conversion --- the transformation from one dialect to another --- by hand.
 The MLIR framework already implements this and many other conversions between the built-in dialects.
