@@ -60,7 +60,7 @@ def __dir__() -> list[str]:
 
 def _build_gate_mappings_for_backend(
     gate_aliases: dict[str, set[str]],
-) -> tuple[dict[str, set[str]], dict[str, Instruction]]:
+) -> tuple[dict[str, set[str]], dict[str, Instruction | type[Instruction]]]:
     """Build both forward (Qiskit→QDMI) and inverse (QDMI→Gate) mappings.
 
     Uses Qiskit's standard gate mapping as the canonical source of truth,
@@ -83,10 +83,10 @@ def _build_gate_mappings_for_backend(
     })
 
     qiskit_to_qdmi: dict[str, set[str]] = {}
-    operation_to_gate: dict[str, Instruction] = {}
+    operation_to_gate: dict[str, Instruction | type[Instruction]] = {}
 
     # Process each canonical gate from Qiskit's standard library
-    for canonical_name, gate_instance in canonical_gates.items():
+    for canonical_name, gate in canonical_gates.items():
         # Get all names for this gate (canonical + aliases)
         all_names = {canonical_name}
         if canonical_name in gate_aliases:
@@ -95,7 +95,7 @@ def _build_gate_mappings_for_backend(
         # For each name, map it to all names (bidirectional aliases)
         for name in all_names:
             qiskit_to_qdmi[name] = all_names.copy()
-            operation_to_gate[name] = gate_instance
+            operation_to_gate[name] = gate
 
     return qiskit_to_qdmi, operation_to_gate
 
@@ -155,7 +155,7 @@ class QDMIBackend(BackendV2):
     }
 
     _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
-    _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction]]
+    _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction | type[Instruction]]]
 
     # Initialize derived mappings at class definition time
     _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
@@ -322,7 +322,7 @@ class QDMIBackend(BackendV2):
         return target
 
     @staticmethod
-    def _map_operation_to_gate(op_name: str) -> Instruction | None:
+    def _map_operation_to_gate(op_name: str) -> Instruction | type[Instruction] | None:
         """Map a device operation name to a Qiskit gate.
 
         Args:
