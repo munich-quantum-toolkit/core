@@ -407,9 +407,12 @@ template <typename OpType>
   return entryBlock.getArguments().take_back(numTargets);
 }
 
-/** @brief Inserts all extracted qubits into the tensors. */
-static void insertAllExtractedQubits(LoweringState& state, Operation* target,
-                                     PatternRewriter& rewriter) {
+/**
+ * @brief Inserts extracted qubits that are not required by @p target back into
+ * their tensors.
+ */
+static void insertQubitsBeforeOp(LoweringState& state, Operation* target,
+                                 PatternRewriter& rewriter) {
   auto* region = target->getParentRegion();
   Operation* anchor = nullptr;
   SmallVector<Value> memrefs;
@@ -426,8 +429,11 @@ static void insertAllExtractedQubits(LoweringState& state, Operation* target,
   auto& qubitInfoFromRegion = state.qubitInfoMap[region];
   for (auto memref : memrefs) {
     auto& extractedQubits = qubitsFromRegion[memref];
-    // Insert all extracted qubits
+    // Insert all extracted qubits that are not required by the target
     for (auto qubit : extractedQubits) {
+      if (state.regionQubitMap[target].contains(qubit)) {
+        continue;
+      }
       auto tensor = lookupMappedTensor(state, anchor, memref);
       auto qcoQubit = lookupMappedQubit(state, anchor, qubit);
       auto index = qubitInfoFromRegion[qubit].index;
@@ -439,9 +445,12 @@ static void insertAllExtractedQubits(LoweringState& state, Operation* target,
   }
 }
 
-/** @brief Extracts all previously inserted qubits. */
-static void extractAllInsertedQubits(LoweringState& state, Operation* target,
-                                     PatternRewriter& rewriter) {
+/**
+ * @brief Re-extracts qubits from their tensors after @p target has been
+ * processed.
+ */
+static void extractQubitsAfterOp(LoweringState& state, Operation* target,
+                                 PatternRewriter& rewriter) {
   auto* region = target->getParentRegion();
   Operation* anchor = nullptr;
   SmallVector<Value> memrefs;
@@ -457,8 +466,11 @@ static void extractAllInsertedQubits(LoweringState& state, Operation* target,
   auto& qubitInfoFromRegion = state.qubitInfoMap[region];
   for (auto& memref : memrefs) {
     auto& extractedQubits = qubitsFromRegion[memref];
-    // Extract all inserted qubits
+    // Extract the previously extracted qubits
     for (auto qubit : extractedQubits) {
+      if (state.regionQubitMap[target].contains(qubit)) {
+        continue;
+      }
       auto tensor = lookupMappedTensor(state, anchor, memref);
       auto index = qubitInfoFromRegion[qubit].index;
       auto insertOp =
@@ -1244,7 +1256,7 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
 
     // Insert the extracted qubits back to the registers that are used inside
     // the ForOp
-    insertAllExtractedQubits(state, operation, rewriter);
+    insertQubitsBeforeOp(state, operation, rewriter);
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new ForOp
@@ -1266,7 +1278,7 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
 
     // Extract all the previously inserted qubits again
     rewriter.setInsertionPointAfter(newForOp);
-    extractAllInsertedQubits(state, operation, rewriter);
+    extractQubitsAfterOp(state, operation, rewriter);
 
     auto qubits = qubitMap.getArrayRef();
     auto registers = registerMap.getArrayRef();
@@ -1324,7 +1336,7 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
 
     // Insert the extracted qubits back to the registers that are used inside
     // the WhileOp
-    insertAllExtractedQubits(state, operation, rewriter);
+    insertQubitsBeforeOp(state, operation, rewriter);
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new WhileOp
@@ -1353,7 +1365,7 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
 
     // Extract all the previously inserted qubits again
     rewriter.setInsertionPointAfter(newWhileOp);
-    extractAllInsertedQubits(state, operation, rewriter);
+    extractQubitsAfterOp(state, operation, rewriter);
 
     auto qubits = qubitMap.getArrayRef();
     auto registers = registerMap.getArrayRef();
@@ -1407,7 +1419,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     // Insert the extracted qubits back to the registers that are used inside
     // the IfOp
-    insertAllExtractedQubits(state, operation, rewriter);
+    insertQubitsBeforeOp(state, operation, rewriter);
     auto qcoTargets = resolveAllValues(state, operation);
 
     // Create the new IfOp
@@ -1420,7 +1432,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     // Extract all the previously inserted qubits again
     rewriter.setInsertionPointAfter(newIfOp);
-    extractAllInsertedQubits(state, operation, rewriter);
+    extractQubitsAfterOp(state, operation, rewriter);
 
     auto& thenRegion = newIfOp.getThenRegion();
     auto& elseRegion = newIfOp.getElseRegion();
@@ -1486,7 +1498,7 @@ struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     auto& state = getState();
     auto* operation = op.getOperation();
 
-    insertAllExtractedQubits(state, op.getOperation(), rewriter);
+    insertQubitsBeforeOp(state, op.getOperation(), rewriter);
     SmallVector<Value> targets = resolveAllValues(state, operation);
 
     if (isa<IfOp>(op->getParentOp())) {
@@ -1524,7 +1536,7 @@ struct ConvertSCFConditionOp final
     auto& state = getState();
     auto* operation = op.getOperation();
 
-    insertAllExtractedQubits(state, op.getOperation(), rewriter);
+    insertQubitsBeforeOp(state, op.getOperation(), rewriter);
     SmallVector<Value> targets = resolveAllValues(state, operation);
 
     rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
