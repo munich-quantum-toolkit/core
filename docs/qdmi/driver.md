@@ -10,9 +10,9 @@ mystnb:
 
 ## Objective
 
-A QDMI Driver manages the communication between QDMI devices, such as [MQT Core's NA QDMI Device](na_device.md) or the [MQT Core's DDSIM QDMI Device](ddsim_device.md), and QDMI clients, see the [QDMI specification](https://munich-quantum-software-stack.github.io/QDMI/).
+A QDMI Driver manages the communication between QDMI devices, such as [MQT Core's NA QDMI Device](na_device.md) or [MQT Core's DDSIM QDMI Device](ddsim_device.md), and QDMI clients, see the [QDMI specification](https://munich-quantum-software-stack.github.io/QDMI/).
 It is responsible for loading the device, forwarding requests from the client to the device, and sending back the results.
-MQT Core's QDMI Driver, {cpp:class}`qdmi::Driver`, comes with several devices preloaded that can be used directly.
+MQT Core's QDMI Driver, {cpp:class}`qdmi::Driver`, comes with several devices preloaded devices that can be used directly.
 Other devices can be loaded dynamically at runtime via {cpp:func}`qdmi::Driver::addDynamicDeviceLibrary`.
 
 ## Python Bindings

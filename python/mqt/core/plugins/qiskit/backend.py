@@ -245,6 +245,7 @@ class QDMIBackend(BackendV2):
                     stacklevel=2,
                 )
                 continue
+
             is_class = inspect.isclass(gate)
 
             # Skip if we've already added this Qiskit gate to the target
