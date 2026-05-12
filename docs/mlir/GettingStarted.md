@@ -9,7 +9,7 @@ This page guides you through the labyrinth of concepts and provides you with a s
 ## Setup
 
 Before we actually get started, make sure to visit the [installation](../installation.md) page.
-There you will find detailed instructions on how to download the project as well as install and set up the Multi-Level Intermediate Representation (MLIR) framework correctly.
+There you will find detailed instructions on how to download the project as well as install and set up the MLIR framework correctly.
 Once this is done, you can compile the project as follows:
 
 ```console
@@ -118,15 +118,34 @@ In the next section, you will learn about the Multi-Level Intermediate Represent
 The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware.
 Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to lower them from higher to lower levels.
 
-The core concept in MLIR is the dialect.
-A dialect groups operations, types, and attributes under a common namespace.
+The core concept in MLIR is the dialect, where a dialect groups operations, types, and attributes under a common namespace.
 A single program may combine multiple dialects, which facilitates code reuse.
 For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the `arith` dialect defines integer and floating-point operations.
 Another essential dialect is the `func` dialect, which lets us define and call functions.
 
-The following snippet combines the three dialects into a single program that sums the numbers from 0 to 100.
+The following snippet contains a function `@main` that defines and adds two 32-bit integers. 
 
 ```mlir
+func.func @main() {
+  %c1 = arith.constant 1 : i32
+  %c2 = arith.constant 2 : i32
+  %c3 = arith.addi %c1, %c2 : i32
+
+  return
+}
+```
+
+The `func` and `arith` prefixes specify the dialect's name. For example, `arith.constant` represents the `constant` operation from the `arith` dialect. 
+Moreover, the `%` prefixes variables that store values just like in other programming language. 
+However, variables in MLIR adhere to the Static Single-Assignment (SSA) principle, where each variable is assigned exactly once and never reassigned. 
+For instance, the first `arith.constant` operation produces the `%c1` SSA variable.
+Analogous to functional programming, the `arith.addi` operation produces a new SSA variable `%c3` representing the sum of its operands.
+Lastly, the `: i32` annotations specify the type, where `i32` represents a 32-bit integer.
+
+MLIR also provides dialects for structured control flow such as loops and conditionals in the `scf` dialect. 
+To demonstrate this, the snippet below sums the numbers from 0 to 100 using the `scf.for` operation.
+
+```{code-block} mlir
 func.func @main() {
     %lb = arith.constant 0 : index
     %ub = arith.constant 100 : index
@@ -138,18 +157,51 @@ func.func @main() {
         %2 = arith.addi %sum_iter, %1 : i32
         scf.yield %2 : i32
     }
+
     return
 }
 ```
 
-- The `func`, `arith`, and `scf` prefixes specify the dialect's name. For example, `arith.constant` represents the `constant` operation from the `arith` dialect.
-- The percentage symbol `%` prefixes static single-assignment (SSA) values, a principle in which each variable is assigned exactly once and never reassigned. For instance, the first `arith.constant` operation produces the `%lb` SSA value.
-- The `: index` and `: i32` annotations specify the types, where `i32` represents a 32-bit integer while `index` is a special type for loop bounds. The `arith.index_cast` operation casts the `%iv` value from `index` to `i32`.
-- To return the final values after loop termination, we define loop-carried variables via the `iter_args` construct and the return type with the `->` symbol. Inside the loop body, we specify the value for the next iteration via the `scf.yield` operation.
+We already know what the first three operations do: Define constants of the type `index` using the `arith.constant` operation! 
+Semantically, the `index` type is much alike the `std::size_t` datatype in C++. 
+Namely, both represent a value that is "big enough" to index any memory location on the target architecture.
 
-The function below returns either `%a` or `%b` depending on the condition `%cond`.
+Then, usually we would implement the loop as follows.
 
-```mlir
+```
+acc = 0
+for iv = 0; iv < 100; ++iv {
+  acc = acc + iv
+}
+```
+
+However, because variables in MLIR adhere to the SSA principle, the `acc = acc + iv` statement is invalid.
+To represent this loop in MLIR, we must utilize _loop-carried variables_, which we specify via the `iter_args` construct.
+These variables are passed from one iteration to another, maintaining SSA form.
+In the example above, the `scf.yield` operation carries the SSA variable `%2` to the next iteration and returns it after the final iteration, where the final result is stored in `%sum`.
+
+Because MLIR uses a strongly typed system, we must specify the type of the loop-carried variable using the `->` symbol. 
+Thus, in summary, the `iter_args(%sum_iter = %sum_0) -> (i32)` specifies the loop-carried variable `%sum_iter` with datatype `i32`.
+Moreover, because the `%iv` variable is of datatype `index`, a cast to `i32` using the `arith.index_cast` operation is required for the subsequent addition operation.
+
+Earlier we stated that we can represent programs at multiple levels of abstraction in MLIR. 
+So, how exactly is this achieved? 
+Even though the `scf` dialect provides a `scf.if` operation, the following snippet uses the `cf` (control flow) dialect to implement a conditional on a lower abstraction level.
+Particularly, the function `@select` returns either `%a` or `%b` depending on the condition `%cond`.
+
+```{code-block} mlir
+func.func @select(%a: i32, %b: i32, %cond: i1) -> i32 {
+    cf.cond_br %cond, ^exit(%a: i32), ^exit(%b: i32)
+^exit(%v : i32):
+    return %v : i32
+}
+```
+
+The `^exit` label defines a _block_ which takes a 32-bit integer as variable and consists of the `return` operation. 
+There is another implicit block hidden in the snippet above. 
+Internally, the `@select` function is represented as follows. 
+
+```{code-block} mlir
 func.func @select(i32, i32, i1) -> i32 {
 ^entry(%a: i32, %b: i32, %cond: i1):
     cf.cond_br %cond, ^exit(%a: i32), ^exit(%b: i32)
@@ -158,10 +210,17 @@ func.func @select(i32, i32, i1) -> i32 {
 }
 ```
 
-- The `^entry` and `^exit` labels define blocks, respectively. In MLIR, a block is a list of operations. Moreover, blocks take a list of arguments in an intuitive, function-like way.
-- The terminator, the last operation inside the block, determines the control flow. For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a` if `%cond` is true. Otherwise, it uses variable `%b`. The `return` operation is another example of a terminator that returns control to the caller of the function.
-- A region combines multiple blocks and is indicated by curly brackets.
 
+The _terminator_ --- the last operation inside a block --- determines the control flow. 
+For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a` if `%cond` is true. 
+Otherwise, it uses variable `%b`. 
+The `return` operation is another example of a terminator that returns control to the caller of the function.
+Generally, a block consists of multiple operations, where the final one is the terminator.
+
+Note that the `@select` function body consists of two blocks.
+
+
+A region combines multiple blocks and is indicated by curly brackets.
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
 
 ```{figure} ../_static/mlir/mlir-ir-structure.svg
@@ -170,7 +229,7 @@ The following figure illustrates the interplay of operations, blocks, and region
 :figclass: only-light
 :name: fig:mlir-ir-structure
 
-The data-flow graph of the IR shown above.
+The nested substructures of an IR. 
 ```
 
 ```{figure} ../_static/mlir/mlir-ir-structure-dark.svg
@@ -179,10 +238,10 @@ The data-flow graph of the IR shown above.
 :figclass: only-dark
 :name: fig:mlir-ir-structure
 
-The data-flow graph of the IR shown above.
+The nested substructures of an IR. 
 ```
 
-The control-flow dialect (`cf`) is the lower-level equivalent of the structured control-flow dialect (`scf`).
+The `cf` dialect is the lower-level equivalent of the `scf` dialect.
 For each IR that uses the SCF dialect, there is an equivalent one in the CF dialect.
 For example, the IR below is semantically equivalent to the one above that sums the numbers from 0 to 100.
 However, it uses the CF dialect instead of the SCF dialect.
@@ -209,6 +268,7 @@ func.func @main() {
   }
 ```
 
+
 Luckily, we don't have to perform this conversion --- the transformation from one dialect to another --- by hand.
 The MLIR framework already implements this and many other conversions between the built-in dialects.
 Furthermore, we can develop custom conversions using the conversion framework, which defines exactly how a transformation must look and under what circumstances the resulting IR is considered valid.
@@ -225,7 +285,7 @@ This section outlines how we use the MLIR framework and its compilation infrastr
 ### Quantum Dialects
 
 The MQT Compiler Collection defines two dialects in MLIR, each with a distinct purpose.
-While the Quantum Circuit (QC) dialect is great for exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is --- as the name suggests --- specifically designed for optimizations.
+While the Quantum Circuit (QC) dialect is tailored to exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is --- as the name suggests --- specifically designed for optimizations.
 Let's explore their differences.
 
 The following snippet allocates and subsequently deallocates a dynamic qubit using the `alloc` operation of the respective dialect.
@@ -254,7 +314,7 @@ qco.sink %q0_0 : !qco.qubit
 ::::
 
 To target specific hardware qubits, we use the `static` operation.
-While static qubits in the QCO dialect still require a `sink` operation, the `dealloc` is omitted for the QC dialect.
+While static qubits in the QCO dialect still require a `sink` operation, the `dealloc` is not required for the QC dialect.
 There is a sound rationale behind this seemingly obscure design choice: The QCO dialect enforces "linear typing", where each qubit SSA value is used _exactly_ once.
 If there were no `sink` operation for static qubits in the QCO dialect, this property would be violated.
 
@@ -305,9 +365,9 @@ qco.sink %q0_1 : !qco.qubit
 :::
 ::::
 
-Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit.
+Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply passes the targeted qubit.
 We say that the QC dialect uses "reference semantics" whereas the QCO dialect uses "value semantics".
-Semantically, the unitary operations in the QCO dialect return the new state after modifying it.
+Semantically, the operations in the QCO dialect return the new state of a qubit after modifying it.
 
 Instead of the Hadamard, we can also achieve the same transformation with X and Y rotations using parameterized gates as follows:
 
@@ -445,7 +505,7 @@ For instance, the controlled-X operation depends on the application of the Hadam
 This is especially useful for gate cancellation: if one gate is the inverse of another, cancel both.
 Consequently, the expressive data-flow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
 
-However, that expressiveness also increases complexity. This is best seen in the `qco.ctrl` operation:
+However, that expressiveness also increases syntax complexity. This is best seen in the `qco.ctrl` operation:
 
 - The input target qubit must be explicitly specified and is aliased to the block argument `%arg0`.
 - The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield` to return the resulting values to the outer scope.
@@ -524,8 +584,8 @@ memref.dealloc %r0 : memref<3x!qc.qubit>
 %r0_0 = qtensor.alloc(%N) : tensor<3x!qco.qubit>
 
 %r0_1, %q0_0 = qtensor.extract %r0_0[%i0] : tensor<3x!qco.qubit>
-%r0_2, %q1_0 = qtensor.extract %r0_1[%c1] : tensor<3x!qco.qubit>
-%r0_3, %q2_0 = qtensor.extract %r0_2[%c2] : tensor<3x!qco.qubit>
+%r0_2, %q1_0 = qtensor.extract %r0_1[%i1] : tensor<3x!qco.qubit>
+%r0_3, %q2_0 = qtensor.extract %r0_2[%i2] : tensor<3x!qco.qubit>
 
 %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
 %q1_1 = qco.h %q1_0 : !qco.qubit -> !qco.qubit
@@ -541,9 +601,9 @@ memref.dealloc %r0 : memref<3x!qc.qubit>
   qco.yield %q2_2
 } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
 
-%r0_4 = qtensor.insert %q1_2 into %r0_3[%c1] : tensor<3x!qco.qubit>
-%r0_5 = qtensor.insert %q2_2 into %r0_4[%c2] : tensor<3x!qco.qubit>
-%r0_6 = qtensor.insert %q0_3 into %r0_5[%c0] : tensor<3x!qco.qubit>
+%r0_6 = qtensor.insert %q0_3 into %r0_5[%i0] : tensor<3x!qco.qubit>
+%r0_4 = qtensor.insert %q1_2 into %r0_3[%i1] : tensor<3x!qco.qubit>
+%r0_5 = qtensor.insert %q2_2 into %r0_4[%i2] : tensor<3x!qco.qubit>
 
 qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
 ```
@@ -723,7 +783,7 @@ The MQT Compiler Collection achieves this using the following compilation pipeli
 
 - First, a program in a front-end quantum language (e.g. OpenQASM) is translated to the QC dialect.
 - Next, the compiler transforms the program to the QCO dialect and subsequently applies hardware-agnostic and optionally hardware-dependent passes. Finally, the program is transformed back to the QC dialect.
-- Optionally, the optimized and transpiled program can be transformed into a target dialect such as LLVM using the Quantum Intermediate Representation (QIR) extension.
+- Optionally, the optimized and transpiled program can be transformed into a target representation such as LLVM using the Quantum Intermediate Representation (QIR) extension.
 
 The figure below illustrates the compilation flow graphically.
 
