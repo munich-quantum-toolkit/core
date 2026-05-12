@@ -78,6 +78,10 @@ static cl::opt<bool> disableMergeSingleQubitRotationGates(
     cl::desc("Disable quaternion-based single-qubit rotation gate merging"),
     cl::init(false));
 
+static cl::opt<bool> enableHadamardLifting(
+    "hadamard-lifting", cl::desc("Apply Hadamard lifting during optimization"),
+    cl::init(false));
+
 /**
  * @brief Load and parse a .qasm file
  */
@@ -176,6 +180,7 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = printIRAfterAllStages;
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
+  config.enableHadamardLifting = enableHadamardLifting;
 
   // Run the compilation pipeline
   CompilationRecord record;
