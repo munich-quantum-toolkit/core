@@ -664,12 +664,12 @@ memref.dealloc %r0 : memref<?x!qc.qubit>
 %i0 = arith.constant 0 : index
 %r0_1, %q0_0 = qtensor.extract %r0_0[%i0] : tensor<?x!qco.qubit>
 %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
-  
+
 %c1 = arith.constant 1 : index
 %r0_3, %q0_2 = scf.for %iv = %c1 to %N step %c1 iter_args(%ri_0 = %r0_1, %ctrl_0 = %q0_1) -> (tensor<?x!qco.qubit>, !qco.qubit) {
   %ri_1, %qi_0 = qtensor.extract %ri_0[%iv] : tensor<?x!qco.qubit>
   %qi_1 = qco.h %qi_0 : !qco.qubit -> !qco.qubit
-  
+
   %ctrl_1, %qi_2 = qco.ctrl(%ctrl_0) targets (%arg3 = %qi_1) {
     %6 = qco.x %arg3 : !qco.qubit -> !qco.qubit
     qco.yield %6 : !qco.qubit
@@ -738,12 +738,12 @@ func.func @ghz(%N: index) {
     %i0 = arith.constant 0 : index
     %r0_1, %q0_0 = qtensor.extract %r0_0[%i0] : tensor<?x!qco.qubit>
     %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
-      
+
     %c1 = arith.constant 1 : index
     %r0_3, %q0_2 = scf.for %iv = %c1 to %N step %c1 iter_args(%ri_0 = %r0_1, %ctrl_0 = %q0_1) -> (tensor<?x!qco.qubit>, !qco.qubit) {
       %ri_1, %qi_0 = qtensor.extract %ri_0[%iv] : tensor<?x!qco.qubit>
       %qi_1 = qco.h %qi_0 : !qco.qubit -> !qco.qubit
-      
+
       %ctrl_1, %qi_2 = qco.ctrl(%ctrl_0) targets (%arg3 = %qi_1) {
         %6 = qco.x %arg3 : !qco.qubit -> !qco.qubit
         qco.yield %6 : !qco.qubit
