@@ -97,7 +97,7 @@ if(NOT TARGET ${TARGET_NAME})
   add_custom_target(generate_qdmi_na_device_header DEPENDS ${DEVICE_HDR})
 
   # Add library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMINaDevice)
+  add_mqt_core_library(${TARGET_NAME} FORCE_SHARED HIDDEN_VISIBILITY ALIAS_NAME QDMINaDevice)
   add_dependencies(${TARGET_NAME} generate_qdmi_na_device_header)
 
   # Generate prefixed QDMI headers
@@ -123,88 +123,12 @@ if(NOT TARGET ${TARGET_NAME})
   # add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
 
-  # Always compile with position independent code such that the library can be used in shared
-  # libraries
-  set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-  # add to list of MQT core targets
-  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
-
   # Make QDMI version available and ensure symbols are properly exported when building the library
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
                                                     ${QDMI_PREFIX}_QDMI_device_EXPORTS)
 
-  # Define a preprocessor macro to indicate that the library is being built as a static library
-  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
-    target_compile_definitions(${TARGET_NAME} PUBLIC ${QDMI_PREFIX}_QDMI_STATIC_DEFINE)
-  endif()
-
-  # Compile with hidden visibility by default to reduce the exported symbols to the public API
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES C_VISIBILITY_PRESET hidden
-               CXX_VISIBILITY_PRESET hidden
-               VISIBILITY_INLINES_HIDDEN 1)
-
-  # Generate additional alias for the target required for generate_device_defs_executable function
-  # in the tests
-  add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
-
-  set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-dyn)
-  if(NOT TARGET ${DYN_TARGET_NAME})
-    # Set prefix for QDMI
-    set(QDMI_PREFIX "MQT_NA_DYN")
-    # Generate prefixed QDMI headers
-    generate_prefixed_qdmi_headers(${QDMI_PREFIX})
-    file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_dyn_qdmi/**.hpp)
-    # Add dynamic library target
-    add_library(${DYN_TARGET_NAME} SHARED)
-    # add sources to target
-    target_sources(${DYN_TARGET_NAME} PRIVATE DynDevice.cpp)
-    # add headers using file sets
-    target_sources(
-      ${DYN_TARGET_NAME}
-      PUBLIC FILE_SET
-             HEADERS
-             BASE_DIRS
-             ${MQT_CORE_INCLUDE_BUILD_DIR}
-             ${CMAKE_CURRENT_BINARY_DIR}/include
-             FILES
-             ${DEVICE_HDR}
-             ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/na/Device.hpp
-             ${QDMI_HDRS})
-    # add link libraries
-    target_link_libraries(
-      ${DYN_TARGET_NAME} PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions
-                                 MQT::ProjectWarnings spdlog::spdlog)
-    # set c++ standard
-    target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
-    # set versioning information
-    set_target_properties(
-      ${DYN_TARGET_NAME}
-      PROPERTIES VERSION ${PROJECT_VERSION}
-                 SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-                 EXPORT_NAME CoreQDMINaDeviceDyn)
-    if(MSVC)
-      # Disable link-time code generation for dynamic library on Windows to avoid issues with
-      # missing symbols and other link errors
-      set_target_properties(${DYN_TARGET_NAME} PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
-      target_link_options(${DYN_TARGET_NAME} PRIVATE /LTCG:OFF)
-    endif()
-
-    # Ensure that symbols are properly exported when building the library
-    target_compile_definitions(${DYN_TARGET_NAME} PRIVATE ${QDMI_PREFIX}_QDMI_device_EXPORTS)
-
-    # Compile with hidden visibility by default to reduce the exported symbols to the public API
-    set_target_properties(
-      ${DYN_TARGET_NAME}
-      PROPERTIES C_VISIBILITY_PRESET hidden
-                 CXX_VISIBILITY_PRESET hidden
-                 VISIBILITY_INLINES_HIDDEN 1)
-
-    add_library(MQT::CoreQDMINaDeviceDyn ALIAS ${DYN_TARGET_NAME})
-    list(APPEND MQT_CORE_TARGETS ${DYN_TARGET_NAME})
-  endif()
+  # add to list of MQT core targets
+  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
 set(MQT_CORE_TARGETS

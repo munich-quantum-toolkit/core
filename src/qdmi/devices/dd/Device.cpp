@@ -75,8 +75,6 @@ constexpr std::array OPERATIONS{
     OperationInfo{.name = "z", .numSites = 1, .numParams = 0},
     OperationInfo{.name = "cz", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "ccz", .numSites = 3, .numParams = 0},
-    OperationInfo{
-        .name = "mcz", .numSites = 0, .numParams = 0, .isVariadic = true},
     OperationInfo{.name = "h", .numSites = 1, .numParams = 0},
     OperationInfo{.name = "ch", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "s", .numSites = 1, .numParams = 0},
@@ -91,16 +89,10 @@ constexpr std::array OPERATIONS{
     OperationInfo{.name = "r", .numSites = 1, .numParams = 2},
     OperationInfo{.name = "rx", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "crx", .numSites = 2, .numParams = 1},
-    OperationInfo{
-        .name = "mcrx", .numSites = 0, .numParams = 1, .isVariadic = true},
     OperationInfo{.name = "ry", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "cry", .numSites = 2, .numParams = 1},
-    OperationInfo{
-        .name = "mcry", .numSites = 0, .numParams = 1, .isVariadic = true},
     OperationInfo{.name = "rz", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "crz", .numSites = 2, .numParams = 1},
-    OperationInfo{
-        .name = "mcrz", .numSites = 0, .numParams = 1, .isVariadic = true},
     OperationInfo{.name = "p", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "cp", .numSites = 2, .numParams = 1},
     OperationInfo{

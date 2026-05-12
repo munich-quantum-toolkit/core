@@ -4,6 +4,25 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### Changes to builtin QDMI devices
+
+The builtin QDMI devices (with prefixes `MQT_SC`, `MQT_NA`, and `MQT_DDSIM`) are now all built as shared libraries by default.
+In turn, the shared library wrappers (with prefixes `MQT_SC_DYN` and `MQT_NA_DYN`) have been removed entirely.
+MQT Core's QDMI driver will automatically load the shared libraries of the builtin devices if they are available in the library search path.
+If you were previously using the statically builtin devices, no changes should be necessary as the shared libraries are now the default.
+If you were previously using the shared library wrappers, you should switch to using the builtin devices instead, which are now shared libraries by default.
+
+### Broader operation support in QDMI Qiskit converter
+
+The QDMI Qiskit converter now supports a broader range of operations, including multi-controlled gates such as `mcx`, `mcz`, `mcrx`, and more.
+As a consequence, these operations can now be directly used without requiring decomposition, for example, with the builtin `DDSIM` QDMI device.
+
+### Minimum supported Qiskit version
+
+From this release onwards, MQT Core requires Qiskit version 1.1.0 or higher.
+This is due to the fact that we are relying on some fixes to Qiskit primitives that were introduced in that version.
+If you are using MQT Core with Qiskit, please ensure that you have updated to Qiskit 1.1.0 or higher to avoid any compatibility issues.
+
 ## [3.5.1]
 
 No breaking changes.
@@ -11,7 +30,7 @@ No breaking changes.
 ### Component-based CMake installs
 
 Fixed exported `nlohmann_json` CMake metadata so `find_package(mqt-core CONFIG)` no longer propagates an invalid `.../COMPONENT` include directory in component-based installations.
-Anyone relying on an installed version of `mqt-core` shall update from `3.5.0` to `3.5.1`.
+Anyone relying on an installed version of `mqt-core` should update from 3.5.0 to 3.5.1.
 
 ## [3.5.0]
 

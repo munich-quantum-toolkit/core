@@ -9,7 +9,27 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Added
+
+- 🚸 Add a measurement instruction to the default SC QDMI device ([#1694]) ([**@burgholzer**])
+- ✨ Add support for multi-controlled gates to the QDMI Qiskit backend converter ([#1694]) ([**@burgholzer**])
+
+### Changed
+
+- ♻️ Build all built-in QDMI devices as shared libraries ([#1694]) ([**@burgholzer**])
+- ⬆️ Update minimum supported Qiskit version to 1.1.0 ([#1694]) ([**@burgholzer**])
+
+### Fixed
+
+- 🐛 Fix segfault in DD `sample` method when idle classical bits are present ([#1694]) ([**@burgholzer**])
+
+### Removed
+
+- 🔥 Remove shared library wrappers for QDMI devices ([#1694]) ([**@burgholzer**])
+
 ## [3.5.1] - 2026-04-23
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#351)._
 
 ### Fixed
 
@@ -21,7 +41,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#350)._
 
 ### Added
 
-- ✨ Add support for multi-controlled gates to ZX package ([#1380]) ([**@keefehuang**])
+- ✨ Add support for multi-controlled gates to ZX package ([#1380]) ([**@keefehuang**], [**@denialhaag**])
 - ✨ Add Sampler and Estimator primitives to the QDMI-Qiskit interface ([#1507]) ([**@marcelwa**])
 
 ### Changed
@@ -342,6 +362,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1654]: https://github.com/munich-quantum-toolkit/core/pull/1654
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652

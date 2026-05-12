@@ -53,15 +53,6 @@ class DriverTest : public testing::TestWithParam<const char*> {
 protected:
   QDMI_Session session = nullptr;
   QDMI_Device device = nullptr;
-  static void SetUpTestSuite() {
-    // Load dynamic libraries with default device session configuration
-    const qdmi::DeviceSessionConfig config;
-    ASSERT_NO_THROW({
-      for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
-        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
-      }
-    });
-  }
 
   void SetUp() override {
     const auto& deviceName = GetParam();
@@ -507,10 +498,9 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_EQ(ret, QDMI_SUCCESS);
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
-constexpr std::array DEVICES{
-    "MQT NA Default QDMI Device", "MQT NA Dynamic QDMI Device",
-    "MQT Core DDSIM QDMI Device", "MQT SC Default QDMI Device",
-    "MQT SC Dynamic QDMI Device"};
+constexpr std::array DEVICES{"MQT NA Default QDMI Device",
+                             "MQT Core DDSIM QDMI Device",
+                             "MQT SC Default QDMI Device"};
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
@@ -626,49 +616,6 @@ TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithAllParameters) {
       }
     }
   }
-}
-
-TEST(DeviceSessionConfigTest, VerifyDynamicDevicesInSession) {
-  QDMI_Session session = nullptr;
-  ASSERT_EQ(QDMI_session_alloc(&session), QDMI_SUCCESS);
-  ASSERT_EQ(QDMI_session_init(session), QDMI_SUCCESS);
-
-  size_t devicesSize = 0;
-  ASSERT_EQ(QDMI_session_query_session_property(session,
-                                                QDMI_SESSION_PROPERTY_DEVICES,
-                                                0, nullptr, &devicesSize),
-            QDMI_SUCCESS);
-
-  const size_t numDevices = devicesSize / sizeof(QDMI_Device);
-
-  // Should have at least the static devices (NA, DDSIM, SC)
-  const size_t expectedMinDevices = 3;
-  EXPECT_GE(numDevices, expectedMinDevices)
-      << "Should have at least " << expectedMinDevices << " static devices";
-
-  // Verify we can query device names
-  std::vector<QDMI_Device> devices(numDevices);
-  ASSERT_EQ(QDMI_session_query_session_property(
-                session, QDMI_SESSION_PROPERTY_DEVICES, devicesSize,
-                static_cast<void*>(devices.data()), nullptr),
-            QDMI_SUCCESS);
-
-  for (auto* device : devices) {
-    size_t nameSize = 0;
-    ASSERT_EQ(QDMI_device_query_device_property(
-                  device, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &nameSize),
-              QDMI_SUCCESS);
-
-    std::string name(nameSize - 1, '\0');
-    ASSERT_EQ(QDMI_device_query_device_property(device,
-                                                QDMI_DEVICE_PROPERTY_NAME,
-                                                nameSize, name.data(), nullptr),
-              QDMI_SUCCESS);
-
-    EXPECT_FALSE(name.empty()) << "Device should have a non-empty name";
-  }
-
-  QDMI_session_free(session);
 }
 
 TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {

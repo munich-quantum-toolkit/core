@@ -185,6 +185,7 @@
   ],
   "operations": [
     { "name": "r", "numParameters": 2, "numQubits": 1 },
-    { "name": "cz", "numParameters": 0, "numQubits": 2 }
+    { "name": "cz", "numParameters": 0, "numQubits": 2 },
+    { "name": "measure", "numParameters": 0, "numQubits": 1 }
   ]
 }
