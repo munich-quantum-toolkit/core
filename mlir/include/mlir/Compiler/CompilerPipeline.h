@@ -43,6 +43,9 @@ struct QuantumCompilerConfig {
 
   /// Disable quaternion-based single-qubit rotation gate merging
   bool disableMergeSingleQubitRotationGates = false;
+
+  /// Enable Hadamard lifting
+  bool enableHadamardLifting = false;
 };
 
 /**

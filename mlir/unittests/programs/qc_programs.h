@@ -833,4 +833,45 @@ void tripleNestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCProgramBuilder& b);
+
+// --- IfOp ----------------------------------------------------------------- //
+
+/// Creates a circuit with a simple if operation with one qubit.
+void simpleIf(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with an else branch.
+void ifElse(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with two qubits.
+void ifTwoQubits(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+void nestedIfOpForLoop(QCProgramBuilder& b);
+
+// --- WhileOp -------------------------------------------------------------- //
+
+/// Creates a circuit with a while operation using a while loop.
+void simpleWhileReset(QCProgramBuilder& b);
+
+/// Creates a circuit with a while operation using a do-while loop.
+void simpleDoWhileReset(QCProgramBuilder& b);
+
+// --- ForOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with a simple for operation with a register.
+void simpleForLoop(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested if operation.
+void nestedForLoopIfOp(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a nested while
+/// operation.
+void nestedForLoopWhileOp(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation.
+void nestedForLoopCtrlOp(QCProgramBuilder& b);
+
 } // namespace mlir::qc

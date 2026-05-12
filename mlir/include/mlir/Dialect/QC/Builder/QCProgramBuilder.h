@@ -172,6 +172,28 @@ public:
   QubitRegister allocQubitRegister(int64_t size);
 
   /**
+   * @brief Explicitly loads a qubit from a memref
+   *
+   * @details Explicitly loads a qubit from a memref at the given index. This
+   * builder should only be called in a nested region inside the main function.
+   * The same index cannot be used to load a value multiple times in the same
+   * nested region.
+   *
+   * @param memref Source memref
+   * @param index The index from where the qubit is loaded
+   * @return The loaded qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto q0 = builder.memrefLoad(memref, index);
+   * ```
+   * ```mlir
+   * %q0 = memref.load %memref[%index] : memref<3x!qc.qubit>
+   * ```
+   */
+  Value memrefLoad(Value memref, Value index);
+
+  /**
    * @brief A small structure representing a single classical bit within a
    * classical register.
    */
@@ -925,6 +947,112 @@ public:
   QCProgramBuilder& dealloc(Value qubit);
 
   //===--------------------------------------------------------------------===//
+  // SCF operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Construct an scf.for operation
+   *
+   * @param lowerbound Lower bound of the loop
+   * @param upperbound Upper bound of the loop
+   * @param step Step size of the loop
+   * @param body Function that builds the body of the for operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfFor(lb, ub, step, [&](Value iv) {
+   *   auto q0 = builder.memrefLoad(memref, iv);
+   *   builder.h(q0);
+   * });
+   * ```
+   * ```mlir
+   * scf.for %iv = %lb to %ub step %step {
+   *   %q0 = memref.load %memref[%iv] : memref<3x!qc.qubit>
+   *   qc.h %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
+                           const std::variant<int64_t, Value>& upperbound,
+                           const std::variant<int64_t, Value>& step,
+                           const function_ref<void(Value)>& body);
+
+  /**
+   * @brief Construct an scf.while operation
+   *
+   * @param beforeBody Function that builds the before body of the while
+   * operation
+   * @param afterBody Function that builds the after body of the while operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfWhile([&] {
+   *   auto res = builder.measure(q0);
+   *   builder.scfCondition(res);
+   * }, [&] {
+   *   builder.h(q0);
+   * });
+   * ```
+   * ```mlir
+   * scf.while : () -> () {
+   *   %res = qc.measure %q0 : !qc.qubit -> i1
+   *   scf.condition(%res)
+   * } do {
+   *   qc.h %q0 : !qc.qubit
+   *   scf.yield
+   * }
+   * ```
+   */
+  QCProgramBuilder& scfWhile(const function_ref<void()>& beforeBody,
+                             const function_ref<void()>& afterBody);
+
+  /**
+   * @brief Construct an scf.if operation
+   *
+   * @param condition Condition for the if operation
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfIf(condition, [&] {
+   *   builder.x(q0);
+   * }, [&] {
+   *   builder.z(q0);
+   * });
+   * ```
+   * ```mlir
+   * scf.if %condition {
+   *   qc.x %q0 : !qc.qubit
+   * } else {
+   *   qc.z %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder& scfIf(const std::variant<bool, Value>& condition,
+                          const function_ref<void()>& thenBody,
+                          const function_ref<void()>& elseBody = nullptr);
+
+  /**
+   * @brief Construct an scf.condition operation
+   *
+   * @param condition Condition for the condition operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfCondition(condition);
+   * ```
+   * ```mlir
+   * scf.condition(%condition)
+   * ```
+   */
+  QCProgramBuilder& scfCondition(Value condition);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
@@ -965,6 +1093,12 @@ private:
 
   /// Track allocated MemRefs for automatic deallocation
   DenseSet<Value> allocatedMemrefs;
+
+  /// Per-region map of memrefs and their loaded indices
+  DenseMap<Region*, DenseMap<Value, DenseSet<Value>>> loadedQubits;
+
+  /// Stack of the nested regions where the insertion point of the builder is
+  SmallVector<Region*> regionStack;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
