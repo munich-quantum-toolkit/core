@@ -9,7 +9,7 @@
 if(TARGET MQT::CoreQDMI_DDSIM_Device)
   # Set QDMI prefix again for the tests
   set(QDMI_PREFIX "MQT_DDSIM")
-  generate_device_defs_executable(${QDMI_PREFIX})
+  generate_device_defs_executable(${QDMI_PREFIX} TARGET MQT::CoreQDMI_DDSIM_Device)
   # Set test target name
   set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-ddsim-device-test)
   # Add the test executable
@@ -32,4 +32,13 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
   # Set the executable path and version information
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
   target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+  # On Windows, we need to copy the DLL to the test executable directory
+  if(WIN32)
+    add_custom_command(
+      TARGET ${TARGET_NAME}
+      PRE_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>
+              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+  endif()
 endif()

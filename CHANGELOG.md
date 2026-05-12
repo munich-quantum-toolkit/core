@@ -9,6 +9,59 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+<<<<<<< HEAD
+||||||| parent of 4fe097cf (🚸  Improve QDMI Integration (#1694))
+### Added
+
+- ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
+- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+### Changed
+
+- ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
+- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Removed
+
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+=======
+### Added
+
+- 🚸 Add a measurement instruction to the default SC QDMI device ([#1694]) ([**@burgholzer**])
+- ✨ Add support for multi-controlled gates to the QDMI Qiskit backend converter ([#1694]) ([**@burgholzer**])
+- ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
+- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+### Changed
+
+- ♻️ Build all builtin QDMI devices as shared libraries ([#1694]) ([**@burgholzer**])
+- ⬆️ Update the minimum supported Qiskit version to `1.1.0` ([#1694]) ([**@burgholzer**])
+- ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
+- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Fixed
+
+- 🐛 Fix segfault in DD `sample` method when idle classical bits are present ([#1694]) ([**@burgholzer**])
+
+### Removed
+
+- 🔥 Remove shared library wrappers for QDMI devices ([#1694]) ([**@burgholzer**])
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+>>>>>>> 4fe097cf (🚸  Improve QDMI Integration (#1694))
 ## [3.5.1] - 2026-04-23
 
 ### Fixed
@@ -342,6 +395,21 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+<<<<<<< HEAD
+||||||| parent of 4fe097cf (🚸  Improve QDMI Integration (#1694))
+[#1676]: https://github.com/munich-quantum-toolkit/core/pull/1676
+[#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
+[#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674
+[#1673]: https://github.com/munich-quantum-toolkit/core/pull/1673
+[#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
+=======
+[#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
+[#1676]: https://github.com/munich-quantum-toolkit/core/pull/1676
+[#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
+[#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674
+[#1673]: https://github.com/munich-quantum-toolkit/core/pull/1673
+[#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
+>>>>>>> 4fe097cf (🚸  Improve QDMI Integration (#1694))
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1654]: https://github.com/munich-quantum-toolkit/core/pull/1654
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
