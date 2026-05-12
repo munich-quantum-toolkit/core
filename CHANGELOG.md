@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664]) ([**@MatthiasReumann**], [**@burgholzer**])
@@ -376,6 +377,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1624]: https://github.com/munich-quantum-toolkit/core/pull/1624
 [#1623]: https://github.com/munich-quantum-toolkit/core/pull/1623
 [#1620]: https://github.com/munich-quantum-toolkit/core/pull/1620
+[#1605]: https://github.com/munich-quantum-toolkit/core/pull/1605
 [#1602]: https://github.com/munich-quantum-toolkit/core/pull/1602
 [#1600]: https://github.com/munich-quantum-toolkit/core/pull/1600
 [#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
