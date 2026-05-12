@@ -49,7 +49,7 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 qiskit = [
-  "qiskit[qasm3-import]>=1.0.0",
+  "qiskit[qasm3-import]>=1.1.0",
 ]
 
 [project.scripts]
@@ -97,9 +97,7 @@ build.targets = [
   "mqt-core-na-bindings",
   "mqt-core-qdmi-ddsim-device",
   "mqt-core-qdmi-na-device",
-  "mqt-core-qdmi-na-device-dyn",
   "mqt-core-qdmi-sc-device",
-  "mqt-core-qdmi-sc-device-dyn",
 ]
 
 install.components = [
@@ -344,7 +342,7 @@ docs = [
   "sphinxcontrib-bibtex>=2.6.5",
   "sphinxcontrib-svg2pdfconverter>=1.3.0",
   "sphinxext-opengraph>=0.13.0",
-  "qiskit[qasm3-import,visualization]>=1.0.0",
+  "qiskit[qasm3-import,visualization]>=1.1.0",
   "openqasm-pygments>=0.2.0",
   "breathe>=4.36.0",
   "graphviz>=0.21.0",
@@ -358,7 +356,7 @@ test = [
   "pytest-cov>=7.0.0",
   "pytest-sugar>=1.1.1",
   "pytest-xdist>=3.8.0",
-  "qiskit[qasm3-import]>=1.0.0",
+  "qiskit[qasm3-import]>=1.1.0",
   "numpy>=2.1; python_version >= '3.13'",
   "numpy>=2.3.2; python_version >= '3.14'",
 ]
@@ -367,5 +365,5 @@ dev = [
   {include-group = "test"},
   "lit>=18.1.8",
   "nox>=2025.11.12",
-  "ty==0.0.32",
+  "ty==0.0.34",
 ]

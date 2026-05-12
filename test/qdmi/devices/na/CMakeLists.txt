@@ -11,7 +11,7 @@ if(TARGET MQT::CoreQDMINaDeviceGen
    AND TARGET MQT::CoreQDMINaDevice)
   # Set QDMI prefix again for the tests
   set(QDMI_PREFIX "MQT_NA")
-  generate_device_defs_executable(${QDMI_PREFIX})
+  generate_device_defs_executable(${QDMI_PREFIX} TARGET MQT::CoreQDMINaDevice)
   # Set test target name
   set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-test)
   # Add the test executable
@@ -28,4 +28,13 @@ if(TARGET MQT::CoreQDMINaDeviceGen
     PRIVATE EXECUTABLE_PATH="$<TARGET_FILE:MQT::CoreQDMINaDeviceGenerator>"
             MQT_CORE_VERSION="${MQT_CORE_VERSION}"
             NA_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/na/device.json")
+
+  # On Windows, we need to copy the DLL to the test executable directory
+  if(WIN32)
+    add_custom_command(
+      TARGET ${TARGET_NAME}
+      PRE_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMINaDevice>
+              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+  endif()
 endif()

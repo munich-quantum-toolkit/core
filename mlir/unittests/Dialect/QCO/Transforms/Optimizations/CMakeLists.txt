@@ -7,7 +7,8 @@
 # Licensed under the MIT License
 
 set(target_name mqt-core-mlir-unittest-optimizations)
-add_executable(${target_name} test_qco_merge_single_qubit_rotation.cpp)
+add_executable(${target_name} test_qco_hadamard_lifting.cpp
+                              test_qco_merge_single_qubit_rotation.cpp)
 
 target_link_libraries(
   ${target_name}
@@ -19,7 +20,8 @@ target_link_libraries(
           MLIRIR
           MLIRPass
           MLIRSupport
-          LLVMSupport)
+          LLVMSupport
+          MLIRSupportMQT)
 
 mqt_mlir_configure_unittest_target(${target_name})
 
