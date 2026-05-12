@@ -18,13 +18,7 @@ import pytest
 from mqt.core import fomac
 from mqt.core.plugins.qiskit import QDMIProvider
 
-pytestmark = [
-    pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
-    pytest.mark.filterwarnings("ignore:Device does not define a measurement operation.*:UserWarning"),
-]
 
-
-@pytest.mark.filterwarnings("ignore:Skipping device:UserWarning")
 def test_provider_backends_filter_by_name() -> None:
     """Provider can filter backends by name substring."""
     provider = QDMIProvider()
@@ -41,7 +35,6 @@ def test_provider_backends_filter_by_name() -> None:
     assert any(b.name == backend_name for b in filtered)
 
 
-@pytest.mark.filterwarnings("ignore:Skipping device:UserWarning")
 def test_provider_backends_filter_by_substring() -> None:
     """Provider can filter backends by name substring."""
     provider = QDMIProvider()
