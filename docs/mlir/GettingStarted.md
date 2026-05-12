@@ -621,27 +621,34 @@ To do so, we leverage MLIR's built-in `scf` dialect.
 ::::{grid} 2
 :::{grid-item}
 
-```{code-block} mlir
+```mlir
 //          QC
 %N = arith.constant 4 : index
 
-%r0 = memref.alloc() : memref<4x!qc.qubit>
+%r0 = memref.alloc(%N) : memref<?x!qc.qubit>
 
 %i0 = arith.constant 0 : index
-%q0 = memref.load %r0[%i0] : memref<4x!qc.qubit>
+%q0 = memref.load %r0[%i0] : memref<?x!qc.qubit>
 qc.h %q0 : !qc.qubit
 
-%lb = arith.constant 1 : index
-%step = arith.constant 1 : index
-scf.for %iv = %lb to %N step %step {
-  %qi = memref.load %r0[%iv] : memref<4x!qc.qubit>
+%c1 = arith.constant 1 : index
+scf.for %iv = %c1 to %N step %c1 {
+  %qi = memref.load %r0[%iv] : memref<?x!qc.qubit>
   qc.h %qi : !qc.qubit
+
   qc.ctrl(%q0) {
     qc.x %qi : !qc.qubit
+
   } : !qc.qubit
+
+
+
+
 }
 
-memref.dealloc %r0 : memref<4x!qc.qubit>
+
+
+memref.dealloc %r0 : memref<?x!qc.qubit>
 ```
 
 :::
@@ -650,7 +657,32 @@ memref.dealloc %r0 : memref<4x!qc.qubit>
 
 ```mlir
 //            QCO
-TODO
+%N = arith.constant 4 : index
+
+%r0_0 = qtensor.alloc(%N) : tensor<?x!qco.qubit>
+
+%i0 = arith.constant 0 : index
+%r0_1, %q0_0 = qtensor.extract %r0_0[%i0] : tensor<?x!qco.qubit>
+%q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+  
+%c1 = arith.constant 1 : index
+%r0_3, %q0_2 = scf.for %iv = %c1 to %N step %c1 iter_args(%ri_0 = %r0_1, %ctrl_0 = %q0_1) -> (tensor<?x!qco.qubit>, !qco.qubit) {
+  %ri_1, %qi_0 = qtensor.extract %ri_0[%iv] : tensor<?x!qco.qubit>
+  %qi_1 = qco.h %qi_0 : !qco.qubit -> !qco.qubit
+  
+  %ctrl_1, %qi_2 = qco.ctrl(%ctrl_0) targets (%arg3 = %qi_1) {
+    %6 = qco.x %arg3 : !qco.qubit -> !qco.qubit
+    qco.yield %6 : !qco.qubit
+  } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+
+  %ri_2 = qtensor.insert %qi_2 into %ri_1[%iv] : tensor<?x!qco.qubit>
+
+  scf.yield %ri_2, %ctrl_1 : tensor<?x!qco.qubit>, !qco.qubit
+}
+
+%r0_4 = qtensor.insert %q0_2 into %r0_3[%i0] : tensor<?x!qco.qubit>
+
+qtensor.dealloc %r0_4 : tensor<?x!qco.qubit>
 ```
 
 :::
@@ -662,27 +694,33 @@ Naturally, a function taking N as parameter seems like an appropriate choice.
 ::::{grid} 2
 :::{grid-item}
 
-```{code-block} mlir
+```mlir
 //          QC
 func.func @ghz(%N: index) {
-  %r0 = memref.alloc() : memref<4x!qc.qubit>
+  %r0 = memref.alloc(%N) : memref<?x!qc.qubit>
 
   %i0 = arith.constant 0 : index
-  %q0 = memref.load %r0[%i0] : memref<4x!qc.qubit>
+  %q0 = memref.load %r0[%i0] : memref<?x!qc.qubit>
   qc.h %q0 : !qc.qubit
 
-  %lb = arith.constant 1 : index
-  %step = arith.constant 1 : index
-  scf.for %iv = %lb to %N step %step {
-    %qi = memref.load %r0[%iv] : memref<4x!qc.qubit>
+  %c1 = arith.constant 1 : index
+  scf.for %iv = %c1 to %N step %c1 {
+    %qi = memref.load %r0[%iv] : memref<?x!qc.qubit>
     qc.h %qi : !qc.qubit
+
     qc.ctrl(%q0) {
       qc.x %qi : !qc.qubit
+
     } : !qc.qubit
+
+
 
   }
 
-  memref.dealloc %r0 : memref<4x!qc.qubit>
+
+
+
+  memref.dealloc %r0 : memref<?x!qc.qubit>
 
   return
 }
@@ -694,7 +732,34 @@ func.func @ghz(%N: index) {
 
 ```mlir
 //            QCO
-TODO
+ func.func @ghz(%N: index) {
+    %r0_0 = qtensor.alloc(%N) : tensor<?x!qco.qubit>
+
+    %i0 = arith.constant 0 : index
+    %r0_1, %q0_0 = qtensor.extract %r0_0[%i0] : tensor<?x!qco.qubit>
+    %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+      
+    %c1 = arith.constant 1 : index
+    %r0_3, %q0_2 = scf.for %iv = %c1 to %N step %c1 iter_args(%ri_0 = %r0_1, %ctrl_0 = %q0_1) -> (tensor<?x!qco.qubit>, !qco.qubit) {
+      %ri_1, %qi_0 = qtensor.extract %ri_0[%iv] : tensor<?x!qco.qubit>
+      %qi_1 = qco.h %qi_0 : !qco.qubit -> !qco.qubit
+      
+      %ctrl_1, %qi_2 = qco.ctrl(%ctrl_0) targets (%arg3 = %qi_1) {
+        %6 = qco.x %arg3 : !qco.qubit -> !qco.qubit
+        qco.yield %6 : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+
+      %ri_2 = qtensor.insert %qi_2 into %ri_1[%iv] : tensor<?x!qco.qubit>
+
+      scf.yield %ri_2, %ctrl_1 : tensor<?x!qco.qubit>, !qco.qubit
+    }
+
+    %r0_4 = qtensor.insert %q0_2 into %r0_3[%i0] : tensor<?x!qco.qubit>
+
+    qtensor.dealloc %r0_4 : tensor<?x!qco.qubit>
+
+    return
+  }
 ```
 
 :::
