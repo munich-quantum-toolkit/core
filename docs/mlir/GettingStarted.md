@@ -215,8 +215,8 @@ Otherwise, it uses `%v = %b`.
 The `return` operation is another example of a terminator that returns control to the caller of the function.
 Generally, a block consists of multiple operations, where the final one is the terminator.
 
-Note that the `@select` function body consists of two blocks. 
-The respective enveloping structure in MLIR is a _region_. 
+Note that the `@select` function body consists of two blocks.
+The respective enveloping structure in MLIR is a _region_.
 A region is always attached to an operation (its parent), encompasses multiple blocks, and is usually indicated by curly brackets.
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
 
