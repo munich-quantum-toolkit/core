@@ -61,6 +61,15 @@ void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
 LogicalResult
 QuantumCompilerPipeline::runPipeline(ModuleOp module,
                                      CompilationRecord* record) const {
+  if (config_.convertToQIRBase && config_.convertToQIRAdaptive) {
+    llvm::errs()
+        << "convertToQIRBase and convertToQIRAdaptive are mutually "
+           "exclusive; only one QIR profile can be targeted at a time.\n";
+    return failure();
+  }
+  const auto convertToQIR =
+      config_.convertToQIRAdaptive || config_.convertToQIRBase;
+
   // Ensure printIRAfterAllStages implies recordIntermediates
   if (config_.printIRAfterAllStages &&
       (!config_.recordIntermediates || record == nullptr)) {
@@ -88,7 +97,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // 9. QC-to-QIR conversion (optional)
   // 10. QIR cleanup (optional)
   auto totalStages = 8;
-  if (config_.convertToQIRBase) {
+  if (convertToQIR) {
     totalStages += 2;
   }
   auto currentStage = 0;
@@ -189,7 +198,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
   }
   // Stage 9: QC-to-QIR conversion (optional)
-  if (config_.convertToQIRBase || config_.convertToQIRAdaptive) {
+  if (convertToQIR) {
     auto addConversionPass = [&](PassManager& pm) {
       if (config_.convertToQIRBase) {
         pm.addPass(createQCToQIRBase());

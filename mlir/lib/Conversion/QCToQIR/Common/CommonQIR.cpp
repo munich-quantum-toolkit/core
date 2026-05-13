@@ -406,14 +406,6 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
   }
 };
 
-/**
- * @brief Populates conversion patterns for QC-to-QIR lowering.
- *
- * @details
- * Centralizes pattern registration so adding a new QC gate typically only
- * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
- * list of unitary gates below.
- */
 } // namespace
 
 /**
@@ -486,6 +478,14 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
   }
 }
 
+/**
+ * @brief Populates common conversion patterns for QC-to-QIR lowering.
+ *
+ * @details
+ * Centralizes pattern registration so adding a new QC gate typically only
+ * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
+ * list of unitary gates below.
+ */
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {

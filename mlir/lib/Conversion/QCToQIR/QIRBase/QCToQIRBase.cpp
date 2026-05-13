@@ -54,13 +54,10 @@ namespace {
  * @brief Converts qc.measure to QIR measurement
  *
  * @details
- * For measurements with register information, a result array is allocated and
- * all result pointers are loaded.
+ * For measurements with register information, a static result is used at
+ * the given index. Otherwise a static result at the next index is used.
  *
- * For measurements without register information, an individual result pointer
- * is allocated.
- *
- * @par Example (with register):
+ * @par Example (with register): TODO fix this
  * ```mlir
  * %result = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
  * ```
@@ -178,7 +175,7 @@ struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     if (main.getBlocks().size() > 1) {
       llvm::reportFatalInternalError(
-          "Modules with multiple blocks are not supported yet");
+          "Modules with multiple blocks are not supported in the Base Profile");
     }
 
     // Get the existing block

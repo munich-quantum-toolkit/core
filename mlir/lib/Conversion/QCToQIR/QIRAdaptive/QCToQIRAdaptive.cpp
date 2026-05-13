@@ -330,8 +330,10 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
  * For measurements with register information, a result array is allocated and
  * all result pointers are loaded.
  *
- * For measurements without register information, an individual result pointer
- * is allocated.
+ * For measurements without register information, a static result pointer is
+ * used.
+ * If the operation has an user, a read result call operation is created to
+ * convert the result !llvm.ptr to an i1 value.
  *
  * @par Example (with register):
  * ```mlir
@@ -433,6 +435,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
                          ValueRange{adaptor.getQubit(), result});
 
+    // Creates a readResult operation if the measure operation has any users
     if (op.getResult().use_empty()) {
       rewriter.eraseOp(op);
     } else {
@@ -448,10 +451,15 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     return success();
   }
 };
+} // namespace
 
-void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
-                                     QCToQIRTypeConverter& typeConverter,
-                                     MLIRContext* ctx, LoweringState& state) {
+/**
+ * @brief Populates conversion patterns for QC-to-QIR-Adaptive lowering.
+ */
+static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
+                                            QCToQIRTypeConverter& typeConverter,
+                                            MLIRContext* ctx,
+                                            LoweringState& state) {
   patterns
       .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp>(
           typeConverter, ctx, &state);
@@ -462,6 +470,8 @@ void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
 }
 
+namespace {
+
 /**
  * @brief Pass for converting QC dialect operations to QIR Adaptive Profile
  *
@@ -470,22 +480,34 @@ void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
  * dialect operations that call QIR runtime functions.
  *
  * Conversion stages:
- * 1. Convert func dialect to LLVM
- * 2. Ensure proper block structure for QIR base profile
- * 3. Add QIR initialization call
- * 4. Convert QC operations to QIR calls
- * 5. Set QIR metadata attributes
- * 6. Convert arith and cf dialects to LLVM
- * 7. Reconcile unrealized casts
+ * 1. Convert scf dialect to cf
+ * 2. Cpmvert func dialect to LLVM
+ * 3. Ensure proper block structure for QIR Adaptive Profile
+ * 4. Add QIR initialization call
+ * 5. Convert QC and memref operations to QIR calls
+ * 6. Set QIR metadata attributes
+ * 7. Convert arith and cf dialects to LLVM
+ * 8. Reconcile unrealized casts
  *
- * @pre
- * The input entry function must consist of a single block. The pass will
- * restructure it into four blocks. Multi-block input functions are
- * currently not supported.
  */
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
 
+  /**
+   * @brief Ensures proper block structure for QIR Adaptive Profile
+   *
+   * @details
+   * The Adaptive Profile requires an entry block and an output block with an
+   * arbitrary number of blocks between them.
+   * 1. **Entry block**: Contains constant operations and initialization
+   * 2. **Intermediate blocks**: Original function structure containing quantum
+   * operations
+   * 3. **Output block**: Contains output recording calls and qubit release
+   * calls
+   *
+   * @param main The main LLVM function to restructure
+   * @param state The LoweringState of the conversion pass
+   */
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     OpBuilder builder(main.getBody());
     auto* firstBlock = &main.front();
@@ -506,8 +528,7 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
     builder.setInsertionPointToEnd(lastBlock);
     LLVM::BrOp::create(builder, main->getLoc(), finalBlock);
 
-    // Hoist constant-like ops from all non-entry, non-output blocks
-    // into the entry block so they dominate all uses
+    // Move up all constants to the beginning
     auto& entryOps = entryBlock->getOperations();
     for (auto& block : main.getBlocks()) {
       if (&block == entryBlock || &block == finalBlock) {
@@ -551,7 +572,11 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
                            ValueRange{size, array});
     }
   }
-
+  /**
+   * @brief Iterates through the module to find any scf.while or scf.for
+   * operation to set the appropriate flags before they are converted to cf
+   * operations.
+   */
   static void findOperations(Operation* op, LoweringState* state) {
     op->walk([&](Operation* op) {
       if (llvm::isa<scf::WhileOp>(op)) {
@@ -564,6 +589,41 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   }
 
 protected:
+  /**
+   * @brief Executes the QC to QIR conversion pass
+   *
+   * @details
+   * Performs the conversion in seven stages:
+   *
+   * **Stage 1: scf to cf**
+   * Convert scf dialect operation to cf dialect equivalents.
+   *
+   * **Stage 2: func to LLVM**
+   * Convert func dialect operations (main function) to LLVM dialect
+   * equivalents.
+   *
+   * **Stage 3: Block structure**
+   * Create proper block structure for QIR Adaptive Profile (entry, intermediate
+   * blocks, output).
+   *
+   * **Stage 4: Initialization**
+   * Insert the `__quantum__rt__initialize` call.
+   *
+   * **Stage 5: QC and memref to LLVM**
+   * Convert QC dialect operations and memref operations to QIR calls and add
+   * output recording to the output block.
+   *
+   * **Stage 6: QIR Attributes**
+   * Add QIR Profile metadata to the main function, including qubit/result
+   * counts and version information.
+   *
+   * **Stage 7: Standard dialects to LLVM**
+   * Convert arith and control flow dialects to LLVM (for index arithmetic and
+   * function control flow).
+   *
+   * **Stage 8: Reconcile casts**
+   * Clean up any unrealized cast operations introduced during type conversion.
+   */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto* moduleOp = getOperation();
