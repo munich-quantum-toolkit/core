@@ -158,4 +158,38 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   }];
 }
 
+def MeasurementLifting : Pass<"measurement-lifting", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+  ];
+  let summary = "This pass attempts to move measurements as far up as"
+                "possible, shiftling them above gates that commute with them."
+                "This is done to enable qubit reuse and other optimizations.";
+  let description = [{
+    This pass lifts measurements gates away from the measurements in order to apply measurement lifting more effectively.
+    Measurement lifting is a subroutine of the qubit reuse routine. The goal is to measure qubits earlier in the
+    circuit to reuse them and to potentially remove some quantum gates.
+
+    Measurement lifting uses the following commutation rules:
+                 ┌──────┐             ┌──────┐
+            ──■──┤ Meas │──────      ─┤ Meas ├──■───
+              │  └──────┘             └──────┘  │
+            ┌─┴─┐                 =>          ┌─┴─┐
+            ┤ U ├────────────────    ─────────┤ U ├─
+            └───┘                             └───┘
+            (Where U is any (controlled) unitary gate)
+
+            ┌───┐┌──────┐    ┌──────┐┌───┐
+            ┤ P ├┤ Meas ├ => ┤ Meas ├┤ P ├
+            └───┘└──────┘    └──────┘└───┘
+            (Where P is any diagonal gate, e.g., `z`, `s`, ...)
+
+            ┌───┐┌──────┐    ┌───────┐┌───┐
+            ┤ X ├┤ Meas ├ => ┤ Meas* ├┤ X ├
+            └───┘└──────┘    └───────┘└───┘
+            (Where Meas* is a measurement after which the outcome is classically negated)
+
+  }];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
