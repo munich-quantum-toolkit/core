@@ -1379,13 +1379,24 @@ void nestedForLoopWhileOp(QCProgramBuilder& b) {
   });
 }
 
-void nestedForLoopCtrlOp(QCProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+void nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
   auto control = b.allocQubit();
   b.h(control);
-  b.scfFor(0, 2, 1, [&](Value iv) {
+  b.scfFor(0, 3, 1, [&](Value iv) {
     auto q0 = b.memrefLoad(reg.value, iv);
-    b.ctrl(control, [&] { b.h(q0); });
+    b.h(q0);
+    b.ctrl(control, [&] { b.x(q0); });
+  });
+}
+
+void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(4);
+  b.h(reg[0]);
+  b.scfFor(1, 4, 1, [&](Value iv) {
+    auto q0 = b.memrefLoad(reg.value, iv);
+    b.h(q0);
+    b.ctrl(reg[0], [&] { b.x(q0); });
   });
 }
 
