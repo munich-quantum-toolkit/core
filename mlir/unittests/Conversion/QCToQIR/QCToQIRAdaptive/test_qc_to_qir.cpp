@@ -103,7 +103,7 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference =
-      qir::QIRProgramBuilder::build(context.get(), referenceBuilder.fn);
+      qir::QIRProgramBuilder::build(context.get(), referenceBuilder.fn, true);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -693,9 +693,11 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQIRTestCase{"NestedForLoopWhileOp",
                         MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
                         MQT_NAMED_BUILDER(qir::nestedForLoopWhileOp)},
-        QCToQIRTestCase{"NestedForLoopCtrlOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOp),
-                        MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOp)},
-
-        QCToQIRTestCase{"NestedForLoopCtrlOp", MQT_NAMED_BUILDER(qc::test),
-                        MQT_NAMED_BUILDER(qir::test)}));
+        QCToQIRTestCase{
+            "nestedForLoopCtrlOpWithSeparateQubit",
+            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),
+            MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOpWithSeparateQubit)},
+        QCToQIRTestCase{
+            "nestedForLoopCtrlOpWithExtractedQubit",
+            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
+            MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOpWithExtractedQubit)}));

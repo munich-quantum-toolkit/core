@@ -133,6 +133,27 @@ void measurementWithoutRegisters(QIRProgramBuilder& b) {
   b.measure(q, 0);
 }
 
+void measureStaticQubit(QIRProgramBuilder& b) {
+  auto q = b.staticQubit(0);
+  b.measure(q, 0);
+}
+
+void measureMultipleStaticQubits(QIRProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  auto q2 = b.staticQubit(2);
+  b.measure(q0, 0);
+  b.measure(q1, 1);
+  b.measure(q2, 2);
+}
+
+void repeatedMeasurementToSameBitStaticQubit(QIRProgramBuilder& b) {
+  auto q = b.staticQubit(0);
+  b.measure(q, 0);
+  b.measure(q, 0);
+  b.measure(q, 0);
+}
+
 void resetQubitWithoutOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
@@ -702,13 +723,24 @@ void nestedForLoopWhileOp(QIRProgramBuilder& b) {
   });
 }
 
-void nestedForLoopCtrlOp(QIRProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+void nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
   auto control = b.allocQubit();
   b.h(control);
-  b.scfFor(0, 2, 1, [&](Value iv) {
+  b.scfFor(0, 3, 1, [&](Value iv) {
     auto q0 = b.load(reg.value, iv);
-    b.ch(control, q0);
+    b.h(q0);
+    b.cx(control, q0);
+  });
+}
+
+void nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(4);
+  b.h(reg[0]);
+  b.scfFor(1, 4, 1, [&](Value iv) {
+    auto q0 = b.load(reg.value, iv);
+    b.h(q0);
+    b.cx(reg[0], q0);
   });
 }
 

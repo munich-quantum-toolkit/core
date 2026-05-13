@@ -75,11 +75,12 @@ void QIRProgramBuilder::initialize() {
   auto zero = LLVM::ZeroOp::create(*this, ptrType);
   LLVM::CallOp::create(*this, initDec, zero.getResult());
 
-  // Add unconditional branches between blocks
   setInsertionPointToEnd(entryBlock);
   LLVM::BrOp::create(*this, bodyBlock);
   if (!useAdaptive) {
-    measurementsBlock = mainFuncOp.addBlock();
+    measurementsBlock = createBlock(&mainFuncOp.getBody());
+    mainFuncOp.getBlocks().splice(Region::iterator(outputBlock),
+                                  mainFuncOp.getBlocks(), measurementsBlock);
     setInsertionPointToEnd(bodyBlock);
     LLVM::BrOp::create(*this, measurementsBlock);
 
@@ -286,8 +287,6 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
     llvm::reportFatalUsageError("Result index must be non-negative");
   }
 
-  metadata_.useDynamicResult = true;
-
   // Save current insertion point
   const InsertionGuard guard(*this);
   auto insertionPoint = saveInsertionPoint();
@@ -305,6 +304,10 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   }
 
   restoreInsertionPoint(insertionPoint);
+
+  if (!useAdaptive) {
+    setInsertionPoint(measurementsBlock->getTerminator());
+  }
 
   // Create measure call
   const auto mzSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
@@ -336,9 +339,6 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
 
 QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
   checkFinalized();
-
-  // Save current insertion point
-  const InsertionGuard guard(*this);
 
   // Create reset call
   const auto qirSignature = LLVM::LLVMFunctionType::get(voidType, ptrType);
@@ -920,7 +920,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::build(
     MLIRContext* context,
     const function_ref<void(QIRProgramBuilder&)>& buildFunc, bool useAdaptive) {
   QIRProgramBuilder builder(context);
-  builder.useAdaptive = true;
+  builder.useAdaptive = useAdaptive;
   builder.initialize();
   buildFunc(builder);
   return builder.finalize();

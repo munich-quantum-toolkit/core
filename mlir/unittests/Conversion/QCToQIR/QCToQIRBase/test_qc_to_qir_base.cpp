@@ -9,7 +9,7 @@
  */
 
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
@@ -76,7 +76,7 @@ protected:
 
 static LogicalResult runQCToQIRConversion(ModuleOp module) {
   PassManager pm(module.getContext());
-  pm.addPass(createQCToQIRAdaptive());
+  pm.addPass(createQCToQIRBase());
   return pm.run(module);
 }
 
@@ -119,32 +119,29 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
 /// \name QCToQIR/Operations/StandardGates/BarrierOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRBarrierOpTest, QCToQIRTest,
+    QCToQIRBaseTest, QCToQIRTest,
     testing::Values(
-        QCToQIRTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
+        QCToQIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
                         MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"BarrierTwoQubits",
-                        MQT_NAMED_BUILDER(qc::barrierTwoQubits),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"BarrierMultipleQubits",
-                        MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"SingleControlledBarrier",
-                        MQT_NAMED_BUILDER(qc::singleControlledBarrier),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/DcxOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRDCXOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"DCX", MQT_NAMED_BUILDER(qc::dcx),
-                        MQT_NAMED_BUILDER(qir::dcx)},
-        QCToQIRTestCase{"SingleControlledDCX",
-                        MQT_NAMED_BUILDER(qc::singleControlledDcx),
-                        MQT_NAMED_BUILDER(qir::singleControlledDcx)},
-        QCToQIRTestCase{"MultipleControlledDCX",
-                        MQT_NAMED_BUILDER(qc::multipleControlledDcx),
-                        MQT_NAMED_BUILDER(qir::multipleControlledDcx)}));
+        QCToQIRTestCase{"StaticQubitsWithOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
+                        MQT_NAMED_BUILDER(qir::staticQubitsWithOps)},
+        QCToQIRTestCase{"StaticQubitsWithParametricOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithParametricOps),
+                        MQT_NAMED_BUILDER(qir::staticQubitsWithParametricOps)},
+        QCToQIRTestCase{"StaticQubitsWithTwoTargetOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithTwoTargetOps),
+                        MQT_NAMED_BUILDER(qir::staticQubitsWithTwoTargetOps)},
+        QCToQIRTestCase{"StaticQubitsWithCtrl",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithCtrl),
+                        MQT_NAMED_BUILDER(qir::staticQubitsWithCtrl)},
+        QCToQIRTestCase{"StaticQubitsWithInv",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithInv),
+                        MQT_NAMED_BUILDER(qir::staticQubitsWithInv)},
+        QCToQIRTestCase{"MeasureStaticQubit",
+                        MQT_NAMED_BUILDER(qc::measureStaticQubit),
+                        MQT_NAMED_BUILDER(qir::measureStaticQubit)},
+        QCToQIRTestCase{"MeasureMultipleStaticQubits",
+                        MQT_NAMED_BUILDER(qc::measureMultipleStaticQubits),
+                        MQT_NAMED_BUILDER(qir::measureMultipleStaticQubits)}));
 /// @}

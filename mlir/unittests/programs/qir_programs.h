@@ -83,6 +83,15 @@ void multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b);
 /// allocating a quantum or classical register.
 void measurementWithoutRegisters(QIRProgramBuilder& b);
 
+/// Measures a single static qubit.
+void measureStaticQubit(QIRProgramBuilder& b);
+
+/// Measures a single static qubit.
+void measureMultipleStaticQubits(QIRProgramBuilder& b);
+
+/// Measures a single static qubit.
+void repeatedMeasurementToSameBitStaticQubit(QIRProgramBuilder& b);
+
 // --- ResetOp -------------------------------------------------------------- //
 
 /// Resets a single qubit without any operations being applied.
@@ -459,8 +468,13 @@ void nestedForLoopIfOp(QIRProgramBuilder& b);
 void nestedForLoopWhileOp(QIRProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
-/// nested ctrl operation.
-void nestedForLoopCtrlOp(QIRProgramBuilder& b);
+/// nested ctrl operation where the qubit is separately allocated from the
+/// register.
+void nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is extracted from the register.
+void nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b);
 
 void test(QIRProgramBuilder& b);
 } // namespace mlir::qir
