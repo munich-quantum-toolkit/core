@@ -32,6 +32,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>

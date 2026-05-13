@@ -26,7 +26,6 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -975,9 +974,9 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
 /**
  * @brief Move a region from QCO/SCF operation to a jeff operation
  */
-LogicalResult moveRegion(Region& source, Region& dest,
-                         ConversionPatternRewriter& rewriter,
-                         const TypeConverter* typeConverter) {
+static LogicalResult moveRegion(Region& source, Region& dest,
+                                ConversionPatternRewriter& rewriter,
+                                const TypeConverter* typeConverter) {
   rewriter.inlineRegionBefore(source, dest, dest.end());
   Block* block = &dest.front();
   TypeConverter::SignatureConversion sc(block->getNumArguments());
