@@ -822,6 +822,9 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
  * ```mlir
  * %q_out = jeff.switch(%condition) : i1 -> (!jeff.qubit)
  * case 0 args(%a = %q_in) {
+ *   %jeff.yield %a : !jeff.qubit
+ * }
+ * case 1 args(%a = %q_in) {
  *   %q_res = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %a
  * : !jeff.qubit
  *   jeff.yield %q_res : !jeff.qubit
@@ -846,10 +849,13 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
   LogicalResult
   matchAndRewrite(jeff::SwitchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getBranches().size() != 1) {
+    if (op.getBranches().size() != 2) {
       return rewriter.notifyMatchFailure(
-          op,
-          "qco.if requires exactly one branch (then) and one default (else).");
+          op, "qco.if requires exactly two branches.");
+    }
+    if (op.getDefault().front().getOperations().size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "qco.if requires a trivial default branch.");
     }
 
     SmallVector<Type> outTypes;
@@ -874,10 +880,10 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       return success();
     };
 
-    if (failed(moveRegion(op.getBranches()[0], qcoIf.getThenRegion()))) {
+    if (failed(moveRegion(op.getBranches()[0], qcoIf.getElseRegion()))) {
       return failure();
     }
-    if (failed(moveRegion(op.getDefault(), qcoIf.getElseRegion()))) {
+    if (failed(moveRegion(op.getBranches()[1], qcoIf.getThenRegion()))) {
       return failure();
     }
 
@@ -941,6 +947,7 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
     Block* jeffBody = &op.getBody().front();
     Block* scfBody = scfFor.getBody();
 
+    OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointToStart(scfBody);
 
     auto iv = arith::IndexCastOp::create(rewriter, loc,
