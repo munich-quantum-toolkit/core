@@ -149,6 +149,13 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
+  if(MSVC)
+    install(
+      FILES ${nlohmann_json_SOURCE_DIR}/nlohmann_json.natvis
+      DESTINATION .
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  endif()
+
   install(TARGETS nlohmann_json EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME})
 
   install(
