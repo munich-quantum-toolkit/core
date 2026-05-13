@@ -51,6 +51,9 @@ function(add_mqt_core_library name)
                  VISIBILITY_INLINES_HIDDEN 1)
   endif()
 
+  # Always compile with position-independent code to enable usage in shared libraries
+  set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
   # Set versioning information
   set_target_properties(
     ${name}

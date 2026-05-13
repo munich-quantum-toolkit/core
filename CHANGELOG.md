@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-05-13
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#360)._
+
 ### Added
 
 - 🚸 Add a measurement instruction to the default SC QDMI device ([#1694]) ([**@burgholzer**])
@@ -344,7 +348,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.0
 [3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
