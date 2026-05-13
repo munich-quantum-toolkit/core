@@ -80,6 +80,8 @@ namespace qir {
  */
 class QIRProgramBuilder final : public ImplicitLocOpBuilder {
 public:
+  enum class Profile : uint8_t { Base, Adaptive };
+
   /**
    * @brief Construct a new QIRProgramBuilder
    * @param context The MLIR context to use for building operations
@@ -874,23 +876,129 @@ public:
   // SCF Operations
   //===--------------------------------------------------------------------===//
 
+  /**
+   * @brief Construct a for construct in LLVM dialect
+   *
+   * @param lowerbound Lower bound of the loop
+   * @param upperbound Upper bound of the loop
+   * @param step Step size of the loop
+   * @param body Function that builds the body of the for operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfFor(lb, ub, step, [&](Value iv) {
+   *   auto q0 = builder.load(register, iv);
+   *   builder.h(q0);
+   * });
+   * ```
+   * ```mlir
+   *   llvm.br ^condition(%lowerbound : i64)
+   * ^condition(%iv: i64):
+   *   %condition = llvm.icmp "slt" %iv, %upperbound : i64
+   *   llvm.cond_br %condition, ^loop, ^next
+   * ^loop:
+   *   %gep = llvm.getelementptr %alloc[%iv] : (!llvm.ptr, i64) -> !llvm.ptr,
+   *   !llvm.ptr
+   *   %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   *   llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
+   *   %nextIv = llvm.add %iv, %step : i64
+   *   llvm.br ^condition(%nextIv : i64)
+   * ^next:
+   * ```
+   */
   QIRProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
                             const std::variant<int64_t, Value>& upperbound,
                             const std::variant<int64_t, Value>& step,
                             const llvm::function_ref<void(Value)>& body);
-
+  /**
+   * @brief Construct an if construct in LLVM dialect
+   *
+   * @param condition Condition for the if operation
+   * @param thenBody Function that builds the then body of the if construct
+   * @param elseBody Function that builds the else body of the if construct
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfIf(condition, [&] {
+   *   builder.x(q0);
+   * }, [&] {
+   *   builder.z(q0);
+   * });
+   * ```
+   * ```mlir
+   *   %condition = llvm.call @__quantum__rt__read_result(%result) : (!llvm.ptr)
+   *   -> i1
+   *   llvm.cond_br %condition, ^then, ^else
+   * ^then:
+   *   llvm.call @__quantum__qis__x__body(%q0) : (!llvm.ptr) -> ()
+   *   llvm.br ^next
+   * ^else:
+   *   llvm.call @__quantum__qis__z__body(%q0) : (!llvm.ptr) -> ()
+   *   llvm.br ^next
+   * ^next:
+   * ```
+   */
   QIRProgramBuilder&
   scfIf(const std::variant<bool, Value>& condition,
         const llvm::function_ref<void()>& thenBody,
         const llvm::function_ref<void()>& elseBody = nullptr);
 
+  /**
+   * @brief Construct a while construct in LLVM dialect
+   *
+   * @param beforeBody Function that builds the before body of the while
+   * construct
+   * @param afterBody Function that builds the after body of the while construct
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfWhile([&] {
+   *   auto res = builder.measure(q0);
+   *   return res;
+   * }, [&] {
+   *   builder.h(q0);
+   * });
+   * ```
+   * ```mlir
+   *   llvm.br ^before
+   * ^before:
+   *   llvm.call @__quantum__qis__mz__body(%q0, %result) : (!llvm.ptr,
+   * !llvm.ptr)
+   *   -> ()
+   *   %condition = llvm.call @__quantum__rt__read_result(%result) : (!llvm.ptr)
+   *   -> i1
+   *   llvm.cond_br %condition, ^after, ^next
+   * ^after:
+   *   llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
+   *   llvm.br ^bb2
+   * ^next:
+   * ```
+   */
   QIRProgramBuilder&
   scfWhile(const llvm::function_ref<Value()>& beforeBody,
            const llvm::function_ref<void()>& afterBody = nullptr);
 
+  /**
+   * @brief Loads a qubit from a register
+   *
+   * @param register Source register
+   * @param index The index from where the qubit is loaded
+   * @return The loaded qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto q0 = builder.load(register, index);
+   * ```
+   * ```mlir
+   * %gep = llvm.getelementptr %alloc[%index] : (!llvm.ptr, i64) -> !llvm.ptr,
+   * !llvm.ptr
+   * %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   * ```
+   */
   Value load(Value memref, Value index);
-
-  Value getValue(const std::variant<int64_t, Value>& val);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -921,7 +1029,7 @@ public:
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
         const function_ref<void(QIRProgramBuilder&)>& buildFunc,
-        bool useAdaptive = false);
+        Profile profile = Profile::Adaptive);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
@@ -975,8 +1083,6 @@ private:
   /// Helper variable for storing the LLVM void type
   Type voidType;
 
-  bool useAdaptive = true;
-
   /**
    * @brief Helper to create a LLVM CallOp
    *
@@ -1003,11 +1109,28 @@ private:
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
 
+  /// Track whether Base or Adaptive Profile is used.
+  Profile profile = Profile::Adaptive;
+
   /// Check if the builder has been finalized
   void checkFinalized() const;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
+
+  /**
+   * @brief Helper to resolve a variant of either int64_t type or Value Type to
+   * a Value
+   *
+   * @details Helper function to resolve a given variant to a Value. Creates a
+   * LLVM ConstantOp from the int value. The created LLVM Constant is of type
+   * I64 and has an IndexAttr as its value. If the variant holds a Value, return
+   * it directly.
+   *
+   * @param variant The variant to resolve
+   * @return The resolved Value
+   */
+  Value resolveIntVariant(const std::variant<int64_t, Value>& variant);
 };
 
 } // namespace qir

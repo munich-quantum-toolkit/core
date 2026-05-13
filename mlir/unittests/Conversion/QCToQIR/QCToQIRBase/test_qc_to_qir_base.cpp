@@ -103,7 +103,8 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference =
-      qir::QIRProgramBuilder::build(context.get(), referenceBuilder.fn);
+      qir::QIRProgramBuilder::build(context.get(), referenceBuilder.fn,
+                                    qir::QIRProgramBuilder::Profile::Base);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

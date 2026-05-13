@@ -6,8 +6,8 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-qc-to-qir)
-add_executable(${target_name} test_qc_to_qir.cpp)
+set(target_name mqt-core-mlir-unittest-qc-to-qir-adaptive)
+add_executable(${target_name} test_qc_to_qir_adaptive.cpp)
 
 target_link_libraries(
   ${target_name}
