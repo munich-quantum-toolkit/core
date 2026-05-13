@@ -1,6 +1,6 @@
 # Getting Started
 
-The MQT Compiler Collection (`mqt-cc`) establishes a "classical-first" approach in the quantum compilation world.
+The MQT Compiler Collection establishes a "classical-first" approach in the quantum compilation world.
 Following an open-source philosophy, the project thrives on external contributions.
 However, because quantum compilers are complex programs by nature, it can sometimes be difficult to know where and how to start.
 
@@ -277,7 +277,7 @@ That's it! Now that we've covered the fundamentals, we can move on and explore h
 
 ## The MQT Compiler Collection
 
-The MQT Compiler Collection (`mqt-cc`) provides tools to optimize and transpile quantum programs.
+The MQT Compiler Collection provides tools to optimize and transpile quantum programs.
 This section outlines how we use the MLIR framework and its compilation infrastructure to implement these tasks.
 
 ### Quantum Dialects
@@ -599,9 +599,9 @@ memref.dealloc %r0 : memref<3x!qc.qubit>
   qco.yield %q2_2
 } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
 
-%r0_6 = qtensor.insert %q0_3 into %r0_5[%i0] : tensor<3x!qco.qubit>
-%r0_4 = qtensor.insert %q1_2 into %r0_3[%i1] : tensor<3x!qco.qubit>
-%r0_5 = qtensor.insert %q2_2 into %r0_4[%i2] : tensor<3x!qco.qubit>
+%r0_4 = qtensor.insert %q0_3 into %r0_3[%i0] : tensor<3x!qco.qubit>
+%r0_5 = qtensor.insert %q1_2 into %r0_4[%i1] : tensor<3x!qco.qubit>
+%r0_6 = qtensor.insert %q2_2 into %r0_5[%i2] : tensor<3x!qco.qubit>
 
 qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
 ```
@@ -764,6 +764,9 @@ func.func @ghz(%N: index) {
 
 :::
 ::::
+
+Maybe you have already noticed that the dialects in the MQT Compiler Collection can represent quantum computations far beyond simple quantum circuits.
+Ultimately, our goal is to define dialects expressive enough to represent a broad range of hybrid quantum-classical computations.
 
 ### Building Programs Programmatically
 
