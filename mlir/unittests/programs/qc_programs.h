@@ -879,4 +879,5 @@ void nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
 /// nested ctrl operation where the qubit is extracted from the register.
 void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
 
+void test(QCProgramBuilder& b);
 } // namespace mlir::qc

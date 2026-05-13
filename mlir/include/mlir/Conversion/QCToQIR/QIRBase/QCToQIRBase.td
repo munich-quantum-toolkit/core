@@ -8,7 +8,7 @@
 
 include "mlir/Pass/PassBase.td"
 
-def QCToQIR : Pass<"qc-to-qir"> {
+def QCToQIRBase : Pass<"qc-to-qir-base"> {
   let summary =
       "Lower the QC dialect to the LLVM dialect compliant with QIR 2.0";
 

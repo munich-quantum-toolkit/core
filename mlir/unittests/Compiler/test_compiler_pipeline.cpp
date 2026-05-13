@@ -121,7 +121,7 @@ protected:
                           const bool enableHadamardLifting,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
-    config.convertToQIR = convertToQIR;
+    config.convertToQIRBase = convertToQIR;
     config.disableMergeSingleQubitRotationGates =
         disableMergeSingleQubitRotationGates;
     config.enableHadamardLifting = enableHadamardLifting;

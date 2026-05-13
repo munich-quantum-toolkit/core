@@ -51,9 +51,15 @@ static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
                                            cl::value_desc("filename"),
                                            cl::init("-"));
 
-static cl::opt<bool> convertToQIR("emit-qir",
-                                  cl::desc("Convert to QIR at the end"),
-                                  cl::init(false));
+static cl::opt<bool>
+    convertToQIRBase("emit-qir-base",
+                     cl::desc("Convert to QIR Base Profile at the end"),
+                     cl::init(false));
+
+static cl::opt<bool>
+    convertToQIRAdaptive("emit-qir-adaptive",
+                         cl::desc("Convert to QIR Adaptive Profile at the end"),
+                         cl::init(false));
 
 static cl::opt<bool> recordIntermediates(
     "record-intermediates",
@@ -173,7 +179,8 @@ int main(int argc, char** argv) {
 
   // Configure the compiler pipeline
   QuantumCompilerConfig config;
-  config.convertToQIR = convertToQIR;
+  config.convertToQIRBase = convertToQIRBase;
+  config.convertToQIRAdaptive = convertToQIRAdaptive;
   config.recordIntermediates = recordIntermediates;
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;

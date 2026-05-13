@@ -1400,4 +1400,23 @@ void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
   });
 }
 
+void test(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.h(q[0]);
+
+  b.scfFor(0, 3, 1, [&](ValueRange arg) {
+    b.h(q[2]);
+    b.scfWhile(
+
+        [&] {
+          auto t = b.measure(q[1]);
+          b.scfIf(t, [&] { b.h(q[0]); });
+          b.h(q[0]);
+          b.scfCondition(t);
+        },
+        [&] {});
+    b.h(q[0]);
+  });
+  b.h(q[2]);
+}
 } // namespace mlir::qc

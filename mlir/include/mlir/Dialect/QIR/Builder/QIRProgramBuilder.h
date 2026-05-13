@@ -171,6 +171,29 @@ public:
   Value staticQubit(int64_t index);
 
   /**
+   * @brief Represents a qubit register with its qubits.
+   */
+  struct QubitRegister {
+    /// The MemRef value representing the qubit register
+    Value value;
+    /// The allocated qubit values
+    SmallVector<Value> qubits;
+
+    /**
+     * @brief Access a specific qubit in the register
+     * @param index The index of the qubit to access
+     * @return The specified qubit value
+     */
+    Value operator[](size_t index) const;
+
+    /**
+     * @brief Conversion to the backing MemRef value
+     * @return The MemRef value representing the qubit register
+     */
+    explicit operator Value() const { return value; }
+  };
+
+  /**
    * @brief Allocate an array of qubits
    * @param size Number of qubits (must be positive)
    * @return Vector of LLVM pointers representing the qubits
@@ -191,7 +214,7 @@ public:
    * %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size);
+  QubitRegister allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -308,7 +331,7 @@ public:
    * : (i64, !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  QIRProgramBuilder& measure(Value qubit, const Bit& bit);
+  Value measure(Value qubit, const Bit& bit);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -848,6 +871,28 @@ public:
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 
   //===--------------------------------------------------------------------===//
+  // SCF Operations
+  //===--------------------------------------------------------------------===//
+
+  QIRProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
+                            const std::variant<int64_t, Value>& upperbound,
+                            const std::variant<int64_t, Value>& step,
+                            const llvm::function_ref<void(Value)>& body);
+
+  QIRProgramBuilder&
+  scfIf(const std::variant<bool, Value>& condition,
+        const llvm::function_ref<void()>& thenBody,
+        const llvm::function_ref<void()>& elseBody = nullptr);
+
+  QIRProgramBuilder&
+  scfWhile(const llvm::function_ref<Value()>& beforeBody,
+           const llvm::function_ref<void()>& afterBody = nullptr);
+
+  Value load(Value memref, Value index);
+
+  Value getValue(const std::variant<int64_t, Value>& val);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
@@ -875,7 +920,8 @@ public:
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const function_ref<void(QIRProgramBuilder&)>& buildFunc);
+        const function_ref<void(QIRProgramBuilder&)>& buildFunc,
+        bool useAdaptive = false);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
@@ -928,6 +974,8 @@ private:
 
   /// Helper variable for storing the LLVM void type
   Type voidType;
+
+  bool useAdaptive = true;
 
   /**
    * @brief Helper to create a LLVM CallOp

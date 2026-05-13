@@ -31,6 +31,14 @@ struct QIRMetadata {
   bool useDynamicQubit{false};
   /// Whether the module uses dynamic result management
   bool useDynamicResult{false};
+  /// Whether the module uses arrays
+  bool useArrays{false};
+  /// Whether the module uses iteration based loops
+  bool useIteration{false};
+  /// Whether the module uses conditional terminated loops
+  bool useConditionalLoopTermination{false};
+  /// Whether the module uses Adaptive Profile
+  bool useAdaptive{false};
 };
 
 } // namespace mlir::qir

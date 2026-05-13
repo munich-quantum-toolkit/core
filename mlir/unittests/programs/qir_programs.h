@@ -422,4 +422,45 @@ void singleControlledXxMinusYY(QIRProgramBuilder& b);
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
 void multipleControlledXxMinusYY(QIRProgramBuilder& b);
 
+// --- IfOp ----------------------------------------------------------------- //
+
+/// Creates a circuit with a simple if operation with one qubit.
+void simpleIf(QIRProgramBuilder& b);
+
+/// Creates a circuit with an if operation with an else branch.
+void ifElse(QIRProgramBuilder& b);
+
+/// Creates a circuit with an if operation with two qubits.
+void ifTwoQubits(QIRProgramBuilder& b);
+
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+void nestedIfOpForLoop(QIRProgramBuilder& b);
+
+// --- WhileOp -------------------------------------------------------------- //
+
+/// Creates a circuit with a while operation using a while loop.
+void simpleWhileReset(QIRProgramBuilder& b);
+
+/// Creates a circuit with a while operation using a do-while loop.
+void simpleDoWhileReset(QIRProgramBuilder& b);
+
+// --- ForOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with a simple for operation with a register.
+void simpleForLoop(QIRProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested if operation.
+void nestedForLoopIfOp(QIRProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a nested while
+/// operation.
+void nestedForLoopWhileOp(QIRProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation.
+void nestedForLoopCtrlOp(QIRProgramBuilder& b);
+
+void test(QIRProgramBuilder& b);
 } // namespace mlir::qir

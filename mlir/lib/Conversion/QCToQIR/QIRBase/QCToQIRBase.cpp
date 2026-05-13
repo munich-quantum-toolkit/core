@@ -1,0 +1,344 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+
+#include "mlir/Conversion/QCToQIR/Common/CommonQIR.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
+#include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
+#include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
+#include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/DialectConversion.h>
+
+#include <utility>
+
+namespace mlir {
+
+using namespace qc;
+using namespace qir;
+
+#define GEN_PASS_DEF_QCTOQIRBASE
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h.inc"
+
+namespace {
+
+/**
+ * @brief Converts qc.measure to QIR measurement
+ *
+ * @details
+ * For measurements with register information, a result array is allocated and
+ * all result pointers are loaded.
+ *
+ * For measurements without register information, an individual result pointer
+ * is allocated.
+ *
+ * @par Example (with register):
+ * ```mlir
+ * %result = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
+ * ```
+ * becomes:
+ * ```mlir
+ * // In entry block:
+ * %zero = llvm.mlir.zero : !llvm.ptr
+ * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
+ * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
+ * (i64, !llvm.ptr, !llvm.ptr) -> ()
+ * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
+ *
+ * // In measurements block:
+ * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+ * ```
+ */
+struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+
+    auto& resultArrays = state.resultArrays;
+    auto& loadedResults = state.loadedResults;
+    auto& resultPtrs = state.resultPtrs;
+
+    auto* ctx = getContext();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+
+    // Save current insertion point
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    // Get result pointer
+    Value result;
+    if (op.getRegisterIndex() && resultPtrs.contains(static_cast<int64_t>(
+                                     op.getRegisterIndex().value()))) {
+      result =
+          resultPtrs.at(static_cast<int64_t>(op.getRegisterIndex().value()));
+    } else {
+      // Insert allocations and constants in entry block
+      rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+      result = createPointerFromIndex(rewriter, op.getLoc(), resultPtrs.size());
+      resultPtrs.try_emplace(resultPtrs.size(), result);
+      state.numResults++;
+    }
+
+    // Switch to measurements block
+    rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());
+
+    // Create measure call
+    auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
+                                             {ptrType, ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
+
+    LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
+                         ValueRange{adaptor.getQubit(), result});
+
+    rewriter.replaceOp(op, result);
+
+    return success();
+  }
+};
+
+void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
+                                 QCToQIRTypeConverter& typeConverter,
+                                 MLIRContext* ctx, LoweringState& state) {
+  populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
+  patterns.add<ConvertQCMeasureOp>(typeConverter, ctx, &state);
+}
+
+/**
+ * @brief Pass for converting QC dialect operations to QIR
+ *
+ * @details
+ * This pass converts QC dialect quantum operations to QIR (Quantum
+ * Intermediate Representation) by lowering them to LLVM dialect operations
+ * that call QIR runtime functions.
+ *
+ * Conversion stages:
+ * 1. Convert func dialect to LLVM
+ * 2. Ensure proper block structure for QIR base profile
+ * 3. Add QIR initialization call
+ * 4. Convert QC operations to QIR calls
+ * 5. Set QIR metadata attributes
+ * 6. Convert arith and cf dialects to LLVM
+ * 7. Reconcile unrealized casts
+ *
+ * @pre
+ * The input entry function must consist of a single block. The pass will
+ * restructure it into four blocks. Multi-block input functions are
+ * currently not supported.
+ */
+struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
+  using QCToQIRBaseBase::QCToQIRBaseBase;
+
+  /**
+   * @brief Ensures proper block structure for QIR base profile
+   *
+   * @details
+   * The QIR base profile requires a specific 4-block structure:
+   * 1. **Entry block**: Contains constant operations and initialization
+   * 2. **Body block**: Contains reversible quantum operations (gates)
+   * 3. **Measurements block**: Contains irreversible operations (measure and
+   * reset)
+   * 4. **Output block**: Contains output recording calls
+   *
+   * Blocks are connected with unconditional jumps (entry, body, measurements,
+   * output). This structure ensures proper QIR Base Profile semantics.
+   *
+   * @param main The main LLVM function to restructure
+   */
+  static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
+    if (main.getBlocks().size() > 1) {
+      llvm::reportFatalInternalError(
+          "Modules with multiple blocks are not supported yet");
+    }
+
+    // Get the existing block
+    auto* bodyBlock = &main.front();
+    OpBuilder builder(main.getBody());
+
+    // Create the required blocks
+    auto* entryBlock = builder.createBlock(&main.getBody());
+    // Move the entry block before the body block
+    main.getBlocks().splice(Region::iterator(bodyBlock), main.getBlocks(),
+                            entryBlock);
+    Block* measurementsBlock = builder.createBlock(&main.getBody());
+    Block* outputBlock = builder.createBlock(&main.getBody());
+
+    state.entryBlock = entryBlock;
+    state.measurementsBlock = measurementsBlock;
+    state.outputBlock = outputBlock;
+
+    auto& bodyBlockOps = bodyBlock->getOperations();
+    auto& outputBlockOps = outputBlock->getOperations();
+
+    // Move operations to appropriate blocks
+    for (auto it = bodyBlock->begin(); it != bodyBlock->end();) {
+      // Ensure iterator remains valid after potential move
+      if (auto& op = *it++; isa<LLVM::ReturnOp>(op)) {
+        // Move return to output block
+        outputBlockOps.splice(outputBlock->end(), bodyBlockOps,
+                              Block::iterator(op));
+      } else if (op.hasTrait<OpTrait::ConstantLike>()) {
+        // Move allocations and constant-like operations to entry block
+        entryBlock->getOperations().splice(entryBlock->end(), bodyBlockOps,
+                                           Block::iterator(op));
+      }
+      // All other operations (gates, etc.) stay in body block
+    }
+
+    // Add unconditional jumps between blocks
+    builder.setInsertionPointToEnd(entryBlock);
+    LLVM::BrOp::create(builder, main->getLoc(), bodyBlock);
+
+    builder.setInsertionPointToEnd(bodyBlock);
+    LLVM::BrOp::create(builder, main->getLoc(), measurementsBlock);
+
+    builder.setInsertionPointToEnd(measurementsBlock);
+    LLVM::BrOp::create(builder, main->getLoc(), outputBlock);
+  }
+
+protected:
+  /**
+   * @brief Executes the QC to QIR conversion pass
+   *
+   * @details
+   * Performs the conversion in seven stages:
+   *
+   * **Stage 1: Func to LLVM**
+   * Convert func dialect operations (main function) to LLVM dialect
+   * equivalents.
+   *
+   * **Stage 2: Block structure**
+   * Create proper 4-block structure for QIR base profile (entry, main,
+   * irreversible, output).
+   *
+   * **Stage 3: Initialization**
+   * Insert the `__quantum__rt__initialize` call.
+   *
+   * **Stage 4: QC to LLVM**
+   * Convert QC dialect operations to QIR calls and add output recording to the
+   * output block.
+   *
+   * **Stage 5: QIR attributes**
+   * Add QIR base profile metadata to the main function, including qubit/result
+   * counts and version information.
+   *
+   * **Stage 6: Standard dialects to LLVM**
+   * Convert arith and control flow dialects to LLVM (for index arithmetic and
+   * function control flow).
+   *
+   * **Stage 7: Reconcile casts**
+   * Clean up any unrealized cast operations introduced during type conversion.
+   */
+  void runOnOperation() override {
+    MLIRContext* ctx = &getContext();
+    auto* moduleOp = getOperation();
+    ConversionTarget target(*ctx);
+    QCToQIRTypeConverter typeConverter(ctx);
+
+    target.addLegalDialect<LLVM::LLVMDialect>();
+
+    // Stage 1: Convert func dialect to LLVM
+    {
+      RewritePatternSet funcPatterns(ctx);
+      target.addIllegalDialect<func::FuncDialect>();
+      populateFuncToLLVMConversionPatterns(typeConverter, funcPatterns);
+
+      if (applyPartialConversion(moduleOp, target, std::move(funcPatterns))
+              .failed()) {
+        signalPassFailure();
+        return;
+      }
+    }
+
+    auto main = getMainFunction(moduleOp);
+    if (!main) {
+      moduleOp->emitError("No main function with entry_point attribute found");
+      signalPassFailure();
+      return;
+    }
+
+    LoweringState state;
+
+    // Stage 2: Create block structure
+    ensureBlocks(main, state);
+
+    // Stage 3: Insert initialize call
+    addInitialize(main, ctx, state);
+    // Stage 4: Convert QC dialect to LLVM (QIR calls)
+    {
+      RewritePatternSet patterns(ctx);
+      target.addIllegalDialect<QCDialect, memref::MemRefDialect>();
+
+      populateQCToQIRBasePatterns(patterns, typeConverter, ctx, state);
+
+      if (applyPartialConversion(moduleOp, target, std::move(patterns))
+              .failed()) {
+        signalPassFailure();
+        return;
+      }
+
+      addOutputRecording(main, ctx, state);
+    }
+
+    // Stage 5: Set QIR metadata attributes
+    setQIRAttributes(main, state);
+
+    // Stage 6: Convert standard dialects to LLVM
+    {
+      RewritePatternSet stdPatterns(ctx);
+      target.addIllegalDialect<arith::ArithDialect>();
+      target.addIllegalDialect<cf::ControlFlowDialect>();
+
+      cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
+                                                      stdPatterns);
+      arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
+
+      if (applyPartialConversion(moduleOp, target, std::move(stdPatterns))
+              .failed()) {
+        signalPassFailure();
+        return;
+      }
+    }
+
+    // Stage 7: Reconcile unrealized casts
+    PassManager passManager(ctx);
+    passManager.addPass(createReconcileUnrealizedCastsPass());
+    if (passManager.run(moduleOp).failed()) {
+      signalPassFailure();
+    }
+  }
+};
+
+} // namespace
+
+} // namespace mlir
