@@ -1,15 +1,15 @@
 # Getting Started
 
-The MQT Compiler Collection establishes a "classical-first" approach in the quantum compilation world.
-Following an open-source philosophy, the project thrives on external contributions.
+The MQT Compiler Collection establishes a "classical-first" approach to quantum compilation.
+Following an open-source philosophy, the project welcomes external contributions.
 However, because quantum compilers are complex programs by nature, it can sometimes be difficult to know where and how to start.
 
-This page guides you through the key concepts and provides a solid understanding of the project's quantum compilation infrastructure and underlying design decisions.
+This page guides you through the key concepts and provides a solid understanding of the project's quantum-compilation infrastructure and underlying design decisions.
 
 ## Setup
 
 Before you start, visit the [installation](../installation.md) page.
-There you will find detailed instructions on how to download the project as well as install and set up the MLIR framework correctly.
+There you will find detailed instructions on how to download the project and install and set up the MLIR framework correctly.
 Once this is done, you can compile the project as follows:
 
 Run the following commands from the repository root.
@@ -72,7 +72,7 @@ X|1\rangle &= |0\rangle
 \end{aligned}
 ```
 
-A quantum gate may target multiple qubits. The controlled-X gate acts on two qubits and applies an X gate to the target qubit if the control qubit is in the $|1\rangle$ state:
+A quantum gate may target multiple qubits. The controlled-X gate acts on two qubits and applies an X gate to the target qubit when the control qubit is in the $|1\rangle$ state:
 
 ```{math}
 :label: cx_gate_action
@@ -84,7 +84,7 @@ A quantum gate may target multiple qubits. The controlled-X gate acts on two qub
 \end{aligned}
 ```
 
-where the first qubit acts as the control qubit.
+where the first qubit is the control qubit.
 
 Quantum _circuits_ describe a quantum computation graphically:
 
@@ -106,22 +106,22 @@ A circuit constructing the first Bell state.
 A circuit constructing the first Bell state.
 ```
 
-Read from left to right, the above quantum circuit prepares and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$:
+Read from left to right, the quantum circuit above prepares and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$:
 
 1. Initialize both qubits in the $|0\rangle$ state.
 2. Apply a Hadamard gate H to the upper qubit. Consequently, this qubit is now in an equal superposition state.
 3. Apply a controlled-X gate to both qubits. The black dot $\bullet{}$ and the $\oplus{}$ represent the control and target qubits, respectively. The resulting two-qubit state is $|\Phi^{+}\rangle$.
 4. Measure both qubits and receive two classical output bits.
 
-With that, we've already covered the most fundamental building blocks of quantum computing: qubits, measurements, gates, and finally circuits.
+With that, we have already covered the most fundamental building blocks of quantum computing: qubits, measurements, gates, and circuits.
 In the next section, you will learn about the Multi-Level Intermediate Representation (MLIR) framework, bringing us one step closer to our goal of understanding and building quantum compilers.
 
 ### Multi-Level Intermediate Representation (MLIR)
 
-The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware.
-Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to lower them from higher to lower levels.
+The Multi-Level Intermediate Representation (MLIR) project is an extensive framework for building compilers for heterogeneous hardware.
+Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the ability to lower them from higher to lower levels.
 
-The core concept in MLIR is the _dialect_, where a dialect groups operations, types, and attributes under a common namespace.
+The core concept in MLIR is the _dialect_, which groups operations, types, and attributes under a common namespace.
 A single program may combine multiple dialects, which facilitates code reuse.
 For example, the `arith` dialect defines integer and floating-point operations, while the `func` dialect lets you define and call functions.
 
@@ -137,14 +137,14 @@ func.func @main() {
 }
 ```
 
-The `func` and `arith` prefixes specify the dialect's name. For example, `arith.constant` represents the `constant` operation from the `arith` dialect.
+The `func` and `arith` prefixes specify the dialect names. For example, `arith.constant` represents the `constant` operation from the `arith` dialect.
 Moreover, the `%` prefix marks variables that store values, similar to other programming languages.
 However, variables in MLIR adhere to the _Static Single-Assignment_ (SSA) principle, where each variable is assigned exactly once and never reassigned.
 For instance, the first `arith.constant` operation produces the `%c1` SSA variable.
 Analogous to functional programming, the `arith.addi` operation produces a new SSA variable `%c3` representing the sum of its operands.
 Lastly, the `: i32` annotations specify the type, where `i32` represents a 32-bit integer.
 
-MLIR also provides dialects for structured control flow such as loops and conditionals in the `scf` dialect.
+MLIR also provides dialects for structured control flow, such as loops and conditionals, in the `scf` dialect.
 To demonstrate this, the snippet below sums the numbers from 0 to 100 using the `scf.for` operation.
 
 ```{code-block} mlir
@@ -164,11 +164,11 @@ func.func @main() {
 }
 ```
 
-We already know what the first three operations do: define constants of type `index` using the `arith.constant` operation.
+We already know what the first three operations do: they define constants of type `index` using the `arith.constant` operation.
 Semantically, the `index` type is much like `std::size_t` in C++.
-Namely, both represent a value that is "big enough" to index any memory location on the target architecture.
+Namely, both represent a value that is large enough to index any memory location on the target architecture.
 
-Usually, we would implement the loop as follows.
+Usually, we would implement the loop as follows:
 
 ```
 acc = 0
@@ -180,16 +180,16 @@ for iv = 0; iv < 100; ++iv {
 However, because variables in MLIR adhere to the SSA principle, the `acc = acc + iv` statement is invalid.
 To represent this loop in MLIR, we must utilize _loop-carried variables_, which we specify via the `iter_args` construct.
 These variables are passed from one iteration to another, maintaining SSA form.
-In the example above, the `scf.yield` operation carries the SSA variable `%2` to the next iteration and returns it after the final iteration, where the final result is stored in `%sum`.
+In the example above, the `scf.yield` operation carries the SSA value `%2` to the next iteration and returns it after the final iteration, where the final result is stored in `%sum`.
 
 Because MLIR uses a strongly-typed system, we must specify the type of the loop-carried variable using the `->` symbol.
-Thus, in summary, the `iter_args(%sum_iter = %sum_0) -> (i32)` specifies the loop-carried variable `%sum_iter` with datatype `i32`.
-Moreover, because the `%iv` variable is of datatype `index`, a cast to `i32` using the `arith.index_cast` operation is required for the subsequent addition operation.
+Thus, in summary, the `iter_args(%sum_iter = %sum_0) -> (i32)` specifies the loop-carried variable `%sum_iter` with data type `i32`.
+Moreover, because the `%iv` variable has data type `index`, a cast to `i32` using the `arith.index_cast` operation is required for the subsequent addition operation.
 
-Earlier we stated that we can represent programs at multiple levels of abstraction in MLIR.
+Earlier, we stated that we can represent programs at multiple levels of abstraction in MLIR.
 So, how exactly is this achieved?
 Even though the `scf` dialect provides a `scf.if` operation, the following snippet uses the `cf` (control flow) dialect to implement a conditional on a lower abstraction level.
-Particularly, the function `@select` returns either `%a` or `%b` depending on the condition `%cond`.
+In particular, the function `@select` returns either `%a` or `%b` depending on the condition `%cond`.
 
 ```{code-block} mlir
 func.func @select(%a: i32, %b: i32, %cond: i1) -> i32 {
@@ -216,11 +216,11 @@ The _terminator_ --- the last operation inside a block --- determines the contro
 For instance, the `cf.cond_br` terminator jumps to the exit block with `%v = %a` if `%cond` is true.
 Otherwise, it uses `%v = %b`.
 The `return` operation is another example of a terminator that returns control to the caller of the function.
-Generally, a block consists of multiple operations, where the final one is the terminator.
+Generally, a block consists of multiple operations, with the final one being the terminator.
 
 Note that the `@select` function body consists of two blocks.
 The respective enveloping structure in MLIR is a _region_.
-A region is always attached to an operation (its parent), encompasses multiple blocks, and is usually indicated by curly brackets.
+A region is always attached to an operation (its parent), encompasses multiple blocks, and is usually indicated by curly braces.
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
 
 ```{figure} ../_static/mlir/mlir-ir-structure.svg
@@ -243,7 +243,7 @@ The nested substructures of an IR.
 
 For each operation in the `scf` dialect, there is an equivalent sequence of operations in the `cf` dialect.
 This transformation to a lower abstraction level is referred to as _lowering_.
-For instance, the following program is semantically equivalent to the previous `scf.for` one but uses the `cf` dialect.
+For instance, the following program is semantically equivalent to the previous `scf.for` example but uses the `cf` dialect.
 
 ```mlir
 func.func @main() {
@@ -871,6 +871,9 @@ This approach has been a success story in the classical compiler world, where, i
 The MQT Compiler Collection attempts to establish this design philosophy in the quantum world.
 
 ## Writing Your First Optimization Pass
+
+Optimizations are a core part of the MQT Compiler Collection, as they are for any compiler.
+In this section, you will implement a simple optimization pass and see how it fits into the MQT Compiler Collection workflow.
 
 ### Directory Layout
 
