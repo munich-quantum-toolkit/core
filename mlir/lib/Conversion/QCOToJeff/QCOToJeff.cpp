@@ -328,6 +328,23 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   return success();
 }
 
+/**
+ * @brief Move a region from QCO/SCF operation to a jeff operation
+ */
+static LogicalResult moveRegion(Region& source, Region& dest,
+                                ConversionPatternRewriter& rewriter,
+                                const TypeConverter* typeConverter) {
+  rewriter.inlineRegionBefore(source, dest, dest.end());
+  Block* block = &dest.front();
+  TypeConverter::SignatureConversion sc(block->getNumArguments());
+  if (failed(
+          typeConverter->convertSignatureArgs(block->getArgumentTypes(), sc))) {
+    return failure();
+  }
+  rewriter.applySignatureConversion(block, sc);
+  return success();
+}
+
 namespace {
 
 /**
@@ -970,23 +987,6 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
     return success();
   }
 };
-
-/**
- * @brief Move a region from QCO/SCF operation to a jeff operation
- */
-static LogicalResult moveRegion(Region& source, Region& dest,
-                                ConversionPatternRewriter& rewriter,
-                                const TypeConverter* typeConverter) {
-  rewriter.inlineRegionBefore(source, dest, dest.end());
-  Block* block = &dest.front();
-  TypeConverter::SignatureConversion sc(block->getNumArguments());
-  if (failed(
-          typeConverter->convertSignatureArgs(block->getArgumentTypes(), sc))) {
-    return failure();
-  }
-  rewriter.applySignatureConversion(block, sc);
-  return success();
-}
 
 /**
  * @brief Converts qco.if to jeff.switch
