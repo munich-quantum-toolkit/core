@@ -1023,6 +1023,7 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<qco::IfOp> {
   LogicalResult
   matchAndRewrite(qco::IfOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto loc = op.getLoc();
     SmallVector<Type> outTypes;
     if (failed(
             getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
@@ -1030,8 +1031,8 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<qco::IfOp> {
     }
 
     auto jeffIf =
-        jeff::SwitchOp::create(rewriter, op.getLoc(), outTypes,
-                               adaptor.getCondition(), adaptor.getQubits(), 2);
+        jeff::SwitchOp::create(rewriter, loc, outTypes, adaptor.getCondition(),
+                               adaptor.getQubits(), 2);
 
     if (failed(moveRegion(op.getElseRegion(), jeffIf.getBranches()[0], rewriter,
                           getTypeConverter()))) {
@@ -1044,17 +1045,13 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<qco::IfOp> {
 
     // Add trivial default case
     {
-      Block* defaultBlock = &jeffIf.getDefault().emplaceBlock();
-      Block* thenBlock = &jeffIf.getBranches()[1].front();
-      SmallVector<Location> argLocs;
-      for (Value arg : thenBlock->getArguments()) {
-        argLocs.push_back(arg.getLoc());
+      auto* block = &jeffIf.getDefault().emplaceBlock();
+      for (auto value : adaptor.getQubits()) {
+        block->addArgument(value.getType(), loc);
       }
-      defaultBlock->addArguments(thenBlock->getArgumentTypes(), argLocs);
       OpBuilder::InsertionGuard guard(rewriter);
-      rewriter.setInsertionPointToStart(defaultBlock);
-      jeff::YieldOp::create(rewriter, op.getLoc(),
-                            defaultBlock->getArguments());
+      rewriter.setInsertionPointToStart(block);
+      jeff::YieldOp::create(rewriter, loc, block->getArguments());
     }
 
     rewriter.replaceOp(op, jeffIf.getResults());

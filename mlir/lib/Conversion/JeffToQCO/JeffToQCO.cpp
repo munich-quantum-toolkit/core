@@ -928,12 +928,6 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
   LogicalResult
   matchAndRewrite(jeff::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    SmallVector<Type> outTypes;
-    if (failed(
-            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
-      return failure();
-    }
-
     auto loc = op.getLoc();
     auto indexType = rewriter.getIndexType();
 
@@ -943,6 +937,12 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
         arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStop());
     auto step =
         arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStep());
+
+    SmallVector<Type> outTypes;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
+      return failure();
+    }
 
     auto scfFor = scf::ForOp::create(rewriter, loc, start, stop, step,
                                      adaptor.getInValues());
