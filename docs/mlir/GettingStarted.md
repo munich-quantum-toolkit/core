@@ -552,8 +552,6 @@ The following snippets construct the three-qubit [GHZ](https://en.wikipedia.org/
 %q2 = memref.load %r0[%i2] : memref<3x!qc.qubit>
 
 qc.h %q0 : !qc.qubit
-qc.h %q1 : !qc.qubit
-qc.h %q2 : !qc.qubit
 
 qc.ctrl(%q0) {
     qc.x %q1 : !qc.qubit
@@ -590,22 +588,20 @@ memref.dealloc %r0 : memref<3x!qc.qubit>
 %r0_3, %q2_0 = qtensor.extract %r0_2[%i2] : tensor<3x!qco.qubit>
 
 %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
-%q1_1 = qco.h %q1_0 : !qco.qubit -> !qco.qubit
-%q2_1 = qco.h %q2_0 : !qco.qubit -> !qco.qubit
 
-%q0_2, %q1_2 = qco.ctrl(%q0_1) targets (%arg0 = %q1_1) {
-  %q1_2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-  qco.yield %q1_2
+%q0_2, %q1_1 = qco.ctrl(%q0_1) targets (%arg0 = %q1_0) {
+  %q1_1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+  qco.yield %q1_1
 } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
 
-%q0_3, %q2_2 = qco.ctrl(%q0_2) targets (%arg0 = %q2_1) {
-  %q2_2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-  qco.yield %q2_2
+%q0_3, %q2_1 = qco.ctrl(%q0_2) targets (%arg0 = %q2_0) {
+  %q2_1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+  qco.yield %q2_1
 } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
 
 %r0_4 = qtensor.insert %q0_3 into %r0_3[%i0] : tensor<3x!qco.qubit>
-%r0_5 = qtensor.insert %q1_2 into %r0_4[%i1] : tensor<3x!qco.qubit>
-%r0_6 = qtensor.insert %q2_2 into %r0_5[%i2] : tensor<3x!qco.qubit>
+%r0_5 = qtensor.insert %q1_1 into %r0_4[%i1] : tensor<3x!qco.qubit>
+%r0_6 = qtensor.insert %q2_1 into %r0_5[%i2] : tensor<3x!qco.qubit>
 
 qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
 ```
@@ -638,7 +634,6 @@ qc.h %q0 : !qc.qubit
 %c1 = arith.constant 1 : index
 scf.for %iv = %c1 to %N step %c1 {
   %qi = memref.load %r0[%iv] : memref<?x!qc.qubit>
-  qc.h %qi : !qc.qubit
 
   qc.ctrl(%q0) {
     qc.x %qi : !qc.qubit
@@ -672,14 +667,13 @@ memref.dealloc %r0 : memref<?x!qc.qubit>
 %c1 = arith.constant 1 : index
 %r0_3, %q0_2 = scf.for %iv = %c1 to %N step %c1 iter_args(%ri_0 = %r0_1, %ctrl_0 = %q0_1) -> (tensor<?x!qco.qubit>, !qco.qubit) {
   %ri_1, %qi_0 = qtensor.extract %ri_0[%iv] : tensor<?x!qco.qubit>
-  %qi_1 = qco.h %qi_0 : !qco.qubit -> !qco.qubit
 
-  %ctrl_1, %qi_2 = qco.ctrl(%ctrl_0) targets (%arg3 = %qi_1) {
+  %ctrl_1, %qi_1 = qco.ctrl(%ctrl_0) targets (%arg3 = %qi_0) {
     %6 = qco.x %arg3 : !qco.qubit -> !qco.qubit
     qco.yield %6 : !qco.qubit
   } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
 
-  %ri_2 = qtensor.insert %qi_2 into %ri_1[%iv] : tensor<?x!qco.qubit>
+  %ri_2 = qtensor.insert %qi_1 into %ri_1[%iv] : tensor<?x!qco.qubit>
 
   scf.yield %ri_2, %ctrl_1 : tensor<?x!qco.qubit>, !qco.qubit
 }
@@ -710,7 +704,6 @@ func.func @ghz(%N: index) {
   %c1 = arith.constant 1 : index
   scf.for %iv = %c1 to %N step %c1 {
     %qi = memref.load %r0[%iv] : memref<?x!qc.qubit>
-    qc.h %qi : !qc.qubit
 
     qc.ctrl(%q0) {
       qc.x %qi : !qc.qubit
@@ -746,14 +739,13 @@ func.func @ghz(%N: index) {
     %c1 = arith.constant 1 : index
     %r0_3, %q0_2 = scf.for %iv = %c1 to %N step %c1 iter_args(%ri_0 = %r0_1, %ctrl_0 = %q0_1) -> (tensor<?x!qco.qubit>, !qco.qubit) {
       %ri_1, %qi_0 = qtensor.extract %ri_0[%iv] : tensor<?x!qco.qubit>
-      %qi_1 = qco.h %qi_0 : !qco.qubit -> !qco.qubit
 
-      %ctrl_1, %qi_2 = qco.ctrl(%ctrl_0) targets (%arg3 = %qi_1) {
+      %ctrl_1, %qi_1 = qco.ctrl(%ctrl_0) targets (%arg3 = %qi_0) {
         %6 = qco.x %arg3 : !qco.qubit -> !qco.qubit
         qco.yield %6 : !qco.qubit
       } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
 
-      %ri_2 = qtensor.insert %qi_2 into %ri_1[%iv] : tensor<?x!qco.qubit>
+      %ri_2 = qtensor.insert %qi_1 into %ri_1[%iv] : tensor<?x!qco.qubit>
 
       scf.yield %ri_2, %ctrl_1 : tensor<?x!qco.qubit>, !qco.qubit
     }
