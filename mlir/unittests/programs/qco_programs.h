@@ -1041,7 +1041,7 @@ void nestedForLoopWhileOp(QCOProgramBuilder& b);
 void nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
-/// nested ctrl operation where the the qubit is extracted from the register.
+/// nested ctrl operation where the qubit is extracted from the register.
 void nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b);
 
 // --- QTensor Operations -------------------------------------------------- //
