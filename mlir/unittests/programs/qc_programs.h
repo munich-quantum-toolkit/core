@@ -871,7 +871,12 @@ void nestedForLoopIfOp(QCProgramBuilder& b);
 void nestedForLoopWhileOp(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
-/// nested ctrl operation.
-void nestedForLoopCtrlOp(QCProgramBuilder& b);
+/// nested ctrl operation where the qubit is separately allocated from the
+/// register.
+void nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is extracted from the register.
+void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
 
 } // namespace mlir::qc

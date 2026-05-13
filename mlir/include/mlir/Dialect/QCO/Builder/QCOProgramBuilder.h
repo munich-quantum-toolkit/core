@@ -1451,21 +1451,18 @@ private:
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
   /**
-   * @brief Take a range of qubit and tensor values and insert all extracted
-   * qubits back to the tensors
+   * @brief Prepares initial arguments for operations by re-inserting extracted
+   * qubits into their tensors
    *
-   * @details Iterates through a range of qubit and tensor values and returns
-   * the latest qubit and tensor values. Qubit values are returned without
-   * modification. Tensor values are updated by adding all extracted qubits back
-   * to the tensors. The latest tensor values after inserting the qubits are
-   * returned.
+   * @details For each tensor in @p initArgs, any qubits extracted from it that
+   * are not also present in @p initArgs are inserted back. The latest tensor
+   * values after inserting the qubits are returned. Qubit values are returned
+   * without modifications.
    *
    * @param initArgs ValueRange of the initial values
    * @return SmallVector of the updated values of the initial values.
-   * @throws Abort if a tensor and one of its extracted qubits both appear in
-   * the @p initArgs
    */
-  SmallVector<Value> insertExtractedQubits(ValueRange initArgs);
+  SmallVector<Value> prepareInitArgs(ValueRange initArgs);
 
   /**
    * @brief Update the qubit tracking of the old values with the new values
