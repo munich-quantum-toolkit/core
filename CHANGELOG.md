@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- 📝 Add _Getting Started With MLIR_ guide ([#1555]) ([**@MatthiasReumann**])
 - 🚸 Add a measurement instruction to the default SC QDMI device ([#1694]) ([**@burgholzer**])
 - ✨ Add support for multi-controlled gates to the QDMI Qiskit backend converter ([#1694]) ([**@burgholzer**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
@@ -405,6 +406,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1567]: https://github.com/munich-quantum-toolkit/core/pull/1567
 [#1565]: https://github.com/munich-quantum-toolkit/core/pull/1565
 [#1564]: https://github.com/munich-quantum-toolkit/core/pull/1564
+[#1555]: https://github.com/munich-quantum-toolkit/core/pull/1555
 [#1554]: https://github.com/munich-quantum-toolkit/core/pull/1554
 [#1550]: https://github.com/munich-quantum-toolkit/core/pull/1550
 [#1549]: https://github.com/munich-quantum-toolkit/core/pull/1549
