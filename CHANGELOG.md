@@ -30,6 +30,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🐛 Fix missing `nlohmann_json.natvis` in Windows component-based CMake installs ([#1702]) ([**@burgholzer**])
 - 🐛 Fix segfault in DD `sample` method when idle classical bits are present ([#1694]) ([**@burgholzer**])
 
 ### Removed
@@ -371,6 +372,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1700]: https://github.com/munich-quantum-toolkit/core/pull/1700
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
 [#1676]: https://github.com/munich-quantum-toolkit/core/pull/1676
