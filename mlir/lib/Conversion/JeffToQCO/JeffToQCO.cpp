@@ -849,13 +849,16 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
   LogicalResult
   matchAndRewrite(jeff::SwitchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getBranches().size() != 2) {
-      return rewriter.notifyMatchFailure(
-          op, "qco.if requires exactly two branches.");
+    if (!adaptor.getSelection().getType().isInteger(1)) {
+      return rewriter.notifyMatchFailure(op, "qco.if requires an i1 selector");
     }
     if (op.getDefault().front().getOperations().size() != 1) {
       return rewriter.notifyMatchFailure(
-          op, "qco.if requires a trivial default branch.");
+          op, "qco.if requires a trivial default branch");
+    }
+    if (op.getBranches().size() != 2) {
+      return rewriter.notifyMatchFailure(
+          op, "qco.if requires exactly two branches");
     }
 
     SmallVector<Type> outTypes;
