@@ -872,8 +872,6 @@ The MQT Compiler Collection attempts to establish this design philosophy in the 
 
 ## Writing Your First Optimization Pass
 
-
-
 ### Directory Layout
 
 The folder structure of MLIR projects can be confusing at first.
@@ -934,13 +932,14 @@ def CancelConsecutiveHadamards : Pass<"cancel-consecutive-hadamards", "mlir::Mod
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Cancel two consecutive Hadamard gates";
   let description = [{
-    Cancels two consecutive Hadamard gates acting on the same qubit, 
+    Cancels two consecutive Hadamard gates acting on the same qubit,
     reducing circuit depth & gate count.
   }];
 }
 ```
 
 Let's dissect the TableGen definition:
+
 - The summary and description are self-explanatory.
 - To load and initialize `QCODialect` automatically in the MLIR context, we list it as a dependent dialect.
 - The pass entry operation is `mlir::ModuleOp`. Since a module is the top-level container for `func.func` operations, attaching the pass to the module applies it to all nested operations, including functions.
@@ -965,12 +964,12 @@ namespace mlir::qco {
  */
 struct CancelConsecutiveHadamards final
     : impl::CancelConsecutiveHadamardsBase<CancelConsecutiveHadamards> {
-  
+
   // Inherit the constructor of the base class.
   using CancelConsecutiveHadamardsBase::CancelConsecutiveHadamardsBase;
 
 protected:
-  
+
   // This method is invoked for every entry point operation. Here: mlir::ModuleOp.
   void runOnOperation() override {
     mlir::ModuleOp entryPoint = getOperation();
@@ -981,11 +980,11 @@ protected:
 } // namespace mlir::qco
 ```
 
-To implement the logic of the pass, we utilize MLIR's rewrite patterns. 
+To implement the logic of the pass, we utilize MLIR's rewrite patterns.
 Particularly, we add a class `CancelConsecutiveHadamardsPattern` which inherits from `OpRewritePattern<HOp>`, where the template variable `HOp` specifies that the pattern should match Hadamard operations.
 The overridden `matchAndRewrite` method is called for each matched Hadamard operation.
 
-```cpp 
+```cpp
 // file: mlir/lib/Dialect/QCO/Transforms/Optimizations/CancelConsecutiveHadamards.cpp
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h" // Newly added.
@@ -1013,7 +1012,7 @@ struct CancelConsecutiveHadamardsPattern final : OpRewritePattern<HOp> {
     //
 
     rewriter.replaceAllUsesWith(
-      /*from= */nextOp.getOutputQubit(0), 
+      /*from= */nextOp.getOutputQubit(0),
       /*to= */op.getInputQubit(0));
   }
 };
@@ -1043,7 +1042,6 @@ Congratulations, you have written your first optimization pass in MLIR 🎉
 The MQT Compiler Collection implements a generic version of this pass.
 If you are curious about how this is achieved using C++ templates, see [QCOUtils.h](https://github.com/munich-quantum-toolkit/core/blob/main/mlir/include/mlir/Dialect/QCO/QCOUtils.h).
 To see the pass in action, continue with the next section.
-
 
 ## Using the MQT Compiler Collection Tool
 
