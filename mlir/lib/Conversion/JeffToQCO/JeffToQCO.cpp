@@ -958,6 +958,9 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
   }
 };
 
+/**
+ * @brief Converts jeff.yield to QCO
+ */
 struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 

@@ -944,7 +944,7 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
 };
 
 /**
- * @brief Erases qco.yield operation
+ * @brief Converts qco.yield to jeff
  */
 struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
