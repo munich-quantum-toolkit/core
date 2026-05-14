@@ -11,8 +11,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- 🚸 Add a measurement instruction to the default SC QDMI device ([#1694]) ([**@burgholzer**])
-- ✨ Add support for multi-controlled gates to the QDMI Qiskit backend converter ([#1694]) ([**@burgholzer**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676], [#1706]) ([**@denialhaag**], [**@burgholzer**])
@@ -23,10 +21,27 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- ♻️ Build all builtin QDMI devices as shared libraries ([#1694]) ([**@burgholzer**])
-- ⬆️ Update the minimum supported Qiskit version to `1.1.0` ([#1694]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Removed
+
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+## [3.6.0] - 2026-05-13
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#360)._
+
+### Added
+
+- 🚸 Add a measurement instruction to the default SC QDMI device ([#1694]) ([**@burgholzer**])
+- ✨ Add support for multi-controlled gates to the QDMI Qiskit backend converter ([#1694]) ([**@burgholzer**])
+
+### Changed
+
+- ♻️ Build all built-in QDMI devices as shared libraries ([#1694]) ([**@burgholzer**])
+- ⬆️ Update minimum supported Qiskit version to 1.1.0 ([#1694]) ([**@burgholzer**])
 
 ### Fixed
 
@@ -36,10 +51,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Removed
 
 - 🔥 Remove shared library wrappers for QDMI devices ([#1694]) ([**@burgholzer**])
-- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
-- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
 
 ## [3.5.1] - 2026-04-23
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#351)._
 
 ### Fixed
 
@@ -353,7 +368,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.0
 [3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
