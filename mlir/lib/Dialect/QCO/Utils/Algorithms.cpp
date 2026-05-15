@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 
 namespace mlir::qco {
 Matrix findAllShortestPaths(size_t n, const Edges& edges) {
