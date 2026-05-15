@@ -13,11 +13,8 @@ target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
           MLIRParser
-          MLIRQCProgramBuilder
           MLIRQCOProgramBuilder
           MLIRQCOUtils
-          MLIRQCToQCO
-          MLIRQCOToQC
           MLIRQCOTransforms)
 
 mqt_mlir_configure_unittest_target(${target_name})
