@@ -12,9 +12,10 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Algorithms.h"
+#include "mlir/Dialect/QCO/Utils/Drivers.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/LogicalResult.h>
@@ -29,33 +30,54 @@
 
 #include <cassert>
 #include <memory>
-#include <string>
 #include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
 
 namespace {
-struct ArchitectureParam {
-  std::string name;
-  std::shared_ptr<Architecture> (*factory)();
-};
+
+using DeviceSpec = std::pair<size_t, Edges>;
+
+/**
+ * @returns llvm::success() if all two-qubit gates inside @p region fulfill the
+ * given coupling constraints. llvm::failure(), otherwise.
+ */
+LogicalResult isExecutable(Region& region, const Edges& coupling) {
+  return walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
+    if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
+      if (isa<BarrierOp>(op)) {
+        return WalkResult::advance();
+      }
+      if (op.getNumQubits() > 1) {
+        const auto q0 = cast<TypedValue<QubitType>>(op.getInputQubit(0));
+        const auto q1 = cast<TypedValue<QubitType>>(op.getInputQubit(1));
+        const auto i0 = qubits.getIndex(q0);
+        const auto i1 = qubits.getIndex(q1);
+
+        if (!coupling.contains(std::make_pair(i0, i1))) {
+          return WalkResult::interrupt();
+        }
+      }
+    }
+
+    return WalkResult::advance();
+  });
+}
 
 class MappingPassTest : public testing::Test,
-                        public testing::WithParamInterface<ArchitectureParam> {
+                        public testing::WithParamInterface<DeviceSpec> {
 public:
-  static std::shared_ptr<Architecture> getRigettiNovera() {
-    // TODO: At some point this should be provided via QDMI.
-    const static Architecture::CouplingSet COUPLING{
-        {0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1}, {1, 2}, {2, 1},
-        {2, 5}, {5, 2}, {3, 6}, {6, 3}, {3, 4}, {4, 3}, {4, 7}, {7, 4},
-        {4, 5}, {5, 4}, {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
-    return std::make_shared<Architecture>("RigettiNovera", 9, COUPLING);
+  static DeviceSpec getNineQubitSquareGrid() {
+    const static Edges COUPLING{{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
+                                {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
+                                {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
+                                {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
+    return std::make_pair(9, COUPLING);
   }
 
 protected:
   void SetUp() override {
-    // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
                     func::FuncDialect>();
@@ -64,22 +86,22 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static void runHeuristicMapping(OwningOpRef<ModuleOp>& moduleOp,
-                                  std::shared_ptr<Architecture> arch,
-                                  const qco::MappingPassOptions& options) {
-    PassManager pm(moduleOp->getContext());
+  static void runPass(OwningOpRef<ModuleOp>& program, const DeviceSpec& device,
+                      const qco::MappingPassOptions& options) {
+    PassManager pm(program->getContext());
     pm.addPass(createQCToQCO());
-    pm.addPass(qco::createMappingPass(std::move(arch), options));
-    auto res = pm.run(*moduleOp);
+    pm.addPass(qco::createMappingPass(device.first, device.second, options));
+    auto res = pm.run(*program);
     ASSERT_TRUE(res.succeeded());
   }
 
   std::unique_ptr<MLIRContext> context;
 };
+
 }; // namespace
 
 TEST_P(MappingPassTest, GHZ) {
-  auto arch = GetParam().factory();
+  const auto& device = GetParam();
 
   qc::QCProgramBuilder builder(context.get());
   builder.initialize();
@@ -96,7 +118,7 @@ TEST_P(MappingPassTest, GHZ) {
   builder.dealloc(q1);
   builder.dealloc(q2);
 
-  auto moduleOp = builder.finalize();
+  auto program = builder.finalize();
 
   const qco::MappingPassOptions options{.nlookahead = 5,
                                         .alpha = 1,
@@ -104,13 +126,14 @@ TEST_P(MappingPassTest, GHZ) {
                                         .niterations = 2,
                                         .ntrials = 4,
                                         .seed = 1337};
-  runHeuristicMapping(moduleOp, arch, options);
-  auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
-  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), *arch).succeeded());
+
+  runPass(program, device, options);
+  auto entry = *(program->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), device.second).succeeded());
 }
 
 TEST_P(MappingPassTest, Sabre) {
-  auto arch = GetParam().factory();
+  const auto& device = GetParam();
 
   qc::QCProgramBuilder builder(context.get());
   builder.initialize();
@@ -165,22 +188,18 @@ TEST_P(MappingPassTest, Sabre) {
   builder.dealloc(q4);
   builder.dealloc(q5);
 
-  auto moduleOp = builder.finalize();
+  auto program = builder.finalize();
   const qco::MappingPassOptions options{.nlookahead = 1,
                                         .alpha = 1,
                                         .lambda = 0.85,
                                         .niterations = 2,
                                         .ntrials = 1,
                                         .seed = 42};
-  runHeuristicMapping(moduleOp, arch, options);
-  auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
-  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), *arch).succeeded());
+  runPass(program, device, options);
+  auto entry = *(program->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), device.second).succeeded());
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Architectures, MappingPassTest,
-    testing::Values(ArchitectureParam{"RigettiNovera",
-                                      &MappingPassTest::getRigettiNovera}),
-    [](const testing::TestParamInfo<ArchitectureParam>& info) {
-      return info.param.name;
-    });
+    NineQubitSquareGrid, MappingPassTest,
+    testing::Values(MappingPassTest::getNineQubitSquareGrid()));

@@ -10,13 +10,10 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Algorithms.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
-#include "mlir/Dialect/QCO/Utils/Qubits.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -62,34 +59,14 @@ using namespace mlir::qtensor;
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-LogicalResult isExecutable(Region& region, const Architecture& arch) {
-  return walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
-    if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
-      if (isa<BarrierOp>(op)) {
-        return WalkResult::advance();
-      }
-      if (op.getNumQubits() > 1) {
-        const auto q0 = cast<TypedValue<QubitType>>(op.getInputQubit(0));
-        const auto q1 = cast<TypedValue<QubitType>>(op.getInputQubit(1));
-        const auto i0 = qubits.getIndex(q0);
-        const auto i1 = qubits.getIndex(q1);
-        if (!arch.areAdjacent(i0, i1)) {
-          return WalkResult::interrupt();
-        }
-      }
-    }
-
-    return WalkResult::advance();
-  });
-}
-
 namespace {
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using IndexType = size_t;
   using IndexPairType = std::pair<IndexType, IndexType>;
-  using Window = SmallVector<IndexPairType>;
+  using Window = llvm::SmallVector<IndexPairType>;
+  using Neighbours = llvm::SmallVector<llvm::SmallVector<size_t, 4>>;
 
   enum class RoutingMode : std::uint8_t { Cold, Hot };
 
@@ -124,7 +101,7 @@ private:
      * @return The random layout.
      */
     static Layout random(const size_t nqubits, const size_t seed) {
-      SmallVector<IndexType> mapping(nqubits);
+      llvm::SmallVector<IndexType> mapping(nqubits);
       std::iota(mapping.begin(), mapping.end(), IndexType{0});
       std::ranges::shuffle(mapping, std::mt19937_64{seed});
 
@@ -223,16 +200,76 @@ private:
     /**
      * @brief Maps a program qubit index to its hardware index.
      */
-    SmallVector<IndexType> programToHardware_;
+    llvm::SmallVector<IndexType> programToHardware_;
 
     /**
      * @brief Maps a hardware qubit index to its program index.
      */
-    SmallVector<IndexType> hardwareToProgram_;
+    llvm::SmallVector<IndexType> hardwareToProgram_;
 
   private:
     explicit Layout(const size_t nqubits)
         : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
+  };
+
+  class [[nodiscard]] AugmentedDevice {
+  public:
+    AugmentedDevice() = default;
+
+    AugmentedDevice(size_t nqubits, const Edges& coupling)
+        : nqubits_(nqubits), dist_(findAllShortestPaths(nqubits, coupling)),
+          coupling_(coupling), neighbours_(nqubits) {
+      for (const auto& [u, v] : coupling_) {
+        neighbours_[u].push_back(v);
+      }
+    }
+
+    /**
+     * @returns the device's number of qubits.
+     */
+    [[nodiscard]] size_t nqubits() const { return nqubits_; }
+
+    /**
+     * @returns true if @p u and @p v are adjacent.
+     */
+    [[nodiscard]] bool areAdjacent(size_t u, size_t v) const {
+      return coupling_.contains(std::make_pair(u, v));
+    }
+
+    /**
+     * @returns the length of the shortest path between @p u and @p v.
+     */
+    [[nodiscard]] size_t distanceBetween(size_t u, size_t v) const {
+      if (dist_[u][v] == UINT64_MAX) {
+        report_fatal_error("Failed to compute the distance between qubits " +
+                           Twine(u) + " and " + Twine(v));
+      }
+      return dist_[u][v];
+    }
+
+    /**
+     * @returns all neighbours of @p u.
+     */
+    [[nodiscard]] llvm::ArrayRef<size_t> neighboursOf(size_t u) const {
+      return neighbours_[u];
+    }
+
+    /**
+     * @returns the max degree (connectivity) of any qubit of the device.
+     */
+    [[nodiscard]] size_t maxDegree() const {
+      size_t deg = 0;
+      for (const auto& nbrs : neighbours_) {
+        deg = std::max(deg, nbrs.size());
+      }
+      return deg;
+    }
+
+  private:
+    size_t nqubits_{};
+    Matrix dist_;
+    Edges coupling_;
+    Neighbours neighbours_;
   };
 
   struct [[nodiscard]] Trial {
@@ -279,11 +316,11 @@ private:
      * swap to the layout of the parent node.
      */
     Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const Architecture& arch, const Parameters& params)
+         const AugmentedDevice& device, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
       layout.swap(swap.first, swap.second);
-      f = g(params.alpha) + h(window, arch, params); // NOLINT
+      f = g(params.alpha) + h(window, device, params); // NOLINT
     }
 
     /**
@@ -291,9 +328,9 @@ private:
      * executable.
      */
     [[nodiscard]] bool isGoal(const IndexPairType& front,
-                              const Architecture& arch) const {
-      return arch.areAdjacent(layout.getHardwareIndex(front.first),
-                              layout.getHardwareIndex(front.second));
+                              const AugmentedDevice& device) const {
+      return device.areAdjacent(layout.getHardwareIndex(front.first),
+                                layout.getHardwareIndex(front.second));
     }
 
   private:
@@ -316,7 +353,7 @@ private:
      * that a naive router would insert to route the layers (with a constant
      * layout).
      */
-    [[nodiscard]] float h(const Window& window, const Architecture& arch,
+    [[nodiscard]] float h(const Window& window, const AugmentedDevice& device,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
@@ -324,7 +361,7 @@ private:
       for (const auto& [i, progs] : enumerate(window)) {
         const auto [prog0, prog1] = progs;
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        const size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
+        const size_t nswaps = device.distanceBetween(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
       }
@@ -333,15 +370,12 @@ private:
   };
 
 public:
-  explicit MappingPass() : arch(std::make_shared<Architecture>()) {}
+  MappingPass() = default;
+  explicit MappingPass(MappingPassOptions options) : MappingPassBase(options) {}
 
-  explicit MappingPass(MappingPassOptions options)
-      : MappingPassBase<MappingPass>(options),
-        arch(std::make_shared<Architecture>()) {}
-
-  explicit MappingPass(std::shared_ptr<Architecture> arch,
-                       const MappingPassOptions& options)
-      : MappingPassBase(options), arch(std::move(arch)) {}
+  explicit MappingPass(size_t nqubits, const Edges& coupling,
+                       MappingPassOptions options = {})
+      : MappingPassBase(options), device(nqubits, coupling) {}
 
 protected:
   void runOnOperation() override {
@@ -353,14 +387,12 @@ protected:
     IRRewriter rewriter(&getContext());
 
     for (auto func : getOperation().getOps<func::FuncOp>()) {
-      // TODO: Check if num-qubits > arch.nqubits
-
       // Create trials for initial layout refining. Currently, this includes
       // `ntrials` many random layouts.
-      SmallVector<Trial> trials;
+      llvm::SmallVector<Trial> trials;
       trials.reserve(ntrials);
       for (size_t i = 0; i < ntrials; ++i) {
-        trials.emplace_back(Layout::random(arch->nqubits(), rng()));
+        trials.emplace_back(Layout::random(device.nqubits(), rng()));
       }
 
       // Execute each of the trials (possibly in parallel). Collect the results
@@ -385,7 +417,7 @@ protected:
       // Collect wire iterators for static qubits.
       // The i-th wire iterator belongs to the i-th program qubit.
       auto staticOps = func.getOps<StaticOp>();
-      SmallVector<WireIterator> wires(range_size(staticOps));
+      llvm::SmallVector<WireIterator> wires(range_size(staticOps));
       for (StaticOp op : staticOps) {
         const auto hw = op.getIndex();
         const auto prog = best->layout.getProgramIndex(hw);
@@ -408,8 +440,6 @@ protected:
       // Fix SSA Dominance issues.
       for_each(func.getFunctionBody().getBlocks(),
                [](Block& b) { sortTopologically(&b); });
-
-      assert(isExecutable(func.getFunctionBody(), *arch).succeeded());
     }
   }
 
@@ -474,7 +504,8 @@ private:
    * @brief Find the best trial result in terms of the number of SWAPs.
    * @returns the best trial result or nullptr if no result is valid.
    */
-  [[nodiscard]] static Trial* findBestTrial(MutableArrayRef<Trial> trials) {
+  [[nodiscard]] static Trial*
+  findBestTrial(llvm::MutableArrayRef<Trial> trials) {
     Trial* best = nullptr;
     for (auto& trial : trials) {
       if (!trial.success) {
@@ -498,7 +529,7 @@ private:
    * @returns failure() if routing fails.
    */
   FailureOr<size_t> refineLayout(func::FuncOp func, Layout& layout) {
-    SmallVector<WireIterator> wires;
+    llvm::SmallVector<WireIterator> wires;
     for (auto op : func.getOps<AllocOp>()) {
       wires.emplace_back(op.getResult());
     }
@@ -540,11 +571,11 @@ private:
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
-  [[nodiscard]] FailureOr<SmallVector<IndexPairType>>
+  [[nodiscard]] FailureOr<llvm::SmallVector<IndexPairType>>
   search(const Window& window, const Layout& layout) {
     constexpr size_t cap = 25'000'000UL;
 
-    const size_t b = arch->maxDegree() * ((arch->nqubits() + 1) / 2);
+    const size_t b = device.maxDegree() * ((device.nqubits() + 1) / 2);
     const size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
@@ -555,14 +586,14 @@ private:
 
     // Early exit, if the root node is a goal node already.
     Node* root = std::construct_at(arena.Allocate(), layout);
-    if (root->isGoal(window.front(), *arch)) {
-      return SmallVector<IndexPairType>{};
+    if (root->isGoal(window.front(), device)) {
+      return llvm::SmallVector<IndexPairType>{};
     }
 
     frontier.emplace(root);
 
-    DenseMap<ArrayRef<IndexType>, size_t> bestDepth;
-    DenseSet<IndexPairType> expansionSet;
+    llvm::DenseMap<llvm::ArrayRef<IndexType>, size_t> bestDepth;
+    llvm::DenseSet<IndexPairType> expansionSet;
 
     size_t i = 0;
     while (!frontier.empty() && i < budget) {
@@ -589,8 +620,8 @@ private:
       // If the currently visited node is a goal node, reconstruct the sequence
       // of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), *arch)) {
-        SmallVector<IndexPairType> seq(curr->depth);
+      if (curr->isGoal(window.front(), device)) {
+        llvm::SmallVector<IndexPairType> seq(curr->depth);
         size_t j = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
           seq[j] = n->swap;
@@ -607,7 +638,7 @@ private:
       const auto& [q0, q1] = window.front();
       for (const auto prog : {q0, q1}) {
         for (const auto hw0 = curr->layout.getHardwareIndex(prog);
-             const auto hw1 : arch->neighboursOf(hw0)) {
+             const auto hw1 : device.neighboursOf(hw0)) {
           // Ensure consistent hashing/comparison.
           const IndexPairType swap = std::minmax(hw0, hw1);
           if (!expansionSet.insert(swap).second) {
@@ -615,7 +646,7 @@ private:
           }
 
           frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
-                                             window, *arch, params));
+                                             window, device, params));
         }
       }
 
@@ -682,7 +713,7 @@ private:
     Window window;
     window.reserve(1 + nlookahead);
 
-    SmallVector<WireIterator> wires(baseWires);
+    llvm::SmallVector<WireIterator> wires(baseWires);
     std::ignore = walkProgramGraph<Direction>(
         wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
@@ -735,7 +766,7 @@ private:
             const auto [hw0, hw1] =
                 layout.getHardwareIndices(progs[0], progs[1]);
 
-            if (arch->areAdjacent(hw0, hw1)) {
+            if (device.areAdjacent(hw0, hw1)) {
               released.emplace_back(op);
             }
           }
@@ -843,14 +874,14 @@ private:
     return nswaps;
   }
 
-  std::shared_ptr<Architecture> arch;
+  AugmentedDevice device;
 };
 
 } // namespace
 
-std::unique_ptr<Pass> createMappingPass(std::shared_ptr<Architecture> arch,
+std::unique_ptr<Pass> createMappingPass(size_t nqubits, const Edges& coupling,
                                         MappingPassOptions options) {
-  return std::make_unique<MappingPass>(std::move(arch), options);
+  return std::make_unique<MappingPass>(nqubits, coupling, options);
 }
 
 } // namespace mlir::qco

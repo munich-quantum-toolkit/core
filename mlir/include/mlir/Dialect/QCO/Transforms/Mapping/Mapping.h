@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Algorithms.h"
 
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Region.h>
@@ -20,21 +21,11 @@
 
 namespace mlir::qco {
 
-// Forward declaration
-class Architecture;
-
-/**
- * @brief Verifies if all two-qubit gates within the region are executable on
- * the targeted architecture. Expects static qubits only.
- * @returns llvm::success() if executable, llvm::failure() otherwise.
- */
-LogicalResult isExecutable(Region& region, const Architecture& arch);
-
 /**
  * @brief Create a mapping pass instance with the given target architecture.
  * @returns a pass object.
  */
-std::unique_ptr<Pass>
-createMappingPass(std::shared_ptr<Architecture> arch,
-                  MappingPassOptions options = MappingPassOptions{});
+std::unique_ptr<Pass> createMappingPass(size_t nqubits, const Edges& coupling,
+                                        MappingPassOptions options);
+
 } // namespace mlir::qco
