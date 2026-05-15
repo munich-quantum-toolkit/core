@@ -16,21 +16,13 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Allocator.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -83,8 +75,6 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
   });
 };
 
-namespace {
-
 /**
  * @brief Helper to convert a QC operation to a LLVM CallOp
  *
@@ -101,11 +91,11 @@ namespace {
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOpAdaptorType>
-LogicalResult convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
-                                     ConversionPatternRewriter& rewriter,
-                                     MLIRContext* ctx, LoweringState& state,
-                                     StringRef fnName, size_t numTargets,
-                                     size_t numParams) {
+static LogicalResult
+convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
+                       ConversionPatternRewriter& rewriter, MLIRContext* ctx,
+                       LoweringState& state, StringRef fnName,
+                       size_t numTargets, size_t numParams) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> controls =
@@ -153,6 +143,8 @@ LogicalResult convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
   return success();
 }
+
+namespace {
 
 /**
  * @brief Generic converter for unitary QC ops to QIR calls.

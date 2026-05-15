@@ -29,6 +29,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
@@ -274,10 +275,12 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     return success();
   }
 };
+} // namespace
 
-void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
-                                 QCToQIRTypeConverter& typeConverter,
-                                 MLIRContext* ctx, LoweringState& state) {
+static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
+                                        QCToQIRTypeConverter& typeConverter,
+                                        MLIRContext* ctx,
+                                        LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
   patterns.add<ConvertQCMeasureOp>(typeConverter, ctx, &state);
   patterns
@@ -287,6 +290,7 @@ void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
                                                      &state);
 }
 
+namespace {
 /**
  * @brief Pass for converting QC dialect operations to QIR
  *
