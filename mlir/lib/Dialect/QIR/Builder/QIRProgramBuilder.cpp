@@ -218,22 +218,31 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   qubitArrays.insert(array.getResult());
 
   for (int64_t i = 0; i < size; ++i) {
+    auto index = intConstant(i);
     auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
-                                   ValueRange{intConstant(i)});
+                                   ValueRange{index});
     auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
     qubits.push_back(load.getResult());
+    loadedQubits[array].insert(index);
   }
 
   return {.value = array.getResult(), .qubits = std::move(qubits)};
 }
 
-Value QIRProgramBuilder::load(Value memref, Value index) {
+Value QIRProgramBuilder::load(Value reg, Value index) {
   if (profile == Profile::Base) {
     llvm::reportFatalUsageError("Arrays can only be accessed if the "
                                 "Adaptive Profile is selected.");
   }
-  auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, memref, index);
+  if (loadedQubits[reg].contains(index)) {
+    llvm::reportFatalUsageError(
+        "Qubit was already extracted from the register at this index");
+  }
+
+  auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, reg, index);
   auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+  loadedQubits[reg].insert(index);
+
   return load.getResult();
 }
 

@@ -176,7 +176,7 @@ public:
    * @brief Represents a qubit register with its qubits.
    */
   struct QubitRegister {
-    /// The MemRef value representing the qubit register
+    /// The llvm.ptr value representing the qubit register
     Value value;
     /// The allocated qubit values
     SmallVector<Value> qubits;
@@ -190,7 +190,7 @@ public:
 
     /**
      * @brief Conversion to the backing MemRef value
-     * @return The MemRef value representing the qubit register
+     * @return The llvm.ptr value representing the qubit register
      */
     explicit operator Value() const { return value; }
   };
@@ -198,7 +198,7 @@ public:
   /**
    * @brief Allocate an array of qubits
    * @param size Number of qubits (must be positive)
-   * @return Vector of LLVM pointers representing the qubits
+   * @return A `QubitRegister` structure
    *
    * @par Example:
    * ```c++
@@ -217,6 +217,25 @@ public:
    * ```
    */
   QubitRegister allocQubitRegister(int64_t size);
+
+  /**
+   * @brief Loads a qubit from a register
+   *
+   * @param reg Source register
+   * @param index The index from where the qubit is loaded
+   * @return The loaded qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto q0 = builder.load(register, index);
+   * ```
+   * ```mlir
+   * %gep = llvm.getelementptr %alloc[%index] : (!llvm.ptr, i64) -> !llvm.ptr,
+   * !llvm.ptr
+   * %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   * ```
+   */
+  Value load(Value reg, Value index);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -911,6 +930,7 @@ public:
                             const std::variant<int64_t, Value>& upperbound,
                             const std::variant<int64_t, Value>& step,
                             const llvm::function_ref<void(Value)>& body);
+
   /**
    * @brief Construct an if construct in LLVM dialect
    *
@@ -980,25 +1000,6 @@ public:
   QIRProgramBuilder&
   scfWhile(const llvm::function_ref<Value()>& beforeBody,
            const llvm::function_ref<void()>& afterBody = nullptr);
-
-  /**
-   * @brief Loads a qubit from a register
-   *
-   * @param register Source register
-   * @param index The index from where the qubit is loaded
-   * @return The loaded qubit
-   *
-   * @par Example:
-   * ```c++
-   * auto q0 = builder.load(register, index);
-   * ```
-   * ```mlir
-   * %gep = llvm.getelementptr %alloc[%index] : (!llvm.ptr, i64) -> !llvm.ptr,
-   * !llvm.ptr
-   * %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
-   * ```
-   */
-  Value load(Value memref, Value index);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -1073,6 +1074,9 @@ private:
 
   /// Map from result index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
+
+  /// Map from register to their loaded indices
+  DenseMap<Value, DenseSet<Value>> loadedQubits;
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
