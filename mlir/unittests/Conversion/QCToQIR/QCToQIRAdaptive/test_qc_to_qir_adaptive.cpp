@@ -40,24 +40,26 @@ using namespace mlir;
 
 namespace {
 
-struct QCToQIRTestCase {
+struct QCToQIRAdaptiveTestCase {
   std::string name;
   mqt::test::NamedBuilder<qc::QCProgramBuilder> programBuilder;
   mqt::test::NamedBuilder<qir::QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
-                                  const QCToQIRTestCase& info);
+                                  const QCToQIRAdaptiveTestCase& info);
 };
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
-std::ostream& operator<<(std::ostream& os, const QCToQIRTestCase& info) {
-  return os << "QCToQIR{" << info.name
+std::ostream& operator<<(std::ostream& os,
+                         const QCToQIRAdaptiveTestCase& info) {
+  return os << "QCToQIRAdaptive{" << info.name
             << ", original=" << mqt::test::displayName(info.programBuilder.name)
             << ", reference="
             << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
-class QCToQIRTest : public testing::TestWithParam<QCToQIRTestCase> {
+class QCToQIRAdaptiveTest
+    : public testing::TestWithParam<QCToQIRAdaptiveTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
@@ -74,13 +76,13 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQIRConversion(ModuleOp module) {
+static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(module);
 }
 
-TEST_P(QCToQIRTest, ProgramEquivalence) {
+TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
@@ -94,7 +96,7 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  EXPECT_TRUE(succeeded(runQCToQIRConversion(program.get())));
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(program.get())));
   printer.record(program.get(), "Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -117,588 +119,617 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/// \name QCToQIR/Operations/StandardGates/BarrierOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/BarrierOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRBarrierOpTest, QCToQIRTest,
+    QCToQIRAdaptiveBarrierOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"BarrierTwoQubits",
-                        MQT_NAMED_BUILDER(qc::barrierTwoQubits),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"BarrierMultipleQubits",
-                        MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"SingleControlledBarrier",
-                        MQT_NAMED_BUILDER(qc::singleControlledBarrier),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)}));
+        QCToQIRAdaptiveTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{"BarrierTwoQubits",
+                                MQT_NAMED_BUILDER(qc::barrierTwoQubits),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{"BarrierMultipleQubits",
+                                MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{"SingleControlledBarrier",
+                                MQT_NAMED_BUILDER(qc::singleControlledBarrier),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/DcxOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/DcxOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRDCXOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"DCX", MQT_NAMED_BUILDER(qc::dcx),
-                        MQT_NAMED_BUILDER(qir::dcx)},
-        QCToQIRTestCase{"SingleControlledDCX",
+    QCToQIRAdaptiveDCXOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"DCX", MQT_NAMED_BUILDER(qc::dcx),
+                                            MQT_NAMED_BUILDER(qir::dcx)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledDCX",
                         MQT_NAMED_BUILDER(qc::singleControlledDcx),
                         MQT_NAMED_BUILDER(qir::singleControlledDcx)},
-        QCToQIRTestCase{"MultipleControlledDCX",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledDCX",
                         MQT_NAMED_BUILDER(qc::multipleControlledDcx),
                         MQT_NAMED_BUILDER(qir::multipleControlledDcx)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/EcrOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/EcrOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRECROpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"ECR", MQT_NAMED_BUILDER(qc::ecr),
-                        MQT_NAMED_BUILDER(qir::ecr)},
-        QCToQIRTestCase{"SingleControlledECR",
+    QCToQIRAdaptiveECROpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"ECR", MQT_NAMED_BUILDER(qc::ecr),
+                                            MQT_NAMED_BUILDER(qir::ecr)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledECR",
                         MQT_NAMED_BUILDER(qc::singleControlledEcr),
                         MQT_NAMED_BUILDER(qir::singleControlledEcr)},
-        QCToQIRTestCase{"MultipleControlledECR",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledECR",
                         MQT_NAMED_BUILDER(qc::multipleControlledEcr),
                         MQT_NAMED_BUILDER(qir::multipleControlledEcr)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/GphaseOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/GphaseOp.cpp
 /// @{
-INSTANTIATE_TEST_SUITE_P(QCToQIRGPhaseOpTest, QCToQIRTest,
-                         testing::Values(QCToQIRTestCase{
+INSTANTIATE_TEST_SUITE_P(QCToQIRAdaptiveGPhaseOpTest, QCToQIRAdaptiveTest,
+                         testing::Values(QCToQIRAdaptiveTestCase{
                              "GlobalPhase", MQT_NAMED_BUILDER(qc::globalPhase),
                              MQT_NAMED_BUILDER(qir::globalPhase)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/HOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/HOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRHOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"H", MQT_NAMED_BUILDER(qc::h),
-                                    MQT_NAMED_BUILDER(qir::h)},
-                    QCToQIRTestCase{"SingleControlledH",
-                                    MQT_NAMED_BUILDER(qc::singleControlledH),
-                                    MQT_NAMED_BUILDER(qir::singleControlledH)},
-                    QCToQIRTestCase{
-                        "MultipleControlledH",
-                        MQT_NAMED_BUILDER(qc::multipleControlledH),
-                        MQT_NAMED_BUILDER(qir::multipleControlledH)},
-                    QCToQIRTestCase{"HWithoutRegister",
-                                    MQT_NAMED_BUILDER(qc::hWithoutRegister),
-                                    MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/IdOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRIDOpTest, QCToQIRTest,
+    QCToQIRAdaptiveHOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
-                        MQT_NAMED_BUILDER(qir::identity)},
-        QCToQIRTestCase{"SingleControlledIdentity",
-                        MQT_NAMED_BUILDER(qc::singleControlledIdentity),
-                        MQT_NAMED_BUILDER(qir::identity)},
-        QCToQIRTestCase{"MultipleControlledIdentity",
-                        MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-                        MQT_NAMED_BUILDER(qir::identity)}));
+        QCToQIRAdaptiveTestCase{"H", MQT_NAMED_BUILDER(qc::h),
+                                MQT_NAMED_BUILDER(qir::h)},
+        QCToQIRAdaptiveTestCase{"SingleControlledH",
+                                MQT_NAMED_BUILDER(qc::singleControlledH),
+                                MQT_NAMED_BUILDER(qir::singleControlledH)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledH",
+                                MQT_NAMED_BUILDER(qc::multipleControlledH),
+                                MQT_NAMED_BUILDER(qir::multipleControlledH)},
+        QCToQIRAdaptiveTestCase{"HWithoutRegister",
+                                MQT_NAMED_BUILDER(qc::hWithoutRegister),
+                                MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/IswapOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/IdOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRiSWAPOpTest, QCToQIRTest,
+    QCToQIRAdaptiveIDOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"iSWAP", MQT_NAMED_BUILDER(qc::iswap),
-                        MQT_NAMED_BUILDER(qir::iswap)},
-        QCToQIRTestCase{"SingleControllediSWAP",
-                        MQT_NAMED_BUILDER(qc::singleControlledIswap),
-                        MQT_NAMED_BUILDER(qir::singleControlledIswap)},
-        QCToQIRTestCase{"MultipleControllediSWAP",
-                        MQT_NAMED_BUILDER(qc::multipleControlledIswap),
-                        MQT_NAMED_BUILDER(qir::multipleControlledIswap)}));
+        QCToQIRAdaptiveTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
+                                MQT_NAMED_BUILDER(qir::identity)},
+        QCToQIRAdaptiveTestCase{"SingleControlledIdentity",
+                                MQT_NAMED_BUILDER(qc::singleControlledIdentity),
+                                MQT_NAMED_BUILDER(qir::identity)},
+        QCToQIRAdaptiveTestCase{
+            "MultipleControlledIdentity",
+            MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
+            MQT_NAMED_BUILDER(qir::identity)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/POp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/IswapOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRPOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"P", MQT_NAMED_BUILDER(qc::p),
-                                    MQT_NAMED_BUILDER(qir::p)},
-                    QCToQIRTestCase{"SingleControlledP",
-                                    MQT_NAMED_BUILDER(qc::singleControlledP),
-                                    MQT_NAMED_BUILDER(qir::singleControlledP)},
-                    QCToQIRTestCase{
-                        "MultipleControlledP",
-                        MQT_NAMED_BUILDER(qc::multipleControlledP),
-                        MQT_NAMED_BUILDER(qir::multipleControlledP)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/ROp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRROpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"R", MQT_NAMED_BUILDER(qc::r),
-                                    MQT_NAMED_BUILDER(qir::r)},
-                    QCToQIRTestCase{"SingleControlledR",
-                                    MQT_NAMED_BUILDER(qc::singleControlledR),
-                                    MQT_NAMED_BUILDER(qir::singleControlledR)},
-                    QCToQIRTestCase{
-                        "MultipleControlledR",
-                        MQT_NAMED_BUILDER(qc::multipleControlledR),
-                        MQT_NAMED_BUILDER(qir::multipleControlledR)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/RxOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRRXOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"RX", MQT_NAMED_BUILDER(qc::rx),
-                                    MQT_NAMED_BUILDER(qir::rx)},
-                    QCToQIRTestCase{"SingleControlledRX",
-                                    MQT_NAMED_BUILDER(qc::singleControlledRx),
-                                    MQT_NAMED_BUILDER(qir::singleControlledRx)},
-                    QCToQIRTestCase{
-                        "MultipleControlledRX",
-                        MQT_NAMED_BUILDER(qc::multipleControlledRx),
-                        MQT_NAMED_BUILDER(qir::multipleControlledRx)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/RxxOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRRXXOpTest, QCToQIRTest,
+    QCToQIRAdaptiveiSWAPOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"RXX", MQT_NAMED_BUILDER(qc::rxx),
-                        MQT_NAMED_BUILDER(qir::rxx)},
-        QCToQIRTestCase{"SingleControlledRXX",
+        QCToQIRAdaptiveTestCase{"iSWAP", MQT_NAMED_BUILDER(qc::iswap),
+                                MQT_NAMED_BUILDER(qir::iswap)},
+        QCToQIRAdaptiveTestCase{"SingleControllediSWAP",
+                                MQT_NAMED_BUILDER(qc::singleControlledIswap),
+                                MQT_NAMED_BUILDER(qir::singleControlledIswap)},
+        QCToQIRAdaptiveTestCase{
+            "MultipleControllediSWAP",
+            MQT_NAMED_BUILDER(qc::multipleControlledIswap),
+            MQT_NAMED_BUILDER(qir::multipleControlledIswap)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/POp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptivePOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"P", MQT_NAMED_BUILDER(qc::p),
+                                MQT_NAMED_BUILDER(qir::p)},
+        QCToQIRAdaptiveTestCase{"SingleControlledP",
+                                MQT_NAMED_BUILDER(qc::singleControlledP),
+                                MQT_NAMED_BUILDER(qir::singleControlledP)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledP",
+                                MQT_NAMED_BUILDER(qc::multipleControlledP),
+                                MQT_NAMED_BUILDER(qir::multipleControlledP)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/ROp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveROpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"R", MQT_NAMED_BUILDER(qc::r),
+                                MQT_NAMED_BUILDER(qir::r)},
+        QCToQIRAdaptiveTestCase{"SingleControlledR",
+                                MQT_NAMED_BUILDER(qc::singleControlledR),
+                                MQT_NAMED_BUILDER(qir::singleControlledR)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledR",
+                                MQT_NAMED_BUILDER(qc::multipleControlledR),
+                                MQT_NAMED_BUILDER(qir::multipleControlledR)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/RxOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveRXOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"RX", MQT_NAMED_BUILDER(qc::rx),
+                                MQT_NAMED_BUILDER(qir::rx)},
+        QCToQIRAdaptiveTestCase{"SingleControlledRX",
+                                MQT_NAMED_BUILDER(qc::singleControlledRx),
+                                MQT_NAMED_BUILDER(qir::singleControlledRx)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledRX",
+                                MQT_NAMED_BUILDER(qc::multipleControlledRx),
+                                MQT_NAMED_BUILDER(qir::multipleControlledRx)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/RxxOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveRXXOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"RXX", MQT_NAMED_BUILDER(qc::rxx),
+                                            MQT_NAMED_BUILDER(qir::rxx)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRXX",
                         MQT_NAMED_BUILDER(qc::singleControlledRxx),
                         MQT_NAMED_BUILDER(qir::singleControlledRxx)},
-        QCToQIRTestCase{"MultipleControlledRXX",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRXX",
                         MQT_NAMED_BUILDER(qc::multipleControlledRxx),
                         MQT_NAMED_BUILDER(qir::multipleControlledRxx)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/RyOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/RyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRRYOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"RY", MQT_NAMED_BUILDER(qc::ry),
-                                    MQT_NAMED_BUILDER(qir::ry)},
-                    QCToQIRTestCase{"SingleControlledRY",
-                                    MQT_NAMED_BUILDER(qc::singleControlledRy),
-                                    MQT_NAMED_BUILDER(qir::singleControlledRy)},
-                    QCToQIRTestCase{
-                        "MultipleControlledRY",
-                        MQT_NAMED_BUILDER(qc::multipleControlledRy),
-                        MQT_NAMED_BUILDER(qir::multipleControlledRy)}));
+    QCToQIRAdaptiveRYOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"RY", MQT_NAMED_BUILDER(qc::ry),
+                                MQT_NAMED_BUILDER(qir::ry)},
+        QCToQIRAdaptiveTestCase{"SingleControlledRY",
+                                MQT_NAMED_BUILDER(qc::singleControlledRy),
+                                MQT_NAMED_BUILDER(qir::singleControlledRy)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledRY",
+                                MQT_NAMED_BUILDER(qc::multipleControlledRy),
+                                MQT_NAMED_BUILDER(qir::multipleControlledRy)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/RyyOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/RyyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRRYYOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"RYY", MQT_NAMED_BUILDER(qc::ryy),
-                        MQT_NAMED_BUILDER(qir::ryy)},
-        QCToQIRTestCase{"SingleControlledRYY",
+    QCToQIRAdaptiveRYYOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"RYY", MQT_NAMED_BUILDER(qc::ryy),
+                                            MQT_NAMED_BUILDER(qir::ryy)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRYY",
                         MQT_NAMED_BUILDER(qc::singleControlledRyy),
                         MQT_NAMED_BUILDER(qir::singleControlledRyy)},
-        QCToQIRTestCase{"MultipleControlledRYY",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRYY",
                         MQT_NAMED_BUILDER(qc::multipleControlledRyy),
                         MQT_NAMED_BUILDER(qir::multipleControlledRyy)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/RzOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/RzOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRRZOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"RZ", MQT_NAMED_BUILDER(qc::rz),
-                                    MQT_NAMED_BUILDER(qir::rz)},
-                    QCToQIRTestCase{"SingleControlledRZ",
-                                    MQT_NAMED_BUILDER(qc::singleControlledRz),
-                                    MQT_NAMED_BUILDER(qir::singleControlledRz)},
-                    QCToQIRTestCase{
-                        "MultipleControlledRZ",
-                        MQT_NAMED_BUILDER(qc::multipleControlledRz),
-                        MQT_NAMED_BUILDER(qir::multipleControlledRz)}));
+    QCToQIRAdaptiveRZOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"RZ", MQT_NAMED_BUILDER(qc::rz),
+                                MQT_NAMED_BUILDER(qir::rz)},
+        QCToQIRAdaptiveTestCase{"SingleControlledRZ",
+                                MQT_NAMED_BUILDER(qc::singleControlledRz),
+                                MQT_NAMED_BUILDER(qir::singleControlledRz)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledRZ",
+                                MQT_NAMED_BUILDER(qc::multipleControlledRz),
+                                MQT_NAMED_BUILDER(qir::multipleControlledRz)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/RzxOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/RzxOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRRZXOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"RZX", MQT_NAMED_BUILDER(qc::rzx),
-                        MQT_NAMED_BUILDER(qir::rzx)},
-        QCToQIRTestCase{"SingleControlledRZX",
+    QCToQIRAdaptiveRZXOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"RZX", MQT_NAMED_BUILDER(qc::rzx),
+                                            MQT_NAMED_BUILDER(qir::rzx)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRZX",
                         MQT_NAMED_BUILDER(qc::singleControlledRzx),
                         MQT_NAMED_BUILDER(qir::singleControlledRzx)},
-        QCToQIRTestCase{"MultipleControlledRZX",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRZX",
                         MQT_NAMED_BUILDER(qc::multipleControlledRzx),
                         MQT_NAMED_BUILDER(qir::multipleControlledRzx)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/RzzOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/RzzOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRRZZOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"RZZ", MQT_NAMED_BUILDER(qc::rzz),
-                        MQT_NAMED_BUILDER(qir::rzz)},
-        QCToQIRTestCase{"SingleControlledRZZ",
+    QCToQIRAdaptiveRZZOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"RZZ", MQT_NAMED_BUILDER(qc::rzz),
+                                            MQT_NAMED_BUILDER(qir::rzz)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRZZ",
                         MQT_NAMED_BUILDER(qc::singleControlledRzz),
                         MQT_NAMED_BUILDER(qir::singleControlledRzz)},
-        QCToQIRTestCase{"MultipleControlledRZZ",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRZZ",
                         MQT_NAMED_BUILDER(qc::multipleControlledRzz),
                         MQT_NAMED_BUILDER(qir::multipleControlledRzz)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/SOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/SOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRSOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"S", MQT_NAMED_BUILDER(qc::s),
-                                    MQT_NAMED_BUILDER(qir::s)},
-                    QCToQIRTestCase{"SingleControlledS",
-                                    MQT_NAMED_BUILDER(qc::singleControlledS),
-                                    MQT_NAMED_BUILDER(qir::singleControlledS)},
-                    QCToQIRTestCase{
-                        "MultipleControlledS",
-                        MQT_NAMED_BUILDER(qc::multipleControlledS),
-                        MQT_NAMED_BUILDER(qir::multipleControlledS)}));
+    QCToQIRAdaptiveSOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"S", MQT_NAMED_BUILDER(qc::s),
+                                MQT_NAMED_BUILDER(qir::s)},
+        QCToQIRAdaptiveTestCase{"SingleControlledS",
+                                MQT_NAMED_BUILDER(qc::singleControlledS),
+                                MQT_NAMED_BUILDER(qir::singleControlledS)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledS",
+                                MQT_NAMED_BUILDER(qc::multipleControlledS),
+                                MQT_NAMED_BUILDER(qir::multipleControlledS)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/SdgOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/SdgOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRSdgOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"Sdg", MQT_NAMED_BUILDER(qc::sdg),
-                        MQT_NAMED_BUILDER(qir::sdg)},
-        QCToQIRTestCase{"SingleControlledSdg",
+    QCToQIRAdaptiveSdgOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"Sdg", MQT_NAMED_BUILDER(qc::sdg),
+                                            MQT_NAMED_BUILDER(qir::sdg)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledSdg",
                         MQT_NAMED_BUILDER(qc::singleControlledSdg),
                         MQT_NAMED_BUILDER(qir::singleControlledSdg)},
-        QCToQIRTestCase{"MultipleControlledSdg",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledSdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledSdg),
                         MQT_NAMED_BUILDER(qir::multipleControlledSdg)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/SwapOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/SwapOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRSWAPOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"SWAP", MQT_NAMED_BUILDER(qc::swap),
-                        MQT_NAMED_BUILDER(qir::swap)},
-        QCToQIRTestCase{"SingleControlledSWAP",
+    QCToQIRAdaptiveSWAPOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"SWAP", MQT_NAMED_BUILDER(qc::swap),
+                                            MQT_NAMED_BUILDER(qir::swap)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledSWAP",
                         MQT_NAMED_BUILDER(qc::singleControlledSwap),
                         MQT_NAMED_BUILDER(qir::singleControlledSwap)},
-        QCToQIRTestCase{"MultipleControlledSWAP",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledSWAP",
                         MQT_NAMED_BUILDER(qc::multipleControlledSwap),
                         MQT_NAMED_BUILDER(qir::multipleControlledSwap)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/SxOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/SxOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRSXOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"SX", MQT_NAMED_BUILDER(qc::sx),
-                                    MQT_NAMED_BUILDER(qir::sx)},
-                    QCToQIRTestCase{"SingleControlledSX",
-                                    MQT_NAMED_BUILDER(qc::singleControlledSx),
-                                    MQT_NAMED_BUILDER(qir::singleControlledSx)},
-                    QCToQIRTestCase{
-                        "MultipleControlledSX",
-                        MQT_NAMED_BUILDER(qc::multipleControlledSx),
-                        MQT_NAMED_BUILDER(qir::multipleControlledSx)}));
+    QCToQIRAdaptiveSXOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"SX", MQT_NAMED_BUILDER(qc::sx),
+                                MQT_NAMED_BUILDER(qir::sx)},
+        QCToQIRAdaptiveTestCase{"SingleControlledSX",
+                                MQT_NAMED_BUILDER(qc::singleControlledSx),
+                                MQT_NAMED_BUILDER(qir::singleControlledSx)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledSX",
+                                MQT_NAMED_BUILDER(qc::multipleControlledSx),
+                                MQT_NAMED_BUILDER(qir::multipleControlledSx)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/SxdgOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/SxdgOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRSXdgOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"SXdg", MQT_NAMED_BUILDER(qc::sxdg),
-                        MQT_NAMED_BUILDER(qir::sxdg)},
-        QCToQIRTestCase{"SingleControlledSXdg",
+    QCToQIRAdaptiveSXdgOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"SXdg", MQT_NAMED_BUILDER(qc::sxdg),
+                                            MQT_NAMED_BUILDER(qir::sxdg)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledSXdg",
                         MQT_NAMED_BUILDER(qc::singleControlledSxdg),
                         MQT_NAMED_BUILDER(qir::singleControlledSxdg)},
-        QCToQIRTestCase{"MultipleControlledSXdg",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledSXdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledSxdg),
                         MQT_NAMED_BUILDER(qir::multipleControlledSxdg)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/TOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/TOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRTOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"T", MQT_NAMED_BUILDER(qc::t_),
-                                    MQT_NAMED_BUILDER(qir::t_)},
-                    QCToQIRTestCase{"SingleControlledT",
-                                    MQT_NAMED_BUILDER(qc::singleControlledT),
-                                    MQT_NAMED_BUILDER(qir::singleControlledT)},
-                    QCToQIRTestCase{
-                        "MultipleControlledT",
-                        MQT_NAMED_BUILDER(qc::multipleControlledT),
-                        MQT_NAMED_BUILDER(qir::multipleControlledT)}));
+    QCToQIRAdaptiveTOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"T", MQT_NAMED_BUILDER(qc::t_),
+                                MQT_NAMED_BUILDER(qir::t_)},
+        QCToQIRAdaptiveTestCase{"SingleControlledT",
+                                MQT_NAMED_BUILDER(qc::singleControlledT),
+                                MQT_NAMED_BUILDER(qir::singleControlledT)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledT",
+                                MQT_NAMED_BUILDER(qc::multipleControlledT),
+                                MQT_NAMED_BUILDER(qir::multipleControlledT)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/TdgOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/TdgOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRTdgOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"Tdg", MQT_NAMED_BUILDER(qc::tdg),
-                        MQT_NAMED_BUILDER(qir::tdg)},
-        QCToQIRTestCase{"SingleControlledTdg",
+    QCToQIRAdaptiveTdgOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"Tdg", MQT_NAMED_BUILDER(qc::tdg),
+                                            MQT_NAMED_BUILDER(qir::tdg)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledTdg",
                         MQT_NAMED_BUILDER(qc::singleControlledTdg),
                         MQT_NAMED_BUILDER(qir::singleControlledTdg)},
-        QCToQIRTestCase{"MultipleControlledTdg",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledTdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledTdg),
                         MQT_NAMED_BUILDER(qir::multipleControlledTdg)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/U2Op.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/U2Op.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRU2OpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"U2", MQT_NAMED_BUILDER(qc::u2),
-                                    MQT_NAMED_BUILDER(qir::u2)},
-                    QCToQIRTestCase{"SingleControlledU2",
-                                    MQT_NAMED_BUILDER(qc::singleControlledU2),
-                                    MQT_NAMED_BUILDER(qir::singleControlledU2)},
-                    QCToQIRTestCase{
-                        "MultipleControlledU2",
-                        MQT_NAMED_BUILDER(qc::multipleControlledU2),
-                        MQT_NAMED_BUILDER(qir::multipleControlledU2)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/UOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRUOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"U", MQT_NAMED_BUILDER(qc::u),
-                                    MQT_NAMED_BUILDER(qir::u)},
-                    QCToQIRTestCase{"SingleControlledU",
-                                    MQT_NAMED_BUILDER(qc::singleControlledU),
-                                    MQT_NAMED_BUILDER(qir::singleControlledU)},
-                    QCToQIRTestCase{
-                        "MultipleControlledU",
-                        MQT_NAMED_BUILDER(qc::multipleControlledU),
-                        MQT_NAMED_BUILDER(qir::multipleControlledU)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/XOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRXOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"X", MQT_NAMED_BUILDER(qc::x),
-                                    MQT_NAMED_BUILDER(qir::x)},
-                    QCToQIRTestCase{"SingleControlledX",
-                                    MQT_NAMED_BUILDER(qc::singleControlledX),
-                                    MQT_NAMED_BUILDER(qir::singleControlledX)},
-                    QCToQIRTestCase{
-                        "MultipleControlledX",
-                        MQT_NAMED_BUILDER(qc::multipleControlledX),
-                        MQT_NAMED_BUILDER(qir::multipleControlledX)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/XxMinusYyOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRXXMinusYYOpTest, QCToQIRTest,
+    QCToQIRAdaptiveU2OpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"XXMinusYY", MQT_NAMED_BUILDER(qc::xxMinusYY),
-                        MQT_NAMED_BUILDER(qir::xxMinusYY)},
-        QCToQIRTestCase{"SingleControlledXXMinusYY",
+        QCToQIRAdaptiveTestCase{"U2", MQT_NAMED_BUILDER(qc::u2),
+                                MQT_NAMED_BUILDER(qir::u2)},
+        QCToQIRAdaptiveTestCase{"SingleControlledU2",
+                                MQT_NAMED_BUILDER(qc::singleControlledU2),
+                                MQT_NAMED_BUILDER(qir::singleControlledU2)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledU2",
+                                MQT_NAMED_BUILDER(qc::multipleControlledU2),
+                                MQT_NAMED_BUILDER(qir::multipleControlledU2)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/UOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveUOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"U", MQT_NAMED_BUILDER(qc::u),
+                                MQT_NAMED_BUILDER(qir::u)},
+        QCToQIRAdaptiveTestCase{"SingleControlledU",
+                                MQT_NAMED_BUILDER(qc::singleControlledU),
+                                MQT_NAMED_BUILDER(qir::singleControlledU)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledU",
+                                MQT_NAMED_BUILDER(qc::multipleControlledU),
+                                MQT_NAMED_BUILDER(qir::multipleControlledU)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/XOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveXOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"X", MQT_NAMED_BUILDER(qc::x),
+                                MQT_NAMED_BUILDER(qir::x)},
+        QCToQIRAdaptiveTestCase{"SingleControlledX",
+                                MQT_NAMED_BUILDER(qc::singleControlledX),
+                                MQT_NAMED_BUILDER(qir::singleControlledX)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledX",
+                                MQT_NAMED_BUILDER(qc::multipleControlledX),
+                                MQT_NAMED_BUILDER(qir::multipleControlledX)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/XxMinusYyOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveXXMinusYYOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"XXMinusYY",
+                                            MQT_NAMED_BUILDER(qc::xxMinusYY),
+                                            MQT_NAMED_BUILDER(qir::xxMinusYY)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledXXMinusYY",
                         MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY),
                         MQT_NAMED_BUILDER(qir::singleControlledXxMinusYY)},
-        QCToQIRTestCase{"MultipleControlledXXMinusYY",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledXXMinusYY",
                         MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY),
                         MQT_NAMED_BUILDER(qir::multipleControlledXxMinusYY)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/XxPlusYyOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/XxPlusYyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRXXPlusYYOpTest, QCToQIRTest,
-    testing::Values(
-        QCToQIRTestCase{"XXPlusYY", MQT_NAMED_BUILDER(qc::xxPlusYY),
-                        MQT_NAMED_BUILDER(qir::xxPlusYY)},
-        QCToQIRTestCase{"SingleControlledXXPlusYY",
+    QCToQIRAdaptiveXXPlusYYOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"XXPlusYY",
+                                            MQT_NAMED_BUILDER(qc::xxPlusYY),
+                                            MQT_NAMED_BUILDER(qir::xxPlusYY)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledXXPlusYY",
                         MQT_NAMED_BUILDER(qc::singleControlledXxPlusYY),
                         MQT_NAMED_BUILDER(qir::singleControlledXxPlusYY)},
-        QCToQIRTestCase{"MultipleControlledXXPlusYY",
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledXXPlusYY",
                         MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY),
                         MQT_NAMED_BUILDER(qir::multipleControlledXxPlusYY)}));
 /// @}
 
-/// \name QCToQIR/Operations/StandardGates/YOp.cpp
+/// \name QCToQIRAdaptive/Operations/StandardGates/YOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRYOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"Y", MQT_NAMED_BUILDER(qc::y),
-                                    MQT_NAMED_BUILDER(qir::y)},
-                    QCToQIRTestCase{"SingleControlledY",
-                                    MQT_NAMED_BUILDER(qc::singleControlledY),
-                                    MQT_NAMED_BUILDER(qir::singleControlledY)},
-                    QCToQIRTestCase{
-                        "MultipleControlledY",
-                        MQT_NAMED_BUILDER(qc::multipleControlledY),
-                        MQT_NAMED_BUILDER(qir::multipleControlledY)}));
-/// @}
-
-/// \name QCToQIR/Operations/StandardGates/ZOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRZOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"Z", MQT_NAMED_BUILDER(qc::z),
-                                    MQT_NAMED_BUILDER(qir::z)},
-                    QCToQIRTestCase{"SingleControlledZ",
-                                    MQT_NAMED_BUILDER(qc::singleControlledZ),
-                                    MQT_NAMED_BUILDER(qir::singleControlledZ)},
-                    QCToQIRTestCase{
-                        "MultipleControlledZ",
-                        MQT_NAMED_BUILDER(qc::multipleControlledZ),
-                        MQT_NAMED_BUILDER(qir::multipleControlledZ)}));
-/// @}
-
-/// \name QCToQIR/Operations/MeasureOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCToQIRMeasureOpTest, QCToQIRTest,
+    QCToQIRAdaptiveYOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"SingleMeasurementToSingleBit",
-                        MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit),
-                        MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit)},
-        QCToQIRTestCase{"RepeatedMeasurementToSameBit",
-                        MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit),
-                        MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit)},
-        QCToQIRTestCase{
+        QCToQIRAdaptiveTestCase{"Y", MQT_NAMED_BUILDER(qc::y),
+                                MQT_NAMED_BUILDER(qir::y)},
+        QCToQIRAdaptiveTestCase{"SingleControlledY",
+                                MQT_NAMED_BUILDER(qc::singleControlledY),
+                                MQT_NAMED_BUILDER(qir::singleControlledY)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledY",
+                                MQT_NAMED_BUILDER(qc::multipleControlledY),
+                                MQT_NAMED_BUILDER(qir::multipleControlledY)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/ZOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveZOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"Z", MQT_NAMED_BUILDER(qc::z),
+                                MQT_NAMED_BUILDER(qir::z)},
+        QCToQIRAdaptiveTestCase{"SingleControlledZ",
+                                MQT_NAMED_BUILDER(qc::singleControlledZ),
+                                MQT_NAMED_BUILDER(qir::singleControlledZ)},
+        QCToQIRAdaptiveTestCase{"MultipleControlledZ",
+                                MQT_NAMED_BUILDER(qc::multipleControlledZ),
+                                MQT_NAMED_BUILDER(qir::multipleControlledZ)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/MeasureOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveMeasureOpTest, QCToQIRAdaptiveTest,
+    testing::Values(
+        QCToQIRAdaptiveTestCase{
+            "SingleMeasurementToSingleBit",
+            MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit),
+            MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit)},
+        QCToQIRAdaptiveTestCase{
+            "RepeatedMeasurementToSameBit",
+            MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit),
+            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit)},
+        QCToQIRAdaptiveTestCase{
             "RepeatedMeasurementToDifferentBits",
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits),
             MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits)},
-        QCToQIRTestCase{
+        QCToQIRAdaptiveTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qir::multipleClassicalRegistersAndMeasurements)},
-        QCToQIRTestCase{"MeasurementWithoutRegisters",
-                        MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
-                        MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
+        QCToQIRAdaptiveTestCase{
+            "MeasurementWithoutRegisters",
+            MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
+            MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
 /// @}
 
-/// \name QCToQIR/Operations/ResetOp.cpp
+/// \name QCToQIRAdaptive/Operations/ResetOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRResetOpTest, QCToQIRTest,
+    QCToQIRAdaptiveResetOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"ResetQubitWithoutOp",
-                        MQT_NAMED_BUILDER(qc::resetQubitWithoutOp),
-                        MQT_NAMED_BUILDER(qir::resetQubitWithoutOp)},
-        QCToQIRTestCase{"ResetMultipleQubitsWithoutOp",
-                        MQT_NAMED_BUILDER(qc::resetMultipleQubitsWithoutOp),
-                        MQT_NAMED_BUILDER(qir::resetMultipleQubitsWithoutOp)},
-        QCToQIRTestCase{"RepeatedResetWithoutOp",
-                        MQT_NAMED_BUILDER(qc::repeatedResetWithoutOp),
-                        MQT_NAMED_BUILDER(qir::repeatedResetWithoutOp)},
-        QCToQIRTestCase{"ResetQubitAfterSingleOp",
-                        MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp),
-                        MQT_NAMED_BUILDER(qir::resetQubitAfterSingleOp)},
-        QCToQIRTestCase{
+        QCToQIRAdaptiveTestCase{"ResetQubitWithoutOp",
+                                MQT_NAMED_BUILDER(qc::resetQubitWithoutOp),
+                                MQT_NAMED_BUILDER(qir::resetQubitWithoutOp)},
+        QCToQIRAdaptiveTestCase{
+            "ResetMultipleQubitsWithoutOp",
+            MQT_NAMED_BUILDER(qc::resetMultipleQubitsWithoutOp),
+            MQT_NAMED_BUILDER(qir::resetMultipleQubitsWithoutOp)},
+        QCToQIRAdaptiveTestCase{"RepeatedResetWithoutOp",
+                                MQT_NAMED_BUILDER(qc::repeatedResetWithoutOp),
+                                MQT_NAMED_BUILDER(qir::repeatedResetWithoutOp)},
+        QCToQIRAdaptiveTestCase{
+            "ResetQubitAfterSingleOp",
+            MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp),
+            MQT_NAMED_BUILDER(qir::resetQubitAfterSingleOp)},
+        QCToQIRAdaptiveTestCase{
             "ResetMultipleQubitsAfterSingleOp",
             MQT_NAMED_BUILDER(qc::resetMultipleQubitsAfterSingleOp),
             MQT_NAMED_BUILDER(qir::resetMultipleQubitsAfterSingleOp)},
-        QCToQIRTestCase{"RepeatedResetAfterSingleOp",
-                        MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp),
-                        MQT_NAMED_BUILDER(qir::repeatedResetAfterSingleOp)}));
+        QCToQIRAdaptiveTestCase{
+            "RepeatedResetAfterSingleOp",
+            MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp),
+            MQT_NAMED_BUILDER(qir::repeatedResetAfterSingleOp)}));
 /// @}
 
-/// \name QCToQIR/QubitManagement/QubitManagement.cpp
+/// \name QCToQIRAdaptive/QubitManagement/QubitManagement.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCToQIRQubitManagementTest, QCToQIRTest,
+    QCToQIRAdaptiveQubitManagementTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"AllocQubit", MQT_NAMED_BUILDER(qc::allocQubit),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"AllocQubitRegister",
-                        MQT_NAMED_BUILDER(qc::allocQubitRegister),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"AllocMultipleQubitRegisters",
-                        MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"AllocLargeRegister",
-                        MQT_NAMED_BUILDER(qc::allocLargeRegister),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"StaticQubitsWithOps",
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
-                        MQT_NAMED_BUILDER(qir::staticQubitsWithOps)},
-        QCToQIRTestCase{"StaticQubitsWithParametricOps",
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithParametricOps),
-                        MQT_NAMED_BUILDER(qir::staticQubitsWithParametricOps)},
-        QCToQIRTestCase{"StaticQubitsWithTwoTargetOps",
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithTwoTargetOps),
-                        MQT_NAMED_BUILDER(qir::staticQubitsWithTwoTargetOps)},
-        QCToQIRTestCase{"StaticQubitsWithCtrl",
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithCtrl),
-                        MQT_NAMED_BUILDER(qir::staticQubitsWithCtrl)},
-        QCToQIRTestCase{"StaticQubitsWithInv",
-                        MQT_NAMED_BUILDER(qc::staticQubitsWithInv),
-                        MQT_NAMED_BUILDER(qir::staticQubitsWithInv)},
-        QCToQIRTestCase{"AllocDeallocPair",
-                        MQT_NAMED_BUILDER(qc::allocDeallocPair),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)}));
+        QCToQIRAdaptiveTestCase{"AllocQubit", MQT_NAMED_BUILDER(qc::allocQubit),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{"AllocQubitRegister",
+                                MQT_NAMED_BUILDER(qc::allocQubitRegister),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{
+            "AllocMultipleQubitRegisters",
+            MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters),
+            MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{"AllocLargeRegister",
+                                MQT_NAMED_BUILDER(qc::allocLargeRegister),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{"StaticQubits",
+                                MQT_NAMED_BUILDER(qc::staticQubits),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{"StaticQubitsWithOps",
+                                MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
+                                MQT_NAMED_BUILDER(qir::staticQubitsWithOps)},
+        QCToQIRAdaptiveTestCase{
+            "StaticQubitsWithParametricOps",
+            MQT_NAMED_BUILDER(qc::staticQubitsWithParametricOps),
+            MQT_NAMED_BUILDER(qir::staticQubitsWithParametricOps)},
+        QCToQIRAdaptiveTestCase{
+            "StaticQubitsWithTwoTargetOps",
+            MQT_NAMED_BUILDER(qc::staticQubitsWithTwoTargetOps),
+            MQT_NAMED_BUILDER(qir::staticQubitsWithTwoTargetOps)},
+        QCToQIRAdaptiveTestCase{"StaticQubitsWithCtrl",
+                                MQT_NAMED_BUILDER(qc::staticQubitsWithCtrl),
+                                MQT_NAMED_BUILDER(qir::staticQubitsWithCtrl)},
+        QCToQIRAdaptiveTestCase{"StaticQubitsWithInv",
+                                MQT_NAMED_BUILDER(qc::staticQubitsWithInv),
+                                MQT_NAMED_BUILDER(qir::staticQubitsWithInv)},
+        QCToQIRAdaptiveTestCase{"AllocDeallocPair",
+                                MQT_NAMED_BUILDER(qc::allocDeallocPair),
+                                MQT_NAMED_BUILDER(qir::emptyQIR)}));
 /// @}
 
 /// \name QCToQCO/Operations/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    SCFIfOpTest, QCToQIRTest,
+    SCFIfOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
-                        MQT_NAMED_BUILDER(qir::simpleIf)},
-        QCToQIRTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
-                        MQT_NAMED_BUILDER(qir::ifTwoQubits)},
-        QCToQIRTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
-                        MQT_NAMED_BUILDER(qir::ifElse)},
-        QCToQIRTestCase{"NestedIfOpForLoop",
-                        MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
-                        MQT_NAMED_BUILDER(qir::nestedIfOpForLoop)}));
+        QCToQIRAdaptiveTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
+                                MQT_NAMED_BUILDER(qir::simpleIf)},
+        QCToQIRAdaptiveTestCase{"IfTwoQubits",
+                                MQT_NAMED_BUILDER(qc::ifTwoQubits),
+                                MQT_NAMED_BUILDER(qir::ifTwoQubits)},
+        QCToQIRAdaptiveTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
+                                MQT_NAMED_BUILDER(qir::ifElse)},
+        QCToQIRAdaptiveTestCase{"NestedIfOpForLoop",
+                                MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
+                                MQT_NAMED_BUILDER(qir::nestedIfOpForLoop)}));
 /// @}
 
 /// \name QCToQCO/Operations/WhileOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    SCFWhileOpTest, QCToQIRTest,
+    SCFWhileOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"SimpleWhile", MQT_NAMED_BUILDER(qc::simpleWhileReset),
-                        MQT_NAMED_BUILDER(qir::simpleWhileReset)},
-        QCToQIRTestCase{"SimpleDoWhile",
-                        MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
-                        MQT_NAMED_BUILDER(qir::simpleDoWhileReset)}));
+        QCToQIRAdaptiveTestCase{"SimpleWhile",
+                                MQT_NAMED_BUILDER(qc::simpleWhileReset),
+                                MQT_NAMED_BUILDER(qir::simpleWhileReset)},
+        QCToQIRAdaptiveTestCase{"SimpleDoWhile",
+                                MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
+                                MQT_NAMED_BUILDER(qir::simpleDoWhileReset)}));
 
 /// \name QCToQCO/Operations/ForOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    SCFForOpTest, QCToQIRTest,
+    SCFForOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRTestCase{"SimpleForLoop", MQT_NAMED_BUILDER(qc::simpleForLoop),
-                        MQT_NAMED_BUILDER(qir::simpleForLoop)},
-        QCToQIRTestCase{"NestedForLoopIfOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopIfOp),
-                        MQT_NAMED_BUILDER(qir::nestedForLoopIfOp)},
-        QCToQIRTestCase{"NestedForLoopWhileOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
-                        MQT_NAMED_BUILDER(qir::nestedForLoopWhileOp)},
-        QCToQIRTestCase{
+        QCToQIRAdaptiveTestCase{"SimpleForLoop",
+                                MQT_NAMED_BUILDER(qc::simpleForLoop),
+                                MQT_NAMED_BUILDER(qir::simpleForLoop)},
+        QCToQIRAdaptiveTestCase{"NestedForLoopIfOp",
+                                MQT_NAMED_BUILDER(qc::nestedForLoopIfOp),
+                                MQT_NAMED_BUILDER(qir::nestedForLoopIfOp)},
+        QCToQIRAdaptiveTestCase{"NestedForLoopWhileOp",
+                                MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
+                                MQT_NAMED_BUILDER(qir::nestedForLoopWhileOp)},
+        QCToQIRAdaptiveTestCase{
             "nestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),
             MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOpWithSeparateQubit)},
-        QCToQIRTestCase{
+        QCToQIRAdaptiveTestCase{
             "nestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOpWithExtractedQubit)}));

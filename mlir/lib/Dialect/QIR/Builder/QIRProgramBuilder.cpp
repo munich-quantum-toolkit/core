@@ -127,20 +127,22 @@ Value QIRProgramBuilder::doubleConstant(double value) {
 
 Value QIRProgramBuilder::allocQubit() {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic);
 
-  if (profile == Profile::Base) {
-    llvm::reportFatalUsageError("Dynamic qubits can only be allocated if the "
-                                "Adaptive Profile is selected.");
+  Value qubit;
+  if (profile == Profile::Adaptive) {
+    ensureAllocationMode(AllocationMode::Dynamic);
+    metadata_.useDynamicQubit = true;
+
+    auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_ALLOC, fnSig);
+
+    auto zero = LLVM::ZeroOp::create(*this, ptrType);
+    qubit = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
   }
-  metadata_.useDynamicQubit = true;
-
-  auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
-  auto fnDec =
-      getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_ALLOC, fnSig);
-
-  auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  auto qubit = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
+  if (profile == Profile::Base) {
+    qubit = staticQubit(static_cast<int64_t>(metadata_.numQubits));
+  }
 
   qubits.insert(qubit);
 
@@ -185,48 +187,54 @@ Value QIRProgramBuilder::QubitRegister::operator[](const size_t index) const {
 QIRProgramBuilder::QubitRegister
 QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic);
 
-  if (profile == Profile::Base) {
-    llvm::reportFatalUsageError("Arrays can only be used if the "
-                                "Adaptive Profile is selected.");
-  }
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
-  metadata_.useArrays = true;
-  metadata_.useDynamicQubit = true;
 
   // Save current insertion point
   const InsertionGuard guard(*this);
 
   SmallVector<Value> qubits;
+
   qubits.reserve(size);
 
-  auto allocFnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(getContext()), {getI64Type(), ptrType, ptrType});
-  auto allocFnDecl = getOrCreateFunctionDeclaration(
-      *this, module, QIR_QUBIT_ARRAY_ALLOC, allocFnSignature);
+  if (profile == Profile::Adaptive) {
+    ensureAllocationMode(AllocationMode::Dynamic);
+    metadata_.useArrays = true;
+    metadata_.useDynamicQubit = true;
 
-  auto array =
-      LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
-  auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  LLVM::CallOp::create(
-      *this, allocFnDecl,
-      ValueRange{intConstant(size), array.getResult(), zero.getResult()});
+    auto allocFnSignature =
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(getContext()),
+                                    {getI64Type(), ptrType, ptrType});
+    auto allocFnDecl = getOrCreateFunctionDeclaration(
+        *this, module, QIR_QUBIT_ARRAY_ALLOC, allocFnSignature);
 
-  qubitArrays.insert(array.getResult());
+    auto array =
+        LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
+    auto zero = LLVM::ZeroOp::create(*this, ptrType);
+    LLVM::CallOp::create(
+        *this, allocFnDecl,
+        ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
-  for (int64_t i = 0; i < size; ++i) {
-    auto index = intConstant(i);
-    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
-                                   ValueRange{index});
-    auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
-    qubits.push_back(load.getResult());
-    loadedQubits[array].insert(index);
+    qubitArrays.insert(array.getResult());
+
+    for (int64_t i = 0; i < size; ++i) {
+      auto index = intConstant(i);
+      auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
+                                     ValueRange{index});
+      auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+      qubits.push_back(load.getResult());
+      loadedQubits[array].insert(index);
+    }
+    return {.value = array.getResult(), .qubits = std::move(qubits)};
   }
 
-  return {.value = array.getResult(), .qubits = std::move(qubits)};
+  for (int64_t i = 0; i < size; ++i) {
+    auto qubit = staticQubit(i);
+    qubits.push_back(qubit);
+  }
+  return {.value = nullptr, .qubits = std::move(qubits)};
 }
 
 Value QIRProgramBuilder::load(Value reg, Value index) {
@@ -261,10 +269,7 @@ QIRProgramBuilder::ClassicalRegister
 QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
                                              const std::string& name) {
   checkFinalized();
-  if (profile == Profile::Base) {
-    llvm::reportFatalUsageError("Arrays can only be used if the "
-                                "Adaptive Profile is selected.");
-  }
+
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
@@ -276,34 +281,40 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   if (resultArrays.contains(name)) {
     llvm::reportFatalUsageError("Classical register already exists");
   }
-
-  metadata_.useDynamicResult = true;
-
   // Save current insertion point
   const InsertionGuard guard(*this);
 
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
+  if (profile == Profile::Adaptive) {
+    metadata_.useDynamicResult = true;
 
-  auto fnSig =
-      LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
-  auto fnDec = getOrCreateFunctionDeclaration(*this, module,
-                                              QIR_RESULT_ARRAY_ALLOC, fnSig);
+    auto fnSig =
+        LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
+    auto fnDec = getOrCreateFunctionDeclaration(*this, module,
+                                                QIR_RESULT_ARRAY_ALLOC, fnSig);
 
-  auto array =
-      LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
-  auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  LLVM::CallOp::create(
-      *this, fnDec,
-      ValueRange{intConstant(size), array.getResult(), zero.getResult()});
+    auto array =
+        LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
+    auto zero = LLVM::ZeroOp::create(*this, ptrType);
+    LLVM::CallOp::create(
+        *this, fnDec,
+        ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
-  resultArrays.try_emplace(name, array.getResult());
+    resultArrays.try_emplace(name, array.getResult());
 
-  for (int64_t i = 0; i < size; ++i) {
-    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
-                                   ValueRange{intConstant(i)});
-    auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
-    loadedResults.try_emplace({stringSaver.save(name), i}, load.getResult());
+    for (int64_t i = 0; i < size; ++i) {
+      auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
+                                     ValueRange{intConstant(i)});
+      auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+      loadedResults.try_emplace({stringSaver.save(name), i}, load.getResult());
+    }
+  } else {
+    for (int64_t i = 0; i < size; ++i) {
+      auto result = staticQubit(i);
+      loadedResults.try_emplace({stringSaver.save(name), i}, result);
+      resultPtrs.try_emplace(i, result);
+    }
   }
 
   return {.name = name, .size = size};
@@ -349,14 +360,18 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
 
 Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
-  // TODO how to handle this in Base Profile is this valid
+  const InsertionGuard guard(*this);
+
   auto it = loadedResults.find({bit.registerName, bit.registerIndex});
   if (it == loadedResults.end()) {
-    llvm::reportFatalUsageError(
-        "Bit does not belong to an allocated classical register");
+    llvm::reportFatalUsageError("Bit does not belong to an result pointer");
   }
   auto result = it->second;
-  metadata_.useDynamicResult = true;
+  if (profile == Profile::Adaptive) {
+    metadata_.useDynamicResult = true;
+  } else {
+    setInsertionPoint(measurementsBlock->getTerminator());
+  }
 
   // Create measure call
   const auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});

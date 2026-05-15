@@ -27,6 +27,7 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -38,6 +39,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <cstdint>
 #include <utility>
 
 namespace mlir {
@@ -49,6 +51,151 @@ using namespace qir;
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h.inc"
 
 namespace {
+
+/**
+ * @brief Erases memref.alloc during the QIR Base Profile conversion
+ */
+struct ConvertMemRefAllocOp final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+/**
+ * @brief Converts memref.load to llvm.inttoptr
+ *
+ * @par Example:
+ * ```mlir
+ * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %c0 = llvm.mlir.constant(0 : i64) : i64
+ * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+ * ```
+ */
+struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto shape = op.getMemref().getType().getShape();
+    if (shape.size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
+    }
+    // Save current insertion point
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    // Switch to entry block
+    rewriter.setInsertionPoint(getState().entryBlock->getTerminator());
+
+    auto& state = getState();
+    auto indexValue = adaptor.getIndices()[0];
+
+    // Get the constant value of the index
+    if (auto castOp = indexValue.getDefiningOp<UnrealizedConversionCastOp>()) {
+      indexValue = castOp.getInputs()[0];
+    }
+    int64_t index = getConstantIntValue(indexValue).value_or(0);
+    Value qubit;
+
+    if (const auto it = state.staticQubits.find(index);
+        it != state.staticQubits.end()) {
+      // Reuse existing pointer
+      qubit = it->second;
+    } else {
+      // Create and cache for reuse
+      qubit = createPointerFromIndex(rewriter, op.getLoc(), index);
+      state.staticQubits.try_emplace(index, qubit);
+    }
+    rewriter.replaceOp(op, qubit);
+
+    // Track maximum qubit index
+    if (std::cmp_greater_equal(index, state.numQubits)) {
+      state.numQubits = index + 1;
+    }
+
+    return success();
+  }
+};
+
+/**
+ * @brief Erases memref.dealloc during the QIR Base Profile conversion
+ *
+ */
+struct ConvertMemRefDeallocOp final
+    : StatefulOpConversionPattern<memref::DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qc.alloc to llvm.inttoptr
+ *
+ * @details
+ * Converts a static qubit reference to an LLVM pointer by creating a constant
+ * with the next available static qubit index and converting it to a pointer.
+ * The pointer is cached in the lowering state for reuse.
+ *
+ * @par Example:
+ * ```mlir
+ * %q = qc.alloc : !qc.qubit
+ * ```
+ * becomes:
+ * ```mlir
+ * %c0 = llvm.mlir.constant(0 : i64) : i64
+ * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+ * ```
+ */
+struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    rewriter.setInsertionPoint(getState().entryBlock->getTerminator());
+
+    auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
+                                        static_cast<int64_t>(state.numQubits));
+    state.staticQubits.try_emplace(static_cast<int64_t>(state.numQubits++),
+                                   qubit);
+    rewriter.replaceOp(op, qubit);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Erases memref.alloc during the QIR Base Profile conversion
+ *
+ */
+struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(DeallocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
 
 /**
  * @brief Converts qc.measure to QIR measurement
@@ -129,6 +276,11 @@ void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
                                  MLIRContext* ctx, LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
   patterns.add<ConvertQCMeasureOp>(typeConverter, ctx, &state);
+  patterns
+      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp>(
+          typeConverter, ctx, &state);
+  patterns.add<ConvertQCAllocOp, ConvertQCDeallocOp>(typeConverter, ctx,
+                                                     &state);
 }
 
 /**
