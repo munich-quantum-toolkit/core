@@ -10,10 +10,13 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Algorithms.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QCO/Utils/Qubits.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/LogicalResult.h>
@@ -25,23 +28,24 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <cassert>
+#include <cstddef>
 #include <memory>
+#include <tuple>
 #include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
 using DeviceSpec = std::pair<size_t, Edges>;
 
 /**
- * @returns llvm::success() if all two-qubit gates inside @p region fulfill the
- * given coupling constraints. llvm::failure(), otherwise.
+ * @returns llvm::success() if all two-qubit gates inside @p region
+ * fulfill the given coupling constraints. llvm::failure(), otherwise.
  */
-LogicalResult isExecutable(Region& region, const Edges& coupling) {
+static LogicalResult isExecutable(Region& region, const Edges& coupling) {
   return walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
     if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
       if (isa<BarrierOp>(op)) {
@@ -63,13 +67,18 @@ LogicalResult isExecutable(Region& region, const Edges& coupling) {
   });
 }
 
-DeviceSpec getNineQubitSquareGrid() {
+/**
+ * @returns a 9x9 square-grid device.
+ */
+static DeviceSpec getNineQubitSquareGrid() {
   const static Edges COUPLING{{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
                               {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
                               {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
                               {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
   return std::make_pair(9, COUPLING);
 }
+
+namespace {
 
 class MappingPassTest : public testing::Test,
                         public testing::WithParamInterface<DeviceSpec> {
