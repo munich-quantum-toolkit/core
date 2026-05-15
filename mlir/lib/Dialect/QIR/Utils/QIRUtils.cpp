@@ -107,10 +107,9 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
                              "dynamic_result_management",
                              static_cast<int32_t>(metadata.useDynamicResult)));
   if (metadata.useAdaptive) {
-    flags.push_back(
-        createFlag(LLVM::ModFlagBehavior::Error, "backwards_branching",
-                   (metadata.useConditionalLoopTermination ? 1 : 0) |
-                       (metadata.useAdaptive ? 2 : 0)));
+    flags.push_back(createFlag(LLVM::ModFlagBehavior::Error,
+                               "backwards_branching",
+                               metadata.backwardsBranching));
     flags.push_back(createFlag(LLVM::ModFlagBehavior::Error, "arrays",
                                static_cast<int32_t>(metadata.useArrays)));
   }

@@ -685,7 +685,12 @@ QIRProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
     llvm::reportFatalUsageError("For operation can only be used if the "
                                 "Adaptive Profile is selected.");
   }
-  metadata_.useIteration = true;
+
+  int& backwardsBranchingFlag = metadata_.backwardsBranching;
+  if (backwardsBranchingFlag != 1 && backwardsBranchingFlag != 3) {
+    backwardsBranchingFlag += 1;
+  }
+
   auto loc = getLoc();
   auto lb = resolveIntVariant(lowerbound);
   auto ub = resolveIntVariant(upperbound);
@@ -799,9 +804,13 @@ QIRProgramBuilder::scfWhile(const llvm::function_ref<Value()>& beforeBody,
     llvm::reportFatalUsageError("While operation can only be used if the "
                                 "Adaptive Profile is selected.");
   }
-  metadata_.useConditionalLoopTermination;
-  auto* currentBlock = getInsertionBlock();
 
+  int& backwardsBranchingFlag = metadata_.backwardsBranching;
+  if (backwardsBranchingFlag != 2 && backwardsBranchingFlag != 3) {
+    backwardsBranchingFlag += 2;
+  }
+
+  auto* currentBlock = getInsertionBlock();
   // Build the blocks
   auto* beforeBlock = createBlock(currentBlock->getParent(),
                                   std::next(Region::iterator(currentBlock)));

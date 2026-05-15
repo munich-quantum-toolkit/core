@@ -30,6 +30,7 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 namespace mlir {
@@ -575,13 +576,18 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
 
   /**
    * @brief Iterates through the module to find any scf.while or scf.for
-   * operation to set the appropriate flags before they are converted to cf
-   * operations.
+   * operation to set the backward branching flag before they are converted to
+   * cf operations.
    */
   static void setSCFFlags(Operation* op, LoweringState* state) {
-    op->walk(
-        [&](scf::WhileOp) { state->useConditionalLoopTermination = true; });
-    op->walk([&](scf::ForOp) { state->useIteration = true; });
+    op->walk([&](scf::ForOp) {
+      state->backwardsBranching += 1;
+      return WalkResult::interrupt();
+    });
+    op->walk([&](scf::WhileOp) {
+      state->backwardsBranching += 2;
+      return WalkResult::interrupt();
+    });
   }
 
 protected:
