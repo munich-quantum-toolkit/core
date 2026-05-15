@@ -58,10 +58,6 @@ namespace mlir {
 using namespace qc;
 using namespace qir;
 
-//===----------------------------------------------------------------------===//
-// LoweringState
-//===----------------------------------------------------------------------===//
-
 LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
                                                   Operation* op) {
   if (allocationMode == AllocationMode::Unset) {
@@ -74,10 +70,6 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
   return op->emitOpError(
       "cannot mix static and dynamic qubit allocation modes in conversion");
 }
-
-//===----------------------------------------------------------------------===//
-// QCToQIRTypeConverter
-//===----------------------------------------------------------------------===//
 
 QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
@@ -408,9 +400,6 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
 
 } // namespace
 
-/**
- * @brief Inserts the QIR runtime initialization call into the entry block
- */
 void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                    LoweringState& state) {
   OpBuilder builder(ctx);
@@ -426,15 +415,6 @@ void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
   LLVM::CallOp::create(builder, main->getLoc(), initDec, zero.getResult());
 }
 
-/**
- * @brief Adds output recording calls to the output block
- *
- * @details
- * Named registers are recorded via
- * `__quantum__rt__result_array_record_output`. Unnamed results are recorded
- * via `__quantum__rt__result_record_output` under the label
- * `__unnamed__<index>`.
- */
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state) {
   auto& resultArrays = state.resultArrays;
@@ -478,14 +458,6 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
   }
 }
 
-/**
- * @brief Populates common conversion patterns for QC-to-QIR lowering.
- *
- * @details
- * Centralizes pattern registration so adding a new QC gate typically only
- * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
- * list of unitary gates below.
- */
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {
@@ -502,4 +474,5 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
   patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp>(
       typeConverter, ctx, &state);
 }
+
 } // namespace mlir

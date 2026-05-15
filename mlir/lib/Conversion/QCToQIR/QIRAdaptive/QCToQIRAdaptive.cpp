@@ -572,20 +572,16 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
                            ValueRange{size, array});
     }
   }
+
   /**
    * @brief Iterates through the module to find any scf.while or scf.for
    * operation to set the appropriate flags before they are converted to cf
    * operations.
    */
-  static void findOperations(Operation* op, LoweringState* state) {
-    op->walk([&](Operation* op) {
-      if (llvm::isa<scf::WhileOp>(op)) {
-        state->useConditionalLoopTermination = true;
-      }
-      if (llvm::isa<scf::ForOp>(op)) {
-        state->useIteration = true;
-      }
-    });
+  static void setSCFFlags(Operation* op, LoweringState* state) {
+    op->walk(
+        [&](scf::WhileOp) { state->useConditionalLoopTermination = true; });
+    op->walk([&](scf::ForOp) { state->useIteration = true; });
   }
 
 protected:
@@ -632,7 +628,7 @@ protected:
     LoweringState state;
     state.useAdaptive = true;
 
-    findOperations(moduleOp, &state);
+    setSCFFlags(moduleOp, &state);
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 

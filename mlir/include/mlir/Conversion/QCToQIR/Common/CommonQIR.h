@@ -22,52 +22,69 @@
 #include <mlir/Transforms/DialectConversion.h>
 
 namespace mlir {
+using namespace qir;
 
-//===----------------------------------------------------------------------===//
-// Allocation mode
-//===----------------------------------------------------------------------===//
+/** @brief Qubit allocation mode */
+enum class AllocationMode : std::uint8_t {
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
+};
 
-enum class AllocationMode : std::uint8_t { Unset, Static, Dynamic };
+/**
+ * @brief State object for tracking lowering information during QIR conversion
+ */
+struct LoweringState : QIRMetadata {
+  /// Cache static qubit pointers for reuse
+  DenseMap<int64_t, Value> staticQubits;
 
-//===----------------------------------------------------------------------===//
-// LoweringState
-//===----------------------------------------------------------------------===//
+  /// Cache MemRef sizes for reuse
+  DenseMap<Value, Value> memrefSizes;
 
-struct LoweringState : qir::QIRMetadata {
-  llvm::DenseMap<int64_t, Value> staticQubits;
-  llvm::DenseMap<Value, Value> memrefSizes;
+  /// Map from register name to result-array pointer
   llvm::StringMap<Value> resultArrays;
-  llvm::DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
-  llvm::DenseMap<int64_t, Value> resultPtrs;
 
+  /// Map from (register name, index) to loaded result
+  DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
+
+  /// Map from index to result pointer for non-register results
+  DenseMap<int64_t, Value> resultPtrs;
+
+  /// Modifier information
   int64_t inCtrlOp = 0;
-  llvm::DenseMap<int64_t, SmallVector<Value>> controls;
+  DenseMap<int64_t, SmallVector<Value>> controls;
 
+  /// Allocator and StringSaver for stable StringRefs
   llvm::BumpPtrAllocator allocator;
   llvm::StringSaver stringSaver{allocator};
 
-  Block* entryBlock = nullptr;
-  Block* measurementsBlock = nullptr;
-  Block* outputBlock = nullptr;
+  /// Block information
+  Block* entryBlock{};
+  Block* measurementsBlock{};
+  Block* outputBlock{};
 
+  /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
 
-  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requested,
+  /// Sets or validates the allocation mode, or emits an error if it conflicts.
+  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
                                                    Operation* op);
 };
-
-//===----------------------------------------------------------------------===//
-// QCToQIRTypeConverter
-//===----------------------------------------------------------------------===//
 
 struct QCToQIRTypeConverter final : LLVMTypeConverter {
   explicit QCToQIRTypeConverter(MLIRContext* ctx);
 };
 
-//===----------------------------------------------------------------------===//
-// StatefulOpConversionPattern
-//===----------------------------------------------------------------------===//
-
+/**
+ * @brief Base class for conversion patterns that need access to lowering state
+ *
+ * @details
+ * Extends OpConversionPattern to provide access to a shared LoweringState
+ * object, which tracks qubit/result counts and caches values across multiple
+ * pattern applications.
+ *
+ * @tparam OpType The operation type to convert
+ */
 template <typename OpType>
 class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
 public:
@@ -85,13 +102,50 @@ private:
 // Pattern population
 //===----------------------------------------------------------------------===//
 
+/**
+ * @brief Adds QIR initialization call to the entry block
+ *
+ * @details
+ * This QIR runtime function initializes the quantum execution environment.
+ *
+ * @param main The main LLVM function
+ * @param ctx The MLIR context
+ * @param state The lowering state
+ */
 void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                    LoweringState& state);
 
+/**
+ * @brief Populates common conversion patterns for QC-to-QIR lowering.
+ *
+ * @details
+ * Centralizes pattern registration so adding a new QC gate typically only
+ * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
+ * list of unitary gates below.
+ */
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state);
 
+/**
+ * @brief Adds output recording calls to the output block
+ *
+ * @details
+ * Generates output recording calls in the output block based on the
+ * measurements tracked during conversion. Follows the QIR specification for
+ * labeled output schema.
+ *
+ * Results that are part of registers are recorded via
+ * `__quantum__rt__result_array_record_output`.
+ *
+ * Results that are not part of registers (i.e., measurements without register
+ * info) are grouped under a default `__unnamed__` label recorded via
+ * `__quantum__rt__result_record_output`.
+ *
+ * @param main The main LLVM function
+ * @param ctx The MLIR context
+ * @param state The lowering state containing measurement information
+ */
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
 
