@@ -57,8 +57,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
 
 void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   auto module = main->getParentOfType<ModuleOp>();
-  if (metadata.useDynamicQubit && metadata.numQubits != 0 &&
-      !metadata.useAdaptive) {
+  if (metadata.useDynamicQubit && metadata.numQubits != 0) {
     llvm::reportFatalUsageError(
         "Cannot use dynamic qubit allocation if static qubits are allocated");
   }

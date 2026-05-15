@@ -140,28 +140,6 @@ void measurementWithoutRegisters(QCProgramBuilder& b) {
   b.measure(q);
 }
 
-void measureStaticQubit(QCProgramBuilder& b) {
-  auto q = b.staticQubit(0);
-  b.measure(q);
-}
-
-void measureMultipleStaticQubits(QCProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.staticQubit(1);
-  auto q2 = b.staticQubit(2);
-  b.measure(q0);
-  b.measure(q1);
-  b.measure(q2);
-}
-
-/// Measures a single static qubit.
-void repeatedMeasurementToSameBitStaticQubit(QCProgramBuilder& b) {
-  auto q = b.staticQubit(0);
-  b.measure(q);
-  b.measure(q);
-  b.measure(q);
-}
-
 void resetQubitWithoutOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
