@@ -702,7 +702,7 @@ QIRProgramBuilder&
 QIRProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
                           const std::variant<int64_t, Value>& upperbound,
                           const std::variant<int64_t, Value>& step,
-                          const llvm::function_ref<void(Value)>& body) {
+                          const function_ref<void(Value)>& body) {
   checkFinalized();
   if (profile == Profile::Base) {
     llvm::reportFatalUsageError("For operation can only be used if the "
@@ -762,8 +762,8 @@ QIRProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
 
 QIRProgramBuilder&
 QIRProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
-                         const llvm::function_ref<void()>& thenBody,
-                         const llvm::function_ref<void()>& elseBody) {
+                         const function_ref<void()>& thenBody,
+                         const function_ref<void()>& elseBody) {
   checkFinalized();
   if (profile == Profile::Base) {
     llvm::reportFatalUsageError("If operation can only be used if the "
@@ -820,8 +820,8 @@ QIRProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
   return *this;
 }
 QIRProgramBuilder&
-QIRProgramBuilder::scfWhile(const llvm::function_ref<Value()>& beforeBody,
-                            const llvm::function_ref<void()>& afterBody) {
+QIRProgramBuilder::scfWhile(const function_ref<Value()>& beforeBody,
+                            const function_ref<void()>& afterBody) {
   checkFinalized();
   if (profile == Profile::Base) {
     llvm::reportFatalUsageError("While operation can only be used if the "

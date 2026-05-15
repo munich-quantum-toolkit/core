@@ -929,7 +929,7 @@ public:
   QIRProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
                             const std::variant<int64_t, Value>& upperbound,
                             const std::variant<int64_t, Value>& step,
-                            const llvm::function_ref<void(Value)>& body);
+                            const function_ref<void(Value)>& body);
 
   /**
    * @brief Construct an if construct in LLVM dialect
@@ -960,10 +960,9 @@ public:
    * ^next:
    * ```
    */
-  QIRProgramBuilder&
-  scfIf(const std::variant<bool, Value>& condition,
-        const llvm::function_ref<void()>& thenBody,
-        const llvm::function_ref<void()>& elseBody = nullptr);
+  QIRProgramBuilder& scfIf(const std::variant<bool, Value>& condition,
+                           const function_ref<void()>& thenBody,
+                           const function_ref<void()>& elseBody = nullptr);
 
   /**
    * @brief Construct a while construct in LLVM dialect
@@ -997,9 +996,8 @@ public:
    * ^next:
    * ```
    */
-  QIRProgramBuilder&
-  scfWhile(const llvm::function_ref<Value()>& beforeBody,
-           const llvm::function_ref<void()>& afterBody = nullptr);
+  QIRProgramBuilder& scfWhile(const function_ref<Value()>& beforeBody,
+                              const function_ref<void()>& afterBody = nullptr);
 
   //===--------------------------------------------------------------------===//
   // Finalization

@@ -28,13 +28,19 @@
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Region.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+
+#include <cassert>
+#include <cstdint>
+#include <utility>
 
 namespace mlir {
 
@@ -504,8 +510,8 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
    * The Adaptive Profile requires an entry block and an output block with an
    * arbitrary number of blocks between them.
    * 1. **Entry block**: Contains constant operations and initialization
-   * 2. **Intermediate blocks**: Original function structure containing quantum
-   * operations
+   * 2. **Intermediate blocks**: Original function structure containing
+   * quantum operations
    * 3. **Output block**: Contains output recording calls and qubit release
    * calls
    *
@@ -608,8 +614,8 @@ protected:
    * equivalents.
    *
    * **Stage 3: Block structure**
-   * Create proper block structure for QIR Adaptive Profile (entry, intermediate
-   * blocks, output).
+   * Create proper block structure for QIR Adaptive Profile (entry,
+   * intermediate blocks, output).
    *
    * **Stage 4: Initialization**
    * Insert the `__quantum__rt__initialize` call.
@@ -627,7 +633,8 @@ protected:
    * function control flow).
    *
    * **Stage 8: Reconcile casts**
-   * Clean up any unrealized cast operations introduced during type conversion.
+   * Clean up any unrealized cast operations introduced during type
+   * conversion.
    */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
