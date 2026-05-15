@@ -16,11 +16,6 @@ target_link_libraries(MLIRQCOPrograms PUBLIC MLIRQCOProgramBuilder)
 target_sources(MLIRQCOPrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES
                                       qco_programs.h)
 
-add_library(MLIRQIRBasePrograms qir_programs.cpp)
-target_link_libraries(MLIRQIRBasePrograms PUBLIC MLIRQIRProgramBuilder)
-target_sources(MLIRQIRBasePrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
-                                          FILES qir_base_programs.h)
-
 add_library(MLIRQIRPrograms qir_programs.cpp)
 target_link_libraries(MLIRQIRPrograms PUBLIC MLIRQIRProgramBuilder)
 target_sources(MLIRQIRPrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES
