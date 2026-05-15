@@ -139,8 +139,7 @@ Value QIRProgramBuilder::allocQubit() {
 
     auto zero = LLVM::ZeroOp::create(*this, ptrType);
     qubit = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
-  }
-  if (profile == Profile::Base) {
+  } else {
     qubit = staticQubit(static_cast<int64_t>(metadata_.numQubits));
   }
 
@@ -195,11 +194,13 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   // Save current insertion point
   const InsertionGuard guard(*this);
 
+  Value array;
   SmallVector<Value> qubits;
 
   qubits.reserve(size);
 
   if (profile == Profile::Adaptive) {
+    // Create a dynamic qubit array and load the qubits in the Adaptive Profile
     ensureAllocationMode(AllocationMode::Dynamic);
     metadata_.useArrays = true;
     metadata_.useDynamicQubit = true;
@@ -210,31 +211,32 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
     auto allocFnDecl = getOrCreateFunctionDeclaration(
         *this, module, QIR_QUBIT_ARRAY_ALLOC, allocFnSignature);
 
-    auto array =
-        LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
+    array = LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size))
+                .getResult();
     auto zero = LLVM::ZeroOp::create(*this, ptrType);
     LLVM::CallOp::create(
         *this, allocFnDecl,
-        ValueRange{intConstant(size), array.getResult(), zero.getResult()});
+        ValueRange{intConstant(size), array, zero.getResult()});
 
-    qubitArrays.insert(array.getResult());
+    qubitArrays.insert(array);
 
     for (int64_t i = 0; i < size; ++i) {
       auto index = intConstant(i);
-      auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
+      auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array,
                                      ValueRange{index});
       auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
       qubits.push_back(load.getResult());
       loadedQubits[array].insert(index);
     }
-    return {.value = array.getResult(), .qubits = std::move(qubits)};
+  } else {
+    // Create static qubits in the Base Profile
+    for (int64_t i = 0; i < size; ++i) {
+      auto qubit = staticQubit(i);
+      qubits.push_back(qubit);
+    }
   }
 
-  for (int64_t i = 0; i < size; ++i) {
-    auto qubit = staticQubit(i);
-    qubits.push_back(qubit);
-  }
-  return {.value = nullptr, .qubits = std::move(qubits)};
+  return {.value = array, .qubits = std::move(qubits)};
 }
 
 Value QIRProgramBuilder::load(Value reg, Value index) {
@@ -286,7 +288,9 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
 
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
+
   if (profile == Profile::Adaptive) {
+    // Create a dynamic result array for the Adaptive Profile
     metadata_.useDynamicResult = true;
 
     auto fnSig =
@@ -310,6 +314,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
       loadedResults.try_emplace({stringSaver.save(name), i}, load.getResult());
     }
   } else {
+    // Use static results in the Base Profile
     for (int64_t i = 0; i < size; ++i) {
       auto result = staticQubit(i);
       loadedResults.try_emplace({stringSaver.save(name), i}, result);
@@ -345,6 +350,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
 
   restoreInsertionPoint(insertionPoint);
 
+  // Only set the insertionpoint if the Base Profile is used
   if (profile == Profile::Base) {
     setInsertionPoint(measurementsBlock->getTerminator());
   }

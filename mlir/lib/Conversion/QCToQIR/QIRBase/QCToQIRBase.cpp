@@ -69,6 +69,10 @@ struct ConvertMemRefAllocOp final
 /**
  * @brief Converts memref.load to llvm.inttoptr
  *
+ * Converts a load operation to an LLVM pointer by creating a constant
+ * with the index of the load operation and converting it to a pointer.
+ * The pointer is cached in the lowering state for reuse.
+ *
  * @par Example:
  * ```mlir
  * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
@@ -146,7 +150,7 @@ struct ConvertMemRefDeallocOp final
  * @brief Converts qc.alloc to llvm.inttoptr
  *
  * @details
- * Converts a static qubit reference to an LLVM pointer by creating a constant
+ * Converts a qubit allocation to an LLVM pointer by creating a constant
  * with the next available static qubit index and converting it to a pointer.
  * The pointer is cached in the lowering state for reuse.
  *

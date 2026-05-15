@@ -86,9 +86,6 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
 
   auto createFlag = [&](LLVM::ModFlagBehavior behavior, StringRef name,
                         int32_t val) {
-    // LLVM seems to normalize to i32 values. Even if we would use e.g. a i1
-    // attribute for the boolean flags `mlir-translate` would still force it
-    // to i32. Hence we stick to i32 always here.
     return LLVM::ModuleFlagAttr::get(module->getContext(), behavior,
                                      builder.getStringAttr(name),
                                      builder.getI32IntegerAttr(val));
