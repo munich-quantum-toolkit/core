@@ -30,6 +30,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <ranges>
@@ -553,24 +554,20 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
                                  TranslationState& state) {
   const auto& ifElse = dynamic_cast<const ::qc::IfElseOperation&>(operation);
 
-  Value controlValue;
-  Value expectedValue;
   if (ifElse.getControlRegister().has_value()) {
     llvm::errs() << "IfElseOperations controlled by registers cannot be "
                     "translated to QC at the moment\n";
     return failure();
   }
-  if (ifElse.getControlBit().has_value()) {
-    const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
-    controlValue = state.results[bitIdx];
-    if (controlValue == nullptr) {
-      llvm::errs() << "Control bit does not contain a measurement result\n";
-      return failure();
-    }
-    expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
-  } else {
+
+  assert(ifElse.getControlBit().has_value());
+  const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
+  auto controlValue = state.results[bitIdx];
+  if (controlValue == nullptr) {
+    llvm::errs() << "Control bit does not contain a measurement result\n";
     return failure();
   }
+  auto expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
 
   // Define comparison predicate
   const auto comparisonKind = ifElse.getComparisonKind();
