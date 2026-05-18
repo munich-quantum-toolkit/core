@@ -11,6 +11,10 @@
 #include "quantum_computation_programs.h"
 
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
+
+#include <memory>
 
 namespace qc {
 

@@ -612,7 +612,7 @@ static LogicalResult translateOperation(QCProgramBuilder& builder,
       translateOperation(builder, *ifElse.getThenOp(), qubits, bitMap,
                          resultMap);
     };
-    if (auto elseOp = ifElse.getElseOp()) {
+    if (auto* elseOp = ifElse.getElseOp()) {
       builder.scfIf(condition, thenBuilder, [&] {
         translateOperation(builder, *elseOp, qubits, bitMap, resultMap);
       });
