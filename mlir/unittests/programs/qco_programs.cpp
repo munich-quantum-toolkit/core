@@ -2290,15 +2290,31 @@ void nestedForLoopWhileOp(QCOProgramBuilder& b) {
   });
 }
 
-void nestedForLoopCtrlOp(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+void nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
   auto control0 = b.allocQubit();
   auto control1 = b.h(control0);
-  b.scfFor(0, 2, 1, {reg.value, control1}, [&](Value iv, ValueRange iterArgs) {
+  b.scfFor(0, 3, 1, {reg.value, control1}, [&](Value iv, ValueRange iterArgs) {
     auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-    auto [controls, targets] = b.ctrl(iterArgs[1], q0, [&](ValueRange args) {
-      auto q1 = b.h(args[0]);
-      return SmallVector{q1};
+    auto q1 = b.h(q0);
+    auto [controls, targets] = b.ctrl(iterArgs[1], q1, [&](ValueRange args) {
+      auto q2 = b.x(args[0]);
+      return SmallVector{q2};
+    });
+    auto insert = b.qtensorInsert(targets[0], t0, iv);
+    return SmallVector{insert, controls[0]};
+  });
+}
+
+void nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(4);
+  auto control = b.h(reg[0]);
+  b.scfFor(1, 4, 1, {reg.value, control}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.h(q0);
+    auto [controls, targets] = b.ctrl(iterArgs[1], q1, [&](ValueRange args) {
+      auto q2 = b.x(args[0]);
+      return SmallVector{q2};
     });
     auto insert = b.qtensorInsert(targets[0], t0, iv);
     return SmallVector{insert, controls[0]};

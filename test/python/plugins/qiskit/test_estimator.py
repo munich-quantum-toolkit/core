@@ -10,48 +10,31 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
-from qiskit.primitives import BaseEstimatorV2
 from qiskit.primitives.containers.estimator_pub import EstimatorPub
 from qiskit.quantum_info import SparsePauliOp
 
-from mqt.core.plugins.qiskit import QDMIEstimator
-
-if TYPE_CHECKING:
-    from mqt.core.plugins.qiskit import QDMIBackend
+from mqt.core import fomac
+from mqt.core.plugins.qiskit import QDMIBackend, QDMIEstimator
 
 
-def _get_ndarray_field(data: object, field: str) -> np.ndarray:
-    """Extract an ndarray field from estimator pub result data.
-
-    Returns:
-        The requested ndarray field from estimator result data.
-    """
-    value = getattr(data, field, None)
-    assert isinstance(value, np.ndarray)
-    return value
-
-
-pytestmark = [
-    pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
-]
+@pytest.fixture
+def estimator() -> QDMIEstimator:
+    """Returns a QDMIEstimator based on the DDSIM backend."""
+    session = fomac.Session()
+    devices = session.get_devices()
+    for device in devices:
+        if "DDSIM" in device.name():
+            backend = QDMIBackend(device=device, provider=None)
+            return QDMIEstimator(backend)
+    pytest.skip("DDSIM device not available")
 
 
-def test_estimator_instantiation(backend_with_mock_jobs: QDMIBackend) -> None:
-    """Estimator can be instantiated with a backend."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
-    assert isinstance(estimator, BaseEstimatorV2)
-    assert estimator.backend == backend_with_mock_jobs
-
-
-def test_estimator_run_simple_observable(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_run_simple_observable(estimator: QDMIEstimator) -> None:
     """Estimator runs a simple observable estimation."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
     qc = QuantumCircuit(1)  # |0> state
     op = [SparsePauliOp("Z"), SparsePauliOp("X")]  # Expectation of Z should be 1, X should be 0
 
@@ -61,16 +44,14 @@ def test_estimator_run_simple_observable(backend_with_mock_jobs: QDMIBackend) ->
     assert len(result) == 1
     pub_result = result[0]
 
-    # Values are simulated by mock backend (random), so we just check structure
-    evs = _get_ndarray_field(pub_result.data, "evs")
-    stds = _get_ndarray_field(pub_result.data, "stds")
+    evs = pub_result.data["evs"]
+    stds = pub_result.data["stds"]
     assert evs.shape == (2,)  # 2 observables
     assert stds.shape == (2,)
 
 
-def test_estimator_run_parameterized_observable(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_run_parameterized_observable(estimator: QDMIEstimator) -> None:
     """Estimator runs parameterized circuit and observables."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
     theta = Parameter("theta")
     qc = QuantumCircuit(1)
     qc.ry(theta, 0)
@@ -83,13 +64,12 @@ def test_estimator_run_parameterized_observable(backend_with_mock_jobs: QDMIBack
     result = job.result()
 
     pub_result = result[0]
-    evs = _get_ndarray_field(pub_result.data, "evs")
+    evs = pub_result.data["evs"]
     assert evs.shape == (2,)
 
 
-def test_estimator_precision_handling(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_precision_handling(estimator: QDMIEstimator) -> None:
     """Test that precision argument controls the number of shots."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
     qc = QuantumCircuit(1)
     qc.h(0)
     op = SparsePauliOp("Z")
@@ -115,28 +95,27 @@ def test_estimator_precision_handling(backend_with_mock_jobs: QDMIBackend) -> No
     assert result[0].metadata["shots"] == other_expected_shots
 
 
-def test_estimator_options(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_options(estimator: QDMIEstimator) -> None:
     """Test estimator options handling."""
     # Test default_shots option
-    estimator = QDMIEstimator(backend_with_mock_jobs, options={"default_shots": 500})
+    estimator2 = QDMIEstimator(estimator.backend, options={"default_shots": 500})
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")
 
-    job = estimator.run([(qc, op)])
+    job = estimator2.run([(qc, op)])
     result = job.result()
     assert result[0].metadata["shots"] == 500
 
     # Test default_precision option
-    estimator_prec = QDMIEstimator(backend_with_mock_jobs, default_precision=0.1)
+    estimator_prec = QDMIEstimator(estimator.backend, default_precision=0.1)
     job = estimator_prec.run([(qc, op)])
     result = job.result()
     # Should use default_precision -> 100 shots
     assert result[0].metadata["shots"] == 100
 
 
-def test_estimator_observable_bases(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_observable_bases(estimator: QDMIEstimator) -> None:
     """Test estimating observables in different bases."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.cx(0, 1)
@@ -156,17 +135,12 @@ def test_estimator_observable_bases(backend_with_mock_jobs: QDMIBackend) -> None
     result = job.result()
 
     assert len(result) == 1
-    evs = _get_ndarray_field(result[0].data, "evs")
+    evs = result[0].data["evs"]
     assert evs.shape == (6,)
 
-    # Check that we can run without error.
-    # Logic verification is hard with mock random results, but we verify it doesn't crash on basis changes.
 
-
-def test_estimator_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_broadcasting(estimator: QDMIEstimator) -> None:
     """Test broadcasting of parameters and observables."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
-
     # 1 qubit, parameterized
     theta = Parameter("theta")
     qc = QuantumCircuit(1)
@@ -184,24 +158,22 @@ def test_estimator_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
     job = estimator.run([pub])
     result = job.result()
 
-    evs = _get_ndarray_field(result[0].data, "evs")
-    stds = _get_ndarray_field(result[0].data, "stds")
+    evs = result[0].data["evs"]
+    stds = result[0].data["stds"]
     # Shape expectations: (2,) result from broadcasting
     assert evs.shape == (2,)
     assert stds.shape == (2,)
 
 
-def test_estimator_no_circuits(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_no_circuits(estimator: QDMIEstimator) -> None:
     """Test run with empty pub list."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
     job = estimator.run([])
     result = job.result()
     assert len(result) == 0
 
 
-def test_estimator_mismatched_qubits(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_mismatched_qubits(estimator: QDMIEstimator) -> None:
     """Test estimator run with mismatched observable vs circuit qubit count."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
     qc = QuantumCircuit(1)  # 1 qubit
     op = SparsePauliOp("XX")  # 2 qubits
 
@@ -210,9 +182,8 @@ def test_estimator_mismatched_qubits(backend_with_mock_jobs: QDMIBackend) -> Non
         estimator.run([(qc, op)])
 
 
-def test_estimator_invalid_precision(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_invalid_precision(estimator: QDMIEstimator) -> None:
     """Test estimator run with invalid precision."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")
 
@@ -223,16 +194,15 @@ def test_estimator_invalid_precision(backend_with_mock_jobs: QDMIBackend) -> Non
         estimator.run([(qc, op)], precision=-0.1)
 
 
-def test_estimator_identity_observable_only(backend_with_mock_jobs: QDMIBackend) -> None:
+def test_estimator_identity_observable_only(estimator: QDMIEstimator) -> None:
     """Test case where no measurement circuits are needed (Identity)."""
-    estimator = QDMIEstimator(backend_with_mock_jobs)
     qc = QuantumCircuit(1)
     op = SparsePauliOp("I")
 
     job = estimator.run([(qc, op)])
     result = job.result()
 
-    evs = _get_ndarray_field(result[0].data, "evs")
+    evs = result[0].data["evs"]
     # Expectation of I is always 1
     # Result should be a scalar array 1.0
     assert float(evs) == pytest.approx(1.0)

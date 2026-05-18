@@ -213,21 +213,14 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validTensors.try_emplace(outputTensor, info);
 }
 
-SmallVector<Value>
-QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
+SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   checkQubitType(initArgs);
 
-  // Gather all used tensor ids first
-  DenseSet<int64_t> tensorRegIds;
+  // Gather all initial qubits first
+  DenseSet<Value> initQubits;
   for (auto initArg : initArgs) {
-    if (!isa<QubitType>(initArg.getType())) {
-      validateTensorValue(initArg);
-      const auto tensorId = validTensors.find(initArg)->second.regId;
-      if (tensorRegIds.contains(tensorId)) {
-        llvm::reportFatalUsageError(
-            "Same tensor cannot be passed to the same operation twice");
-      }
-      tensorRegIds.insert(tensorId);
+    if (isa<QubitType>(initArg.getType())) {
+      initQubits.insert(initArg);
     }
   }
 
@@ -238,14 +231,6 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
   // arguments
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
-      // Check if the qubits are from one of the used tensors
-      auto it = validQubits.find(initArg);
-      if (it != validQubits.end() && it->second.regId != -1 &&
-          tensorRegIds.contains(it->second.regId)) {
-        llvm::reportFatalUsageError(
-            "Cannot pass a register and one of its extracted qubits "
-            "to the same region");
-      }
       // Directly insert qubits
       updatedArgs.emplace_back(initArg);
     } else {
@@ -256,7 +241,8 @@ QCOProgramBuilder::insertExtractedQubits(ValueRange initArgs) {
       // from this tensor
       for (auto it = validQubits.begin(); it != validQubits.end();) {
         auto& [qubit, qubitInfo] = *it;
-        if (qubitInfo.regId == regId) {
+        // Ignore qubits that are also used as initArgs
+        if (qubitInfo.regId == regId && !initQubits.contains(qubit)) {
           // Create an InsertOp for the qubit
           auto newTensor = qtensor::InsertOp::create(
                                *this, qubit, currentTensor, qubitInfo.regIndex)
@@ -919,7 +905,7 @@ ValueRange QCOProgramBuilder::scfFor(
   auto ub = variantToValue(*this, loc, upperbound);
   auto stepSize = variantToValue(*this, loc, step);
   // Get the updated arguments after inserting the extracted qubits
-  auto updatedArgs = insertExtractedQubits(initArgs);
+  auto updatedArgs = prepareInitArgs(initArgs);
 
   // Create the empty for operation
   auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, updatedArgs);
@@ -956,7 +942,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   checkFinalized();
 
   // Get the updated arguments after inserting the extracted qubits
-  auto updatedArgs = insertExtractedQubits(initArgs);
+  auto updatedArgs = prepareInitArgs(initArgs);
   // Create the empty while operation
   auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), updatedArgs);
 
@@ -1016,7 +1002,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   checkFinalized();
 
   auto conditionValue = variantToValue(*this, getLoc(), condition);
-  auto updatedArgs = insertExtractedQubits(initArgs);
+  auto updatedArgs = prepareInitArgs(initArgs);
   // Create the empty if operation
   auto ifOp = IfOp::create(*this, conditionValue, updatedArgs);
 
