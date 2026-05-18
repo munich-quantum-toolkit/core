@@ -57,6 +57,20 @@ struct QregInfo {
 using BitMemInfo = std::pair<QCProgramBuilder::ClassicalRegister, size_t>;
 using BitIndexVec = SmallVector<BitMemInfo>;
 
+/**
+ * @brief Structure to maintain state during translation
+ */
+struct TranslationState {
+  /// Flat vector of qubit values indexed by physical qubit index
+  const SmallVector<Value> qubits;
+
+  /// Mapping from global bit index to (register, local_index)
+  const BitIndexVec bitMap;
+
+  /// Flat vector of measurement results
+  SmallVector<Value> results;
+};
+
 } // namespace
 
 /**
@@ -187,26 +201,23 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
  *
  * @param builder The QCProgramBuilder used to create operations
  * @param operation The measurement operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- * @param bitMap Mapping from global bit index to (register, local_index)
+ * @param state The translation state
  */
 static void addMeasureOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
-                         const SmallVector<Value>& qubits,
-                         const BitIndexVec& bitMap,
-                         SmallVector<Value>& results) {
+                         TranslationState& state) {
   const auto& measureOp =
       dynamic_cast<const ::qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
   const auto& classics = measureOp.getClassics();
 
   for (size_t i = 0; i < targets.size(); ++i) {
-    const auto& qubit = qubits[targets[i]];
+    const auto& qubit = state.qubits[targets[i]];
     const auto bitIdx = static_cast<size_t>(classics[i]);
-    const auto& [mem, localIdx] = bitMap[bitIdx];
+    const auto& [mem, localIdx] = state.bitMap[bitIdx];
     const auto& bit = mem[static_cast<int64_t>(localIdx)];
     auto result = builder.measure(qubit, bit);
-    results[bitIdx] = result;
+    state.results[bitIdx] = result;
   }
 }
 
@@ -524,17 +535,13 @@ static void addBarrierOp(QCProgramBuilder& builder,
 // Forward declaration
 static LogicalResult translateOperation(QCProgramBuilder& builder,
                                         const ::qc::Operation& operation,
-                                        const SmallVector<Value>& qubits,
-                                        const BitIndexVec& bitMap,
-                                        SmallVector<Value>& results);
+                                        TranslationState& state);
 
 // IfElseOp
 
 static LogicalResult addIfElseOp(QCProgramBuilder& builder,
                                  const ::qc::Operation& operation,
-                                 const SmallVector<Value>& qubits,
-                                 const BitIndexVec& bitMap,
-                                 SmallVector<Value>& results) {
+                                 TranslationState& state) {
   const auto& ifElse = dynamic_cast<const ::qc::IfElseOperation&>(operation);
 
   Value controlValue;
@@ -545,7 +552,7 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
     return failure();
   } else {
     const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
-    controlValue = results[bitIdx];
+    controlValue = state.results[bitIdx];
     if (controlValue == nullptr) {
       llvm::errs() << "Control bit does not contain a measurement result\n";
       return failure();
@@ -572,14 +579,12 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   // Define if-else operation
   auto thenResult = success();
   auto thenBuilder = [&] {
-    thenResult = translateOperation(builder, *ifElse.getThenOp(), qubits,
-                                    bitMap, results);
+    thenResult = translateOperation(builder, *ifElse.getThenOp(), state);
   };
 
   auto elseResult = success();
   auto elseBuilder = [&] {
-    elseResult = translateOperation(builder, *ifElse.getElseOp(), qubits,
-                                    bitMap, results);
+    elseResult = translateOperation(builder, *ifElse.getElseOp(), state);
   };
 
   if (ifElse.getElseOp() != nullptr) {
@@ -610,19 +615,16 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
  *
  * @param builder The QCProgramBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- * @param bitMap Mapping from global bit index to (register, local_index)
- * @param results Flat vector of measurement results
+ * @param state The translation state
  * @return Success if all supported operations were translated
  */
 static LogicalResult translateOperation(QCProgramBuilder& builder,
                                         const ::qc::Operation& operation,
-                                        const SmallVector<Value>& qubits,
-                                        const BitIndexVec& bitMap,
-                                        SmallVector<Value>& results) {
+                                        TranslationState& state) {
+  const auto& qubits = state.qubits;
   switch (operation.getType()) {
   case ::qc::OpType::Measure:
-    addMeasureOp(builder, operation, qubits, bitMap, results);
+    addMeasureOp(builder, operation, state);
     return success();
     ADD_OP_CASE(Reset)
     ADD_OP_CASE(I)
@@ -658,7 +660,7 @@ static LogicalResult translateOperation(QCProgramBuilder& builder,
     addISWAPdgOp(builder, operation, qubits);
     return success();
   case ::qc::OpType::IfElse:
-    if (failed(addIfElseOp(builder, operation, qubits, bitMap, results))) {
+    if (failed(addIfElseOp(builder, operation, state))) {
       return failure();
     }
     return success();
@@ -679,22 +681,18 @@ static LogicalResult translateOperation(QCProgramBuilder& builder,
  *
  * @param builder The QCProgramBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- * @param bitMap Mapping from global bit index to (register, local_index)
- * @param results Flat vector of measurement results
+ * @param state The translation state
  * @return Success if all supported operations were translated
  */
 static LogicalResult
 translateOperations(QCProgramBuilder& builder,
                     const ::qc::QuantumComputation& quantumComputation,
-                    const SmallVector<Value>& qubits, const BitIndexVec& bitMap,
-                    SmallVector<Value>& results) {
+                    TranslationState& state) {
   if (quantumComputation.hasGlobalPhase()) {
     builder.gphase(quantumComputation.getGlobalPhase());
   }
   for (const auto& operation : quantumComputation) {
-    if (translateOperation(builder, *operation, qubits, bitMap, results)
-            .failed()) {
+    if (translateOperation(builder, *operation, state).failed()) {
       llvm::errs() << "Failed to translate operation: " << operation->getName()
                    << "\n";
       return failure();
@@ -746,9 +744,10 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   // Allocate result map
   SmallVector<Value> results(quantumComputation.getNcbits(), nullptr);
 
+  TranslationState state{qubits, bitMap, results};
+
   // Translate operations
-  if (translateOperations(builder, quantumComputation, qubits, bitMap, results)
-          .failed()) {
+  if (translateOperations(builder, quantumComputation, state).failed()) {
     llvm::reportFatalInternalError(
         "Failed to translate QuantumComputation to QC");
   }
