@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/Utils/Algorithms.h"
 
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Support/LLVM.h>
 

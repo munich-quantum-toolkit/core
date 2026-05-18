@@ -65,8 +65,8 @@ struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using IndexType = size_t;
   using IndexPairType = std::pair<IndexType, IndexType>;
-  using Window = llvm::SmallVector<IndexPairType>;
-  using Neighbours = llvm::SmallVector<llvm::SmallVector<size_t, 4>>;
+  using Window = SmallVector<IndexPairType>;
+  using Neighbours = SmallVector<SmallVector<size_t, 4>>;
 
   enum class RoutingMode : std::uint8_t { Cold, Hot };
 
@@ -101,7 +101,7 @@ private:
      * @return The random layout.
      */
     static Layout random(const size_t nqubits, const size_t seed) {
-      llvm::SmallVector<IndexType> mapping(nqubits);
+      SmallVector<IndexType> mapping(nqubits);
       std::iota(mapping.begin(), mapping.end(), IndexType{0});
       std::ranges::shuffle(mapping, std::mt19937_64{seed});
 
@@ -200,12 +200,12 @@ private:
     /**
      * @brief Maps a program qubit index to its hardware index.
      */
-    llvm::SmallVector<IndexType> programToHardware_;
+    SmallVector<IndexType> programToHardware_;
 
     /**
      * @brief Maps a hardware qubit index to its program index.
      */
-    llvm::SmallVector<IndexType> hardwareToProgram_;
+    SmallVector<IndexType> hardwareToProgram_;
 
   private:
     explicit Layout(const size_t nqubits)
@@ -250,7 +250,7 @@ private:
     /**
      * @returns all neighbours of @p u.
      */
-    [[nodiscard]] llvm::ArrayRef<size_t> neighboursOf(size_t u) const {
+    [[nodiscard]] ArrayRef<size_t> neighboursOf(size_t u) const {
       return neighbours_[u];
     }
 
@@ -389,7 +389,7 @@ protected:
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       // Create trials for initial layout refining. Currently, this includes
       // `ntrials` many random layouts.
-      llvm::SmallVector<Trial> trials;
+      SmallVector<Trial> trials;
       trials.reserve(ntrials);
       for (size_t i = 0; i < ntrials; ++i) {
         trials.emplace_back(Layout::random(device.nqubits(), rng()));
@@ -417,7 +417,7 @@ protected:
       // Collect wire iterators for static qubits.
       // The i-th wire iterator belongs to the i-th program qubit.
       auto staticOps = func.getOps<StaticOp>();
-      llvm::SmallVector<WireIterator> wires(range_size(staticOps));
+      SmallVector<WireIterator> wires(range_size(staticOps));
       for (StaticOp op : staticOps) {
         const auto hw = op.getIndex();
         const auto prog = best->layout.getProgramIndex(hw);
@@ -453,7 +453,7 @@ private:
                     IRRewriter& rewriter) {
     // 1. Replace existing dynamic allocations with mapped static ones.
     size_t p = 0;
-    for (auto op : llvm::make_early_inc_range(func.getOps<AllocOp>())) {
+    for (auto op : make_early_inc_range(func.getOps<AllocOp>())) {
       const auto hw = layout.getHardwareIndex(p);
       rewriter.setInsertionPoint(op);
       rewriter.replaceOpWithNewOp<StaticOp>(op, hw);
@@ -461,19 +461,18 @@ private:
     }
 
     // 1.1 Handle tensors.
-    for (auto op :
-         llvm::make_early_inc_range(func.getOps<qtensor::DeallocOp>())) {
+    for (auto op : make_early_inc_range(func.getOps<qtensor::DeallocOp>())) {
       rewriter.eraseOp(op);
     }
 
-    const auto inserts = llvm::to_vector(func.getOps<InsertOp>());
-    for (auto op : llvm::reverse(inserts)) {
+    const auto inserts = to_vector(func.getOps<InsertOp>());
+    for (auto op : reverse(inserts)) {
       rewriter.setInsertionPoint(op);
       SinkOp::create(rewriter, op.getLoc(), op.getScalar());
       rewriter.eraseOp(op);
     }
 
-    auto extracts = llvm::to_vector(func.getOps<ExtractOp>());
+    auto extracts = to_vector(func.getOps<ExtractOp>());
     for (auto [i, extractOp] : enumerate(reverse(extracts))) {
       const auto hw = layout.getHardwareIndex(p + extracts.size() - 1 - i);
       rewriter.setInsertionPoint(extractOp);
@@ -485,7 +484,7 @@ private:
     p += extracts.size();
 
     for (qtensor::AllocOp op :
-         llvm::make_early_inc_range(func.getOps<qtensor::AllocOp>())) {
+         make_early_inc_range(func.getOps<qtensor::AllocOp>())) {
       rewriter.eraseOp(op);
     }
 
@@ -505,7 +504,7 @@ private:
    * @returns the best trial result or nullptr if no result is valid.
    */
   [[nodiscard]] static Trial*
-  findBestTrial(llvm::MutableArrayRef<Trial> trials) {
+  findBestTrial(MutableArrayRef<Trial> trials) {
     Trial* best = nullptr;
     for (auto& trial : trials) {
       if (!trial.success) {
@@ -529,7 +528,7 @@ private:
    * @returns failure() if routing fails.
    */
   FailureOr<size_t> refineLayout(func::FuncOp func, Layout& layout) {
-    llvm::SmallVector<WireIterator> wires;
+    SmallVector<WireIterator> wires;
     for (auto op : func.getOps<AllocOp>()) {
       wires.emplace_back(op.getResult());
     }
@@ -571,7 +570,7 @@ private:
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
-  [[nodiscard]] FailureOr<llvm::SmallVector<IndexPairType>>
+  [[nodiscard]] FailureOr<SmallVector<IndexPairType>>
   search(const Window& window, const Layout& layout) {
     constexpr size_t cap = 25'000'000UL;
 
@@ -587,13 +586,13 @@ private:
     // Early exit, if the root node is a goal node already.
     Node* root = std::construct_at(arena.Allocate(), layout);
     if (root->isGoal(window.front(), device)) {
-      return llvm::SmallVector<IndexPairType>{};
+      return SmallVector<IndexPairType>{};
     }
 
     frontier.emplace(root);
 
-    llvm::DenseMap<llvm::ArrayRef<IndexType>, size_t> bestDepth;
-    llvm::DenseSet<IndexPairType> expansionSet;
+    DenseMap<ArrayRef<IndexType>, size_t> bestDepth;
+    DenseSet<IndexPairType> expansionSet;
 
     size_t i = 0;
     while (!frontier.empty() && i < budget) {
@@ -621,7 +620,7 @@ private:
       // of SWAPs from this node to the root.
 
       if (curr->isGoal(window.front(), device)) {
-        llvm::SmallVector<IndexPairType> seq(curr->depth);
+        SmallVector<IndexPairType> seq(curr->depth);
         size_t j = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
           seq[j] = n->swap;
@@ -713,7 +712,7 @@ private:
     Window window;
     window.reserve(1 + nlookahead);
 
-    llvm::SmallVector<WireIterator> wires(baseWires);
+    SmallVector<WireIterator> wires(baseWires);
     std::ignore = walkProgramGraph<Direction>(
         wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {

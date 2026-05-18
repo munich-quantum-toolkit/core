@@ -11,6 +11,7 @@
 #pragma once
 
 #include <mlir/Support/LLVM.h>
+#include <llvm/ADT/DenseSet.h>
 
 #include <cstddef>
 #include <utility>
@@ -18,7 +19,7 @@
 namespace mlir::qco {
 
 using Matrix = SmallVector<SmallVector<size_t, 0>, 0>;
-using Edges = DenseSet<std::pair<size_t, size_t>>;
+using Edges = llvm::DenseSet<std::pair<size_t, size_t>>;
 
 /**
  * @brief Find all shortest paths between two nodes in a graph.
