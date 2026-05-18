@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Algorithms.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QCO/Utils/Utils.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -372,7 +373,6 @@ private:
 public:
   MappingPass() = default;
   explicit MappingPass(MappingPassOptions options) : MappingPassBase(options) {}
-
   explicit MappingPass(size_t nqubits, const Edges& coupling,
                        MappingPassOptions options = {})
       : MappingPassBase(options), device(nqubits, coupling) {}
@@ -383,64 +383,69 @@ protected:
     assert(niterations > 0 && "runOnOperation: expected niterations > 0");
     assert(ntrials > 0 && "runOnOperation: expected ntrials > 0");
 
+    ModuleOp m = getOperation();
     std::mt19937_64 rng{seed};
     IRRewriter rewriter(&getContext());
 
-    for (auto func : getOperation().getOps<func::FuncOp>()) {
-      // Create trials for initial layout refining. Currently, this includes
-      // `ntrials` many random layouts.
-      SmallVector<Trial> trials;
-      trials.reserve(ntrials);
-      for (size_t i = 0; i < ntrials; ++i) {
-        trials.emplace_back(Layout::random(device.nqubits(), rng()));
-      }
-
-      // Execute each of the trials (possibly in parallel). Collect the results
-      // and find the one with the fewest SWAPs on the final backwards pass.
-      parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-        if (const auto res = refineLayout(func, trial.layout); succeeded(res)) {
-          trial.success = true;
-          trial.nswaps = *res;
-        }
-      });
-
-      Trial* best = findBestTrial(trials);
-      if (best == nullptr) {
-        func.emitError() << "failed to find the best layout trial";
-        signalPassFailure();
-        return;
-      }
-
-      // Perform placement.
-      place(func, best->layout, rewriter);
-
-      // Collect wire iterators for static qubits.
-      // The i-th wire iterator belongs to the i-th program qubit.
-      auto staticOps = func.getOps<StaticOp>();
-      SmallVector<WireIterator> wires(range_size(staticOps));
-      for (StaticOp op : staticOps) {
-        const auto hw = op.getIndex();
-        const auto prog = best->layout.getProgramIndex(hw);
-        wires[prog] = WireIterator(op.getQubit());
-      }
-
-      // Perform hot routing by inserting SWAPs into the IR.
-      const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
-          wires, best->layout, &rewriter);
-      if (failed(res)) {
-        func.emitError() << "failed to map the " << func.getName()
-                         << " function";
-        signalPassFailure();
-        return;
-      }
-
-      // Collect statistics.
-      numSwaps += *res;
-
-      // Fix SSA Dominance issues.
-      for_each(func.getFunctionBody().getBlocks(),
-               [](Block& b) { sortTopologically(&b); });
+    auto func = getEntryPoint(m);
+    if (!func) {
+      m.emitError() << "does not contain an entry point function";
+      signalPassFailure();
+      return;
     }
+
+    // Create trials for initial layout refining. Currently, this includes
+    // `ntrials` many random layouts.
+    SmallVector<Trial> trials;
+    trials.reserve(ntrials);
+    for (size_t i = 0; i < ntrials; ++i) {
+      trials.emplace_back(Layout::random(device.nqubits(), rng()));
+    }
+
+    // Execute each of the trials (possibly in parallel). Collect the results
+    // and find the one with the fewest SWAPs on the final backwards pass.
+    parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
+      if (const auto res = refineLayout(func, trial.layout); succeeded(res)) {
+        trial.success = true;
+        trial.nswaps = *res;
+      }
+    });
+
+    Trial* best = findBestTrial(trials);
+    if (best == nullptr) {
+      func.emitError() << "failed to find the best layout trial";
+      signalPassFailure();
+      return;
+    }
+
+    // Perform placement.
+    place(func, best->layout, rewriter);
+
+    // Collect wire iterators for static qubits.
+    // The i-th wire iterator belongs to the i-th program qubit.
+    auto staticOps = func.getOps<StaticOp>();
+    SmallVector<WireIterator> wires(range_size(staticOps));
+    for (StaticOp op : staticOps) {
+      const auto hw = op.getIndex();
+      const auto prog = best->layout.getProgramIndex(hw);
+      wires[prog] = WireIterator(op.getQubit());
+    }
+
+    // Perform hot routing by inserting SWAPs into the IR.
+    const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
+        wires, best->layout, &rewriter);
+    if (failed(res)) {
+      func.emitError() << "failed to map the " << func.getName() << " function";
+      signalPassFailure();
+      return;
+    }
+
+    // Collect statistics.
+    numSwaps += *res;
+
+    // Fix SSA Dominance issues.
+    for_each(func.getFunctionBody().getBlocks(),
+             [](Block& b) { sortTopologically(&b); });
   }
 
 private:

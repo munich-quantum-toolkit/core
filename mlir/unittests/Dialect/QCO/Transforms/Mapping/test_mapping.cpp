@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QCO/Utils/Algorithms.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Qubits.h"
+#include "mlir/Dialect/QCO/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/LogicalResult.h>
@@ -95,18 +96,28 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static void runPass(OwningOpRef<ModuleOp>& program, const DeviceSpec& device,
-                      const qco::MappingPassOptions& options) {
-    PassManager pm(program->getContext());
+  static LogicalResult runPass(ModuleOp m, const DeviceSpec& device,
+                               const qco::MappingPassOptions& options) {
+    PassManager pm(m->getContext());
     pm.addPass(qco::createMappingPass(device.first, device.second, options));
-    auto res = pm.run(*program);
-    ASSERT_TRUE(res.succeeded());
+    return pm.run(m);
   }
 
   std::unique_ptr<MLIRContext> context;
 };
 
 }; // namespace
+
+TEST_P(MappingPassTest, NoEntryPoint) {
+  const auto& device = GetParam();
+
+  OwningOpRef<ModuleOp> m = ModuleOp::create(UnknownLoc::get(context.get()));
+
+  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto entry = getEntryPoint(m.get());
+
+  ASSERT_TRUE(res.failed());
+}
 
 TEST_P(MappingPassTest, GHZ) {
   const auto& device = GetParam();
@@ -126,10 +137,11 @@ TEST_P(MappingPassTest, GHZ) {
   builder.sink(q1);
   builder.sink(q2);
 
-  auto program = builder.finalize();
+  auto m = builder.finalize();
+  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto entry = getEntryPoint(m.get());
 
-  runPass(program, device, qco::MappingPassOptions{});
-  auto entry = *(program->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry.getFunctionBody(), device.second).succeeded());
 }
 
@@ -203,9 +215,11 @@ TEST_P(MappingPassTest, Sabre) {
   builder.sink(q4);
   builder.sink(q5);
 
-  auto program = builder.finalize();
-  runPass(program, device, qco::MappingPassOptions{});
-  auto entry = *(program->getOps<func::FuncOp>().begin());
+  auto m = builder.finalize();
+  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto entry = getEntryPoint(m.get());
+
+  EXPECT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry.getFunctionBody(), device.second).succeeded());
 }
 
