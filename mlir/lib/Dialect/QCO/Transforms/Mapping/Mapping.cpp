@@ -394,7 +394,7 @@ protected:
       return;
     }
 
-    const auto comp = getDynamicComputation(func);
+    const auto comp = getComputation(func);
     if (failed(comp)) {
       signalPassFailure();
       return;
@@ -463,7 +463,7 @@ private:
    * assumptions are violated.
    */
   static FailureOr<SmallVector<WireIterator>>
-  getDynamicComputation(func::FuncOp func) {
+  getComputation(func::FuncOp func) {
     if (!func.getOps<qco::AllocOp>().empty()) {
       func.emitError() << "must not contain qco.alloc operations";
       return failure();
@@ -475,33 +475,46 @@ private:
       return failure();
     }
 
+    bool inExtractPhase = true;
+    SmallVector<WireIterator> wires;
     Value tensor = (*tensors.begin()).getResult();
 
-    SmallVector<WireIterator> wires;
     while (true) {
-      auto op = dyn_cast<qtensor::ExtractOp>(*tensor.user_begin());
-      if (!op) {
+      Operation* curr = *(tensor.user_begin());
+      assert(curr != nullptr);
+
+      if (isa<qtensor::DeallocOp>(curr)) {
         break;
       }
 
-      wires.emplace_back(op.getResult());
-      tensor = op.getOutTensor();
-    }
+      const auto res =
+          TypeSwitch<Operation*, WalkResult>(curr)
+              .Case<qtensor::ExtractOp>([&](qtensor::ExtractOp op) {
+                if (!inExtractPhase) {
+                  func.emitError()
+                      << "must extract and insert all qubits at once.";
+                  return WalkResult::interrupt();
+                }
 
-    while (true) {
-      Operation* user = *tensor.user_begin();
-      if (isa<qtensor::DeallocOp>(user)) {
-        break;
+                wires.emplace_back(op.getResult());
+                tensor = op.getOutTensor();
+
+                return WalkResult::advance();
+              })
+              .Case<qtensor::InsertOp>([&](qtensor::InsertOp op) {
+                inExtractPhase = false;
+                tensor = op.getResult();
+                return WalkResult::advance();
+              })
+              .Default([&](Operation* op) {
+                report_fatal_error("unknown op in def-use chain: " +
+                                   op->getName().getStringRef());
+                return WalkResult::interrupt();
+              });
+
+      if (res.wasInterrupted()) {
+        return failure();
       }
-
-      if (isa<qtensor::InsertOp>(user)) {
-        auto op = dyn_cast<qtensor::InsertOp>(*tensor.user_begin());
-        tensor = op.getResult();
-        continue;
-      }
-
-      func.emitError() << "must extract and insert all qubits at once.";
-      return failure();
     }
 
     return wires;
