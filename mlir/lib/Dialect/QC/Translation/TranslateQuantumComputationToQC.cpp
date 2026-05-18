@@ -559,18 +559,6 @@ static void addIfElseOp(QCProgramBuilder& builder,
   case ::qc::ComparisonKind::Neq:
     predicate = arith::CmpIPredicate::ne;
     break;
-  case ::qc::ComparisonKind::Lt:
-    predicate = arith::CmpIPredicate::ult;
-    break;
-  case ::qc::ComparisonKind::Leq:
-    predicate = arith::CmpIPredicate::ule;
-    break;
-  case ::qc::ComparisonKind::Gt:
-    predicate = arith::CmpIPredicate::ugt;
-    break;
-  case ::qc::ComparisonKind::Geq:
-    predicate = arith::CmpIPredicate::uge;
-    break;
   }
 
   // Define condition
