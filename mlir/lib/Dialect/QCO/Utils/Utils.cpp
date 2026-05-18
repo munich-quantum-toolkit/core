@@ -13,9 +13,9 @@
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Attributes.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/IR/BuiltinAttributes.h>
 
 namespace mlir::qco {
 func::FuncOp getEntryPoint(ModuleOp op) {
