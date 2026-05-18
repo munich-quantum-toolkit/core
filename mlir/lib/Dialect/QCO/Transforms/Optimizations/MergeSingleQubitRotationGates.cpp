@@ -11,8 +11,10 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -27,6 +29,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <iterator>
 #include <numbers>
 #include <optional>
 #include <utility>
@@ -81,8 +84,8 @@ struct MergeSingleQubitRotationGatesPattern final
   }
 
   /// Checks if two gates a and b are mergeable via quaternion-based merging.
-  [[nodiscard]] static bool areQuaternionMergeable(Operation& a, Operation& b) {
-    return isMergeable(&a) && isMergeable(&b);
+  [[nodiscard]] static bool areQuaternionMergeable(Operation* a, Operation* b) {
+    return isMergeable(a) && isMergeable(b);
   }
 
   /**
@@ -93,7 +96,7 @@ struct MergeSingleQubitRotationGatesPattern final
    *         RXOp, RYOp, or RZOp.
    */
   static std::optional<RotationAxis> getRotationAxis(Operation* op) {
-    return llvm::TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
+    return TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
         .Case<RXOp>([](auto) { return RotationAxis::X; })
         .Case<RYOp>([](auto) { return RotationAxis::Y; })
         .Case<RZOp, POp>([](auto) { return RotationAxis::Z; })
@@ -325,7 +328,7 @@ struct MergeSingleQubitRotationGatesPattern final
     }
 
     // Multi-parameter gates each need their own conversion
-    return llvm::TypeSwitch<Operation*, Quaternion>(op.getOperation())
+    return TypeSwitch<Operation*, Quaternion>(op.getOperation())
         .Case<ROp>(
             [&](ROp o) { return quaternionFromROp(o, constants, rewriter); })
         .Case<U2Op>(
@@ -359,7 +362,7 @@ struct MergeSingleQubitRotationGatesPattern final
                                             const Constants& constants,
                                             Location loc,
                                             PatternRewriter& rewriter) {
-    return llvm::TypeSwitch<Operation*, std::optional<Value>>(op.getOperation())
+    return TypeSwitch<Operation*, std::optional<Value>>(op.getOperation())
         .Case<RXOp, RYOp, RZOp, ROp>(
             [&](auto) -> std::optional<Value> { return std::nullopt; })
         .Case<POp>([&](auto) -> std::optional<Value> {
@@ -394,10 +397,8 @@ struct MergeSingleQubitRotationGatesPattern final
     if (!isMergeable(op.getOperation())) {
       return false;
     }
-    auto input = op.getInputQubit(0);
-    auto* defOp = input.getDefiningOp();
-    return defOp == nullptr ||
-           !areQuaternionMergeable(*defOp, *op.getOperation());
+    Operation* defOp = op.getInputQubit(0).getDefiningOp();
+    return defOp == nullptr || !areQuaternionMergeable(defOp, op);
   }
 
   /**
@@ -411,14 +412,15 @@ struct MergeSingleQubitRotationGatesPattern final
    */
   static SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
-    SmallVector<UnitaryOpInterface> chain = {start};
-    auto current = start;
-    while (true) {
-      auto* userOp = *current->getUsers().begin();
-      if (!areQuaternionMergeable(*current.getOperation(), *userOp)) {
+    SmallVector chain{start};
+    WireIterator prev(start.getOutputQubit(0));
+    for (auto curr = std::next(prev); curr != std::default_sentinel; ++curr) {
+      if (!areQuaternionMergeable(prev.operation(), curr.operation())) {
         break;
       }
-      current = chain.emplace_back(cast<UnitaryOpInterface>(userOp));
+
+      chain.emplace_back(cast<UnitaryOpInterface>(*curr.operation()));
+      prev = curr;
     }
     return chain;
   }

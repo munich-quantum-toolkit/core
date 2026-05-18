@@ -19,12 +19,13 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
+#include <mlir/Support/LLVM.h>
 
 #include <iosfwd>
 #include <memory>
@@ -125,9 +126,9 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp =
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
-                   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
+                   [&](ValueRange qubits) -> SmallVector<Value> {
                      auto innerQubit = XOp::create(builder, qubits[0]);
-                     return llvm::SmallVector<Value>{innerQubit};
+                     return SmallVector<Value>{innerQubit};
                    });
   auto r2 = qtensor::InsertOp::create(builder, ifOp.getResult(0),
                                       extractOp.getOutTensor(), c0);
@@ -147,6 +148,51 @@ TEST_F(QCOTest, DirectIfBuilder) {
   EXPECT_TRUE(verify(*refBuilder).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),
+                                                   refBuilder.get()));
+}
+
+TEST_F(QCOTest, IfOpParser) {
+  // Test IfOp parser
+  const char* mlirCode = R"(
+      module {
+        func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+            %c0 = arith.constant 0 : index
+            %c1 = arith.constant 1 : index
+            %c0_i64 = arith.constant 0 : i64
+            %q0_0 = qco.alloc : !qco.qubit
+            %t0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+            %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+            %q0_2, %cond = qco.measure %q0_1 : !qco.qubit
+            %q0_4, %t3 = qco.if %cond args(%arg0 = %q0_2, %arg1 = %t0) -> (!qco.qubit, tensor<1x!qco.qubit>) {
+                %q0_3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+                %t1, %q1_0 = qtensor.extract %arg1[%c0] : tensor<1x!qco.qubit>
+                %q1_1 = qco.x %q1_0 : !qco.qubit -> !qco.qubit
+                %t2 = qtensor.insert %q1_1 into %t1[%c0] : tensor<1x!qco.qubit>
+                qco.yield %q0_3, %t2 : !qco.qubit, tensor<1x!qco.qubit>
+            } else args(%arg0 = %q0_2, %arg1 = %t0) {
+                qco.yield %arg0, %arg1 : !qco.qubit, tensor<1x!qco.qubit>
+            }
+            qco.sink %q0_4 : !qco.qubit
+            qtensor.dealloc %t3 : tensor<1x!qco.qubit>
+            return %c0_i64 : i64
+        }
+    })";
+
+  auto parsedSourceModule =
+      parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsedSourceModule);
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+
+  auto refBuilder = QCOProgramBuilder::build(
+      context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor).fn);
+  ASSERT_TRUE(refBuilder);
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
                                                    refBuilder.get()));
 }
 

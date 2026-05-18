@@ -8,8 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/Utils/Qubits.h"
+
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Utils/Drivers.h"
 
 #include <mlir/IR/Value.h>
 
@@ -58,13 +59,19 @@ void Qubits::remove(TypedValue<QubitType> q) {
   hardwareToValue_.erase(index);
 }
 
-TypedValue<QubitType> Qubits::getProgramQubit(std::size_t index) {
+TypedValue<QubitType> Qubits::getProgramQubit(std::size_t index) const {
   assert(programToValue_.contains(index));
   return programToValue_.lookup(index);
 }
 
-TypedValue<QubitType> Qubits::getHardwareQubit(std::size_t index) {
+TypedValue<QubitType> Qubits::getHardwareQubit(std::size_t index) const {
   assert(hardwareToValue_.contains(index));
   return hardwareToValue_.lookup(index);
+}
+
+std::size_t Qubits::getIndex(TypedValue<QubitType> q) const {
+  assert(valueToIndex_.contains(q));
+  const auto& res = valueToIndex_.lookup(q);
+  return res.second;
 }
 } // namespace mlir::qco

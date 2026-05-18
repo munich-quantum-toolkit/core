@@ -8,13 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -28,18 +26,16 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 #include <cassert>
 
 using namespace mlir;
 using namespace mlir::qco;
 
-void IfOp::build(
-    OpBuilder& odsBuilder, OperationState& odsState, Value condition,
-    ValueRange qubits,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBuilder,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBuilder) {
+void IfOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                 Value condition, ValueRange qubits,
+                 function_ref<SmallVector<Value>(ValueRange)> thenBuilder,
+                 function_ref<SmallVector<Value>(ValueRange)> elseBuilder) {
   // Build the empty operation
   build(odsBuilder, odsState, qubits.getTypes(), condition, qubits);
 
@@ -49,22 +45,19 @@ void IfOp::build(
 
   const OpBuilder::InsertionGuard guard(odsBuilder);
   // Add the block arguments and insert the yield operation
-  thenBlock.addArguments(
-      qubits.getTypes(),
-      SmallVector<Location>(qubits.size(), odsState.location));
+  thenBlock.addArguments(qubits.getTypes(),
+                         SmallVector(qubits.size(), odsState.location));
   odsBuilder.setInsertionPointToStart(&thenBlock);
-  qco::YieldOp::create(odsBuilder, odsState.location,
-                       thenBuilder(thenBlock.getArguments()));
-  elseBlock.addArguments(
-      qubits.getTypes(),
-      SmallVector<Location>(qubits.size(), odsState.location));
+  YieldOp::create(odsBuilder, odsState.location,
+                  thenBuilder(thenBlock.getArguments()));
+  elseBlock.addArguments(qubits.getTypes(),
+                         SmallVector(qubits.size(), odsState.location));
   odsBuilder.setInsertionPointToStart(&elseBlock);
   if (elseBuilder) {
-    qco::YieldOp::create(odsBuilder, odsState.location,
-                         elseBuilder(elseBlock.getArguments()));
+    YieldOp::create(odsBuilder, odsState.location,
+                    elseBuilder(elseBlock.getArguments()));
   } else {
-    qco::YieldOp::create(odsBuilder, odsState.location,
-                         elseBlock.getArguments());
+    YieldOp::create(odsBuilder, odsState.location, elseBlock.getArguments());
   }
 }
 
@@ -113,7 +106,7 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
 void IfOp::getRegionInvocationBounds(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<InvocationBounds>& invocationBounds) {
-  if (auto cond = llvm::dyn_cast_or_null<BoolAttr>(operands[0])) {
+  if (auto cond = dyn_cast_or_null<BoolAttr>(operands[0])) {
     // If the condition is known, then one region is known to be executed once
     // and the other zero times.
     invocationBounds.emplace_back(0, cond.getValue() ? 1 : 0);
@@ -185,10 +178,10 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
  * Allow the true region of an if to assume the condition is true
  * and vice versa. For example:
  *
- *   qco.if %cmp qubits(%arg0 = %q0) {
+ *   qco.if %cmp args(%arg0 = %q0) -> (!qco.qubit) {
  *      print(true)
  *      ...
- *   } else (%arg = %q0) {
+ *   } else args(%arg = %q0) {
  *      print(false)
  *      ...
  *   }
@@ -206,7 +199,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
     }
 
     bool changed = false;
-    mlir::Type i1Ty = rewriter.getI1Type();
+    Type i1Ty = rewriter.getI1Type();
 
     // These variables serve to prevent creating duplicate constants
     // and hold constant true or false values.
@@ -256,11 +249,6 @@ LogicalResult IfOp::verify() {
   const auto& outputQubits = getResults();
   const auto numOutputQubits = outputQubits.size();
 
-  for (auto type : inputQubits.getTypes()) {
-    if (!llvm::isa<QubitType>(type)) {
-      return emitOpError("Inputs must be qubit type!");
-    }
-  }
   const auto numThenArgs = thenBlock()->getNumArguments();
   const auto numElseArgs = elseBlock()->getNumArguments();
 
@@ -271,14 +259,6 @@ LogicalResult IfOp::verify() {
   if (numThenArgs != numInputQubits) {
     return emitOpError("Both regions must have the same number of qubits as "
                        "arguments as the number of input qubits");
-  }
-  if (numInputQubits != thenYield()->getNumOperands()) {
-    return emitOpError("Then region yield must return the same number of "
-                       "qubits as the number of input qubits.");
-  }
-  if (numInputQubits != elseYield()->getNumOperands()) {
-    return emitOpError("Else region yield must return the same number of "
-                       "qubits as the number of input qubits.");
   }
   if (numInputQubits != numOutputQubits) {
     return emitOpError("Operation must return the same number of qubits as the "

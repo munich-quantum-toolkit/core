@@ -37,6 +37,39 @@ The `datastructures` (sub)library has been removed from the MQT Core repository.
 Its functionality has only ever been used in [MQT QMAP] since its inception.
 As a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT Core version that includes this change.
 
+## [3.6.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.5` to `3.6`.
+Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
+
+### Changes to builtin QDMI devices
+
+The builtin QDMI devices (with prefixes `MQT_SC`, `MQT_NA`, and `MQT_DDSIM`) are now all built as shared libraries by default.
+In turn, the shared library wrappers (with prefixes `MQT_SC_DYN` and `MQT_NA_DYN`) have been removed entirely.
+MQT Core's QDMI driver will automatically load the shared libraries of the builtin devices if they are available in the library search path.
+If you were previously using the statically builtin devices, no changes should be necessary as the shared libraries are now the default.
+If you were previously using the shared library wrappers, you should switch to using the builtin devices instead, which are now shared libraries by default.
+
+### Broader operation support in QDMI Qiskit converter
+
+The QDMI Qiskit converter now supports a broader range of operations, including multi-controlled gates such as `mcx`, `mcz`, `mcrx`, and more.
+As a consequence, these operations can now be directly used without requiring decomposition, for example, with the builtin `DDSIM` QDMI device.
+
+### Minimum supported Qiskit version
+
+From this release onwards, MQT Core requires Qiskit version 1.1.0 or higher.
+This is due to the fact that we are relying on some fixes to Qiskit primitives that were introduced in that version.
+If you are using MQT Core with Qiskit, please ensure that you have updated to Qiskit 1.1.0 or higher to avoid any compatibility issues.
+
+## [3.5.1]
+
+No breaking changes.
+
+### Component-based CMake installs
+
+Fixed exported `nlohmann_json` CMake metadata so `find_package(mqt-core CONFIG)` no longer propagates an invalid `.../COMPONENT` include directory in component-based installations.
+Anyone relying on an installed version of `mqt-core` should update from 3.5.0 to 3.5.1.
+
 ## [3.5.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.4` to `3.5`.
@@ -48,6 +81,9 @@ This release updates the `nanobind` dependency to version 2.12.0, which includes
 Any existing code that uses the `mqt-core` Python bindings will need to be recompiled with the new `nanobind` version.
 
 ## [3.4.0]
+
+The shared library ABI version (`SOVERSION`) is increased from `3.3` to `3.4`.
+Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
 
 ### Python wheels
 
@@ -227,7 +263,9 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.1...v3.6.0
+[3.5.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.0...v3.3.0

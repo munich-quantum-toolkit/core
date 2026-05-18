@@ -22,12 +22,10 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -53,8 +51,8 @@ struct QregInfo {
   SmallVector<Value> qubits;
 };
 
-using BitMemInfo = std::pair<QCProgramBuilder::ClassicalRegister,
-                             size_t>; // (register ref, localIdx)
+// (register ref, localIdx)
+using BitMemInfo = std::pair<QCProgramBuilder::ClassicalRegister, size_t>;
 using BitIndexVec = SmallVector<BitMemInfo>;
 
 } // namespace

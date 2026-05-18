@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
-#include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseMapInfo.h>
@@ -21,7 +20,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -36,6 +34,7 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cmath>
 #include <cstddef>
@@ -119,9 +118,9 @@ struct StructuralOperationKey {
 };
 
 /// Map to track value equivalence between two modules.
-using ValueEquivalenceMap = llvm::DenseMap<mlir::Value, mlir::Value>;
+using ValueEquivalenceMap = DenseMap<mlir::Value, mlir::Value>;
 
-using OperationSet = llvm::DenseSet<Operation*>;
+using OperationSet = DenseSet<Operation*>;
 
 struct InsertWrite {
   Value scalar;
@@ -131,7 +130,7 @@ struct InsertWrite {
 struct InsertChainSummary {
   Value baseTensor;
   Value finalTensor;
-  llvm::SmallVector<InsertWrite> writes;
+  SmallVector<InsertWrite> writes;
 };
 
 } // namespace
@@ -154,13 +153,13 @@ static bool areIndexValuesEquivalent(Value lhs, Value rhs,
 }
 
 static bool isQTensorInsertOp(Operation* op) {
-  return llvm::isa<qtensor::InsertOp>(op);
+  return isa<qtensor::InsertOp>(op);
 }
 
 static bool isCommutableQTensorInsertDependency(Operation* dependent,
                                                 Operation* dependency) {
-  auto dependentInsert = llvm::dyn_cast<qtensor::InsertOp>(dependent);
-  auto dependencyInsert = llvm::dyn_cast<qtensor::InsertOp>(dependency);
+  auto dependentInsert = dyn_cast<qtensor::InsertOp>(dependent);
+  auto dependencyInsert = dyn_cast<qtensor::InsertOp>(dependency);
   if (!dependentInsert || !dependencyInsert) {
     return false;
   }
@@ -187,17 +186,16 @@ static Value getInsertChainBaseTensor(Value tensor, const OperationSet& group) {
   return current;
 }
 
-static bool
-summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
-                     llvm::SmallVectorImpl<InsertChainSummary>& chains) {
+static bool summarizeInsertGroup(ArrayRef<Operation*> ops,
+                                 SmallVectorImpl<InsertChainSummary>& chains) {
   OperationSet groupOps;
   for (Operation* op : ops) {
     groupOps.insert(op);
   }
 
-  llvm::DenseSet<Value> consumedInsertResults;
+  DenseSet<Value> consumedInsertResults;
   for (Operation* op : ops) {
-    auto insertOp = llvm::cast<qtensor::InsertOp>(op);
+    auto insertOp = cast<qtensor::InsertOp>(op);
     if (auto definingInsert =
             insertOp.getDest().getDefiningOp<qtensor::InsertOp>()) {
       if (groupOps.contains(definingInsert.getOperation())) {
@@ -206,9 +204,9 @@ summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
     }
   }
 
-  llvm::DenseMap<Value, size_t> chainByBaseTensor;
+  DenseMap<Value, size_t> chainByBaseTensor;
   for (Operation* op : ops) {
-    auto insertOp = llvm::cast<qtensor::InsertOp>(op);
+    auto insertOp = cast<qtensor::InsertOp>(op);
     const Value baseTensor =
         getInsertChainBaseTensor(insertOp.getDest(), groupOps);
 
@@ -242,7 +240,7 @@ summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
     }
 
     // Reordering writes to the same index is not semantics-preserving.
-    llvm::SmallVector<Value> seenIndices;
+    SmallVector<Value> seenIndices;
     for (const auto& write : chain.writes) {
       if (llvm::any_of(seenIndices, [&](Value seenIndex) {
             return qtensor::areEquivalentIndices(seenIndex, write.index);
@@ -257,9 +255,9 @@ summarizeInsertGroup(llvm::ArrayRef<Operation*> ops,
 }
 
 static bool areInsertWritesEquivalentRec(const size_t lhsIdx,
-                                         llvm::ArrayRef<InsertWrite> lhsWrites,
-                                         llvm::ArrayRef<InsertWrite> rhsWrites,
-                                         llvm::SmallVectorImpl<char>& rhsUsed,
+                                         ArrayRef<InsertWrite> lhsWrites,
+                                         ArrayRef<InsertWrite> rhsWrites,
+                                         SmallVectorImpl<char>& rhsUsed,
                                          ValueEquivalenceMap& valueMap) {
   if (lhsIdx == lhsWrites.size()) {
     return true;
@@ -290,13 +288,13 @@ static bool areInsertWritesEquivalentRec(const size_t lhsIdx,
   return false;
 }
 
-static bool areInsertWritesEquivalent(llvm::ArrayRef<InsertWrite> lhsWrites,
-                                      llvm::ArrayRef<InsertWrite> rhsWrites,
+static bool areInsertWritesEquivalent(ArrayRef<InsertWrite> lhsWrites,
+                                      ArrayRef<InsertWrite> rhsWrites,
                                       ValueEquivalenceMap& valueMap) {
   if (lhsWrites.size() != rhsWrites.size()) {
     return false;
   }
-  llvm::SmallVector<char> rhsUsed(rhsWrites.size(), 0);
+  SmallVector<char> rhsUsed(rhsWrites.size(), 0);
   return areInsertWritesEquivalentRec(0, lhsWrites, rhsWrites, rhsUsed,
                                       valueMap);
 }
@@ -322,10 +320,11 @@ static bool areInsertChainsEquivalent(const InsertChainSummary& lhsChain,
   return true;
 }
 
-static bool areInsertGroupsEquivalentRec(
-    const size_t lhsChainIdx, llvm::ArrayRef<InsertChainSummary> lhsChains,
-    llvm::ArrayRef<InsertChainSummary> rhsChains,
-    llvm::SmallVectorImpl<char>& rhsChainUsed, ValueEquivalenceMap& valueMap) {
+static bool areInsertGroupsEquivalentRec(const size_t lhsChainIdx,
+                                         ArrayRef<InsertChainSummary> lhsChains,
+                                         ArrayRef<InsertChainSummary> rhsChains,
+                                         SmallVectorImpl<char>& rhsChainUsed,
+                                         ValueEquivalenceMap& valueMap) {
   if (lhsChainIdx == lhsChains.size()) {
     return true;
   }
@@ -353,15 +352,15 @@ static bool areInsertGroupsEquivalentRec(
   return false;
 }
 
-static bool areInsertGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
-                                      llvm::ArrayRef<Operation*> rhsOps,
+static bool areInsertGroupsEquivalent(ArrayRef<Operation*> lhsOps,
+                                      ArrayRef<Operation*> rhsOps,
                                       ValueEquivalenceMap& valueMap) {
   if (lhsOps.size() != rhsOps.size()) {
     return false;
   }
 
-  llvm::SmallVector<InsertChainSummary> lhsChains;
-  llvm::SmallVector<InsertChainSummary> rhsChains;
+  SmallVector<InsertChainSummary> lhsChains;
+  SmallVector<InsertChainSummary> rhsChains;
   if (!summarizeInsertGroup(lhsOps, lhsChains) ||
       !summarizeInsertGroup(rhsOps, rhsChains)) {
     return false;
@@ -370,7 +369,7 @@ static bool areInsertGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
     return false;
   }
 
-  llvm::SmallVector<char> rhsChainUsed(rhsChains.size(), 0);
+  SmallVector<char> rhsChainUsed(rhsChains.size(), 0);
   return areInsertGroupsEquivalentRec(0, lhsChains, rhsChains, rhsChainUsed,
                                       valueMap);
 }
@@ -408,8 +407,8 @@ template <> struct llvm::DenseMapInfo<StructuralOperationKey> {
   }
 };
 
-static bool areFloatValuesNear(const llvm::APFloat& lhs,
-                               const llvm::APFloat& rhs, const unsigned width) {
+static bool areFloatValuesNear(const APFloat& lhs, const APFloat& rhs,
+                               const unsigned width) {
   if (lhs.isNaN() || rhs.isNaN()) {
     return lhs.isNaN() && rhs.isNaN();
   }
@@ -443,8 +442,8 @@ static bool areConstantAttributesEquivalent(const Attribute& lhs,
     return true;
   }
 
-  if (auto lhsFloat = llvm::dyn_cast<FloatAttr>(lhs)) {
-    auto rhsFloat = llvm::dyn_cast<FloatAttr>(rhs);
+  if (auto lhsFloat = dyn_cast<FloatAttr>(lhs)) {
+    auto rhsFloat = dyn_cast<FloatAttr>(rhs);
     if (!rhsFloat) {
       return false;
     }
@@ -465,8 +464,8 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
   }
 
   // Check arith::ConstantOp
-  if (auto lhsConst = llvm::dyn_cast<arith::ConstantOp>(lhs)) {
-    auto rhsConst = llvm::dyn_cast<arith::ConstantOp>(rhs);
+  if (auto lhsConst = dyn_cast<arith::ConstantOp>(lhs)) {
+    auto rhsConst = dyn_cast<arith::ConstantOp>(rhs);
     if (!rhsConst) {
       return false;
     }
@@ -478,8 +477,8 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
   }
 
   // Check LLVM::ConstantOp
-  if (auto lhsConst = llvm::dyn_cast<LLVM::ConstantOp>(lhs)) {
-    auto rhsConst = llvm::dyn_cast<LLVM::ConstantOp>(rhs);
+  if (auto lhsConst = dyn_cast<LLVM::ConstantOp>(lhs)) {
+    auto rhsConst = dyn_cast<LLVM::ConstantOp>(rhs);
     if (!rhsConst) {
       return false;
     }
@@ -490,8 +489,8 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
   }
 
   // Check LLVM::CallOp
-  if (auto lhsCall = llvm::dyn_cast<LLVM::CallOp>(lhs)) {
-    auto rhsCall = llvm::dyn_cast<LLVM::CallOp>(rhs);
+  if (auto lhsCall = dyn_cast<LLVM::CallOp>(lhs)) {
+    auto rhsCall = dyn_cast<LLVM::CallOp>(rhs);
     if (!rhsCall) {
       return false;
     }
@@ -567,19 +566,19 @@ static bool hasOrderingConstraints(Operation* op) {
 
   // Symbol-defining operations (like function declarations) can be reordered
   if (op->hasTrait<OpTrait::SymbolTable>() ||
-      llvm::isa<LLVM::LLVMFuncOp, func::FuncOp>(op)) {
+      isa<LLVM::LLVMFuncOp, func::FuncOp>(op)) {
     return false;
   }
 
   // Check for memory effects that enforce ordering
-  if (auto memInterface = llvm::dyn_cast<MemoryEffectOpInterface>(op)) {
-    llvm::SmallVector<MemoryEffects::EffectInstance> effects;
+  if (auto memInterface = dyn_cast<MemoryEffectOpInterface>(op)) {
+    SmallVector<MemoryEffects::EffectInstance> effects;
     memInterface.getEffects(effects);
 
     bool hasNonAllocFreeEffects = false;
     for (const auto& effect : effects) {
       // Allow operations with no effects or pure allocation/free effects
-      if (!llvm::isa<MemoryEffects::Allocate, MemoryEffects::Free>(
+      if (!isa<MemoryEffects::Allocate, MemoryEffects::Free>(
               effect.getEffect())) {
         hasNonAllocFreeEffects = true;
         break;
@@ -596,17 +595,14 @@ static bool hasOrderingConstraints(Operation* op) {
 
 /// Build a dependence graph for operations.
 /// Returns a map from each operation to the set of operations it depends on.
-llvm::DenseMap<
-    Operation*,
-    llvm::DenseSet<
-        Operation*>> static buildDependenceGraph(llvm::ArrayRef<Operation*>
-                                                     ops) {
-  llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>> dependsOn;
-  llvm::DenseMap<Value, Operation*> valueProducers;
+DenseMap<Operation*, DenseSet<Operation*>> static buildDependenceGraph(
+    ArrayRef<Operation*> ops) {
+  DenseMap<Operation*, DenseSet<Operation*>> dependsOn;
+  DenseMap<Value, Operation*> valueProducers;
 
   // Build value-to-producer map and dependence relationships
   for (Operation* op : ops) {
-    dependsOn[op] = llvm::DenseSet<Operation*>();
+    dependsOn[op] = DenseSet<Operation*>();
 
     // This operation depends on the producers of its operands
     for (const auto operand : op->getOperands()) {
@@ -626,16 +622,15 @@ llvm::DenseMap<
 
 /// Partition operations into groups that can be compared as multisets.
 /// Operations in the same group are independent and can be reordered.
-llvm::SmallVector<llvm::SmallVector<
-    Operation*>> static partitionIndependentGroups(llvm::ArrayRef<Operation*>
-                                                       ops) {
-  llvm::SmallVector<llvm::SmallVector<Operation*>> groups;
+SmallVector<SmallVector<Operation*>> static partitionIndependentGroups(
+    ArrayRef<Operation*> ops) {
+  SmallVector<SmallVector<Operation*>> groups;
   if (ops.empty()) {
     return groups;
   }
 
   auto dependsOn = buildDependenceGraph(ops);
-  llvm::SmallVector<Operation*> currentGroup;
+  SmallVector<Operation*> currentGroup;
 
   for (auto* op : ops) {
     bool dependsOnCurrent = false;
@@ -682,15 +677,15 @@ llvm::SmallVector<llvm::SmallVector<
 }
 
 /// Compare two groups of independent operations using multiset equivalence.
-static bool areIndependentGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
-                                           llvm::ArrayRef<Operation*> rhsOps) {
+static bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
+                                           ArrayRef<Operation*> rhsOps) {
   if (lhsOps.size() != rhsOps.size()) {
     return false;
   }
 
   // Build frequency maps for both groups
-  llvm::DenseMap<StructuralOperationKey, size_t> lhsFrequencyMap;
-  llvm::DenseMap<StructuralOperationKey, size_t> rhsFrequencyMap;
+  DenseMap<StructuralOperationKey, size_t> lhsFrequencyMap;
+  DenseMap<StructuralOperationKey, size_t> rhsFrequencyMap;
 
   for (auto* op : lhsOps) {
     lhsFrequencyMap[StructuralOperationKey(op)]++;
@@ -734,8 +729,8 @@ static bool areBlocksEquivalent(Block& lhs, Block& rhs,
   }
 
   // Collect all operations
-  llvm::SmallVector<Operation*> lhsOps;
-  llvm::SmallVector<Operation*> rhsOps;
+  SmallVector<Operation*> lhsOps;
+  SmallVector<Operation*> rhsOps;
 
   for (Operation& op : lhs) {
     lhsOps.push_back(&op);
@@ -784,7 +779,7 @@ static bool areBlocksEquivalent(Block& lhs, Block& rhs,
     // by trying all permutations (for small groups) or use a greedy approach
 
     // Use a simple greedy matching
-    llvm::DenseSet<Operation*> matchedRhs;
+    DenseSet<Operation*> matchedRhs;
     for (Operation* lhsOp : lhsGroup) {
       bool matched = false;
       for (Operation* rhsOp : rhsGroup) {

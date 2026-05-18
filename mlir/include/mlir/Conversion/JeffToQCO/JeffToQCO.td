@@ -9,13 +9,13 @@
 include "mlir/Pass/PassBase.td"
 
 def JeffToQCO : Pass<"jeff-to-qco"> {
-  let summary = "Convert Jeff operations to QCO operations";
+  let summary = "Convert `jeff` operations to QCO operations";
 
   let description = [{
-    This pass converts all operations from the Jeff dialect to their equivalent operations in the QCO dialect.
+    This pass converts all operations from the `jeff` dialect to their equivalent operations in the QCO dialect.
     It ensures that the returned module is a valid QCO module.
 
-    Note that this pass is still in development as QCO and Jeff do not have full feature parity yet.
+    Note that this pass is still in development as QCO and `jeff` do not have full feature parity yet.
 
     Known limitations:
 

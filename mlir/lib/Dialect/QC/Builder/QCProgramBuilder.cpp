@@ -14,22 +14,23 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -48,7 +49,7 @@ QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
 
 void QCProgramBuilder::initialize() {
   // Set insertion point to the module body
-  setInsertionPointToStart(module.getBody());
+  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, {getI64Type()});
@@ -61,11 +62,19 @@ void QCProgramBuilder::initialize() {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+  regionStack.emplace_back(entryBlock.getParent());
 }
 
 Value QCProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value QCProgramBuilder::QubitRegister::operator[](const size_t index) const {
+  if (index >= qubits.size()) {
+    llvm::reportFatalUsageError("Qubit index out of bounds");
+  }
+  return qubits[index];
 }
 
 Value QCProgramBuilder::allocQubit() {
@@ -103,16 +112,50 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
   auto memref = memref::AllocOp::create(*this, memrefType);
   allocatedMemrefs.insert(memref);
 
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(size);
+  auto& loadedQubitsForRegion = loadedQubits[memref->getParentRegion()][memref];
   for (int64_t i = 0; i < size; ++i) {
     auto index = arith::ConstantIndexOp::create(*this, i);
     auto load = memref::LoadOp::create(*this, memref, index.getResult());
     const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
+    loadedQubitsForRegion.insert(index);
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
+}
+
+QCProgramBuilder::Bit
+QCProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
+  if (index < 0 || index >= size) {
+    const std::string msg = "Bit index " + std::to_string(index) +
+                            " out of bounds for register '" + name +
+                            "' of size " + std::to_string(size);
+    llvm::reportFatalUsageError(msg.c_str());
+  }
+  return {.registerName = name, .registerSize = size, .registerIndex = index};
+}
+
+Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
+  checkFinalized();
+
+  auto* region = getInsertionBlock()->getParent();
+
+  if (regionStack.size() == 1) {
+    llvm::reportFatalUsageError(
+        "Qubit cannot be loaded in the main function region");
+  }
+  for (Region* curr : regionStack) {
+    if (loadedQubits[curr][memref].contains(index)) {
+      llvm::reportFatalUsageError("Qubit already loaded in enclosing region");
+    }
+  }
+
+  auto loadOp = memref::LoadOp::create(*this, memref, index);
+  loadedQubits[region][memref].insert(index);
+
+  return loadOp.getResult();
 }
 
 QCProgramBuilder::ClassicalRegister
@@ -429,18 +472,103 @@ QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-QCProgramBuilder&
-QCProgramBuilder::ctrl(ValueRange controls,
-                       const llvm::function_ref<void()>& body) {
+QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
+                                         const function_ref<void()>& body) {
   checkFinalized();
   CtrlOp::create(*this, controls, body);
   return *this;
 }
 
-QCProgramBuilder&
-QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
+QCProgramBuilder& QCProgramBuilder::inv(const function_ref<void()>& body) {
   checkFinalized();
   InvOp::create(*this, body);
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder&
+QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
+                         const std::variant<int64_t, Value>& upperbound,
+                         const std::variant<int64_t, Value>& step,
+                         const function_ref<void(Value)>& body) {
+  checkFinalized();
+
+  auto loc = getLoc();
+  auto lb = variantToValue(*this, loc, lowerbound);
+  auto ub = variantToValue(*this, loc, upperbound);
+  auto stepSize = variantToValue(*this, loc, step);
+
+  scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
+                     [&](OpBuilder& b, Location l, Value iv, ValueRange) {
+                       regionStack.emplace_back(
+                           b.getInsertionBlock()->getParent());
+                       body(iv);
+                       scf::YieldOp::create(b, l);
+                       regionStack.pop_back();
+                     });
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfWhile(const function_ref<void()>& beforeBody,
+                           const function_ref<void()>& afterBody) {
+  checkFinalized();
+
+  scf::WhileOp::create(
+      *this, TypeRange{}, ValueRange{},
+      [&](OpBuilder& b, Location, ValueRange) {
+        auto* insertionBlock = b.getInsertionBlock();
+        regionStack.emplace_back(insertionBlock->getParent());
+        beforeBody();
+        if (!isa_and_nonnull<scf::ConditionOp>(
+                insertionBlock->getTerminator())) {
+          llvm::reportFatalUsageError(
+              "scf.while beforeBody must terminate with scf.condition");
+        }
+        regionStack.pop_back();
+      },
+      [&](OpBuilder& b, Location loc, ValueRange) {
+        regionStack.emplace_back(b.getInsertionBlock()->getParent());
+        afterBody();
+        scf::YieldOp::create(b, loc);
+        regionStack.pop_back();
+      });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
+                        const function_ref<void()>& thenBody,
+                        const function_ref<void()>& elseBody) {
+  checkFinalized();
+
+  auto condition = variantToValue(*this, getLoc(), cond);
+
+  auto buildRegion = [&](const function_ref<void()>& body) {
+    return [&, body](OpBuilder& b, Location loc) {
+      regionStack.emplace_back(b.getInsertionBlock()->getParent());
+      body();
+      scf::YieldOp::create(b, loc);
+      regionStack.pop_back();
+    };
+  };
+
+  if (!elseBody) {
+    scf::IfOp::create(*this, condition, buildRegion(thenBody));
+  } else {
+    scf::IfOp::create(*this, condition, buildRegion(thenBody),
+                      buildRegion(elseBody));
+  }
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
+  checkFinalized();
+  scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
 }
 
@@ -451,7 +579,7 @@ QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
 QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   checkFinalized();
 
-  if (llvm::isa_and_nonnull<memref::LoadOp>(qubit.getDefiningOp())) {
+  if (isa_and_nonnull<memref::LoadOp>(qubit.getDefiningOp())) {
     llvm::reportFatalUsageError(
         "Register-backed qubits cannot be deallocated manually");
   }
@@ -506,7 +634,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
-  for (auto op : module.getOps<func::FuncOp>()) {
+  for (auto op : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
     if (op.getName() == "main") {
       mainFunc = op;
       break;
@@ -522,7 +650,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   }
 
   for (auto qubit : allocatedQubits) {
-    if (!llvm::isa<memref::LoadOp>(qubit.getDefiningOp())) {
+    if (!isa<memref::LoadOp>(qubit.getDefiningOp())) {
       DeallocOp::create(*this, qubit);
     }
   }
@@ -543,12 +671,12 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   ctx = nullptr;
 
   // Transfer ownership to the caller
-  return module;
+  return cast<ModuleOp>(module);
 }
 
 OwningOpRef<ModuleOp> QCProgramBuilder::build(
     MLIRContext* context,
-    const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc) {
+    const function_ref<void(QCProgramBuilder&)>& buildFunc) {
   QCProgramBuilder builder(context);
   builder.initialize();
   buildFunc(builder);

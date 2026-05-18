@@ -35,13 +35,10 @@ if(BUILD_MQT_CORE_MLIR)
   list(APPEND FETCH_PACKAGES Eigen)
 
   # Fetch jeff-mlir
-  set(BUILD_JEFF_MLIR_TRANSLATION
-      OFF
-      CACHE BOOL "Disable building the translation submodule of jeff-mlir")
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG v0.1.0)
+    GIT_TAG v0.2.0)
   list(APPEND FETCH_PACKAGES jeff-mlir)
 endif()
 
@@ -191,12 +188,14 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
-  install(
-    TARGETS nlohmann_json
-    EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME}
-    INCLUDES
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  if(MSVC)
+    install(
+      FILES ${nlohmann_json_SOURCE_DIR}/nlohmann_json.natvis
+      DESTINATION .
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  endif()
+
+  install(TARGETS nlohmann_json EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME})
 
   install(
     EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME}

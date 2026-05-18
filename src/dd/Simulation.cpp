@@ -109,8 +109,10 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
     }
 
     // correct permutation if necessary
-    changePermutation(e, permutation, qc.outputPermutation, dd);
-    e = dd.reduceGarbage(e, qc.getGarbage());
+    if (!hasMeasurements) {
+      changePermutation(e, permutation, qc.outputPermutation, dd);
+      e = dd.reduceGarbage(e, qc.getGarbage());
+    }
 
     // measure all qubits
     std::map<std::string, std::size_t> counts{};
@@ -134,7 +136,7 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
           // measurement map specifies that the circuit `qubit` is measured into
           // a certain `bit`
           measurement[numBits - 1U - bit] =
-              bitstring[bitstring.size() - 1U - qc.outputPermutation.at(qubit)];
+              bitstring[bitstring.size() - 1U - permutation.at(qubit)];
         }
       } else {
         // otherwise, we consider the output permutation for determining where

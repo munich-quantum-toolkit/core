@@ -10,16 +10,9 @@
 
 #pragma once
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -27,7 +20,15 @@
 #include <utility>
 #include <variant>
 
-namespace mlir::qco {
+namespace mlir {
+
+// Forward declarations
+class MLIRContext;
+class ModuleOp;
+class Operation;
+class ValueRange;
+
+namespace qco {
 
 /**
  * @brief Builder API for constructing quantum programs in the QCO dialect
@@ -122,12 +123,7 @@ public:
      * @param index The index of the qubit to access
      * @return The specified qubit value
      */
-    Value& operator[](size_t index) {
-      if (index >= qubits.size()) {
-        llvm::reportFatalUsageError("Qubit index out of bounds");
-      }
-      return qubits[index];
-    }
+    Value& operator[](size_t index);
 
     /**
      * @brief Conversion to the backing QTensor value
@@ -210,16 +206,7 @@ public:
      * @param index The index of the bit to access (must be less than size)
      * @return A Bit structure representing the specified bit
      */
-    Bit operator[](const int64_t index) const {
-      if (index < 0 || index >= size) {
-        const std::string msg = "Bit index " + std::to_string(index) +
-                                " out of bounds for register '" + name +
-                                "' of size " + std::to_string(size);
-        llvm::reportFatalUsageError(msg.c_str());
-      }
-      return {
-          .registerName = name, .registerSize = size, .registerIndex = index};
-    }
+    Bit operator[](int64_t index) const;
   };
 
   /**
@@ -305,7 +292,8 @@ public:
    * %outTensor, %q0 = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
    * ```
    */
-  std::pair<Value, Value> qtensorExtract(Value tensor, const int64_t index);
+  std::pair<Value, Value>
+  qtensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
 
   /**
    * @brief Insert a qubit into a tensor
@@ -521,7 +509,7 @@ public:
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
    *   %q1_res = qco.OP_NAME %q1_in : !qco.qubit -> !qco.qubit                 \
-   *   qco.yield %q1_res                                                       \
+   *   qco.yield %q1_res : !qco.qubit                                          \
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})          \
    * ```                                                                       \
    */                                                                          \
@@ -544,7 +532,7 @@ public:
    * ```mlir                                                                   \
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
    *   %q2_res = qco.OP_NAME %q2_in : !qco.qubit -> !qco.qubit                 \
-   *   qco.yield %q2_res                                                       \
+   *   qco.yield %q2_res : !qco.qubit                                          \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit,             \
    * !qco.qubit}, {!qco.qubit})                                                \
    * ```                                                                       \
@@ -607,7 +595,7 @@ public:
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
    *   %q1_res = qco.OP_NAME(%PARAM) %q1_in : !qco.qubit -> !qco.qubit         \
-   *   qco.yield %q1_res                                                       \
+   *   qco.yield %q1_res : !qco.qubit                                          \
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})          \
    * ```                                                                       \
    */                                                                          \
@@ -633,7 +621,7 @@ public:
    * ```mlir                                                                   \
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
    *   %q2_res = qco.OP_NAME(%PARAM) %q2_in : !qco.qubit -> !qco.qubit         \
-   *   qco.yield %q2_res                                                       \
+   *   qco.yield %q2_res : !qco.qubit                                          \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit,             \
    * !qco.qubit}, {!qco.qubit})                                                \
    * ```                                                                       \
@@ -696,7 +684,7 @@ public:
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
    *   %q1_res = qco.OP_NAME(%PARAM1, %PARAM2) %q1_in : !qco.qubit ->          \
    * !qco.qubit                                                                \
-   *   qco.yield %q1_res                                                       \
+   *   qco.yield %q1_res : !qco.qubit                                          \
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})          \
    * ```                                                                       \
    */                                                                          \
@@ -726,7 +714,7 @@ public:
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
    *   %q2_res = qco.OP_NAME(%PARAM1, %PARAM2) %q2_in : !qco.qubit ->          \
    * !qco.qubit                                                                \
-   *   qco.yield %q2_res                                                       \
+   *   qco.yield %q2_res : !qco.qubit                                          \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit,             \
    * !qco.qubit}, {!qco.qubit})                                                \
    * ```                                                                       \
@@ -793,7 +781,7 @@ public:
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
    *   %q1_res = qco.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q1_in : !qco.qubit    \
    * -> !qco.qubit                                                             \
-   *   qco.yield %q1_res                                                       \
+   *   qco.yield %q1_res : !qco.qubit                                          \
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})          \
    * ```                                                                       \
    */                                                                          \
@@ -825,7 +813,7 @@ public:
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
    *   %q2_res = qco.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q2_in : !qco.qubit    \
    * -> !qco.qubit                                                             \
-   *   qco.yield %q2_res                                                       \
+   *   qco.yield %q2_res : !qco.qubit                                          \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit,             \
    * !qco.qubit}, {!qco.qubit})                                                \
    * ```                                                                       \
@@ -884,7 +872,7 @@ public:
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
    *   %q1_res, %q2_res = qco.OP_NAME %q1_in, %q2_in : !qco.qubit,             \
    * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   *   qco.yield %q1_res, %q2_res                                              \
+   *   qco.yield %q1_res, %q2_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit},            \
    * {!qco.qubit, !qco.qubit})                                                 \
    * ```                                                                       \
@@ -913,7 +901,7 @@ public:
    * %q3_in {                                                                  \
    *   %q2_res, %q3_res = qco.OP_NAME %q2_in, %q3_in : !qco.qubit,             \
    * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   *   qco.yield %q2_res, %q3_res                                              \
+   *   qco.yield %q2_res, %q3_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit}) ->               \
    * ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit})                      \
    * ```                                                                       \
@@ -977,7 +965,7 @@ public:
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
    *   %q1_res, %q2_res = qco.OP_NAME(%PARAM) %q1_in, %q2_in : !qco.qubit,     \
    * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   *   qco.yield %q1_res, %q2_res                                              \
+   *   qco.yield %q1_res, %q2_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit},            \
    * {!qco.qubit, !qco.qubit})                                                 \
    * ```                                                                       \
@@ -1008,7 +996,7 @@ public:
    * %q3_in {                                                                  \
    *   %q2_res, %q3_res = qco.OP_NAME(%PARAM) %q2_in, %q3_in : !qco.qubit,     \
    * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   *   qco.yield %q2_res, %q3_res                                              \
+   *   qco.yield %q2_res, %q3_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit}) ->               \
    * ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit})                      \
    * ```                                                                       \
@@ -1075,7 +1063,7 @@ public:
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
    *   %q1_res, %q2_res = qco.OP_NAME(%PARAM1, %PARAM2) %q1_in, %q2_in :       \
    * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit                          \
-   *   qco.yield %q1_res, %q2_res                                              \
+   *   qco.yield %q1_res, %q2_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) ->                           \
    * ({!qco.qubit}, {!qco.qubit, !qco.qubit})                                  \
    * ```                                                                       \
@@ -1108,7 +1096,7 @@ public:
    * %q3_in {                                                                  \
    *   %q2_res, %q3_res = qco.OP_NAME(%PARAM1, %PARAM2) %q2_in, %q3_in :       \
    * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit                          \
-   *   qco.yield %q2_res, %q3_res                                              \
+   *   qco.yield %q2_res, %q3_res : !qco.qubit, !qco.qubit                     \
    * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit}) ->               \
    * ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit})                      \
    * ```                                                                       \
@@ -1165,13 +1153,13 @@ public:
    * ```mlir
    * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%t = %q1_in) {
    *   %q1_res = qco.x %t : !qco.qubit -> !qco.qubit
-   *   qco.yield %q1_res
+   *   qco.yield %q1_res : !qco.qubit
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
    * ```
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       llvm::function_ref<SmallVector<Value>(ValueRange)> body);
+       function_ref<SmallVector<Value>(ValueRange)> body);
 
   /**
    * @brief Apply an inverse operation
@@ -1191,12 +1179,12 @@ public:
    * ```mlir
    * %qubits_out = qco.inv (%q = %q0_in) {
    *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
-   *   qco.yield %q_res
+   *   qco.yield %q_res : !qco.qubit
    * } : {!qco.qubit} -> {!qco.qubit}
    * ```
    */
   ValueRange inv(ValueRange qubits,
-                 llvm::function_ref<SmallVector<Value>(ValueRange)> body);
+                 function_ref<SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -1227,44 +1215,148 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Construct an if operation for qubits with linear typing
+   * @brief Construct an if operation for qubits or tensors of qubits with
+   * linear typing
    *
    * @details
    * Constructs an if operation that takes a bool Value and a range of qubit
-   * values that are used in the then/else region of this operation. The qubit
-   * values are passed down as block arguments to each region.
+   * and qtensor values that are used in the then/else region of this operation.
+   * The values are passed down as block arguments to each region. Qubits that
+   * were extracted from a tensor that is used as an argument for this operation
+   * are automatically inserted before the operation is constructed.
    *
    * @param condition Bool condition
-   * @param qubits Input qubits
-   * @param thenBody Function that builds the then body of the if
-   * operation
-   * @param elseBody Function that builds the else body of the if
-   * operation
-   * @return ValueRange of the results (must be the same types as the input
-   * qubits)
+   * @param initArgs Initial arguments for the if branches
+   * @param thenBody Function that builds the then body of the if operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return ValueRange of the results
    *
    * @par Example:
    * ```c++
-   * auto result =
-   *   builder.qcoIf(condition, q0,
-   *     [&](ValueRange args) -> SmallVector<Value> {
-   *       auto q1 = builder.h(args[0]);
-   *       return {q1};
-   *     });
+   * result = builder.qcoIf(condition, initArgs, [&](ValueRange args)
+   * -> SmallVector<Value> {
+   *   auto q1 = builder.x(args[0]);
+   *   return {q1};
+   * }, [&](ValueRange args) -> SmallVector<Value> {
+   *   auto q2 = builder.z(args[0]);
+   *   return {q2};
+   * });
    * ```
    * ```mlir
-   * %q2 = qco.if %condition qubits(%arg0 = %q0) {
-   *      %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
-   *      qco.yield %q1
-   * } else qubits(%arg0 = %q0) {
-   *      qco.yield %arg0
-   * } : {i1, !qco.qubit} -> {!qco.qubit}
+   * %q3 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+   *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q1 : !qco.qubit
+   * } else args(%arg0 = %q0) {
+   *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+   *   qco.yield %q2 : !qco.qubit
+   * }
    * ```
    */
   ValueRange
-  qcoIf(const std::variant<bool, Value>& condition, ValueRange qubits,
-        llvm::function_ref<SmallVector<Value>(ValueRange)> thenBody,
-        llvm::function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
+  qcoIf(const std::variant<bool, Value>& condition, ValueRange initArgs,
+        function_ref<SmallVector<Value>(ValueRange)> thenBody,
+        function_ref<SmallVector<Value>(ValueRange)> elseBody = nullptr);
+
+  /**
+   * @brief Construct an scf.for operation
+   *
+   * @details
+   * Constructs an scf.for operation with the given loop boundaries and stepsize
+   * and a range of qubit and qtensor values for its iter args. Qubits that were
+   * extracted from a tensor that is used as an argument for this operation are
+   * automatically inserted before the operation is constructed.
+   *
+   * @param lowerbound Lower bound of the loop
+   * @param upperbound Upper bound of the loop
+   * @param step Step size of the loop
+   * @param initArgs Initial arguments for the iter args
+   * @param body Function that builds the body of the for operation
+   * @return ValueRange of the results
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs)
+   * -> SmallVector<Value> {
+   *   auto [t0, q0] = builder.qtensorExtract(iterArgs[0], iv);
+   *   auto q1 = builder.h(q0);
+   *   auto insert = builder.qtensorInsert(q1, t0, iv);
+   *   return {insert};
+   * });
+   * ```
+   * ```mlir
+   * %t3 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %t0)
+   * -> (tensor<3x!qco.qubit>) {
+   *   %t1, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+   *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+   *   %t2 = qtensor.insert %q1 into %t1[%iv] : tensor<3x!qco.qubit>
+   *   scf.yield %t2 : tensor<3x!qco.qubit>
+   * }
+   * ```
+   */
+  ValueRange scfFor(const std::variant<int64_t, Value>& lowerbound,
+                    const std::variant<int64_t, Value>& upperbound,
+                    const std::variant<int64_t, Value>& step,
+                    ValueRange initArgs,
+                    function_ref<SmallVector<Value>(Value, ValueRange)> body);
+
+  /**
+   * @brief Construct an scf.while operation
+   *
+   * @details
+   * Constructs an scf.while with a range of qubit and qtensor values for its
+   * iter args. Qubits that were extracted from a tensor that is used as an
+   * argument for this operation are automatically inserted before the operation
+   * is constructed.
+   *
+   * @param initArgs Arguments for the while loop
+   * @param beforeBody Function that builds the before body of the while
+   * operation
+   * @param afterBody Function that builds the after body of the while operation
+   * @return ValueRange of the results
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfWhile(initArgs, [&](ValueRange iterArgs) ->
+   * SmallVector<Value> {
+   *   auto [q0, cond] = builder.measure(iterArgs[0]);
+   *   builder.scfCondition(cond, q0);
+   *   return {q0};
+   * }, [&](ValueRange iterArgs) -> SmallVector<Value> {
+   *   auto q0 = builder.h(iterArgs[0]);
+   *   return {q0};
+   * });
+   * ```
+   * ```mlir
+   * %q2 = scf.while (%arg0 = %q0): (!qco.qubit) -> (!qco.qubit) {
+   *   %q1, %cond = qco.measure %arg0 : !qco.qubit
+   *   scf.condition(%cond) %q1 : !qco.qubit
+   * } do {
+   * ^bb0(%arg0 : !qco.qubit):
+   *   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+   *   scf.yield %q1 : !qco.qubit
+   * }
+   * ```
+   */
+  ValueRange scfWhile(ValueRange initArgs,
+                      function_ref<SmallVector<Value>(ValueRange)> beforeBody,
+                      function_ref<SmallVector<Value>(ValueRange)> afterBody);
+
+  /**
+   * @brief Construct an scf.condition operation with yielded values
+   *
+   * @param condition Condition for the condition operation
+   * @param yieldedValues ValueRange of the yieldedValues
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfCondition(condition, q0);
+   * ```
+   * ```mlir
+   * scf.condition(%condition) %q0 : !qco.qubit
+   * ```
+   */
+  QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -1294,13 +1386,13 @@ public:
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc);
+        const function_ref<void(QCOProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
 
   MLIRContext* ctx{};
-  ModuleOp module;
+  Operation* module;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;
@@ -1333,14 +1425,14 @@ private:
     /// ID of the register the qubit belongs to
     int64_t regId = -1;
     /// Index of the qubit within its register
-    int64_t regIndex = -1;
+    Value regIndex;
   };
 
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
   /// Only values present in this map are valid for use in operations.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseMap<Value, QubitInfo> validQubits;
+  DenseMap<Value, QubitInfo> validQubits;
 
   /**
    * @brief Validate that a tensor value is valid and unconsumed. This also
@@ -1359,6 +1451,34 @@ private:
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
   /**
+   * @brief Prepares initial arguments for operations by re-inserting extracted
+   * qubits into their tensors
+   *
+   * @details For each tensor in @p initArgs, any qubits extracted from it that
+   * are not also present in @p initArgs are inserted back. The latest tensor
+   * values after inserting the qubits are returned. Qubit values are returned
+   * without modifications.
+   *
+   * @param initArgs ValueRange of the initial values
+   * @return SmallVector of the updated values of the initial values.
+   */
+  SmallVector<Value> prepareInitArgs(ValueRange initArgs);
+
+  /**
+   * @brief Update the qubit tracking of the old values with the new values
+   * @param oldValues The old values to be replaced
+   * @param newValues The new values to be tracked
+   */
+  void updateQubitValueTracking(ValueRange oldValues, ValueRange newValues);
+
+  /**
+   * @brief Check if every value is either a qubit or a tensor of qubits
+   * @param values The values that are checked
+   * @throws Abort if a value is neither a qubit nor a tensor of qubits
+   */
+  static void checkQubitType(ValueRange values);
+
+  /**
    * @brief Information about a tensor
    */
   struct TensorInfo {
@@ -1370,7 +1490,7 @@ private:
   /// Only values present in this map are valid for use in operations.
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseMap<Value, TensorInfo> validTensors;
+  DenseMap<Value, TensorInfo> validTensors;
 
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -1378,4 +1498,5 @@ private:
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
 };
-} // namespace mlir::qco
+} // namespace qco
+} // namespace mlir
