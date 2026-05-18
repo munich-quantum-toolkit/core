@@ -25,6 +25,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
@@ -115,7 +116,6 @@ TEST_P(MappingPassTest, NoEntryPoint) {
   OwningOpRef<ModuleOp> m = ModuleOp::create(UnknownLoc::get(context.get()));
 
   auto res = runPass(m.get(), device, qco::MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.failed());
 }
@@ -132,7 +132,6 @@ TEST_P(MappingPassTest, NoQubitAllocations) {
 
   auto m = builder.finalize();
   auto res = runPass(m.get(), device, qco::MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.failed());
 }
@@ -164,7 +163,6 @@ TEST_P(MappingPassTest, NoTwoTensors) {
 
   auto m = builder.finalize();
   auto res = runPass(m.get(), device, qco::MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.failed());
 }
@@ -190,7 +188,6 @@ TEST_P(MappingPassTest, NoExtractAfterInsert) {
 
   auto m = builder.finalize();
   auto res = runPass(m.get(), device, qco::MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.failed());
 }
@@ -219,7 +216,6 @@ TEST_P(MappingPassTest, TooManyQubitsForArch) {
 
   auto m = builder.finalize();
   auto res = runPass(m.get(), device, qco::MappingPassOptions{});
-  auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.failed());
 }
