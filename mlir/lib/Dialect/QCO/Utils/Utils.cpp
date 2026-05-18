@@ -29,11 +29,7 @@ func::FuncOp getEntryPoint(ModuleOp op) {
 
   for (auto func : op.getOps<func::FuncOp>()) {
     const auto passthrough = func->getAttrOfType<ArrayAttr>(PASSTHROUGH_LABEL);
-    if (!passthrough) {
-      continue;
-    }
-
-    if (llvm::any_of(passthrough, isEntry)) {
+    if (passthrough && llvm::any_of(passthrough, isEntry)) {
       return func;
     }
   }
