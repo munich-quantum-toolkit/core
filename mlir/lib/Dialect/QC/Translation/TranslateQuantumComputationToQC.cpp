@@ -69,6 +69,9 @@ struct TranslationState {
 
   /// Flat vector of measurement results
   SmallVector<Value> results;
+
+  /// Whether the translation is currently processing an IfElseOperation
+  bool inIfElse = false;
 };
 
 } // namespace
@@ -206,6 +209,12 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
 static void addMeasureOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
                          TranslationState& state) {
+  if (state.inIfElse) {
+    llvm::reportFatalInternalError(
+        "Measurement operations inside IfElseOperations cannot be translated "
+        "to QC at the moment");
+  }
+
   const auto& measureOp =
       dynamic_cast<const ::qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
@@ -579,12 +588,16 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   // Define if-else operation
   auto thenResult = success();
   auto thenBuilder = [&] {
+    state.inIfElse = true;
     thenResult = translateOperation(builder, *ifElse.getThenOp(), state);
+    state.inIfElse = false;
   };
 
   auto elseResult = success();
   auto elseBuilder = [&] {
+    state.inIfElse = true;
     elseResult = translateOperation(builder, *ifElse.getElseOp(), state);
+    state.inIfElse = false;
   };
 
   if (ifElse.getElseOp() != nullptr) {
