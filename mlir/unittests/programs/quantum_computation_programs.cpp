@@ -534,4 +534,21 @@ void barrierMultipleQubits(QuantumComputation& comp) {
   comp.barrier({0, 1, 2});
 }
 
+void simpleIf(QuantumComputation& comp) {
+  auto q = comp.addQubitRegister(1, "q");
+  auto c = comp.addClassicalRegister(1, "c");
+  comp.h(q[0]);
+  comp.measure(0, 0);
+  comp.if_(X, 0, 0);
+}
+
+void ifElse(QuantumComputation& comp) {
+  auto q = comp.addQubitRegister(1, "q");
+  auto c = comp.addClassicalRegister(1, "c");
+  comp.h(q[0]);
+  comp.measure(0, 0);
+  comp.ifElse(std::make_unique<qc::StandardOperation>(0, qc::X),
+              std::make_unique<qc::StandardOperation>(0, qc::Z), 0);
+}
+
 } // namespace qc

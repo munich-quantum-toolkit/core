@@ -13,6 +13,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -21,6 +22,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -191,7 +193,8 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
 static void addMeasureOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
                          const SmallVector<Value>& qubits,
-                         const BitIndexVec& bitMap) {
+                         const BitIndexVec& bitMap,
+                         SmallVector<Value>& resultMap) {
   const auto& measureOp =
       dynamic_cast<const ::qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
@@ -201,9 +204,9 @@ static void addMeasureOp(QCProgramBuilder& builder,
     const auto& qubit = qubits[targets[i]];
     const auto bitIdx = static_cast<size_t>(classics[i]);
     const auto& [mem, localIdx] = bitMap[bitIdx];
-
-    // Use builder's measure method which keeps output record
-    builder.measure(qubit, mem[static_cast<int64_t>(localIdx)]);
+    const auto& bit = mem[static_cast<int64_t>(localIdx)];
+    auto result = builder.measure(qubit, bit);
+    resultMap[bitIdx] = result;
   }
 }
 
@@ -506,8 +509,126 @@ static void addBarrierOp(QCProgramBuilder& builder,
 
 #define ADD_OP_CASE(OP_CORE)                                                   \
   case ::qc::OpType::OP_CORE:                                                  \
-    add##OP_CORE##Op(builder, *operation, qubits);                             \
-    break;
+    add##OP_CORE##Op(builder, operation, qubits);                              \
+    return success();
+
+static LogicalResult translateOperation(QCProgramBuilder& builder,
+                                        const ::qc::Operation& operation,
+                                        const SmallVector<Value>& qubits,
+                                        const BitIndexVec& bitMap,
+                                        SmallVector<Value>& resultMap) {
+  switch (operation.getType()) {
+  case ::qc::OpType::Measure:
+    addMeasureOp(builder, operation, qubits, bitMap, resultMap);
+    return success();
+    ADD_OP_CASE(Reset)
+    ADD_OP_CASE(I)
+    ADD_OP_CASE(X)
+    ADD_OP_CASE(Y)
+    ADD_OP_CASE(Z)
+    ADD_OP_CASE(H)
+    ADD_OP_CASE(S)
+    ADD_OP_CASE(Sdg)
+    ADD_OP_CASE(T)
+    ADD_OP_CASE(Tdg)
+    ADD_OP_CASE(SX)
+    ADD_OP_CASE(SXdg)
+    ADD_OP_CASE(RX)
+    ADD_OP_CASE(RY)
+    ADD_OP_CASE(RZ)
+    ADD_OP_CASE(P)
+    ADD_OP_CASE(R)
+    ADD_OP_CASE(U2)
+    ADD_OP_CASE(U)
+    ADD_OP_CASE(SWAP)
+    ADD_OP_CASE(iSWAP)
+    ADD_OP_CASE(DCX)
+    ADD_OP_CASE(ECR)
+    ADD_OP_CASE(RXX)
+    ADD_OP_CASE(RYY)
+    ADD_OP_CASE(RZX)
+    ADD_OP_CASE(RZZ)
+    ADD_OP_CASE(XXplusYY)
+    ADD_OP_CASE(XXminusYY)
+    ADD_OP_CASE(Barrier)
+  case ::qc::OpType::iSWAPdg: {
+    auto target0 = qubits[operation.getTargets()[0]];
+    auto target1 = qubits[operation.getTargets()[1]];
+    if (const auto& controls = getControls(operation, qubits);
+        controls.empty()) {
+      builder.inv([&] { builder.iswap(target0, target1); });
+    } else {
+      builder.ctrl(controls, [&] {
+        builder.inv([&] { builder.iswap(target0, target1); });
+      });
+    }
+    return success();
+  }
+  case ::qc::OpType::IfElse: {
+    const auto& ifElse = dynamic_cast<const ::qc::IfElseOperation&>(operation);
+
+    Value controlValue;
+    Value expectedValue;
+    if (ifElse.getControlRegister().has_value()) {
+      llvm::reportFatalInternalError(
+          "IfElse operations controlled by classical registers cannot be "
+          "translated to QC at the moment");
+    } else {
+      const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
+      controlValue = resultMap[bitIdx];
+      expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
+    }
+
+    // Define comparison predicate
+    const auto comparisonKind = ifElse.getComparisonKind();
+    auto predicate = arith::CmpIPredicate::eq;
+    switch (comparisonKind) {
+    case ::qc::ComparisonKind::Eq:
+      predicate = arith::CmpIPredicate::eq;
+      break;
+    case ::qc::ComparisonKind::Neq:
+      predicate = arith::CmpIPredicate::ne;
+      break;
+    case ::qc::ComparisonKind::Lt:
+      predicate = arith::CmpIPredicate::ult;
+      break;
+    case ::qc::ComparisonKind::Leq:
+      predicate = arith::CmpIPredicate::ule;
+      break;
+    case ::qc::ComparisonKind::Gt:
+      predicate = arith::CmpIPredicate::ugt;
+      break;
+    case ::qc::ComparisonKind::Geq:
+      predicate = arith::CmpIPredicate::uge;
+      break;
+    }
+
+    // Define condition
+    auto condition =
+        arith::CmpIOp::create(builder, predicate, controlValue, expectedValue);
+
+    // Define if-else operation
+    auto thenBuilder = [&] {
+      translateOperation(builder, *ifElse.getThenOp(), qubits, bitMap,
+                         resultMap);
+    };
+    if (auto elseOp = ifElse.getElseOp()) {
+      builder.scfIf(condition, thenBuilder, [&] {
+        translateOperation(builder, *elseOp, qubits, bitMap, resultMap);
+      });
+    } else {
+      builder.scfIf(condition, thenBuilder);
+    }
+
+    return success();
+  }
+  default:
+    llvm::errs() << operation.getName() << " cannot be translated to QC\n";
+    return failure();
+  }
+}
+
+#undef ADD_OP_CASE
 
 /**
  * @brief Translates operations from QuantumComputation to QC dialect
@@ -525,69 +646,21 @@ static void addBarrierOp(QCProgramBuilder& builder,
 static LogicalResult
 translateOperations(QCProgramBuilder& builder,
                     const ::qc::QuantumComputation& quantumComputation,
-                    const SmallVector<Value>& qubits,
-                    const BitIndexVec& bitMap) {
+                    const SmallVector<Value>& qubits, const BitIndexVec& bitMap,
+                    SmallVector<Value>& resultMap) {
   if (quantumComputation.hasGlobalPhase()) {
     builder.gphase(quantumComputation.getGlobalPhase());
   }
   for (const auto& operation : quantumComputation) {
-    switch (operation->getType()) {
-    case ::qc::OpType::Measure:
-      addMeasureOp(builder, *operation, qubits, bitMap);
-      break;
-      ADD_OP_CASE(Reset)
-      ADD_OP_CASE(I)
-      ADD_OP_CASE(X)
-      ADD_OP_CASE(Y)
-      ADD_OP_CASE(Z)
-      ADD_OP_CASE(H)
-      ADD_OP_CASE(S)
-      ADD_OP_CASE(Sdg)
-      ADD_OP_CASE(T)
-      ADD_OP_CASE(Tdg)
-      ADD_OP_CASE(SX)
-      ADD_OP_CASE(SXdg)
-      ADD_OP_CASE(RX)
-      ADD_OP_CASE(RY)
-      ADD_OP_CASE(RZ)
-      ADD_OP_CASE(P)
-      ADD_OP_CASE(R)
-      ADD_OP_CASE(U2)
-      ADD_OP_CASE(U)
-      ADD_OP_CASE(SWAP)
-      ADD_OP_CASE(iSWAP)
-      ADD_OP_CASE(DCX)
-      ADD_OP_CASE(ECR)
-      ADD_OP_CASE(RXX)
-      ADD_OP_CASE(RYY)
-      ADD_OP_CASE(RZX)
-      ADD_OP_CASE(RZZ)
-      ADD_OP_CASE(XXplusYY)
-      ADD_OP_CASE(XXminusYY)
-      ADD_OP_CASE(Barrier)
-    case ::qc::OpType::iSWAPdg: {
-      const auto& target0 = qubits[operation->getTargets()[0]];
-      const auto& target1 = qubits[operation->getTargets()[1]];
-      if (const auto& controls = getControls(*operation, qubits);
-          controls.empty()) {
-        builder.inv([&] { builder.iswap(target0, target1); });
-      } else {
-        builder.ctrl(controls, [&] {
-          builder.inv([&] { builder.iswap(target0, target1); });
-        });
-      }
-      break;
-    }
-    default:
-      llvm::errs() << operation->getName() << " cannot be translated to QC\n";
+    if (translateOperation(builder, *operation, qubits, bitMap, resultMap)
+            .failed()) {
+      llvm::errs() << "Failed to translate operation: " << operation->getName()
+                   << "\n";
       return failure();
     }
   }
-
   return success();
 }
-
-#undef ADD_OP_CASE
 
 /**
  * @brief Translates a QuantumComputation to an MLIR module with QC
@@ -629,8 +702,12 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   // Allocate classical registers using the builder
   const auto bitMap = allocateClassicalRegisters(builder, quantumComputation);
 
+  // Allocate result map
+  SmallVector<Value> resultMap(quantumComputation.getNcbits(), nullptr);
+
   // Translate operations
-  if (translateOperations(builder, quantumComputation, qubits, bitMap)
+  if (translateOperations(builder, quantumComputation, qubits, bitMap,
+                          resultMap)
           .failed()) {
     llvm::reportFatalInternalError(
         "Failed to translate QuantumComputation to QC");
