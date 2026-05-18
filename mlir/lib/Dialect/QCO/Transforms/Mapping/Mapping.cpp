@@ -503,8 +503,7 @@ private:
    * @brief Find the best trial result in terms of the number of SWAPs.
    * @returns the best trial result or nullptr if no result is valid.
    */
-  [[nodiscard]] static Trial*
-  findBestTrial(MutableArrayRef<Trial> trials) {
+  [[nodiscard]] static Trial* findBestTrial(MutableArrayRef<Trial> trials) {
     Trial* best = nullptr;
     for (auto& trial : trials) {
       if (!trial.success) {

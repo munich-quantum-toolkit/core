@@ -10,8 +10,8 @@
 
 #pragma once
 
-#include <mlir/Support/LLVM.h>
 #include <llvm/ADT/DenseSet.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <utility>
