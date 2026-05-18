@@ -530,22 +530,26 @@ static LogicalResult translateOperation(QCProgramBuilder& builder,
 
 // IfElseOp
 
-static void addIfElseOp(QCProgramBuilder& builder,
-                        const ::qc::Operation& operation,
-                        const SmallVector<Value>& qubits,
-                        const BitIndexVec& bitMap,
-                        SmallVector<Value>& results) {
+static LogicalResult addIfElseOp(QCProgramBuilder& builder,
+                                 const ::qc::Operation& operation,
+                                 const SmallVector<Value>& qubits,
+                                 const BitIndexVec& bitMap,
+                                 SmallVector<Value>& results) {
   const auto& ifElse = dynamic_cast<const ::qc::IfElseOperation&>(operation);
 
   Value controlValue;
   Value expectedValue;
   if (ifElse.getControlRegister().has_value()) {
-    llvm::reportFatalInternalError(
-        "IfElse operations controlled by classical registers cannot be "
-        "translated to QC at the moment");
+    llvm::errs() << "IfElseOperations controlled by registers cannot be "
+                    "translated to QC at the moment\n";
+    return failure();
   } else {
     const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
     controlValue = results[bitIdx];
+    if (controlValue == nullptr) {
+      llvm::errs() << "Control bit does not contain a measurement result\n";
+      return failure();
+    }
     expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
   }
 
@@ -566,16 +570,34 @@ static void addIfElseOp(QCProgramBuilder& builder,
       arith::CmpIOp::create(builder, predicate, controlValue, expectedValue);
 
   // Define if-else operation
+  auto thenResult = success();
   auto thenBuilder = [&] {
-    translateOperation(builder, *ifElse.getThenOp(), qubits, bitMap, results);
+    thenResult = translateOperation(builder, *ifElse.getThenOp(), qubits,
+                                    bitMap, results);
   };
-  if (auto* elseOp = ifElse.getElseOp()) {
-    builder.scfIf(condition, thenBuilder, [&] {
-      translateOperation(builder, *elseOp, qubits, bitMap, results);
-    });
+
+  auto elseResult = success();
+  auto elseBuilder = [&] {
+    elseResult = translateOperation(builder, *ifElse.getElseOp(), qubits,
+                                    bitMap, results);
+  };
+
+  if (ifElse.getElseOp() != nullptr) {
+    builder.scfIf(condition, thenBuilder, elseBuilder);
   } else {
     builder.scfIf(condition, thenBuilder);
   }
+
+  if (failed(thenResult)) {
+    llvm::errs() << "Failed to translate then branch of IfElseOperation\n";
+    return failure();
+  }
+  if (failed(elseResult)) {
+    llvm::errs() << "Failed to translate else branch of IfElseOperation\n";
+    return failure();
+  }
+
+  return success();
 }
 
 #define ADD_OP_CASE(OP_CORE)                                                   \
@@ -636,7 +658,9 @@ static LogicalResult translateOperation(QCProgramBuilder& builder,
     addISWAPdgOp(builder, operation, qubits);
     return success();
   case ::qc::OpType::IfElse:
-    addIfElseOp(builder, operation, qubits, bitMap, results);
+    if (failed(addIfElseOp(builder, operation, qubits, bitMap, results))) {
+      return failure();
+    }
     return success();
   default:
     llvm::errs() << operation.getName() << " cannot be translated to QC\n";
