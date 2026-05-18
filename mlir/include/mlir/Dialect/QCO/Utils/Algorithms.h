@@ -10,20 +10,18 @@
 
 #pragma once
 
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/SmallVector.h>
-
+#include <mlir/Support/LLVM.h>
 #include <cstddef>
 #include <utility>
 
 namespace mlir::qco {
 
-using Matrix = llvm::SmallVector<llvm::SmallVector<size_t, 0>, 0>;
-using Edges = llvm::DenseSet<std::pair<size_t, size_t>>;
+using Matrix = SmallVector<SmallVector<size_t, 0>, 0>;
+using Edges = DenseSet<std::pair<size_t, size_t>>;
 
 /**
  * @brief Find all shortest paths between two nodes in a graph.
- * @details Has a time and memory complexity of O(n^3).
+ * @details Has a time complexity of O(n^3).
  *
  * @link Adapted from https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
  *

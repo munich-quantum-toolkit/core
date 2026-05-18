@@ -10,7 +10,9 @@
 
 #include "mlir/Dialect/QCO/Utils/Algorithms.h"
 
+#include <mlir/Support/LLVM.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/DenseSet.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -18,7 +20,7 @@
 
 namespace mlir::qco {
 Matrix findAllShortestPaths(size_t n, const Edges& edges) {
-  Matrix dist(n, llvm::SmallVector<size_t>(n, UINT64_MAX));
+  Matrix dist(n, SmallVector<size_t>(n, UINT64_MAX));
 
   for (const auto& [u, v] : edges) {
     dist[u][v] = 1;
