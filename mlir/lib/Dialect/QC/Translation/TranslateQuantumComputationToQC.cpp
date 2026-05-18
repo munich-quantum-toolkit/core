@@ -62,10 +62,10 @@ using BitIndexVec = SmallVector<BitMemInfo>;
  */
 struct TranslationState {
   /// Flat vector of qubit values indexed by physical qubit index
-  const SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
 
   /// Mapping from global bit index to (register, local_index)
-  const BitIndexVec bitMap;
+  BitIndexVec bitMap;
 
   /// Flat vector of measurement results
   SmallVector<Value> results;
@@ -559,7 +559,8 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
     llvm::errs() << "IfElseOperations controlled by registers cannot be "
                     "translated to QC at the moment\n";
     return failure();
-  } else {
+  }
+  if (ifElse.getControlBit().has_value()) {
     const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
     controlValue = state.results[bitIdx];
     if (controlValue == nullptr) {
@@ -567,6 +568,8 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
       return failure();
     }
     expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
+  } else {
+    return failure();
   }
 
   // Define comparison predicate
@@ -757,7 +760,8 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   // Allocate result map
   SmallVector<Value> results(quantumComputation.getNcbits(), nullptr);
 
-  TranslationState state{qubits, bitMap, results};
+  TranslationState state{
+      .qubits = qubits, .bitMap = bitMap, .results = results};
 
   // Translate operations
   if (translateOperations(builder, quantumComputation, state).failed()) {
