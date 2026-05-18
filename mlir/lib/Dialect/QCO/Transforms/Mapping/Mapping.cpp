@@ -400,7 +400,7 @@ protected:
       return;
     }
 
-    if (comp.value().size() > device.nqubits()) {
+    if (comp->size() > device.nqubits()) {
       m.emitError() << "requires " + Twine(comp.value().size()) +
                            " qubits. However, the architecture only supports " +
                            Twine(device.nqubits()) + "qubits.";
@@ -419,7 +419,7 @@ protected:
     // Execute each of the trials (possibly in parallel). Collect the results
     // and find the one with the fewest SWAPs on the final backwards pass.
     parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-      SmallVector<WireIterator> wires(comp.value()); // Thread-local copy.
+      SmallVector<WireIterator> wires(*comp); // Thread-local copy.
       if (const auto res = refineLayout(wires, trial.layout); succeeded(res)) {
         trial.success = true;
         trial.nswaps = *res;
@@ -433,12 +433,10 @@ protected:
       return;
     }
 
-    // Perform placement.
-    place(func, best->layout, rewriter);
-
-    // Perform hot routing by inserting SWAPs into the IR.
+    // Perform placement and hot routing by inserting SWAPs into the IR.
+    const auto placedWires = place(func, best->layout, rewriter);
     const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
-        getPlacedComputation(func, best->layout), best->layout, &rewriter);
+        placedWires, best->layout, &rewriter);
     if (failed(res)) {
       func.emitError() << "failed to map the " << func.getName() << " function";
       signalPassFailure();
@@ -510,73 +508,85 @@ private:
   }
 
   /**
-   * @brief Collect wires of the quantum computation after placement.
-   * @returns a vector of wire iterator, where the i-th static qubit corresponds
-   * to the i-th program qubit.
+   * @brief Perform placement by replacing dynamic with static qubits.
+   * @details
+   * Creates static qubits and replaces the extracted qubits with it.
+   * Moreover, the function extends the computation with as many static qubits
+   * as the architecture supports.
+   * @returns a vector of wire iterators, where the i-th wire points at the i-th
+   * static program qubit.
    */
-  static SmallVector<WireIterator> getPlacedComputation(func::FuncOp func,
-                                                        const Layout& layout) {
-    SmallVector<WireIterator> wires(layout.nqubits());
-    for (StaticOp op : func.getOps<StaticOp>()) {
-      wires[layout.getProgramIndex(op.getIndex())] =
-          WireIterator(op.getQubit());
-    }
-    return wires;
-  }
+  static SmallVector<WireIterator>
+  place(func::FuncOp func, const Layout& layout, IRRewriter& rewriter) {
+    SmallVector<StaticOp> staticOps;
+    staticOps.reserve(layout.nqubits());
 
-  /**
-   * @brief Perform placement.
-   * @details Replaces dynamic with static qubits. Extends the computation
-   * with as many static qubits as the architecture supports.
-   */
-  static void place(func::FuncOp func, const Layout& layout,
-                    IRRewriter& rewriter) {
-    // 1. Replace existing dynamic allocations with mapped static ones.
-    size_t p = 0;
-    for (auto op : make_early_inc_range(func.getOps<AllocOp>())) {
-      const auto hw = layout.getHardwareIndex(p);
-      rewriter.setInsertionPoint(op);
-      rewriter.replaceOpWithNewOp<StaticOp>(op, hw);
-      ++p;
+    // Create and save static qubit operations.
+    rewriter.setInsertionPointToStart(&func.getFunctionBody().front());
+    for (size_t i = 0; i < layout.nqubits(); ++i) {
+      const auto op = StaticOp::create(rewriter, func.getLoc(), i);
+      staticOps.emplace_back(op);
+      rewriter.setInsertionPointAfter(op);
     }
 
-    // 1.1 Handle tensors.
-    for (auto op : make_early_inc_range(func.getOps<qtensor::DeallocOp>())) {
-      rewriter.eraseOp(op);
+    // Replace extract ops and collect in program-qubit order.
+    SmallVector<WireIterator> placedWires(layout.nqubits());
+
+    const auto tensors = func.getOps<qtensor::AllocOp>();
+    assert(range_size(tensors) == 1);
+    qtensor::AllocOp alloc = *(tensors.begin());
+
+    size_t prog = 0;
+    while (true) {
+      const Value tensor = alloc.getResult();
+      Operation* curr = *(tensor.user_begin());
+      assert(curr != nullptr);
+
+      if (isa<qtensor::DeallocOp>(curr)) {
+        rewriter.eraseOp(curr);
+        break;
+      }
+
+      TypeSwitch<Operation*>(curr)
+          .Case<qtensor::ExtractOp>([&](qtensor::ExtractOp op) {
+            const auto hw = layout.getHardwareIndex(prog);
+            const auto qubit = staticOps[hw].getQubit();
+
+            placedWires[prog] = WireIterator(qubit);
+
+            rewriter.replaceAllUsesWith(op.getResult(), qubit);
+            rewriter.replaceAllUsesWith(op.getOutTensor(), tensor);
+            rewriter.eraseOp(op);
+
+            ++prog;
+          })
+          .Case<qtensor::InsertOp>([&](qtensor::InsertOp op) {
+            rewriter.setInsertionPointAfter(op);
+
+            auto sink = SinkOp::create(rewriter, op.getLoc(), op.getScalar());
+
+            rewriter.replaceAllUsesWith(op.getResult(), tensor);
+            rewriter.eraseOp(op);
+          })
+          .Default([&](Operation* op) {
+            report_fatal_error("unknown op in def-use chain: " +
+                               op->getName().getStringRef());
+          });
     }
 
-    const auto inserts = to_vector(func.getOps<InsertOp>());
-    for (auto op : reverse(inserts)) {
-      rewriter.setInsertionPoint(op);
-      SinkOp::create(rewriter, op.getLoc(), op.getScalar());
-      rewriter.eraseOp(op);
+    rewriter.eraseOp(alloc);
+
+    // Create sinks for remaining, unused, static qubits.
+
+    rewriter.setInsertionPoint(func.getFunctionBody().back().getTerminator());
+    for (; prog < layout.nqubits(); ++prog) {
+      const auto hw = layout.getHardwareIndex(prog);
+      const auto qubit = staticOps[hw].getQubit();
+      placedWires[prog] = WireIterator(qubit);
+      SinkOp::create(rewriter, func->getLoc(), qubit);
     }
 
-    auto extracts = to_vector(func.getOps<ExtractOp>());
-    for (auto [i, extractOp] : enumerate(reverse(extracts))) {
-      const auto hw = layout.getHardwareIndex(p + extracts.size() - 1 - i);
-      rewriter.setInsertionPoint(extractOp);
-      auto op = StaticOp::create(rewriter, extractOp.getLoc(), hw);
-      rewriter.replaceAllUsesWith(extractOp.getResult(), op.getQubit());
-      rewriter.eraseOp(extractOp);
-    }
-
-    p += extracts.size();
-
-    for (qtensor::AllocOp op :
-         make_early_inc_range(func.getOps<qtensor::AllocOp>())) {
-      rewriter.eraseOp(op);
-    }
-
-    // 2. Create static qubits for the remaining (unused) hardware indices.
-    const auto location = func.getLoc();
-    for (; p < layout.nqubits(); ++p) {
-      rewriter.setInsertionPointToStart(&func.getFunctionBody().front());
-      const auto hw = layout.getHardwareIndex(p);
-      auto op = StaticOp::create(rewriter, location, hw);
-      rewriter.setInsertionPoint(func.getFunctionBody().back().getTerminator());
-      SinkOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
-    }
+    return placedWires;
   }
 
   /**
