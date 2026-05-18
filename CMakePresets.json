@@ -13,12 +13,13 @@
       "name": "base-ninja",
       "hidden": true,
       "inherits": "base",
-      "generator": "Ninja",
       "condition": {
         "type": "notEquals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
-      }
+      },
+      "description": "Default configuration for non-Windows builds. Uses the Ninja generator",
+      "generator": "Ninja"
     },
     {
       "name": "base-windows",
@@ -28,7 +29,8 @@
         "type": "equals",
         "lhs": "${hostSystemName}",
         "rhs": "Windows"
-      }
+      },
+      "description": "Default configuration for Windows builds. Uses the default generator"
     },
     {
       "name": "debug",
