@@ -51,6 +51,10 @@ static LogicalResult isExecutable(Region& region, const Edges& coupling) {
       if (isa<BarrierOp>(op)) {
         return WalkResult::advance();
       }
+
+      assert(op.getNumQubits() <= 2 &&
+             "isExecutable: expected two-qubit gate decomposition");
+
       if (op.getNumQubits() > 1) {
         const auto q0 = cast<TypedValue<QubitType>>(op.getInputQubit(0));
         const auto q1 = cast<TypedValue<QubitType>>(op.getInputQubit(1));
