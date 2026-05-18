@@ -394,6 +394,20 @@ protected:
       return;
     }
 
+    const auto comp = getDynamicComputation(func);
+    if (failed(comp)) {
+      signalPassFailure();
+      return;
+    }
+
+    if (comp.value().size() > device.nqubits()) {
+      m.emitError() << "requires " + Twine(comp.value().size()) +
+                           " qubits. However, the architecture only supports " +
+                           Twine(device.nqubits()) + "qubits.";
+      signalPassFailure();
+      return;
+    }
+
     // Create trials for initial layout refining. Currently, this includes
     // `ntrials` many random layouts.
     SmallVector<Trial> trials;
@@ -405,7 +419,8 @@ protected:
     // Execute each of the trials (possibly in parallel). Collect the results
     // and find the one with the fewest SWAPs on the final backwards pass.
     parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-      if (const auto res = refineLayout(func, trial.layout); succeeded(res)) {
+      SmallVector<WireIterator> wires(comp.value()); // Thread-local copy.
+      if (const auto res = refineLayout(wires, trial.layout); succeeded(res)) {
         trial.success = true;
         trial.nswaps = *res;
       }
@@ -421,19 +436,9 @@ protected:
     // Perform placement.
     place(func, best->layout, rewriter);
 
-    // Collect wire iterators for static qubits.
-    // The i-th wire iterator belongs to the i-th program qubit.
-    auto staticOps = func.getOps<StaticOp>();
-    SmallVector<WireIterator> wires(range_size(staticOps));
-    for (StaticOp op : staticOps) {
-      const auto hw = op.getIndex();
-      const auto prog = best->layout.getProgramIndex(hw);
-      wires[prog] = WireIterator(op.getQubit());
-    }
-
     // Perform hot routing by inserting SWAPs into the IR.
     const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
-        wires, best->layout, &rewriter);
+        getPlacedComputation(func, best->layout), best->layout, &rewriter);
     if (failed(res)) {
       func.emitError() << "failed to map the " << func.getName() << " function";
       signalPassFailure();
@@ -450,9 +455,79 @@ protected:
 
 private:
   /**
+   * @brief Collect wires of the quantum computation before placement.
+   * @details
+   * The mapping pass currently assumes that the quantum computation consists of
+   * a single quantum tensor. The required qubits are extracted and inserted "in
+   * one go" at the beginning and the end of the function, respectively.
+   *
+   * @returns a vector of wire iterator, or failure() if any of the above
+   * assumptions are violated.
+   */
+  static FailureOr<SmallVector<WireIterator>>
+  getDynamicComputation(func::FuncOp func) {
+    if (!func.getOps<qco::AllocOp>().empty()) {
+      func.emitError() << "must not contain qco.alloc operations";
+      return failure();
+    }
+
+    const auto tensors = func.getOps<qtensor::AllocOp>();
+    if (range_size(tensors) != 1) {
+      func.emitError() << "must contain a single qtensor.alloc operation";
+      return failure();
+    }
+
+    Value tensor = (*tensors.begin()).getResult();
+
+    SmallVector<WireIterator> wires;
+    while (true) {
+      auto op = dyn_cast<qtensor::ExtractOp>(*tensor.user_begin());
+      if (!op) {
+        break;
+      }
+
+      wires.emplace_back(op.getResult());
+      tensor = op.getOutTensor();
+    }
+
+    while (true) {
+      Operation* user = *tensor.user_begin();
+      if (isa<qtensor::DeallocOp>(user)) {
+        break;
+      }
+
+      if (isa<qtensor::InsertOp>(user)) {
+        auto op = dyn_cast<qtensor::InsertOp>(*tensor.user_begin());
+        tensor = op.getResult();
+        continue;
+      }
+
+      func.emitError() << "must extract and insert all qubits at once.";
+      return failure();
+    }
+
+    return wires;
+  }
+
+  /**
+   * @brief Collect wires of the quantum computation after placement.
+   * @returns a vector of wire iterator, where the i-th static qubit corresponds
+   * to the i-th program qubit.
+   */
+  static SmallVector<WireIterator> getPlacedComputation(func::FuncOp func,
+                                                        const Layout& layout) {
+    SmallVector<WireIterator> wires(layout.nqubits());
+    for (StaticOp op : func.getOps<StaticOp>()) {
+      wires[layout.getProgramIndex(op.getIndex())] =
+          WireIterator(op.getQubit());
+    }
+    return wires;
+  }
+
+  /**
    * @brief Perform placement.
-   * @details Replaces dynamic with static qubits. Extends the computation with
-   * as many static qubits as the architecture supports.
+   * @details Replaces dynamic with static qubits. Extends the computation
+   * with as many static qubits as the architecture supports.
    */
   static void place(func::FuncOp func, const Layout& layout,
                     IRRewriter& rewriter) {
@@ -531,16 +606,8 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns failure() if routing fails.
    */
-  FailureOr<size_t> refineLayout(func::FuncOp func, Layout& layout) {
-    SmallVector<WireIterator> wires;
-    for (auto op : func.getOps<AllocOp>()) {
-      wires.emplace_back(op.getResult());
-    }
-
-    for (auto op : func.getOps<ExtractOp>()) {
-      wires.emplace_back(op.getResult());
-    }
-
+  FailureOr<size_t> refineLayout(SmallVector<WireIterator>& wires,
+                                 Layout& layout) {
     size_t nswaps{0};
     for (size_t i = 0; i < niterations; ++i) {
       if (failed(route<WireDirection::Forward>(wires, layout))) {
