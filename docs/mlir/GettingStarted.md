@@ -794,6 +794,8 @@ builder.barrier({q0, q1});
 
 
 
+
+
 const auto c0 = builder.measure(q0);
 const auto c1 = builder.measure(q1);
 
@@ -811,26 +813,28 @@ auto program = builder.finalize();
 qco::QCOProgramBuilder builder(&ctx);
 builder.initialize();
 
-const auto q0_0 = builder.allocQubit();
-const auto q1_0 = builder.allocQubit();
+Value q0 = builder.allocQubit();
+Value q1 = builder.allocQubit();
 
-const auto q0_1 = builder.h(q0_0);
-const auto [ctrlsOut, targOut] = builder.ctrl(q0_0, q1_0,
+q0 = builder.h(q0);
+const auto [ctrlsOut, targOut] = builder.ctrl(q0, q1,
   [&](ValueRange targets) -> SmallVector<Value> {
    return {builder.x(targets[0])};
 });
-const auto q0_2 = ctrlsOut[0];
-const auto q1_1 = targOut[0];
+q0 = ctrlsOut[0];
+q1 = targOut[0];
 
-const auto barrierOut = builder.barrier({q0_2, q1_1});
-const auto q0_3 = barrierOut[0];
-const auto q1_2 = barrierOut[1];
+const auto barrierOut = builder.barrier({q0, q1});
+q0 = barrierOut[0];
+q1 = barrierOut[1];
 
-const auto [q0_4, c0] = builder.measure(q0_3);
-const auto [q1_3, c1] = builder.measure(q1_2);
+Value c0;
+Value c1;
+std::tie(q0, c0) = builder.measure(q0);
+std::tie(q1, c1) = builder.measure(q1);
 
-builder.sink(q0_4);
-builder.sink(q1_3);
+builder.sink(q0);
+builder.sink(q1);
 
 auto program = builder.finalize();
 ```
