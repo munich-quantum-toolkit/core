@@ -6,8 +6,7 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "MLIR_DIR": "$env(MLIR_DIR)",
-        "LLVM_DIR": "$env(LLVM_DIR)"
+        "MLIR_DIR": "$env(MLIR_DIR)"
       }
     },
     {
@@ -49,7 +48,7 @@
       }
     },
     {
-      "name": "windows-debug",
+      "name": "debug-windows",
       "inherits": "base-windows",
       "displayName": "Windows Debug config",
       "cacheVariables": {
@@ -58,11 +57,30 @@
       }
     },
     {
-      "name": "windows-release",
+      "name": "release-windows",
       "inherits": "base-windows",
       "displayName": "Windows Release config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "coverage",
+      "inherits": "base-ninja",
+      "displayName": "Coverage config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "lint",
+      "inherits": "base-ninja",
+      "displayName": "Lint config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_MQT_CORE_BENCHMARKS": "ON",
+        "BUILD_MQT_CORE_BINDINGS": "ON"
       }
     }
   ],
@@ -78,14 +96,24 @@
       "configuration": "Release"
     },
     {
-      "name": "windows-debug",
-      "configurePreset": "windows-debug",
+      "name": "debug-windows",
+      "configurePreset": "debug-windows",
       "configuration": "Debug"
     },
     {
-      "name": "windows-release",
-      "configurePreset": "windows-release",
+      "name": "release-windows",
+      "configurePreset": "release-windows",
       "configuration": "Release"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "configuration": "Debug"
+    },
+    {
+      "name": "lint",
+      "configurePreset": "lint",
+      "configuration": "Debug"
     }
   ],
   "testPresets": [
@@ -111,16 +139,22 @@
       "configuration": "Release"
     },
     {
-      "name": "windows-debug",
+      "name": "debug-windows",
       "inherits": "base",
-      "configurePreset": "windows-debug",
+      "configurePreset": "debug-windows",
       "configuration": "Debug"
     },
     {
-      "name": "windows-release",
+      "name": "release-windows",
       "inherits": "base",
-      "configurePreset": "windows-release",
+      "configurePreset": "release-windows",
       "configuration": "Release"
+    },
+    {
+      "name": "coverage",
+      "inherits": "base",
+      "configurePreset": "coverage",
+      "configuration": "Debug"
     }
   ]
 }
