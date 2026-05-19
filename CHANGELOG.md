@@ -21,6 +21,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🚸 Improve native gate support for the Qiskit-to-OpenQASM3 conversion in the QDMI-Qiskit interface ([#1719]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 
@@ -388,6 +389,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
 [#1709]: https://github.com/munich-quantum-toolkit/core/pull/1709
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1700]: https://github.com/munich-quantum-toolkit/core/pull/1700

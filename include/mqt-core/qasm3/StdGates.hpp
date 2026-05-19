@@ -64,6 +64,9 @@ const std::map<std::string, std::shared_ptr<Gate>> STANDARD_GATES = {
     {"u1",
      std::make_shared<StandardGate>(StandardGate(
          {.nControls = 0, .nTargets = 1, .nParameters = 1, .type = qc::P}))},
+    {"cu1",
+     std::make_shared<StandardGate>(StandardGate(
+         {.nControls = 1, .nTargets = 1, .nParameters = 1, .type = qc::P}))},
     {"phase",
      std::make_shared<StandardGate>(StandardGate(
          {.nControls = 0, .nTargets = 1, .nParameters = 1, .type = qc::P}))},
