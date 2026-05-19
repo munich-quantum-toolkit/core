@@ -18,13 +18,15 @@
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <mlir/IR/Visitors.h>
+
+#include <tuple>
+#include <cassert>
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_QUANTUMLOOPUNROLL
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
-
-namespace {
 
 /**
  * @brief Predicate for quantum loops.
@@ -33,7 +35,7 @@ namespace {
  * @param loop The loop to test.
  * @returns true, if the loop is a quantum loop.
  */
-bool isQuantumLoop(scf::ForOp loop) {
+static bool isQuantumLoop(scf::ForOp loop) {
   return llvm::any_of(loop.getInitArgs(), [](Value arg) {
     const auto type = arg.getType();
     return isa<QubitType>(type) ||
@@ -47,7 +49,7 @@ bool isQuantumLoop(scf::ForOp loop) {
  * @param m The module.
  * @return A vector of quantum `scf.for` loops.
  */
-SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
+static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
   SmallVector<scf::ForOp> loops;
   std::ignore = func.walk<WalkOrder::PostOrder>([&](scf::ForOp loop) {
     if (!isQuantumLoop(loop)) {
@@ -60,6 +62,8 @@ SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
   return loops;
 }
 
+namespace {
+
 /**
  * @brief Unroll bounded quantum loops.
  */
@@ -70,6 +74,10 @@ struct QuantumLoopUnroll final
 protected:
   void runOnOperation() override {
     assert(unrollFactor >= -1 && "runOnOperation: invalid unroll factor");
+
+    // Note that the built-in loop-unrolling utilities initialize
+    // `IRRewriter`s using the context of the loop operation and automatically
+    // rewrite the IR. This is the reason why we don't use patterns here.
 
     // A unroll-factor of zero is a no-op.
     if (unrollFactor == 0) {

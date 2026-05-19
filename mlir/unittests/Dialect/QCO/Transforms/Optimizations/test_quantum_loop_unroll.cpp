@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -26,17 +27,14 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 
 #include <cassert>
-#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;
-
-namespace {
 
 /**
  * @brief Build a program that constructs a GHZ state using a loop.
@@ -44,7 +42,7 @@ namespace {
  * @param n The number of qubits of the GHZ state.
  * @return A module with an entry point function containing the GHZ logic.
  */
-OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
+static OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
   qco::QCOProgramBuilder builder(context);
   builder.initialize();
 
@@ -77,6 +75,8 @@ OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
 
   return builder.finalize();
 }
+
+namespace {
 
 class QuantumLoopUnrollTest : public testing::Test {
 protected:
