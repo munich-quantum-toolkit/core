@@ -6,7 +6,7 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "MLIR_DIR": "$env(MLIR_DIR)"
+        "MLIR_DIR": "$env{MLIR_DIR}"
       }
     },
     {
