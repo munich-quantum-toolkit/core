@@ -73,14 +73,18 @@ struct QuantumLoopUnroll final
 
 protected:
   void runOnOperation() override {
-    assert(unrollFactor >= -1 && "runOnOperation: invalid unroll factor");
+    if (unrollFactor < -1) {
+      getOperation()->emitError() << "invalid unroll factor " << unrollFactor;
+      signalPassFailure();
+      return;
+    }
 
     // Note that the built-in loop-unrolling utilities initialize
     // `IRRewriter`s using the context of the loop operation and automatically
     // rewrite the IR. This is the reason why we don't use patterns here.
 
-    // A unroll-factor of zero is a no-op.
-    if (unrollFactor == 0) {
+    // A unroll-factor of zero or one is a no-op.
+    if (unrollFactor == 0 || unrollFactor == 1) {
       return;
     }
 
