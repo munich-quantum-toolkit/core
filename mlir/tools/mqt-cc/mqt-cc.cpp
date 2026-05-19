@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
@@ -25,6 +26,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/AsmState.h>
 #include <mlir/IR/MLIRContext.h>
@@ -74,6 +76,10 @@ static cl::opt<bool>
 static cl::opt<bool> disableMergeSingleQubitRotationGates(
     "disable-merge-single-qubit-rotation-gates",
     cl::desc("Disable quaternion-based single-qubit rotation gate merging"),
+    cl::init(false));
+
+static cl::opt<bool> enableHadamardLifting(
+    "hadamard-lifting", cl::desc("Apply Hadamard lifting during optimization"),
     cl::init(false));
 
 /**
@@ -148,6 +154,8 @@ int main(int argc, char** argv) {
   registry.insert<func::FuncDialect>();
   registry.insert<scf::SCFDialect>();
   registry.insert<LLVM::LLVMDialect>();
+  registry.insert<mlir::memref::MemRefDialect>();
+  registry.insert<qtensor::QTensorDialect>();
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
@@ -172,6 +180,7 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = printIRAfterAllStages;
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
+  config.enableHadamardLifting = enableHadamardLifting;
 
   // Run the compilation pipeline
   CompilationRecord record;

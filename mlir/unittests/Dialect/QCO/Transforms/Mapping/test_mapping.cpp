@@ -8,19 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QCOToQC/QCOToQC.h"
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Algorithms.h"
+#include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QCO/Utils/Qubits.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -35,183 +33,181 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <string>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-struct ArchitectureParam {
-  std::string name;
-  Architecture (*factory)();
-};
+using DeviceSpec = std::pair<size_t, Edges>;
 
-class MappingPassTest : public testing::Test,
-                        public testing::WithParamInterface<ArchitectureParam> {
-public:
-  /**
-   * @brief Walks the IR and validates if each two-qubit op is executable on the
-   * given architecture.
-   * @returns true iff. all two-qubit gates are executable on the architecture.
-   */
-  static bool isExecutable(OwningOpRef<ModuleOp>& moduleOp,
-                           const Architecture& arch) {
-    auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
-    DenseMap<Value, std::size_t> mappings;
-    for_each(entry.getOps<qc::StaticOp>(), [&](qc::StaticOp op) {
-      mappings.try_emplace(op.getQubit(), op.getIndex());
-    });
-
-    bool executable = true;
-    std::ignore = moduleOp->walk([&](qc::UnitaryOpInterface op) {
-      if (isa<qc::BarrierOp>(op)) {
+/**
+ * @returns llvm::success() if all two-qubit gates inside @p region
+ * fulfill the given coupling constraints. llvm::failure(), otherwise.
+ */
+static LogicalResult isExecutable(Region& region, const Edges& coupling) {
+  return walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
+    if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
+      if (isa<BarrierOp>(op)) {
         return WalkResult::advance();
       }
+
+      assert(op.getNumQubits() <= 2 &&
+             "isExecutable: expected two-qubit gate decomposition");
+
       if (op.getNumQubits() > 1) {
-        assert(op.getNumQubits() == 2 &&
-               "Expected only 2-qubit gates after decomposition");
-        assert(mappings.contains(op.getQubit(0)) && "Qubit 0 not in mapping");
-        assert(mappings.contains(op.getQubit(1)) && "Qubit 1 not in mapping");
-        const auto i0 = mappings[op.getQubit(0)];
-        const auto i1 = mappings[op.getQubit(1)];
-        if (!arch.areAdjacent(i0, i1)) {
-          executable = false;
+        const auto q0 = cast<TypedValue<QubitType>>(op.getInputQubit(0));
+        const auto q1 = cast<TypedValue<QubitType>>(op.getInputQubit(1));
+        const auto i0 = qubits.getIndex(q0);
+        const auto i1 = qubits.getIndex(q1);
+
+        if (!coupling.contains(std::make_pair(i0, i1))) {
           return WalkResult::interrupt();
         }
       }
-      return WalkResult::advance();
-    });
+    }
 
-    return executable;
-  }
+    return WalkResult::advance();
+  });
+}
 
-  static Architecture getRigettiNovera() {
-    // TODO: At some point this should be provided via QDMI.
-    const static Architecture::CouplingSet COUPLING{
-        {0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1}, {1, 2}, {2, 1},
-        {2, 5}, {5, 2}, {3, 6}, {6, 3}, {3, 4}, {4, 3}, {4, 7}, {7, 4},
-        {4, 5}, {5, 4}, {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
-    return Architecture("RigettiNovera", 9, COUPLING);
-  }
+/**
+ * @returns a 9x9 square-grid device.
+ */
+static DeviceSpec getNineQubitSquareGrid() {
+  const static Edges COUPLING{{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
+                              {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
+                              {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
+                              {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
+  return std::make_pair(9, COUPLING);
+}
 
+namespace {
+
+class MappingPassTest : public testing::Test,
+                        public testing::WithParamInterface<DeviceSpec> {
 protected:
   void SetUp() override {
-    // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
-                    func::FuncDialect>();
+    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
 
-  static void runHeuristicMapping(OwningOpRef<ModuleOp>& moduleOp) {
-    PassManager pm(moduleOp->getContext());
-    pm.addPass(createQCToQCO());
-    pm.addPass(qco::createMappingPass(qco::MappingPassOptions{.nlookahead = 5,
-                                                              .alpha = 1,
-                                                              .lambda = 0.85,
-                                                              .niterations = 2,
-                                                              .ntrials = 16,
-                                                              .seed = 1337}));
-    pm.addPass(createQCOToQC());
-    auto res = pm.run(*moduleOp);
-    ASSERT_TRUE(succeeded(res));
+  static void runPass(OwningOpRef<ModuleOp>& program, const DeviceSpec& device,
+                      const qco::MappingPassOptions& options) {
+    PassManager pm(program->getContext());
+    pm.addPass(qco::createMappingPass(device.first, device.second, options));
+    auto res = pm.run(*program);
+    ASSERT_TRUE(res.succeeded());
   }
 
   std::unique_ptr<MLIRContext> context;
 };
+
 }; // namespace
 
 TEST_P(MappingPassTest, GHZ) {
-  auto arch = GetParam().factory();
+  const auto& device = GetParam();
 
-  qc::QCProgramBuilder builder(context.get());
+  qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  const auto q0 = builder.allocQubit();
-  const auto q1 = builder.allocQubit();
-  const auto q2 = builder.allocQubit();
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  Value q2 = builder.allocQubit();
 
-  builder.h(q0);
-  builder.cx(q0, q1);
-  builder.cx(q0, q2);
+  q0 = builder.h(q0);
+  std::tie(q0, q1) = builder.cx(q0, q1);
+  std::tie(q0, q2) = builder.cx(q0, q2);
 
-  builder.dealloc(q0);
-  builder.dealloc(q1);
-  builder.dealloc(q2);
+  builder.sink(q0);
+  builder.sink(q1);
+  builder.sink(q2);
 
-  auto moduleOp = builder.finalize();
-  runHeuristicMapping(moduleOp);
-  EXPECT_TRUE(isExecutable(moduleOp, arch));
+  auto program = builder.finalize();
+
+  runPass(program, device, qco::MappingPassOptions{});
+  auto entry = *(program->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), device.second).succeeded());
 }
 
 TEST_P(MappingPassTest, Sabre) {
-  auto arch = GetParam().factory();
+  const auto& device = GetParam();
 
-  qc::QCProgramBuilder builder(context.get());
+  qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  const auto q0 = builder.allocQubit();
-  const auto q1 = builder.allocQubit();
-  const auto q2 = builder.allocQubit();
-  const auto q3 = builder.allocQubit();
-  const auto q4 = builder.allocQubit();
-  const auto q5 = builder.allocQubit();
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  Value q2 = builder.allocQubit();
+  Value q3 = builder.allocQubit();
+  Value q4 = builder.allocQubit();
+  Value q5 = builder.allocQubit();
 
-  builder.h(q0);
-  builder.h(q1);
-  builder.h(q4);
+  q0 = builder.h(q0);
+  q1 = builder.h(q1);
+  q4 = builder.h(q4);
 
-  builder.z(q0);
-  builder.cx(q1, q2);
-  builder.cx(q4, q5);
+  q0 = builder.z(q0);
+  std::tie(q1, q2) = builder.cx(q1, q2);
+  std::tie(q4, q5) = builder.cx(q4, q5);
 
-  builder.cx(q0, q1);
+  std::tie(q0, q1) = builder.cx(q0, q1);
 
-  builder.h(q0);
-  builder.y(q1);
-  builder.cx(q0, q1);
+  q0 = builder.h(q0);
+  q1 = builder.y(q1);
+  std::tie(q0, q1) = builder.cx(q0, q1);
 
-  builder.cx(q2, q3);
+  std::tie(q2, q3) = builder.cx(q2, q3);
 
-  builder.h(q2);
-  builder.h(q3);
+  q2 = builder.h(q2);
+  q3 = builder.h(q3);
 
-  builder.cx(q1, q2);
-  builder.cx(q3, q5);
+  std::tie(q1, q2) = builder.cx(q1, q2);
+  std::tie(q3, q5) = builder.cx(q3, q5);
 
-  builder.z(q3);
+  q3 = builder.z(q3);
 
-  builder.cx(q3, q4);
+  std::tie(q3, q4) = builder.cx(q3, q4);
 
-  builder.cx(q3, q0);
+  std::tie(q3, q0) = builder.cx(q3, q0);
 
-  builder.barrier({q0, q1, q2, q3, q4, q5});
-  builder.measure(q0);
-  builder.measure(q1);
-  builder.measure(q2);
-  builder.measure(q3);
-  builder.measure(q4);
-  builder.measure(q5);
+  ValueRange out = builder.barrier({q0, q1, q2, q3, q4, q5});
+  q0 = out[0];
+  q1 = out[1];
+  q2 = out[2];
+  q3 = out[3];
+  q4 = out[4];
+  q5 = out[5];
 
-  builder.dealloc(q0);
-  builder.dealloc(q1);
-  builder.dealloc(q2);
-  builder.dealloc(q3);
-  builder.dealloc(q4);
-  builder.dealloc(q5);
+  Value c0;
+  Value c1;
+  Value c2;
+  Value c3;
+  Value c4;
+  Value c5;
 
-  auto moduleOp = builder.finalize();
-  runHeuristicMapping(moduleOp);
-  EXPECT_TRUE(isExecutable(moduleOp, arch));
+  std::tie(q0, c0) = builder.measure(q0);
+  std::tie(q1, c1) = builder.measure(q1);
+  std::tie(q2, c2) = builder.measure(q2);
+  std::tie(q3, c3) = builder.measure(q3);
+  std::tie(q4, c4) = builder.measure(q4);
+  std::tie(q5, c5) = builder.measure(q5);
+
+  builder.sink(q0);
+  builder.sink(q1);
+  builder.sink(q2);
+  builder.sink(q3);
+  builder.sink(q4);
+  builder.sink(q5);
+
+  auto program = builder.finalize();
+  runPass(program, device, qco::MappingPassOptions{});
+  auto entry = *(program->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), device.second).succeeded());
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Architectures, MappingPassTest,
-    testing::Values(ArchitectureParam{"RigettiNovera",
-                                      &MappingPassTest::getRigettiNovera}),
-    [](const testing::TestParamInfo<ArchitectureParam>& info) {
-      return info.param.name;
-    });
+INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,
+                         testing::Values(getNineQubitSquareGrid()));

@@ -64,8 +64,8 @@ LogicalResult walkProgram(Region& region, const WalkProgramFn& fn) {
         .template Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
           for (const auto& [prevV, nextV] :
                llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-            const auto prevQ = llvm::cast<TypedValue<QubitType>>(prevV);
-            const auto nextQ = llvm::cast<TypedValue<QubitType>>(nextV);
+            const auto prevQ = cast<TypedValue<QubitType>>(prevV);
+            const auto nextQ = cast<TypedValue<QubitType>>(nextV);
             qubits.remap(prevQ, nextQ);
           }
         })

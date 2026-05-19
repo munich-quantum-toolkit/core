@@ -35,4 +35,6 @@ def QubitType : QCOType<"Qubit", "qubit"> {
     }];
 }
 
+def LinearType : AnyTypeOf<[QubitType, 1DTensorOf<[QubitType]>]>;
+
 #endif // MLIR_DIALECT_QCO_IR_QCOTYPES_TD
