@@ -69,6 +69,8 @@ composeRun(ArrayRef<UnitaryOpInterface> run) {
   return composed;
 }
 
+namespace {
+
 struct FuseSingleQubitUnitaryRunsPass final
     : impl::FuseSingleQubitUnitaryRunsBase<FuseSingleQubitUnitaryRunsPass> {
   using Base::Base;
@@ -184,5 +186,7 @@ protected:
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir::qco

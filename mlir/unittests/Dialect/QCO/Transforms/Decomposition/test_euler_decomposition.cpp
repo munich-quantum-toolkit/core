@@ -50,6 +50,27 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 
+namespace {
+
+struct SynthesisFixture {
+  std::unique_ptr<MLIRContext> context;
+
+  void setUp() {
+    DialectRegistry registry;
+    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
+    context = std::make_unique<MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
+};
+
+struct SynthesizedCircuit {
+  OwningOpRef<ModuleOp> module;
+  func::FuncOp func;
+};
+
+} // namespace
+
 template <typename MatrixType>
 [[nodiscard]] static MatrixType randomUnitaryMatrix(std::mt19937& rng) {
   static_assert(MatrixType::RowsAtCompileTime != Eigen::Dynamic &&
@@ -79,18 +100,6 @@ template <typename MatrixType>
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
   return unitaryMatrix;
 }
-
-struct SynthesisFixture {
-  std::unique_ptr<MLIRContext> context;
-
-  void setUp() {
-    DialectRegistry registry;
-    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
-};
 
 template <typename Fn> static void forEachBasis(Fn fn) {
   const std::array<const char*, 7> bases = {"zyz", "zxz", "xzx", "xyx",
@@ -272,11 +281,6 @@ static void runFuseOnProgramForAllBases(MLIRContext* ctx,
   return Eigen::Matrix2cd{{{std::cos(theta / 2.0), -std::sin(theta / 2.0)}, 0},
                           {0, {std::cos(theta / 2.0), std::sin(theta / 2.0)}}};
 }
-
-struct SynthesizedCircuit {
-  OwningOpRef<ModuleOp> module;
-  func::FuncOp func;
-};
 
 [[nodiscard]] static SynthesizedCircuit
 synthesizeMatrix(MLIRContext* ctx, const Eigen::Matrix2cd& matrix,
