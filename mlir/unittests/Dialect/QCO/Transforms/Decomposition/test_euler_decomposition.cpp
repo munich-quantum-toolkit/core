@@ -22,11 +22,16 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <array>
@@ -34,19 +39,19 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 
-namespace {
-
 template <typename MatrixType>
-[[nodiscard]] MatrixType randomUnitaryMatrix(std::mt19937& rng) {
+[[nodiscard]] static MatrixType randomUnitaryMatrix(std::mt19937& rng) {
   static_assert(MatrixType::RowsAtCompileTime != Eigen::Dynamic &&
                     MatrixType::ColsAtCompileTime != Eigen::Dynamic,
                 "randomUnitaryMatrix requires fixed-size matrices");
@@ -87,7 +92,7 @@ struct SynthesisFixture {
   }
 };
 
-template <typename Fn> void forEachBasis(Fn fn) {
+template <typename Fn> static void forEachBasis(Fn fn) {
   const std::array<const char*, 7> bases = {"zyz", "zxz", "xzx", "xyx",
                                             "u",   "zsx", "zsxx"};
   for (const char* basis : bases) {
@@ -95,7 +100,7 @@ template <typename Fn> void forEachBasis(Fn fn) {
   }
 }
 
-bool isAllowedBasisGate(Operation& op, StringRef basis) {
+static bool isAllowedBasisGate(Operation& op, StringRef basis) {
   // Always allow global phase as correction term.
   if (isa<GPhaseOp>(op)) {
     return true;
@@ -126,7 +131,7 @@ bool isAllowedBasisGate(Operation& op, StringRef basis) {
   return false;
 }
 
-void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
+static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
   auto& block = funcOp.getBody().front();
   for (Operation& op : block.without_terminator()) {
     if (isa<arith::ConstantOp>(op)) {
@@ -147,7 +152,7 @@ void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
   }
 }
 
-Eigen::Matrix2cd compute1QMatrixFromFunction(func::FuncOp funcOp) {
+static Eigen::Matrix2cd compute1QMatrixFromFunction(func::FuncOp funcOp) {
   Eigen::Matrix2cd acc = Eigen::Matrix2cd::Identity();
   std::complex<double> global{1.0, 0.0};
 
@@ -184,7 +189,7 @@ Eigen::Matrix2cd compute1QMatrixFromFunction(func::FuncOp funcOp) {
   return global * acc;
 }
 
-LogicalResult runFuse(ModuleOp module, StringRef basis) {
+static LogicalResult runFuse(ModuleOp module, StringRef basis) {
   PassManager pm(module.getContext());
   qco::FuseSingleQubitUnitaryRunsOptions opts;
   opts.basis = basis.str();
@@ -192,24 +197,24 @@ LogicalResult runFuse(ModuleOp module, StringRef basis) {
   return pm.run(module);
 }
 
-OwningOpRef<ModuleOp> buildProgram(MLIRContext* ctx,
-                                   void (*fn)(QCOProgramBuilder&)) {
+static OwningOpRef<ModuleOp> buildProgram(MLIRContext* ctx,
+                                          void (*fn)(QCOProgramBuilder&)) {
   QCOProgramBuilder builder(ctx);
   builder.initialize();
   fn(builder);
   return builder.finalize();
 }
 
-func::FuncOp lookupMain(ModuleOp module) {
+static func::FuncOp lookupMain(ModuleOp module) {
   auto func = module.lookupSymbol<func::FuncOp>("main");
   EXPECT_TRUE(func) << "Expected a 'main' function";
   return func;
 }
 
 template <typename ChecksT>
-void runFuseOnProgramForAllBases(MLIRContext* ctx,
-                                 void (*program)(QCOProgramBuilder&),
-                                 ChecksT checksAfter) {
+static void runFuseOnProgramForAllBases(MLIRContext* ctx,
+                                        void (*program)(QCOProgramBuilder&),
+                                        ChecksT checksAfter) {
   forEachBasis([&](StringRef basis) {
     auto owned = buildProgram(ctx, program);
     if (!static_cast<bool>(owned)) {
@@ -249,21 +254,21 @@ void runFuseOnProgramForAllBases(MLIRContext* ctx,
   });
 }
 
-[[nodiscard]] Eigen::Matrix2cd rxMatrix(double theta) {
+[[nodiscard]] static Eigen::Matrix2cd rxMatrix(double theta) {
   const auto halfTheta = theta / 2.0;
   const std::complex<double> cosHalf{std::cos(halfTheta), 0.0};
   const std::complex<double> iSinHalf{0.0, -std::sin(halfTheta)};
   return Eigen::Matrix2cd{{cosHalf, iSinHalf}, {iSinHalf, cosHalf}};
 }
 
-[[nodiscard]] Eigen::Matrix2cd ryMatrix(double theta) {
+[[nodiscard]] static Eigen::Matrix2cd ryMatrix(double theta) {
   const auto halfTheta = theta / 2.0;
   const std::complex<double> cosHalf{std::cos(halfTheta), 0.0};
   const std::complex<double> sinHalf{std::sin(halfTheta), 0.0};
   return Eigen::Matrix2cd{{cosHalf, -sinHalf}, {sinHalf, cosHalf}};
 }
 
-[[nodiscard]] Eigen::Matrix2cd rzMatrix(double theta) {
+[[nodiscard]] static Eigen::Matrix2cd rzMatrix(double theta) {
   return Eigen::Matrix2cd{{{std::cos(theta / 2.0), -std::sin(theta / 2.0)}, 0},
                           {0, {std::cos(theta / 2.0), std::sin(theta / 2.0)}}};
 }
@@ -273,7 +278,7 @@ struct SynthesizedCircuit {
   func::FuncOp func;
 };
 
-[[nodiscard]] SynthesizedCircuit
+[[nodiscard]] static SynthesizedCircuit
 synthesizeMatrix(MLIRContext* ctx, const Eigen::Matrix2cd& matrix,
                  EulerBasis basis, bool simplify) {
   OwningOpRef<ModuleOp> module = ModuleOp::create(UnknownLoc::get(ctx));
@@ -294,19 +299,17 @@ synthesizeMatrix(MLIRContext* ctx, const Eigen::Matrix2cd& matrix,
 }
 
 template <typename OpTy>
-[[nodiscard]] std::size_t countOps(func::FuncOp funcOp) {
+[[nodiscard]] static std::size_t countOps(func::FuncOp funcOp) {
   std::size_t count = 0;
   funcOp.walk([&](OpTy) { ++count; });
   return count;
 }
 
-[[nodiscard]] std::size_t countUnitaryMatrixOps(func::FuncOp funcOp) {
+[[nodiscard]] static std::size_t countUnitaryMatrixOps(func::FuncOp funcOp) {
   std::size_t count = 0;
   funcOp.walk([&](UnitaryMatrixOpInterface) { ++count; });
   return count;
 }
-
-} // namespace
 
 TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
   SynthesisFixture fx;

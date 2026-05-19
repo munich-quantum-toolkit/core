@@ -18,11 +18,17 @@
 #include <Eigen/LU>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <array>
 #include <cmath>
 #include <complex>
 #include <numbers>
+#include <optional>
 
 namespace mlir::qco::decomposition {
 
@@ -133,14 +139,13 @@ EulerDecomposition::paramsXZX(const Eigen::Matrix2cd& matrix) {
 // Euler synthesis (IR emission)
 //===----------------------------------------------------------------------===//
 
-namespace {
-
-Value getOrCreateF64Constant(OpBuilder& builder, Location loc, double value) {
+static Value getOrCreateF64Constant(OpBuilder& builder, Location loc,
+                                    double value) {
   return arith::ConstantOp::create(builder, loc,
                                    builder.getF64FloatAttr(value));
 }
 
-void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
+static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
   if (std::abs(phase) <= mlir::utils::TOLERANCE) {
     return;
   }
@@ -148,14 +153,14 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
   builder.create<GPhaseOp>(loc, phaseVal);
 }
 
-double phaseToMatchTarget(const Eigen::Matrix2cd& target,
-                          const Eigen::Matrix2cd& emitted) {
+static double phaseToMatchTarget(const Eigen::Matrix2cd& target,
+                                 const Eigen::Matrix2cd& emitted) {
   // If `target == s * emitted`, then `target * emitted^H == s * I`.
   const auto s = (target * emitted.adjoint())(0, 0);
   return std::arg(s);
 }
 
-void accumulateEmittedMatrix(Operation* op, Eigen::Matrix2cd& emitted) {
+static void accumulateEmittedMatrix(Operation* op, Eigen::Matrix2cd& emitted) {
   auto iface = dyn_cast<UnitaryMatrixOpInterface>(op);
   if (!iface) {
     llvm::reportFatalInternalError(
@@ -172,46 +177,46 @@ void accumulateEmittedMatrix(Operation* op, Eigen::Matrix2cd& emitted) {
   emitted = m * emitted;
 }
 
-Value emitRZ(OpBuilder& builder, Location loc, Value qubit, double angle,
-             Eigen::Matrix2cd& emitted) {
+static Value emitRZ(OpBuilder& builder, Location loc, Value qubit, double angle,
+                    Eigen::Matrix2cd& emitted) {
   auto v = getOrCreateF64Constant(builder, loc, angle);
   auto op = builder.create<RZOp>(loc, qubit, v);
   accumulateEmittedMatrix(op, emitted);
   return op.getQubitOut();
 }
 
-Value emitRY(OpBuilder& builder, Location loc, Value qubit, double angle,
-             Eigen::Matrix2cd& emitted) {
+static Value emitRY(OpBuilder& builder, Location loc, Value qubit, double angle,
+                    Eigen::Matrix2cd& emitted) {
   auto v = getOrCreateF64Constant(builder, loc, angle);
   auto op = builder.create<RYOp>(loc, qubit, v);
   accumulateEmittedMatrix(op, emitted);
   return op.getQubitOut();
 }
 
-Value emitRX(OpBuilder& builder, Location loc, Value qubit, double angle,
-             Eigen::Matrix2cd& emitted) {
+static Value emitRX(OpBuilder& builder, Location loc, Value qubit, double angle,
+                    Eigen::Matrix2cd& emitted) {
   auto v = getOrCreateF64Constant(builder, loc, angle);
   auto op = builder.create<RXOp>(loc, qubit, v);
   accumulateEmittedMatrix(op, emitted);
   return op.getQubitOut();
 }
 
-Value emitSX(OpBuilder& builder, Location loc, Value qubit,
-             Eigen::Matrix2cd& emitted) {
+static Value emitSX(OpBuilder& builder, Location loc, Value qubit,
+                    Eigen::Matrix2cd& emitted) {
   auto op = builder.create<SXOp>(loc, qubit);
   accumulateEmittedMatrix(op, emitted);
   return op.getQubitOut();
 }
 
-Value emitX(OpBuilder& builder, Location loc, Value qubit,
-            Eigen::Matrix2cd& emitted) {
+static Value emitX(OpBuilder& builder, Location loc, Value qubit,
+                   Eigen::Matrix2cd& emitted) {
   auto op = builder.create<XOp>(loc, qubit);
   accumulateEmittedMatrix(op, emitted);
   return op.getQubitOut();
 }
 
-Value emitU(OpBuilder& builder, Location loc, Value qubit, double theta,
-            double phi, double lambda, Eigen::Matrix2cd& emitted) {
+static Value emitU(OpBuilder& builder, Location loc, Value qubit, double theta,
+                   double phi, double lambda, Eigen::Matrix2cd& emitted) {
   auto thetaV = getOrCreateF64Constant(builder, loc, theta);
   auto phiV = getOrCreateF64Constant(builder, loc, phi);
   auto lambdaV = getOrCreateF64Constant(builder, loc, lambda);
@@ -220,9 +225,10 @@ Value emitU(OpBuilder& builder, Location loc, Value qubit, double theta,
   return op.getQubitOut();
 }
 
-Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
-              const Eigen::Matrix2cd& targetMatrix, double theta, double phi,
-              double lambda, EulerBasis basis, bool simplify) {
+static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
+                     const Eigen::Matrix2cd& targetMatrix, double theta,
+                     double phi, double lambda, EulerBasis basis,
+                     bool simplify) {
   const double eps = simplify ? mlir::utils::TOLERANCE : -1.0;
   Eigen::Matrix2cd emitted = Eigen::Matrix2cd::Identity();
 
@@ -276,9 +282,10 @@ Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
   return qubit;
 }
 
-Value emitPSXGen(OpBuilder& builder, Location loc, Value qubit,
-                 const Eigen::Matrix2cd& targetMatrix, double theta, double phi,
-                 double lambda, bool allowXShortcut, bool simplify) {
+static Value emitPSXGen(OpBuilder& builder, Location loc, Value qubit,
+                        const Eigen::Matrix2cd& targetMatrix, double theta,
+                        double phi, double lambda, bool allowXShortcut,
+                        bool simplify) {
   const double eps = simplify ? mlir::utils::TOLERANCE : -1.0;
   Eigen::Matrix2cd emitted = Eigen::Matrix2cd::Identity();
 
@@ -333,8 +340,6 @@ Value emitPSXGen(OpBuilder& builder, Location loc, Value qubit,
   emitGPhaseIfNeeded(builder, loc, phaseToMatchTarget(targetMatrix, emitted));
   return qubit;
 }
-
-} // namespace
 
 std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
   const auto b = basis.lower();

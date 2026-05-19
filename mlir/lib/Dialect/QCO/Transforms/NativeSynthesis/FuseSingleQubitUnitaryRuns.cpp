@@ -10,37 +10,39 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <Eigen/Core>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
+#include <iterator>
+#include <optional>
 #include <ranges>
+#include <utility>
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_FUSESINGLEQUBITUNITARYRUNS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-namespace {
-
-bool isFuseCandidate(UnitaryOpInterface op) {
+static bool isFuseCandidate(UnitaryOpInterface op) {
   if (!op || !op.isSingleQubit()) {
     return false;
   }
   return isa<UnitaryMatrixOpInterface>(op.getOperation());
 }
 
-std::optional<Eigen::Matrix2cd> getConstMatrix(UnitaryOpInterface op) {
+static std::optional<Eigen::Matrix2cd> getConstMatrix(UnitaryOpInterface op) {
   if (!isa<UnitaryMatrixOpInterface>(op.getOperation())) {
     return std::nullopt;
   }
@@ -53,7 +55,8 @@ std::optional<Eigen::Matrix2cd> getConstMatrix(UnitaryOpInterface op) {
 }
 
 /// Compose a run of unitary ops (execution order) into a single matrix.
-std::optional<Eigen::Matrix2cd> composeRun(ArrayRef<UnitaryOpInterface> run) {
+static std::optional<Eigen::Matrix2cd>
+composeRun(ArrayRef<UnitaryOpInterface> run) {
   Eigen::Matrix2cd composed = Eigen::Matrix2cd::Identity();
   for (auto op : run) {
     auto m = getConstMatrix(op);
@@ -74,6 +77,7 @@ struct FuseSingleQubitUnitaryRunsPass final
       FuseSingleQubitUnitaryRunsOptions options)
       : Base(std::move(options)) {}
 
+protected:
   void runOnOperation() override {
     auto module = getOperation();
 
@@ -106,6 +110,15 @@ struct FuseSingleQubitUnitaryRunsPass final
     SmallVector<SmallVector<UnitaryOpInterface, 8>, 16> runs;
     DenseSet<Operation*> seen;
 
+    auto flushRun = [&](SmallVector<UnitaryOpInterface, 8>& current) {
+      if (current.size() > 1) {
+        runs.push_back(std::move(current));
+        current = SmallVector<UnitaryOpInterface, 8>();
+      } else {
+        current.clear();
+      }
+    };
+
     for (Value start : wireStarts) {
       if (!start) {
         continue;
@@ -128,26 +141,17 @@ struct FuseSingleQubitUnitaryRunsPass final
 
         if (seen.contains(op)) {
           // Wire may be reached from multiple starts; flush any partial run.
-          if (current.size() > 1) {
-            runs.push_back(std::move(current));
-          }
-          current.clear();
+          flushRun(current);
           continue;
         }
         if (!isa<UnitaryOpInterface>(op)) {
-          if (current.size() > 1) {
-            runs.push_back(std::move(current));
-          }
-          current.clear();
+          flushRun(current);
           continue;
         }
 
         auto iface = cast<UnitaryOpInterface>(op);
         if (!isFuseCandidate(iface)) {
-          if (current.size() > 1) {
-            runs.push_back(std::move(current));
-          }
-          current.clear();
+          flushRun(current);
           continue;
         }
 
@@ -155,9 +159,7 @@ struct FuseSingleQubitUnitaryRunsPass final
         seen.insert(op);
       }
 
-      if (current.size() > 1) {
-        runs.push_back(std::move(current));
-      }
+      flushRun(current);
     }
 
     for (auto& run : runs) {
@@ -183,5 +185,4 @@ struct FuseSingleQubitUnitaryRunsPass final
   }
 };
 
-} // namespace
 } // namespace mlir::qco
