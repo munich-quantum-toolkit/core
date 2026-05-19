@@ -250,7 +250,7 @@ TEST_P(MappingPassTest, GHZ) {
   auto res = runPass(m.get(), device, qco::MappingPassOptions{});
   auto entry = getEntryPoint(m.get());
 
-  EXPECT_TRUE(res.succeeded());
+  ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry.getFunctionBody(), device.second).succeeded());
 }
 
@@ -342,7 +342,7 @@ TEST_P(MappingPassTest, Sabre) {
   auto res = runPass(m.get(), device, qco::MappingPassOptions{});
   auto entry = getEntryPoint(m.get());
 
-  EXPECT_TRUE(res.succeeded());
+  ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry.getFunctionBody(), device.second).succeeded());
 }
 
