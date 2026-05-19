@@ -105,7 +105,8 @@ TEST_F(QuantumLoopUnrollTest, InvalidUnrollFactor) {
   auto m = getGHZ(context.get(), 2);
   auto mClone = m->clone();
 
-  const auto res = runPass(m, qco::QuantumLoopUnrollOptions{.unrollFactor = -2});
+  const auto res =
+      runPass(m, qco::QuantumLoopUnrollOptions{.unrollFactor = -2});
   ASSERT_TRUE(res.failed());
 }
 

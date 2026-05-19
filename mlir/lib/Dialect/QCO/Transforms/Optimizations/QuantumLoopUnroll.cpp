@@ -74,7 +74,8 @@ struct QuantumLoopUnroll final
 protected:
   void runOnOperation() override {
     if (unrollFactor < -1) {
-      getOperation()->emitError() << "invalid unroll factor " << Twine(unrollFactor);
+      getOperation()->emitError()
+          << "invalid unroll factor " << Twine(unrollFactor);
       signalPassFailure();
       return;
     }
