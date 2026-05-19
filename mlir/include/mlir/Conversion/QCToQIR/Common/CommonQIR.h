@@ -47,6 +47,9 @@ struct LoweringState : QIRMetadata {
   /// Map from (register name, index) to loaded result
   DenseMap<std::pair<StringRef, int64_t>, Value> loadedResults;
 
+  // Map from register name to its offset
+  DenseMap<StringRef, int64_t> registerOffsets;
+
   /// Map from index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
 

@@ -178,6 +178,36 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
 
   return qubit;
 }
+
+Value QIRProgramBuilder::staticResult(const int64_t index) {
+  checkFinalized();
+
+  const InsertionGuard guard(*this);
+
+  // Insert allocations and constants in entry block
+  setInsertionPoint(entryBlock->getTerminator());
+
+  if (index < 0) {
+    llvm::reportFatalUsageError("Index must be non-negative");
+  }
+
+  Value result;
+  if (const auto it = resultPtrs.find(index); it != resultPtrs.end()) {
+    result = it->second;
+  } else {
+    result = createPointerFromIndex(*this, getLoc(), index);
+    // Cache for reuse
+    resultPtrs[index] = result;
+  }
+
+  // Update result count
+  if (std::cmp_greater_equal(index, metadata_.numResults)) {
+    metadata_.numResults = static_cast<size_t>(index) + 1;
+  }
+
+  return result;
+}
+
 Value QIRProgramBuilder::QubitRegister::operator[](const size_t index) const {
   if (index >= qubits.size()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");
@@ -233,7 +263,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   } else {
     // Create static qubits in the Base Profile
     for (int64_t i = 0; i < size; ++i) {
-      auto qubit = staticQubit(i);
+      auto qubit = staticQubit(static_cast<int64_t>(metadata_.numQubits));
       qubits.push_back(qubit);
     }
   }
@@ -318,9 +348,8 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   } else {
     // Use static results in the Base Profile
     for (int64_t i = 0; i < size; ++i) {
-      auto result = staticQubit(i);
+      auto result = staticResult(static_cast<int64_t>(metadata_.numResults));
       loadedResults.try_emplace({stringSaver.save(name), i}, result);
-      resultPtrs.try_emplace(i, result);
     }
   }
 
@@ -341,14 +370,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   setInsertionPoint(entryBlock->getTerminator());
 
   // Get or create result pointer
-  Value result;
-  if (const auto it = resultPtrs.find(resultIndex); it != resultPtrs.end()) {
-    result = it->second;
-  } else {
-    result = createPointerFromIndex(*this, qubit.getLoc(), resultIndex);
-    resultPtrs.try_emplace(resultIndex, result);
-    metadata_.numResults++;
-  }
+  auto result = staticResult(resultIndex);
 
   restoreInsertionPoint(insertionPoint);
 
@@ -865,6 +887,9 @@ QIRProgramBuilder::scfWhile(const function_ref<Value()>& beforeBody,
   setInsertionPointToStart(beforeBlock);
   auto condition = beforeBody();
 
+  if (condition.getType() != ptrType) {
+    llvm::reportFatalUsageError("Before region must return a llvm.ptr type");
+  }
   const auto fnSig = LLVM::LLVMFunctionType::get(getI1Type(), {ptrType});
   auto fnDec =
       getOrCreateFunctionDeclaration(*this, module, QIR_READ_RESULT, fnSig);

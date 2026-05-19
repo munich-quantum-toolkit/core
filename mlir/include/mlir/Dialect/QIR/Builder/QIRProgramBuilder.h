@@ -173,6 +173,22 @@ public:
   Value staticQubit(int64_t index);
 
   /**
+   * @brief Get a static result by index
+   * @param index The result index (must be non-negative)
+   * @return An LLVM pointer representing the result
+   *
+   * @par Example:
+   * ```c++
+   * auto q0 = builder.staticResult(0);
+   * ```
+   * ```mlir
+   * %c0 = llvm.mlir.constant(0 : i64) : i64
+   * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+   * ```
+   */
+  Value staticResult(int64_t index);
+
+  /**
    * @brief Represents a qubit register with its qubits.
    */
   struct QubitRegister {

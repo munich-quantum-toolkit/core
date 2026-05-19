@@ -211,7 +211,8 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
  *
  * @details
  * For measurements with register information, a static result is used at
- * the given index. Otherwise a static result at the next index is used.
+ * the given index + register offset. Otherwise a static result at
+ * the next index is used.
  *
  * @par Example (without register):
  * ```mlir
@@ -243,9 +244,25 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 
     // Get result pointer
     Value result;
-    auto resultIndex = op.getRegisterIndex()
-                           ? static_cast<int64_t>(op.getRegisterIndex().value())
-                           : static_cast<int64_t>(state.numResults);
+    int64_t resultIndex = 0;
+
+    if (op.getRegisterIndex() && op.getRegisterName() && op.getRegisterSize()) {
+      const auto registerName = op.getRegisterName().value();
+      const auto registerSize = op.getRegisterSize().value();
+      const auto registerIndex = op.getRegisterIndex().value();
+
+      // Assign a base offset to this register if not yet seen
+      if (!state.registerOffsets.contains(registerName)) {
+        state.registerOffsets.try_emplace(
+            registerName, static_cast<int64_t>(state.numResults));
+        state.numResults += static_cast<std::size_t>(registerSize);
+      }
+      resultIndex = state.registerOffsets[registerName] +
+                    static_cast<int64_t>(registerIndex);
+    } else {
+      resultIndex = static_cast<int64_t>(state.numResults);
+    }
+
     if (resultPtrs.contains(resultIndex)) {
       result = resultPtrs.at(resultIndex);
     } else {
