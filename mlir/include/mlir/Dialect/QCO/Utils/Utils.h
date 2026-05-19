@@ -19,8 +19,9 @@ namespace mlir::qco {
  * @brief Find the entry point function with entry_point attribute
  *
  * @details
- * Searches for the LLVM function marked with the "entry_point" attribute in
- * the passthrough attributes.
+ * Searches for the function marked with the "entry_point" attribute in
+ * the passthrough attributes. If multiple functions are marked, returns the
+ * first one encountered.
  *
  * @param op The module operation to search in.
  * @returns the entry point function, or nullptr if not found.
