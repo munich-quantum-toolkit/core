@@ -547,7 +547,7 @@ private:
 
     const auto tensors = func.getOps<qtensor::AllocOp>();
     assert(range_size(tensors) == 1 && "place: expected exactly one tensor");
-    
+
     qtensor::AllocOp alloc = *(tensors.begin());
     const Value tensor = alloc.getResult();
     assert(tensor.hasOneUse() && "place: expected linear typing");
