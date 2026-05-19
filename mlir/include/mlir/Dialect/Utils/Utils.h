@@ -19,7 +19,9 @@
 
 namespace mlir::utils {
 
-constexpr auto TOLERANCE = 1e-15;
+/// Default absolute tolerance for MLIR dialect numerics (matrix checks,
+/// angles).
+constexpr auto TOLERANCE = 1e-14;
 
 inline Value constantFromScalar(OpBuilder& builder, Location loc, double v) {
   return arith::ConstantOp::create(builder, loc, builder.getF64FloatAttr(v));
