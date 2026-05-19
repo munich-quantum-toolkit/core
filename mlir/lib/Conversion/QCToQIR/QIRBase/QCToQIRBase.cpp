@@ -254,7 +254,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       result = createPointerFromIndex(rewriter, op.getLoc(), resultIndex);
       resultPtrs.try_emplace(resultIndex, result);
       if (std::cmp_greater_equal(resultIndex, state.numResults)) {
-        state.numResults = static_cast<std::size_t>(resultIndex + 1);
+        state.numResults = resultIndex + 1;
       }
     }
 
