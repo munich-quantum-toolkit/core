@@ -445,8 +445,24 @@ class QDMIBackend(BackendV2):
 
         # Try OpenQASM3
         if fomac.ProgramFormat.QASM3 in supported_program_formats:
+            # Qiskit's OpenQASM3 exporter is fairly limited in terms of which gates it supports natively.
+            # So it needs some help from us.
+            exclusion_list = set()
+
+            # Qiskit treats "measure", "reset", and "barrier" as keywords rather than gates
+            exclusion_list.update({"measure", "reset", "barrier"})
+
+            # We also need to remove all gates that are defined in the OpenQASM `stdlib.inc`.
+            # Qiskit's exporter will otherwise complain about duplicate definitions.
+            exclusion_list.update([gate.name for gate in qasm3.STDGATES_INC_GATES])
+
+            # By excluding already defined gates, we allow the exporter to emit otherwise unsupported gates without
+            # needing to provide a definition for them. The exporter will then treat them as opaque gates, which is fine
+            # as long as the target device supports them.
+            basis_gates = [gate for gate in self.target.operation_names if gate not in exclusion_list] + ["U"]
+
             try:
-                return str(qasm3.dumps(circuit)), fomac.ProgramFormat.QASM3
+                return qasm3.dumps(circuit, basis_gates=basis_gates), fomac.ProgramFormat.QASM3
             except Exception as exc:
                 msg = f"Failed to convert circuit to QASM3: {exc}"
                 raise TranslationError(msg) from exc
@@ -454,7 +470,7 @@ class QDMIBackend(BackendV2):
         # Try OpenQASM2 (legacy)
         if fomac.ProgramFormat.QASM2 in supported_program_formats:
             try:
-                return str(qasm2.dumps(circuit)), fomac.ProgramFormat.QASM2
+                return qasm2.dumps(circuit), fomac.ProgramFormat.QASM2
             except Exception as exc:
                 msg = f"Failed to convert circuit to QASM2: {exc}"
                 raise TranslationError(msg) from exc
