@@ -13,6 +13,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - 🚸 Improve native gate support for the Qiskit-to-OpenQASM3 conversion in the QDMI-Qiskit interface ([#1719]) ([**@burgholzer**])
 
+### Fixed
+
+- 🏁 Fix dynamic loading of QDMI device DLLs on Windows when an absolute path is provided ([#1720]) ([**@burgholzer**])
+
 ## [3.6.0] - 2026-05-13
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#360)._
@@ -370,8 +374,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [3.0.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.0.0
 [2.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v2.7.0
 
-<!-- PR links -->
+<!-- PR links -
 
+[#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
