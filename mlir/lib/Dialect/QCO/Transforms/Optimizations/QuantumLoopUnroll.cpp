@@ -24,8 +24,8 @@ namespace {
  * @returns true, if the loop is a quantum loop.
  */
 bool isQuantumLoop(scf::ForOp loop) {
-  return llvm::any_of(loop.getInitArgs(), [](OpOperand& operand) {
-    const auto type = operand.get().getType();
+  return llvm::any_of(loop.getInitArgs(), [](Value arg) {
+    const auto type = arg.getType();
     return isa<QubitType>(type) ||
            (isa<RankedTensorType>(type) &&
             isa<QubitType>(cast<RankedTensorType>(type).getElementType()));
@@ -33,8 +33,8 @@ bool isQuantumLoop(scf::ForOp loop) {
 }
 
 /**
- * @brief Post-order collect all quantum loops inside a function-like operation.
- * @param func The function-like operation.
+ * @brief Post-order collect all quantum loops inside a module.
+ * @param m The module.
  * @return A vector of quantum `scf.for` loops.
  */
 SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {

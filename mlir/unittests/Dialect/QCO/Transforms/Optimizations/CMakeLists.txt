@@ -8,7 +8,8 @@
 
 set(target_name mqt-core-mlir-unittest-optimizations)
 add_executable(${target_name} test_qco_hadamard_lifting.cpp
-                              test_qco_merge_single_qubit_rotation.cpp)
+                              test_qco_merge_single_qubit_rotation.cpp
+                              test_quantum_loop_unroll.cpp)
 
 target_link_libraries(
   ${target_name}
