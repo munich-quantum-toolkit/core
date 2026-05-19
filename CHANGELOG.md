@@ -25,6 +25,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 
+### Fixed
+
+- 🏁 Fix dynamic loading of QDMI device DLLs on Windows when an absolute path is provided ([#1720]) ([**@burgholzer**])
+
 ### Removed
 
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
@@ -389,6 +393,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
 [#1709]: https://github.com/munich-quantum-toolkit/core/pull/1709
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
