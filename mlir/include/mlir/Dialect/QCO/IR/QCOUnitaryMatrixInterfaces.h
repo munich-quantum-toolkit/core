@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <Eigen/Core>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Support/LLVM.h>
@@ -21,5 +22,5 @@
 #include <utility>
 
 // clang-format:off
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
+#include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.h.inc" // IWYU pragma: export
 // clang-format:on

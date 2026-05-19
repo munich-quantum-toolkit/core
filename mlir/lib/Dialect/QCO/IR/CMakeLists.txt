@@ -14,6 +14,7 @@ file(GLOB_RECURSE SCF "${CMAKE_CURRENT_SOURCE_DIR}/SCF/*.cpp")
 add_mlir_dialect_library(
   MLIRQCODialect
   QCOOps.cpp
+  QCOUnitaryMatrixInterfaces.cpp
   ${MODIFIERS}
   ${OPERATIONS}
   ${QUBIT_MANAGEMENT}
@@ -23,6 +24,7 @@ add_mlir_dialect_library(
   DEPENDS
   MLIRQCOOpsIncGen
   MLIRQCOInterfacesIncGen
+  MLIRQCOUnitaryMatrixInterfacesIncGen
   LINK_LIBS
   PRIVATE
   MLIRIR

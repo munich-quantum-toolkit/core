@@ -23,6 +23,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
