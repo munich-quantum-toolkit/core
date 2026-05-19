@@ -2344,4 +2344,40 @@ void nestedIfOpForLoop(QCOProgramBuilder& b) {
       });
 }
 
+void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.t(q[0]);
+  q[0] = b.rz(0.123, q[0]);
+  // Keep `inv` inside the single-qubit run so it gets fused/resynthesized too.
+  q[0] = b.inv({q[0]}, [&](ValueRange targets) -> SmallVector<Value> {
+    return {b.sx(targets[0])};
+  })[0];
+  q[0] = b.ry(-0.456, q[0]);
+}
+
+void singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  q[0] = b.h(q[0]);
+  q[0] = b.t(q[0]);
+  // Use `ctrl` as a separator between runs.
+  const auto& [ctrlOut, tgtOut] =
+      b.ctrl({q[1]}, {q[0]}, [&](ValueRange targets) -> SmallVector<Value> {
+        return {b.x(targets[0])};
+      });
+  q[1] = ctrlOut[0];
+  q[0] = tgtOut[0];
+  q[0] = b.rz(0.321, q[0]);
+  q[0] = b.sx(q[0]);
+}
+
+void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.t(q[0]);
+  q[0] = b.barrier({q[0]})[0];
+  q[0] = b.rz(0.321, q[0]);
+  q[0] = b.sx(q[0]);
+}
+
 } // namespace mlir::qco

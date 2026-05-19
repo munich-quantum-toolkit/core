@@ -8,250 +8,512 @@
  * Licensed under the MIT License
  */
 
-#include "decomposition_test_utils.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerDecomposition.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Utils.h"
+#include "qco_programs.h"
 
 #include <Eigen/Core>
+#include <Eigen/QR>
 #include <gtest/gtest.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Verifier.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <numbers>
 #include <optional>
 #include <random>
+#include <string>
 #include <tuple>
 
+using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-using namespace mlir::qco::decomposition_test;
 
-static std::size_t countGatesOfType(const OneQubitGateSequence& seq,
-                                    GateKind kind) {
-  std::size_t count = 0;
-  for (const auto& gate : seq.gates) {
-    if (gate.type == kind) {
-      ++count;
+namespace {
+
+template <typename MatrixType>
+[[nodiscard]] MatrixType randomUnitaryMatrix(std::mt19937& rng) {
+  static_assert(MatrixType::RowsAtCompileTime != Eigen::Dynamic &&
+                    MatrixType::ColsAtCompileTime != Eigen::Dynamic,
+                "randomUnitaryMatrix requires fixed-size matrices");
+  static_assert(MatrixType::RowsAtCompileTime == MatrixType::ColsAtCompileTime,
+                "randomUnitaryMatrix requires square matrices");
+  std::normal_distribution<double> normalDist(0.0, 1.0);
+  MatrixType randomMatrix;
+  for (auto& x : randomMatrix.reshaped()) {
+    x = std::complex<double>(normalDist(rng), normalDist(rng));
+  }
+  Eigen::HouseholderQR<MatrixType> qr{};
+  qr.compute(randomMatrix);
+  const MatrixType qMatrix = qr.householderQ();
+  const MatrixType rMatrix =
+      qr.matrixQR().template triangularView<Eigen::Upper>();
+  MatrixType dMatrix = MatrixType::Identity();
+  constexpr Eigen::Index dim = MatrixType::RowsAtCompileTime;
+  for (Eigen::Index i = 0; i < dim; ++i) {
+    const auto rii = rMatrix(i, i);
+    const auto absRii = std::abs(rii);
+    dMatrix(i, i) =
+        absRii > 0.0 ? (rii / absRii) : std::complex<double>{1.0, 0.0};
+  }
+  const MatrixType unitaryMatrix = qMatrix * dMatrix;
+  assert(helpers::isUnitaryMatrix(unitaryMatrix));
+  return unitaryMatrix;
+}
+
+struct SynthesisFixture {
+  std::unique_ptr<MLIRContext> context;
+
+  void setUp() {
+    DialectRegistry registry;
+    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
+    context = std::make_unique<MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
+};
+
+template <typename Fn> void forEachBasis(Fn fn) {
+  const std::array<const char*, 7> bases = {"zyz", "zxz", "xzx", "xyx",
+                                            "u",   "zsx", "zsxx"};
+  for (const char* basis : bases) {
+    fn(StringRef{basis});
+  }
+}
+
+bool isAllowedBasisGate(Operation& op, StringRef basis) {
+  // Always allow global phase as correction term.
+  if (isa<GPhaseOp>(op)) {
+    return true;
+  }
+
+  const auto b = basis.lower();
+  if (b == "zyz") {
+    return isa<RZOp, RYOp>(op);
+  }
+  if (b == "zxz") {
+    return isa<RZOp, RXOp>(op);
+  }
+  if (b == "xzx") {
+    return isa<RXOp, RZOp>(op);
+  }
+  if (b == "xyx") {
+    return isa<RXOp, RYOp>(op);
+  }
+  if (b == "u") {
+    return isa<UOp>(op);
+  }
+  if (b == "zsx") {
+    return isa<RZOp, SXOp>(op);
+  }
+  if (b == "zsxx") {
+    return isa<RZOp, SXOp, XOp>(op);
+  }
+  return false;
+}
+
+void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
+  auto& block = funcOp.getBody().front();
+  for (Operation& op : block.without_terminator()) {
+    if (isa<arith::ConstantOp>(op)) {
+      continue;
+    }
+
+    // Allow the separator modifiers themselves.
+    if (isa<CtrlOp>(op)) {
+      continue;
+    }
+
+    // Only check ops that claim to carry a unitary matrix (i.e., actual gates).
+    if (isa<UnitaryMatrixOpInterface>(op)) {
+      EXPECT_TRUE(isAllowedBasisGate(op, basis))
+          << "basis=" << basis.str()
+          << " unexpected gate: " << op.getName().getStringRef().str();
     }
   }
+}
+
+Eigen::Matrix2cd compute1QMatrixFromFunction(func::FuncOp funcOp) {
+  Eigen::Matrix2cd acc = Eigen::Matrix2cd::Identity();
+  std::complex<double> global{1.0, 0.0};
+
+  auto& block = funcOp.getBody().front();
+  for (Operation& op : block.without_terminator()) {
+    if (isa<arith::ConstantOp>(op)) {
+      continue;
+    }
+
+    if (isa<CtrlOp>(op)) {
+      continue;
+    }
+
+    if (auto gphase = dyn_cast<GPhaseOp>(op)) {
+      if (auto m = gphase.getUnitaryMatrix()) {
+        global *= (*m)(0, 0);
+      }
+      continue;
+    }
+
+    if (auto iface = dyn_cast<UnitaryMatrixOpInterface>(op)) {
+      // All ops in this test should be 1q ops after synthesis.
+      const auto maybeM = iface.getUnitaryMatrix<Eigen::Matrix2cd>();
+      if (!maybeM) {
+        ADD_FAILURE() << "Expected constant unitary matrix for op: "
+                      << op.getName().getStringRef().str();
+        return Eigen::Matrix2cd::Zero();
+      }
+      acc = (*maybeM) * acc;
+      continue;
+    }
+  }
+
+  return global * acc;
+}
+
+LogicalResult runFuse(ModuleOp module, StringRef basis) {
+  PassManager pm(module.getContext());
+  qco::FuseSingleQubitUnitaryRunsOptions opts;
+  opts.basis = basis.str();
+  pm.addPass(qco::createFuseSingleQubitUnitaryRuns(opts));
+  return pm.run(module);
+}
+
+OwningOpRef<ModuleOp> buildProgram(MLIRContext* ctx,
+                                   void (*fn)(QCOProgramBuilder&)) {
+  QCOProgramBuilder builder(ctx);
+  builder.initialize();
+  fn(builder);
+  return builder.finalize();
+}
+
+func::FuncOp lookupMain(ModuleOp module) {
+  auto func = module.lookupSymbol<func::FuncOp>("main");
+  EXPECT_TRUE(func) << "Expected a 'main' function";
+  return func;
+}
+
+template <typename ChecksT>
+void runFuseOnProgramForAllBases(MLIRContext* ctx,
+                                 void (*program)(QCOProgramBuilder&),
+                                 ChecksT checksAfter) {
+  forEachBasis([&](StringRef basis) {
+    auto owned = buildProgram(ctx, program);
+    if (!static_cast<bool>(owned)) {
+      ADD_FAILURE() << "Failed to build program for basis=" << basis.str();
+      return;
+    }
+    ModuleOp module = *owned;
+    if (failed(verify(module))) {
+      ADD_FAILURE() << "Verifier failed for basis=" << basis.str();
+      return;
+    }
+
+    auto funcOp = lookupMain(module);
+    if (!funcOp) {
+      ADD_FAILURE() << "Missing 'main' for basis=" << basis.str();
+      return;
+    }
+
+    const Eigen::Matrix2cd original = compute1QMatrixFromFunction(funcOp);
+
+    if (failed(runFuse(module, basis))) {
+      ADD_FAILURE() << "Fuse pass failed for basis=" << basis.str();
+      return;
+    }
+    if (failed(verify(module))) {
+      ADD_FAILURE() << "Verifier failed after fuse for basis=" << basis.str();
+      return;
+    }
+
+    funcOp = lookupMain(module);
+    if (!funcOp) {
+      ADD_FAILURE() << "Missing 'main' after fuse for basis=" << basis.str();
+      return;
+    }
+
+    checksAfter(funcOp, basis, original);
+  });
+}
+
+[[nodiscard]] Eigen::Matrix2cd rxMatrix(double theta) {
+  const auto halfTheta = theta / 2.0;
+  const std::complex<double> cosHalf{std::cos(halfTheta), 0.0};
+  const std::complex<double> iSinHalf{0.0, -std::sin(halfTheta)};
+  return Eigen::Matrix2cd{{cosHalf, iSinHalf}, {iSinHalf, cosHalf}};
+}
+
+[[nodiscard]] Eigen::Matrix2cd ryMatrix(double theta) {
+  const auto halfTheta = theta / 2.0;
+  const std::complex<double> cosHalf{std::cos(halfTheta), 0.0};
+  const std::complex<double> sinHalf{std::sin(halfTheta), 0.0};
+  return Eigen::Matrix2cd{{cosHalf, -sinHalf}, {sinHalf, cosHalf}};
+}
+
+[[nodiscard]] Eigen::Matrix2cd rzMatrix(double theta) {
+  return Eigen::Matrix2cd{{{std::cos(theta / 2.0), -std::sin(theta / 2.0)}, 0},
+                          {0, {std::cos(theta / 2.0), std::sin(theta / 2.0)}}};
+}
+
+struct SynthesizedCircuit {
+  OwningOpRef<ModuleOp> module;
+  func::FuncOp func;
+};
+
+[[nodiscard]] SynthesizedCircuit
+synthesizeMatrix(MLIRContext* ctx, const Eigen::Matrix2cd& matrix,
+                 EulerBasis basis, bool simplify) {
+  OwningOpRef<ModuleOp> module = ModuleOp::create(UnknownLoc::get(ctx));
+  OpBuilder builder(ctx);
+  builder.setInsertionPointToStart(module->getBody());
+
+  auto qubitTy = QubitType::get(ctx);
+  auto funcTy = builder.getFunctionType({qubitTy}, {qubitTy});
+  auto func = builder.create<func::FuncOp>(module->getLoc(), "main", funcTy);
+  auto* entry = func.addEntryBlock();
+
+  builder.setInsertionPointToStart(entry);
+  Value q = entry->getArgument(0);
+  q = synthesizeUnitary1QEuler(builder, module->getLoc(), q, matrix, basis,
+                               simplify);
+  builder.create<func::ReturnOp>(module->getLoc(), q);
+  return SynthesizedCircuit{.module = std::move(module), .func = func};
+}
+
+template <typename OpTy>
+[[nodiscard]] std::size_t countOps(func::FuncOp funcOp) {
+  std::size_t count = 0;
+  funcOp.walk([&](OpTy) { ++count; });
   return count;
 }
 
-/// Compare ``seq.getUnitaryMatrix()`` to ``u`` embedded on qubit 0 (4×4
-/// layout).
-static bool sequenceMatchesSingleQubitMatrix(const Eigen::Matrix2cd& u,
-                                             const OneQubitGateSequence& seq) {
-  const Eigen::Matrix4cd expanded = expandToTwoQubits(u, 0);
-  return expanded.isApprox(seq.getUnitaryMatrix());
+[[nodiscard]] std::size_t countUnitaryMatrixOps(func::FuncOp funcOp) {
+  std::size_t count = 0;
+  funcOp.walk([&](UnitaryMatrixOpInterface) { ++count; });
+  return count;
+}
+
+} // namespace
+
+TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  std::mt19937 rng{12345678UL};
+  constexpr int iterations = 200;
+
+  for (int i = 0; i < iterations; ++i) {
+    const auto original = randomUnitaryMatrix<Eigen::Matrix2cd>(rng);
+
+    forEachBasis([&](StringRef basisStr) {
+      const auto parsed = mlir::qco::decomposition::parseEulerBasis(basisStr);
+      ASSERT_TRUE(parsed) << "basis=" << basisStr.str();
+
+      auto module = ModuleOp::create(UnknownLoc::get(fx.context.get()));
+      MLIRContext* ctx = module.getContext();
+
+      OpBuilder builder(ctx);
+      builder.setInsertionPointToStart(module.getBody());
+
+      auto qubitTy = QubitType::get(ctx);
+      auto funcTy = builder.getFunctionType({qubitTy}, {qubitTy});
+      auto func = builder.create<func::FuncOp>(module.getLoc(), "main", funcTy);
+      auto* entry = func.addEntryBlock();
+
+      builder.setInsertionPointToStart(entry);
+      Value q = entry->getArgument(0);
+      q = mlir::qco::decomposition::synthesizeUnitary1QEuler(
+          builder, module.getLoc(), q, original, *parsed);
+      builder.create<func::ReturnOp>(module.getLoc(), q);
+
+      ASSERT_TRUE(succeeded(verify(module))) << "basis=" << basisStr.str();
+
+      const auto restored = compute1QMatrixFromFunction(func);
+      EXPECT_TRUE(restored.isApprox(original, mlir::utils::TOLERANCE))
+          << "basis=" << basisStr.str();
+    });
+  }
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, ReconstructsOriginalRunAllBases) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  runFuseOnProgramForAllBases(
+      fx.context.get(), &mlir::qco::singleQubitRunWithSingleQubitGate,
+      /*checksAfter=*/
+      [&](func::FuncOp funcOp, StringRef basis,
+          const Eigen::Matrix2cd& original) {
+        const auto restored = compute1QMatrixFromFunction(funcOp);
+        EXPECT_TRUE(restored.isApprox(original, mlir::utils::TOLERANCE))
+            << "basis=" << basis.str();
+        expectBasisGatesOnly(funcOp, basis);
+      });
+}
+
+TEST(EulerSynthesisTest, ZsxxPauliXUsesSingleXGate) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  const Eigen::Matrix2cd pauliX = XOp::getUnitaryMatrix();
+  const auto circuit =
+      synthesizeMatrix(fx.context.get(), pauliX, EulerBasis::ZSXX,
+                       /*simplify=*/true);
+
+  ASSERT_TRUE(succeeded(verify(*circuit.module)));
+  EXPECT_EQ(countUnitaryMatrixOps(circuit.func), 1U);
+  EXPECT_EQ(countOps<XOp>(circuit.func), 1U);
+  EXPECT_EQ(countOps<RZOp>(circuit.func), 0U);
+  EXPECT_EQ(countOps<SXOp>(circuit.func), 0U);
+  EXPECT_EQ(countOps<UOp>(circuit.func), 0U);
+  EXPECT_TRUE(compute1QMatrixFromFunction(circuit.func)
+                  .isApprox(pauliX, mlir::utils::TOLERANCE));
+}
+
+TEST(EulerSynthesisTest, UGateReconstruction) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  std::mt19937 rng{99991};
+  for (int i = 0; i < 32; ++i) {
+    const auto u = randomUnitaryMatrix<Eigen::Matrix2cd>(rng);
+    const auto circuit = synthesizeMatrix(fx.context.get(), u, EulerBasis::U,
+                                          /*simplify=*/true);
+    ASSERT_TRUE(succeeded(verify(*circuit.module)));
+    EXPECT_LE(countOps<UOp>(circuit.func), 1U);
+    EXPECT_TRUE(compute1QMatrixFromFunction(circuit.func)
+                    .isApprox(u, mlir::utils::TOLERANCE));
+  }
+}
+
+TEST(EulerDecompositionTest, ZYZAnglesFromUnitaryReconstructHadamard) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  const Eigen::Matrix2cd hadamard = HOp::getUnitaryMatrix();
+  const auto [theta, phi, lambda, phase] =
+      EulerDecomposition::anglesFromUnitary(hadamard, EulerBasis::ZYZ);
+
+  auto module = ModuleOp::create(UnknownLoc::get(fx.context.get()));
+  OpBuilder builder(fx.context.get());
+  builder.setInsertionPointToStart(module.getBody());
+  const Location loc = module.getLoc();
+
+  auto qubitTy = QubitType::get(fx.context.get());
+  auto funcTy = builder.getFunctionType({qubitTy}, {qubitTy});
+  auto func = builder.create<func::FuncOp>(loc, "main", funcTy);
+  auto* entry = func.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+
+  Value q = entry->getArgument(0);
+  auto mkAngle = [&](double angle) -> Value {
+    return builder
+        .create<arith::ConstantOp>(loc, builder.getF64FloatAttr(angle))
+        .getResult();
+  };
+  q = builder.create<RZOp>(loc, q, mkAngle(lambda)).getQubitOut();
+  q = builder.create<RYOp>(loc, q, mkAngle(theta)).getQubitOut();
+  q = builder.create<RZOp>(loc, q, mkAngle(phi)).getQubitOut();
+  if (std::abs(phase) > mlir::utils::TOLERANCE) {
+    Value phaseVal = mkAngle(phase);
+    builder.create<GPhaseOp>(loc, phaseVal);
+  }
+  builder.create<func::ReturnOp>(loc, q);
+
+  ASSERT_TRUE(succeeded(verify(module)));
+  EXPECT_TRUE(compute1QMatrixFromFunction(func).isApprox(
+      hadamard, mlir::utils::TOLERANCE));
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
-class EulerDecompositionTest
+class EulerSynthesisExactTest
     : public testing::TestWithParam<
-          std::tuple<EulerBasis, Eigen::Matrix2cd (*)()>> {
-public:
-  [[nodiscard]] static Eigen::Matrix2cd
-  restore(const OneQubitGateSequence& sequence) {
-    Eigen::Matrix2cd matrix = Eigen::Matrix2cd::Identity();
-    for (auto&& gate : sequence.gates) {
-      matrix = getSingleQubitMatrix(gate) * matrix;
-    }
+          std::tuple<EulerBasis, Eigen::Matrix2cd (*)()>> {};
 
-    matrix *= helpers::globalPhaseFactor(sequence.globalPhase);
-    return matrix;
-  }
+TEST_P(EulerSynthesisExactTest, WithoutSimplification) {
+  SynthesisFixture fx;
+  fx.setUp();
 
-protected:
-  void SetUp() override {
-    eulerBasis = std::get<0>(GetParam());
-    originalMatrix = std::get<1>(GetParam())();
-  }
+  const auto [basis, matrixFactory] = GetParam();
+  const Eigen::Matrix2cd original = matrixFactory();
+  const auto circuit = synthesizeMatrix(fx.context.get(), original, basis,
+                                        /*simplify=*/false);
 
-  Eigen::Matrix2cd originalMatrix;
-  EulerBasis eulerBasis{};
-};
-
-TEST_P(EulerDecompositionTest, TestExact) {
-  auto decomposition = EulerDecomposition::generateCircuit(
-      eulerBasis, originalMatrix, false, std::nullopt);
-  auto restoredMatrix = restore(decomposition);
-
-  EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix))
-      << "RESULT:\n"
-      << restoredMatrix << '\n';
-}
-
-TEST(EulerDecompositionTest, Random) {
-  constexpr auto maxIterations = 10000;
-  std::mt19937 rng{12345678UL};
-
-  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
-                               EulerBasis::ZYZ, EulerBasis::ZXZ};
-  std::size_t currentEulerBasis = 0;
-  for (int i = 0; i < maxIterations; ++i) {
-    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix2cd>(rng);
-    auto eulerBasis = eulerBases[currentEulerBasis++ % eulerBases.size()];
-    auto decomposition = EulerDecomposition::generateCircuit(
-        eulerBasis, originalMatrix, true, std::nullopt);
-    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
-
-    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix))
-        << "ORIGINAL:\n"
-        << originalMatrix << '\n'
-        << "RESULT:\n"
-        << restoredMatrix << '\n';
-  }
-}
-
-TEST(EulerDecompositionTest, ZyzAnglesFromUnitaryReconstructHadamard) {
-  Eigen::Matrix2cd hadamard;
-  hadamard << 1.0 / std::numbers::sqrt2, 1.0 / std::numbers::sqrt2,
-      1.0 / std::numbers::sqrt2, -1.0 / std::numbers::sqrt2;
-
-  const auto angles =
-      EulerDecomposition::anglesFromUnitary(hadamard, EulerBasis::ZYZ);
-  OneQubitGateSequence zyzSeq{
-      .gates =
-          {
-              {.type = GateKind::RZ, .parameter = {angles[2]}},
-              {.type = GateKind::RY, .parameter = {angles[0]}},
-              {.type = GateKind::RZ, .parameter = {angles[1]}},
-          },
-      .globalPhase = angles[3],
-  };
-  const Eigen::Matrix2cd reconstructed =
-      EulerDecompositionTest::restore(zyzSeq);
-
-  EXPECT_TRUE(reconstructed.isApprox(hadamard));
-}
-
-TEST(EulerDecompositionTest, NativeEulerBasesRandomReconstruction) {
-  std::mt19937 rng(424242);
-  std::uniform_real_distribution<double> angleDist(-std::numbers::pi,
-                                                   std::numbers::pi);
-  for (int i = 0; i < 24; ++i) {
-    const double theta = angleDist(rng);
-    const double phi = angleDist(rng);
-    const double lambda = angleDist(rng);
-    const double phase = angleDist(rng);
-    const Eigen::Matrix2cd unitary =
-        std::exp(std::complex<double>(0.0, phase)) *
-        decomposition::uMatrix(theta, phi, lambda);
-    const Eigen::Matrix4cd expanded = expandToTwoQubits(unitary, 0);
-
-    const auto u3Seq = EulerDecomposition::generateCircuit(
-        EulerBasis::U3, unitary, true, std::nullopt);
-    const auto zsxSeq = EulerDecomposition::generateCircuit(
-        EulerBasis::ZSX, unitary, true, std::nullopt);
-    const auto zsxxSeq = EulerDecomposition::generateCircuit(
-        EulerBasis::ZSXX, unitary, true, std::nullopt);
-
-    EXPECT_TRUE(expanded.isApprox(u3Seq.getUnitaryMatrix()));
-    EXPECT_TRUE(expanded.isApprox(zsxSeq.getUnitaryMatrix()));
-    EXPECT_TRUE(sequenceMatchesSingleQubitMatrix(unitary, zsxSeq));
-    EXPECT_TRUE(sequenceMatchesSingleQubitMatrix(unitary, zsxxSeq));
-
-    const std::size_t zsxSx = countGatesOfType(zsxSeq, GateKind::SX);
-    const std::size_t zsxxSx = countGatesOfType(zsxxSeq, GateKind::SX);
-    const std::size_t zsxxX = countGatesOfType(zsxxSeq, GateKind::X);
-    EXPECT_EQ(countGatesOfType(zsxSeq, GateKind::X), 0U);
-    EXPECT_LE(zsxxX, 1U);
-    if (zsxxX == 0U) {
-      EXPECT_EQ(zsxSx, zsxxSx);
-    } else {
-      EXPECT_EQ(zsxSx, zsxxSx + 2U);
-    }
-  }
-}
-
-TEST(EulerDecompositionTest, ZsxxPauliXUsesSingleXGate) {
-  Eigen::Matrix2cd pauliX;
-  pauliX << 0.0, 1.0, 1.0, 0.0;
-  const auto seq = EulerDecomposition::generateCircuit(EulerBasis::ZSXX, pauliX,
-                                                       true, std::nullopt);
-  EXPECT_EQ(seq.gates.size(), 1U);
-  EXPECT_EQ(countGatesOfType(seq, GateKind::X), 1U);
-  EXPECT_EQ(countGatesOfType(seq, GateKind::RZ), 0U);
-  EXPECT_EQ(countGatesOfType(seq, GateKind::SX), 0U);
-  EXPECT_EQ(countGatesOfType(seq, GateKind::H), 0U);
-  EXPECT_EQ(countGatesOfType(seq, GateKind::U), 0U);
-  EXPECT_TRUE(sequenceMatchesSingleQubitMatrix(pauliX, seq));
-}
-
-TEST(EulerDecompositionTest, GetGateTypesForEulerBasis) {
-  const auto zyz = getGateTypesForEulerBasis(EulerBasis::ZYZ);
-  ASSERT_EQ(zyz.size(), 2U);
-  EXPECT_EQ(zyz[0], GateKind::RZ);
-  EXPECT_EQ(zyz[1], GateKind::RY);
-
-  const auto uFamily = getGateTypesForEulerBasis(EulerBasis::U321);
-  ASSERT_EQ(uFamily.size(), 1U);
-  EXPECT_EQ(uFamily[0], GateKind::U);
-
-  const auto zsxx = getGateTypesForEulerBasis(EulerBasis::ZSXX);
-  ASSERT_EQ(zsxx.size(), 3U);
-  EXPECT_EQ(zsxx[0], GateKind::RZ);
-  EXPECT_EQ(zsxx[1], GateKind::SX);
-  EXPECT_EQ(zsxx[2], GateKind::X);
-}
-
-TEST(EulerDecompositionTest, UAndU321MatchU3Reconstruction) {
-  std::mt19937 rng(99991);
-  for (int i = 0; i < 32; ++i) {
-    const auto u = randomUnitaryMatrix<Eigen::Matrix2cd>(rng);
-    const auto seqU3 = EulerDecomposition::generateCircuit(EulerBasis::U3, u,
-                                                           true, std::nullopt);
-    const auto seqU = EulerDecomposition::generateCircuit(EulerBasis::U, u,
-                                                          true, std::nullopt);
-    const auto seqU321 = EulerDecomposition::generateCircuit(
-        EulerBasis::U321, u, true, std::nullopt);
-    EXPECT_TRUE(EulerDecompositionTest::restore(seqU3).isApprox(u));
-    EXPECT_TRUE(EulerDecompositionTest::restore(seqU).isApprox(u));
-    EXPECT_TRUE(EulerDecompositionTest::restore(seqU321).isApprox(u));
-  }
-}
-
-TEST(EulerDecompositionTest, AnglesFromUnitaryXZXReconstructsRx) {
-  const Eigen::Matrix2cd u = rxMatrix(0.7);
-  const auto angles = EulerDecomposition::anglesFromUnitary(u, EulerBasis::XZX);
-  OneQubitGateSequence seq{
-      .gates =
-          {
-              {.type = GateKind::RX, .parameter = {angles[2]}},
-              {.type = GateKind::RZ, .parameter = {angles[0]}},
-              {.type = GateKind::RX, .parameter = {angles[1]}},
-          },
-      .globalPhase = angles[3],
-  };
-  EXPECT_TRUE(EulerDecompositionTest::restore(seq).isApprox(u));
-}
-
-TEST(EulerDecompositionTest, GateSequenceComplexityAndGlobalPhase) {
-  OneQubitGateSequence seq;
-  seq.gates.push_back(
-      {.type = GateKind::RZ, .parameter = {0.2}, .qubitId = {0}});
-  seq.globalPhase = 0.5;
-  EXPECT_TRUE(seq.hasGlobalPhase());
-  EXPECT_GE(seq.complexity(), 1U);
-  seq.globalPhase = 0.0;
-  EXPECT_FALSE(seq.hasGlobalPhase());
+  ASSERT_TRUE(succeeded(verify(*circuit.module)));
+  EXPECT_TRUE(compute1QMatrixFromFunction(circuit.func)
+                  .isApprox(original, mlir::utils::TOLERANCE));
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    SingleQubitMatrices, EulerDecompositionTest,
-    testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
-                                     EulerBasis::ZYZ, EulerBasis::ZXZ),
-                     testing::Values(
-                         []() -> Eigen::Matrix2cd {
-                           return Eigen::Matrix2cd::Identity();
-                         },
-                         []() -> Eigen::Matrix2cd { return ryMatrix(2.0); },
-                         []() -> Eigen::Matrix2cd { return rxMatrix(0.5); },
-                         []() -> Eigen::Matrix2cd { return rzMatrix(3.14); },
-                         []() -> Eigen::Matrix2cd { return H_GATE; })));
+    SingleQubitMatrices, EulerSynthesisExactTest,
+    testing::Combine(
+        testing::Values(EulerBasis::XYX, EulerBasis::XZX, EulerBasis::ZYZ,
+                        EulerBasis::ZXZ),
+        testing::Values(
+            []() -> Eigen::Matrix2cd { return Eigen::Matrix2cd::Identity(); },
+            []() -> Eigen::Matrix2cd { return ryMatrix(2.0); },
+            []() -> Eigen::Matrix2cd { return rxMatrix(0.5); },
+            []() -> Eigen::Matrix2cd { return rzMatrix(3.14); },
+            []() -> Eigen::Matrix2cd { return HOp::getUnitaryMatrix(); })));
+
+TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossCtrlAllBases) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  runFuseOnProgramForAllBases(
+      fx.context.get(), &mlir::qco::singleQubitRunsSplitByTwoQGate,
+      /*checksAfter=*/
+      [&](func::FuncOp funcOp, StringRef basis,
+          const Eigen::Matrix2cd& original) {
+        int numCtrl = 0;
+        funcOp.walk([&](CtrlOp) { ++numCtrl; });
+        EXPECT_EQ(numCtrl, 1) << "basis=" << basis.str();
+        EXPECT_TRUE(compute1QMatrixFromFunction(funcOp).isApprox(
+            original, mlir::utils::TOLERANCE))
+            << "basis=" << basis.str();
+        expectBasisGatesOnly(funcOp, basis);
+      });
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBarrierAllBases) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  runFuseOnProgramForAllBases(
+      fx.context.get(), &mlir::qco::singleQubitRunsSplitByBarrier,
+      /*checksAfter=*/
+      [&](func::FuncOp funcOp, StringRef basis,
+          const Eigen::Matrix2cd& original) {
+        EXPECT_EQ(countOps<BarrierOp>(funcOp), 1U) << "basis=" << basis.str();
+        EXPECT_TRUE(compute1QMatrixFromFunction(funcOp).isApprox(
+            original, mlir::utils::TOLERANCE))
+            << "basis=" << basis.str();
+        expectBasisGatesOnly(funcOp, basis);
+      });
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, InvalidBasisFailsPass) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  auto owned = buildProgram(fx.context.get(),
+                            &mlir::qco::singleQubitRunWithSingleQubitGate);
+  ASSERT_TRUE(static_cast<bool>(owned));
+  ModuleOp module = *owned;
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  EXPECT_TRUE(failed(runFuse(module, "not-a-basis")));
+}

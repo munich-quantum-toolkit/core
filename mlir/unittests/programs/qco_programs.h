@@ -1075,4 +1075,14 @@ void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
 void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
 
+// --- Single-qubit run merging --------------------------------------------- //
+
+/// Creates a single-qubit run with a single-qubit gate.
+void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b);
+
+/// Creates a single-qubit run with a two-qubit gate.
+void singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b);
+
+/// Creates two single-qubit runs separated by a barrier on the same wire.
+void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b);
 } // namespace mlir::qco

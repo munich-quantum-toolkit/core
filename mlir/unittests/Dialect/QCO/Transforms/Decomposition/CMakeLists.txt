@@ -7,9 +7,12 @@
 # Licensed under the MIT License
 
 set(target_name mqt-core-mlir-unittest-decomposition)
-add_executable(${target_name} test_decomposition_helpers.cpp test_euler_decomposition.cpp)
+add_executable(${target_name} test_euler_decomposition.cpp test_euler_helpers.cpp)
 
-target_link_libraries(${target_name} PRIVATE GTest::gtest_main MLIRQCOTransforms Eigen3::Eigen)
+target_link_libraries(${target_name} PRIVATE GTest::gtest_main MLIRQCOPrograms MLIRQCOTransforms
+                                             Eigen3::Eigen)
+target_link_libraries(${target_name} PRIVATE MLIRPass MLIRFuncDialect MLIRArithDialect MLIRIR
+                                             MLIRSupport MLIRQTensorDialect)
 
 mqt_mlir_configure_unittest_target(${target_name})
 
