@@ -80,6 +80,7 @@ def _build_gate_mappings_for_backend(
         "mcx": MCXGate,
         "mcphase": MCPhaseGate,
         "mcp": MCPhaseGate,
+        "mcx_gray": MCXGate,
     })
 
     qiskit_to_qdmi: dict[str, set[str]] = {}
@@ -143,6 +144,9 @@ class QDMIBackend(BackendV2):
         "gphase": {"global_phase"},  # OpenQASM canonical name
         "mcphase": {"mcp"},  # Qiskit canonical name
         "mcp": {"mcphase"},  # OpenQASM canonical name
+        "mcx_gray": {"mcx"},  # Alias for MCX with specific encoding
+        "mcx_vchain": {"mcx"},  # Alias for MCX with specific encoding
+        "mcx_recursive": {"mcx"},  # Alias for MCX with specific encoding
     }
 
     _QDMI_TO_QISKIT_GATE_MAP: ClassVar[dict[str, str]] = {
@@ -454,7 +458,40 @@ class QDMIBackend(BackendV2):
 
             # We also need to remove all gates that are defined in the OpenQASM `stdlib.inc`.
             # Qiskit's exporter will otherwise complain about duplicate definitions.
-            exclusion_list.update([gate.name for gate in qasm3.STDGATES_INC_GATES])
+            exclusion_list.update({
+                "p",
+                "x",
+                "y",
+                "z",
+                "h",
+                "s",
+                "sdg",
+                "t",
+                "tdg",
+                "sx",
+                "rx",
+                "ry",
+                "rz",
+                "cx",
+                "cy",
+                "cz",
+                "cp",
+                "crx",
+                "cry",
+                "crz",
+                "ch",
+                "swap",
+                "ccx",
+                "cswap",
+                "cu",
+                "CX",
+                "phase",
+                "cphase",
+                "id",
+                "u1",
+                "u2",
+                "u3",
+            })
 
             # By excluding already defined gates, we allow the exporter to emit otherwise unsupported gates without
             # needing to provide a definition for them. The exporter will then treat them as opaque gates, which is fine
