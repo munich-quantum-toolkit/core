@@ -40,6 +40,29 @@ def MergeSingleQubitRotationGates
   }];
 }
 
+def FuseSingleQubitUnitaryRuns
+    : Pass<"fuse-single-qubit-unitary-runs", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect"];
+  let summary = "Fuse single-qubit unitary runs using Euler resynthesis";
+  let description = [{
+    Collects maximal runs of consecutive single-qubit unitary operations on the
+    same qubit wire, composes their constant unitary matrices, and replaces each
+    run with an equivalent sequence of basis gates.
+
+    The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
+    A `gphase` correction is inserted when needed so the rewritten sequence
+    matches the composed matrix exactly (not only up to global phase).
+
+    Currently, only operations whose unitary matrix can be obtained at compile
+    time are fused.
+  }];
+  let options = [Option<
+      "basis", "basis", "std::string", "\"zyz\"",
+      "Target Euler basis (zyz, zxz, xzx, xyx, u, zsx, zsxx).">];
+}
+
 //===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//

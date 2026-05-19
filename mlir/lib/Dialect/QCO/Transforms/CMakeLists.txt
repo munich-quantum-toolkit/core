@@ -17,6 +17,7 @@ add_mlir_library(
   MLIRQCOUtils
   MLIRArithDialect
   MLIRMathDialect
+  Eigen3::Eigen
   DEPENDS
   MLIRQCOTransformsIncGen)
 
