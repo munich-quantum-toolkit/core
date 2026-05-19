@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.h"
 
 #include <Eigen/Core>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -406,7 +407,9 @@ std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
+  auto&& targetMatrix =
+      cast<UnitaryMatrixOpInterface>(bodyUnitary.getOperation())
+          .getUnitaryMatrix<Eigen::MatrixXcd>();
   if (!targetMatrix) {
     return std::nullopt;
   }
