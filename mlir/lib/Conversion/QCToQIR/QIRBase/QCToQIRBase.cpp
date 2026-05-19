@@ -253,9 +253,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 
       // Assign a base offset to this register if not yet seen
       if (!state.registerOffsets.contains(registerName)) {
-        state.registerOffsets.try_emplace(
-            registerName, static_cast<int64_t>(state.numResults));
-        state.numResults += static_cast<std::size_t>(registerSize);
+        state.registerOffsets.try_emplace(registerName, state.numResults);
+        state.numResults += registerSize;
       }
       resultIndex = state.registerOffsets[registerName] +
                     static_cast<int64_t>(registerIndex);
