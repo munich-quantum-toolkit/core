@@ -109,7 +109,12 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     if (auto castOp = indexValue.getDefiningOp<UnrealizedConversionCastOp>()) {
       indexValue = castOp.getInputs()[0];
     }
-    auto index = getConstantIntValue(indexValue).value_or(0);
+    auto constIndex = getConstantIntValue(indexValue);
+    if (!constIndex) {
+      return rewriter.notifyMatchFailure(
+          op, "Base profile requires a constant memref.load index");
+    }
+    auto index = *constIndex;
     Value qubit;
 
     if (const auto it = state.staticQubits.find(index);
@@ -238,16 +243,19 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 
     // Get result pointer
     Value result;
-    if (op.getRegisterIndex() && resultPtrs.contains(static_cast<int64_t>(
-                                     op.getRegisterIndex().value()))) {
-      result =
-          resultPtrs.at(static_cast<int64_t>(op.getRegisterIndex().value()));
+    auto resultIndex = op.getRegisterIndex()
+                           ? static_cast<int64_t>(op.getRegisterIndex().value())
+                           : static_cast<int64_t>(state.numResults);
+    if (resultPtrs.contains(resultIndex)) {
+      result = resultPtrs.at(resultIndex);
     } else {
       // Insert allocations and constants in entry block
       rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-      result = createPointerFromIndex(rewriter, op.getLoc(), resultPtrs.size());
-      resultPtrs.try_emplace(resultPtrs.size(), result);
-      state.numResults++;
+      result = createPointerFromIndex(rewriter, op.getLoc(), resultIndex);
+      resultPtrs.try_emplace(resultIndex, result);
+      if (std::cmp_greater_equal(resultIndex, state.numResults)) {
+        state.numResults = static_cast<std::size_t>(resultIndex + 1);
+      }
     }
 
     // Switch to measurements block

@@ -243,7 +243,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
 
 Value QIRProgramBuilder::load(Value reg, Value index) {
   if (profile == Profile::Base) {
-    llvm::reportFatalUsageError("Arrays can only be accessed if the "
+    llvm::reportFatalUsageError("Arrays can only be used if the "
                                 "Adaptive Profile is selected.");
   }
   if (loadedQubits[reg].contains(index)) {
@@ -770,13 +770,6 @@ QIRProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
                                 "Adaptive Profile is selected.");
   }
 
-  auto condition =
-      std::holds_alternative<bool>(cond)
-          ? LLVM::ConstantOp::create(
-                *this, getI1Type(),
-                getIntegerAttr(getI1Type(), std::get<bool>(cond) ? 1 : 0))
-                .getResult()
-          : std::get<Value>(cond);
   auto* currentBlock = getInsertionBlock();
 
   // Create the blocks
@@ -807,11 +800,23 @@ QIRProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 
   // Add read result operation to the current block and add conditional jump
   setInsertionPointToEnd(currentBlock);
-  const auto fnSig = LLVM::LLVMFunctionType::get(getI1Type(), {ptrType});
-  auto fnDec =
-      getOrCreateFunctionDeclaration(*this, module, QIR_READ_RESULT, fnSig);
-  auto readOp = LLVM::CallOp::create(*this, fnDec, condition);
-  LLVM::CondBrOp::create(*this, readOp.getResult(), thenBlock,
+
+  Value branchCondition;
+  if (std::holds_alternative<bool>(cond)) {
+    branchCondition =
+        LLVM::ConstantOp::create(
+            *this, getI1Type(),
+            getIntegerAttr(getI1Type(), std::get<bool>(cond) ? 1 : 0))
+            .getResult();
+  } else {
+    const auto fnSig = LLVM::LLVMFunctionType::get(getI1Type(), {ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_READ_RESULT, fnSig);
+    auto readOp = LLVM::CallOp::create(*this, fnDec, std::get<Value>(cond));
+    branchCondition = readOp.getResult();
+  }
+
+  LLVM::CondBrOp::create(*this, branchCondition, thenBlock,
                          elseBody ? elseBlock : nextBlock);
 
   // Set insertionpoint to next block

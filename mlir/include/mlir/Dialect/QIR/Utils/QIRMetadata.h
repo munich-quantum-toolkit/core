@@ -33,7 +33,8 @@ struct QIRMetadata {
   bool useDynamicResult{false};
   /// Whether the module uses arrays
   bool useArrays{false};
-  /// Whether the module uses backward branching
+  /// Whether the module uses backward branching (0 = none, 1 = iteration based,
+  /// 2 = condition based, 3 = both)
   int backwardsBranching{0};
   /// Whether the module uses Adaptive Profile
   bool useAdaptive{false};
