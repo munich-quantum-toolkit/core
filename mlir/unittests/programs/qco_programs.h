@@ -1080,7 +1080,7 @@ void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
 /// Creates a single-qubit run with a single-qubit gate.
 void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b);
 
-/// Creates a single-qubit run with a two-qubit gate.
+/// Creates two single-qubit runs separated by a two-qubit gate.
 void singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b);
 
 /// Creates two single-qubit runs separated by a barrier on the same wire.

@@ -152,7 +152,7 @@ protected:
         }
 
         auto iface = cast<UnitaryOpInterface>(op);
-        if (!isFuseCandidate(iface)) {
+        if (!isFuseCandidate(iface) || !getConstMatrix(iface).has_value()) {
           flushRun(current);
           continue;
         }
