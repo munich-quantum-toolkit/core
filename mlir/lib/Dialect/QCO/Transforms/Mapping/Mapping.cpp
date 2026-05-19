@@ -480,8 +480,8 @@ private:
     Value tensor = (*tensors.begin()).getResult();
 
     while (true) {
+      assert(tensor.hasOneUse() && "getComputation: expected linear typing");
       Operation* curr = *(tensor.user_begin());
-      assert(curr != nullptr);
 
       if (isa<qtensor::DeallocOp>(curr)) {
         break;
@@ -546,15 +546,15 @@ private:
     SmallVector<WireIterator> placedWires(layout.nqubits());
 
     const auto tensors = func.getOps<qtensor::AllocOp>();
-    assert(range_size(tensors) == 1);
+    assert(range_size(tensors) == 1 && "place: expected exactly one tensor");
+    
     qtensor::AllocOp alloc = *(tensors.begin());
+    const Value tensor = alloc.getResult();
+    assert(tensor.hasOneUse() && "place: expected linear typing");
 
     size_t prog = 0;
     while (true) {
-      const Value tensor = alloc.getResult();
       Operation* curr = *(tensor.user_begin());
-      assert(curr != nullptr);
-
       if (isa<qtensor::DeallocOp>(curr)) {
         rewriter.eraseOp(curr);
         break;
@@ -590,7 +590,6 @@ private:
     rewriter.eraseOp(alloc);
 
     // Create sinks for remaining, unused, static qubits.
-
     rewriter.setInsertionPoint(func.getFunctionBody().back().getTerminator());
     for (; prog < layout.nqubits(); ++prog) {
       const auto hw = layout.getHardwareIndex(prog);
