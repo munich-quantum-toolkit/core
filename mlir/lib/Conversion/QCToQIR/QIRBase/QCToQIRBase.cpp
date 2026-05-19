@@ -109,7 +109,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     if (auto castOp = indexValue.getDefiningOp<UnrealizedConversionCastOp>()) {
       indexValue = castOp.getInputs()[0];
     }
-    int64_t index = getConstantIntValue(indexValue).value_or(0);
+    auto index = getConstantIntValue(indexValue).value_or(0);
     Value qubit;
 
     if (const auto it = state.staticQubits.find(index);
@@ -134,7 +134,6 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
 
 /**
  * @brief Erases memref.dealloc during the QIR Base Profile conversion
- *
  */
 struct ConvertMemRefDeallocOp final
     : StatefulOpConversionPattern<memref::DeallocOp> {
@@ -190,7 +189,6 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
 
 /**
  * @brief Erases memref.alloc during the QIR Base Profile conversion
- *
  */
 struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -210,21 +208,17 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
  * For measurements with register information, a static result is used at
  * the given index. Otherwise a static result at the next index is used.
  *
- * @par Example (with register): TODO fix this
+ * @par Example (without register):
  * ```mlir
- * %result = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
+ * %result = qc.measure %q : !qc.qubit -> i1
  * ```
  * becomes:
  * ```mlir
  * // In entry block:
  * %zero = llvm.mlir.zero : !llvm.ptr
- * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
- * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
- * (i64, !llvm.ptr, !llvm.ptr) -> ()
- * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
  *
  * // In measurements block:
- * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+ * llvm.call @__quantum__qis__mz__body(%q, %zero) : (!llvm.ptr, !llvm.ptr) -> ()
  * ```
  */
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
@@ -234,9 +228,6 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-
-    auto& resultArrays = state.resultArrays;
-    auto& loadedResults = state.loadedResults;
     auto& resultPtrs = state.resultPtrs;
 
     auto* ctx = getContext();
@@ -278,6 +269,9 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 };
 } // namespace
 
+/**
+ * @brief Populates conversion patterns for QC-to-QIR-Base lowering.
+ */
 static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
                                         QCToQIRTypeConverter& typeConverter,
                                         MLIRContext* ctx,

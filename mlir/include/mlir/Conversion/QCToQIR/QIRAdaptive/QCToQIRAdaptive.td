@@ -9,31 +9,29 @@
 include "mlir/Pass/PassBase.td"
 
 def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive"> {
-  let summary =
-      "Lower the QC dialect to the LLVM dialect compliant with QIR 2.0";
+  let summary = "Lower the QC dialect to the LLVM dialect compliant with the "
+                "QIR Adaptive Profile 2.1";
 
   let description = [{
-    This pass lowers all operations from the QC dialect to their equivalent operations in the LLVM dialect, ensuring compliance with the QIR 2.0 standard.
+    This pass lowers all operations from the QC dialect to their equivalent operations in the LLVM dialect, ensuring compliance with the QIR Adaptive Profile 2.1 standard.
     It translates quantum operations and types from QC to their corresponding representations in QIR, facilitating interoperability with quantum computing frameworks that utilize the QIR standard.
 
     Requirements:
 
     - Input is a valid module in the QC dialect.
     - The entry function must be marked with the `entry_point` attribute.
-    - The input entry function must consist of a single block.
-      Multi-block input functions are currently not supported.
-    - The program must have straight-line control flow (i.e., Base Profile QIR).
 
     Behavior:
 
     - Each QC quantum operation is replaced by a call to the corresponding QIR function in the LLVM dialect.
-    - Required QIR module flags are attached as attributes to the entry function.
-    - The pass transforms the single-block entry function into four blocks to satisfy QIR Base Profile constraints:
+    - Operations from the scf dialect are lowered into the cf dialect before they are lowered to the LLVM dialect.
+    - Required QIR module flags are attached to the MLIR module.
+    - Required attributes are attached to the entry function.
+    - The pass extends the existing block structure of the entry function with an entry block and an epilogue block:
       0. Initialization block: Sets up the execution environment and performs required runtime initialization.
-      1. Reversible operations block: Contains only void-returning calls to reversible quantum operations.
-      2. Irreversible operations block: Contains only void-returning calls to operations marked irreversible (e.g., `__quantum__qis__mz__body` and `__quantum__qis__reset__body`).
-      3. Epilogue block: Records measurement results and returns from the entry function.
-    - Blocks are connected via unconditional branches in the order listed above.
+      1. Epilogue block: Records measurement results and returns from the entry function.
+      Any blocks in-between have no restrictions regarding their operations as long as they are supported.
+    - Measurement results may be used as classical values to drive conditional branches.
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
 
     Producing LLVM IR:

@@ -339,7 +339,6 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
  * @details
  * For measurements with register information, a result array is allocated and
  * all result pointers are loaded.
- *
  * For measurements without register information, a static result pointer is
  * used.
  * If the operation has an user, a read result call operation is created to
@@ -527,9 +526,10 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
     main.getBlocks().splice(Region::iterator(firstBlock), main.getBlocks(),
                             entryBlock);
     Block* finalBlock = builder.createBlock(&main.getBody());
-    state.entryBlock = entryBlock;
 
+    state.entryBlock = entryBlock;
     state.outputBlock = finalBlock;
+
     builder.setInsertionPointToEnd(entryBlock);
     LLVM::BrOp::create(builder, main->getLoc(), firstBlock);
     auto* terminatorOp = lastBlock->getTerminator();
@@ -644,12 +644,13 @@ protected:
     LoweringState state;
     state.useAdaptive = true;
 
-    setSCFFlags(moduleOp, &state);
-
     target.addLegalDialect<LLVM::LLVMDialect>();
 
     // Stage 1: Convert scf dialect to cf
     {
+      // Find  the required flags before the scf operations are converted
+      setSCFFlags(moduleOp, &state);
+
       RewritePatternSet scfPatterns(ctx);
       target.addIllegalDialect<scf::SCFDialect>();
       target.addLegalDialect<cf::ControlFlowDialect>();
