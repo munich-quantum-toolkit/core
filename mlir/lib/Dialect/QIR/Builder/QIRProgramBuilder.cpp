@@ -324,6 +324,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   if (profile == Profile::Adaptive) {
     // Create a dynamic result array for the Adaptive Profile
     metadata_.useDynamicResult = true;
+    metadata_.useArrays = true;
 
     auto fnSig =
         LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
@@ -831,6 +832,11 @@ QIRProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
             getIntegerAttr(getI1Type(), std::get<bool>(cond) ? 1 : 0))
             .getResult();
   } else {
+    auto conditionValue = std::get<Value>(cond);
+    if (conditionValue.getType() != ptrType) {
+      llvm::reportFatalUsageError("Condition value must be llvm.ptr type");
+    }
+
     const auto fnSig = LLVM::LLVMFunctionType::get(getI1Type(), {ptrType});
     auto fnDec =
         getOrCreateFunctionDeclaration(*this, module, QIR_READ_RESULT, fnSig);

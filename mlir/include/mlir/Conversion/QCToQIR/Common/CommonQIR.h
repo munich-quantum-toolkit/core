@@ -14,12 +14,16 @@
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Transforms/DialectConversion.h>
+
+#include <cstdint>
+#include <utility>
 
 namespace mlir {
 using namespace qir;

@@ -345,7 +345,7 @@ public:
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
-   * @return Reference to this builder for method chaining
+   * @return An LLVM pointer to the measurement result
    *
    * @par Example:
    * ```c++
