@@ -21,18 +21,23 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 🚸 Improve native gate support for the Qiskit-to-OpenQASM3 conversion in the QDMI-Qiskit interface ([#1719]) ([**@burgholzer**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
-
-### Fixed
-
-- 🏁 Fix dynamic loading of QDMI device DLLs on Windows when an absolute path is provided ([#1720]) ([**@burgholzer**])
 
 ### Removed
 
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+## [3.6.1] - 2026-05-20
+
+### Changed
+
+- 🚸 Improve native gate support for the Qiskit-to-OpenQASM3 conversion in the QDMI-Qiskit interface ([#1719]) ([**@burgholzer**])
+
+### Fixed
+
+- 🏁 Fix dynamic loading of QDMI device DLLs on Windows when an absolute path is provided ([#1720]) ([**@burgholzer**])
 
 ## [3.6.0] - 2026-05-13
 
@@ -373,7 +378,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.1...HEAD
+[3.6.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.1
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.0
