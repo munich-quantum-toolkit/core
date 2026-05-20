@@ -98,7 +98,7 @@ namespace {
 /**
  * @brief Remove matching extract-insert pairs.
  */
-struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
+struct RemoveExtractInsertPairPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InsertOp op,
@@ -121,9 +121,9 @@ struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
 
 /**
  * @brief Replace extracted qubit with previously inserted qubit and remove both
- * the insert as well as the extract operation.
+ * the insert and the extract operation.
  */
-struct RemoveExtractAfterInsert final : OpRewritePattern<InsertOp> {
+struct RemoveExtractAfterInsertPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InsertOp op,
@@ -145,6 +145,37 @@ struct RemoveExtractAfterInsert final : OpRewritePattern<InsertOp> {
       rewriter.eraseOp(extract);
       rewriter.eraseOp(op);
 
+      return success();
+    }
+
+    return failure();
+  }
+};
+
+struct BubbleDownInsertPattern final : OpRewritePattern<InsertOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertOp op,
+                                PatternRewriter& rewriter) const override {
+    auto next = std::next(TensorIterator(op.getResult()));
+
+    if (next == std::default_sentinel ||
+        isa<DeallocOp, InsertOp>(next.operation())) {
+      return failure();
+    }
+
+    if (auto extract = dyn_cast<ExtractOp>(next.operation())) {
+      if (extract.getIndex() == op.getIndex()) {
+        return failure();
+      }
+
+      auto newExtract = ExtractOp::create(rewriter, op.getLoc(), op.getDest(),
+                                          extract.getIndex());
+
+      rewriter.setInsertionPoint(extract);
+      auto newInsert =
+          InsertOp::create(rewriter, extract.getLoc(), op.getScalar(),
+                           extract.getTensor(), op.getIndex());           
       return success();
     }
 
@@ -179,5 +210,6 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<RemoveExtractInsertPair, RemoveExtractAfterInsert>(context);
+  results.add<RemoveExtractInsertPairPattern, RemoveExtractAfterInsertPattern,
+              BubbleDownInsertPattern>(context);
 }
