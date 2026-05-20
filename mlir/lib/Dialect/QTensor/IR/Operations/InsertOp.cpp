@@ -10,8 +10,10 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
+#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -21,37 +23,38 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <iterator>
+
 using namespace mlir;
 using namespace mlir::qtensor;
 
 /**
  * @brief Checks whether removing an extract-insert pair is linearity-safe.
  */
-static bool isRemovableExtractInsertPair(InsertOp insertOp,
-                                         ExtractOp extractOp) {
-  return insertOp.getScalar() == extractOp.getResult() &&
-         areEquivalentIndices(insertOp.getIndex(), extractOp.getIndex());
+static bool isRemovableExtractInsertPair(InsertOp insert, ExtractOp extract) {
+  return insert.getScalar() == extract.getResult() &&
+         areEquivalentIndices(insert.getIndex(), extract.getIndex());
 }
 
 /**
  * @brief Folds an insert operation after a matching extract operation into the
  * original tensor.
  */
-static Value foldInsertAfterExtract(InsertOp insertOp) {
-  auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
-  if (!extractOp) {
+static Value foldInsertAfterExtract(InsertOp insert) {
+  auto extract = insert.getScalar().getDefiningOp<ExtractOp>();
+  if (!extract) {
     return nullptr;
   }
 
-  if (insertOp.getDest() != extractOp.getOutTensor()) {
+  if (insert.getDest() != extract.getOutTensor()) {
     return nullptr;
   }
 
-  if (!isRemovableExtractInsertPair(insertOp, extractOp)) {
+  if (!isRemovableExtractInsertPair(insert, extract)) {
     return nullptr;
   }
 
-  return extractOp.getTensor();
+  return extract.getTensor();
 }
 
 /**
@@ -60,40 +63,33 @@ static Value foldInsertAfterExtract(InsertOp insertOp) {
  * @details The function traverses the tensor chain of the insert operation
  * until it finds the matching extract operation.
  */
-static ExtractOp findMatchingExtractInTensorChain(InsertOp insertOp) {
-  auto current = insertOp.getDest();
-  auto insertIndex = insertOp.getIndex();
-
-  if (!getConstantIntValue(insertIndex)) {
-    return nullptr;
-  }
-
-  while (auto* definingOp = current.getDefiningOp()) {
-    if (auto nestedInsertOp = dyn_cast<InsertOp>(definingOp)) {
-      auto nestedInsertIndex = nestedInsertOp.getIndex();
-      if (!getConstantIntValue(nestedInsertIndex)) {
+static ExtractOp findMatchingExtractInTensorChain(InsertOp op) {
+  TensorIterator it(op.getResult());
+  for (; !isa<AllocOp>(it.operation()); --it) {
+    if (auto nestedInsert = dyn_cast<InsertOp>(it.operation())) {
+      if (!getConstantIntValue(nestedInsert.getIndex())) {
         return nullptr;
       }
+
       // A more recent write to the same index shadows all older extracts
-      if (areEquivalentIndices(nestedInsertIndex, insertIndex)) {
+      if (areEquivalentIndices(nestedInsert.getIndex(), op.getIndex())) {
         return nullptr;
       }
-      current = nestedInsertOp.getDest();
       continue;
     }
-    if (auto extractOp = dyn_cast<ExtractOp>(definingOp)) {
-      auto extractIndex = extractOp.getIndex();
-      if (!getConstantIntValue(extractIndex)) {
+
+    if (auto extract = dyn_cast<ExtractOp>(it.operation())) {
+      if (!getConstantIntValue(extract.getIndex())) {
         return nullptr;
       }
-      if (areEquivalentIndices(extractIndex, insertIndex)) {
-        return extractOp;
+
+      if (areEquivalentIndices(extract.getIndex(), op.getIndex())) {
+        return extract;
       }
-      current = extractOp.getTensor();
       continue;
     }
-    break;
   }
+
   return nullptr;
 }
 
@@ -107,17 +103,17 @@ struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
 
   LogicalResult matchAndRewrite(InsertOp op,
                                 PatternRewriter& rewriter) const override {
-    auto extractOp = findMatchingExtractInTensorChain(op);
-    if (!extractOp) {
+    auto extract = findMatchingExtractInTensorChain(op);
+    if (!extract) {
       return failure();
     }
 
-    if (!isRemovableExtractInsertPair(op, extractOp)) {
+    if (!isRemovableExtractInsertPair(op, extract)) {
       return failure();
     }
 
     rewriter.replaceOp(op, op.getDest());
-    rewriter.replaceOp(extractOp, {extractOp.getTensor(), nullptr});
+    rewriter.replaceOp(extract, {extract.getTensor(), nullptr});
 
     return success();
   }
@@ -132,53 +128,24 @@ struct RemoveExtractAfterInsert final : OpRewritePattern<InsertOp> {
 
   LogicalResult matchAndRewrite(InsertOp op,
                                 PatternRewriter& rewriter) const override {
-    auto index = op.getIndex();
-
-    Value tensor = op.getResult();
-    while (true) {
-      assert(tensor.hasOneUse() && "getComputation: expected linear typing");
-      Operation* curr = *(tensor.user_begin());
-
-      if (isa<qtensor::DeallocOp, scf::YieldOp>(curr)) {
-        break;
+    for (TensorIterator it(op.getResult()); it != std::default_sentinel; ++it) {
+      if (!isa<ExtractOp>(it.operation())) {
+        continue;
       }
 
-      const auto walk =
-          TypeSwitch<Operation*, WalkResult>(curr)
-              .Case<qtensor::ExtractOp>([&](qtensor::ExtractOp wOp) {
-                if (wOp.getIndex() != index) {
-                  tensor = wOp.getOutTensor();
-                  return WalkResult::advance();
-                }
-
-                rewriter.replaceAllUsesWith(wOp.getResult(), op.getScalar());
-                rewriter.replaceAllUsesWith(wOp.getOutTensor(),
-                                            wOp.getTensor());
-                rewriter.replaceAllUsesWith(op.getResult(), op.getDest());
-                rewriter.eraseOp(wOp);
-                rewriter.eraseOp(op);
-
-                return WalkResult::interrupt();
-              })
-              .Case<qtensor::InsertOp>([&](qtensor::InsertOp wOp) {
-                tensor = wOp.getResult();
-                return WalkResult::advance();
-              })
-              .Case<scf::ForOp>([&](scf::ForOp wOp) {
-                constexpr auto offset = 3; // lb, ub, step
-                const auto num = tensor.use_begin()->getOperandNumber();
-                tensor = wOp->getResults()[offset - num];
-                return WalkResult::advance();
-              })
-              .Default([&](Operation* op) {
-                report_fatal_error("unknown op in def-use chain: " +
-                                   op->getName().getStringRef());
-                return WalkResult::interrupt();
-              });
-
-      if (walk.wasInterrupted()) {
-        return success();
+      auto extract = cast<ExtractOp>(it.operation());
+      if (extract.getIndex() != op.getIndex()) {
+        continue;
       }
+
+      rewriter.replaceAllUsesWith(extract.getResult(), op.getScalar());
+      rewriter.replaceAllUsesWith(extract.getOutTensor(), extract.getTensor());
+      rewriter.replaceAllUsesWith(op.getResult(), op.getDest());
+
+      rewriter.eraseOp(extract);
+      rewriter.eraseOp(op);
+
+      return success();
     }
 
     return failure();
