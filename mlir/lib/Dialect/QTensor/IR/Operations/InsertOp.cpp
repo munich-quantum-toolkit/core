@@ -11,6 +11,8 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
+#include <llvm/ADT/TypeSwitch.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
@@ -121,6 +123,68 @@ struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
   }
 };
 
+/**
+ * @brief Replace extracted qubit with previously inserted qubit and remove both
+ * the insert as well as the extract operation.
+ */
+struct RemoveExtractAfterInsert final : OpRewritePattern<InsertOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertOp op,
+                                PatternRewriter& rewriter) const override {
+    auto index = op.getIndex();
+
+    Value tensor = op.getResult();
+    while (true) {
+      assert(tensor.hasOneUse() && "getComputation: expected linear typing");
+      Operation* curr = *(tensor.user_begin());
+
+      if (isa<qtensor::DeallocOp, scf::YieldOp>(curr)) {
+        break;
+      }
+
+      const auto walk =
+          TypeSwitch<Operation*, WalkResult>(curr)
+              .Case<qtensor::ExtractOp>([&](qtensor::ExtractOp wOp) {
+                if (wOp.getIndex() != index) {
+                  tensor = wOp.getOutTensor();
+                  return WalkResult::advance();
+                }
+
+                rewriter.replaceAllUsesWith(wOp.getResult(), op.getScalar());
+                rewriter.replaceAllUsesWith(wOp.getOutTensor(),
+                                            wOp.getTensor());
+                rewriter.replaceAllUsesWith(op.getResult(), op.getDest());
+                rewriter.eraseOp(wOp);
+                rewriter.eraseOp(op);
+
+                return WalkResult::interrupt();
+              })
+              .Case<qtensor::InsertOp>([&](qtensor::InsertOp wOp) {
+                tensor = wOp.getResult();
+                return WalkResult::advance();
+              })
+              .Case<scf::ForOp>([&](scf::ForOp wOp) {
+                constexpr auto offset = 3; // lb, ub, step
+                const auto num = tensor.use_begin()->getOperandNumber();
+                tensor = wOp->getResults()[offset - num];
+                return WalkResult::advance();
+              })
+              .Default([&](Operation* op) {
+                report_fatal_error("unknown op in def-use chain: " +
+                                   op->getName().getStringRef());
+                return WalkResult::interrupt();
+              });
+
+      if (walk.wasInterrupted()) {
+        return success();
+      }
+    }
+
+    return failure();
+  }
+};
+
 } // namespace
 
 LogicalResult InsertOp::verify() {
@@ -148,5 +212,5 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<RemoveExtractInsertPair>(context);
+  results.add<RemoveExtractInsertPair, RemoveExtractAfterInsert>(context);
 }
