@@ -10,15 +10,15 @@
       }
     },
     {
-      "name": "base-ninja",
+      "name": "base-unix",
       "hidden": true,
       "inherits": "base",
       "condition": {
-        "type": "notEquals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
+        "type": "inList",
+        "string": "${hostSystemName}",
+        "list": ["Linux", "Darwin"]
       },
-      "description": "Default configuration for non-Windows builds. Uses the Ninja generator",
+      "description": "Default configuration for Linux and macOS builds. Uses the Ninja generator",
       "generator": "Ninja"
     },
     {
@@ -34,7 +34,7 @@
     },
     {
       "name": "debug",
-      "inherits": "base-ninja",
+      "inherits": "base-unix",
       "displayName": "Debug config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -43,10 +43,29 @@
     },
     {
       "name": "release",
-      "inherits": "base-ninja",
+      "inherits": "base-unix",
       "displayName": "Release config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "coverage",
+      "inherits": "base-unix",
+      "displayName": "Coverage config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "lint",
+      "inherits": "base-unix",
+      "displayName": "Lint config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_MQT_CORE_BENCHMARKS": "ON",
+        "BUILD_MQT_CORE_BINDINGS": "ON"
       }
     },
     {
@@ -65,37 +84,24 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
-    },
-    {
-      "name": "coverage",
-      "inherits": "base-ninja",
-      "displayName": "Coverage config",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "ENABLE_COVERAGE": "ON"
-      }
-    },
-    {
-      "name": "lint",
-      "inherits": "base-ninja",
-      "displayName": "Lint config",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "BUILD_MQT_CORE_BENCHMARKS": "ON",
-        "BUILD_MQT_CORE_BINDINGS": "ON"
-      }
     }
   ],
   "buildPresets": [
     {
       "name": "debug",
-      "configurePreset": "debug",
-      "configuration": "Debug"
+      "configurePreset": "debug"
     },
     {
       "name": "release",
-      "configurePreset": "release",
-      "configuration": "Release"
+      "configurePreset": "release"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    },
+    {
+      "name": "lint",
+      "configurePreset": "lint"
     },
     {
       "name": "debug-windows",
@@ -106,16 +112,6 @@
       "name": "release-windows",
       "configurePreset": "release-windows",
       "configuration": "Release"
-    },
-    {
-      "name": "coverage",
-      "configurePreset": "coverage",
-      "configuration": "Debug"
-    },
-    {
-      "name": "lint",
-      "configurePreset": "lint",
-      "configuration": "Debug"
     }
   ],
   "testPresets": [
@@ -131,14 +127,17 @@
     {
       "name": "debug",
       "inherits": "base",
-      "configurePreset": "debug",
-      "configuration": "Debug"
+      "configurePreset": "debug"
     },
     {
       "name": "release",
       "inherits": "base",
-      "configurePreset": "release",
-      "configuration": "Release"
+      "configurePreset": "release"
+    },
+    {
+      "name": "coverage",
+      "inherits": "base",
+      "configurePreset": "coverage"
     },
     {
       "name": "debug-windows",
@@ -151,12 +150,6 @@
       "inherits": "base",
       "configurePreset": "release-windows",
       "configuration": "Release"
-    },
-    {
-      "name": "coverage",
-      "inherits": "base",
-      "configurePreset": "coverage",
-      "configuration": "Debug"
     }
   ]
 }
