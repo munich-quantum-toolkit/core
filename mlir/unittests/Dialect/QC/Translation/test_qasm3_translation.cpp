@@ -9,7 +9,6 @@
  */
 
 #include "TestCaseUtils.h"
-#include "ir/QuantumComputation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
@@ -31,12 +30,14 @@
 #include <ostream>
 #include <string>
 
+using namespace mlir;
+
 namespace {
 
 struct QASM3TranslationTestCase {
   std::string name;
   std::string path;
-  mqt::test::NamedBuilder<mlir::qc::QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedBuilder<qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QASM3TranslationTestCase& test);
@@ -53,14 +54,13 @@ std::ostream& operator<<(std::ostream& os,
 class QASM3TranslationTest
     : public testing::TestWithParam<QASM3TranslationTestCase> {
 protected:
-  std::unique_ptr<mlir::MLIRContext> context;
+  std::unique_ptr<MLIRContext> context;
 
   void SetUp() override {
-    mlir::DialectRegistry registry;
-    registry.insert<mlir::qc::QCDialect, mlir::arith::ArithDialect,
-                    mlir::func::FuncDialect, mlir::memref::MemRefDialect,
-                    mlir::scf::SCFDialect>();
-    context = std::make_unique<mlir::MLIRContext>();
+    DialectRegistry registry;
+    registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                    memref::MemRefDialect, scf::SCFDialect>();
+    context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
@@ -77,24 +77,24 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
                                .string();
   mqt::test::DeferredPrinter printer;
 
-  auto translated = mlir::qc::translateQASM3ToQC(context.get(), programPath);
+  auto translated = qc::translateQASM3ToQC(context.get(), programPath);
   ASSERT_TRUE(translated);
   printer.record(translated.get(), "Translated QC IR" + testName);
-  EXPECT_TRUE(mlir::verify(*translated).succeeded());
+  EXPECT_TRUE(verify(*translated).succeeded());
 
   EXPECT_TRUE(runQCCleanupPipeline(translated.get()).succeeded());
   printer.record(translated.get(), "Canonicalized Translated QC IR" + testName);
-  EXPECT_TRUE(mlir::verify(*translated).succeeded());
+  EXPECT_TRUE(verify(*translated).succeeded());
 
   auto reference =
-      mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
+      qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QC IR" + testName);
-  EXPECT_TRUE(mlir::verify(*reference).succeeded());
+  EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(runQCCleanupPipeline(reference.get()).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QC IR" + testName);
-  EXPECT_TRUE(mlir::verify(*reference).succeeded());
+  EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(translated.get(), reference.get()));
@@ -102,4 +102,4 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
 
 INSTANTIATE_TEST_SUITE_P(QASM3TranslationProgramsTest, QASM3TranslationTest,
                          testing::Values(QASM3TranslationTestCase{
-                             "X", "x.qasm", MQT_NAMED_BUILDER(mlir::qc::x)}));
+                             "X", "x.qasm", MQT_NAMED_BUILDER(qc::x)}));
