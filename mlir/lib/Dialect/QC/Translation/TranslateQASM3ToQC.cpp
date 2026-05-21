@@ -63,12 +63,14 @@ namespace {
 using GateFn =
     std::function<void(QCProgramBuilder&, ArrayRef<Value>, ArrayRef<double>)>;
 
+} // namespace
+
 /**
  * Build the static gate-name → GateFn dispatch table.
  * Each entry maps a QASM3 gate identifier to a lambda that emits the
  * corresponding QC dialect op via QCProgramBuilder.
  */
-llvm::StringMap<GateFn> buildGateDispatch() {
+static llvm::StringMap<GateFn> buildGateDispatch() {
   llvm::StringMap<GateFn> d;
 
   // 0-target, 1-param
@@ -179,8 +181,10 @@ llvm::StringMap<GateFn> buildGateDispatch() {
   return d;
 }
 
+namespace {
+
 /// Static gate dispatch table, built once at startup.
-static const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
+const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 
 /// Local qubit scope used during compound gate body expansion.
 /// Maps argument name → vector of MLIR qubit Values.
