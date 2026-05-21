@@ -33,7 +33,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <exception>
 #include <string>
 #include <utility>
 
