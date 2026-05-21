@@ -937,12 +937,6 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
     auto step =
         arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStep());
 
-    SmallVector<Type> outTypes;
-    if (failed(
-            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
-      return failure();
-    }
-
     auto scfFor = scf::ForOp::create(rewriter, loc, start, stop, step,
                                      adaptor.getInValues());
 
