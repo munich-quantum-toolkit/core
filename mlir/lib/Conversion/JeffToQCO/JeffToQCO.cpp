@@ -861,14 +861,8 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
           op, "qco.if requires exactly two branches");
     }
 
-    SmallVector<Type> outTypes;
-    if (failed(
-            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
-      return failure();
-    }
-
-    auto qcoIf = IfOp::create(rewriter, op.getLoc(), outTypes,
-                              adaptor.getSelection(), adaptor.getInValues());
+    auto qcoIf = IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(),
+                              adaptor.getInValues());
 
     auto moveRegion = [&](Region& source, Region& dest) -> LogicalResult {
       rewriter.inlineRegionBefore(source, dest, dest.end());
