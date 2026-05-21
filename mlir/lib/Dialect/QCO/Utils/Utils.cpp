@@ -19,8 +19,8 @@
 
 namespace mlir::qco {
 func::FuncOp getEntryPoint(ModuleOp op) {
-  static constexpr llvm::StringRef PASSTHROUGH_LABEL = "passthrough";
-  static constexpr llvm::StringRef ENTRY_POINT_LABEL = "entry_point";
+  static constexpr StringRef PASSTHROUGH_LABEL = "passthrough";
+  static constexpr StringRef ENTRY_POINT_LABEL = "entry_point";
 
   const auto isEntry = [](Attribute attr) {
     const auto strAttr = dyn_cast<StringAttr>(attr);

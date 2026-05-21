@@ -92,16 +92,16 @@ class MappingPassTest : public testing::Test,
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
 
   static LogicalResult runPass(ModuleOp m, const DeviceSpec& device,
-                               const qco::MappingPassOptions& options) {
+                               const MappingPassOptions& options) {
     PassManager pm(m->getContext());
-    pm.addPass(qco::createMappingPass(device.first, device.second, options));
+    pm.addPass(createMappingPass(device.first, device.second, options));
     return pm.run(m);
   }
 
@@ -113,9 +113,9 @@ protected:
 TEST_P(MappingPassTest, NoEntryPoint) {
   const auto& device = GetParam();
 
-  OwningOpRef<ModuleOp> m = ModuleOp::create(UnknownLoc::get(context.get()));
+  OwningOpRef m = ModuleOp::create(UnknownLoc::get(context.get()));
 
-  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto res = runPass(m.get(), device, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
@@ -123,7 +123,7 @@ TEST_P(MappingPassTest, NoEntryPoint) {
 TEST_P(MappingPassTest, NoQubitAllocations) {
   const auto& device = GetParam();
 
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   Value q0 = builder.allocQubit();
@@ -131,7 +131,7 @@ TEST_P(MappingPassTest, NoQubitAllocations) {
   builder.sink(q0);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto res = runPass(m.get(), device, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
@@ -139,7 +139,7 @@ TEST_P(MappingPassTest, NoQubitAllocations) {
 TEST_P(MappingPassTest, NoTwoTensors) {
   const auto& device = GetParam();
 
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   Value tensor0 = builder.qtensorAlloc(1);
@@ -162,7 +162,7 @@ TEST_P(MappingPassTest, NoTwoTensors) {
   builder.qtensorDealloc(tensor1);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto res = runPass(m.get(), device, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
@@ -170,7 +170,7 @@ TEST_P(MappingPassTest, NoTwoTensors) {
 TEST_P(MappingPassTest, NoExtractAfterInsert) {
   const auto& device = GetParam();
 
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   Value tensor0 = builder.qtensorAlloc(1);
@@ -187,7 +187,7 @@ TEST_P(MappingPassTest, NoExtractAfterInsert) {
   builder.qtensorDealloc(tensor0);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto res = runPass(m.get(), device, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
@@ -195,7 +195,7 @@ TEST_P(MappingPassTest, NoExtractAfterInsert) {
 TEST_P(MappingPassTest, TooManyQubitsForArch) {
   const auto& device = GetParam();
 
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   int64_t nqubits = static_cast<int64_t>(device.first) + 1;
@@ -215,7 +215,7 @@ TEST_P(MappingPassTest, TooManyQubitsForArch) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto res = runPass(m.get(), device, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
@@ -223,7 +223,7 @@ TEST_P(MappingPassTest, TooManyQubitsForArch) {
 TEST_P(MappingPassTest, GHZ) {
   const auto& device = GetParam();
 
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   Value tensor = builder.qtensorAlloc(3);
@@ -247,7 +247,7 @@ TEST_P(MappingPassTest, GHZ) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto res = runPass(m.get(), device, MappingPassOptions{});
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
@@ -257,7 +257,7 @@ TEST_P(MappingPassTest, GHZ) {
 TEST_P(MappingPassTest, Sabre) {
   const auto& device = GetParam();
 
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   Value tensor = builder.qtensorAlloc(6);
@@ -339,7 +339,7 @@ TEST_P(MappingPassTest, Sabre) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, qco::MappingPassOptions{});
+  auto res = runPass(m.get(), device, MappingPassOptions{});
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());

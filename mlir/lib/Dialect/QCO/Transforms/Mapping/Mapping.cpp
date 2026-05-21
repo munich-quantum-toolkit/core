@@ -383,10 +383,10 @@ protected:
     assert(niterations > 0 && "runOnOperation: expected niterations > 0");
     assert(ntrials > 0 && "runOnOperation: expected ntrials > 0");
 
-    ModuleOp m = getOperation();
     std::mt19937_64 rng{seed};
     IRRewriter rewriter(&getContext());
 
+    ModuleOp m = getOperation();
     auto func = getEntryPoint(m);
     if (!func) {
       m.emitError() << "does not contain an entry point function";
@@ -464,7 +464,7 @@ private:
    */
   static FailureOr<SmallVector<WireIterator>>
   getComputation(func::FuncOp func) {
-    if (!func.getOps<qco::AllocOp>().empty()) {
+    if (!func.getOps<AllocOp>().empty()) {
       func.emitError() << "must not contain qco.alloc operations";
       return failure();
     }
@@ -483,38 +483,28 @@ private:
       assert(tensor.hasOneUse() && "getComputation: expected linear typing");
       Operation* curr = *(tensor.user_begin());
 
-      if (isa<qtensor::DeallocOp>(curr)) {
+      if (isa<DeallocOp>(curr)) {
         break;
       }
 
-      const auto res =
-          TypeSwitch<Operation*, WalkResult>(curr)
-              .Case<qtensor::ExtractOp>([&](qtensor::ExtractOp op) {
-                if (!inExtractPhase) {
-                  func.emitError()
-                      << "must extract and insert all qubits at once.";
-                  return WalkResult::interrupt();
-                }
-
-                wires.emplace_back(op.getResult());
-                tensor = op.getOutTensor();
-
-                return WalkResult::advance();
-              })
-              .Case<qtensor::InsertOp>([&](qtensor::InsertOp op) {
-                inExtractPhase = false;
-                tensor = op.getResult();
-                return WalkResult::advance();
-              })
-              .Default([&](Operation* op) {
-                report_fatal_error("unknown op in def-use chain: " +
-                                   op->getName().getStringRef());
-                return WalkResult::interrupt();
-              });
-
-      if (res.wasInterrupted()) {
-        return failure();
+      if (auto extractOp = dyn_cast<ExtractOp>(curr)) {
+        if (!inExtractPhase) {
+          func.emitError() << "must extract and insert all qubits at once.";
+          return failure();
+        }
+        tensor = extractOp.getOutTensor();
+        wires.emplace_back(extractOp.getResult());
+        continue;
       }
+
+      if (auto insertOp = dyn_cast<InsertOp>(curr)) {
+        inExtractPhase = false;
+        tensor = insertOp.getResult();
+        continue;
+      }
+
+      report_fatal_error("unknown op in def-use chain: " +
+                         curr->getName().getStringRef());
     }
 
     return wires;
@@ -555,13 +545,13 @@ private:
     size_t prog = 0;
     while (true) {
       Operation* curr = *(tensor.user_begin());
-      if (isa<qtensor::DeallocOp>(curr)) {
+      if (isa<DeallocOp>(curr)) {
         rewriter.eraseOp(curr);
         break;
       }
 
       TypeSwitch<Operation*>(curr)
-          .Case<qtensor::ExtractOp>([&](qtensor::ExtractOp op) {
+          .Case<ExtractOp>([&](ExtractOp op) {
             const auto hw = layout.getHardwareIndex(prog);
             const auto qubit = staticOps[hw].getQubit();
 
@@ -573,10 +563,10 @@ private:
 
             ++prog;
           })
-          .Case<qtensor::InsertOp>([&](qtensor::InsertOp op) {
+          .Case<InsertOp>([&](InsertOp op) {
             rewriter.setInsertionPointAfter(op);
 
-            auto sink = SinkOp::create(rewriter, op.getLoc(), op.getScalar());
+            SinkOp::create(rewriter, op.getLoc(), op.getScalar());
 
             rewriter.replaceAllUsesWith(op.getResult(), tensor);
             rewriter.eraseOp(op);
@@ -628,7 +618,7 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns failure() if routing fails.
    */
-  FailureOr<size_t> refineLayout(SmallVector<WireIterator>& wires,
+  FailureOr<size_t> refineLayout(const SmallVector<WireIterator>& wires,
                                  Layout& layout) {
     size_t nswaps{0};
     for (size_t i = 0; i < niterations; ++i) {
