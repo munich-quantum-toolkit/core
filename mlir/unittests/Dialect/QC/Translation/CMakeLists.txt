@@ -8,7 +8,7 @@
 
 file(GLOB_RECURSE TEST_SOURCES "*.cpp")
 
-set(target_name mqt-core-mlir-unittest-quantum-computation-translation)
+set(target_name mqt-core-mlir-unittest-qc-translation)
 add_executable(${target_name} ${TEST_SOURCES})
 
 target_link_libraries(
