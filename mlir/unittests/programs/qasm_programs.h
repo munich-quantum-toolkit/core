@@ -12,6 +12,7 @@
 
 #include <string>
 
+// NOLINTBEGIN(readability-identifier-naming)
 namespace mlir::qasm {
 
 /// Allocates a single qubit.
@@ -328,3 +329,4 @@ extern const std::string simpleIf;
 extern const std::string ifElse;
 
 } // namespace mlir::qasm
+// NOLINTEND(readability-identifier-naming)
