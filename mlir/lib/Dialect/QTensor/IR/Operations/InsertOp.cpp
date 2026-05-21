@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/LogicalResult.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -134,16 +135,12 @@ struct RemoveExtractAfterInsertPattern final : OpRewritePattern<InsertOp> {
       }
 
       auto extract = cast<ExtractOp>(it.operation());
-      if (extract.getIndex() != op.getIndex()) {
+      if (!areEquivalentIndices(extract.getIndex(), op.getIndex())) {
         continue;
       }
 
-      rewriter.replaceAllUsesWith(extract.getResult(), op.getScalar());
-      rewriter.replaceAllUsesWith(extract.getOutTensor(), extract.getTensor());
-      rewriter.replaceAllUsesWith(op.getResult(), op.getDest());
-
-      rewriter.eraseOp(extract);
-      rewriter.eraseOp(op);
+      rewriter.replaceOp(extract, {extract.getTensor(), op.getScalar()});
+      rewriter.replaceOp(op, op.getDest());
 
       return success();
     }
@@ -152,34 +149,57 @@ struct RemoveExtractAfterInsertPattern final : OpRewritePattern<InsertOp> {
   }
 };
 
+/**
+ * @brief If possible, move insert after extract in tensor chain.
+ */
 struct BubbleDownInsertPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(InsertOp op,
+  LogicalResult matchAndRewrite(InsertOp insert,
                                 PatternRewriter& rewriter) const override {
-    auto next = std::next(TensorIterator(op.getResult()));
-
-    if (next == std::default_sentinel ||
-        isa<DeallocOp, InsertOp>(next.operation())) {
+    if (!getConstantIntValue(insert.getIndex())) {
       return failure();
     }
 
-    if (auto extract = dyn_cast<ExtractOp>(next.operation())) {
-      if (extract.getIndex() == op.getIndex()) {
-        return failure();
-      }
-
-      auto newExtract = ExtractOp::create(rewriter, op.getLoc(), op.getDest(),
-                                          extract.getIndex());
-
-      rewriter.setInsertionPoint(extract);
-      auto newInsert =
-          InsertOp::create(rewriter, extract.getLoc(), op.getScalar(),
-                           extract.getTensor(), op.getIndex());           
-      return success();
+    auto next = std::next(TensorIterator(insert.getResult()));
+    if (next == std::default_sentinel) {
+      return failure();
     }
 
-    return failure();
+    if (!isa<ExtractOp>(next.operation())) {
+      return failure();
+    }
+
+    auto extract = cast<ExtractOp>(next.operation());
+    if (!getConstantIntValue(extract.getIndex())) {
+      return failure();
+    }
+
+    if (areEquivalentIndices(extract.getIndex(), insert.getIndex())) {
+      return failure();
+    }
+
+    // i != j
+    //                ┌─────────┐                  ┌──────────┐
+    // ... ─t = dest─▶│insert(i)│─result = tensor─▶│extract(j)│─outTensor─▶...
+    //                └─────────┘                  └──────────┘
+    // is transformed to
+    //                  ┌──────────┐                   ┌─────────┐
+    // ... ─t = tensor─▶│extract(j)│─outTensor = dest─▶│insert(i)│─result─▶...
+    //                  └──────────┘                   └─────────┘
+
+    const Value t = insert.getDest();
+    const Value outTensor = extract.getOutTensor();
+    const Value result = insert.getResult();
+
+    rewriter.moveOpAfter(insert, extract);
+    rewriter.modifyOpInPlace(extract,
+                             [&] { extract.getTensorMutable().assign(t); });
+    rewriter.modifyOpInPlace(
+        insert, [&] { insert.getDestMutable().assign(outTensor); });
+    rewriter.replaceAllUsesExcept(outTensor, result, insert);
+
+    return success();
   }
 };
 
