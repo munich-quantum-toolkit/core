@@ -37,7 +37,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -185,7 +184,6 @@ namespace {
 /// Static gate dispatch table, built once at startup.
 const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 
-/// Local qubit scope used during compound gate body expansion.
 /// Maps argument name → vector of MLIR qubit Values.
 using QubitScope = llvm::StringMap<SmallVector<Value>>;
 
@@ -235,7 +233,7 @@ private:
   /// Updated each time a measure is emitted. Used for if/else conditions.
   llvm::StringMap<SmallVector<Value>> bitValues;
 
-  /// Gate library: standard gates + user-defined compound gates
+  /// Gate library
   std::map<std::string, std::shared_ptr<qasm3::Gate>> gates;
 
   bool openQASM2CompatMode{false};
@@ -384,28 +382,6 @@ public:
       throw qasm3::CompilerError("Gate '" + id + "' already declared.",
                                  stmt->debugInfo);
     }
-    std::vector<std::string> paramNames;
-    for (const auto& p : stmt->parameters->identifiers) {
-      if (std::ranges::find(paramNames, p->identifier) != paramNames.end()) {
-        throw qasm3::CompilerError("Parameter '" + p->identifier +
-                                       "' already declared in gate '" + id +
-                                       "'.",
-                                   stmt->debugInfo);
-      }
-      paramNames.push_back(p->identifier);
-    }
-    std::vector<std::string> qubitNames;
-    for (const auto& q : stmt->qubits->identifiers) {
-      if (std::ranges::find(qubitNames, q->identifier) != qubitNames.end()) {
-        throw qasm3::CompilerError("Qubit '" + q->identifier +
-                                       "' already declared in gate '" + id +
-                                       "'.",
-                                   stmt->debugInfo);
-      }
-      qubitNames.push_back(q->identifier);
-    }
-    gates[id] = std::make_shared<qasm3::CompoundGate>(
-        std::move(paramNames), std::move(qubitNames), stmt->statements);
   }
 
   void visitGateCallStatement(
@@ -511,8 +487,6 @@ public:
   //===--- Core gate application ----------------------------------------===//
 
   /// Apply a gate call statement, resolving qubits from \p scope.
-  /// For top-level calls pass \p qubitRegisters; for compound gate bodies
-  /// pass the local argument scope.
   void
   applyGateCallStatement(const std::shared_ptr<qasm3::GateCallStatement>& stmt,
                          const QubitScope& scope) {
@@ -617,12 +591,12 @@ public:
         expandedOperands.begin() + static_cast<std::ptrdiff_t>(totalCtrlCount),
         expandedOperands.end());
 
-    // Compound gate: inline expand
+    // Compound gate
     if (const auto* compound =
             dynamic_cast<qasm3::CompoundGate*>(it->second.get())) {
-      applyCompoundGate(*compound, gateOperands, posControls, negControls,
-                        params, invert, stmt->debugInfo);
-      return;
+      throw qasm3::CompilerError(
+          "Compound gates cannot be translated to QC at the moment.",
+          stmt->debugInfo);
     }
 
     // Standard gate: validate param count then determine broadcast width
@@ -709,87 +683,6 @@ public:
     for (auto q : negControls) {
       builder.x(q);
     }
-  }
-
-  /// Inline-expand a compound (user-defined) gate.
-  void applyCompoundGate(const qasm3::CompoundGate& gate,
-                         const std::vector<SmallVector<Value>>& gateOperands,
-                         ArrayRef<Value> posControls,
-                         ArrayRef<Value> negControls, ArrayRef<double> params,
-                         bool invert,
-                         const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
-    if (gate.targetNames.size() != gateOperands.size()) {
-      throw qasm3::CompilerError("Compound gate operand count mismatch.",
-                                 debugInfo);
-    }
-    if (gate.parameterNames.size() != params.size()) {
-      throw qasm3::CompilerError("Compound gate parameter count mismatch.",
-                                 debugInfo);
-    }
-
-    // Build local scope: argument name → Values
-    QubitScope localScope;
-    for (size_t i = 0; i < gate.targetNames.size(); ++i) {
-      localScope[gate.targetNames[i]] =
-          SmallVector<Value>(gateOperands[i].begin(), gateOperands[i].end());
-    }
-
-    // Bind parameters as constants
-    constEvalPass.pushEnv();
-    for (size_t i = 0; i < gate.parameterNames.size(); ++i) {
-      constEvalPass.addConst(gate.parameterNames[i],
-                             qasm3::const_eval::ConstEvalValue(params[i]));
-    }
-
-    auto bodyFn = [&] {
-      for (const auto& bodyStmt : gate.body) {
-        if (const auto gateCall =
-                std::dynamic_pointer_cast<qasm3::GateCallStatement>(bodyStmt)) {
-          applyGateCallStatement(gateCall, localScope);
-        } else if (const auto barrier =
-                       std::dynamic_pointer_cast<qasm3::BarrierStatement>(
-                           bodyStmt)) {
-          SmallVector<Value> qubits;
-          for (const auto& g : barrier->gates) {
-            auto resolved =
-                resolveGateOperandInScope(g, localScope, barrier->debugInfo);
-            qubits.append(resolved.begin(), resolved.end());
-          }
-          builder.barrier(qubits);
-        } else if (const auto reset =
-                       std::dynamic_pointer_cast<qasm3::ResetStatement>(
-                           bodyStmt)) {
-          for (auto q : resolveGateOperandInScope(reset->gate, localScope,
-                                                  reset->debugInfo)) {
-            builder.reset(q);
-          }
-        }
-      }
-    };
-
-    auto withInv = [&] {
-      if (invert) {
-        builder.inv(function_ref<void()>(bodyFn));
-      } else {
-        bodyFn();
-      }
-    };
-
-    if (posControls.empty() && negControls.empty()) {
-      withInv();
-    } else {
-      for (auto q : negControls) {
-        builder.x(q);
-      }
-      SmallVector<Value> allControls(posControls.begin(), posControls.end());
-      allControls.append(negControls.begin(), negControls.end());
-      builder.ctrl(allControls, function_ref<void()>(withInv));
-      for (auto q : negControls) {
-        builder.x(q);
-      }
-    }
-
-    constEvalPass.popEnv();
   }
 
   //===--- If/else helpers ------------------------------------------------===//
@@ -905,9 +798,9 @@ public:
     return resolveGateOperandInScope(operand, qubitRegisters, debugInfo);
   }
 
-  /** Resolve a gate operand against \p scope (top-level registers or a
-   * compound-gate local argument scope). Returns the MLIR Values for the
-   * qubit(s) named by \p operand — a full register or a single indexed qubit.
+  /**
+   * Resolve a gate operand against \p scope. Returns the qubit Values named by
+   * \p operand.
    */
   SmallVector<Value> resolveGateOperandInScope(
       const std::shared_ptr<qasm3::GateOperand>& operand,
