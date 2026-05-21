@@ -6,6 +6,10 @@
 #
 # Licensed under the MIT License
 
+add_library(MLIRQASMPrograms qasm_programs.cpp)
+target_sources(MLIRQASMPrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES
+                                       qasm_programs.h)
+
 add_library(MLIRQCPrograms qc_programs.cpp)
 target_link_libraries(MLIRQCPrograms PUBLIC MLIRQCProgramBuilder)
 target_sources(MLIRQCPrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES
