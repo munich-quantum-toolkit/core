@@ -226,8 +226,7 @@ static void addMeasureOp(QCProgramBuilder& builder,
     const auto bitIdx = static_cast<size_t>(classics[i]);
     const auto& [mem, localIdx] = state.bitMap[bitIdx];
     const auto& bit = mem[static_cast<int64_t>(localIdx)];
-    auto result = builder.measure(qubit, bit);
-    state.results[bitIdx] = result;
+    state.results[bitIdx] = builder.measure(qubit, bit);
   }
 }
 
@@ -579,6 +578,9 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   case ::qc::ComparisonKind::Neq:
     predicate = arith::CmpIPredicate::ne;
     break;
+  default:
+    llvm::errs() << "Unsupported comparison kind in IfElseOperation\n";
+    return failure();
   }
 
   // Define condition
@@ -601,9 +603,9 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
   };
 
   if (ifElse.getElseOp() != nullptr) {
-    builder.scfIf(condition, thenBuilder, elseBuilder);
+    builder.scfIf(condition.getResult(), thenBuilder, elseBuilder);
   } else {
-    builder.scfIf(condition, thenBuilder);
+    builder.scfIf(condition.getResult(), thenBuilder);
   }
 
   if (failed(thenResult)) {
@@ -758,7 +760,7 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   SmallVector<Value> results(quantumComputation.getNcbits(), nullptr);
 
   TranslationState state{
-      .qubits = qubits, .bitMap = bitMap, .results = results};
+      .qubits = qubits, .bitMap = bitMap, .results = std::move(results)};
 
   // Translate operations
   if (translateOperations(builder, quantumComputation, state).failed()) {
