@@ -867,9 +867,8 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       return failure();
     }
 
-    auto qcoIf =
-        qco::IfOp::create(rewriter, op.getLoc(), outTypes,
-                          adaptor.getSelection(), adaptor.getInValues());
+    auto qcoIf = IfOp::create(rewriter, op.getLoc(), outTypes,
+                              adaptor.getSelection(), adaptor.getInValues());
 
     auto moveRegion = [&](Region& source, Region& dest) -> LogicalResult {
       rewriter.inlineRegionBefore(source, dest, dest.end());
@@ -977,8 +976,8 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
   LogicalResult
   matchAndRewrite(jeff::YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (isa<qco::IfOp>(op->getParentOp())) {
-      rewriter.replaceOpWithNewOp<qco::YieldOp>(op, adaptor.getOperands());
+    if (isa<IfOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<YieldOp>(op, adaptor.getOperands());
       return success();
     }
 

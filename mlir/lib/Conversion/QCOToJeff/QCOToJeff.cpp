@@ -1017,11 +1017,11 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
  * }
  * ```
  */
-struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<qco::IfOp> {
+struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::IfOp op, OpAdaptor adaptor,
+  matchAndRewrite(IfOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto loc = op.getLoc();
     SmallVector<Type> outTypes;
