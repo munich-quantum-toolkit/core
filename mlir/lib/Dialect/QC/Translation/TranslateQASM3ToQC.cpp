@@ -545,8 +545,7 @@ public:
 
       // Check that no qubit appears twice across targets and controls.
       llvm::SmallDenseSet<Value> seen;
-      for (auto q :
-           llvm::concat<const Value>(iterQubits, posControls, negControls)) {
+      for (auto q : concat<const Value>(iterQubits, posControls, negControls)) {
         if (!seen.insert(q).second) {
           throw qasm3::CompilerError("Duplicate qubit in gate '" + id +
                                          "' operands.",
