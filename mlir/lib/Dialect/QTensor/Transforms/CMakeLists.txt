@@ -14,7 +14,6 @@ add_mlir_library(
   LINK_LIBS
   PRIVATE
   MLIRQTensorDialect
-  MLIRQTensorUtils
   DEPENDS
   MLIRQTensorTransformsIncGen)
 
