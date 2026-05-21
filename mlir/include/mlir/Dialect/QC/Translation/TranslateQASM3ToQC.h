@@ -19,15 +19,20 @@
 namespace mlir::qc {
 
 /**
- * @brief Import a QASM3 program directly into the QC dialect.
+ * @brief Translate an OpenQASM3 program to the QC dialect.
  *
- * @details Bypasses qc::QuantumComputation: the parser produces an AST walked
- * by an InstVisitor that emits QC dialect ops via QCProgramBuilder.
- * Returns nullptr on failure (diagnostics written to llvm::errs()).
+ * @param context MLIRContext to create the module in.
+ * @param filename Path to the input OpenQASM3 file.
  */
 [[nodiscard]] OwningOpRef<ModuleOp>
 translateQASM3ToQC(MLIRContext* context, const std::string& filename);
 
+/**
+ * @brief Translate an OpenQASM3 program to the QC dialect.
+ *
+ * @param context MLIRContext to create the module in.
+ * @param input Stream containing the OpenQASM3 program.
+ */
 [[nodiscard]] OwningOpRef<ModuleOp> translateQASM3ToQC(MLIRContext* context,
                                                        std::istream& input);
 

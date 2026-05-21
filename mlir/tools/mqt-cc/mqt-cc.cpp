@@ -87,7 +87,7 @@ static llvm::cl::opt<bool> enableHadamardLifting(
  */
 static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
                                           MLIRContext* context) {
-  return mlir::qc::translateQASM3ToQC(context, filename.str());
+  return qc::translateQASM3ToQC(context, filename.str());
 }
 
 /**
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
   DialectRegistry registry;
   registry
       .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
-              LLVM::LLVMDialect, memref::MemRefDialect, mlir::qc::QCDialect,
+              LLVM::LLVMDialect, memref::MemRefDialect, qc::QCDialect,
               qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
 
   MLIRContext context(registry);
