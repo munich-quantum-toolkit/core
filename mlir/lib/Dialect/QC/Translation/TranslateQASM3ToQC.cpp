@@ -63,8 +63,121 @@ namespace {
 using GateFn =
     std::function<void(QCProgramBuilder&, ArrayRef<Value>, ArrayRef<double>)>;
 
-// Forward declaration
-llvm::StringMap<GateFn> buildGateDispatch();
+/**
+ * Build the static gate-name → GateFn dispatch table.
+ * Each entry maps a QASM3 gate identifier to a lambda that emits the
+ * corresponding QC dialect op via QCProgramBuilder.
+ */
+llvm::StringMap<GateFn> buildGateDispatch() {
+  llvm::StringMap<GateFn> d;
+
+  // 0-target, 1-param
+  d["gphase"] = [](auto& b, auto /*q*/, auto p) { b.gphase(p[0]); };
+
+  // 1-target, 0-param
+  d["id"] = [](auto& b, auto q, auto) { b.id(q[0]); };
+  d["x"] = [](auto& b, auto q, auto) { b.x(q[0]); };
+  d["y"] = [](auto& b, auto q, auto) { b.y(q[0]); };
+  d["z"] = [](auto& b, auto q, auto) { b.z(q[0]); };
+  d["h"] = [](auto& b, auto q, auto) { b.h(q[0]); };
+  d["s"] = [](auto& b, auto q, auto) { b.s(q[0]); };
+  d["sdg"] = [](auto& b, auto q, auto) { b.sdg(q[0]); };
+  d["t"] = [](auto& b, auto q, auto) { b.t(q[0]); };
+  d["tdg"] = [](auto& b, auto q, auto) { b.tdg(q[0]); };
+  d["sx"] = [](auto& b, auto q, auto) { b.sx(q[0]); };
+  d["sxdg"] = [](auto& b, auto q, auto) { b.sxdg(q[0]); };
+
+  // 1-target, 1-param
+  d["rx"] = [](auto& b, auto q, auto p) { b.rx(p[0], q[0]); };
+  d["ry"] = [](auto& b, auto q, auto p) { b.ry(p[0], q[0]); };
+  d["rz"] = [](auto& b, auto q, auto p) { b.rz(p[0], q[0]); };
+  d["p"] = [](auto& b, auto q, auto p) { b.p(p[0], q[0]); };
+  d["u1"] = [](auto& b, auto q, auto p) { b.p(p[0], q[0]); };    // alias
+  d["phase"] = [](auto& b, auto q, auto p) { b.p(p[0], q[0]); }; // alias
+
+  // 1-target, 2-param
+  d["r"] = [](auto& b, auto q, auto p) { b.r(p[0], p[1], q[0]); };
+  d["u2"] = [](auto& b, auto q, auto p) { b.u2(p[0], p[1], q[0]); };
+
+  // 1-target, 3-param
+  d["U"] = [](auto& b, auto q, auto p) { b.u(p[0], p[1], p[2], q[0]); };
+  d["u3"] = [](auto& b, auto q, auto p) {
+    b.u(p[0], p[1], p[2], q[0]);
+  }; // alias
+  d["u"] = [](auto& b, auto q, auto p) {
+    b.u(p[0], p[1], p[2], q[0]);
+  }; // alias
+
+  // 1-ctrl + 1-target, 0-param  (q[0]=ctrl, q[1]=target)
+  d["cx"] = [](auto& b, auto q, auto) { b.cx(q[0], q[1]); };
+  d["cnot"] = [](auto& b, auto q, auto) { b.cx(q[0], q[1]); }; // alias
+  d["cy"] = [](auto& b, auto q, auto) { b.cy(q[0], q[1]); };
+  d["cz"] = [](auto& b, auto q, auto) { b.cz(q[0], q[1]); };
+  d["ch"] = [](auto& b, auto q, auto) { b.ch(q[0], q[1]); };
+  d["csx"] = [](auto& b, auto q, auto) { b.csx(q[0], q[1]); };
+
+  // 1-ctrl + 1-target, 1-param
+  d["crx"] = [](auto& b, auto q, auto p) { b.crx(p[0], q[0], q[1]); };
+  d["cry"] = [](auto& b, auto q, auto p) { b.cry(p[0], q[0], q[1]); };
+  d["crz"] = [](auto& b, auto q, auto p) { b.crz(p[0], q[0], q[1]); };
+  d["cp"] = [](auto& b, auto q, auto p) { b.cp(p[0], q[0], q[1]); };
+  d["cphase"] = [](auto& b, auto q, auto p) {
+    b.cp(p[0], q[0], q[1]);
+  }; // alias
+
+  // 2-ctrl + 1-target, 0-param  (q[0],q[1]=ctrl, q[2]=target)
+  d["ccx"] = [](auto& b, auto q, auto) { b.mcx({q[0], q[1]}, q[2]); };
+  d["toffoli"] = [](auto& b, auto q, auto) {
+    b.mcx({q[0], q[1]}, q[2]);
+  }; // alias
+  d["ccz"] = [](auto& b, auto q, auto) { b.mcz({q[0], q[1]}, q[2]); };
+
+  // 2-target, 0-param
+  d["swap"] = [](auto& b, auto q, auto) { b.swap(q[0], q[1]); };
+  d["iswap"] = [](auto& b, auto q, auto) { b.iswap(q[0], q[1]); };
+  d["dcx"] = [](auto& b, auto q, auto) { b.dcx(q[0], q[1]); };
+  d["ecr"] = [](auto& b, auto q, auto) { b.ecr(q[0], q[1]); };
+
+  // 1-ctrl + 2-target, 0-param  (q[0]=ctrl, q[1],q[2]=targets)
+  d["cswap"] = [](auto& b, auto q, auto) { b.cswap(q[0], q[1], q[2]); };
+  d["fredkin"] = [](auto& b, auto q, auto) {
+    b.cswap(q[0], q[1], q[2]);
+  }; // alias
+
+  // 2-target, 2-param
+  d["xx_plus_yy"] = [](auto& b, auto q, auto p) {
+    b.xx_plus_yy(p[0], p[1], q[0], q[1]);
+  };
+  d["xx_minus_yy"] = [](auto& b, auto q, auto p) {
+    b.xx_minus_yy(p[0], p[1], q[0], q[1]);
+  };
+
+  // 2-target, 1-param
+  d["rxx"] = [](auto& b, auto q, auto p) { b.rxx(p[0], q[0], q[1]); };
+  d["ryy"] = [](auto& b, auto q, auto p) { b.ryy(p[0], q[0], q[1]); };
+  d["rzx"] = [](auto& b, auto q, auto p) { b.rzx(p[0], q[0], q[1]); };
+  d["rzz"] = [](auto& b, auto q, auto p) { b.rzz(p[0], q[0], q[1]); };
+
+  // MCX variants: q[0..N-2] are controls, q[N-1] is the target.
+  // These are not in stdgates.inc but are widely used (Qiskit-style).
+  auto mcxFn = [](auto& b, auto q, auto) { b.mcx(q.drop_back(1), q.back()); };
+  d["mcx"] = mcxFn;
+  d["mcx_gray"] = mcxFn;
+  d["mcphase"] = [](auto& b, auto q, auto p) {
+    b.mcp(p[0], q.drop_back(1), q.back());
+  };
+  // vchain/recursive carry ancilla qubits; strip them using Qiskit's formula
+  d["mcx_vchain"] = [](auto& b, auto q, auto) {
+    const size_t n = q.size() - ((q.size() + 1) / 2) + 2;
+    b.mcx(q.slice(0, n - 1), q[n - 1]);
+  };
+  d["mcx_recursive"] = [](auto& b, auto q, auto) {
+    const size_t n = (q.size() > 5) ? q.size() - 1 : q.size();
+    b.mcx(q.slice(0, n - 1), q[n - 1]);
+  };
+
+  return d;
+}
 
 /// Static gate dispatch table, built once at startup.
 static const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
@@ -980,122 +1093,6 @@ public:
 };
 
 } // namespace
-
-/**
- * Build the static gate-name → GateFn dispatch table.
- * Each entry maps a QASM3 gate identifier to a lambda that emits the
- * corresponding QC dialect op via QCProgramBuilder.
- */
-static llvm::StringMap<GateFn> buildGateDispatch() {
-  llvm::StringMap<GateFn> d;
-
-  // 0-target, 1-param
-  d["gphase"] = [](auto& b, auto /*q*/, auto p) { b.gphase(p[0]); };
-
-  // 1-target, 0-param
-  d["id"] = [](auto& b, auto q, auto) { b.id(q[0]); };
-  d["x"] = [](auto& b, auto q, auto) { b.x(q[0]); };
-  d["y"] = [](auto& b, auto q, auto) { b.y(q[0]); };
-  d["z"] = [](auto& b, auto q, auto) { b.z(q[0]); };
-  d["h"] = [](auto& b, auto q, auto) { b.h(q[0]); };
-  d["s"] = [](auto& b, auto q, auto) { b.s(q[0]); };
-  d["sdg"] = [](auto& b, auto q, auto) { b.sdg(q[0]); };
-  d["t"] = [](auto& b, auto q, auto) { b.t(q[0]); };
-  d["tdg"] = [](auto& b, auto q, auto) { b.tdg(q[0]); };
-  d["sx"] = [](auto& b, auto q, auto) { b.sx(q[0]); };
-  d["sxdg"] = [](auto& b, auto q, auto) { b.sxdg(q[0]); };
-
-  // 1-target, 1-param
-  d["rx"] = [](auto& b, auto q, auto p) { b.rx(p[0], q[0]); };
-  d["ry"] = [](auto& b, auto q, auto p) { b.ry(p[0], q[0]); };
-  d["rz"] = [](auto& b, auto q, auto p) { b.rz(p[0], q[0]); };
-  d["p"] = [](auto& b, auto q, auto p) { b.p(p[0], q[0]); };
-  d["u1"] = [](auto& b, auto q, auto p) { b.p(p[0], q[0]); };    // alias
-  d["phase"] = [](auto& b, auto q, auto p) { b.p(p[0], q[0]); }; // alias
-
-  // 1-target, 2-param
-  d["r"] = [](auto& b, auto q, auto p) { b.r(p[0], p[1], q[0]); };
-  d["u2"] = [](auto& b, auto q, auto p) { b.u2(p[0], p[1], q[0]); };
-
-  // 1-target, 3-param
-  d["U"] = [](auto& b, auto q, auto p) { b.u(p[0], p[1], p[2], q[0]); };
-  d["u3"] = [](auto& b, auto q, auto p) {
-    b.u(p[0], p[1], p[2], q[0]);
-  }; // alias
-  d["u"] = [](auto& b, auto q, auto p) {
-    b.u(p[0], p[1], p[2], q[0]);
-  }; // alias
-
-  // 1-ctrl + 1-target, 0-param  (q[0]=ctrl, q[1]=target)
-  d["cx"] = [](auto& b, auto q, auto) { b.cx(q[0], q[1]); };
-  d["cnot"] = [](auto& b, auto q, auto) { b.cx(q[0], q[1]); }; // alias
-  d["cy"] = [](auto& b, auto q, auto) { b.cy(q[0], q[1]); };
-  d["cz"] = [](auto& b, auto q, auto) { b.cz(q[0], q[1]); };
-  d["ch"] = [](auto& b, auto q, auto) { b.ch(q[0], q[1]); };
-  d["csx"] = [](auto& b, auto q, auto) { b.csx(q[0], q[1]); };
-
-  // 1-ctrl + 1-target, 1-param
-  d["crx"] = [](auto& b, auto q, auto p) { b.crx(p[0], q[0], q[1]); };
-  d["cry"] = [](auto& b, auto q, auto p) { b.cry(p[0], q[0], q[1]); };
-  d["crz"] = [](auto& b, auto q, auto p) { b.crz(p[0], q[0], q[1]); };
-  d["cp"] = [](auto& b, auto q, auto p) { b.cp(p[0], q[0], q[1]); };
-  d["cphase"] = [](auto& b, auto q, auto p) {
-    b.cp(p[0], q[0], q[1]);
-  }; // alias
-
-  // 2-ctrl + 1-target, 0-param  (q[0],q[1]=ctrl, q[2]=target)
-  d["ccx"] = [](auto& b, auto q, auto) { b.mcx({q[0], q[1]}, q[2]); };
-  d["toffoli"] = [](auto& b, auto q, auto) {
-    b.mcx({q[0], q[1]}, q[2]);
-  }; // alias
-  d["ccz"] = [](auto& b, auto q, auto) { b.mcz({q[0], q[1]}, q[2]); };
-
-  // 2-target, 0-param
-  d["swap"] = [](auto& b, auto q, auto) { b.swap(q[0], q[1]); };
-  d["iswap"] = [](auto& b, auto q, auto) { b.iswap(q[0], q[1]); };
-  d["dcx"] = [](auto& b, auto q, auto) { b.dcx(q[0], q[1]); };
-  d["ecr"] = [](auto& b, auto q, auto) { b.ecr(q[0], q[1]); };
-
-  // 1-ctrl + 2-target, 0-param  (q[0]=ctrl, q[1],q[2]=targets)
-  d["cswap"] = [](auto& b, auto q, auto) { b.cswap(q[0], q[1], q[2]); };
-  d["fredkin"] = [](auto& b, auto q, auto) {
-    b.cswap(q[0], q[1], q[2]);
-  }; // alias
-
-  // 2-target, 2-param
-  d["xx_plus_yy"] = [](auto& b, auto q, auto p) {
-    b.xx_plus_yy(p[0], p[1], q[0], q[1]);
-  };
-  d["xx_minus_yy"] = [](auto& b, auto q, auto p) {
-    b.xx_minus_yy(p[0], p[1], q[0], q[1]);
-  };
-
-  // 2-target, 1-param
-  d["rxx"] = [](auto& b, auto q, auto p) { b.rxx(p[0], q[0], q[1]); };
-  d["ryy"] = [](auto& b, auto q, auto p) { b.ryy(p[0], q[0], q[1]); };
-  d["rzx"] = [](auto& b, auto q, auto p) { b.rzx(p[0], q[0], q[1]); };
-  d["rzz"] = [](auto& b, auto q, auto p) { b.rzz(p[0], q[0], q[1]); };
-
-  // MCX variants: q[0..N-2] are controls, q[N-1] is the target.
-  // These are not in stdgates.inc but are widely used (Qiskit-style).
-  auto mcxFn = [](auto& b, auto q, auto) { b.mcx(q.drop_back(1), q.back()); };
-  d["mcx"] = mcxFn;
-  d["mcx_gray"] = mcxFn;
-  d["mcphase"] = [](auto& b, auto q, auto p) {
-    b.mcp(p[0], q.drop_back(1), q.back());
-  };
-  // vchain/recursive carry ancilla qubits; strip them using Qiskit's formula
-  d["mcx_vchain"] = [](auto& b, auto q, auto) {
-    const size_t n = q.size() - ((q.size() + 1) / 2) + 2;
-    b.mcx(q.slice(0, n - 1), q[n - 1]);
-  };
-  d["mcx_recursive"] = [](auto& b, auto q, auto) {
-    const size_t n = (q.size() > 5) ? q.size() - 1 : q.size();
-    b.mcx(q.slice(0, n - 1), q[n - 1]);
-  };
-
-  return d;
-}
 
 //===----------------------------------------------------------------------===//
 // Public API
