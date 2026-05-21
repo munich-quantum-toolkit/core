@@ -12,9 +12,9 @@
 
 #include <string>
 
+// NOLINTBEGIN(readability-identifier-naming)
 namespace mlir::qasm {
 
-// NOLINTBEGIN(readability-identifier-naming)
 const std::string allocQubit = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
@@ -663,6 +663,6 @@ if (c) {
   z q[0];
 }
 )qasm";
-// NOLINTEND(readability-identifier-naming)
 
 } // namespace mlir::qasm
+// NOLINTEND(readability-identifier-naming)
