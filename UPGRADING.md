@@ -4,7 +4,7 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
-### MLIR enabled by default for C++ builds
+### MLIR enabled by default for C++ and Python package builds
 
 The MLIR-based functionality within MQT Core has long been experimental and opt-in.
 Starting with this release, MLIR is enabled by default for C++ library builds.
@@ -15,8 +15,10 @@ Please follow the instructions there to install the distribution for your platfo
 You can then point CMake to the installation directory using the `-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
 
 The MLIR components can still be manually disabled by passing `-DBUILD_MQT_CORE_MLIR=OFF` to CMake.
-MLIR is also not enabled for the Python package builds because no functionality depends on it yet.
-This is expected to change in the future, when we expose the MLIR-based functionality via the Python package.
+As of this release, MLIR is also enabled for Python package builds, since the package now exposes an MLIR-based compiler entry point in `mqt.core.mlir`.
+
+For local development, you can configure `MLIR_DIR` once in a repository-local `.env` file (for example, `MLIR_DIR=/path/to/installation/lib/cmake/mlir`).
+MQT Core's CMake setup will pick this up automatically when `MLIR_DIR` is not otherwise provided.
 
 Known limitations:
 
