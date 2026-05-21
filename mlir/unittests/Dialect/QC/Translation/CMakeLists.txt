@@ -19,6 +19,7 @@ target_link_libraries(
           MLIRQCProgramBuilder
           MLIRQCTranslation
           MLIRQCPrograms
+          MLIRQASMPrograms
           MLIRQuantumComputationPrograms
           MQT::CoreIR)
 
