@@ -123,6 +123,7 @@ struct RemoveExtractInsertPairPattern final : OpRewritePattern<InsertOp> {
 /**
  * @brief Replace extracted qubit with previously inserted qubit and remove both
  * the insert and the extract operation.
+ * @pre Assumes that the extract and insertion index of any qubit is equivalent.
  */
 struct RemoveExtractAfterInsertPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -151,6 +152,7 @@ struct RemoveExtractAfterInsertPattern final : OpRewritePattern<InsertOp> {
 
 /**
  * @brief If possible, move insert after extract in tensor chain.
+ * @pre Assumes that the extract and insertion index of any qubit is equivalent.
  */
 struct BubbleDownInsertPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
