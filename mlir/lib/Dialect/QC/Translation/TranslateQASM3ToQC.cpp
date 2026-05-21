@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 
 #include "ir/Definitions.hpp"
-#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -29,7 +28,6 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -812,14 +810,15 @@ public:
   /// Translate a QASM3 condition expression to an i1 MLIR Value.
   /// Supports:
   ///   - Single bit: `c[0]` or `!c[0]` / `~c[0]`
-  ///   - Register comparison: `creg == N`, `creg != N`, etc.
   [[nodiscard]] Value
   translateCondition(const std::shared_ptr<qasm3::Expression>& condition,
                      const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
-    // Case 1: Binary comparison (creg == N, creg != N, etc.)
+    // Case 1: Register comparison (creg == N, creg != N, etc.)
     if (const auto binaryExpr =
             std::dynamic_pointer_cast<qasm3::BinaryExpression>(condition)) {
-      return translateBinaryCondition(binaryExpr, debugInfo);
+      throw qasm3::CompilerError(
+          "Register comparisons cannot be translated to QC at the moment",
+          debugInfo);
     }
 
     // Case 2: Unary negation (!c[0] or ~c[0])
@@ -844,106 +843,6 @@ public:
 
     throw qasm3::CompilerError(
         "Unsupported condition expression in if statement.", debugInfo);
-  }
-
-  /// Translate a binary comparison condition (creg == N, etc.)
-  [[nodiscard]] Value translateBinaryCondition(
-      const std::shared_ptr<qasm3::BinaryExpression>& binaryExpr,
-      const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
-    const auto comparisonKind = qasm3::getComparisonKind(binaryExpr->op);
-    if (!comparisonKind) {
-      throw qasm3::CompilerError("Unsupported comparison operator.", debugInfo);
-    }
-
-    // Determine which side is the identifier and which is the constant
-    auto lhsIsIdentifier =
-        std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(binaryExpr->lhs);
-
-    const auto& idExpr =
-        lhsIsIdentifier ? std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(
-                              binaryExpr->lhs)
-                        : std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(
-                              binaryExpr->rhs);
-    const auto& constExpr =
-        lhsIsIdentifier
-            ? std::dynamic_pointer_cast<qasm3::Constant>(binaryExpr->rhs)
-            : std::dynamic_pointer_cast<qasm3::Constant>(binaryExpr->lhs);
-
-    if (!idExpr || !constExpr) {
-      throw qasm3::CompilerError(
-          "Only classical registers and constants are supported in conditions.",
-          debugInfo);
-    }
-
-    const auto& regName = idExpr->identifier;
-    const uint64_t expectedVal = constExpr->getUInt();
-
-    // Look up classical register to get its size
-    auto cregIt = classicalRegisters.find(regName);
-    if (cregIt == classicalRegisters.end()) {
-      throw qasm3::CompilerError("Unknown classical register '" + regName +
-                                     "' in condition.",
-                                 debugInfo);
-    }
-    const auto regSize = static_cast<size_t>(cregIt->second.size);
-
-    auto bitIt = bitValues.find(regName);
-    if (bitIt == bitValues.end()) {
-      throw qasm3::CompilerError(
-          "Classical register '" + regName +
-              "' has no measurement results to use in condition.",
-          debugInfo);
-    }
-    const auto& regBits = bitIt->second;
-
-    const auto intWidth = std::max(regSize, static_cast<size_t>(64));
-    auto intTy = builder.getIntegerType(static_cast<unsigned>(intWidth));
-
-    // Indexed access (c[i] == N): compare the single bit directly
-    if (!idExpr->indices.empty()) {
-      const auto idx = evaluatePositiveConstant(
-          idExpr->indices[0]->indexExpressions[0], debugInfo);
-      if (idx >= regBits.size() || !regBits[idx]) {
-        throw qasm3::CompilerError(
-            "Bit " + std::to_string(idx) + " of register '" + regName +
-                "' was not measured before use in condition.",
-            debugInfo);
-      }
-      Value extended = arith::ExtUIOp::create(builder, intTy, regBits[idx]);
-      Value expected = arith::ConstantOp::create(
-          builder, builder.getIntegerAttr(intTy, expectedVal));
-      auto pred = convertComparisonKind(*comparisonKind);
-      return arith::CmpIOp::create(builder, pred, extended, expected);
-    }
-
-    // Full-register access (c == N): compose bits into an integer
-    // result = b0 | (b1 << 1) | (b2 << 2) | ...
-    Value composed =
-        arith::ConstantOp::create(builder, builder.getIntegerAttr(intTy, 0));
-
-    for (size_t i = 0; i < regSize; ++i) {
-      if (i >= regBits.size() || !regBits[i]) {
-        throw qasm3::CompilerError(
-            "Bit " + std::to_string(i) + " of register '" + regName +
-                "' was not measured before use in condition.",
-            debugInfo);
-      }
-      // Extend i1 to integer type
-      Value extended = arith::ExtUIOp::create(builder, intTy, regBits[i]);
-      if (i > 0) {
-        Value shiftAmt = arith::ConstantOp::create(
-            builder, builder.getIntegerAttr(intTy, i));
-        extended = arith::ShLIOp::create(builder, extended, shiftAmt);
-      }
-      composed = arith::OrIOp::create(builder, composed, extended);
-    }
-
-    // Compare
-    Value expectedConst = arith::ConstantOp::create(
-        builder, builder.getIntegerAttr(intTy, expectedVal));
-
-    auto pred = convertComparisonKind(*comparisonKind);
-    return arith::CmpIOp::create(builder, pred, composed, expectedConst);
   }
 
   /// Look up the most recent measurement result for a single classical bit.
@@ -986,25 +885,6 @@ public:
           debugInfo);
     }
     return regBits[idx];
-  }
-
-  /// Convert qc::ComparisonKind to arith::CmpIPredicate.
-  static arith::CmpIPredicate convertComparisonKind(::qc::ComparisonKind kind) {
-    switch (kind) {
-    case ::qc::ComparisonKind::Eq:
-      return arith::CmpIPredicate::eq;
-    case ::qc::ComparisonKind::Neq:
-      return arith::CmpIPredicate::ne;
-    case ::qc::ComparisonKind::Lt:
-      return arith::CmpIPredicate::ult;
-    case ::qc::ComparisonKind::Leq:
-      return arith::CmpIPredicate::ule;
-    case ::qc::ComparisonKind::Gt:
-      return arith::CmpIPredicate::ugt;
-    case ::qc::ComparisonKind::Geq:
-      return arith::CmpIPredicate::uge;
-    }
-    llvm_unreachable("unknown ComparisonKind");
   }
 
   //===--- Operand resolution helpers ------------------------------------===//
@@ -1078,7 +958,7 @@ public:
     }
     const auto& indexExpression = target->indices[0]->indexExpressions[0];
     const auto idx = evaluatePositiveConstant(indexExpression, debugInfo);
-    bits.push_back(creg[idx]);
+    bits.push_back(creg[static_cast<int64_t>(idx)]);
     return bits;
   }
 
