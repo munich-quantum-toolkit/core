@@ -74,10 +74,14 @@ namespace {
 [[nodiscard]] auto loadDeviceLibrary(const std::string& libName) -> HMODULE {
   const auto requested = std::filesystem::path(libName);
 
-  const std::filesystem::path path = requested.has_parent_path()
-                                         ? requested
-                                         : getDriverDirectory() / requested;
+  if (requested.has_parent_path()) {
+    // A directory component was supplied: Directly load the library.
+    return LoadLibraryW(requested.wstring().c_str());
+  }
 
+  // Bare filename: resolve relative to the driver's own directory so that
+  // builtin device DLLs installed next to the driver are found reliably.
+  const auto path = getDriverDirectory() / requested;
   return LoadLibraryExW(path.wstring().c_str(), nullptr,
                         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
                             LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
