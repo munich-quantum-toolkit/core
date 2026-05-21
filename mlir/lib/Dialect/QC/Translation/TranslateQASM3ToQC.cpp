@@ -66,8 +66,9 @@ using GateFn =
 } // namespace
 
 /**
- * Build the static gate-name → GateFn dispatch table.
- * Each entry maps a QASM3 gate identifier to a lambda that emits the
+ * @brief Build the static gate-name → GateFn dispatch table.
+ *
+ * @details Each entry maps a QASM3 gate identifier to a lambda that emits the
  * corresponding QC dialect op via QCProgramBuilder.
  */
 static llvm::StringMap<GateFn> buildGateDispatch() {
@@ -190,11 +191,14 @@ const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 /// Maps argument name → vector of MLIR qubit Values.
 using QubitScope = llvm::StringMap<SmallVector<Value>>;
 
-/** AST visitor that translates a QASM3 program directly into the QC dialect.
+/**
+ * @brief AST visitor that translates a QASM3 program directly into the QC
+ * dialect.
  *
- * Implements qasm3::InstVisitor to walk the AST produced by qasm3::Parser and
- * emit QC dialect ops via QCProgramBuilder, bypassing qc::QuantumComputation.
- * Const-evaluation and type-checking passes run in lock-step with the walk.
+ * @details Implements qasm3::InstVisitor to walk the AST produced by
+ * qasm3::Parser and emit QC dialect ops via QCProgramBuilder, bypassing
+ * qc::QuantumComputation. Const-evaluation and type-checking passes run in
+ * lock-step with the walk.
  */
 class MLIRQasmImporter final : public qasm3::InstVisitor {
 public:
