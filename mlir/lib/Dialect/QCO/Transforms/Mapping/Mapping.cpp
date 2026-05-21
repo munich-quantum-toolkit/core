@@ -394,7 +394,7 @@ protected:
       return;
     }
 
-    const auto comp = getComputation(func);
+    auto comp = getComputation(func);
     if (failed(comp)) {
       signalPassFailure();
       return;
