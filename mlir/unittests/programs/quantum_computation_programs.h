@@ -385,4 +385,12 @@ void barrierTwoQubits(QuantumComputation& comp);
 /// Creates a circuit with a barrier on multiple qubits.
 void barrierMultipleQubits(QuantumComputation& comp);
 
+// --- IfOp ----------------------------------------------------------------- //
+
+/// Creates a circuit with a simple if operation with one qubit.
+void simpleIf(QuantumComputation& comp);
+
+/// Creates a circuit with an if operation with an else branch.
+void ifElse(QuantumComputation& comp);
+
 } // namespace qc
