@@ -17,7 +17,6 @@
 #include "mlir/Dialect/QCO/Utils/Algorithms.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Qubits.h"
-#include "mlir/Dialect/QCO/Utils/Utils.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/LogicalResult.h>

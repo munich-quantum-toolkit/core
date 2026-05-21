@@ -10,11 +10,10 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Algorithms.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
-#include "mlir/Dialect/QCO/Utils/Utils.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -419,8 +418,7 @@ protected:
     // Execute each of the trials (possibly in parallel). Collect the results
     // and find the one with the fewest SWAPs on the final backwards pass.
     parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-      SmallVector<WireIterator> wires(*comp); // Thread-local copy.
-      if (const auto res = refineLayout(wires, trial.layout); succeeded(res)) {
+      if (const auto res = refineLayout(*comp, trial.layout); succeeded(res)) {
         trial.success = true;
         trial.nswaps = *res;
       }
@@ -434,7 +432,7 @@ protected:
     }
 
     // Perform placement and hot routing by inserting SWAPs into the IR.
-    const auto placedWires = place(func, best->layout, rewriter);
+    auto placedWires = place(func, best->layout, rewriter);
     const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
         placedWires, best->layout, &rewriter);
     if (failed(res)) {
@@ -618,7 +616,7 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns failure() if routing fails.
    */
-  FailureOr<size_t> refineLayout(const SmallVector<WireIterator>& wires,
+  FailureOr<size_t> refineLayout(SmallVector<WireIterator> wires,
                                  Layout& layout) {
     size_t nswaps{0};
     for (size_t i = 0; i < niterations; ++i) {
@@ -872,7 +870,7 @@ private:
    * of SWAPs otherwise.
    */
   template <WireDirection Direction, RoutingMode mode = RoutingMode::Cold>
-  FailureOr<size_t> route(MutableArrayRef<WireIterator> wires, Layout& layout,
+  FailureOr<size_t> route(SmallVector<WireIterator>& wires, Layout& layout,
                           IRRewriter* rewriter = nullptr) {
     using Traits = WireTraversalTraits<Direction>;
 
