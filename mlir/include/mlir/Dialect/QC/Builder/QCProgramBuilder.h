@@ -83,6 +83,21 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Create a constant bool value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.boolConstant(true);
+   * ```
+   * ```mlir
+   * %c = arith.constant true : i1
+   * ```
+   */
+  Value boolConstant(bool value);
+
+  /**
    * @brief Create a constant integer value
    * @param value The value to store in the constant
    * @return The value produced by the constant operation
@@ -265,6 +280,7 @@ public:
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
+   * @return Classical measurement result (i1)
    *
    * @par Example:
    * ```c++
@@ -274,7 +290,7 @@ public:
    * %r0 = qc.measure("c", 3, 0) %q0 : !qc.qubit -> i1
    * ```
    */
-  QCProgramBuilder& measure(Value qubit, const Bit& bit);
+  Value measure(Value qubit, const Bit& bit);
 
   /**
    * @brief Reset a qubit to |0⟩ state

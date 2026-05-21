@@ -14,9 +14,9 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676], [#1706]) ([**@denialhaag**], [**@burgholzer**])
-- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
-  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700])
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717])
   ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
 
 ### Changed
@@ -28,6 +28,16 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+## [3.6.1] - 2026-05-20
+
+### Changed
+
+- 🚸 Improve native gate support for the Qiskit-to-OpenQASM3 conversion in the QDMI-Qiskit interface ([#1719]) ([**@burgholzer**])
+
+### Fixed
+
+- 🏁 Fix dynamic loading of QDMI device DLLs on Windows when an absolute path is provided ([#1720]) ([**@burgholzer**])
 
 ## [3.6.0] - 2026-05-13
 
@@ -368,7 +378,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.1...HEAD
+[3.6.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.1
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
 [3.5.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.0
@@ -388,6 +399,10 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
+[#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
+[#1717]: https://github.com/munich-quantum-toolkit/core/pull/1717
+[#1716]: https://github.com/munich-quantum-toolkit/core/pull/1716
 [#1709]: https://github.com/munich-quantum-toolkit/core/pull/1709
 [#1706]: https://github.com/munich-quantum-toolkit/core/pull/1706
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
