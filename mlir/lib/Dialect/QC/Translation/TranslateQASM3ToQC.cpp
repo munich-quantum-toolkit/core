@@ -326,7 +326,8 @@ public:
       break;
     }
     default:
-      break;
+      throw qasm3::CompilerError("Unsupported declaration type.",
+                                 stmt->debugInfo);
     }
 
     // Handle initializer (measure only)
@@ -433,11 +434,12 @@ public:
     }
     for (size_t i = 0; i < qubits.size(); ++i) {
       // Use the MeasureOp directly to capture the i1 result for if/else
-      auto measureOp = MeasureOp::create(
-          builder, qubits[i], builder.getStringAttr(bits[i].registerName),
-          builder.getI64IntegerAttr(bits[i].registerSize),
-          builder.getI64IntegerAttr(bits[i].registerIndex));
-      Value result = measureOp.getResult();
+      auto result =
+          MeasureOp::create(builder, qubits[i],
+                            builder.getStringAttr(bits[i].registerName),
+                            builder.getI64IntegerAttr(bits[i].registerSize),
+                            builder.getI64IntegerAttr(bits[i].registerIndex))
+              .getResult();
 
       // Track the result for use in if/else conditions
       const auto& regName = bits[i].registerName;
@@ -472,7 +474,7 @@ public:
       return;
     }
 
-    Value condition = translateCondition(stmt->condition, stmt->debugInfo);
+    auto condition = translateCondition(stmt->condition, stmt->debugInfo);
     const bool hasElse = !stmt->elseStatements.empty();
 
     auto ifOp =
@@ -585,7 +587,8 @@ public:
     size_t ctrlIdx = 0;
     for (const auto& [n, positive] : ctrlSpec) {
       for (size_t i = 0; i < n; ++i, ++ctrlIdx) {
-        if (expandedOperands[ctrlIdx].size() != 1) {
+        if (ctrlIdx >= expandedOperands.size() ||
+            expandedOperands[ctrlIdx].size() != 1) {
           throw qasm3::CompilerError("Control operand must be a single qubit.",
                                      stmt->debugInfo);
         }
@@ -664,7 +667,7 @@ public:
 
       // Check that no qubit appears twice across targets and controls.
       llvm::SmallDenseSet<Value> seen;
-      for (auto q : concat<const Value>(iterQubits, posControls, negControls)) {
+      for (auto q : concat<Value>(iterQubits, posControls, negControls)) {
         if (!seen.insert(q).second) {
           throw qasm3::CompilerError("Duplicate qubit in gate '" + id +
                                          "' operands.",
@@ -817,7 +820,7 @@ public:
     if (const auto binaryExpr =
             std::dynamic_pointer_cast<qasm3::BinaryExpression>(condition)) {
       throw qasm3::CompilerError(
-          "Register comparisons cannot be translated to QC at the moment",
+          "Register comparisons cannot be translated to QC at the moment.",
           debugInfo);
     }
 
@@ -828,11 +831,17 @@ public:
              unaryExpr->op == qasm3::UnaryExpression::BitwiseNot);
       const auto idExpr = std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(
           unaryExpr->operand);
-      Value bitVal = lookupBitValue(idExpr, debugInfo);
+      if (!idExpr) {
+        throw qasm3::CompilerError("Unary expression has unsupported operand.",
+                                   debugInfo);
+      }
+      auto bitVal = lookupBitValue(idExpr, debugInfo);
       // Negate: XOR with true
-      Value trueVal = arith::ConstantOp::create(
-          builder, builder.getIntegerAttr(builder.getI1Type(), 1));
-      return arith::XOrIOp::create(builder, bitVal, trueVal);
+      auto trueVal =
+          arith::ConstantOp::create(
+              builder, builder.getIntegerAttr(builder.getI1Type(), 1))
+              .getResult();
+      return arith::XOrIOp::create(builder, bitVal, trueVal).getResult();
     }
 
     // Case 3: Single bit (c[0] — truthy)
