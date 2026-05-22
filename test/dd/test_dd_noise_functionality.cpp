@@ -33,6 +33,8 @@
 
 using namespace qc;
 
+namespace {
+
 class DDNoiseFunctionalityTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -68,6 +70,8 @@ protected:
   qc::QuantumComputation qc;
   size_t stochRuns = 1000U;
 };
+
+} // namespace
 
 TEST_F(DDNoiseFunctionalityTest, DetSimulateAdder4TrackAPD) {
   const dd::SparsePVecStrKeys reference = {
