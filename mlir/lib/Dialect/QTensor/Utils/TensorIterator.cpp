@@ -13,7 +13,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Casting.h>
+#include <mlir/Support/LLVM.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -98,12 +98,12 @@ void TensorIterator::backward() {
           return;
         }
 
-        llvm::report_fatal_error(
+        llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
       })
       .Default([&](Operation* op) {
-        report_fatal_error("unknown op in def-use chain: " +
-                           op->getName().getStringRef());
+        llvm::reportFatalInternalError("unknown op in def-use chain: " +
+                                       op->getName().getStringRef());
       });
 
   // Get the operation that produces the tensor value.

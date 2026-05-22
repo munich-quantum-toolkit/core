@@ -14,15 +14,16 @@
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <gtest/gtest.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <iterator>
 #include <memory>
@@ -40,7 +41,7 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    QTensorDialect>();
+                    scf::SCFDialect, QTensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -52,7 +53,8 @@ TEST_F(TensorIteratorTest, Traversal) {
   qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  auto tensor0 = builder.qtensorAlloc(3);
+  constexpr int64_t n = 3;
+  auto tensor0 = builder.qtensorAlloc(n);
   auto [tensor1, q00] = builder.qtensorExtract(tensor0, 0);
   auto q01 = builder.h(q00);
   auto tensor2 = builder.qtensorInsert(q01, tensor1, 0);
@@ -61,7 +63,16 @@ TEST_F(TensorIteratorTest, Traversal) {
   auto [q03, q11] = builder.cx(q02, q10);
   auto tensor5 = builder.qtensorInsert(q03, tensor4, 0);
   auto tensor6 = builder.qtensorInsert(q11, tensor5, 1);
-  builder.qtensorDealloc(tensor6);
+  auto tensor7 = builder.scfFor(
+      1, n, 1, {tensor6}, [&builder](Value iv, ValueRange iterArgs) {
+        Value loopTensor = iterArgs[0];
+        Value q;
+        std::tie(loopTensor, q) = builder.qtensorExtract(loopTensor, iv);
+        q = builder.h(q);
+        loopTensor = builder.qtensorInsert(q, loopTensor, 0);
+        return SmallVector{loopTensor};
+      })[0];
+  builder.qtensorDealloc(tensor7);
   [[maybe_unused]] auto m = builder.finalize();
 
   TensorIterator it(cast<TypedValue<RankedTensorType>>(tensor0));
@@ -94,7 +105,11 @@ TEST_F(TensorIteratorTest, Traversal) {
   ASSERT_EQ(it.tensor(), tensor6);
 
   ++it;
-  ASSERT_EQ(it.operation(), *(tensor6.user_begin())); // qtensor.dealloc
+  ASSERT_EQ(it.operation(), tensor7.getDefiningOp()); // scf.for
+  ASSERT_EQ(it.tensor(), tensor7);
+
+  ++it;
+  ASSERT_EQ(it.operation(), *(tensor7.user_begin())); // qtensor.dealloc
   ASSERT_EQ(it.tensor(), nullptr);
 
   ++it;
@@ -104,8 +119,12 @@ TEST_F(TensorIteratorTest, Traversal) {
   ASSERT_EQ(it, std::default_sentinel);
 
   --it;
-  ASSERT_EQ(it.operation(), *(tensor6.user_begin())); // qtensor.dealloc
+  ASSERT_EQ(it.operation(), *(tensor7.user_begin())); // qtensor.dealloc
   ASSERT_EQ(it.tensor(), nullptr);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor7.getDefiningOp()); // scf.for
+  ASSERT_EQ(it.tensor(), tensor7);
 
   --it;
   ASSERT_EQ(it.operation(), tensor6.getDefiningOp()); // qtensor.insert
