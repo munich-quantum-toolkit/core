@@ -450,9 +450,6 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {
-  patterns.add<ConvertQCStaticOp>(typeConverter, ctx, &state);
-  patterns.add<ConvertQCGPhaseOp>(typeConverter, ctx, &state);
-
   // Note: `MQT_GATE_TABLE` is defined in `mlir/Conversion/GateTable.h`.
 #define MQT_ADD_QC_TO_QIR_UNITARY(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN) \
   patterns.add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
@@ -460,8 +457,9 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
   MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
 #undef MQT_ADD_QC_TO_QIR_UNITARY
 
-  patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp>(
-      typeConverter, ctx, &state);
+  patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp,
+               ConvertQCStaticOp, ConvertQCGPhaseOp>(typeConverter, ctx,
+                                                     &state);
 }
 
 } // namespace mlir
