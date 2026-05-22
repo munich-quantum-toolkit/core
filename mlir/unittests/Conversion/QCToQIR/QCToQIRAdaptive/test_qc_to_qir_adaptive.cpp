@@ -654,6 +654,10 @@ INSTANTIATE_TEST_SUITE_P(
             "AllocMultipleQubitRegisters",
             MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters),
             MQT_NAMED_BUILDER(qir::emptyQIR)},
+        QCToQIRAdaptiveTestCase{
+            "AllocMultipleQubitRegistersWithOps",
+            MQT_NAMED_BUILDER(qc::allocMultipleQubitRegistersWithOps),
+            MQT_NAMED_BUILDER(qir::allocMultipleQubitRegistersWithOps)},
         QCToQIRAdaptiveTestCase{"AllocLargeRegister",
                                 MQT_NAMED_BUILDER(qc::allocLargeRegister),
                                 MQT_NAMED_BUILDER(qir::emptyQIR)},

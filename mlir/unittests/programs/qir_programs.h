@@ -27,6 +27,9 @@ void allocQubitRegister(QIRProgramBuilder& b);
 /// Allocates two qubit registers of size `2` and `3`.
 void allocMultipleQubitRegisters(QIRProgramBuilder& b);
 
+/// Allocates two qubit registers of size `2` and `3` and applies operations.
+void allocMultipleQubitRegistersWithOps(QIRProgramBuilder& b);
+
 /// Allocates a large qubit register.
 void allocLargeRegister(QIRProgramBuilder& b);
 

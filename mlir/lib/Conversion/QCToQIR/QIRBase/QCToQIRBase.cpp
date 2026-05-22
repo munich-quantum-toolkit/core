@@ -10,7 +10,7 @@
 
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 
-#include "mlir/Conversion/QCToQIR/Common/CommonQIR.h"
+#include "mlir/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -90,8 +90,9 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::LoadOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
     auto shape = op.getMemref().getType().getShape();
     if (shape.size() != 1) {
       return rewriter.notifyMatchFailure(
@@ -103,36 +104,11 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     // Switch to entry block
     rewriter.setInsertionPoint(getState().entryBlock->getTerminator());
 
-    auto& state = getState();
-    auto indexValue = adaptor.getIndices()[0];
-
-    // Get the constant value of the index
-    if (auto castOp = indexValue.getDefiningOp<UnrealizedConversionCastOp>()) {
-      indexValue = castOp.getInputs()[0];
-    }
-    auto constIndex = getConstantIntValue(indexValue);
-    if (!constIndex) {
-      return rewriter.notifyMatchFailure(
-          op, "Base profile requires a constant memref.load index");
-    }
-    auto index = *constIndex;
-    Value qubit;
-
-    if (const auto it = state.staticQubits.find(index);
-        it != state.staticQubits.end()) {
-      // Reuse existing pointer
-      qubit = it->second;
-    } else {
-      // Create and cache for reuse
-      qubit = createPointerFromIndex(rewriter, op.getLoc(), index);
-      state.staticQubits.try_emplace(index, qubit);
-    }
+    auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
+                                        static_cast<int64_t>(state.numQubits));
+    state.staticQubits.try_emplace(static_cast<int64_t>(state.numQubits++),
+                                   qubit);
     rewriter.replaceOp(op, qubit);
-
-    // Track maximum qubit index
-    if (std::cmp_greater_equal(index, state.numQubits)) {
-      state.numQubits = index + 1;
-    }
 
     return success();
   }
@@ -181,7 +157,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
 
     const OpBuilder::InsertionGuard guard(rewriter);
 
-    rewriter.setInsertionPoint(getState().entryBlock->getTerminator());
+    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
     auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
                                         static_cast<int64_t>(state.numQubits));
