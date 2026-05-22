@@ -13,7 +13,7 @@
       "cacheVariables": {
         "BUILD_MQT_CORE_MLIR": "ON",
         "MLIR_DIR": "$env{MLIR_DIR}",
-        "LIT_BIN": "$env{LIT_BIN}"
+        "LLVM_EXTERNAL_LIT": "$env{LIT_BIN}"
       }
     },
     {
