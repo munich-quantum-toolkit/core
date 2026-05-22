@@ -48,7 +48,7 @@ def QuantumLoopUnroll
     This pass unrolls `scf.for` operations which contain quantum operations. Classical loops are not unrolled.
 
     Because the pass uses the `mlir::loopUnrollByFactor` utility internally, the same assumptions and restrictions hold for both.
-    See the MLIR documentation for more information.
+    See the [MLIR documentation](https://mlir.llvm.org/doxygen/include_2mlir_2Dialect_2SCF_2Utils_2Utils_8h.html) for more information.
   }];
   let options = [Option<"unrollFactor", "unroll-factor", "int64_t",
                         /*default=*/"-1",

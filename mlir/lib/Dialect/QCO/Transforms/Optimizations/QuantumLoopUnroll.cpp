@@ -14,6 +14,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/SCF/Utils/Utils.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Support/LLVM.h>
