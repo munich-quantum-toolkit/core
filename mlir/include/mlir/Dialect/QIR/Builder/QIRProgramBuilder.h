@@ -178,7 +178,7 @@ public:
    * @return An LLVM pointer representing the result
    *
    * @par Example:
-   * 
+   *
    */
   Value staticResult(int64_t index);
 
