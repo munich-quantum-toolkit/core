@@ -58,90 +58,52 @@ static Value foldInsertAfterExtract(InsertOp insert) {
   return extract.getTensor();
 }
 
-/**
- * @brief Finds the extract operation corresponding to a given insert operation.
- *
- * @details The function traverses the tensor chain of the insert operation
- * until it finds the matching extract operation.
- */
-static ExtractOp findMatchingExtractInTensorChain(InsertOp op) {
-  TensorIterator it(op.getResult());
-  for (; !isa<AllocOp>(it.operation()); --it) {
-    if (auto nestedInsert = dyn_cast<InsertOp>(it.operation())) {
-      if (!getConstantIntValue(nestedInsert.getIndex())) {
-        return nullptr;
-      }
-
-      // A more recent write to the same index shadows all older extracts
-      if (areEquivalentIndices(nestedInsert.getIndex(), op.getIndex())) {
-        return nullptr;
-      }
-      continue;
-    }
-
-    if (auto extract = dyn_cast<ExtractOp>(it.operation())) {
-      if (!getConstantIntValue(extract.getIndex())) {
-        return nullptr;
-      }
-
-      if (areEquivalentIndices(extract.getIndex(), op.getIndex())) {
-        return extract;
-      }
-      continue;
-    }
-  }
-
-  return nullptr;
-}
-
 namespace {
-
 /**
- * @brief Remove matching extract-insert pairs.
+ * @brief Remove an (insert, extract) pair when the inserted qubit has been
+ * extracted previously with the same constant index.
+ * @pre Assumes each qubit is extracted and inserted with the same index.
  */
-struct RemoveExtractInsertPairPattern final : OpRewritePattern<InsertOp> {
+struct RemoveInsertExtractPairPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(InsertOp op,
+  LogicalResult matchAndRewrite(InsertOp insert,
                                 PatternRewriter& rewriter) const override {
-    auto extract = findMatchingExtractInTensorChain(op);
-    if (!extract) {
+    // Check: Insert has constant index.
+    if (!getConstantIntValue(insert.getIndex())) {
       return failure();
     }
 
-    if (!isRemovableExtractInsertPair(op, extract)) {
-      return failure();
-    }
-
-    rewriter.replaceOp(op, op.getDest());
-    rewriter.replaceOp(extract, {extract.getTensor(), nullptr});
-
-    return success();
-  }
-};
-
-/**
- * @brief Replace extracted qubit with previously inserted qubit and remove both
- * the insert and the extract operation.
- * @pre Assumes that the extract and insertion index of any qubit is equivalent.
- */
-struct RemoveExtractAfterInsertPattern final : OpRewritePattern<InsertOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(InsertOp op,
-                                PatternRewriter& rewriter) const override {
-    for (TensorIterator it(op.getResult()); it != std::default_sentinel; ++it) {
+    // Search for an extract operation on the tensor-chain with the same
+    // constant index as the matched insert operation.
+    TensorIterator it(insert.getResult());
+    for (; it != std::default_sentinel; ++it) {
       if (!isa<ExtractOp>(it.operation())) {
         continue;
       }
 
       auto extract = cast<ExtractOp>(it.operation());
-      if (!areEquivalentIndices(extract.getIndex(), op.getIndex())) {
+
+      // Check: Extract has constant index.
+      if (!getConstantIntValue(extract.getIndex())) {
+        return failure();
+      }
+
+      // Check: Same constant index.
+      if (!areEquivalentIndices(extract.getIndex(), insert.getIndex())) {
         continue;
       }
 
-      rewriter.replaceOp(extract, {extract.getTensor(), op.getScalar()});
-      rewriter.replaceOp(op, op.getDest());
+      //                 ┌─────────┐                 ┌──────────┐
+      // ... ─t = dest──▶│insert(i)│─▶ ... ─▶tensor─▶│extract(i)│─outTensor─▶...
+      //                 └────▲────┘                 └────┬─────┘
+      //          ... ─scalar─┘                           └result─▶ ...
+      // ------------------------- ⬇ (transformed) ⬇ -------------------------
+      // ... ─t = outTensor─▶ ...
+      // ... ─scalar = result─▶ ... (Assumption applied.)
+
+      rewriter.replaceOp(extract, {extract.getTensor(), insert.getScalar()});
+      rewriter.replaceOp(insert, insert.getDest());
 
       return success();
     }
@@ -183,11 +145,11 @@ struct BubbleDownInsertPattern final : OpRewritePattern<InsertOp> {
 
     // i != j
     //                ┌─────────┐                  ┌──────────┐
-    // ... ─t = dest─▶│insert(i)│─result = tensor─▶│extract(j)│─outTensor─▶...
+    // ... ─t = dest─▶│insert(i)│─result = tensor─▶│extract(j)│─outTensor─▶ ...
     //                └─────────┘                  └──────────┘
-    // is transformed to
+    // -------------------------- ⬇ (transformed) ⬇ --------------------------
     //                  ┌──────────┐                   ┌─────────┐
-    // ... ─t = tensor─▶│extract(j)│─outTensor = dest─▶│insert(i)│─result─▶...
+    // ... ─t = tensor─▶│extract(j)│─outTensor = dest─▶│insert(i)│─result─▶ ...
     //                  └──────────┘                   └─────────┘
 
     const Value t = insert.getDest();
@@ -204,7 +166,6 @@ struct BubbleDownInsertPattern final : OpRewritePattern<InsertOp> {
     return success();
   }
 };
-
 } // namespace
 
 LogicalResult InsertOp::verify() {
@@ -232,6 +193,5 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<RemoveExtractInsertPairPattern, RemoveExtractAfterInsertPattern,
-              BubbleDownInsertPattern>(context);
+  results.add<RemoveInsertExtractPairPattern, BubbleDownInsertPattern>(context);
 }
