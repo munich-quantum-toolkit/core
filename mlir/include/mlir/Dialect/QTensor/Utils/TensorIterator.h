@@ -83,4 +83,4 @@ private:
   TypedValue<RankedTensorType> tensor_;
   bool isSentinel_;
 };
-} // namespace mlir::qco
+} // namespace mlir::qtensor

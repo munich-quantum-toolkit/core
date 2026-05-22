@@ -1,3 +1,13 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -124,7 +134,7 @@ TEST_F(TensorIteratorTest, Traversal) {
   ASSERT_EQ(it.operation(), tensor1.getDefiningOp()); // qtensor.extract
   ASSERT_EQ(it.tensor(), tensor1);
 
-  --it; 
+  --it;
   ASSERT_EQ(it.operation(), tensor0.getDefiningOp()); // qtensor.alloc
   ASSERT_EQ(it.tensor(), tensor0);
 
