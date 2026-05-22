@@ -84,24 +84,22 @@ protected:
       return;
     }
 
-    // If the unroll factor is larger than zero, partially unroll the loops.
-    if (unrollFactor > 0) {
+    // If the unroll factor is -1, fully unroll all loops.
+    if (unrollFactor == -1) {
       for (auto loop : collectQuantumLoops(getOperation())) {
-        if (failed(loopUnrollByFactor(loop, unrollFactor))) {
-          loop.emitError() << "failed to unroll with factor " +
-                                  Twine(unrollFactor);
+        if (failed(loopUnrollFull(loop))) {
+          loop.emitError() << "failed to fully unroll";
           signalPassFailure();
           return;
         }
       }
-
       return;
     }
 
-    // Otherwise, fully unroll all loops.
     for (auto loop : collectQuantumLoops(getOperation())) {
-      if (failed(loopUnrollFull(loop))) {
-        loop.emitError() << "failed to fully unroll";
+      if (failed(loopUnrollByFactor(loop, unrollFactor))) {
+        loop.emitError() << "failed to unroll with factor " +
+                                Twine(unrollFactor);
         signalPassFailure();
         return;
       }
