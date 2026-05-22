@@ -9,6 +9,14 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Added
+
+- 🚸 Add [CMake presets] to provide a standardized and reproducible way to configure builds ([#1660]) ([**@denialhaag**])
+
+### Changed
+
+- ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660], [#1737]) ([**@denialhaag**])
+
 ## [3.6.1] - 2026-05-20
 
 ### Changed
@@ -379,12 +387,13 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
-[#1654]: https://github.com/munich-quantum-toolkit/core/pull/1654
+[#1660]: https://github.com/munich-quantum-toolkit/core/pull/1660
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
 [#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
@@ -565,3 +574,5 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
 [PEP 639]: https://peps.python.org/pep-0639/
 [PEP 735]: https://peps.python.org/pep-0735/
+[CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
+[munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows

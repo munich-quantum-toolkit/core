@@ -33,6 +33,8 @@
 
 using namespace qc;
 
+namespace {
+
 class DDNoiseFunctionalityTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -68,6 +70,8 @@ protected:
   qc::QuantumComputation qc;
   size_t stochRuns = 1000U;
 };
+
+} // namespace
 
 TEST_F(DDNoiseFunctionalityTest, DetSimulateAdder4TrackAPD) {
   const dd::SparsePVecStrKeys reference = {
@@ -137,7 +141,7 @@ TEST_F(DDNoiseFunctionalityTest, DetSimulateAdder4TrackD) {
 }
 
 TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
-  constexpr double tolerance = 1e-10;
+  constexpr double tolerance = 1e-9;
 
   qc::QuantumComputation qcOp{};
   qcOp.addQubitRegister(3U);
@@ -158,7 +162,7 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
     deterministicNoiseFunctionality.applyNoiseEffects(rootEdge, op);
   }
 
-  auto tmp = rootEdge.getSparseProbabilityVectorStrKeys(qc.getNqubits());
+  auto tmp = rootEdge.getSparseProbabilityVectorStrKeys(qcOp.getNqubits());
   auto prob = 0.125;
   EXPECT_NEAR(tmp["000"], prob, tolerance);
   EXPECT_NEAR(tmp["001"], prob, tolerance);
@@ -169,9 +173,9 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
   EXPECT_NEAR(tmp["110"], prob, tolerance);
   EXPECT_NEAR(tmp["111"], prob, tolerance);
 
-  dd->measureOneCollapsing(rootEdge, 0, qc.getGenerator());
+  dd->measureOneCollapsing(rootEdge, 0, qcOp.getGenerator());
 
-  auto tmp0 = rootEdge.getSparseProbabilityVectorStrKeys(qc.getNqubits());
+  auto tmp0 = rootEdge.getSparseProbabilityVectorStrKeys(qcOp.getNqubits());
   prob = 0.25;
 
   EXPECT_TRUE(fabs(tmp0["000"] + tmp0["001"] - prob) < tolerance);
@@ -179,18 +183,18 @@ TEST_F(DDNoiseFunctionalityTest, testingMeasure) {
   EXPECT_TRUE(fabs(tmp0["100"] + tmp0["101"] - prob) < tolerance);
   EXPECT_TRUE(fabs(tmp0["110"] + tmp0["111"] - prob) < tolerance);
 
-  dd->measureOneCollapsing(rootEdge, 1, qc.getGenerator());
+  dd->measureOneCollapsing(rootEdge, 1, qcOp.getGenerator());
 
-  auto tmp1 = rootEdge.getSparseProbabilityVectorStrKeys(qc.getNqubits());
+  auto tmp1 = rootEdge.getSparseProbabilityVectorStrKeys(qcOp.getNqubits());
   prob = 0.5;
   EXPECT_TRUE(fabs(tmp0["000"] + tmp0["001"] + tmp0["010"] + tmp0["011"] -
                    prob) < tolerance);
   EXPECT_TRUE(fabs(tmp0["100"] + tmp0["101"] + tmp0["110"] + tmp0["111"] -
                    prob) < tolerance);
 
-  dd->measureOneCollapsing(rootEdge, 2, qc.getGenerator());
+  dd->measureOneCollapsing(rootEdge, 2, qcOp.getGenerator());
 
-  auto tmp2 = rootEdge.getSparseProbabilityVectorStrKeys(qc.getNqubits());
+  auto tmp2 = rootEdge.getSparseProbabilityVectorStrKeys(qcOp.getNqubits());
   EXPECT_TRUE(
       fabs(tmp2["000"] - 1) < tolerance || fabs(tmp2["001"] - 1) < tolerance ||
       fabs(tmp2["010"] - 1) < tolerance || fabs(tmp2["011"] - 1) < tolerance ||

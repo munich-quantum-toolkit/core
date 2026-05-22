@@ -4,6 +4,21 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### CMake presets
+
+[CMake presets] have been added to provide a standardized and reproducible way to configure builds across different platforms.
+These presets are also used in our CI.
+
+On Unix systems, the `debug` and `release` presets can be used to configure, build, and test MQT Core.
+
+```console
+cmake --preset release
+cmake --build --preset release
+ctest --preset release
+```
+
+If you are on Windows, use the `debug-windows` and `release-windows` presets.
+
 ## [3.6.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.5` to `3.6`.
@@ -246,3 +261,4 @@ It also requires the `uv` library version 0.5.20 or higher.
 [MQT QMAP]: https://github.com/cda-tum/mqt-qmap
 [MQT QCEC]: https://github.com/cda-tum/mqt-qcec
 [MQT SyReC]: https://github.com/cda-tum/mqt-syrec
+[CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
