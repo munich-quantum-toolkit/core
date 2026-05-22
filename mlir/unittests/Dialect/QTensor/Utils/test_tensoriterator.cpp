@@ -25,8 +25,10 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
 #include <iterator>
 #include <memory>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qtensor;
