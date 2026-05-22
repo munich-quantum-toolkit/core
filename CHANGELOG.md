@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- 🚸 Add `debug`, `release`, `coverage`, and `lint` [CMake presets] ([#1660]) ([**@denialhaag**])
+- 🚸 Add [CMake presets] to provide a standardized and reproducible way to configure builds ([#1660]) ([**@denialhaag**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
@@ -23,6 +23,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660], [#1737]) ([**@denialhaag**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 
@@ -401,6 +402,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1730]: https://github.com/munich-quantum-toolkit/core/pull/1730
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
@@ -655,3 +657,4 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [PEP 639]: https://peps.python.org/pep-0639/
 [PEP 735]: https://peps.python.org/pep-0735/
 [CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
+[munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
