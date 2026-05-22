@@ -43,7 +43,7 @@ As a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT 
 These presets are also used in our CI.
 They assume that `MLIR_DIR` is defined in your environment and pointing to an MLIR installation.
 
-On Unix systems `debug`, `release`, and `coverage` can be used to configure, build, and test MQT Core.
+On Unix systems, `debug`, `release`, and `coverage` can be used to configure, build, and test MQT Core.
 
 ```console
 cmake --preset release
