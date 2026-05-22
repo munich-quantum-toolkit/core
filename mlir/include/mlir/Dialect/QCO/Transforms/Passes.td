@@ -40,6 +40,22 @@ def MergeSingleQubitRotationGates
   }];
 }
 
+def QuantumLoopUnroll
+    : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];
+  let summary = "Unroll bounded loops containing quantum operations";
+  let description = [{
+    This pass unrolls `scf.for` operations which contain quantum operations. Classical loops are not unrolled.
+
+    Because the pass uses the `mlir::loopUnrollByFactor` utility internally, the same assumptions and restrictions hold for both.
+    See the [MLIR documentation](https://mlir.llvm.org/doxygen/include_2mlir_2Dialect_2SCF_2Utils_2Utils_8h.html) for more information.
+  }];
+  let options = [Option<"unrollFactor", "unroll-factor", "int64_t",
+                        /*default=*/"-1",
+                        "Use this unroll factor for all loops being unrolled, "
+                        "set it to -1, and it will fully unroll.">];
+}
+
 //===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
