@@ -13,11 +13,15 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
 
+#include <cassert>
 #include <iterator>
+
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
   // A tensor deallocation doesn't have an OpResult.

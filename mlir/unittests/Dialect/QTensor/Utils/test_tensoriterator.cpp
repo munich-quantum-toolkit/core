@@ -12,22 +12,19 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
-#include "mlir/Support/IRVerification.h"
-#include "mlir/Support/Passes.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Verifier.h>
+#include <mlir/IR/Value.h>
 
-#include <cstddef>
+#include <iterator>
 #include <memory>
 
 using namespace mlir;
