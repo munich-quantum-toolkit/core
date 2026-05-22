@@ -43,7 +43,7 @@ def MergeSingleQubitRotationGates
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
   let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];
-  let summary = "Unroll bounded quantum loops";
+  let summary = "Unroll bounded loops containing quantum operations";
   let description = [{
     This pass unrolls `scf.for` operations which contain quantum operations. Classical loops are not unrolled.
 
