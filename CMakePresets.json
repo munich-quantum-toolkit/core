@@ -4,9 +4,16 @@
     {
       "name": "base",
       "hidden": true,
-      "binaryDir": "${sourceDir}/build/${presetName}",
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "base-mlir",
+      "hidden": true,
+      "inherits": "base",
       "cacheVariables": {
-        "MLIR_DIR": "$env{MLIR_DIR}"
+        "BUILD_MQT_CORE_MLIR": "ON",
+        "MLIR_DIR": "$env{MLIR_DIR}",
+        "LIT_BIN": "$env{LIT_BIN}"
       }
     },
     {
@@ -22,6 +29,11 @@
       "generator": "Ninja"
     },
     {
+      "name": "base-unix-mlir",
+      "hidden": true,
+      "inherits": ["base-unix", "base-mlir"]
+    },
+    {
       "name": "base-windows",
       "hidden": true,
       "inherits": "base",
@@ -33,9 +45,22 @@
       "description": "Default configuration for Windows builds. Uses the default generator"
     },
     {
+      "name": "base-windows-mlir",
+      "hidden": true,
+      "inherits": ["base-windows", "base-mlir"]
+    },
+    {
       "name": "debug",
       "inherits": "base-unix",
       "displayName": "Debug config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "debug-mlir",
+      "inherits": "base-unix-mlir",
+      "displayName": "Debug config with MLIR",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "LLVM_ENABLE_ASSERTIONS": "ON"
@@ -50,9 +75,17 @@
       }
     },
     {
+      "name": "release-mlir",
+      "inherits": "base-unix-mlir",
+      "displayName": "Release config with MLIR",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
       "name": "coverage",
-      "inherits": "base-unix",
-      "displayName": "Coverage config",
+      "inherits": "base-unix-mlir",
+      "displayName": "Coverage config (requires MLIR)",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "ENABLE_COVERAGE": "ON"
@@ -60,8 +93,8 @@
     },
     {
       "name": "lint",
-      "inherits": "base-unix",
-      "displayName": "Lint config",
+      "inherits": "base-unix-mlir",
+      "displayName": "Lint config (requires MLIR)",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_MQT_CORE_BENCHMARKS": "ON",
@@ -72,6 +105,14 @@
       "name": "debug-windows",
       "inherits": "base-windows",
       "displayName": "Windows Debug config",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "debug-windows-mlir",
+      "inherits": "base-windows-mlir",
+      "displayName": "Windows Debug config with MLIR",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "LLVM_ENABLE_ASSERTIONS": "ON"
@@ -84,6 +125,14 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "release-windows-mlir",
+      "inherits": "base-windows-mlir",
+      "displayName": "Windows Release config with MLIR",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -92,8 +141,16 @@
       "configurePreset": "debug"
     },
     {
+      "name": "debug-mlir",
+      "configurePreset": "debug-mlir"
+    },
+    {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "release-mlir",
+      "configurePreset": "release-mlir"
     },
     {
       "name": "coverage",
@@ -109,8 +166,18 @@
       "configuration": "Debug"
     },
     {
+      "name": "debug-windows-mlir",
+      "configurePreset": "debug-windows-mlir",
+      "configuration": "Debug"
+    },
+    {
       "name": "release-windows",
       "configurePreset": "release-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "release-windows-mlir",
+      "configurePreset": "release-windows-mlir",
       "configuration": "Release"
     }
   ],
@@ -127,9 +194,19 @@
       "configurePreset": "debug"
     },
     {
+      "name": "debug-mlir",
+      "inherits": "base",
+      "configurePreset": "debug-mlir"
+    },
+    {
       "name": "release",
       "inherits": "base",
       "configurePreset": "release"
+    },
+    {
+      "name": "release-mlir",
+      "inherits": "base",
+      "configurePreset": "release-mlir"
     },
     {
       "name": "coverage",
@@ -143,9 +220,21 @@
       "configuration": "Debug"
     },
     {
+      "name": "debug-windows-mlir",
+      "inherits": "base",
+      "configurePreset": "debug-windows-mlir",
+      "configuration": "Debug"
+    },
+    {
       "name": "release-windows",
       "inherits": "base",
       "configurePreset": "release-windows",
+      "configuration": "Release"
+    },
+    {
+      "name": "release-windows-mlir",
+      "inherits": "base",
+      "configurePreset": "release-windows-mlir",
       "configuration": "Release"
     }
   ]
