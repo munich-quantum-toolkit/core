@@ -165,7 +165,7 @@ struct ConvertMemRefDeallocOp final
  * ```mlir
  * %q = qc.alloc : !qc.qubit
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * %c0 = llvm.mlir.constant(0 : i64) : i64
  * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
@@ -219,7 +219,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
  * ```mlir
  * %result = qc.measure %q : !qc.qubit -> i1
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * // In entry block:
  * %zero = llvm.mlir.zero : !llvm.ptr
@@ -302,12 +302,10 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
                                         MLIRContext* ctx,
                                         LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns.add<ConvertQCMeasureOp>(typeConverter, ctx, &state);
   patterns
-      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp>(
+      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
+           ConvertQCAllocOp, ConvertQCMeasureOp, ConvertQCDeallocOp>(
           typeConverter, ctx, &state);
-  patterns.add<ConvertQCAllocOp, ConvertQCDeallocOp>(typeConverter, ctx,
-                                                     &state);
 }
 
 namespace {
@@ -343,8 +341,8 @@ struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
    * The QIR base profile requires a specific 4-block structure:
    * 1. **Entry block**: Contains constant operations and initialization
    * 2. **Body block**: Contains reversible quantum operations (gates)
-   * 3. **Measurements block**: Contains irreversible operations (measure and
-   * reset)
+   * 3. **Measurements block**: Contains irreversible operations (measure
+   * operations)
    * 4. **Output block**: Contains output recording calls
    *
    * Blocks are connected with unconditional jumps (entry, body, measurements,

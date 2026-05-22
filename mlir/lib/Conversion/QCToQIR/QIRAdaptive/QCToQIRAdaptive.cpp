@@ -58,7 +58,7 @@ namespace {
  * ```mlir
  * %memref = memref.alloc() : memref<3x!qc.qubit>
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * %zero = llvm.mlir.zero : !llvm.ptr
  * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
@@ -167,7 +167,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
  * ```mlir
  * memref.dealloc %memref : memref<3x!qc.qubit>
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * llvm.call @"@__quantum__rt__qubit_array_release"(%c3, %alloca) : (i64,
  * !llvm.ptr) -> ()
@@ -221,7 +221,7 @@ struct ConvertMemRefDeallocOp final
  * ```mlir
  * %q = qc.alloc : !qc.qubit
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * %zero = llvm.mlir.zero : !llvm.ptr
  * %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
@@ -262,7 +262,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
  * ```mlir
  * qc.dealloc %q : !qc.qubit
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * llvm.call @"@__quantum__rt__qubit_release"(%q) : !llvm.ptr -> ()
  * ```
@@ -306,7 +306,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
  * ```mlir
  * qc.reset %q : !qc.qubit
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
  * ```
@@ -348,7 +348,7 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
  * ```mlir
  * %result = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * // In entry block:
  * %zero = llvm.mlir.zero : !llvm.ptr
@@ -469,14 +469,11 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             QCToQIRTypeConverter& typeConverter,
                                             MLIRContext* ctx,
                                             LoweringState& state) {
-  patterns
-      .add<ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp>(
-          typeConverter, ctx, &state);
-  patterns.add<ConvertQCAllocOp>(typeConverter, ctx, &state);
-  patterns.add<ConvertQCDeallocOp>(typeConverter, ctx, &state);
-  patterns.add<ConvertQCMeasureOp>(typeConverter, ctx, &state);
-  patterns.add<ConvertQCResetOp>(typeConverter, ctx, &state);
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
+  patterns.add<ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+               ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
+               ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
+                                                     &state);
 }
 
 namespace {
@@ -532,15 +529,15 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
     builder.setInsertionPointToEnd(entryBlock);
     LLVM::BrOp::create(builder, main->getLoc(), firstBlock);
     auto* terminatorOp = lastBlock->getTerminator();
-    terminatorOp->moveBefore(finalBlock, finalBlock->end());
+    terminatorOp->moveBefore(outputBlock, outputBlock->end());
 
     builder.setInsertionPointToEnd(lastBlock);
-    LLVM::BrOp::create(builder, main->getLoc(), finalBlock);
+    LLVM::BrOp::create(builder, main->getLoc(), outputBlock);
 
     // Move up all constants to the beginning
     auto& entryOps = entryBlock->getOperations();
     for (auto& block : main.getBlocks()) {
-      if (&block == entryBlock || &block == finalBlock) {
+      if (&block == entryBlock || &block == outputBlock) {
         continue;
       }
       for (auto it = block.begin(); it != block.end();) {

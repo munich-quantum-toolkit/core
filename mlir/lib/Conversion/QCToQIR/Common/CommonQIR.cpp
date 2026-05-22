@@ -15,8 +15,6 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
@@ -37,7 +35,6 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -260,7 +257,7 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
  * ```mlir
  * %q0 = qc.static 0 : !qc.qubit
  * ```
- * becomes:
+ * is converted to
  * ```mlir
  * %c0 = llvm.mlir.constant(0 : i64) : i64
  * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
