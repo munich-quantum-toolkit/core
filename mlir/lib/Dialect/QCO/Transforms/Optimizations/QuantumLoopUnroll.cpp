@@ -37,10 +37,13 @@ namespace mlir::qco {
  */
 static bool isQuantumLoop(scf::ForOp loop) {
   return llvm::any_of(loop.getInitArgs(), [](Value arg) {
-    const auto type = arg.getType();
-    return isa<QubitType>(type) ||
-           (isa<RankedTensorType>(type) &&
-            isa<QubitType>(cast<RankedTensorType>(type).getElementType()));
+    if (isa<QubitType>(arg.getType())) {
+      return true;
+    }
+    if (const auto tensorTy = dyn_cast<RankedTensorType>(arg.getType())) {
+      return isa<QubitType>(tensorTy.getElementType());
+    }
+    return false;
   });
 }
 
