@@ -39,7 +39,7 @@ As a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT 
 
 ### CMake presets
 
-[CMake presets] have been added to providing a standardized and reproducible way to configure builds across different platforms.
+[CMake presets] have been added to provide a standardized and reproducible way to configure builds across different platforms.
 These presets are also used in our CI.
 They assume that `MLIR_DIR` is defined in your environment and pointing to an MLIR installation.
 

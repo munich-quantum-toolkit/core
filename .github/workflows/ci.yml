@@ -138,6 +138,7 @@ jobs:
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
       llvm-version: 22.1.0
+      mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
 
   cpp-coverage:
