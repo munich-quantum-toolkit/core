@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- 🚸 Add `debug`, `release`, `coverage`, and `lint` [CMake presets] ([#1660]) ([**@denialhaag**])
 - ✨ Add bi-directional iterator that traverses the def-use chain of a tensor value ([#1730]) ([**@MatthiasReumann**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
@@ -418,6 +419,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1673]: https://github.com/munich-quantum-toolkit/core/pull/1673
 [#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
+[#1660]: https://github.com/munich-quantum-toolkit/core/pull/1660
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1638]: https://github.com/munich-quantum-toolkit/core/pull/1638
 [#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637
@@ -653,3 +655,4 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
 [PEP 639]: https://peps.python.org/pep-0639/
 [PEP 735]: https://peps.python.org/pep-0735/
+[CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
