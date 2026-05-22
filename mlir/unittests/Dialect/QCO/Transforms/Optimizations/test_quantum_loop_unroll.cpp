@@ -43,7 +43,7 @@ using namespace mlir::qco;
  * @return A module with an entry point function containing the GHZ logic.
  */
 static OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
-  qco::QCOProgramBuilder builder(context);
+  QCOProgramBuilder builder(context);
   builder.initialize();
 
   Value tensor = builder.qtensorAlloc(n);
@@ -82,7 +82,7 @@ class QuantumLoopUnrollTest : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<qco::QCODialect, scf::SCFDialect, arith::ArithDialect,
+    registry.insert<QCODialect, scf::SCFDialect, arith::ArithDialect,
                     func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
@@ -90,9 +90,9 @@ protected:
   }
 
   static LogicalResult runPass(OwningOpRef<ModuleOp>& program,
-                               qco::QuantumLoopUnrollOptions options) {
+                               const QuantumLoopUnrollOptions options) {
     PassManager pm(program->getContext());
-    pm.addNestedPass<func::FuncOp>(qco::createQuantumLoopUnroll(options));
+    pm.addNestedPass<func::FuncOp>(createQuantumLoopUnroll(options));
     return pm.run(*program);
   }
 
@@ -104,8 +104,7 @@ protected:
 TEST_F(QuantumLoopUnrollTest, InvalidUnrollFactor) {
   auto m = getGHZ(context.get(), 2);
 
-  const auto res =
-      runPass(m, qco::QuantumLoopUnrollOptions{.unrollFactor = -2});
+  const auto res = runPass(m, QuantumLoopUnrollOptions{.unrollFactor = -2});
   ASSERT_TRUE(res.failed());
 }
 
@@ -113,7 +112,7 @@ TEST_F(QuantumLoopUnrollTest, NoOp) {
   auto m = getGHZ(context.get(), 2);
   auto mClone = m->clone();
 
-  const auto res = runPass(m, qco::QuantumLoopUnrollOptions{.unrollFactor = 0});
+  const auto res = runPass(m, QuantumLoopUnrollOptions{.unrollFactor = 0});
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(mlir::OperationEquivalence::isEquivalentTo(
       m->getOperation(), mClone.getOperation(),
@@ -128,7 +127,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 1);
 
-  const auto res = runPass(m, qco::QuantumLoopUnrollOptions{});
+  const auto res = runPass(m, QuantumLoopUnrollOptions{});
   ASSERT_TRUE(res.succeeded());
 
   // After the pass, there are no more loops and all extracts and inserts are
@@ -147,7 +146,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 1);
 
-  const auto res = runPass(m, qco::QuantumLoopUnrollOptions{.unrollFactor = 2});
+  const auto res = runPass(m, QuantumLoopUnrollOptions{.unrollFactor = 2});
   ASSERT_TRUE(res.succeeded());
 
   // The extraction and insertion of q0 (and the subsequent application) of the
