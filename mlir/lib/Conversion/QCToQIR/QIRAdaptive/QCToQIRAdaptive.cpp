@@ -497,7 +497,6 @@ namespace {
  * 6. Set QIR metadata attributes
  * 7. Convert arith and cf dialects to LLVM
  * 8. Reconcile unrealized casts
- *
  */
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
@@ -525,10 +524,10 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
     auto* entryBlock = builder.createBlock(&main.getBody());
     main.getBlocks().splice(Region::iterator(firstBlock), main.getBlocks(),
                             entryBlock);
-    Block* finalBlock = builder.createBlock(&main.getBody());
+    Block* outputBlock = builder.createBlock(&main.getBody());
 
     state.entryBlock = entryBlock;
-    state.outputBlock = finalBlock;
+    state.outputBlock = outputBlock;
 
     builder.setInsertionPointToEnd(entryBlock);
     LLVM::BrOp::create(builder, main->getLoc(), firstBlock);
@@ -648,7 +647,7 @@ protected:
 
     // Stage 1: Convert scf dialect to cf
     {
-      // Find  the required flags before the scf operations are converted
+      // Find the required flags before the scf operations are converted
       setSCFFlags(moduleOp, &state);
 
       RewritePatternSet scfPatterns(ctx);
@@ -662,6 +661,7 @@ protected:
         return;
       }
     }
+
     // Stage 2: Convert func dialect to LLVM
     {
       RewritePatternSet funcPatterns(ctx);

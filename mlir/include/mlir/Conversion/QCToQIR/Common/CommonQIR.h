@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
 #include <llvm/ADT/DenseMap.h>
@@ -127,8 +127,7 @@ void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  *
  * @details
  * Centralizes pattern registration so adding a new QC gate typically only
- * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization to the
- * list of unitary gates below.
+ * requires adding a new `ConvertQCUnitaryOpQIR<...>` specialization.
  */
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,

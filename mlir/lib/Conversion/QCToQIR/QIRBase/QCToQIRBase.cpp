@@ -68,6 +68,7 @@ struct ConvertMemRefAllocOp final
     return success();
   }
 };
+
 /**
  * @brief Converts memref.load to llvm.inttoptr
  *
@@ -193,7 +194,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
 };
 
 /**
- * @brief Erases memref.alloc during the QIR Base Profile conversion
+ * @brief Erases qc.dealloc during the QIR Base Profile conversion
  */
 struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -470,6 +471,7 @@ protected:
 
     // Stage 3: Insert initialize call
     addInitialize(main, ctx, state);
+
     // Stage 4: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);

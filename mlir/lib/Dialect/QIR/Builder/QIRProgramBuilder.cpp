@@ -106,15 +106,12 @@ void QIRProgramBuilder::initialize() {
 
 Value QIRProgramBuilder::resolveIntVariant(
     const std::variant<int64_t, Value>& variant) {
-  Value value;
   if (std::holds_alternative<int64_t>(variant)) {
-    value = LLVM::ConstantOp::create(*this, IntegerType::get(context, 64),
+    return LLVM::ConstantOp::create(*this, IntegerType::get(context, 64),
                                      getIndexAttr(std::get<int64_t>(variant)))
                 .getResult();
-  } else {
-    value = std::get<Value>(variant);
   }
-  return value;
+  return std::get<Value>(variant);
 }
 
 Value QIRProgramBuilder::intConstant(const int64_t value) {
@@ -395,7 +392,7 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
 
   auto it = loadedResults.find({bit.registerName, bit.registerIndex});
   if (it == loadedResults.end()) {
-    llvm::reportFatalUsageError("Bit does not belong to an result pointer");
+    llvm::reportFatalUsageError("Bit does not belong to a result pointer");
   }
   auto result = it->second;
   if (profile == Profile::Adaptive) {

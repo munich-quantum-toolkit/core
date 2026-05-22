@@ -105,8 +105,8 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   // Define argument types
   SmallVector<Type> argumentTypes;
   argumentTypes.reserve(numParams + numCtrls + numTargets);
-  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  const auto floatType = Float64Type::get(ctx);
+  auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  auto floatType = Float64Type::get(ctx);
   // Add control pointers
   for (size_t i = 0; i < numCtrls; ++i) {
     argumentTypes.push_back(ptrType);
