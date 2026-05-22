@@ -72,9 +72,9 @@ struct ConvertMemRefAllocOp final
 /**
  * @brief Converts memref.load to llvm.inttoptr
  *
- * Converts a load operation to an LLVM pointer by creating a constant
- * with the index of the load operation and converting it to a pointer.
- * The pointer is cached in the lowering state for reuse.
+ * Converts a load operation to an LLVM pointer by creating a constant with the
+ * next available static qubit index and converting it to a pointer. The pointer
+ * is cached in the lowering state for reuse.
  *
  * @par Example:
  * ```mlir
@@ -102,7 +102,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     const OpBuilder::InsertionGuard guard(rewriter);
 
     // Switch to entry block
-    rewriter.setInsertionPoint(getState().entryBlock->getTerminator());
+    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
     auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
                                         static_cast<int64_t>(state.numQubits));

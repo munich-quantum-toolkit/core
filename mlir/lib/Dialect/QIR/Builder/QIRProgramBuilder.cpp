@@ -220,9 +220,6 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  // Save current insertion point
-  const InsertionGuard guard(*this);
-
   Value array;
   SmallVector<Value> qubits;
 
@@ -388,7 +385,6 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
 
 Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
-  const InsertionGuard guard(*this);
 
   auto it = loadedResults.find({bit.registerName, bit.registerIndex});
   if (it == loadedResults.end()) {
@@ -398,6 +394,7 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   if (profile == Profile::Adaptive) {
     metadata_.useDynamicResult = true;
   } else {
+    const InsertionGuard guard(*this);
     setInsertionPoint(measurementsBlock->getTerminator());
   }
 
@@ -993,6 +990,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
   // Release resources in output block
   setInsertionPoint(outputBlock->getTerminator());
+
   if (profile == Profile::Adaptive) {
     for (auto qubit : qubits) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
