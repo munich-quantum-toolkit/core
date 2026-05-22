@@ -8,7 +8,8 @@
 
 set(qco_utils_target mqt-core-mlir-unittest-qco-utils)
 add_executable(${qco_utils_target} test_drivers.cpp test_wireiterator.cpp)
-target_link_libraries(${qco_utils_target} PRIVATE GTest::gtest_main MLIRQCOUtils MLIRQCOProgramBuilder)
+target_link_libraries(${qco_utils_target} PRIVATE GTest::gtest_main MLIRQCOUtils
+                                                  MLIRQCOProgramBuilder)
 mqt_mlir_configure_unittest_target(${qco_utils_target})
 
 gtest_discover_tests(${qco_utils_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
