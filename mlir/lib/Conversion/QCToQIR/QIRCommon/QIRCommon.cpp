@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QCToQIR/Common/CommonQIR.h"
+#include "mlir/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 
 #include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"

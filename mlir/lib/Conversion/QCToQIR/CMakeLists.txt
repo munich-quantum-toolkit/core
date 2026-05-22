@@ -6,6 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Common)
+add_subdirectory(QIRCommon)
 add_subdirectory(QIRBase)
 add_subdirectory(QIRAdaptive)

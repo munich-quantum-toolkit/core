@@ -10,7 +10,7 @@
 
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 
-#include "mlir/Conversion/QCToQIR/Common/CommonQIR.h"
+#include "mlir/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"

@@ -8,11 +8,11 @@
 
 # Copyright ...
 
-file(GLOB COMMON_QIR_SOURCES *.cpp)
+file(GLOB QIR_COMMON_SOURCES *.cpp)
 
 add_mlir_library(
   MLIRQCToQIRCommon
-  ${COMMON_QIR_SOURCES}
+  ${QIR_COMMON_SOURCES}
   LINK_LIBS
   PUBLIC
   MLIRIR
@@ -32,8 +32,8 @@ add_mlir_library(
 
 mqt_mlir_target_use_project_options(MLIRQCToQIRCommon)
 
-file(GLOB_RECURSE COMMON_QIR_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Conversion/QCToQIR/Common/*.h)
+file(GLOB_RECURSE QIR_COMMON_HEADERS_SOURCE
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Conversion/QCToQIR/QIRCommon/*.h)
 
 target_sources(MLIRQCToQIRCommon PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-                                        FILES ${COMMON_QIR_HEADERS_SOURCE})
+                                        FILES ${QIR_COMMON_HEADERS_SOURCE})
