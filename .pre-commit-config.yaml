@@ -20,6 +20,8 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-merge-conflict
+        args: [--assume-in-merge]
+        fail_fast: true
         priority: 0
       - id: end-of-file-fixer
         priority: 1
