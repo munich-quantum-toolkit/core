@@ -119,10 +119,7 @@
       "name": "base",
       "hidden": true,
       "output": { "outputOnFailure": true },
-      "execution": {
-        "repeat": { "mode": "until-pass", "count": 3 },
-        "timeout": 600
-      }
+      "execution": { "timeout": 600 }
     },
     {
       "name": "debug",
