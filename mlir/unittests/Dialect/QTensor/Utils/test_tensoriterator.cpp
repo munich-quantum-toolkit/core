@@ -1,0 +1,134 @@
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
+#include "mlir/Support/IRVerification.h"
+#include "mlir/Support/Passes.h"
+
+#include <gtest/gtest.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Verifier.h>
+
+#include <cstddef>
+#include <memory>
+
+using namespace mlir;
+using namespace mlir::qtensor;
+using namespace mlir::qco;
+
+namespace {
+
+class TensorIteratorTest : public ::testing::Test {
+protected:
+  std::unique_ptr<MLIRContext> context;
+
+  void SetUp() override {
+    DialectRegistry registry;
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    QTensorDialect>();
+    context = std::make_unique<MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
+};
+} // namespace
+
+TEST_F(TensorIteratorTest, Traversal) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto tensor0 = builder.qtensorAlloc(3);
+  auto [tensor1, q00] = builder.qtensorExtract(tensor0, 0);
+  auto q01 = builder.h(q00);
+  auto tensor2 = builder.qtensorInsert(q01, tensor1, 0);
+  auto [tensor3, q02] = builder.qtensorExtract(tensor2, 0);
+  auto [tensor4, q10] = builder.qtensorExtract(tensor3, 1);
+  auto [q03, q11] = builder.cx(q02, q10);
+  auto tensor5 = builder.qtensorInsert(q03, tensor4, 0);
+  auto tensor6 = builder.qtensorInsert(q11, tensor5, 1);
+  builder.qtensorDealloc(tensor6);
+  [[maybe_unused]] auto m = builder.finalize();
+
+  TensorIterator it(cast<TypedValue<RankedTensorType>>(tensor0));
+
+  ASSERT_EQ(it.operation(), tensor0.getDefiningOp()); // qtensor.alloc
+  ASSERT_EQ(it.tensor(), tensor0);
+
+  ++it;
+  ASSERT_EQ(it.operation(), tensor1.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(it.tensor(), tensor1);
+
+  ++it;
+  ASSERT_EQ(it.operation(), tensor2.getDefiningOp()); // qtensor.insert
+  ASSERT_EQ(it.tensor(), tensor2);
+
+  ++it;
+  ASSERT_EQ(it.operation(), tensor3.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(it.tensor(), tensor3);
+
+  ++it;
+  ASSERT_EQ(it.operation(), tensor4.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(it.tensor(), tensor4);
+
+  ++it;
+  ASSERT_EQ(it.operation(), tensor5.getDefiningOp()); // qtensor.insert
+  ASSERT_EQ(it.tensor(), tensor5);
+
+  ++it;
+  ASSERT_EQ(it.operation(), tensor6.getDefiningOp()); // qtensor.insert
+  ASSERT_EQ(it.tensor(), tensor6);
+
+  ++it;
+  ASSERT_EQ(it.operation(), *(tensor6.user_begin())); // qtensor.dealloc
+  ASSERT_EQ(it.tensor(), nullptr);
+
+  ++it;
+  ASSERT_EQ(it, std::default_sentinel);
+
+  ++it;
+  ASSERT_EQ(it, std::default_sentinel);
+
+  --it;
+  ASSERT_EQ(it.operation(), *(tensor6.user_begin())); // qtensor.dealloc
+  ASSERT_EQ(it.tensor(), nullptr);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor6.getDefiningOp()); // qtensor.insert
+  ASSERT_EQ(it.tensor(), tensor6);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor5.getDefiningOp()); // qtensor.insert
+  ASSERT_EQ(it.tensor(), tensor5);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor4.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(it.tensor(), tensor4);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor3.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(it.tensor(), tensor3);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor2.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(it.tensor(), tensor2);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor1.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(it.tensor(), tensor1);
+
+  --it; 
+  ASSERT_EQ(it.operation(), tensor0.getDefiningOp()); // qtensor.alloc
+  ASSERT_EQ(it.tensor(), tensor0);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor0.getDefiningOp()); // qtensor.alloc
+  ASSERT_EQ(it.tensor(), tensor0);
+}

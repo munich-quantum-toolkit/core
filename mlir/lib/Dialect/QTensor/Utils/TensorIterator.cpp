@@ -60,7 +60,7 @@ void TensorIterator::backward() {
 
   // For deallocations and scf::YieldOps, tensor_ is an OpOperand.
   // Hence, only get the def-op.
-  if (isa<qtensor::InsertOp, scf::YieldOp>(op_)) {
+  if (isa<qtensor::DeallocOp, scf::YieldOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     return;
   }

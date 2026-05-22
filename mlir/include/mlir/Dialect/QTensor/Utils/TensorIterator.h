@@ -20,7 +20,7 @@
 namespace mlir::qtensor {
 
 /**
- * @brief A bidirectional_iterator traversing the def-use chain of a tensor.
+ * @brief A bidirectional_iterator traversing the tensor chain.
  **/
 class [[nodiscard]] TensorIterator {
 public:
