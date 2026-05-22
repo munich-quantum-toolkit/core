@@ -9,7 +9,7 @@ This document describes breaking changes and how to upgrade. For a complete list
 [CMake presets] have been added to provide a standardized and reproducible way to configure builds across different platforms.
 These presets are also used in our CI.
 
-On Unix systems, `debug` and `release` can be used to configure, build, and test MQT Core.
+On Unix systems, the `debug` and `release` presets can be used to configure, build, and test MQT Core.
 
 ```console
 cmake --preset release
@@ -17,7 +17,7 @@ cmake --build --preset release
 ctest --preset release
 ```
 
-If you are on Windows, use `debug-windows` and `release-windows`.
+If you are on Windows, use the `debug-windows` and `release-windows` presets.
 
 ## [3.6.0]
 
