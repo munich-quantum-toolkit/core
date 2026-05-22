@@ -25,7 +25,7 @@
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
   // A tensor deallocation doesn't have an OpResult.
-  if (isa<qtensor::DeallocOp>(op_)) {
+  if (isa<DeallocOp>(op_)) {
     return nullptr;
   }
   return tensor_;
@@ -42,18 +42,16 @@ void TensorIterator::forward() {
   op_ = *(tensor_.user_begin());
 
   // A deallocation defines the end of the tensor's life-chain.
-  if (isa<qtensor::DeallocOp, scf::YieldOp>(op_)) {
+  if (isa<DeallocOp, scf::YieldOp>(op_)) {
     isSentinel_ = true;
     return;
   }
 
   // Find the output from the input tensor SSA value.
-  if (!(isa<qtensor::AllocOp, qtensor::FromElementsOp>(op_))) {
+  if (!(isa<AllocOp, FromElementsOp>(op_))) {
     TypeSwitch<Operation*>(op_)
-        .Case<qtensor::ExtractOp>(
-            [&](qtensor::ExtractOp op) { tensor_ = op.getOutTensor(); })
-        .Case<qtensor::InsertOp>(
-            [&](qtensor::InsertOp op) { tensor_ = op.getResult(); })
+        .Case<ExtractOp>([&](ExtractOp op) { tensor_ = op.getOutTensor(); })
+        .Case<InsertOp>([&](InsertOp op) { tensor_ = op.getResult(); })
         .Case<scf::ForOp>([&](scf::ForOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
               op.getTiedLoopResult(&*(tensor_.use_begin())));
@@ -74,23 +72,21 @@ void TensorIterator::backward() {
 
   // For deallocations and scf::YieldOps, tensor_ is an OpOperand.
   // Hence, only get the def-op.
-  if (isa<qtensor::DeallocOp, scf::YieldOp>(op_)) {
+  if (isa<DeallocOp, scf::YieldOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     return;
   }
 
   // Allocations and FromElements define the start of the tensor's life-chain.
   // Consequently, stop and early exit.
-  if (isa<qtensor::AllocOp, qtensor::FromElementsOp>(op_)) {
+  if (isa<AllocOp, FromElementsOp>(op_)) {
     return;
   }
 
   // Find the input from the output tensor SSA value.
   TypeSwitch<Operation*>(op_)
-      .Case<qtensor::ExtractOp>(
-          [&](qtensor::ExtractOp op) { tensor_ = op.getTensor(); })
-      .Case<qtensor::InsertOp>(
-          [&](qtensor::InsertOp op) { tensor_ = op.getDest(); })
+      .Case<ExtractOp>([&](ExtractOp op) { tensor_ = op.getTensor(); })
+      .Case<InsertOp>([&](InsertOp op) { tensor_ = op.getDest(); })
       .Case<scf::ForOp>([&](scf::ForOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {
           OpOperand* operand = op.getTiedLoopInit(res);

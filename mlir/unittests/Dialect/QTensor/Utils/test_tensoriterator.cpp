@@ -52,7 +52,7 @@ protected:
 } // namespace
 
 TEST_F(TensorIteratorTest, Traversal) {
-  qco::QCOProgramBuilder builder(context.get());
+  QCOProgramBuilder builder(context.get());
   builder.initialize();
 
   constexpr int64_t n = 3;
