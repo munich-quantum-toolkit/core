@@ -43,8 +43,8 @@ static bool isQuantumLoop(scf::ForOp loop) {
 }
 
 /**
- * @brief Post-order collect all quantum loops inside a module.
- * @param m The module.
+ * @brief Post-order collect all quantum loops in a function.
+ * @param func The function to collect quantum loops from.
  * @return A vector of quantum `scf.for` loops.
  */
 static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
@@ -79,7 +79,7 @@ protected:
     // `IRRewriter`s using the context of the loop operation and automatically
     // rewrite the IR. This is the reason why we don't use patterns here.
 
-    // A unroll-factor of zero or one is a no-op.
+    // An unroll-factor of zero or one is a no-op.
     if (unrollFactor == 0 || unrollFactor == 1) {
       return;
     }
