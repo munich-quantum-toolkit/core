@@ -661,6 +661,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{"SimpleDoWhile",
                         MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
                         MQT_NAMED_BUILDER(qc::simpleDoWhileReset)}));
+/// @}
 
 /// \name QCOToQC/Operations/ForOp.cpp
 /// @{
@@ -683,3 +684,4 @@ INSTANTIATE_TEST_SUITE_P(
             "nestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)}));
+/// @}

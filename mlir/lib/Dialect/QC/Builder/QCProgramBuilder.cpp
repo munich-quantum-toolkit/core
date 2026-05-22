@@ -65,6 +65,11 @@ void QCProgramBuilder::initialize() {
   regionStack.emplace_back(entryBlock.getParent());
 }
 
+Value QCProgramBuilder::boolConstant(const bool value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getBoolAttr(value)).getResult();
+}
+
 Value QCProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
@@ -180,13 +185,14 @@ Value QCProgramBuilder::measure(Value qubit) {
   return measureOp.getResult();
 }
 
-QCProgramBuilder& QCProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QCProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
   auto nameAttr = getStringAttr(bit.registerName);
   auto sizeAttr = getI64IntegerAttr(bit.registerSize);
   auto indexAttr = getI64IntegerAttr(bit.registerIndex);
-  MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
-  return *this;
+  auto measureOp =
+      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
+  return measureOp.getResult();
 }
 
 QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
