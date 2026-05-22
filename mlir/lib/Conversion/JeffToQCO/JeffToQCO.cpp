@@ -24,6 +24,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
@@ -31,6 +32,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -814,6 +816,165 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
 };
 
 /**
+ * @brief Converts jeff.switch to qco.if
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = jeff.switch(%condition) : i1 -> (!jeff.qubit)
+ * case 0 args(%a = %q_in) {
+ *   %jeff.yield %a : !jeff.qubit
+ * }
+ * case 1 args(%a = %q_in) {
+ *   %q_res = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %a
+ * : !jeff.qubit
+ *   jeff.yield %q_res : !jeff.qubit
+ * }
+ * default args(%a = %q_in) {
+ *   jeff.yield %a : !jeff.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = qco.if %condition args(%a = %q_in) -> (!qco.qubit) {
+ *   %q_res = qco.x %a : !qco.qubit -> !qco.qubit
+ *   qco.yield %q_res : !qco.qubit
+ * } else args(%a = %q_in) {
+ *   qco.yield %a : !qco.qubit
+ * }
+ * ```
+ */
+struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::SwitchOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (!adaptor.getSelection().getType().isInteger(1)) {
+      return rewriter.notifyMatchFailure(op, "qco.if requires an i1 selector");
+    }
+    if (op.getDefault().front().getOperations().size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "qco.if requires a trivial default branch");
+    }
+    if (op.getBranches().size() != 2) {
+      return rewriter.notifyMatchFailure(
+          op, "qco.if requires exactly two branches");
+    }
+
+    auto qcoIf = IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(),
+                              adaptor.getInValues());
+
+    auto moveRegion = [&](Region& source, Region& dest) -> LogicalResult {
+      rewriter.inlineRegionBefore(source, dest, dest.end());
+      Block* block = &dest.front();
+      TypeConverter::SignatureConversion sc(block->getNumArguments());
+      if (failed(getTypeConverter()->convertSignatureArgs(
+              block->getArgumentTypes(), sc))) {
+        return failure();
+      }
+      rewriter.applySignatureConversion(block, sc);
+      return success();
+    };
+
+    if (failed(moveRegion(op.getBranches()[0], qcoIf.getElseRegion()))) {
+      return failure();
+    }
+    if (failed(moveRegion(op.getBranches()[1], qcoIf.getThenRegion()))) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op, qcoIf.getResults());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.for to scf.for
+ *
+ * @par Example:
+ * ```mlir
+ * %reg_out = jeff.for %iv = %start to %stop step %step args(%a = %reg_in) ->
+ * (!jeff.qureg<2>) : i32 {
+ *   %reg0, %q0 = jeff.qureg_extract_index(%iv) %a : (!jeff.qureg<2>, i32) ->
+ * (!jeff.qureg<2>, !jeff.qubit)
+ *   %q1 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0 :
+ * !jeff.qubit
+ *   %reg1 = jeff.qureg_insert_index(%iv) %reg0 %q1 : (!jeff.qureg<2>, i32,
+ * !jeff.qubit) -> !jeff.qureg<2>
+ *   jeff.yield %reg1 : !jeff.qureg<2>
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %reg_out = scf.for %iv = %start to %stop step %step iter_args(%a = %reg_in)
+ * -> (tensor<2x!qco.qubit>) {
+ *   %reg0, %q0 = qtensor.extract %a[%iv] : tensor<2x!qco.qubit>
+ *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+ *   %reg1 = qtensor.insert %q1 into %reg0[%iv] : tensor<2x!qco.qubit>
+ *   scf.yield %reg1 : tensor<2x!qco.qubit>
+ * }
+ * ```
+ */
+struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::ForOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto loc = op.getLoc();
+    auto indexType = rewriter.getIndexType();
+
+    auto start = arith::IndexCastOp::create(rewriter, loc, indexType,
+                                            adaptor.getStart());
+    auto stop =
+        arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStop());
+    auto step =
+        arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStep());
+
+    auto scfFor = scf::ForOp::create(rewriter, loc, start, stop, step,
+                                     adaptor.getInValues());
+
+    Block* jeffBody = &op.getBody().front();
+    Block* scfBody = scfFor.getBody();
+
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPointToStart(scfBody);
+
+    auto iv = arith::IndexCastOp::create(rewriter, loc,
+                                         jeffBody->getArgument(0).getType(),
+                                         scfFor.getInductionVar());
+    SmallVector<Value> args = {iv.getResult()};
+    for (Value arg : scfFor.getRegionIterArgs()) {
+      args.push_back(arg);
+    }
+
+    rewriter.mergeBlocks(jeffBody, scfBody, args);
+
+    rewriter.replaceOp(op, scfFor.getResults());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.yield to QCO
+ */
+struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::YieldOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (isa<IfOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<YieldOp>(op, adaptor.getOperands());
+      return success();
+    }
+
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op, adaptor.getOperands());
+    return success();
+  }
+};
+
+/**
  * @brief Converts the jeff-style main function to a QCO-style main function
  *
  * @par Example:
@@ -914,7 +1075,7 @@ protected:
     target.addIllegalDialect<jeff::JeffDialect>();
     target.addLegalDialect<QCODialect, qtensor::QTensorDialect,
                            arith::ArithDialect, math::MathDialect,
-                           tensor::TensorDialect>();
+                           tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return !(op.getSymName() == getEntryPointName(module) &&
@@ -943,7 +1104,8 @@ protected:
         ConvertJeffOneTargetOneParameterToQCO<jeff::RzOp, RZOp>,
         ConvertJeffOneTargetOneParameterToQCO<jeff::R1Op, POp>,
         ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO, ConvertJeffCustomOpToQCO,
-        ConvertJeffPPROpToQCO, ConvertJeffMainToQCO>(typeConverter, context);
+        ConvertJeffPPROpToQCO, ConvertJeffSwitchOpToQCO, ConvertJeffForOpToQCO,
+        ConvertJeffYieldOpToQCO, ConvertJeffMainToQCO>(typeConverter, context);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
