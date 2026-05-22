@@ -108,8 +108,8 @@ Value QIRProgramBuilder::resolveIntVariant(
     const std::variant<int64_t, Value>& variant) {
   if (std::holds_alternative<int64_t>(variant)) {
     return LLVM::ConstantOp::create(*this, IntegerType::get(context, 64),
-                                     getIndexAttr(std::get<int64_t>(variant)))
-                .getResult();
+                                    getIndexAttr(std::get<int64_t>(variant)))
+        .getResult();
   }
   return std::get<Value>(variant);
 }
