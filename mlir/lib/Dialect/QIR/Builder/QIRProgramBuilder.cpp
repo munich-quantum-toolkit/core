@@ -395,7 +395,6 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   if (profile == Profile::Adaptive) {
     metadata_.useDynamicResult = true;
   } else {
-
     setInsertionPoint(measurementsBlock->getTerminator());
   }
 
