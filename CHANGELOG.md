@@ -9,6 +9,53 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+<<<<<<< HEAD
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+### Added
+
+- ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations containing quantum operations ([#1718]) ([**@MatthiasReumann**])
+- ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
+- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676], [#1706]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+### Changed
+
+- ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
+- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Removed
+
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+=======
+### Added
+
+- 🚸 Add `debug`, `release`, `coverage`, and `lint` [CMake presets] ([#1660]) ([**@denialhaag**])
+- ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations containing quantum operations ([#1718]) ([**@MatthiasReumann**])
+- ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
+- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676], [#1706]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716]) ([**@MatthiasReumann**], [**@burgholzer**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+### Changed
+
+- ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
+- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Removed
+
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
 ## [3.6.1] - 2026-05-20
 
 ### Changed
@@ -384,7 +431,12 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1702]: https://github.com/munich-quantum-toolkit/core/pull/1702
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
+<<<<<<< HEAD
 [#1654]: https://github.com/munich-quantum-toolkit/core/pull/1654
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+=======
+[#1660]: https://github.com/munich-quantum-toolkit/core/pull/1660
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
 [#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
@@ -565,3 +617,4 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
 [PEP 639]: https://peps.python.org/pep-0639/
 [PEP 735]: https://peps.python.org/pep-0735/
+[CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html

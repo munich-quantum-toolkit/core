@@ -14,7 +14,7 @@ concurrency:
 jobs:
   change-detection:
     name: 🔍 Change
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
 
   cpp-tests-ubuntu:
     name: 🇨‌ Test 🐧
@@ -25,19 +25,31 @@ jobs:
       matrix:
         runs-on: [ubuntu-24.04, ubuntu-24.04-arm]
         compiler: [gcc]
-        config: [Release]
+        preset: [release]
         include:
           - runs-on: ubuntu-24.04
             compiler: gcc
-            config: Debug
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+            preset: debug
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
+<<<<<<< HEAD
       config: ${{ matrix.config }}
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      config: ${{ matrix.config }}
+=======
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
       setup-mlir: true
+<<<<<<< HEAD
       llvm-version: 21.1.8
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      llvm-version: 22.1.0
+=======
+      llvm-version: 22.1.0
+      preset-name: ${{ matrix.preset }}
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
 
   cpp-tests-macos:
     name: 🇨‌ Test 🍎
@@ -48,19 +60,32 @@ jobs:
       matrix:
         runs-on: [macos-26, macos-26-intel]
         compiler: [clang]
-        config: [Release]
+        preset: [release]
         include:
           - runs-on: macos-26
             compiler: clang
-            config: Debug
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+            preset: debug
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
+<<<<<<< HEAD
       config: ${{ matrix.config }}
       cmake-args: -DMQT_CORE_WITH_GMP=ON -DBUILD_MQT_CORE_MLIR=ON
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      config: ${{ matrix.config }}
+      cmake-args: -DMQT_CORE_WITH_GMP=ON
+=======
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
       setup-mlir: true
+<<<<<<< HEAD
       llvm-version: 21.1.8
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      llvm-version: 22.1.0
+=======
+      llvm-version: 22.1.0
+      preset-name: ${{ matrix.preset }}
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
 
   cpp-tests-windows:
     name: 🇨‌ Test 🏁
@@ -71,19 +96,32 @@ jobs:
       matrix:
         runs-on: [windows-2025, windows-11-arm]
         compiler: [msvc]
-        config: [Release]
+        preset: [release-windows]
         include:
           - runs-on: windows-2025
             compiler: msvc
-            config: Debug
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+            preset: debug-windows
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
+<<<<<<< HEAD
       config: ${{ matrix.config }}
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      config: ${{ matrix.config }}
+=======
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
       setup-mlir: true
+<<<<<<< HEAD
       llvm-version: 21.1.8
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      llvm-version: 22.1.0
+=======
+      llvm-version: 22.1.0
+      mlir-debug: ${{ matrix.preset == 'debug-windows' }}
+      preset-name: ${{ matrix.preset }}
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-ubuntu:
@@ -95,15 +133,27 @@ jobs:
       matrix:
         runs-on: [ubuntu-24.04, ubuntu-24.04-arm]
         compiler: [gcc, clang, clang-20, clang-21]
-        config: [Release, Debug]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+        preset: [release, debug]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
+<<<<<<< HEAD
       config: ${{ matrix.config }}
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      config: ${{ matrix.config }}
+=======
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
       setup-mlir: true
+<<<<<<< HEAD
       llvm-version: 21.1.8
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      llvm-version: 22.1.0
+=======
+      llvm-version: 22.1.0
+      preset-name: ${{ matrix.preset }}
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-macos:
@@ -115,15 +165,28 @@ jobs:
       matrix:
         runs-on: [macos-15, macos-15-intel, macos-26, macos-26-intel]
         compiler: [clang, clang-20, clang-21, gcc-14, gcc-15]
-        config: [Release, Debug]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+        preset: [release, debug]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
+<<<<<<< HEAD
       config: ${{ matrix.config }}
       cmake-args: -DMQT_CORE_WITH_GMP=ON -DBUILD_MQT_CORE_MLIR=ON
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      config: ${{ matrix.config }}
+      cmake-args: -DMQT_CORE_WITH_GMP=ON
+=======
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
       setup-mlir: true
+<<<<<<< HEAD
       llvm-version: 21.1.8
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      llvm-version: 22.1.0
+=======
+      llvm-version: 22.1.0
+      preset-name: ${{ matrix.preset }}
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-windows:
@@ -135,21 +198,34 @@ jobs:
       matrix:
         runs-on: [windows-2022, windows-2025, windows-11-arm]
         compiler: [msvc, clang]
-        config: [Release, Debug]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+        preset: [release-windows, debug-windows]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
+<<<<<<< HEAD
       config: ${{ matrix.config }}
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      config: ${{ matrix.config }}
+=======
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
       setup-mlir: true
+<<<<<<< HEAD
       llvm-version: 21.1.8
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      llvm-version: 22.1.0
+=======
+      llvm-version: 22.1.0
+      mlir-debug: ${{ matrix.preset == 'debug-windows' }}
+      preset-name: ${{ matrix.preset }}
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
 
   cpp-coverage:
     name: 🇨‌ Coverage
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       cmake-args: -DBUILD_MQT_CORE_MLIR=ON
       setup-mlir: true
@@ -162,9 +238,14 @@ jobs:
     name: 🇨‌ Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
+<<<<<<< HEAD
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_BINDINGS=ON
+||||||| parent of a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
+      cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_BINDINGS=ON
+=======
+>>>>>>> a4c20b90 (🚸 Provide `CMakePresets.json` (#1660))
       clang-version: 22
       build-project: true
       files-changed-only: true
@@ -189,7 +270,7 @@ jobs:
             macos-26-intel,
             windows-2025,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
 
@@ -197,7 +278,7 @@ jobs:
     name: 🐍 Coverage
     needs: [change-detection, python-tests]
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     permissions:
       contents: read
       id-token: write
@@ -211,7 +292,7 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [macos-15, macos-15-intel, windows-2022]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
 
@@ -219,7 +300,7 @@ jobs:
     name: 🐍 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       check-stubs: true
       enable-ty: true
@@ -229,7 +310,7 @@ jobs:
     name: 🚀 CD
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cd)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
 
   build-wheel:
     name: 🚀 CD
@@ -247,7 +328,7 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@b59d15aa4f266e713afad51e132bde6e3a28a6b3 # v1.18.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@ae263e66c071e9f0b79f41166577190085c10b27 # v2.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
 
