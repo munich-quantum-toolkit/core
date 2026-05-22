@@ -39,8 +39,8 @@ void WireIterator::forward() {
   }
 
   // Find the user-operation of the qubit SSA value.
-  assert(qubit_.getNumUses() == 1 && "expected linear typing");
-  op_ = *(qubit_.getUsers().begin());
+  assert(qubit_.hasOneUse() && "expected linear typing");
+  op_ = *(qubit_.user_begin());
 
   // A sink/insert defines the end of the qubit wire (dynamic and static).
   if (isa<SinkOp, YieldOp, qtensor::InsertOp>(op_)) {
