@@ -51,13 +51,10 @@ static bool isQuantumLoop(scf::ForOp loop) {
  */
 static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
   SmallVector<scf::ForOp> loops;
-  std::ignore = func.walk<WalkOrder::PostOrder>([&](scf::ForOp loop) {
-    if (!isQuantumLoop(loop)) {
-      return WalkResult::advance();
+  func.walk<WalkOrder::PostOrder>([&](scf::ForOp loop) {
+    if (isQuantumLoop(loop)) {
+      loops.emplace_back(loop);
     }
-
-    loops.emplace_back(loop);
-    return WalkResult::advance();
   });
   return loops;
 }
