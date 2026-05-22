@@ -385,6 +385,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
 
 Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
+  const InsertionGuard guard(*this);
 
   auto it = loadedResults.find({bit.registerName, bit.registerIndex});
   if (it == loadedResults.end()) {
@@ -394,7 +395,7 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   if (profile == Profile::Adaptive) {
     metadata_.useDynamicResult = true;
   } else {
-    const InsertionGuard guard(*this);
+
     setInsertionPoint(measurementsBlock->getTerminator());
   }
 
