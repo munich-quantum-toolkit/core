@@ -452,10 +452,14 @@ static void addISWAPdgOp(QCProgramBuilder& builder,
   auto target0 = qubits[operation.getTargets()[0]];
   auto target1 = qubits[operation.getTargets()[1]];
   if (const auto& controls = getControls(operation, qubits); controls.empty()) {
-    builder.inv([&] { builder.iswap(target0, target1); });
+    builder.inv({target0, target1}, [&](ValueRange qubits) {
+      builder.iswap(qubits[0], qubits[1]);
+    });
   } else {
-    builder.ctrl(controls, [&] {
-      builder.inv([&] { builder.iswap(target0, target1); });
+    builder.ctrl(controls, {target0, target1}, [&](ValueRange targets) {
+      builder.inv(targets, [&](ValueRange qubits) {
+        builder.iswap(qubits[0], qubits[1]);
+      });
     });
   }
 }

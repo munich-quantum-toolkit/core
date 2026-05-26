@@ -870,9 +870,9 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
                                       adaptor.getControls().end());
     state.controls[state.inCtrlOp] = controls;
 
-    // Inline region and remove operation
-    rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
-                               op->getIterator());
+    // Inline block and remove operation
+    rewriter.inlineBlockBefore(&op.getRegion().front(), op,
+                               adaptor.getTargets());
     rewriter.eraseOp(op);
     return success();
   }

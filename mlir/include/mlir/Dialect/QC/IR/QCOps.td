@@ -916,7 +916,7 @@ def YieldOp : QCOp<"yield", traits = [Terminator]> {
 
 def CtrlOp
     : QCOp<"ctrl",
-           traits = [UnitaryOpInterface,
+           traits = [UnitaryOpInterface, AttrSizedOperandSegments,
                      SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
                      RecursiveMemoryEffects]> {
   let summary = "Add control qubits to a unitary operation";
@@ -937,30 +937,36 @@ def CtrlOp
         ```
     }];
 
-  let arguments =
-      (ins Arg<Variadic<QubitType>,
-               "the control qubits", [MemRead, MemWrite]>:$controls);
+  let arguments = (ins Arg<Variadic<QubitType>,
+                           "the control qubits", [MemRead, MemWrite]>:$controls,
+      Arg<Variadic<QubitType>,
+          "the target qubits", [MemRead, MemWrite]>:$targets);
   let regions = (region SizedRegion<1>:$region);
-  let assemblyFormat =
-      "`(` $controls `)` $region attr-dict `:` type($controls)";
+  let assemblyFormat = [{
+        `(` $controls `)`
+        `targets`
+        custom<TargetAliasing>($region, $targets)
+        attr-dict `:`
+        `{` type($controls) `}` ( `,` `{` type($targets)^ `}` )?
+    }];
 
   let extraClassDeclaration = [{
-        [[nodiscard]] UnitaryOpInterface getBodyUnitary();
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
-        size_t getNumTargets() { return getBodyUnitary().getNumTargets(); }
+        size_t getNumTargets() { return getTargets().size(); }
         size_t getNumControls() { return getControls().size(); }
         Value getQubit(size_t i);
-        Value getTarget(size_t i) { return getBodyUnitary().getTarget(i); }
-        ValueRange getTargets() { return getBodyUnitary().getTargets(); }
+        Value getTarget(size_t i) { return getTargets()[i]; }
         Value getControl(size_t i);
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
+        ValueRange getParameters() { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 
-  let builders = [OpBuilder<(ins "ValueRange":$controls,
-      "const function_ref<void()>&":$bodyBuilder)>];
+  let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets,
+      "const function_ref<void(ValueRange)>&":$body)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -983,26 +989,35 @@ def InvOp : QCOp<"inv",
         ```
     }];
 
+  let arguments = (ins Arg<
+      Variadic<QubitType>,
+      "the qubits involved in the operation", [MemRead, MemWrite]>:$qubits);
   let regions = (region SizedRegion<1>:$region);
-  let assemblyFormat = "$region attr-dict";
+  let assemblyFormat = [{
+        custom<TargetAliasing>($region, $qubits)
+        attr-dict `:`
+        type($qubits)
+    }];
 
   let extraClassDeclaration = [{
-        [[nodiscard]] UnitaryOpInterface getBodyUnitary();
-        size_t getNumQubits() { return getBodyUnitary().getNumQubits(); }
-        size_t getNumTargets() { return getBodyUnitary().getNumTargets(); }
-        size_t getNumControls() { return getBodyUnitary().getNumControls(); }
-        Value getQubit(size_t i) { return getBodyUnitary().getQubit(i); }
-        Value getTarget(size_t i) { return getBodyUnitary().getTarget(i); }
-        ValueRange getTargets() { return getBodyUnitary().getTargets(); }
-        Value getControl(size_t i) { return getBodyUnitary().getControl(i); }
-        ValueRange getControls() { return getBodyUnitary().getControls(); }
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubits().size(); }
+        size_t getNumControls() { return 0; }
+        Value getQubit(size_t i) { return getTarget(i); }
+        Value getTarget(size_t i) { return getQubits()[i]; }
+        ValueRange getTargets() { return getQubits(); }
+        Value getControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
+        ValueRange getControls() { return {nullptr, 0}; }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
+        ValueRange getParameters() { return {nullptr, 0}; }
         static StringRef getBaseSymbol() { return "inv"; }
     }];
 
-  let builders = [OpBuilder<(ins "const function_ref<void()>&":$bodyBuilder)>];
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+      "const function_ref<void(ValueRange)>&":$body)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
+#include "mlir/Dialect/Utils/Utils.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -20,6 +21,17 @@
 
 using namespace mlir;
 using namespace mlir::qc;
+
+static ParseResult
+parseTargetAliasing(OpAsmParser& parser, Region& region,
+                    SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+  return utils::parseTargetAliasing<QubitType>(parser, region, operands);
+}
+
+static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
+                                Region& region, OperandRange targetsIn) {
+  utils::printTargetAliasing(printer, region, targetsIn);
+}
 
 //===----------------------------------------------------------------------===//
 // Dialect

@@ -917,7 +917,8 @@ public:
    * } : !qc.qubit
    * ```
    */
-  QCProgramBuilder& ctrl(ValueRange controls, const function_ref<void()>& body);
+  QCProgramBuilder& ctrl(ValueRange controls, ValueRange targets,
+                         const function_ref<void(ValueRange)>& body);
 
   /**
    * @brief Apply an inverse (i.e., adjoint) operation.
@@ -936,7 +937,8 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& inv(const function_ref<void()>& body);
+  QCProgramBuilder& inv(ValueRange qubits,
+                        const function_ref<void(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

@@ -9,10 +9,12 @@
  */
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -33,22 +35,47 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto* bodyUnitary = op.getBodyUnitary().getOperation();
-    auto bodyCtrlOp = dyn_cast<CtrlOp>(bodyUnitary);
-    if (!bodyCtrlOp) {
+    // Require at least one control
+    // Trivial case is handled by ReduceCtrl
+    if (op.getNumControls() == 0) {
       return failure();
     }
 
-    // add the inner controls as operands to the outer one
-    op->insertOperands(op.getNumOperands(), bodyCtrlOp.getControls());
+    // TODO: Relax this condition?
+    if (op.getNumBodyUnitaries() != 1) {
+      return failure();
+    }
+    auto innerCtrlOp = dyn_cast<CtrlOp>(op.getBodyUnitary(0).getOperation());
+    if (!innerCtrlOp) {
+      return failure();
+    }
 
-    // Move the inner unitary op into the outer one's body region and replace
-    // the outer one with the inner one's results
-    const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(bodyUnitary);
-    auto* innerUnitaryOp = bodyCtrlOp.getBodyUnitary().getOperation();
-    rewriter.moveOpBefore(innerUnitaryOp, bodyUnitary);
-    rewriter.replaceOp(bodyUnitary, innerUnitaryOp->getResults());
+    auto outerControls = op.getControls();
+    auto outerTargets = op.getTargets();
+    auto innerTargets = innerCtrlOp.getTargets();
+
+    SmallVector<Value> controls;
+    SmallVector<Value> targets;
+    llvm::append_range(controls, outerControls);
+    for (auto [arg, qubit] :
+         llvm::zip_equal(op.getBody()->getArguments(), outerTargets)) {
+      if (llvm::is_contained(innerTargets, arg)) {
+        targets.push_back(qubit);
+      } else {
+        controls.push_back(qubit);
+      }
+    }
+
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        op, controls, targets, [&](ValueRange targetArgs) {
+          auto* innerCtrlBody = innerCtrlOp.getBody();
+          IRMapping mapping;
+          utils::prova(*innerCtrlBody, mapping, innerTargets, outerTargets,
+                       targets, targetArgs);
+          for (auto& op : innerCtrlBody->without_terminator()) {
+            rewriter.clone(op, mapping);
+          }
+        });
 
     return success();
   }
@@ -63,16 +90,30 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto* bodyUnitary = op.getBodyUnitary().getOperation();
+    // TODO: Relax this condition?
+    if (op.getNumBodyUnitaries() != 1) {
+      return failure();
+    }
+    auto* innerOp = op.getBodyUnitary(0).getOperation();
+
     // Inline ops from empty control modifiers, IdOp and BarrierOp
-    if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(bodyUnitary)) {
-      rewriter.moveOpBefore(bodyUnitary, op);
-      rewriter.replaceOp(op, bodyUnitary->getResults());
+    if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
+      const auto numTargets = op.getNumTargets();
+      auto outerTargets = op.getTargets();
+      SmallVector<Value> targets;
+      for (auto target : innerOp->getOperands().take_front(numTargets)) {
+        targets.push_back(
+            utils::getValueFromBlockArgument(target, outerTargets));
+      }
+
+      rewriter.moveOpBefore(innerOp, op);
+      innerOp->setOperands(0, numTargets, targets);
+      rewriter.eraseOp(op);
       return success();
     }
 
     // The remaining code explicitly handles GPhaseOp and nothing else
-    auto gPhaseOp = dyn_cast<GPhaseOp>(bodyUnitary);
+    auto gPhaseOp = dyn_cast<GPhaseOp>(innerOp);
     if (!gPhaseOp) {
       return failure();
     }
@@ -84,16 +125,23 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
-    // Remove the last control and replace with a single POp with the removed
-    // control as target
-    auto controls = op.getControls();
-    auto target = controls.back();
-    controls = controls.drop_back();
-    op->setOperands(controls);
+    // Adjust the segment sizes of the control and target operands
+    const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
+    auto segmentsAttr =
+        op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
+    auto newSegments = DenseI32ArrayAttr::get(
+        rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
+    op->setAttr(opSegmentsAttrName, newSegments);
 
+    // Add a block argument for the target qubit
+    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
+                                         op.getLoc());
+
+    // Replace the current GPhaseOp with a PhaseOp
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(gPhaseOp);
-    rewriter.replaceOpWithNewOp<POp>(gPhaseOp, target, gPhaseOp.getTheta());
+    POp::create(rewriter, gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
+    rewriter.eraseOp(gPhaseOp);
 
     return success();
   }
@@ -101,13 +149,27 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
 } // namespace
 
-UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  // In principle, the body region should only contain exactly two operations,
-  // the actual unitary operation and a yield operation. However, the region may
-  // also contain constants and arithmetic operations, e.g., created as part of
-  // canonicalization. Thus, the only safe way to access the unitary operation
-  // is to get the second operation from the back of the region.
-  return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+size_t CtrlOp::getNumBodyUnitaries() {
+  size_t count = 0;
+  for (auto& op : *getBody()) {
+    if (isa<UnitaryOpInterface>(op)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
+  size_t count = 0;
+  for (auto& op : *getBody()) {
+    if (isa<UnitaryOpInterface>(op)) {
+      if (count == i) {
+        return cast<UnitaryOpInterface>(op);
+      }
+      count++;
+    }
+  }
+  llvm::reportFatalUsageError("Unitary index out of bounds");
 }
 
 Value CtrlOp::getQubit(const size_t i) {
@@ -116,9 +178,9 @@ Value CtrlOp::getQubit(const size_t i) {
     return getControls()[i];
   }
   if (numControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getQubit(i - numControls);
+    return getTarget(i - numControls);
   }
-  llvm::reportFatalUsageError("Invalid qubit index");
+  llvm::reportFatalUsageError("Qubit index out of bounds");
 }
 
 Value CtrlOp::getControl(const size_t i) {
@@ -129,15 +191,19 @@ Value CtrlOp::getControl(const size_t i) {
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                   ValueRange controls,
-                   const function_ref<void()>& bodyBuilder) {
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsState.addOperands(controls);
-  auto* region = odsState.addRegion();
-  auto& block = region->emplaceBlock();
+                   ValueRange controls, ValueRange targets,
+                   const function_ref<void(ValueRange)>& body) {
+  build(odsBuilder, odsState, controls, targets);
+  auto& block = odsState.regions.front()->emplaceBlock();
 
+  auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  bodyBuilder();
+  body(block.getArguments());
   YieldOp::create(odsBuilder, odsState.location);
 }
 
@@ -150,16 +216,6 @@ LogicalResult CtrlOp::verify() {
     return emitOpError(
         "last operation in body region must be a yield operation");
   }
-  auto iter = ++block.rbegin();
-  if (!isa<UnitaryOpInterface>(*iter)) {
-    return emitOpError(
-        "second to last operation in body region must be a unitary operation");
-  }
-  for (auto it = ++iter; it != block.rend(); ++it) {
-    if (isa<UnitaryOpInterface>(*it)) {
-      return emitOpError("body region may only contain a single unitary op");
-    }
-  }
 
   SmallPtrSet<Value, 4> uniqueQubits;
   for (const auto& control : getControls()) {
@@ -167,11 +223,9 @@ LogicalResult CtrlOp::verify() {
       return emitOpError("duplicate control qubit found");
     }
   }
-  auto bodyUnitary = getBodyUnitary();
-  const auto numQubits = bodyUnitary.getNumQubits();
-  for (size_t i = 0; i < numQubits; i++) {
-    if (!uniqueQubits.insert(bodyUnitary.getQubit(i)).second) {
-      return emitOpError("duplicate qubit found");
+  for (const auto& target : getTargets()) {
+    if (!uniqueQubits.insert(target).second) {
+      return emitOpError("duplicate target qubit found");
     }
   }
 

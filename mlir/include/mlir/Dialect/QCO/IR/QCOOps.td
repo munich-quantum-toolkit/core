@@ -1102,7 +1102,8 @@ def CtrlOp
     }];
 
   let extraClassDeclaration = [{
-        UnitaryOpInterface getBodyUnitary();
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumControls() + getNumTargets(); }
         size_t getNumTargets() { return getTargetsIn().size(); }
         size_t getNumControls() { return getControlsIn().size(); }
@@ -1120,9 +1121,9 @@ def CtrlOp
         ResultRange getOutputControls() { return getControlsOut(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
+        ValueRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
@@ -1173,7 +1174,8 @@ def InvOp
     }];
 
   let extraClassDeclaration = [{
-        UnitaryOpInterface getBodyUnitary();
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets(); }
         size_t getNumTargets() { return getQubitsIn().size(); }
         static size_t getNumControls() { return 0; }
@@ -1184,16 +1186,16 @@ def InvOp
         ResultRange getOutputQubits() { return getQubitsOut(); }
         Value getInputTarget(size_t i) { return getInputQubit(i); }
         Value getOutputTarget(size_t i) { return getOutputQubit(i); }
-        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
         static OperandRange getInputControls() { return {nullptr, 0}; }
-        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
         static ResultRange getOutputControls() { return {nullptr, 0}; }
         ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
+        ValueRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];

@@ -162,7 +162,8 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     if (!cnotGate) {
       return failure();
     }
-    if (!isa<XOp>(cnotGate.getBodyUnitary()) ||
+    if (cnotGate.getNumBodyUnitaries() != 1 ||
+        !isa<XOp>(cnotGate.getBodyUnitary(0)) ||
         cnotGate.getOutputTarget(0) != inQubitHadamard) {
       return failure();
     }

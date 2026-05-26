@@ -120,17 +120,12 @@ private:
  * @param sourceRegion Source region where the operations are moved from
  * @param targetRegion Target region where the operations are moved to
  * @param offset Offset to the arguments that are dropped
- * @param numArgs Number of arguments that are dropped
  * @param replacementValues Values to replace the uses of the arguments
  * @param rewriter PatternRewriter of the current conversion pass
  */
 static void inlineRegion(Region& sourceRegion, Region& targetRegion,
-                         unsigned int offset, unsigned int numArgs,
-                         ValueRange replacementValues,
+                         unsigned int offset, ValueRange replacementValues,
                          ConversionPatternRewriter& rewriter) {
-  assert(replacementValues.size() == numArgs &&
-         "replacementValues size must match numArgs");
-
   rewriter.inlineRegionBefore(sourceRegion, targetRegion, targetRegion.end());
   auto& block = targetRegion.front();
 
@@ -138,7 +133,7 @@ static void inlineRegion(Region& sourceRegion, Region& targetRegion,
            block.getArguments().drop_front(offset), replacementValues)) {
     arg.replaceAllUsesWith(replacementVal);
   }
-  block.eraseArguments(offset, numArgs);
+  block.eraseArguments(offset, replacementValues.size());
 }
 
 #define GEN_PASS_DEF_QCOTOQC
@@ -645,16 +640,19 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
   LogicalResult
   matchAndRewrite(qco::CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Get QC controls
-    auto qcControls = adaptor.getControlsIn();
-
     // Create qc.ctrl operation
-    auto qcOp = qc::CtrlOp::create(rewriter, op.getLoc(), qcControls);
+    auto qcOp = qc::CtrlOp::create(
+        rewriter, op.getLoc(), adaptor.getControlsIn(), adaptor.getTargetsIn());
 
-    // Inline the region and replace the blockarguments
-    inlineRegion(op.getRegion(), qcOp.getRegion(), 0,
-                 adaptor.getTargetsIn().size(), adaptor.getTargetsIn(),
-                 rewriter);
+    auto& dstRegion = qcOp.getRegion();
+    rewriter.inlineRegionBefore(op.getRegion(), dstRegion, dstRegion.begin());
+    auto* block = &dstRegion.front();
+    TypeConverter::SignatureConversion sc(block->getNumArguments());
+    if (failed(typeConverter->convertSignatureArgs(block->getArgumentTypes(),
+                                                   sc))) {
+      return failure();
+    }
+    rewriter.applySignatureConversion(block, sc);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());
@@ -687,11 +685,17 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
   matchAndRewrite(qco::InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Create qc.inv operation
-    auto qcOp = qc::InvOp::create(rewriter, op.getLoc());
+    auto qcOp = qc::InvOp::create(rewriter, op.getLoc(), adaptor.getQubitsIn());
 
-    // Inline the region and replace the blockarguments
-    inlineRegion(op.getRegion(), qcOp.getRegion(), 0,
-                 adaptor.getOperands().size(), adaptor.getQubitsIn(), rewriter);
+    auto& dstRegion = qcOp.getRegion();
+    rewriter.inlineRegionBefore(op.getRegion(), dstRegion, dstRegion.begin());
+    auto* block = &dstRegion.front();
+    TypeConverter::SignatureConversion sc(block->getNumArguments());
+    if (failed(typeConverter->convertSignatureArgs(block->getArgumentTypes(),
+                                                   sc))) {
+      return failure();
+    }
+    rewriter.applySignatureConversion(block, sc);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());
@@ -764,9 +768,9 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
     // Erase default block
     rewriter.eraseBlock(&newFor.getRegion().front());
 
-    // Inline the region and replace the blockarguments
-    inlineRegion(op.getRegion(), newFor.getRegion(), 1,
-                 adaptor.getInitArgs().size(), adaptor.getInitArgs(), rewriter);
+    // Inline the region and replace the block arguments
+    inlineRegion(op.getRegion(), newFor.getRegion(), 1, adaptor.getInitArgs(),
+                 rewriter);
 
     rewriter.replaceOp(op, adaptor.getInitArgs());
 
@@ -810,11 +814,11 @@ struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
     auto newWhileOp =
         scf::WhileOp::create(rewriter, op->getLoc(), TypeRange{}, ValueRange{});
 
-    // Inline the regions and replace the blockarguments
-    inlineRegion(op.getBefore(), newWhileOp.getBefore(), 0,
-                 adaptor.getInits().size(), adaptor.getInits(), rewriter);
-    inlineRegion(op.getAfter(), newWhileOp.getAfter(), 0,
-                 adaptor.getInits().size(), adaptor.getInits(), rewriter);
+    // Inline the regions and replace the block arguments
+    inlineRegion(op.getBefore(), newWhileOp.getBefore(), 0, adaptor.getInits(),
+                 rewriter);
+    inlineRegion(op.getAfter(), newWhileOp.getAfter(), 0, adaptor.getInits(),
+                 rewriter);
 
     rewriter.replaceOp(op, adaptor.getInits());
 
@@ -855,15 +859,13 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
     // Erase the default empty then block
     rewriter.eraseBlock(&newThenRegion.front());
 
-    // Inline the region and replace the blockarguments
+    // Inline the region and replace the block arguments
     inlineRegion(op.getThenRegion(), newThenRegion, 0,
-                 adaptor.getOperands().size() - 1,
                  adaptor.getOperands().drop_front(1), rewriter);
 
     // Inline the else block if it has more than just the yield operation
     if (oldElseRegion.front().getOperations().size() > 1) {
       inlineRegion(oldElseRegion, newIf.getElseRegion(), 0,
-                   adaptor.getOperands().size() - 1,
                    adaptor.getOperands().drop_front(1), rewriter);
     }
 

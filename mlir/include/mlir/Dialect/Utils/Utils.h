@@ -12,6 +12,7 @@
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
 
@@ -76,6 +77,112 @@ template <typename T>
     return static_cast<double>(intAttr.getValue().getSExtValue());
   }
   return std::nullopt;
+}
+
+template <typename QubitType>
+[[nodiscard]]
+static ParseResult
+parseTargetAliasing(OpAsmParser& parser, Region& region,
+                    SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+  // 1. Parse the opening parenthesis
+  if (parser.parseLParen()) {
+    return failure();
+  }
+
+  // Temporary storage for block arguments we are about to create
+  SmallVector<OpAsmParser::Argument> blockArgs;
+
+  // 2. Prepare to parse the list
+  if (failed(parser.parseOptionalRParen())) {
+    do {
+      OpAsmParser::Argument newArg;              // The "new" variable name
+      OpAsmParser::UnresolvedOperand oldOperand; // The "old" input variable
+
+      // Parse "%new"
+      if (parser.parseArgument(newArg)) {
+        return failure();
+      }
+
+      // Parse "="
+      if (parser.parseEqual()) {
+        return failure();
+      }
+
+      // Parse "%old"
+      if (parser.parseOperand(oldOperand)) {
+        return failure();
+      }
+      operands.push_back(oldOperand);
+
+      // Hard-code QubitType since targets in qco.ctrl are always qubits.
+      // This avoids double-binding type($targets_in) in the assembly format
+      // while keeping the parser simple and the assembly format clean.
+      newArg.type = QubitType::get(parser.getBuilder().getContext());
+      blockArgs.push_back(newArg);
+
+    } while (succeeded(parser.parseOptionalComma()));
+
+    if (parser.parseRParen()) {
+      return failure();
+    }
+  }
+
+  // 4. Parse the Region
+  // We explicitly pass the blockArgs we just parsed so they become the entry
+  // block!
+  if (parser.parseRegion(region, blockArgs)) {
+    return failure();
+  }
+
+  return success();
+}
+
+static void printTargetAliasing(OpAsmPrinter& printer, Region& region,
+                                OperandRange targetsIn) {
+  printer << "(";
+  if (region.empty()) {
+    printer << ") ";
+    printer.printRegion(region, false);
+    return;
+  }
+  Block& entryBlock = region.front();
+
+  const auto numTargets = targetsIn.size();
+  for (unsigned i = 0; i < numTargets; ++i) {
+    if (i > 0) {
+      printer << ", ";
+    }
+    printer.printOperand(entryBlock.getArgument(i));
+    printer << " = ";
+    printer.printOperand(targetsIn[i]);
+  }
+  printer << ") ";
+
+  printer.printRegion(region, false);
+}
+
+// TODO: Document
+static Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
+  if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
+    return qubits[blockArg.getArgNumber()];
+  }
+  return qubit;
+}
+
+// TODO: Rename and document
+static void prova(Block& block, IRMapping& mapping, ValueRange innerQubits,
+                  ValueRange outerQubits, ValueRange newQubits,
+                  ValueRange qubitArgs) {
+  for (auto arg : block.getArguments()) {
+    auto innerQubit = innerQubits[arg.getArgNumber()];
+    auto outerQubit = getValueFromBlockArgument(innerQubit, outerQubits);
+    if (auto it = llvm::find(newQubits, outerQubit); it != newQubits.end()) {
+      auto index = std::distance(newQubits.begin(), it);
+      mapping.map(arg, qubitArgs[index]);
+    } else {
+      llvm::reportFatalInternalError("TODO");
+    }
+  }
 }
 
 } // namespace mlir::utils
