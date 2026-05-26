@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
@@ -74,7 +75,34 @@ TEST_F(TensorIteratorTest, Traversal) {
         loopTensor = builder.qtensorInsert(q, loopTensor, 0);
         return SmallVector{loopTensor};
       })[0];
-  builder.qtensorDealloc(tensor7);
+
+  Value tensorThen0;
+  Value tensorThen1;
+  Value tensorThen2;
+
+  Value tensorElse0;
+  Value tensorElse1;
+  Value tensorElse2;
+
+  auto tensor8 = builder.qcoIf(
+      false, tensor7,
+      [&](ValueRange args) -> SmallVector<Value> {
+        Value q;
+        tensorThen0 = args[0];
+        std::tie(tensorThen1, q) = builder.qtensorExtract(tensorThen0, 0);
+        q = builder.h(q);
+        tensorThen2 = builder.qtensorInsert(q, tensorThen1, 0);
+        return SmallVector{tensorThen2};
+      },
+      [&](ValueRange args) -> SmallVector<Value> {
+        Value q;
+        tensorElse0 = args[0];
+        std::tie(tensorElse1, q) = builder.qtensorExtract(tensorElse0, 0);
+        q = builder.t(q);
+        tensorElse2 = builder.qtensorInsert(q, tensorElse1, 0);
+        return SmallVector{tensorElse2};
+      })[0];
+  builder.qtensorDealloc(tensor8);
   [[maybe_unused]] auto m = builder.finalize();
 
   TensorIterator it(cast<TypedValue<RankedTensorType>>(tensor0));
@@ -111,18 +139,24 @@ TEST_F(TensorIteratorTest, Traversal) {
   ASSERT_EQ(it.tensor(), tensor7);
 
   ++it;
-  ASSERT_EQ(it.operation(), *(tensor7.user_begin())); // qtensor.dealloc
-  ASSERT_EQ(it.tensor(), nullptr);
+  ASSERT_EQ(it.operation(), tensor8.getDefiningOp()); // qco.if
+  ASSERT_EQ(it.tensor(), tensor8);
 
   ++it;
+  ASSERT_EQ(it.operation(), *(tensor8.user_begin())); // qtensor.dealloc
+  ASSERT_EQ(it.tensor(), nullptr);
   ASSERT_EQ(it, std::default_sentinel);
 
   ++it;
   ASSERT_EQ(it, std::default_sentinel);
 
   --it;
-  ASSERT_EQ(it.operation(), *(tensor7.user_begin())); // qtensor.dealloc
+  ASSERT_EQ(it.operation(), *(tensor8.user_begin())); // qtensor.dealloc
   ASSERT_EQ(it.tensor(), nullptr);
+
+  --it;
+  ASSERT_EQ(it.operation(), tensor8.getDefiningOp()); // qco.if
+  ASSERT_EQ(it.tensor(), tensor8);
 
   --it;
   ASSERT_EQ(it.operation(), tensor7.getDefiningOp()); // scf.for
@@ -159,4 +193,49 @@ TEST_F(TensorIteratorTest, Traversal) {
   --it;
   ASSERT_EQ(it.operation(), tensor0.getDefiningOp()); // qtensor.alloc
   ASSERT_EQ(it.tensor(), tensor0);
+
+  //
+  // Test recursive use with block-argument.
+  //
+
+  TensorIterator recIt(cast<TypedValue<RankedTensorType>>(tensorElse0));
+
+  ASSERT_EQ(recIt.operation(), nullptr);
+  ASSERT_EQ(recIt.tensor(), tensorElse0);
+
+  ++recIt;
+  ASSERT_EQ(recIt.operation(), tensorElse1.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(recIt.tensor(), tensorElse1);
+
+  ++recIt;
+  ASSERT_EQ(recIt.operation(), tensorElse2.getDefiningOp()); // qtensor.insert
+  ASSERT_EQ(recIt.tensor(), tensorElse2);
+
+  ++recIt;
+  ASSERT_EQ(recIt, std::default_sentinel);
+  ASSERT_EQ(recIt.operation(), *(tensorElse2.user_begin())); // qco.yield
+  ASSERT_EQ(recIt.tensor(), nullptr);
+
+  ++recIt;
+  ASSERT_EQ(recIt, std::default_sentinel);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), *(tensorElse2.user_begin())); // qco.yield
+  ASSERT_EQ(recIt.tensor(), nullptr);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), tensorElse2.getDefiningOp()); // qtensor.insert
+  ASSERT_EQ(recIt.tensor(), tensorElse2);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), tensorElse1.getDefiningOp()); // qtensor.extract
+  ASSERT_EQ(recIt.tensor(), tensorElse1);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), nullptr);
+  ASSERT_EQ(recIt.tensor(), tensorElse0);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), nullptr);
+  ASSERT_EQ(recIt.tensor(), tensorElse0);
 }

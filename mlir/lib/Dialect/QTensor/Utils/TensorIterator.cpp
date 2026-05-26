@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
@@ -24,10 +25,15 @@
 
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
+  if (op_ == nullptr) {
+    return tensor_;
+  }
+
   // A tensor deallocation doesn't have an OpResult.
-  if (isa<DeallocOp>(op_)) {
+  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     return nullptr;
   }
+
   return tensor_;
 }
 
@@ -41,8 +47,8 @@ void TensorIterator::forward() {
   assert(tensor_.hasOneUse() && "expected linear typing");
   op_ = *(tensor_.user_begin());
 
-  // A deallocation defines the end of the tensor's life-chain.
-  if (isa<DeallocOp, scf::YieldOp>(op_)) {
+  // These define the end of the tensor's life-chain.
+  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     isSentinel_ = true;
     return;
   }
@@ -55,6 +61,9 @@ void TensorIterator::forward() {
         .Case<scf::ForOp>([&](scf::ForOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
               op.getTiedLoopResult(&*(tensor_.use_begin())));
+        })
+        .Case<qco::IfOp>([&](qco::IfOp op) {
+          tensor_ = cast<TypedValue<RankedTensorType>>(op.getResults().front());
         })
         .Default([&](Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
@@ -70,9 +79,15 @@ void TensorIterator::backward() {
     return;
   }
 
+  // If the op is a nullptr, the tensor value is a block argument and thus the
+  // beginning of the tensor's life-chain.
+  if (op_ == nullptr) {
+    return;
+  }
+
   // For deallocations and scf::YieldOps, tensor_ is an OpOperand.
   // Hence, only get the def-op.
-  if (isa<DeallocOp, scf::YieldOp>(op_)) {
+  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     return;
   }
@@ -96,6 +111,9 @@ void TensorIterator::backward() {
 
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
+      })
+      .Case<qco::IfOp>([&](qco::IfOp op) {
+        tensor_ = cast<TypedValue<RankedTensorType>>(op.getQubits().front());
       })
       .Default([&](Operation* op) {
         llvm::reportFatalInternalError("unknown op in def-use chain: " +
