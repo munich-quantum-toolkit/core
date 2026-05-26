@@ -1179,6 +1179,8 @@ void negPowRx(QCOProgramBuilder& b);
 void powRxNeg(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(-0.5) wrapping H (negative non-integer exponent).
+/// Expected to remain unchanged: fractional exponent on a unitary with
+/// eigenvalue -1 cannot safely apply NegPowToInvPow.
 void negPowH(QCOProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping

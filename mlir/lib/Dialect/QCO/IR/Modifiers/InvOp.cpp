@@ -83,9 +83,9 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
  * @brief Absorb inv into pow by negating the exponent, i.e.,
  * `inv(pow(p){U}) => pow(-p){U}`.
  *
- * This is always valid for unitaries: (U^p)† = U^{-p}.
- * Downstream patterns (e.g., NegPowToInvPow) can then rewrite
- * pow(-p){U} => pow(p){inv(U)} when the exponent is an integer.
+ * This is always valid for unitaries: `(U^p)† = U^{-p}`.
+ * Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
+ * `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
  */
 struct MovePowOutside final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;

@@ -40,28 +40,39 @@ using namespace mlir::qco;
  * @brief If the computed P-gate angle corresponds to a named gate, emit it
  * directly.
  *
- * Uses these equivalences:
- *   Z = P(π),  S = P(π/2),  Sdg = P(-π/2),  T = P(π/4),  Tdg = P(-π/4)
+ * @details Uses these equivalences:
  *
- * Since P is diagonal, raising to a power just multiplies the angle:
- *   Z^r   = P(π)^r    = P(r·π)
- *   S^r   = P(π/2)^r  = P(r·π/2)
- *   Sdg^r = P(-π/2)^r = P(-r·π/2)
- *   T^r   = P(π/4)^r  = P(r·π/4)
- *   Tdg^r = P(-π/4)^r = P(-r·π/4)
+ * `Z = P(π)`, `S = P(π/2)`, `Sdg = P(-π/2)`, `T = P(π/4)`, `Tdg = P(-π/4)`
  *
- * The caller computes angle = r * base_angle and passes the raw (unnormalized)
- * value here; normalization to (-π, π] is performed internally.
+ * Since `P` is diagonal, raising to a power just multiplies the angle:
+ *
+ * ```
+ * Z^r   = P(π)^r    = P(r·π)
+ * S^r   = P(π/2)^r  = P(r·π/2)
+ * Sdg^r = P(-π/2)^r = P(-r·π/2)
+ * T^r   = P(π/4)^r  = P(r·π/4)
+ * Tdg^r = P(-π/4)^r = P(-r·π/4)
+ * ```
+ *
+ * The caller computes `angle = r * base_angle` and passes the raw
+ * (unnormalized) value here; normalization to (-π, π] is performed internally.
  *
  * Matched angles and their replacements:
- *   angle ≈ 0           → identity (op replaced with qubit pass-through)
- *   angle ≈ ±π  → Z,   angle ≈  π/2 → S,   angle ≈ -π/2 → Sdg
- *   angle ≈  π/4 → T,  angle ≈ -π/4 → Tdg
  *
- * @param angle    Raw phase angle (r · base_angle), in radians.
- * @param op       The PowOp being rewritten.
+ * | Angle          | Replacement |
+ * |----------------|-------------|
+ * | `angle ≈ 0`    | identity (op replaced with qubit pass-through) |
+ * | `angle ≈ +/-π` | `Z`         |
+ * | `angle ≈ π/2`  | `S`         |
+ * | `angle ≈ -π/2` | `Sdg`       |
+ * | `angle ≈ π/4`  | `T`         |
+ * | `angle ≈ -π/4` | `Tdg`       |
+ *
+ * @param angle    Raw phase angle (`r * base_angle`), in radians.
+ * @param op       The `PowOp` being rewritten.
  * @param rewriter The pattern rewriter.
- * @return success() if replaced, failure() if a general P gate should be used.
+ * @return `success()` if replaced, `failure()` if a general `P` gate should be
+ * used.
  */
 static LogicalResult tryReplaceWithNamedPhaseGate(double angle, PowOp op,
                                                   PatternRewriter& rewriter,
@@ -279,10 +290,13 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
 /**
  * @brief Fold pow(r) around gates into simpler operations.
  *
- * Rotation gates: multiply angle by exponent, e.g., pow(r) { rx(θ) } → rx(r*θ)
- * Phase/diagonal gates: named gate if angle matches, else P gate, e.g., pow(r)
- * { s } → s/sdg/t/tdg/z or p(r*π/2) Hermitian gates (integer exponent): even →
- * erase, odd → gate Identity/barrier: pass through unchanged
+ * @details
+ * - Rotation gates: multiply angle by exponent,
+ *   e.g., `pow(r) { rx(θ) } => rx(r*θ)`
+ * - Phase/diagonal gates: named gate if angle matches, else `P` gate,
+ *   e.g., `pow(r) { s } => s/sdg/t/tdg/z` or `p(r*π/2)`
+ * - Hermitian gates (integer exponent): even => erase, odd => gate
+ * - Identity/barrier: pass through unchanged
  */
 struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -329,40 +343,40 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     const LogicalResult result =
         TypeSwitch<Operation*, LogicalResult>(innerOp)
             // --- Rotation gates: multiply angle by exponent ---
-            // pow(r) { gphase(θ) } → gphase(r*θ)
+            // pow(r) { gphase(θ) } => gphase(r*θ)
             .Case<GPhaseOp>([&](auto gate) {
               auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
               rewriter.replaceOpWithNewOp<GPhaseOp>(op, newParam);
               return success();
             })
-            // pow(r) { rx/ry/rz/p(θ) } → rx/ry/rz/p(r*θ)
+            // pow(r) { rx/ry/rz/p(θ) } => rx/ry/rz/p(r*θ)
             .Case<RXOp, RYOp, RZOp, POp>([&](auto gate) {
               auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
               return replaceOneTargetOneParam<decltype(gate)>(newParam, op,
                                                               rewriter);
             })
-            // pow(r) { rxx/ryy/rzx/rzz(θ) } → rxx/ryy/rzx/rzz(r*θ)
+            // pow(r) { rxx/ryy/rzx/rzz(θ) } => rxx/ryy/rzx/rzz(r*θ)
             .Case<RXXOp, RYYOp, RZXOp, RZZOp>([&](auto gate) {
               auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
               return replaceTwoTargetsOneParam<decltype(gate)>(newParam, op,
                                                                rewriter);
             })
-            // pow(r) { r(θ, φ) } → r(r*θ, φ)
+            // pow(r) { r(θ, φ) } => r(r*θ, φ)
             .Case<ROp>([&](auto gate) {
               auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
               return replaceOneTargetTwoParams<ROp>(mul, gate.getPhi(), op,
                                                     rewriter);
             })
-            // pow(r) { xx±yy(θ, β) } → xx±yy(r*θ, β)
+            // pow(r) { xx±yy(θ, β) } => xx±yy(r*θ, β)
             .Case<XXPlusYYOp, XXMinusYYOp>([&](auto gate) {
               auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
               return replaceTwoTargetsTwoParams<decltype(gate)>(
                   mul, gate.getBeta(), op, rewriter);
             })
             // --- Pauli gates: decompose to rotation + global phase ---
-            // pow(r) { x } → gphase(-r*π/2); rx(r*π)
-            // pow(1/2) x → sx      (X^(1/2) = SX exactly)
-            // pow(-1/2) x → sxdg   (X^(-1/2) = SXdg exactly)
+            // pow(r) { x } => gphase(-r*π/2); rx(r*π)
+            // pow(1/2) x => sx      (X^(1/2) = SX exactly)
+            // pow(-1/2) x => sxdg   (X^(-1/2) = SXdg exactly)
             .Case<XOp>([&](auto) {
               if (r == 0.5) {
                 rewriter.replaceOpWithNewOp<SXOp>(op, op.getInputTarget(0));
@@ -382,7 +396,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                                             r * std::numbers::pi));
               return success();
             })
-            // pow(r) { y } → gphase(-r*π/2); ry(r*π)
+            // pow(r) { y } => gphase(-r*π/2); ry(r*π)
             .Case<YOp>([&](auto) {
               GPhaseOp::create(
                   rewriter, loc,
@@ -394,7 +408,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                                             r * std::numbers::pi));
               return success();
             })
-            // pow(r) { z } → named gate if angle matches, else p(r*π)
+            // pow(r) { z } => named gate if angle matches, else p(r*π)
             .Case<ZOp>([&](auto) {
               const double angle = r * std::numbers::pi;
               if (succeeded(tryReplaceWithNamedPhaseGate(angle, op, rewriter,
@@ -409,7 +423,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             })
             // --- Phase/diagonal gates: named gate if angle matches, else P
             // gate
-            // --- pow(r) { s } → named gate if angle matches, else p(r*π/2)
+            // --- pow(r) { s } => named gate if angle matches, else p(r*π/2)
             .Case<SOp>([&](auto) {
               const double angle = r * std::numbers::pi / 2.0;
               if (succeeded(tryReplaceWithNamedPhaseGate(angle, op, rewriter,
@@ -422,7 +436,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                                             r * (std::numbers::pi / 2.0)));
               return success();
             })
-            // pow(r) { sdg } → named gate if angle matches, else p(-r*π/2)
+            // pow(r) { sdg } => named gate if angle matches, else p(-r*π/2)
             .Case<SdgOp>([&](auto) {
               const double angle = r * -std::numbers::pi / 2.0;
               if (succeeded(tryReplaceWithNamedPhaseGate(angle, op, rewriter,
@@ -435,7 +449,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                                             r * (-std::numbers::pi / 2.0)));
               return success();
             })
-            // pow(r) { t } → named gate if angle matches, else p(r*π/4)
+            // pow(r) { t } => named gate if angle matches, else p(r*π/4)
             .Case<TOp>([&](auto) {
               const double angle = r * std::numbers::pi / 4.0;
               if (succeeded(tryReplaceWithNamedPhaseGate(angle, op, rewriter,
@@ -448,7 +462,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                                             r * (std::numbers::pi / 4.0)));
               return success();
             })
-            // pow(r) { tdg } → named gate if angle matches, else p(-r*π/4)
+            // pow(r) { tdg } => named gate if angle matches, else p(-r*π/4)
             .Case<TdgOp>([&](auto) {
               const double angle = r * -std::numbers::pi / 4.0;
               if (succeeded(tryReplaceWithNamedPhaseGate(angle, op, rewriter,
@@ -462,8 +476,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // --- SX/SXdg gates: decompose to rotation + global phase ---
-            // pow(r) { sx } → gphase(-r*π/4); rx(r*π/2)
-            // pow(±2) sx → x
+            // pow(r) { sx } => gphase(-r*π/4); rx(r*π/2)
+            // pow(±2) sx => x
             .Case<SXOp>([&](auto) {
               if (std::abs(r) == 2.0) {
                 rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
@@ -479,8 +493,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                                             r * (std::numbers::pi / 2.0)));
               return success();
             })
-            // pow(r) { sxdg } → gphase(r*π/4); rx(-r*π/2)
-            // pow(±2) sxdg → x
+            // pow(r) { sxdg } => gphase(r*π/4); rx(-r*π/2)
+            // pow(±2) sxdg => x
             .Case<SXdgOp>([&](auto) {
               if (std::abs(r) == 2.0) {
                 rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
@@ -496,8 +510,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                                             r * (-std::numbers::pi / 2.0)));
               return success();
             })
-            // --- Hermitian gates (integer exponent): even → id, odd → gate
-            // --- pow(n) { h } → id (n even) | h (n odd)
+            // --- Hermitian gates (integer exponent): even => id, odd => gate
+            // --- pow(n) { h } => id (n even) | h (n odd)
             .Case<HOp>([&](auto gate) {
               if (utils::isEvenExponent(r)) {
                 if (insideModifier) {
@@ -510,7 +524,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               }
               return success();
             })
-            // pow(n) { ecr/swap } → id (n even) | ecr/swap (n odd)
+            // pow(n) { ecr/swap } => id (n even) | ecr/swap (n odd)
             // Note: even + insideModifier is rejected before inlining.
             .Case<ECROp, SWAPOp>([&](auto gate) {
               if (utils::isEvenExponent(r)) {
@@ -521,7 +535,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // --- iSWAP: decompose to parametric gate ---
-            // pow(r) { iswap } → xx_plus_yy(-r*π, 0)
+            // pow(r) { iswap } => xx_plus_yy(-r*π, 0)
             // β=0: axis is aligned with XX, matching the iSWAP interaction
             // plane
             .Case<iSWAPOp>([&](auto) {
@@ -533,12 +547,12 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // --- Identity and barrier: pass through unchanged ---
-            // pow(r) { id } → id
+            // pow(r) { id } => id
             .Case<IdOp>([&](auto) {
               rewriter.replaceOpWithNewOp<IdOp>(op, op.getInputTarget(0));
               return success();
             })
-            // pow(r) { barrier } → barrier
+            // pow(r) { barrier } => barrier
             .Case<BarrierOp>([&](auto) {
               rewriter.replaceOpWithNewOp<BarrierOp>(op, op.getQubitsIn());
               return success();

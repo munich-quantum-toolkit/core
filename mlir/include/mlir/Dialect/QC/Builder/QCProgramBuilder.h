@@ -901,7 +901,7 @@ public:
   QCProgramBuilder& inv(const function_ref<void()>& body);
 
   /**
-   * @brief Apply a power modifier to an operation.
+   * @brief Apply a power operation.
    *
    * @param exponent The exponent to raise the operation to
    * @param body Function that builds the body containing the operation to

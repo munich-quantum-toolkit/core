@@ -145,13 +145,10 @@ INSTANTIATE_TEST_SUITE_P(
 
 /// \name QCOToQC/Modifiers/PowOp.cpp
 /// @{
-INSTANTIATE_TEST_SUITE_P(
-    QCOPowOpTest, QCOToQCTest,
-    testing::Values(
-        // pow(1/3){SX} inside ctrl: fold would emit gphase+rx (two ops,
-        // invalid in ctrl body) → pow survives and hits ConvertQCOPowOp
-        QCOToQCTestCase{"CtrlPowSx", MQT_NAMED_BUILDER(qco::ctrlPowSx),
-                        MQT_NAMED_BUILDER(qc::ctrlPowSx)}));
+INSTANTIATE_TEST_SUITE_P(QCOPowOpTest, QCOToQCTest,
+                         testing::Values(QCOToQCTestCase{
+                             "CtrlPowSx", MQT_NAMED_BUILDER(qco::ctrlPowSx),
+                             MQT_NAMED_BUILDER(qc::ctrlPowSx)}));
 /// @}
 
 /// \name QCOToQC/Modifiers/InvOp.cpp

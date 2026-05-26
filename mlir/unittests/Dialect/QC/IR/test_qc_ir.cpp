@@ -137,31 +137,20 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCPowOpTest, QCTest,
     testing::Values(
-        // pow(1) { g } => g  (InlinePow1)
         QCTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
                    MQT_NAMED_BUILDER(rx)},
-        // pow(0) { g } => <erased>  (ErasePow0)
         QCTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
                    MQT_NAMED_BUILDER(emptyQC)},
-        // pow(p) { pow(q) { g } } => pow(p*q) { g }  (MergeNestedPow)
         QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
                    MQT_NAMED_BUILDER(powSingleExponent)},
-        // // pow(p) { g } unchanged when no simplification applies
         QCTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
                    MQT_NAMED_BUILDER(powRxx)},
-        // pow(-n) { g } => pow(n) { inv { g } } only for integer n
         QCTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
                    MQT_NAMED_BUILDER(powRxNeg)},
-        // pow(-0.5) { H } unchanged: fractional exponent on a unitary with
-        // eigenvalue -1 cannot safely apply NegPowToInvPow
         QCTestCase{"NegPowH", MQT_NAMED_BUILDER(negPowH),
                    MQT_NAMED_BUILDER(negPowH)},
-        // inv { pow(p) { g } } => pow(p) { inv { g } }
-        // (MovePowOutside)
         QCTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
                    MQT_NAMED_BUILDER(powRxNeg)},
-        // pow(p) { ctrl(q) { g } } => ctrl(q) { pow(p) { g } }
-        // (MoveCtrlOutside)
         QCTestCase{"PowCtrlRx", MQT_NAMED_BUILDER(powCtrlRx),
                    MQT_NAMED_BUILDER(ctrlPowRx)}));
 /// @}

@@ -1186,11 +1186,12 @@ public:
                  function_ref<SmallVector<Value>(ValueRange)> body);
 
   /**
-   * @brief Raise a unitary operation to a power
+   * @brief Apply a power operation.
    *
-   * @param qubits Input qubits (targets for the powered operation)
-   * @param exponent The power exponent (floating-point)
-   * @param body Function that builds the body containing the target operation
+   * @param qubits Input qubits
+   * @param exponent The exponent to raise the operation to
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
    * @return Output qubits
    *
    * @par Example:
@@ -1201,7 +1202,6 @@ public:
    *   }
    * );
    * ```
-   * generates:
    * ```mlir
    * %q_out = qco.pow (2.000000e+00) (%q = %q_in) {
    *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
