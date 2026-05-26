@@ -16,6 +16,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -95,10 +96,7 @@ static LogicalResult tryReplaceWithNamedPhaseGate(double angle, PowOp op,
 
 /// Materialize exponent * param as arith ops
 static Value scaleByExponent(Value param, PowOp op, PatternRewriter& rewriter) {
-  auto loc = op.getLoc();
-  auto exponent =
-      arith::ConstantOp::create(rewriter, loc, op.getExponentAttr());
-  return arith::MulFOp::create(rewriter, loc, exponent, param);
+  return arith::MulFOp::create(rewriter, op.getLoc(), op.getExponent(), param);
 }
 
 template <typename GateOp>
@@ -497,17 +495,27 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
 } // namespace
 
+double PowOp::getExponentValue() {
+  FloatAttr attr;
+  if (!matchPattern(getExponent(), m_Constant(&attr))) {
+    llvm::reportFatalUsageError("PowOp exponent must be a constant");
+  }
+  return attr.getValueAsDouble();
+}
+
 UnitaryOpInterface PowOp::getBodyUnitary() {
   return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   double exponent, const function_ref<void()>& bodyBuilder) {
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsState.addAttribute("exponent", odsBuilder.getF64FloatAttr(exponent));
+  auto expConst = arith::ConstantFloatOp::create(
+      odsBuilder, odsState.location, odsBuilder.getF64Type(), APFloat(exponent));
+  odsState.addOperands(expConst.getResult());
   auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();
 
+  const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
   bodyBuilder();
   YieldOp::create(odsBuilder, odsState.location);

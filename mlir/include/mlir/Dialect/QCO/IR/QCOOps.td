@@ -1229,7 +1229,7 @@ def PowOp
         ```
     }];
 
-  let arguments = (ins F64Attr:$exponent,
+  let arguments = (ins F64:$exponent,
       Arg<Variadic<QubitType>,
           "the qubits involved in the operation", [MemRead]>:$qubits_in);
   let results = (outs Variadic<QubitType>:$qubits_out);
@@ -1264,15 +1264,12 @@ def PowOp
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         ValueRange getParameters() { return getBodyUnitary().getParameters(); }
-        double getExponentValue() { return getExponentAttr().getValueAsDouble(); }
+        double getExponentValue();
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
 
-  let builders = [OpBuilder<(ins "ValueRange":$qubits, "double":$exponent), [{
-           build($_builder, $_state, qubits.getTypes(),
-                 $_builder.getF64FloatAttr(exponent), qubits);
-        }]>,
+  let builders = [OpBuilder<(ins "ValueRange":$qubits, "double":$exponent)>,
                   OpBuilder<(ins "ValueRange":$qubits, "double":$exponent,
                       "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)"
                       ">":$bodyBuilder)>];

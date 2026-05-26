@@ -1029,7 +1029,7 @@ def PowOp : QCOp<"pow",
           ```
       }];
 
-  let arguments = (ins F64Attr:$exponent);
+  let arguments = (ins F64:$exponent);
   let regions = (region SizedRegion<1>:$region);
   let assemblyFormat = "`(` $exponent `)` $region attr-dict";
 
@@ -1046,7 +1046,7 @@ def PowOp : QCOp<"pow",
           size_t getNumParams() { return getBodyUnitary().getNumParams(); }
           Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
           ValueRange getParameters() { return getBodyUnitary().getParameters(); }
-          double getExponentValue() { return getExponentAttr().getValueAsDouble(); }
+          double getExponentValue();
           static StringRef getBaseSymbol() { return "pow"; }
       }];
 

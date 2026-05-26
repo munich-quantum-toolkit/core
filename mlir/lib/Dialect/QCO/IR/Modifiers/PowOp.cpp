@@ -21,6 +21,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -102,10 +103,7 @@ static LogicalResult tryReplaceWithNamedPhaseGate(double angle, PowOp op,
 
 /// Materialize exponent * param as arith ops
 static Value scaleByExponent(auto param, PowOp op, PatternRewriter& rewriter) {
-  auto loc = op.getLoc();
-  auto exponent =
-      arith::ConstantOp::create(rewriter, loc, op.getExponentAttr());
-  return arith::MulFOp::create(rewriter, loc, exponent, param);
+  return arith::MulFOp::create(rewriter, op.getLoc(), op.getExponent(), param);
 }
 
 template <typename GateOp>
@@ -228,8 +226,12 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     const double merged = op.getExponentValue() * innerPow.getExponentValue();
 
     rewriter.moveOpBefore(innerPow, op);
-    innerPow->setOperands(op.getInputQubits());
-    innerPow.setExponentAttr(rewriter.getF64FloatAttr(merged));
+    auto mergedConst = arith::ConstantOp::create(
+        rewriter, op.getLoc(), rewriter.getF64FloatAttr(merged));
+    rewriter.modifyOpInPlace(innerPow, [&]() {
+      innerPow->setOperands(op.getInputQubits());
+      innerPow.getExponentMutable().assign(mergedConst.getResult());
+    });
     rewriter.replaceOp(op, innerPow->getResults());
     return success();
   }
@@ -554,6 +556,14 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
 } // namespace
 
+double PowOp::getExponentValue() {
+  FloatAttr attr;
+  if (!matchPattern(getExponent(), m_Constant(&attr))) {
+    llvm::reportFatalUsageError("PowOp exponent must be a constant");
+  }
+  return attr.getValueAsDouble();
+}
+
 UnitaryOpInterface PowOp::getBodyUnitary() {
   // In principle, the body region should only contain exactly two operations,
   // the actual unitary operation and a yield operation. However, the region may
@@ -593,6 +603,13 @@ Value PowOp::getOutputForInput(Value input) {
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
+}
+
+void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                  ValueRange qubits, double exponent) {
+  auto expConst = arith::ConstantFloatOp::create(
+      odsBuilder, odsState.location, odsBuilder.getF64Type(), APFloat(exponent));
+  build(odsBuilder, odsState, qubits.getTypes(), expConst.getResult(), qubits);
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,

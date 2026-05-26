@@ -716,7 +716,7 @@ struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
   matchAndRewrite(qco::PowOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Create qc.pow operation with exponent
-    auto qcOp = qc::PowOp::create(rewriter, op.getLoc(), op.getExponentAttr());
+    auto qcOp = qc::PowOp::create(rewriter, op.getLoc(), adaptor.getExponent());
 
     // Clone body region from QCO to QC
     auto& dstRegion = qcOp.getRegion();
