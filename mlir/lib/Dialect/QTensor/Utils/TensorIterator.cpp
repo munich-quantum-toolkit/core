@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -63,7 +64,10 @@ void TensorIterator::forward() {
               op.getTiedLoopResult(&*(tensor_.use_begin())));
         })
         .Case<qco::IfOp>([&](qco::IfOp op) {
-          tensor_ = cast<TypedValue<RankedTensorType>>(op.getResults().front());
+          auto it = llvm::find(op.getQubits(), tensor_);
+          assert(it != op.getQubits().end());
+          const auto idx = std::distance(op.getQubits().begin(), it);
+          tensor_ = cast<TypedValue<RankedTensorType>>(op.getResults()[idx]);
         })
         .Default([&](Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
@@ -113,7 +117,16 @@ void TensorIterator::backward() {
             "expected scf.for result for tied init lookup");
       })
       .Case<qco::IfOp>([&](qco::IfOp op) {
-        tensor_ = cast<TypedValue<RankedTensorType>>(op.getQubits().front());
+        if (auto res = dyn_cast<OpResult>(tensor_)) {
+          auto it = llvm::find(op.getResults(), res);
+          assert(it != op->result_end());
+          const auto idx = std::distance(op.result_begin(), it);
+          tensor_ = cast<TypedValue<RankedTensorType>>(op.getQubits()[idx]);
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected scf.for result for tied init lookup");
       })
       .Default([&](Operation* op) {
         llvm::reportFatalInternalError("unknown op in def-use chain: " +
