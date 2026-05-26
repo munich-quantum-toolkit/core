@@ -30,7 +30,7 @@ TypedValue<RankedTensorType> TensorIterator::tensor() const {
     return tensor_;
   }
 
-  // A tensor deallocation doesn't have an OpResult.
+  // These doesn't have an OpResult.
   if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     return nullptr;
   }
@@ -89,8 +89,7 @@ void TensorIterator::backward() {
     return;
   }
 
-  // For deallocations and scf::YieldOps, tensor_ is an OpOperand.
-  // Hence, only get the def-op.
+  // For these operations, tensor_ is an OpOperand. Hence, only get the def-op.
   if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     return;
