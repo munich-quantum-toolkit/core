@@ -99,6 +99,7 @@ void TensorIterator::backward() {
   // For these operations, tensor_ is an OpOperand. Hence, only get the def-op.
   if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     op_ = tensor_.getDefiningOp();
+    isFinal_ = false;
     return;
   }
 
@@ -143,6 +144,7 @@ void TensorIterator::backward() {
   // If the current tensor SSA value is a BlockArgument (no defining op), the
   // operation will be a nullptr.
   op_ = tensor_.getDefiningOp();
+  isFinal_ = false;
 }
 
 static_assert(std::bidirectional_iterator<TensorIterator>);
