@@ -14,9 +14,10 @@ add_mlir_dialect_library(
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/mlir/include/mlir/Dialect/QTensor
   DEPENDS
-  MLIRSCFDialect
   MLIRQTensorOpsIncGen
-  LINK_LIBS)
+  LINK_LIBS
+  PUBLIC
+  MLIRQCODialect)
 
 mqt_mlir_target_use_project_options(MLIRQTensorUtils)
 

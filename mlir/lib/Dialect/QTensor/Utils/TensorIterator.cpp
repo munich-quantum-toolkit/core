@@ -11,19 +11,30 @@
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <iterator>
+
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
-  // A tensor deallocation doesn't have an OpResult.
-  if (isa<DeallocOp>(op_)) {
+  if (op_ == nullptr) {
+    return tensor_;
+  }
+
+  // The following operations don't have an OpResult.
+  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     return nullptr;
   }
+
   return tensor_;
 }
 
@@ -37,8 +48,8 @@ void TensorIterator::forward() {
   assert(tensor_.hasOneUse() && "expected linear typing");
   op_ = *(tensor_.user_begin());
 
-  // A deallocation defines the end of the tensor's life-chain.
-  if (isa<DeallocOp, scf::YieldOp>(op_)) {
+  // The following operations define the end of the tensor's life-chain.
+  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     isSentinel_ = true;
     return;
   }
@@ -51,6 +62,12 @@ void TensorIterator::forward() {
         .Case<scf::ForOp>([&](scf::ForOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
               op.getTiedLoopResult(&*(tensor_.use_begin())));
+        })
+        .Case<qco::IfOp>([&](qco::IfOp op) {
+          auto it = llvm::find(op.getQubits(), tensor_);
+          assert(it != op.getQubits().end());
+          const auto idx = std::distance(op.getQubits().begin(), it);
+          tensor_ = cast<TypedValue<RankedTensorType>>(op.getResults()[idx]);
         })
         .Default([&](Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
@@ -66,9 +83,14 @@ void TensorIterator::backward() {
     return;
   }
 
-  // For deallocations and scf::YieldOps, tensor_ is an OpOperand.
-  // Hence, only get the def-op.
-  if (isa<DeallocOp, scf::YieldOp>(op_)) {
+  // If the op is a nullptr, the tensor value is a block argument and thus the
+  // beginning of the tensor's life-chain.
+  if (op_ == nullptr) {
+    return;
+  }
+
+  // For these operations, tensor_ is an OpOperand. Hence, only get the def-op.
+  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     return;
   }
@@ -90,12 +112,24 @@ void TensorIterator::backward() {
           return;
         }
 
-        llvm::report_fatal_error(
+        llvm::reportFatalInternalError(
+            "expected scf.for result for tied init lookup");
+      })
+      .Case<qco::IfOp>([&](qco::IfOp op) {
+        if (auto res = dyn_cast<OpResult>(tensor_)) {
+          auto it = llvm::find(op.getResults(), res);
+          assert(it != op->result_end());
+          const auto idx = std::distance(op.result_begin(), it);
+          tensor_ = cast<TypedValue<RankedTensorType>>(op.getQubits()[idx]);
+          return;
+        }
+
+        llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
       })
       .Default([&](Operation* op) {
-        report_fatal_error("unknown op in def-use chain: " +
-                           op->getName().getStringRef());
+        llvm::reportFatalInternalError("unknown op in def-use chain: " +
+                                       op->getName().getStringRef());
       });
 
   // Get the operation that produces the tensor value.

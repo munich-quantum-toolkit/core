@@ -57,8 +57,8 @@ void WireIterator::forward() {
         .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
         .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
         .Default([&](Operation* op) {
-          report_fatal_error("unknown op in def-use chain: " +
-                             op->getName().getStringRef());
+          llvm::reportFatalInternalError("unknown op in def-use chain: " +
+                                         op->getName().getStringRef());
         });
   }
 }
@@ -90,8 +90,8 @@ void WireIterator::backward() {
       .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
       .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
       .Default([&](Operation* op) {
-        report_fatal_error("unknown op in def-use chain: " +
-                           op->getName().getStringRef());
+        llvm::reportFatalInternalError("unknown op in def-use chain: " +
+                                       op->getName().getStringRef());
       });
 
   // Get the operation that produces the qubit value.

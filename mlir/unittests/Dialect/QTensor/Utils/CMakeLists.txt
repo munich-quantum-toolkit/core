@@ -9,7 +9,7 @@
 set(qtensor_utils_target mqt-core-mlir-unittest-qtensor-utils)
 add_executable(${qtensor_utils_target} test_tensoriterator.cpp)
 target_link_libraries(${qtensor_utils_target} PRIVATE GTest::gtest_main MLIRQTensorDialect
-                                                      MLIRQCOProgramBuilder)
+                                                      MLIRQTensorUtils MLIRQCOProgramBuilder)
 mqt_mlir_configure_unittest_target(${qtensor_utils_target})
 
 gtest_discover_tests(${qtensor_utils_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT
