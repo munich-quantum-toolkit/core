@@ -62,13 +62,8 @@ protected:
         auto out0 = swapOp.getQubit0Out();
         auto out1 = swapOp.getQubit1Out();
 
-        // TODO: What if single qubit gates are in front of the SWAP input?
-        // Tipp: Use the WireIterator.
-        StaticOp op0 = cast<StaticOp>(in0.getDefiningOp());
-        StaticOp op1 = cast<StaticOp>(in1.getDefiningOp());
-
-        rewriter.replaceAllUsesWith(out0, op1.getQubit());
-        rewriter.replaceAllUsesWith(out1, op0.getQubit());
+        rewriter.replaceAllUsesWith(out0, in1);
+        rewriter.replaceAllUsesWith(out1, in0);
         rewriter.eraseOp(swapOp);
       }
     }
