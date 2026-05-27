@@ -12,10 +12,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/LogicalResult.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
