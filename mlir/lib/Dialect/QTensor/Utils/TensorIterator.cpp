@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
