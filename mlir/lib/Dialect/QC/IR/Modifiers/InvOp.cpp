@@ -53,14 +53,14 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
 };
 
 /**
- * @brief Absorb inv into pow by negating the exponent, i.e.,
+ * @brief Eliminate inv by negating the pow exponent, i.e.,
  * `inv(pow(p){U}) => pow(-p){U}`.
  *
  * @details This is always valid for unitaries: `(U^p)† = U^{-p}`.
  * Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
  * `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
  */
-struct MovePowOutside final : OpRewritePattern<InvOp> {
+struct InvPowToNegPow final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp invOp,
                                 PatternRewriter& rewriter) const override {
@@ -321,6 +321,6 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv, MoveCtrlOutside, MovePowOutside,
+  results.add<CancelNestedInv, MoveCtrlOutside, InvPowToNegPow,
               InlineSelfAdjoint, ReplaceWithKnownGates>(context);
 }
