@@ -20,7 +20,8 @@ target_link_libraries(
           MLIRSupportMQT
           MLIRTransforms
           MLIRJeffToQCO
-          MLIRQCOToJeff)
+          MLIRQCOToJeff
+          MLIRJeffTranslation)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

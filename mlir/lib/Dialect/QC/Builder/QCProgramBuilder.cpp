@@ -14,17 +14,18 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -61,6 +62,12 @@ void QCProgramBuilder::initialize() {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+  regionStack.emplace_back(entryBlock.getParent());
+}
+
+Value QCProgramBuilder::boolConstant(const bool value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getBoolAttr(value)).getResult();
 }
 
 Value QCProgramBuilder::intConstant(const int64_t value) {
@@ -112,11 +119,13 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 
   SmallVector<Value> qubits;
   qubits.reserve(size);
+  auto& loadedQubitsForRegion = loadedQubits[memref->getParentRegion()][memref];
   for (int64_t i = 0; i < size; ++i) {
     auto index = arith::ConstantIndexOp::create(*this, i);
     auto load = memref::LoadOp::create(*this, memref, index.getResult());
     const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
+    loadedQubitsForRegion.insert(index);
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
@@ -131,6 +140,27 @@ QCProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
     llvm::reportFatalUsageError(msg.c_str());
   }
   return {.registerName = name, .registerSize = size, .registerIndex = index};
+}
+
+Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
+  checkFinalized();
+
+  auto* region = getInsertionBlock()->getParent();
+
+  if (regionStack.size() == 1) {
+    llvm::reportFatalUsageError(
+        "Qubit cannot be loaded in the main function region");
+  }
+  for (Region* curr : regionStack) {
+    if (loadedQubits[curr][memref].contains(index)) {
+      llvm::reportFatalUsageError("Qubit already loaded in enclosing region");
+    }
+  }
+
+  auto loadOp = memref::LoadOp::create(*this, memref, index);
+  loadedQubits[region][memref].insert(index);
+
+  return loadOp.getResult();
 }
 
 QCProgramBuilder::ClassicalRegister
@@ -155,13 +185,14 @@ Value QCProgramBuilder::measure(Value qubit) {
   return measureOp.getResult();
 }
 
-QCProgramBuilder& QCProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QCProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
   auto nameAttr = getStringAttr(bit.registerName);
   auto sizeAttr = getI64IntegerAttr(bit.registerSize);
   auto indexAttr = getI64IntegerAttr(bit.registerIndex);
-  MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
-  return *this;
+  auto measureOp =
+      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
+  return measureOp.getResult();
 }
 
 QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
@@ -457,6 +488,93 @@ QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
 QCProgramBuilder& QCProgramBuilder::inv(const function_ref<void()>& body) {
   checkFinalized();
   InvOp::create(*this, body);
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder&
+QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
+                         const std::variant<int64_t, Value>& upperbound,
+                         const std::variant<int64_t, Value>& step,
+                         const function_ref<void(Value)>& body) {
+  checkFinalized();
+
+  auto loc = getLoc();
+  auto lb = variantToValue(*this, loc, lowerbound);
+  auto ub = variantToValue(*this, loc, upperbound);
+  auto stepSize = variantToValue(*this, loc, step);
+
+  scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
+                     [&](OpBuilder& b, Location l, Value iv, ValueRange) {
+                       regionStack.emplace_back(
+                           b.getInsertionBlock()->getParent());
+                       body(iv);
+                       scf::YieldOp::create(b, l);
+                       regionStack.pop_back();
+                     });
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfWhile(const function_ref<void()>& beforeBody,
+                           const function_ref<void()>& afterBody) {
+  checkFinalized();
+
+  scf::WhileOp::create(
+      *this, TypeRange{}, ValueRange{},
+      [&](OpBuilder& b, Location, ValueRange) {
+        auto* insertionBlock = b.getInsertionBlock();
+        regionStack.emplace_back(insertionBlock->getParent());
+        beforeBody();
+        if (!isa_and_nonnull<scf::ConditionOp>(
+                insertionBlock->getTerminator())) {
+          llvm::reportFatalUsageError(
+              "scf.while beforeBody must terminate with scf.condition");
+        }
+        regionStack.pop_back();
+      },
+      [&](OpBuilder& b, Location loc, ValueRange) {
+        regionStack.emplace_back(b.getInsertionBlock()->getParent());
+        afterBody();
+        scf::YieldOp::create(b, loc);
+        regionStack.pop_back();
+      });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
+                        const function_ref<void()>& thenBody,
+                        const function_ref<void()>& elseBody) {
+  checkFinalized();
+
+  auto condition = variantToValue(*this, getLoc(), cond);
+
+  auto buildRegion = [&](const function_ref<void()>& body) {
+    return [&, body](OpBuilder& b, Location loc) {
+      regionStack.emplace_back(b.getInsertionBlock()->getParent());
+      body();
+      scf::YieldOp::create(b, loc);
+      regionStack.pop_back();
+    };
+  };
+
+  if (!elseBody) {
+    scf::IfOp::create(*this, condition, buildRegion(thenBody));
+  } else {
+    scf::IfOp::create(*this, condition, buildRegion(thenBody),
+                      buildRegion(elseBody));
+  }
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
+  checkFinalized();
+  scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
 }
 
