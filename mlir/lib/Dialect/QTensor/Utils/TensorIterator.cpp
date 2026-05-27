@@ -30,7 +30,7 @@ TypedValue<RankedTensorType> TensorIterator::tensor() const {
     return tensor_;
   }
 
-  // These doesn't have an OpResult.
+  // The following operations don't have an OpResult.
   if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     return nullptr;
   }
@@ -48,7 +48,7 @@ void TensorIterator::forward() {
   assert(tensor_.hasOneUse() && "expected linear typing");
   op_ = *(tensor_.user_begin());
 
-  // These define the end of the tensor's life-chain.
+  // The following operations define the end of the tensor's life-chain.
   if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
     isSentinel_ = true;
     return;
