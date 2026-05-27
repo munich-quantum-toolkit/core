@@ -216,24 +216,19 @@ private:
   public:
     AugmentedDevice() = default;
 
-    AugmentedDevice(size_t nqubits, const Edges& coupling)
-        : nqubits_(nqubits), dist_(findAllShortestPaths(nqubits, coupling)),
-          coupling_(coupling), neighbours_(nqubits) {
-      for (const auto& [u, v] : coupling_) {
-        neighbours_[u].push_back(v);
-      }
-    }
+    explicit AugmentedDevice(const Graph& coupling)
+        : dist_(findAllShortestPaths(coupling)), coupling_(coupling) {}
 
     /**
      * @returns the device's number of qubits.
      */
-    [[nodiscard]] size_t nqubits() const { return nqubits_; }
+    [[nodiscard]] size_t nqubits() const { return coupling_.getNumNodes(); }
 
     /**
      * @returns true if @p u and @p v are adjacent.
      */
     [[nodiscard]] bool areAdjacent(size_t u, size_t v) const {
-      return coupling_.contains(std::make_pair(u, v));
+      return dist_[u][v] == 1UL;
     }
 
     /**
@@ -251,25 +246,17 @@ private:
      * @returns all neighbours of @p u.
      */
     [[nodiscard]] ArrayRef<size_t> neighboursOf(size_t u) const {
-      return neighbours_[u];
+      return coupling_.getEdges(u);
     }
 
     /**
      * @returns the max degree (connectivity) of any qubit of the device.
      */
-    [[nodiscard]] size_t maxDegree() const {
-      size_t deg = 0;
-      for (const auto& nbrs : neighbours_) {
-        deg = std::max(deg, nbrs.size());
-      }
-      return deg;
-    }
+    [[nodiscard]] size_t maxDegree() const { return coupling_.getMaxDegree(); }
 
   private:
-    size_t nqubits_{};
-    Matrix dist_;
-    Edges coupling_;
-    Neighbours neighbours_;
+    Matrix<size_t> dist_;
+    Graph coupling_;
   };
 
   struct [[nodiscard]] Trial {
@@ -372,9 +359,9 @@ private:
 public:
   MappingPass() = default;
   explicit MappingPass(MappingPassOptions options) : MappingPassBase(options) {}
-  explicit MappingPass(size_t nqubits, const Edges& coupling,
+  explicit MappingPass(const EdgeSet& couplingSet,
                        MappingPassOptions options = {})
-      : MappingPassBase(options), device(nqubits, coupling) {}
+      : MappingPassBase(options), device(Graph(couplingSet)) {}
 
 protected:
   void runOnOperation() override {
@@ -959,9 +946,9 @@ private:
 
 } // namespace
 
-std::unique_ptr<Pass> createMappingPass(size_t nqubits, const Edges& coupling,
+std::unique_ptr<Pass> createMappingPass(const EdgeSet& couplingSet,
                                         MappingPassOptions options) {
-  return std::make_unique<MappingPass>(nqubits, coupling, options);
+  return std::make_unique<MappingPass>(couplingSet, options);
 }
 
 } // namespace mlir::qco
