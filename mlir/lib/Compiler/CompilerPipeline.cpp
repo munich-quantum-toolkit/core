@@ -68,6 +68,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     return failure();
   }
 
+  module->dumpPretty();
+
   auto runStage = [&](auto&& populatePasses) -> LogicalResult {
     PassManager pm(module.getContext());
     configurePassManager(pm);

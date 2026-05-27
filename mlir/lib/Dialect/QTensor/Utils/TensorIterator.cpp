@@ -44,13 +44,19 @@ void TensorIterator::forward() {
     return;
   }
 
+  // After the final operation comes the sentinel.
+  if (isFinal_) {
+    isSentinel_ = true;
+    return;
+  }
+
   // Find the user-operation of the tensor SSA value.
   assert(tensor_.hasOneUse() && "expected linear typing");
   op_ = *(tensor_.user_begin());
 
   // The following operations define the end of the tensor's life-chain.
   if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
-    isSentinel_ = true;
+    isFinal_ = true;
     return;
   }
 
@@ -80,6 +86,7 @@ void TensorIterator::backward() {
   // If the iterator is a sentinel, reactivate the iterator.
   if (isSentinel_) {
     isSentinel_ = false;
+    isFinal_ = true;
     return;
   }
 
