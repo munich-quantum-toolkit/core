@@ -12,7 +12,6 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -21,9 +20,6 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
-
-#include <cstddef>
-#include <utility>
 
 namespace mlir::qco {
 #define GEN_PASS_DEF_SWAPABSORPTIONPASS
