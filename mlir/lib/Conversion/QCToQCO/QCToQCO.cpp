@@ -515,56 +515,63 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
  */
 static std::pair<SetVector<Value>, SetVector<Value>>
 collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
-  // Get the regions of the current operation
-  const auto& regions = op->getRegions();
-  auto& regionQubitMap = state->regionQubitMap[op];
-  auto& regionRegisterMap = state->regionRegisterMap[op];
+  SetVector<Value> localQubits;
+  SetVector<Value> localRegisters;
 
-  for (auto& region : regions) {
-    auto& qubitInfoMap = state->qubitInfoMap[&region];
+  // Helper to check if a qubit value is defined locally
+  auto isDefinedLocally = [&](Region* region, Value value) {
+    auto it = state->qubitInfoMap.find(region);
+    return it != state->qubitInfoMap.end() && it->second.contains(value);
+  };
+
+  for (auto& region : op->getRegions()) {
     // Skip empty regions e.g. empty else region of an If operation
     if (region.empty()) {
       continue;
     }
     // Check that the region has only one block
     assert(region.hasOneBlock() && "Expected single-block region");
+
     // Iterate through all operations of the current region
     for (auto& operation : region.front().getOperations()) {
       // Recursively walk through nested regions
       if (operation.getNumRegions() > 0) {
         auto [qubits, registers] =
             collectQubitValuesInsideSCFOps(&operation, state);
-        regionQubitMap.set_union(qubits);
-        // Remove duplicate qubits
-        regionQubitMap.remove_if(
-            [&](Value qubit) { return qubitInfoMap.contains(qubit); });
-        regionRegisterMap.set_union(registers);
+        for (Value qubit : qubits) {
+          if (!isDefinedLocally(&region, qubit)) {
+            localQubits.insert(qubit);
+          }
+        }
+        localRegisters.set_union(registers);
       }
       // Track qubits from loadOp
       if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
         QubitInfo info{.reg = loadOp.getMemRef(),
                        .index = loadOp.getIndices()[0]};
-        qubitInfoMap.try_emplace(loadOp.getResult(), info);
-        regionRegisterMap.insert(loadOp.getMemRef());
+        state->qubitInfoMap[&region].try_emplace(loadOp.getResult(), info);
+        localRegisters.insert(loadOp.getMemRef());
         continue;
       }
       // Add the QC qubit and memref operands to the maps
       for (const auto& operand : operation.getOperands()) {
         if (isa<qc::QubitType>(operand.getType())) {
-          if (!qubitInfoMap.contains(operand)) {
-            regionQubitMap.insert(operand);
+          if (!isDefinedLocally(&region, operand)) {
+            localQubits.insert(operand);
           }
         }
         if (auto memref = dyn_cast<MemRefType>(operand.getType())) {
           if (isa<qc::QubitType>(memref.getElementType())) {
-            regionRegisterMap.insert(operand);
+            localRegisters.insert(operand);
           }
         }
       }
     }
   }
+  state->regionQubitMap[op].set_union(localQubits);
+  state->regionRegisterMap[op].set_union(localRegisters);
 
-  return {regionQubitMap, regionRegisterMap};
+  return {state->regionQubitMap[op], state->regionRegisterMap[op]};
 }
 
 namespace {
