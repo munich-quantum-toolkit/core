@@ -515,9 +515,6 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
  */
 static std::pair<SetVector<Value>, SetVector<Value>>
 collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
-  SetVector<Value> localQubits;
-  SetVector<Value> localRegisters;
-
   // Helper to check if a qubit value is defined locally
   auto isDefinedLocally = [&](Region* region, Value value) {
     auto it = state->qubitInfoMap.find(region);
@@ -540,36 +537,34 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
             collectQubitValuesInsideSCFOps(&operation, state);
         for (Value qubit : qubits) {
           if (!isDefinedLocally(&region, qubit)) {
-            localQubits.insert(qubit);
+            state->regionQubitMap[op].insert(qubit);
           }
         }
-        localRegisters.set_union(registers);
+        state->regionRegisterMap[op].set_union(registers);
       }
       // Track qubits from loadOp
       if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
         QubitInfo info{.reg = loadOp.getMemRef(),
                        .index = loadOp.getIndices()[0]};
         state->qubitInfoMap[&region].try_emplace(loadOp.getResult(), info);
-        localRegisters.insert(loadOp.getMemRef());
+        state->regionRegisterMap[op].insert(loadOp.getMemRef());
         continue;
       }
       // Add the QC qubit and memref operands to the maps
       for (const auto& operand : operation.getOperands()) {
         if (isa<qc::QubitType>(operand.getType())) {
           if (!isDefinedLocally(&region, operand)) {
-            localQubits.insert(operand);
+            state->regionQubitMap[op].insert(operand);
           }
         }
         if (auto memref = dyn_cast<MemRefType>(operand.getType())) {
           if (isa<qc::QubitType>(memref.getElementType())) {
-            localRegisters.insert(operand);
+            state->regionRegisterMap[op].insert(operand);
           }
         }
       }
     }
   }
-  state->regionQubitMap[op].set_union(localQubits);
-  state->regionRegisterMap[op].set_union(localRegisters);
 
   return {state->regionQubitMap[op], state->regionRegisterMap[op]};
 }
