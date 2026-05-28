@@ -192,22 +192,22 @@ TEST_P(MappingPassTest, NoExtractAfterInsert) {
 
 TEST_P(MappingPassTest, TooManyQubitsForArch) {
   const auto& couplingSet = GetParam();
+  const size_t nqubits = Graph(couplingSet).getNumNodes();
+  const auto n = static_cast<int64_t>(nqubits) + 1;
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  const int64_t nqubits =
-      static_cast<int64_t>(Graph(couplingSet).getNumNodes()) + 1;
-  Value tensor = builder.qtensorAlloc(nqubits);
-  SmallVector<Value> qubits(nqubits);
-  for (int64_t i = 0; i < nqubits; ++i) {
+  Value tensor = builder.qtensorAlloc(n);
+  SmallVector<Value> qubits(n);
+  for (int64_t i = 0; i < n; ++i) {
     Value qi;
     std::tie(tensor, qi) = builder.qtensorExtract(tensor, i);
     qi = builder.h(qi);
     qubits[i] = qi;
   }
 
-  for (int64_t i = 0; i < nqubits; ++i) {
+  for (int64_t i = 0; i < n; ++i) {
     tensor = builder.qtensorInsert(qubits[i], tensor, i);
   }
 
@@ -255,23 +255,25 @@ TEST_P(MappingPassTest, GHZ) {
 
 TEST_P(MappingPassTest, GHZUnrolled) {
   const auto& couplingSet = GetParam();
+  const size_t nqubits = Graph(couplingSet).getNumNodes();
+  const auto n = static_cast<int64_t>(nqubits);
 
   PassManager pm(context.get());
   pm.addNestedPass<func::FuncOp>(createQuantumLoopUnroll());
   pm.addPass(createCSEPass());
   pm.addPass(createCanonicalizerPass());
-  // pm.addPass(createMappingPass(couplingSet, MappingPassOptions{}));
+  pm.addPass(createMappingPass(couplingSet, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  Value tensor = builder.qtensorAlloc(3);
+  Value tensor = builder.qtensorAlloc(n);
   Value q0;
   std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
   q0 = builder.h(q0);
   tensor = builder.qtensorInsert(q0, tensor, 0);
   tensor = builder.scfFor(
-      1, 3, 1, {tensor}, [&builder](Value iv, ValueRange iterArgs) {
+      1, n, 1, {tensor}, [&builder](Value iv, ValueRange iterArgs) {
         Value loopTensor = iterArgs[0];
         Value ctrl;
         Value targ;
@@ -291,8 +293,6 @@ TEST_P(MappingPassTest, GHZUnrolled) {
   auto m = builder.finalize();
   auto res = pm.run(m.get());
   auto entry = getEntryPoint(m.get());
-
-  m->dump();
 
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry.getFunctionBody(), couplingSet).succeeded());
