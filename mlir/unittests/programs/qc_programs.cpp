@@ -276,7 +276,7 @@ void repeatedControlledX(QCProgramBuilder& b) {
   b.h(control);
   for (auto i = 0; i < 50; i++) {
     auto qubit = b.allocQubit();
-    b.mcx(control, qubit);
+    b.cx(control, qubit);
   }
 }
 
