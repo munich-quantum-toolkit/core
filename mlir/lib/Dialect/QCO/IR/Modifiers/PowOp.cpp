@@ -35,6 +35,7 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+using namespace mlir::utils;
 
 /**
  * @brief If the computed P-gate angle corresponds to a named gate, emit it
@@ -77,11 +78,10 @@ using namespace mlir::qco;
 static LogicalResult tryReplaceWithNamedPhaseGate(double angle, PowOp op,
                                                   PatternRewriter& rewriter,
                                                   bool insideModifier) {
-  constexpr double eps = 1e-12;
-  const double norm = utils::normalizeAngle(angle);
+  const double norm = normalizeAngle(angle);
   const double pi = std::numbers::pi;
 
-  if (std::abs(norm) < eps) {
+  if (std::abs(norm) < TOLERANCE) {
     if (insideModifier) {
       rewriter.replaceOpWithNewOp<IdOp>(op, op.getInputTarget(0));
     } else {
@@ -89,23 +89,23 @@ static LogicalResult tryReplaceWithNamedPhaseGate(double angle, PowOp op,
     }
     return success();
   }
-  if (std::abs(std::abs(norm) - pi) < eps) {
+  if (std::abs(std::abs(norm) - pi) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<ZOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (std::abs(norm - (pi / 2.0)) < eps) {
+  if (std::abs(norm - (pi / 2.0)) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<SOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (std::abs(norm + (pi / 2.0)) < eps) {
+  if (std::abs(norm + (pi / 2.0)) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<SdgOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (std::abs(norm - (pi / 4.0)) < eps) {
+  if (std::abs(norm - (pi / 4.0)) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<TOp>(op, op.getInputTarget(0));
     return success();
   }
-  if (std::abs(norm + (pi / 4.0)) < eps) {
+  if (std::abs(norm + (pi / 4.0)) < TOLERANCE) {
     rewriter.replaceOpWithNewOp<TdgOp>(op, op.getInputTarget(0));
     return success();
   }
@@ -154,7 +154,7 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getExponentValue() != 1.0) {
+    if (std::abs(op.getExponentValue() - 1.0) > TOLERANCE) {
       return failure();
     }
 
@@ -172,7 +172,7 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getExponentValue() != 0.0) {
+    if (std::abs(op.getExponentValue()) > TOLERANCE) {
       return failure();
     }
 
@@ -378,11 +378,11 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(1/2) x => sx      (X^(1/2) = SX exactly)
             // pow(-1/2) x => sxdg   (X^(-1/2) = SXdg exactly)
             .Case<XOp>([&](auto) {
-              if (r == 0.5) {
+              if (std::abs(r - 0.5) < TOLERANCE) {
                 rewriter.replaceOpWithNewOp<SXOp>(op, op.getInputTarget(0));
                 return success();
               }
-              if (r == -0.5) {
+              if (std::abs(r + 0.5) < TOLERANCE) {
                 rewriter.replaceOpWithNewOp<SXdgOp>(op, op.getInputTarget(0));
                 return success();
               }
@@ -479,7 +479,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { sx } => gphase(-r*π/4); rx(r*π/2)
             // pow(±2) sx => x
             .Case<SXOp>([&](auto) {
-              if (std::abs(r) == 2.0) {
+              if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
                 rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
                 return success();
               }
@@ -496,7 +496,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { sxdg } => gphase(r*π/4); rx(-r*π/2)
             // pow(±2) sxdg => x
             .Case<SXdgOp>([&](auto) {
-              if (std::abs(r) == 2.0) {
+              if (std::abs(std::abs(r) - 2.0) < TOLERANCE) {
                 rewriter.replaceOpWithNewOp<XOp>(op, op.getInputTarget(0));
                 return success();
               }
@@ -724,12 +724,12 @@ std::optional<Eigen::MatrixXcd> PowOp::getUnitaryMatrix() {
   const double p = getExponentValue();
 
   // U^1 = U (no computation needed)
-  if (p == 1.0) {
+  if (std::abs(p - 1.0) < TOLERANCE) {
     return targetMatrix;
   }
 
   // U^0 = I
-  if (p == 0.0) {
+  if (std::abs(p) < TOLERANCE) {
     const auto dim = targetMatrix->cols();
     return Eigen::MatrixXcd::Identity(dim, dim);
   }
