@@ -46,7 +46,7 @@ void Graph::addEdges(SmallVector<std::pair<size_t, size_t>> edges) {
   for_each(edges, [this](const auto& edge) { addEdge(edge); });
 }
 
-EdgeSet Graph::getEdges() const {
+Graph::EdgeSet Graph::getEdges() const {
   EdgeSet set;
   for (const auto& [u, nbrs] : nodes_) {
     for (const auto& v : nbrs) {
@@ -66,25 +66,25 @@ size_t Graph::getMaxDegree() const {
   return deg;
 }
 
-Matrix<size_t> findAllShortestPaths(const Graph& graph) {
-  const size_t n = graph.getNumNodes();
-  const auto edges = graph.getEdges();
+Matrix<size_t> Graph::getDistMatrix() const {
+  const size_t n = getNumNodes();
+  const auto edges = getEdges();
 
   Matrix<size_t> dist(n, Vector<size_t>(n, UINT64_MAX));
   for (const auto& [u, v] : edges) {
     dist[u][v] = 1;
   }
-  for (std::size_t v = 0; v < n; ++v) {
+  for (size_t v = 0; v < n; ++v) {
     dist[v][v] = 0;
   }
-  for (std::size_t k = 0; k < n; ++k) {
-    for (std::size_t i = 0; i < n; ++i) {
-      for (std::size_t j = 0; j < n; ++j) {
+  for (size_t k = 0; k < n; ++k) {
+    for (size_t i = 0; i < n; ++i) {
+      for (size_t j = 0; j < n; ++j) {
         if (dist[i][k] == UINT64_MAX || dist[k][j] == UINT64_MAX) {
           continue; // Avoid overflow with "infinite" distances.
         }
 
-        const std::size_t sum = dist[i][k] + dist[k][j];
+        const size_t sum = dist[i][k] + dist[k][j];
         dist[i][j] = std::min(dist[i][j], sum);
       }
     }

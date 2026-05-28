@@ -25,6 +25,7 @@ namespace mlir::qco {
  * @brief Create a mapping pass instance with the given target architecture.
  * @returns a pass object.
  */
-std::unique_ptr<Pass> createMappingPass(const EdgeSet&, MappingPassOptions);
+std::unique_ptr<Pass> createMappingPass(const Graph::EdgeSet&,
+                                        MappingPassOptions);
 
 } // namespace mlir::qco

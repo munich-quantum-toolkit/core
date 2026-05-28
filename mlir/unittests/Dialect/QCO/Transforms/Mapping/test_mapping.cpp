@@ -22,6 +22,7 @@
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
@@ -30,6 +31,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cassert>
 #include <cstddef>
@@ -45,7 +47,8 @@ using namespace mlir::qco;
  * @returns llvm::success() if all two-qubit gates inside @p region
  * fulfill the given coupling constraints. llvm::failure(), otherwise.
  */
-static LogicalResult isExecutable(Region& region, const EdgeSet& couplingSet) {
+static LogicalResult isExecutable(Region& region,
+                                  const Graph::EdgeSet& couplingSet) {
   return walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
     if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
       if (isa<BarrierOp>(op)) {
@@ -72,29 +75,30 @@ static LogicalResult isExecutable(Region& region, const EdgeSet& couplingSet) {
 }
 
 /**
- * @returns a 9x9 square-grid coupling set;
+ * @returns a 9x9 square-grid coupling set.
  */
-static EdgeSet getNineQubitSquareGrid() {
-  return EdgeSet{{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
-                 {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
-                 {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
-                 {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
+static Graph::EdgeSet getNineQubitSquareGrid() {
+  return Graph::EdgeSet{{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
+                        {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
+                        {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
+                        {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
 }
 
 namespace {
 
 class MappingPassTest : public testing::Test,
-                        public testing::WithParamInterface<EdgeSet> {
+                        public testing::WithParamInterface<Graph::EdgeSet> {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, scf::SCFDialect, arith::ArithDialect,
+                    func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
 
-  static LogicalResult runPass(ModuleOp m, const EdgeSet& couplingSet,
+  static LogicalResult runPass(ModuleOp m, const Graph::EdgeSet& couplingSet,
                                const MappingPassOptions& options) {
     PassManager pm(m->getContext());
     pm.addPass(createMappingPass(couplingSet, options));
@@ -107,17 +111,15 @@ protected:
 }; // namespace
 
 TEST_P(MappingPassTest, NoEntryPoint) {
-  const auto& device = GetParam();
+  const auto& couplingSet = GetParam();
 
   OwningOpRef m = ModuleOp::create(UnknownLoc::get(context.get()));
-
-  auto res = runPass(m.get(), device, MappingPassOptions{});
-
+  auto res = runPass(m.get(), couplingSet, MappingPassOptions{});
   ASSERT_TRUE(res.failed());
 }
 
 TEST_P(MappingPassTest, NoQubitAllocations) {
-  const auto& device = GetParam();
+  const auto& couplingSet = GetParam();
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -127,13 +129,13 @@ TEST_P(MappingPassTest, NoQubitAllocations) {
   builder.sink(q0);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, MappingPassOptions{});
+  auto res = runPass(m.get(), couplingSet, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
 
 TEST_P(MappingPassTest, NoTwoTensors) {
-  const auto& device = GetParam();
+  const auto& couplingSet = GetParam();
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -158,13 +160,13 @@ TEST_P(MappingPassTest, NoTwoTensors) {
   builder.qtensorDealloc(tensor1);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, MappingPassOptions{});
+  auto res = runPass(m.get(), couplingSet, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
 
 TEST_P(MappingPassTest, NoExtractAfterInsert) {
-  const auto& device = GetParam();
+  const auto& couplingSet = GetParam();
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -183,7 +185,7 @@ TEST_P(MappingPassTest, NoExtractAfterInsert) {
   builder.qtensorDealloc(tensor0);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device, MappingPassOptions{});
+  auto res = runPass(m.get(), couplingSet, MappingPassOptions{});
 
   ASSERT_TRUE(res.failed());
 }
@@ -246,6 +248,51 @@ TEST_P(MappingPassTest, GHZ) {
   auto m = builder.finalize();
   auto res = runPass(m.get(), couplingSet, MappingPassOptions{});
   auto entry = getEntryPoint(m.get());
+
+  ASSERT_TRUE(res.succeeded());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), couplingSet).succeeded());
+}
+
+TEST_P(MappingPassTest, GHZUnrolled) {
+  const auto& couplingSet = GetParam();
+
+  PassManager pm(context.get());
+  pm.addNestedPass<func::FuncOp>(createQuantumLoopUnroll());
+  pm.addPass(createCSEPass());
+  pm.addPass(createCanonicalizerPass());
+  // pm.addPass(createMappingPass(couplingSet, MappingPassOptions{}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value tensor = builder.qtensorAlloc(3);
+  Value q0;
+  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+  q0 = builder.h(q0);
+  tensor = builder.qtensorInsert(q0, tensor, 0);
+  tensor = builder.scfFor(
+      1, 3, 1, {tensor}, [&builder](Value iv, ValueRange iterArgs) {
+        Value loopTensor = iterArgs[0];
+        Value ctrl;
+        Value targ;
+
+        std::tie(loopTensor, ctrl) = builder.qtensorExtract(loopTensor, 0);
+        std::tie(loopTensor, targ) = builder.qtensorExtract(loopTensor, iv);
+
+        std::tie(ctrl, targ) = builder.cx(ctrl, targ);
+
+        loopTensor = builder.qtensorInsert(ctrl, loopTensor, 0);
+        loopTensor = builder.qtensorInsert(targ, loopTensor, iv);
+
+        return SmallVector{loopTensor};
+      })[0];
+  builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
+  auto res = pm.run(m.get());
+  auto entry = getEntryPoint(m.get());
+
+  m->dump();
 
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry.getFunctionBody(), couplingSet).succeeded());

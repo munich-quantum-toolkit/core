@@ -216,8 +216,8 @@ private:
   public:
     AugmentedDevice() = default;
 
-    explicit AugmentedDevice(const Graph& coupling)
-        : dist_(findAllShortestPaths(coupling)), coupling_(coupling) {}
+    explicit AugmentedDevice(const Graph::EdgeSet& couplingSet)
+        : coupling_(couplingSet), dist_(coupling_.getDistMatrix()) {}
 
     /**
      * @returns the device's number of qubits.
@@ -255,8 +255,8 @@ private:
     [[nodiscard]] size_t maxDegree() const { return coupling_.getMaxDegree(); }
 
   private:
-    Matrix<size_t> dist_;
     Graph coupling_;
+    Matrix<size_t> dist_;
   };
 
   struct [[nodiscard]] Trial {
@@ -359,9 +359,10 @@ private:
 public:
   MappingPass() = default;
   explicit MappingPass(MappingPassOptions options) : MappingPassBase(options) {}
-  explicit MappingPass(const EdgeSet& couplingSet,
+  /// @brief Construct Mapping Pass from coupling-set.
+  explicit MappingPass(const Graph::EdgeSet& couplingSet,
                        MappingPassOptions options = {})
-      : MappingPassBase(options), device(Graph(couplingSet)) {}
+      : MappingPassBase(options), device(couplingSet) {}
 
 protected:
   void runOnOperation() override {
@@ -946,7 +947,7 @@ private:
 
 } // namespace
 
-std::unique_ptr<Pass> createMappingPass(const EdgeSet& couplingSet,
+std::unique_ptr<Pass> createMappingPass(const Graph::EdgeSet& couplingSet,
                                         MappingPassOptions options) {
   return std::make_unique<MappingPass>(couplingSet, options);
 }

@@ -20,47 +20,38 @@
 namespace mlir::qco {
 template <class T> using Vector = SmallVector<T, 0>;
 template <class T> using Matrix = Vector<Vector<T>>;
-using EdgeSet = llvm::DenseSet<std::pair<size_t, size_t>>;
 
 class Graph {
 public:
+  using IdT = size_t;
+  using EdgeSet = llvm::DenseSet<std::pair<IdT, IdT>>;
+
   /// Construct an empty graph.
   Graph() = default;
   /// Construct graph from edge set.
   explicit Graph(const EdgeSet& edges);
   /// Add a node to the graph.
-  void addNode(size_t id);
+  void addNode(IdT id);
   /// Add an edge to the graph.
-  void addEdge(size_t id, size_t neighbourId);
+  void addEdge(IdT id, IdT neighbourId);
   /// Add an edge to the graph.
-  void addEdge(std::pair<size_t, size_t> edge);
+  void addEdge(std::pair<IdT, IdT> edge);
   /// Add multiple edges to the graph.
-  void addEdges(SmallVector<std::pair<size_t, size_t>> edges);
+  void addEdges(SmallVector<std::pair<IdT, IdT>> edges);
   /// Return a set of edges.
   [[nodiscard]] EdgeSet getEdges() const;
   /// Return the edges of a node.
-  [[nodiscard]] ArrayRef<size_t> getEdges(size_t id) const;
+  [[nodiscard]] ArrayRef<IdT> getEdges(size_t id) const;
   /// Return the number of nodes.
   [[nodiscard]] size_t getNumNodes() const { return nodes_.size(); }
-  /// Returns the max degree of the graph.
+  /// Return the max degree of the graph.
   [[nodiscard]] size_t getMaxDegree() const;
+  /// Return the minimum distance matrix of the graph by implementing the 
+  /// Floyd-Warshall Algorithm (https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm)
+  /// where dist[i][j] denotes the distance between i and j.
+  [[nodiscard]] Matrix<size_t> getDistMatrix() const;
 
 private:
-  llvm::DenseMap<size_t, Vector<size_t>> nodes_;
+  llvm::DenseMap<IdT, Vector<IdT>> nodes_;
 };
-
-/**
- * @brief Find all shortest paths between two nodes in a graph.
- * @details Has a time complexity of O(n^3).
- *
- * @link Adapted from https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
- *
- * @param n The number of nodes in the graph.
- * @param edges The set of edges (i, j).
- *
- * @returns The distance matrix dist, where dist[i, j] is defined as the
- * distance between node i and j.
- */
-Matrix<size_t> findAllShortestPaths(const Graph& graph);
-
 } // namespace mlir::qco
