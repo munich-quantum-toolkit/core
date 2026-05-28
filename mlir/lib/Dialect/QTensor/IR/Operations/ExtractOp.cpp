@@ -58,7 +58,7 @@ struct RemoveExtractInsertPairPattern final : OpRewritePattern<ExtractOp> {
         continue;
       }
 
-      // Check: The inserted qubit value is the extracted one. If so, it the
+      // Check: The inserted qubit value is the extracted one. If so, the
       // qubit has not been used and both operations can be safely removed.
 
       if (extract.getResult() == insert.getScalar()) {
