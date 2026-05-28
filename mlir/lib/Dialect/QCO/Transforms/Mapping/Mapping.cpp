@@ -454,8 +454,17 @@ private:
   /**
    * @brief Collect wires of the quantum computation before placement.
    * @details
-   * The mapping pass currently assumes that the quantum computations consists
-   * The required qubits of each tensor are extracted and inserted "in one go".
+   * The mapping pass currently assumes that the quantum computation allocates
+   * all tensors at the start of the function. The required qubits are extracted
+   * from these tensors and used for the computation. Finally, the qubits are
+   * inserted back into the tensors at the end of the function.
+   * Thus, a valid program has the following structure:
+   *
+   *    T ⨉ [qtensor::AllocOp]
+   *  → N ⨉ [qtensor::ExtractOp]
+   *  → (Computation)
+   *  → N ⨉ [qtensor::InsertOp]
+   *  → T ⨉ [qtensor::DeallocOp]
    *
    * @returns a vector of wire iterator, or failure() if any of the above
    * assumptions are violated.
