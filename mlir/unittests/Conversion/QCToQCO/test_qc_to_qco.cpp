@@ -536,7 +536,11 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::multipleControlledX)},
         QCToQCOTestCase{"RepeatedControlledX",
                         MQT_NAMED_BUILDER(qc::repeatedControlledX),
-                        MQT_NAMED_BUILDER(qco::repeatedControlledX)}));
+                        MQT_NAMED_BUILDER(qco::repeatedControlledX)},
+        QCToQCOTestCase{
+            "RepeatedControlledXWithRegister",
+            MQT_NAMED_BUILDER(qc::repeatedControlledXWithRegister),
+            MQT_NAMED_BUILDER(qco::repeatedControlledXWithRegister)}));
 
 /// @}
 
