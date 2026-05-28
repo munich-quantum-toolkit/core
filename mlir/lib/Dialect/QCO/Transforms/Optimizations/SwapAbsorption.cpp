@@ -13,11 +13,9 @@
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
-#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
@@ -43,30 +41,44 @@ protected:
 
       SmallVector<SWAPOp> readyToAbsorb;
       readyToAbsorb.reserve((wires.size() + 1) / 2);
+      findSwapsReadyForAbsorption(wires, readyToAbsorb);
 
-      std::ignore = walkProgramGraph<WireDirection::Forward>(
-          wires, [&](const ReadyRange& ready, ReleasedOps& released) {
-            for (const auto& [op, indices] : ready) {
-              if (isa<SWAPOp>(op)) {
-                readyToAbsorb.emplace_back(op);
-              }
-              released.emplace_back(op);
-            }
-            return WalkResult::interrupt();
-          });
-
-      for (auto swapOp : readyToAbsorb) {
-        auto in0 = swapOp.getQubit0In();
-        auto in1 = swapOp.getQubit1In();
-
-        auto out0 = swapOp.getQubit0Out();
-        auto out1 = swapOp.getQubit1Out();
-
-        rewriter.replaceAllUsesWith(out0, in1);
-        rewriter.replaceAllUsesWith(out1, in0);
-        rewriter.eraseOp(swapOp);
+      do {
+        for (auto swapOp : readyToAbsorb) {
+          absorbSingleSwap(swapOp, rewriter);
+        }
+        readyToAbsorb.clear();
+        findSwapsReadyForAbsorption(wires, readyToAbsorb);
       }
+      while(!readyToAbsorb.empty());
     }
+  }
+
+private:
+  void findSwapsReadyForAbsorption(SmallVector<WireIterator> wires, SmallVector<SWAPOp> &readyToAbsorb)
+  {
+    std::ignore = walkProgramGraph<WireDirection::Forward>(
+        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
+          for (const auto& [op, indices] : ready) {
+            if (isa<SWAPOp>(op)) {
+              readyToAbsorb.emplace_back(op);
+            }
+            released.emplace_back(op);
+          }
+          return WalkResult::interrupt();
+        });
+  }
+
+  void absorbSingleSwap(SWAPOp swapOp, IRRewriter &rewriter) {
+    auto in0 = swapOp.getQubit0In();
+    auto in1 = swapOp.getQubit1In();
+
+    auto out0 = swapOp.getQubit0Out();
+    auto out1 = swapOp.getQubit1Out();
+
+    rewriter.replaceAllUsesWith(out0, in1);
+    rewriter.replaceAllUsesWith(out1, in0);
+    rewriter.eraseOp(swapOp);
   }
 };
 } // namespace

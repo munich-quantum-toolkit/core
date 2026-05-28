@@ -160,3 +160,31 @@ TEST_F(SwapAbsorbPassTest, PassAbsorbsSwapWithLeadingSingleQubitGates) {
   ASSERT_EQ(q11, ((IdOp)q03.getDefiningOp()).getInputQubit(0));
   ASSERT_EQ(q01, ((IdOp)q13.getDefiningOp()).getInputQubit(0));
 }
+
+TEST_F(SwapAbsorbPassTest, PassAbsorbsTwoDependentSwaps) {
+
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto q00 = builder.staticQubit(0);
+  const auto q10 = builder.staticQubit(1);
+  const auto q20 = builder.staticQubit(2);
+
+  const auto [q01, q11] = builder.swap(q00, q10);
+  const auto [q12, q21] = builder.swap(q11, q20);
+
+  const auto q02 = builder.id(q01);
+  const auto q13 = builder.id(q12);
+  const auto q22 = builder.id(q21);
+
+  builder.sink(q02);
+  builder.sink(q13);
+  builder.sink(q22);
+
+  auto moduleThroughPass = builder.finalize();
+  applySwapAbsorb(moduleThroughPass);
+
+  ASSERT_EQ(q20, ((IdOp)q13.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q00, ((IdOp)q22.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q10, ((IdOp)q02.getDefiningOp()).getInputQubit(0));
+}
