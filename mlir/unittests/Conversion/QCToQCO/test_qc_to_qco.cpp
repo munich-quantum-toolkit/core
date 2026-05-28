@@ -525,15 +525,19 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCXOpTest, QCToQCOTest,
-    testing::Values(QCToQCOTestCase{"X", MQT_NAMED_BUILDER(qc::x),
-                                    MQT_NAMED_BUILDER(qco::x)},
-                    QCToQCOTestCase{"SingleControlledX",
-                                    MQT_NAMED_BUILDER(qc::singleControlledX),
-                                    MQT_NAMED_BUILDER(qco::singleControlledX)},
-                    QCToQCOTestCase{
-                        "MultipleControlledX",
+    testing::Values(
+        QCToQCOTestCase{"X", MQT_NAMED_BUILDER(qc::x),
+                        MQT_NAMED_BUILDER(qco::x)},
+        QCToQCOTestCase{"SingleControlledX",
+                        MQT_NAMED_BUILDER(qc::singleControlledX),
+                        MQT_NAMED_BUILDER(qco::singleControlledX)},
+        QCToQCOTestCase{"MultipleControlledX",
                         MQT_NAMED_BUILDER(qc::multipleControlledX),
-                        MQT_NAMED_BUILDER(qco::multipleControlledX)}));
+                        MQT_NAMED_BUILDER(qco::multipleControlledX)},
+        QCToQCOTestCase{"RepeatedControlledX",
+                        MQT_NAMED_BUILDER(qc::repeatedControlledX),
+                        MQT_NAMED_BUILDER(qco::repeatedControlledX)}));
+
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/XxMinusYyOp.cpp
