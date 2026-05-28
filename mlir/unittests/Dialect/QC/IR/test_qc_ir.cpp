@@ -136,23 +136,25 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCPowOpTest, QCTest,
-    testing::Values(
-        QCTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
-                   MQT_NAMED_BUILDER(rx)},
-        QCTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
-                   MQT_NAMED_BUILDER(emptyQC)},
-        QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
-                   MQT_NAMED_BUILDER(powSingleExponent)},
-        QCTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
-                   MQT_NAMED_BUILDER(powRxx)},
-        QCTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
-                   MQT_NAMED_BUILDER(powRxNeg)},
-        QCTestCase{"NegPowH", MQT_NAMED_BUILDER(negPowH),
-                   MQT_NAMED_BUILDER(negPowH)},
-        QCTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
-                   MQT_NAMED_BUILDER(powRxNeg)},
-        QCTestCase{"PowCtrlRx", MQT_NAMED_BUILDER(powCtrlRx),
-                   MQT_NAMED_BUILDER(ctrlPowRx)}));
+    testing::Values(QCTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
+                               MQT_NAMED_BUILDER(rx)},
+                    QCTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
+                               MQT_NAMED_BUILDER(emptyQC)},
+                    QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
+                               MQT_NAMED_BUILDER(powSingleExponent)},
+                    QCTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
+                               MQT_NAMED_BUILDER(powRxx)},
+                    QCTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
+                               MQT_NAMED_BUILDER(powRxNeg)},
+                    QCTestCase{"NegPowH", MQT_NAMED_BUILDER(negPowH),
+                               MQT_NAMED_BUILDER(negPowH)},
+                    QCTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
+                               MQT_NAMED_BUILDER(powRxNeg)},
+                    QCTestCase{"PowCtrlRx", MQT_NAMED_BUILDER(powCtrlRx),
+                               MQT_NAMED_BUILDER(ctrlPowRx)},
+                    QCTestCase{"NegPowInvIswap",
+                               MQT_NAMED_BUILDER(negPowInvIswap),
+                               MQT_NAMED_BUILDER(negPowInvIswapRef)}));
 /// @}
 
 /// \name QC/Modifiers/InvOp.cpp

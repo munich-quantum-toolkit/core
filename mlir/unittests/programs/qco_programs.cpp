@@ -2526,6 +2526,21 @@ void ctrlPowRx(QCOProgramBuilder& b) {
   });
 }
 
+void negPowInvIswap(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow({q[0], q[1]}, -2.0, [&](mlir::ValueRange qubits) {
+    return b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange invArgs) {
+      auto [q0, q1] = b.iswap(invArgs[0], invArgs[1]);
+      return llvm::SmallVector<mlir::Value>{q0, q1};
+    });
+  });
+}
+
+void negPowInvIswapRef(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_plus_yy(-2.0 * std::numbers::pi, 0.0, q[0], q[1]);
+}
+
 void ctrlPowSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {

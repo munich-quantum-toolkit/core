@@ -1195,6 +1195,14 @@ void powCtrlRx(QCOProgramBuilder& b);
 /// powCtrlRx).
 void ctrlPowRx(QCOProgramBuilder& b);
 
+/// Creates a circuit with pow(-2) wrapping inv wrapping iSWAP.
+/// Exercises NegPowToInvPow: inv{iswap} survives InvOp canonicalization,
+/// FoldPowIntoGate fails (inner is InvOp), so NegPowToInvPow fires.
+void negPowInvIswap(QCOProgramBuilder& b);
+
+/// Reference for negPowInvIswap: xx_plus_yy(-2π, 0) (the fully folded form).
+void negPowInvIswapRef(QCOProgramBuilder& b);
+
 /// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX. The fold
 /// pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two ops),
 /// so the pow survives canonicalization and reaches ConvertQCOPowOp.

@@ -1613,6 +1613,16 @@ void ctrlPowRx(QCProgramBuilder& b) {
   b.ctrl(q[0], [&] { b.pow(2.0, [&] { b.rx(0.123, q[1]); }); });
 }
 
+void negPowInvIswap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(-2.0, [&] { b.inv([&] { b.iswap(q[0], q[1]); }); });
+}
+
+void negPowInvIswapRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_plus_yy(-2.0 * std::numbers::pi, 0.0, q[0], q[1]);
+}
+
 void ctrlPowSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], [&] { b.pow(1.0 / 3.0, [&] { b.sx(q[1]); }); });

@@ -208,23 +208,25 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOPowOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
-                    MQT_NAMED_BUILDER(rx)},
-        QCOTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
-                    MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
-                    MQT_NAMED_BUILDER(powSingleExponent)},
-        QCOTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
-                    MQT_NAMED_BUILDER(powRxx)},
-        QCOTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
-                    MQT_NAMED_BUILDER(powRxNeg)},
-        QCOTestCase{"NegPowH", MQT_NAMED_BUILDER(negPowH),
-                    MQT_NAMED_BUILDER(negPowH)},
-        QCOTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
-                    MQT_NAMED_BUILDER(powRxNeg)},
-        QCOTestCase{"PowCtrlRx", MQT_NAMED_BUILDER(powCtrlRx),
-                    MQT_NAMED_BUILDER(ctrlPowRx)}));
+    testing::Values(QCOTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
+                                MQT_NAMED_BUILDER(rx)},
+                    QCOTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
+                                MQT_NAMED_BUILDER(emptyQCO)},
+                    QCOTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
+                                MQT_NAMED_BUILDER(powSingleExponent)},
+                    QCOTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
+                                MQT_NAMED_BUILDER(powRxx)},
+                    QCOTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
+                                MQT_NAMED_BUILDER(powRxNeg)},
+                    QCOTestCase{"NegPowH", MQT_NAMED_BUILDER(negPowH),
+                                MQT_NAMED_BUILDER(negPowH)},
+                    QCOTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
+                                MQT_NAMED_BUILDER(powRxNeg)},
+                    QCOTestCase{"PowCtrlRx", MQT_NAMED_BUILDER(powCtrlRx),
+                                MQT_NAMED_BUILDER(ctrlPowRx)},
+                    QCOTestCase{"NegPowInvIswap",
+                                MQT_NAMED_BUILDER(negPowInvIswap),
+                                MQT_NAMED_BUILDER(negPowInvIswapRef)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/BarrierOp.cpp

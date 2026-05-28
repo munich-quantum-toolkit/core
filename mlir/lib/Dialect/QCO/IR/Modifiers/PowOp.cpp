@@ -210,8 +210,8 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
 
     rewriter.moveOpBefore(innerPow, op);
     rewriter.modifyOpInPlace(innerPow, [&]() {
-      innerPow->setOperands(op.getInputQubits());
       innerPow.getExponentMutable().assign(mergedConst.getResult());
+      innerPow.getQubitsInMutable().assign(op.getInputQubits());
     });
     rewriter.replaceOp(op, innerPow->getResults());
     return success();
@@ -596,8 +596,9 @@ Value PowOp::getOutputForInput(Value input) {
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   ValueRange qubits, double exponent) {
-  auto expConst = arith::ConstantFloatOp::create(
-      odsBuilder, odsState.location, odsBuilder.getF64Type(), APFloat(exponent));
+  auto expConst = arith::ConstantFloatOp::create(odsBuilder, odsState.location,
+                                                 odsBuilder.getF64Type(),
+                                                 APFloat(exponent));
   build(odsBuilder, odsState, qubits.getTypes(), expConst.getResult(), qubits);
 }
 
@@ -682,8 +683,8 @@ LogicalResult PowOp::verify() {
 
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, NegPowToInvPow,
-              MergeNestedPow, MoveCtrlOutside>(context);
+  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
+              MoveCtrlOutside, NegPowToInvPow>(context);
 }
 
 std::optional<Eigen::MatrixXcd> PowOp::getUnitaryMatrix() {

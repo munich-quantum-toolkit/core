@@ -536,6 +536,6 @@ LogicalResult PowOp::verify() {
 
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, NegPowToInvPow,
-              MergeNestedPow, MoveCtrlOutside>(context);
+  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
+              MoveCtrlOutside, NegPowToInvPow>(context);
 }
