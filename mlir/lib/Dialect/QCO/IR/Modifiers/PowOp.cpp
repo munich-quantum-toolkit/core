@@ -21,8 +21,8 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -117,36 +117,6 @@ static Value scaleByExponent(auto param, PowOp op, PatternRewriter& rewriter) {
   return arith::MulFOp::create(rewriter, op.getLoc(), op.getExponent(), param);
 }
 
-template <typename GateOp>
-static LogicalResult replaceOneTargetOneParam(auto theta, PowOp op,
-                                              PatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<GateOp>(op, op.getInputTarget(0), theta);
-  return success();
-}
-
-template <typename GateOp>
-static LogicalResult replaceTwoTargetsOneParam(auto theta, PowOp op,
-                                               PatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<GateOp>(op, op.getInputTarget(0),
-                                      op.getInputTarget(1), theta);
-  return success();
-}
-
-template <typename GateOp>
-static LogicalResult replaceOneTargetTwoParams(auto theta, auto phi, PowOp op,
-                                               PatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<GateOp>(op, op.getInputTarget(0), theta, phi);
-  return success();
-}
-
-template <typename GateOp>
-static LogicalResult replaceTwoTargetsTwoParams(auto theta, auto beta, PowOp op,
-                                                PatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<GateOp>(op, op.getInputTarget(0),
-                                      op.getInputTarget(1), theta, beta);
-  return success();
-}
-
 namespace {
 
 /// pow(1.0) { g }  =>  inline g
@@ -235,10 +205,10 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     }
 
     const double merged = op.getExponentValue() * innerPow.getExponentValue();
+    auto mergedConst = arith::ConstantFloatOp::create(
+        rewriter, op.getLoc(), rewriter.getF64Type(), APFloat(merged));
 
     rewriter.moveOpBefore(innerPow, op);
-    auto mergedConst = arith::ConstantOp::create(
-        rewriter, op.getLoc(), rewriter.getF64FloatAttr(merged));
     rewriter.modifyOpInPlace(innerPow, [&]() {
       innerPow->setOperands(op.getInputQubits());
       innerPow.getExponentMutable().assign(mergedConst.getResult());
@@ -352,26 +322,31 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { rx/ry/rz/p(θ) } => rx/ry/rz/p(r*θ)
             .Case<RXOp, RYOp, RZOp, POp>([&](auto gate) {
               auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
-              return replaceOneTargetOneParam<decltype(gate)>(newParam, op,
-                                                              rewriter);
+              rewriter.replaceOpWithNewOp<decltype(gate)>(
+                  op, op.getInputTarget(0), newParam);
+              return success();
             })
             // pow(r) { rxx/ryy/rzx/rzz(θ) } => rxx/ryy/rzx/rzz(r*θ)
             .Case<RXXOp, RYYOp, RZXOp, RZZOp>([&](auto gate) {
               auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
-              return replaceTwoTargetsOneParam<decltype(gate)>(newParam, op,
-                                                               rewriter);
+              rewriter.replaceOpWithNewOp<decltype(gate)>(
+                  op, op.getInputTarget(0), op.getInputTarget(1), newParam);
+              return success();
             })
             // pow(r) { r(θ, φ) } => r(r*θ, φ)
             .Case<ROp>([&](auto gate) {
               auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
-              return replaceOneTargetTwoParams<ROp>(mul, gate.getPhi(), op,
-                                                    rewriter);
+              rewriter.replaceOpWithNewOp<ROp>(op, op.getInputTarget(0), mul,
+                                               gate.getPhi());
+              return success();
             })
             // pow(r) { xx±yy(θ, β) } => xx±yy(r*θ, β)
             .Case<XXPlusYYOp, XXMinusYYOp>([&](auto gate) {
               auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
-              return replaceTwoTargetsTwoParams<decltype(gate)>(
-                  mul, gate.getBeta(), op, rewriter);
+              rewriter.replaceOpWithNewOp<decltype(gate)>(
+                  op, op.getInputTarget(0), op.getInputTarget(1), mul,
+                  gate.getBeta());
+              return success();
             })
             // --- Pauli gates: decompose to rotation + global phase ---
             // pow(r) { x } => gphase(-r*π/2); rx(r*π)

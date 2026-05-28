@@ -110,35 +110,6 @@ static Value scaleByExponent(Value param, PowOp op, PatternRewriter& rewriter) {
   return arith::MulFOp::create(rewriter, op.getLoc(), op.getExponent(), param);
 }
 
-template <typename GateOp>
-static LogicalResult replaceOneTargetOneParam(auto theta, PowOp op,
-                                              PatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<GateOp>(op, op.getTarget(0), theta);
-  return success();
-}
-
-template <typename GateOp>
-static LogicalResult replaceTwoTargetsOneParam(auto theta, PowOp op,
-                                               PatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<GateOp>(op, op.getTarget(0), op.getTarget(1),
-                                      theta);
-  return success();
-}
-
-template <typename GateOp>
-static LogicalResult replaceOneTargetTwoParams(auto theta, auto phi, PowOp op,
-                                               PatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<GateOp>(op, op.getTarget(0), theta, phi);
-  return success();
-}
-
-template <typename GateOp>
-static LogicalResult replaceTwoTargetsTwoParams(auto theta, auto beta, PowOp op,
-                                                PatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<GateOp>(op, op.getTarget(0), op.getTarget(1),
-                                      theta, beta);
-  return success();
-}
 
 namespace {
 
@@ -291,26 +262,32 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         // pow(r) { rx/ry/rz/p(θ) } => rx/ry/rz/p(r*θ)
         .Case<RXOp, RYOp, RZOp, POp>([&](auto gate) {
           auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
-          return replaceOneTargetOneParam<decltype(gate)>(newParam, op,
-                                                          rewriter);
+          rewriter.replaceOpWithNewOp<decltype(gate)>(op, op.getTarget(0),
+                                                       newParam);
+          return success();
         })
         // pow(r) { rxx/ryy/rzx/rzz(θ) } => rxx/ryy/rzx/rzz(r*θ)
         .Case<RXXOp, RYYOp, RZXOp, RZZOp>([&](auto gate) {
           auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
-          return replaceTwoTargetsOneParam<decltype(gate)>(newParam, op,
-                                                           rewriter);
+          rewriter.replaceOpWithNewOp<decltype(gate)>(op, op.getTarget(0),
+                                                       op.getTarget(1),
+                                                       newParam);
+          return success();
         })
         // pow(r) { r(θ, φ) } => r(r*θ, φ)
         .Case<ROp>([&](auto gate) {
           auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
-          return replaceOneTargetTwoParams<ROp>(mul, gate.getPhi(), op,
-                                                rewriter);
+          rewriter.replaceOpWithNewOp<ROp>(op, op.getTarget(0), mul,
+                                            gate.getPhi());
+          return success();
         })
         // pow(r) { xx±yy(θ, β) } => xx±yy(r*θ, β)
         .Case<XXPlusYYOp, XXMinusYYOp>([&](auto gate) {
           auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
-          return replaceTwoTargetsTwoParams<decltype(gate)>(mul, gate.getBeta(),
-                                                            op, rewriter);
+          rewriter.replaceOpWithNewOp<decltype(gate)>(op, op.getTarget(0),
+                                                       op.getTarget(1), mul,
+                                                       gate.getBeta());
+          return success();
         })
         // --- Pauli gates: decompose to rotation + global phase ---
         // pow(r) { z } => named gate if angle matches, else p(r*π)
