@@ -9,27 +9,27 @@
 include "mlir/Pass/PassBase.td"
 
 def JeffToQCO : Pass<"jeff-to-qco"> {
-  let summary = "Convert Jeff operations to QCO operations";
+  let summary = "Convert `jeff` operations to QCO operations";
 
   let description = [{
-    This pass converts all operations from the Jeff dialect to their equivalent operations in the QCO dialect.
+    This pass converts all operations from the `jeff` dialect to their equivalent operations in the QCO dialect.
     It ensures that the returned module is a valid QCO module.
 
-    Note that this pass is still in development as QCO and Jeff do not have full feature parity yet.
+    Note that this pass is still in development as QCO and `jeff` do not have full feature parity yet.
 
     Known limitations:
 
     - Gates with a non-trivial power are currently not supported
     - Only specific `CustomOp`s are currently supported
     - Only specific `PPROp`s are currently supported
-    - `Qureg_Op`s are currently not supported
-    - `SCF_Op`s are currently not supported
+    - `WhileOp` and `DoWhileOp` are currently not supported
     - Support for multiple functions is currently limited
   }];
 
   let dependentDialects = ["mlir::arith::ArithDialect",
-                           "mlir::math::MathDialect",
+                           "mlir::math::MathDialect", "mlir::scf::SCFDialect",
                            "mlir::tensor::TensorDialect",
                            "mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
   ];
 }

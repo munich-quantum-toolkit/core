@@ -297,6 +297,15 @@ void trivialControlledX(QCOProgramBuilder& b) {
   b.mcx({}, q[0]);
 }
 
+void repeatedControlledX(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto control = b.h(q0);
+  for (auto i = 0; i < 50; i++) {
+    auto qubit = b.allocQubit();
+    control = b.cx(control, qubit).first;
+  }
+}
+
 void inverseX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv({q[0]}, [&](ValueRange qubits) { return SmallVector{b.x(qubits[0])}; });
@@ -2558,8 +2567,8 @@ void simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  b.qcoIf(measureResult, measuredQubit, [&](ValueRange qubits) {
-    auto innerQubit = b.x(qubits[0]);
+  b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+    auto innerQubit = b.x(args[0]);
     return SmallVector{innerQubit};
   });
 }
@@ -2568,9 +2577,9 @@ void ifTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  b.qcoIf(measureResult, {measuredQubit, q[1]}, [&](ValueRange qubits) {
-    auto innerQubit0 = b.x(qubits[0]);
-    auto innerQubit1 = b.x(qubits[1]);
+  b.qcoIf(measureResult, {measuredQubit, q[1]}, [&](ValueRange args) {
+    auto innerQubit0 = b.x(args[0]);
+    auto innerQubit1 = b.x(args[1]);
     return SmallVector{innerQubit0, innerQubit1};
   });
 }
@@ -2581,26 +2590,40 @@ void ifElse(QCOProgramBuilder& b) {
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
       measureResult, {measuredQubit},
-      [&](ValueRange qubits) {
-        auto innerQubit = b.x(qubits[0]);
+      [&](ValueRange args) {
+        auto innerQubit = b.x(args[0]);
         return SmallVector{innerQubit};
       },
-      [&](ValueRange qubits) {
-        auto innerQubit = b.z(qubits[0]);
+      [&](ValueRange args) {
+        auto innerQubit = b.z(args[0]);
         return SmallVector{innerQubit};
       });
+}
+
+void ifOneQubitOneTensor(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto t0 = b.allocQubitRegister(1);
+  auto q1 = b.h(q0);
+  auto [measuredQubit, measureResult] = b.measure(q1);
+  b.qcoIf(measureResult, {measuredQubit, t0.value}, [&](ValueRange args) {
+    auto innerQubit0 = b.x(args[0]);
+    auto [t1, innerQubit1] = b.qtensorExtract(args[1], 0);
+    auto innerQubit2 = b.x(innerQubit1);
+    auto t2 = b.qtensorInsert(innerQubit2, t1, 0);
+    return SmallVector{innerQubit0, t2};
+  });
 }
 
 void constantTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
       true, q.qubits,
-      [&](ValueRange qubits) {
-        auto innerQubit = b.x(qubits[0]);
+      [&](ValueRange args) {
+        auto innerQubit = b.x(args[0]);
         return SmallVector{innerQubit};
       },
-      [&](ValueRange qubits) {
-        auto innerQubit = b.z(qubits[0]);
+      [&](ValueRange args) {
+        auto innerQubit = b.z(args[0]);
         return SmallVector{innerQubit};
       });
 }
@@ -2609,12 +2632,12 @@ void constantFalseIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.qcoIf(
       false, q.qubits,
-      [&](ValueRange qubits) {
-        auto innerQubit = b.x(qubits[0]);
+      [&](ValueRange args) {
+        auto innerQubit = b.x(args[0]);
         return SmallVector{innerQubit};
       },
-      [&](ValueRange qubits) {
-        auto innerQubit = b.z(qubits[0]);
+      [&](ValueRange args) {
+        auto innerQubit = b.z(args[0]);
         return SmallVector{innerQubit};
       });
 }
@@ -2623,10 +2646,10 @@ void nestedTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  b.qcoIf(measureResult, measuredQubit, [&](ValueRange outerQubits) {
+  b.qcoIf(measureResult, measuredQubit, [&](ValueRange outerArgs) {
     auto innerResult =
-        b.qcoIf(measureResult, outerQubits, [&](ValueRange innerQubits) {
-          auto innerQubit = b.x(innerQubits[0]);
+        b.qcoIf(measureResult, outerArgs, [&](ValueRange innerArgs) {
+          auto innerQubit = b.x(innerArgs[0]);
           return SmallVector{innerQubit};
         });
     return llvm::to_vector(innerResult);
@@ -2639,18 +2662,16 @@ void nestedFalseIf(QCOProgramBuilder& b) {
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
       measureResult, measuredQubit,
-      [&](ValueRange qubits) {
-        auto innerQubit = b.x(qubits[0]);
+      [&](ValueRange args) {
+        auto innerQubit = b.x(args[0]);
         return SmallVector{innerQubit};
       },
-      [&](ValueRange outerQubits) {
+      [&](ValueRange outerArgs) {
         auto innerResult = b.qcoIf(
-            measureResult, outerQubits,
-            [&](ValueRange innerQubits) {
-              return llvm::to_vector(innerQubits);
-            },
-            [&](ValueRange innerQubits) {
-              auto innerQubit = b.z(innerQubits[0]);
+            measureResult, outerArgs,
+            [&](ValueRange innerArgs) { return llvm::to_vector(innerArgs); },
+            [&](ValueRange innerArgs) {
+              auto innerQubit = b.z(innerArgs[0]);
               return SmallVector{innerQubit};
             });
         return llvm::to_vector(innerResult);
@@ -2711,6 +2732,142 @@ void qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
   auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 0);
   b.qtensorInsert(q2, extractOutTensor1, 0);
+}
+
+void simpleWhileReset(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto q1 = b.h(q0);
+  b.scfWhile(
+      ValueRange{q1},
+      [&](ValueRange iterArgs) {
+        auto [q2, measureResult] = b.measure(iterArgs[0]);
+        b.scfCondition(measureResult, q2);
+        return SmallVector{q2};
+      },
+      [&](ValueRange iterArgs) {
+        auto q3 = b.h(iterArgs[0]);
+        return SmallVector{q3};
+      });
+}
+
+void simpleDoWhileReset(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  b.scfWhile(
+      ValueRange{q0},
+      [&](ValueRange iterArgs) {
+        auto q1 = b.h(iterArgs[0]);
+        auto [q2, measureResult] = b.measure(q1);
+        b.scfCondition(measureResult, q2);
+        return SmallVector{q2};
+      },
+      [&](ValueRange iterArgs) { return llvm::to_vector(iterArgs); });
+}
+
+void simpleForLoop(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.h(q0);
+    auto insert = b.qtensorInsert(q1, t0, iv);
+    return SmallVector{insert};
+  });
+};
+
+void nestedForLoopIfOp(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto q0 = b.allocQubit();
+  b.scfFor(0, 2, 1, {reg.value, q0}, [&](Value iv, ValueRange iterArgs) {
+    auto q1 = b.h(iterArgs[1]);
+    auto [q2, cond] = b.measure(q1);
+    auto ifOp = b.qcoIf(cond, iterArgs[0], [&](ValueRange args) {
+      auto [t0, q3] = b.qtensorExtract(args[0], iv);
+      auto q4 = b.h(q3);
+      auto insert = b.qtensorInsert(q4, t0, iv);
+      return SmallVector{insert};
+    });
+    return SmallVector{ifOp[0], q2};
+  });
+}
+
+void nestedForLoopWhileOp(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto loopResult =
+      b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+        auto q1 = b.h(q0);
+        auto insert = b.qtensorInsert(q1, t0, iv);
+        return SmallVector{insert};
+      });
+  b.scfFor(0, 2, 1, loopResult, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto whileResult = b.scfWhile(
+        q0,
+        [&](ValueRange iterArgs) {
+          auto [q1, measureResult] = b.measure(iterArgs[0]);
+          b.scfCondition(measureResult, q1);
+          return SmallVector{q1};
+        },
+        [&](ValueRange iterArgs) {
+          auto q2 = b.h(iterArgs[0]);
+          return SmallVector{q2};
+        });
+    auto insert = b.qtensorInsert(whileResult[0], t0, iv);
+    return SmallVector{insert};
+  });
+}
+
+void nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto control0 = b.allocQubit();
+  auto control1 = b.h(control0);
+  b.scfFor(0, 3, 1, {reg.value, control1}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.h(q0);
+    auto [controls, targets] = b.ctrl(iterArgs[1], q1, [&](ValueRange args) {
+      auto q2 = b.x(args[0]);
+      return SmallVector{q2};
+    });
+    auto insert = b.qtensorInsert(targets[0], t0, iv);
+    return SmallVector{insert, controls[0]};
+  });
+}
+
+void nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(4);
+  auto control = b.h(reg[0]);
+  b.scfFor(1, 4, 1, {reg.value, control}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.h(q0);
+    auto [controls, targets] = b.ctrl(iterArgs[1], q1, [&](ValueRange args) {
+      auto q2 = b.x(args[0]);
+      return SmallVector{q2};
+    });
+    auto insert = b.qtensorInsert(targets[0], t0, iv);
+    return SmallVector{insert, controls[0]};
+  });
+}
+
+void nestedIfOpForLoop(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  auto q1 = b.h(q0);
+  auto [q2, cond] = b.measure(q1);
+  b.qcoIf(
+      cond, {reg.value, q2},
+      [&](ValueRange args) {
+        auto q3 = b.h(args[1]);
+        return SmallVector{args[0], q3};
+      },
+      [&](ValueRange args) {
+        auto scfFor =
+            b.scfFor(0, 3, 1, args[0], [&](Value iv, ValueRange iterArgs) {
+              auto [t0, q4] = b.qtensorExtract(iterArgs[0], iv);
+              auto q5 = b.h(q4);
+              auto insert = b.qtensorInsert(q5, t0, iv);
+              return SmallVector{insert};
+            });
+        return SmallVector{scfFor[0], args[1]};
+      });
 }
 
 } // namespace mlir::qco

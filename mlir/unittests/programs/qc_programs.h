@@ -186,6 +186,9 @@ void nestedControlledX(QCProgramBuilder& b);
 /// Creates a circuit with a trivial controlled X gate.
 void trivialControlledX(QCProgramBuilder& b);
 
+/// Creates a circuit with repeated controlled X gates.
+void repeatedControlledX(QCProgramBuilder& b);
+
 /// Creates a circuit with an inverse modifier applied to an X gate.
 void inverseX(QCProgramBuilder& b);
 
@@ -1061,5 +1064,50 @@ void negPowInvIswapRef(QCProgramBuilder& b);
 /// pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two ops),
 /// so the pow survives canonicalization and reaches ConvertQCPowOp.
 void ctrlPowSx(QCProgramBuilder& b);
+
+// --- IfOp ----------------------------------------------------------------- //
+
+/// Creates a circuit with a simple if operation with one qubit.
+void simpleIf(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with an else branch.
+void ifElse(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with two qubits.
+void ifTwoQubits(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+void nestedIfOpForLoop(QCProgramBuilder& b);
+
+// --- WhileOp -------------------------------------------------------------- //
+
+/// Creates a circuit with a while operation using a while loop.
+void simpleWhileReset(QCProgramBuilder& b);
+
+/// Creates a circuit with a while operation using a do-while loop.
+void simpleDoWhileReset(QCProgramBuilder& b);
+
+// --- ForOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with a simple for operation with a register.
+void simpleForLoop(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested if operation.
+void nestedForLoopIfOp(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a nested while
+/// operation.
+void nestedForLoopWhileOp(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is separately allocated from the
+/// register.
+void nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is extracted from the register.
+void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
 
 } // namespace mlir::qc

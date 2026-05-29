@@ -1044,20 +1044,20 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
 def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
   let summary = "Yield from a modifier region";
   let description = [{
-        Terminates a modifier region, yielding the transformed target qubits back to the enclosing modifier operation.
+        Terminates a modifier region, yielding the transformed target qubit and qtensor values back to the enclosing modifier operation.
         The targets must match the expected output signature of the modifier region.
 
         Example:
         ```mlir
         %res_ctrl, %res_tgt:2 = qco.ctrl(%ctrl) targets(%a0 = %q0, %a1 = %q1) {
             %a0_1, %a1_1 = qco.swap %a0, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-            qco.yield %a0_1, %a1_1
+            qco.yield %a0_1, %a1_1 : !qco.qubit, !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         ```
     }];
 
-  let arguments = (ins Variadic<QubitType>:$targets);
-  let assemblyFormat = "$targets attr-dict";
+  let arguments = (ins Variadic<LinearType>:$targets);
+  let assemblyFormat = "attr-dict ($targets^ `:` type($targets))?";
 }
 
 def CtrlOp
@@ -1080,7 +1080,7 @@ def CtrlOp
         ```mlir
         %res_ctrl, %res_tgt:2 = qco.ctrl(%ctrl) targets(%a0 = %q0, %a1 = %q1) {
             %a0_1, %a1_1 = qco.swap %a0, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-            qco.yield %a0_1, %a1_1
+            qco.yield %a0_1, %a1_1 : !qco.qubit, !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         ```
     }];
@@ -1154,7 +1154,7 @@ def InvOp
         ```mlir
         %q_out = qco.inv (%q = %q_in) {
             %q_1 = qco.s %q : !qco.qubit -> !qco.qubit
-            qco.yield %q_1
+            qco.yield %q_1 : !qco.qubit
         } : {!qco.qubit} -> {!qco.qubit}
         ```
     }];
@@ -1298,34 +1298,26 @@ def IfOp
   let summary = "If-then-else operation for linear (qubit) types";
   let description = [{
         The `qco.if` operation is an if-then-else construct similar to the standard scf.if operation.
-        In addition to the condition, the operation takes a variadic number of qubits as inputs that are
-        required in the bodies of both branches. These qubits are passed down to the individual regions
+        In addition to the condition, the operation takes a variadic number of qubits and qtensors as inputs that are
+        required in the bodies of both branches. These values are passed down to the individual regions
         as block arguments. The number of results and the type of the results must be equivalent to the
-        number and types of the input qubits.
+        number and types of the input qubit and qtensor values.
 
         Example:
         ```mlir
-        %result = qco.if %condition qubits(%arg0 = %q0) {
+        %result = qco.if %condition args(%arg0 = %q0) {
             %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
-            qco.yield %q1
-         } else qubits(%arg0 = %q0) {
-            qco.yield %arg0
+            qco.yield %q1 : !qco.qubit
+         } else args(%arg0 = %q0) {
+            qco.yield %arg0 : !qco.qubit
         } : {i1, !qco.qubit} -> {!qco.qubit}
         ```
     }];
 
-  let arguments = (ins I1:$condition, Variadic<QubitType>:$qubits);
-  let results = (outs Variadic<QubitType>:$results);
+  let arguments = (ins I1:$condition, Variadic<LinearType>:$qubits);
+  let results = (outs Variadic<LinearType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion, SizedRegion<1>:$elseRegion);
-
-  let assemblyFormat = [{
-        $condition
-         custom<IfOpAliasing>($thenRegion, $elseRegion, $qubits)
-         attr-dict `:`
-        `{` type($condition) `,` type($qubits) `}`
-        `->`
-        `{` type($results) `}`
-    }];
+  let hasCustomAssemblyFormat = 1;
 
   let builders = [OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
            build($_builder, $_state, qubits.getTypes(), condition, qubits);

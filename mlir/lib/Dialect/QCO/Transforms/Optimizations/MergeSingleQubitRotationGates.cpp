@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -28,6 +29,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <iterator>
 #include <numbers>
 #include <optional>
 #include <utility>
@@ -82,8 +84,8 @@ struct MergeSingleQubitRotationGatesPattern final
   }
 
   /// Checks if two gates a and b are mergeable via quaternion-based merging.
-  [[nodiscard]] static bool areQuaternionMergeable(Operation& a, Operation& b) {
-    return isMergeable(&a) && isMergeable(&b);
+  [[nodiscard]] static bool areQuaternionMergeable(Operation* a, Operation* b) {
+    return isMergeable(a) && isMergeable(b);
   }
 
   /**
@@ -395,10 +397,8 @@ struct MergeSingleQubitRotationGatesPattern final
     if (!isMergeable(op.getOperation())) {
       return false;
     }
-    auto input = op.getInputQubit(0);
-    auto* defOp = input.getDefiningOp();
-    return defOp == nullptr ||
-           !areQuaternionMergeable(*defOp, *op.getOperation());
+    Operation* defOp = op.getInputQubit(0).getDefiningOp();
+    return defOp == nullptr || !areQuaternionMergeable(defOp, op);
   }
 
   /**
@@ -412,14 +412,15 @@ struct MergeSingleQubitRotationGatesPattern final
    */
   static SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
-    SmallVector chain = {start};
-    auto current = start;
-    while (true) {
-      auto* userOp = *current->getUsers().begin();
-      if (!areQuaternionMergeable(*current.getOperation(), *userOp)) {
+    SmallVector chain{start};
+    WireIterator prev(start.getOutputQubit(0));
+    for (auto curr = std::next(prev); curr != std::default_sentinel; ++curr) {
+      if (!areQuaternionMergeable(prev.operation(), curr.operation())) {
         break;
       }
-      current = chain.emplace_back(cast<UnitaryOpInterface>(userOp));
+
+      chain.emplace_back(cast<UnitaryOpInterface>(*curr.operation()));
+      prev = curr;
     }
     return chain;
   }

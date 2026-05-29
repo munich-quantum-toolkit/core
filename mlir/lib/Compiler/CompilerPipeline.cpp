@@ -140,6 +140,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
         if (!config_.disableMergeSingleQubitRotationGates) {
           pm.addPass(qco::createMergeSingleQubitRotationGates());
         }
+        if (config_.enableHadamardLifting) {
+          pm.addPass(qco::createHadamardLifting());
+        }
       }))) {
     return failure();
   }
