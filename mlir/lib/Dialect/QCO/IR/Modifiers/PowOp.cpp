@@ -595,15 +595,15 @@ Value PowOp::getOutputForInput(Value input) {
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  ValueRange qubits, double exponent) {
-  auto expConst = arith::ConstantFloatOp::create(odsBuilder, odsState.location,
-                                                 odsBuilder.getF64Type(),
-                                                 APFloat(exponent));
-  build(odsBuilder, odsState, qubits.getTypes(), expConst.getResult(), qubits);
+                  ValueRange qubits,
+                  const std::variant<double, Value>& exponent) {
+  auto expValue = variantToValue(odsBuilder, odsState.location, exponent);
+  build(odsBuilder, odsState, qubits.getTypes(), expValue, qubits);
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  ValueRange qubits, double exponent,
+                  ValueRange qubits,
+                  const std::variant<double, Value>& exponent,
                   function_ref<SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, qubits, exponent);
   auto& block = odsState.regions.front()->emplaceBlock();

@@ -499,10 +499,10 @@ UnitaryOpInterface PowOp::getBodyUnitary() {
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  double exponent, const function_ref<void()>& bodyBuilder) {
-  auto expConst = arith::ConstantFloatOp::create(
-      odsBuilder, odsState.location, odsBuilder.getF64Type(), APFloat(exponent));
-  odsState.addOperands(expConst.getResult());
+                  const std::variant<double, Value>& exponent,
+                  const function_ref<void()>& bodyBuilder) {
+  auto expValue = variantToValue(odsBuilder, odsState.location, exponent);
+  odsState.addOperands(expValue);
   auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();
 

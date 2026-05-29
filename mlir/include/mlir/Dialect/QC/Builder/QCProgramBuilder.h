@@ -918,7 +918,8 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& pow(double exponent, const function_ref<void()>& body);
+  QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
+                        const function_ref<void()>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

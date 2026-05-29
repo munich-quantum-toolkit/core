@@ -1050,7 +1050,7 @@ def PowOp : QCOp<"pow",
           static StringRef getBaseSymbol() { return "pow"; }
       }];
 
-  let builders = [OpBuilder<(ins "double":$exponent,
+  let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
       "const llvm::function_ref<void()>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;

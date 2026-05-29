@@ -1269,8 +1269,10 @@ def PowOp
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
 
-  let builders = [OpBuilder<(ins "ValueRange":$qubits, "double":$exponent)>,
-                  OpBuilder<(ins "ValueRange":$qubits, "double":$exponent,
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+                      "const std::variant<double, Value>&":$exponent)>,
+                  OpBuilder<(ins "ValueRange":$qubits,
+                      "const std::variant<double, Value>&":$exponent,
                       "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)"
                       ">":$bodyBuilder)>];
 

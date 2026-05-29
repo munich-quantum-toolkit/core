@@ -459,8 +459,9 @@ QCProgramBuilder& QCProgramBuilder::inv(const function_ref<void()>& body) {
   return *this;
 }
 
-QCProgramBuilder& QCProgramBuilder::pow(double exponent,
-                                        const function_ref<void()>& body) {
+QCProgramBuilder& QCProgramBuilder::pow(
+    const std::variant<double, Value>& exponent,
+    const function_ref<void()>& body) {
   checkFinalized();
   PowOp::create(*this, exponent, body);
   return *this;
