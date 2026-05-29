@@ -1397,6 +1397,34 @@ void ctrlInvSandwich(QCProgramBuilder& b) {
   });
 }
 
+void ctrlTwo(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+    b.x(targets[0]);
+    b.rxx(0.123, targets[0], targets[1]);
+  });
+}
+
+void nestedCtrlTwo(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
+    b.ctrl(targets[0], {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+      b.x(innerTargets[0]);
+      b.rxx(0.123, innerTargets[0], innerTargets[1]);
+    });
+  });
+}
+
+void ctrlInvTwo(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    b.inv(targets, [&](ValueRange qubits) {
+      b.x(qubits[0]);
+      b.rxx(0.123, qubits[0], qubits[1]);
+    });
+  });
+}
+
 void emptyInv(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
@@ -1430,6 +1458,24 @@ void invCtrlSandwich(QCProgramBuilder& b) {
       b.inv({targets[0], targets[1]}, [&](ValueRange innerQubits) {
         b.rxx(0.123, innerQubits[0], innerQubits[1]);
       });
+    });
+  });
+}
+
+void invTwo(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
+    b.x(qubits[0]);
+    b.rxx(0.123, qubits[0], qubits[1]);
+  });
+}
+
+void invCtrlTwo(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
+    b.ctrl(qubits[0], {qubits[1], qubits[2]}, [&](ValueRange targets) {
+      b.x(targets[0]);
+      b.rxx(0.123, targets[0], targets[1]);
     });
   });
 }

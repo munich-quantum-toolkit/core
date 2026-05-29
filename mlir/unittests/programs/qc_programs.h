@@ -829,6 +829,16 @@ void doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
 void ctrlInvSandwich(QCProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to two gates.
+void ctrlTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with nested control modifiers applied to two gates.
+void nestedCtrlTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to a inverse modifier
+/// applied to two gates.
+void ctrlInvTwo(QCProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with an empty inverse modifier.
@@ -842,6 +852,13 @@ void tripleNestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two gates.
+void invTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a control modifier
+/// applied to two gates.
+void invCtrlTwo(QCProgramBuilder& b);
 
 // --- IfOp ----------------------------------------------------------------- //
 

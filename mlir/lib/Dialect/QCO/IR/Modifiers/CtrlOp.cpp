@@ -81,10 +81,12 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
           IRMapping mapping;
           utils::prova(*innerCtrlBody, mapping, innerTargets, outerTargets,
                        targets, targetArgs);
-          SmallVector<Value> yields;
           for (auto& op : innerCtrlBody->without_terminator()) {
-            auto results = rewriter.clone(op, mapping)->getResults();
-            llvm::append_range(yields, results);
+            rewriter.clone(op, mapping);
+          }
+          SmallVector<Value> yields;
+          for (auto value : innerCtrlBody->getTerminator()->getOperands()) {
+            yields.push_back(mapping.lookup(value));
           }
           return yields;
         });

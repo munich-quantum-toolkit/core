@@ -301,6 +301,24 @@ void twoX(QCOProgramBuilder& b) {
   q[0] = b.x(q[0]);
 }
 
+void controlledTwoX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](ValueRange targets) {
+    auto q = b.x(targets[0]);
+    q = b.x(q);
+    return SmallVector{q};
+  });
+}
+
+void inverseTwoX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange qubits) {
+    auto q = b.x(qubits[0]);
+    q = b.x(q);
+    return SmallVector{q};
+  });
+}
+
 void y(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.y(q[0]);
@@ -2009,6 +2027,46 @@ void ctrlInvSandwich(QCOProgramBuilder& b) {
   });
 }
 
+void ctrlTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+    auto i0 = targets[0];
+    auto i1 = targets[1];
+    i0 = b.x(i0);
+    std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+    return SmallVector{i0, i1};
+  });
+}
+
+void nestedCtrlTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
+    const auto& [controlsOut, targetsOut] = b.ctrl(
+        targets[0], {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto i0 = innerTargets[0];
+          auto i1 = innerTargets[1];
+          i0 = b.x(i0);
+          std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+          return SmallVector{i0, i1};
+        });
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targetsOut));
+  });
+}
+
+void ctrlInvTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    auto inner = b.inv(targets, [&](ValueRange qubits) {
+      auto i0 = qubits[0];
+      auto i1 = qubits[1];
+      i0 = b.x(i0);
+      std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+      return SmallVector{i0, i1};
+    });
+    return llvm::to_vector(inner);
+  });
+}
+
 void emptyInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
@@ -2053,6 +2111,32 @@ void invCtrlSandwich(QCOProgramBuilder& b) {
                 return SmallVector{q0, q1};
               });
           return SmallVector<Value>{inner};
+        });
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targetsOut));
+  });
+}
+
+void invTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
+    auto i0 = qubits[0];
+    auto i1 = qubits[1];
+    i0 = b.x(i0);
+    std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+    return SmallVector{i0, i1};
+  });
+}
+
+void invCtrlTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
+    const auto& [controlsOut, targetsOut] =
+        b.ctrl({qubits[0]}, {qubits[1], qubits[2]}, [&](ValueRange targets) {
+          auto i0 = targets[0];
+          auto i1 = targets[1];
+          i0 = b.x(i0);
+          std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+          return SmallVector{i0, i1};
         });
     return llvm::to_vector(llvm::concat<Value>(controlsOut, targetsOut));
   });

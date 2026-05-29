@@ -70,11 +70,13 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
                        utils::prova(*innerCtrlBody, mapping,
                                     innerCtrlOp.getTargetsIn(), outerQubits,
                                     targets, qubitArgs);
-                       SmallVector<Value> yields;
                        for (auto& op : innerCtrlBody->without_terminator()) {
-                         auto results =
-                             rewriter.clone(op, mapping)->getResults();
-                         llvm::append_range(yields, results);
+                         rewriter.clone(op, mapping);
+                       }
+                       SmallVector<Value> yields;
+                       for (auto value :
+                            innerCtrlBody->getTerminator()->getOperands()) {
+                         yields.push_back(mapping.lookup(value));
                        }
                        return yields;
                      })
