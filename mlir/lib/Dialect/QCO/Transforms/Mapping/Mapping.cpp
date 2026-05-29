@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/PriorityQueue.h>
@@ -441,9 +442,17 @@ private:
   /**
    * @brief Collect wires of the quantum computation before placement.
    * @details
-   * The mapping pass currently assumes that the quantum computation consists of
-   * a single quantum tensor. The required qubits are extracted and inserted "in
-   * one go" at the beginning and the end of the function, respectively.
+   * The mapping pass currently assumes that the quantum computation allocates
+   * all tensors at the start of the function. The required qubits are extracted
+   * from these tensors and used for the computation. Finally, the qubits are
+   * inserted back into the tensors at the end of the function.
+   * Thus, a valid program has the following structure:
+   *
+   *    T ⨉ [qtensor::AllocOp]
+   *  → N ⨉ [qtensor::ExtractOp]
+   *  → (Computation)
+   *  → N ⨉ [qtensor::InsertOp]
+   *  → T ⨉ [qtensor::DeallocOp]
    *
    * @returns a vector of wire iterator, or failure() if any of the above
    * assumptions are violated.
@@ -455,44 +464,26 @@ private:
       return failure();
     }
 
-    const auto tensors = func.getOps<qtensor::AllocOp>();
-    if (range_size(tensors) != 1) {
-      func.emitError() << "must contain a single qtensor.alloc operation";
-      return failure();
-    }
-
-    bool inExtractPhase = true;
     SmallVector<WireIterator> wires;
-    Value tensor = (*tensors.begin()).getResult();
-
-    while (true) {
-      assert(tensor.hasOneUse() && "getComputation: expected linear typing");
-      Operation* curr = *(tensor.user_begin());
-
-      if (isa<DeallocOp>(curr)) {
-        break;
-      }
-
-      if (auto extractOp = dyn_cast<ExtractOp>(curr)) {
-        if (!inExtractPhase) {
-          func.emitError() << "must extract and insert all qubits at once.";
-          return failure();
+    for (auto tensor : func.getOps<qtensor::AllocOp>()) {
+      bool isInitPhase = true;
+      TensorIterator it(tensor.getResult());
+      for (; it != std::default_sentinel; ++it) {
+        if (auto extract = dyn_cast<ExtractOp>(it.operation())) {
+          if (!isInitPhase) {
+            func.emitError() << "must extract and insert all qubits at once.";
+            return failure();
+          }
+          wires.emplace_back(extract.getResult());
+          continue;
         }
-        tensor = extractOp.getOutTensor();
-        wires.emplace_back(extractOp.getResult());
-        continue;
-      }
 
-      if (auto insertOp = dyn_cast<InsertOp>(curr)) {
-        inExtractPhase = false;
-        tensor = insertOp.getResult();
-        continue;
+        if (isa<InsertOp>(it.operation())) {
+          isInitPhase = false;
+          continue;
+        }
       }
-
-      report_fatal_error("unknown op in def-use chain: " +
-                         curr->getName().getStringRef());
     }
-
     return wires;
   }
 
@@ -521,49 +512,37 @@ private:
     // Replace extract ops and collect in program-qubit order.
     SmallVector<WireIterator> placedWires(layout.nqubits());
 
-    const auto tensors = func.getOps<qtensor::AllocOp>();
-    assert(range_size(tensors) == 1 && "place: expected exactly one tensor");
+    size_t prog = 0UL;
+    for (auto alloc : make_early_inc_range(func.getOps<qtensor::AllocOp>())) {
+      TensorIterator it(alloc.getResult());
+      while (it != std::default_sentinel) {
+        // Get the operation and early increment to avoid issues after erasure.
+        Operation* curr = it.operation();
+        ++it;
 
-    qtensor::AllocOp alloc = *(tensors.begin());
-    const Value tensor = alloc.getResult();
-    assert(tensor.hasOneUse() && "place: expected linear typing");
+        TypeSwitch<Operation*>(curr)
+            .Case<ExtractOp>([&](auto op) {
+              const auto hw = layout.getHardwareIndex(prog);
+              const auto qubit = staticOps[hw].getQubit();
 
-    size_t prog = 0;
-    while (true) {
-      Operation* curr = *(tensor.user_begin());
-      if (isa<DeallocOp>(curr)) {
-        rewriter.eraseOp(curr);
-        break;
+              rewriter.replaceAllUsesWith(op.getResult(), qubit);
+              rewriter.replaceAllUsesWith(op.getOutTensor(), op.getTensor());
+              rewriter.eraseOp(op);
+
+              placedWires[prog] = WireIterator(qubit);
+              ++prog;
+            })
+            .Case<InsertOp>([&](auto op) {
+              rewriter.setInsertionPointAfter(op);
+              SinkOp::create(rewriter, op.getLoc(), op.getScalar());
+              rewriter.replaceAllUsesWith(op.getResult(), op.getDest());
+              rewriter.eraseOp(op);
+            })
+            .Case<DeallocOp>([&](auto op) { rewriter.eraseOp(op); });
       }
 
-      TypeSwitch<Operation*>(curr)
-          .Case<ExtractOp>([&](ExtractOp op) {
-            const auto hw = layout.getHardwareIndex(prog);
-            const auto qubit = staticOps[hw].getQubit();
-
-            placedWires[prog] = WireIterator(qubit);
-
-            rewriter.replaceAllUsesWith(op.getResult(), qubit);
-            rewriter.replaceAllUsesWith(op.getOutTensor(), tensor);
-            rewriter.eraseOp(op);
-
-            ++prog;
-          })
-          .Case<InsertOp>([&](InsertOp op) {
-            rewriter.setInsertionPointAfter(op);
-
-            SinkOp::create(rewriter, op.getLoc(), op.getScalar());
-
-            rewriter.replaceAllUsesWith(op.getResult(), tensor);
-            rewriter.eraseOp(op);
-          })
-          .Default([&](Operation* op) {
-            report_fatal_error("unknown op in def-use chain: " +
-                               op->getName().getStringRef());
-          });
+      rewriter.eraseOp(alloc);
     }
-
-    rewriter.eraseOp(alloc);
 
     // Create sinks for remaining, unused, static qubits.
     rewriter.setInsertionPoint(func.getFunctionBody().back().getTerminator());

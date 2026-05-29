@@ -134,37 +134,6 @@ TEST_P(MappingPassTest, NoQubitAllocations) {
   ASSERT_TRUE(res.failed());
 }
 
-TEST_P(MappingPassTest, NoTwoTensors) {
-  const auto& couplingSet = GetParam();
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  Value tensor0 = builder.qtensorAlloc(1);
-  Value tensor1 = builder.qtensorAlloc(1);
-
-  Value q0;
-  std::tie(tensor0, q0) = builder.qtensorExtract(tensor0, 0);
-  Value q1;
-  std::tie(tensor1, q1) = builder.qtensorExtract(tensor1, 0);
-
-  q0 = builder.h(q0);
-  q1 = builder.h(q1);
-
-  std::tie(q0, q1) = builder.cx(q0, q1);
-
-  tensor0 = builder.qtensorInsert(q0, tensor0, 0);
-  tensor1 = builder.qtensorInsert(q1, tensor1, 0);
-
-  builder.qtensorDealloc(tensor0);
-  builder.qtensorDealloc(tensor1);
-
-  auto m = builder.finalize();
-  auto res = runPass(m.get(), couplingSet, MappingPassOptions{});
-
-  ASSERT_TRUE(res.failed());
-}
-
 TEST_P(MappingPassTest, NoExtractAfterInsert) {
   const auto& couplingSet = GetParam();
 
@@ -391,25 +360,26 @@ TEST_P(MappingPassTest, Sabre) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
 
-  Value tensor = builder.qtensorAlloc(6);
+  Value tensorUp = builder.qtensorAlloc(4);
+  Value tensorDown = builder.qtensorAlloc(2);
 
   Value q0;
-  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+  std::tie(tensorUp, q0) = builder.qtensorExtract(tensorUp, 0);
 
   Value q1;
-  std::tie(tensor, q1) = builder.qtensorExtract(tensor, 1);
+  std::tie(tensorUp, q1) = builder.qtensorExtract(tensorUp, 1);
 
   Value q2;
-  std::tie(tensor, q2) = builder.qtensorExtract(tensor, 2);
+  std::tie(tensorUp, q2) = builder.qtensorExtract(tensorUp, 2);
 
   Value q3;
-  std::tie(tensor, q3) = builder.qtensorExtract(tensor, 3);
+  std::tie(tensorUp, q3) = builder.qtensorExtract(tensorUp, 3);
 
   Value q4;
-  std::tie(tensor, q4) = builder.qtensorExtract(tensor, 4);
+  std::tie(tensorDown, q4) = builder.qtensorExtract(tensorDown, 0);
 
   Value q5;
-  std::tie(tensor, q5) = builder.qtensorExtract(tensor, 5);
+  std::tie(tensorDown, q5) = builder.qtensorExtract(tensorDown, 1);
 
   q0 = builder.h(q0);
   q1 = builder.h(q1);
@@ -461,13 +431,14 @@ TEST_P(MappingPassTest, Sabre) {
   std::tie(q4, c4) = builder.measure(q4);
   std::tie(q5, c5) = builder.measure(q5);
 
-  tensor = builder.qtensorInsert(q0, tensor, 0);
-  tensor = builder.qtensorInsert(q1, tensor, 1);
-  tensor = builder.qtensorInsert(q2, tensor, 2);
-  tensor = builder.qtensorInsert(q3, tensor, 3);
-  tensor = builder.qtensorInsert(q4, tensor, 4);
-  tensor = builder.qtensorInsert(q5, tensor, 5);
-  builder.qtensorDealloc(tensor);
+  tensorUp = builder.qtensorInsert(q0, tensorUp, 0);
+  tensorUp = builder.qtensorInsert(q1, tensorUp, 1);
+  tensorUp = builder.qtensorInsert(q2, tensorUp, 2);
+  tensorUp = builder.qtensorInsert(q3, tensorUp, 3);
+  tensorDown = builder.qtensorInsert(q4, tensorDown, 0);
+  tensorDown = builder.qtensorInsert(q5, tensorDown, 1);
+  builder.qtensorDealloc(tensorUp);
+  builder.qtensorDealloc(tensorDown);
 
   auto m = builder.finalize();
   auto res = runPass(m.get(), couplingSet, MappingPassOptions{});
