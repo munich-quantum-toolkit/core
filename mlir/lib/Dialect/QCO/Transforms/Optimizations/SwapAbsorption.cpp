@@ -51,14 +51,13 @@ protected:
         }
         readyToAbsorb.clear();
         findSwapsReadyForAbsorption(wires, readyToAbsorb);
-      }
-      while(!readyToAbsorb.empty());
+      } while (!readyToAbsorb.empty());
     }
   }
 
 private:
-  static void findSwapsReadyForAbsorption(SmallVector<WireIterator> wires, SmallVector<SWAPOp> &readyToAbsorb)
-  {
+  static void findSwapsReadyForAbsorption(SmallVector<WireIterator> wires,
+                                          SmallVector<SWAPOp>& readyToAbsorb) {
     std::ignore = walkProgramGraph<WireDirection::Forward>(
         wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           for (const auto& [op, indices] : ready) {
@@ -71,7 +70,7 @@ private:
         });
   }
 
-  static void absorbSingleSwap(SWAPOp swapOp, IRRewriter &rewriter) {
+  static void absorbSingleSwap(SWAPOp swapOp, IRRewriter& rewriter) {
     auto in0 = swapOp.getQubit0In();
     auto in1 = swapOp.getQubit1In();
 
