@@ -36,27 +36,25 @@ protected:
     IRRewriter rewriter(&getContext());
 
     for (auto func : anchor.getOps<func::FuncOp>()) {
-      SmallVector<WireIterator> wires;
-      for (auto op : func.getOps<StaticOp>()) {
-        wires.emplace_back(op.getQubit());
-      }
-
       SmallVector<SWAPOp> readyToAbsorb;
-      readyToAbsorb.reserve((wires.size() + 1) / 2);
-      findSwapsReadyForAbsorption(wires, readyToAbsorb);
-
       do {
+        SmallVector<WireIterator> wires;
+        for (auto op : func.getOps<StaticOp>()) {
+          wires.emplace_back(op.getQubit());
+        }
+
+        readyToAbsorb.clear();
+        findSwapsReadyForAbsorption(wires, readyToAbsorb);
+
         for (auto swapOp : readyToAbsorb) {
           absorbSingleSwap(swapOp, rewriter);
         }
-        readyToAbsorb.clear();
-        findSwapsReadyForAbsorption(wires, readyToAbsorb);
       } while (!readyToAbsorb.empty());
     }
   }
 
 private:
-  static void findSwapsReadyForAbsorption(SmallVector<WireIterator> wires,
+  static void findSwapsReadyForAbsorption(MutableArrayRef<WireIterator> wires,
                                           SmallVector<SWAPOp>& readyToAbsorb) {
     std::ignore = walkProgramGraph<WireDirection::Forward>(
         wires, [&](const ReadyRange& ready, ReleasedOps& released) {
