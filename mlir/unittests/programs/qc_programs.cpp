@@ -204,7 +204,7 @@ void trivialControlledGlobalPhase(QCProgramBuilder& b) {
 }
 
 void inverseGlobalPhase(QCProgramBuilder& b) {
-  b.inv({}, [&](ValueRange qubits) { b.gphase(-0.123); });
+  b.inv({}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
 }
 
 void inverseMultipleControlledGlobalPhase(QCProgramBuilder& b) {

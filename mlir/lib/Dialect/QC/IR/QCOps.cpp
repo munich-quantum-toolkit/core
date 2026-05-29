@@ -13,6 +13,13 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <mlir/IR/OpImplementation.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/Region.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
+
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
 #include <llvm/ADT/TypeSwitch.h>

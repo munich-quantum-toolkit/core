@@ -1096,7 +1096,6 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto numTargets = op.getNumTargets();
     const auto qcControls = op.getControls();
     const auto qcTargets = op.getTargets();
     auto qcoControls = resolveMappedQubits(state, operation, qcControls);
@@ -1154,7 +1153,6 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto numTargets = op.getNumTargets();
     const auto qcTargets = op.getTargets();
     auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
 

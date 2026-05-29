@@ -13,6 +13,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
