@@ -752,7 +752,7 @@ struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
     });
 
     // Replace the output qubits with the same QC references
-    rewriter.replaceOp(op, adaptor.getOperands());
+    rewriter.replaceOp(op, adaptor.getQubitsIn());
 
     return success();
   }
