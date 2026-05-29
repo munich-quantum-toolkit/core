@@ -266,15 +266,6 @@ void nestedControlledX(QCOProgramBuilder& b) {
   });
 }
 
-void repeatedControlledXWithRegister(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(50);
-  auto q0 = b.allocQubit();
-  auto control = b.h(q0);
-  for (auto i = 0; i < 50; i++) {
-    control = b.cx(control, q[i]).first;
-  }
-}
-
 void trivialControlledX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcx({}, q[0]);

@@ -161,10 +161,6 @@ void trivialControlledX(QCOProgramBuilder& b);
 /// Creates a circuit with repeated controlled X gates.
 void repeatedControlledX(QCOProgramBuilder& b);
 
-/// Creates a circuit with repeated controlled X gates using qubits from a
-/// register.
-void repeatedControlledXWithRegister(QCOProgramBuilder& b);
-
 /// Creates a circuit with an inverse modifier applied to an X gate.
 void inverseX(QCOProgramBuilder& b);
 

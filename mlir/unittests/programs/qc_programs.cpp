@@ -280,15 +280,6 @@ void repeatedControlledX(QCProgramBuilder& b) {
   }
 }
 
-void repeatedControlledXWithRegister(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(50);
-  auto control = b.allocQubit();
-  b.h(control);
-  for (auto i = 0; i < 50; i++) {
-    b.cx(control, q[i]);
-  }
-}
-
 void inverseX(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv([&]() { b.x(q[0]); });

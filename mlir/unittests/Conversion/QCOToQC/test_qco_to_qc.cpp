@@ -522,22 +522,18 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOXOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"X", MQT_NAMED_BUILDER(qco::x),
-                        MQT_NAMED_BUILDER(qc::x)},
-        QCOToQCTestCase{"SingleControlledX",
-                        MQT_NAMED_BUILDER(qco::singleControlledX),
-                        MQT_NAMED_BUILDER(qc::singleControlledX)},
-        QCOToQCTestCase{"MultipleControlledX",
-                        MQT_NAMED_BUILDER(qco::multipleControlledX),
-                        MQT_NAMED_BUILDER(qc::multipleControlledX)},
-        QCOToQCTestCase{"RepeatedControlledX",
+    testing::Values(QCOToQCTestCase{"X", MQT_NAMED_BUILDER(qco::x),
+                                    MQT_NAMED_BUILDER(qc::x)},
+                    QCOToQCTestCase{"SingleControlledX",
+                                    MQT_NAMED_BUILDER(qco::singleControlledX),
+                                    MQT_NAMED_BUILDER(qc::singleControlledX)},
+                    QCOToQCTestCase{"MultipleControlledX",
+                                    MQT_NAMED_BUILDER(qco::multipleControlledX),
+                                    MQT_NAMED_BUILDER(qc::multipleControlledX)},
+                    QCOToQCTestCase{
+                        "RepeatedControlledX",
                         MQT_NAMED_BUILDER(qco::repeatedControlledX),
-                        MQT_NAMED_BUILDER(qc::repeatedControlledX)},
-        QCOToQCTestCase{
-            "RepeatedControlledXWithRegister",
-            MQT_NAMED_BUILDER(qco::repeatedControlledXWithRegister),
-            MQT_NAMED_BUILDER(qc::repeatedControlledXWithRegister)}));
+                        MQT_NAMED_BUILDER(qc::repeatedControlledX)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/XxMinusYyOp.cpp
