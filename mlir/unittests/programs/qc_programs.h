@@ -814,6 +814,9 @@ void inverseBarrier(QCProgramBuilder& b);
 /// Creates a circuit with a trivial ctrl modifier.
 void trivialCtrl(QCProgramBuilder& b);
 
+/// Creates a circuit with an empty ctrl modifier.
+void emptyCtrl(QCProgramBuilder& b);
+
 /// Creates a circuit with nested ctrl modifiers.
 void nestedCtrl(QCProgramBuilder& b);
 
@@ -827,6 +830,9 @@ void doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
 void ctrlInvSandwich(QCProgramBuilder& b);
 
 // --- InvOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with an empty inverse modifier.
+void emptyInv(QCProgramBuilder& b);
 
 /// Creates a circuit with nested inverse modifiers.
 void nestedInv(QCProgramBuilder& b);

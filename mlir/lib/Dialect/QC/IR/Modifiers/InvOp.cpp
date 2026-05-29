@@ -337,6 +337,22 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
   }
 };
 
+/**
+ * @brief Erase inverse modifiers that do not have any body unitaries.
+ */
+struct EraseEmptyInv final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(InvOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 0) {
+      return failure();
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 } // namespace
 
 size_t InvOp::getNumBodyUnitaries() {
@@ -381,9 +397,6 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult InvOp::verify() {
   auto& block = *getBody();
-  if (block.getOperations().size() < 2) {
-    return emitOpError("body region must have at least two operations");
-  }
   if (!isa<YieldOp>(block.back())) {
     return emitOpError(
         "last operation in body region must be a yield operation");
@@ -394,5 +407,5 @@ LogicalResult InvOp::verify() {
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<CancelNestedInv, MoveCtrlOutside, InlineSelfAdjoint,
-              ReplaceWithKnownGates>(context);
+              ReplaceWithKnownGates, EraseEmptyInv>(context);
 }

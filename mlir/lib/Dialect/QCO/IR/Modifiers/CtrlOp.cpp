@@ -170,6 +170,22 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
+/**
+ * @brief Erase control modifiers that do not have any body unitaries.
+ */
+struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 0) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op, op.getOperands());
+    return success();
+  }
+};
+
 } // namespace
 
 size_t CtrlOp::getNumBodyUnitaries() {
@@ -292,9 +308,6 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
-  if (block.getOperations().size() < 2) {
-    return emitOpError("body region must have at least two operations");
-  }
   const auto numTargets = getNumTargets();
   if (block.getArguments().size() != numTargets) {
     return emitOpError(
@@ -360,7 +373,7 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl>(context);
+  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
 }
 
 std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {

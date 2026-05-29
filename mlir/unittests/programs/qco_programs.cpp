@@ -1936,6 +1936,12 @@ void trivialCtrl(QCOProgramBuilder& b) {
   });
 }
 
+void emptyCtrl(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
+  b.ctrl(q[0], q[1], [&](ValueRange targets) { return targets; });
+}
+
 void nestedCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange targets) {
@@ -2001,6 +2007,12 @@ void ctrlInvSandwich(QCOProgramBuilder& b) {
         });
     return SmallVector<Value>{inner};
   });
+}
+
+void emptyInv(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) { return qubits; });
 }
 
 void nestedInv(QCOProgramBuilder& b) {

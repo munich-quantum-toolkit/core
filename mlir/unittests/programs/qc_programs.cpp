@@ -1348,6 +1348,12 @@ void trivialCtrl(QCProgramBuilder& b) {
          [&](ValueRange targets) { b.rxx(0.123, targets[0], targets[1]); });
 }
 
+void emptyCtrl(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.rxx(0.123, q[0], q[1]);
+  b.ctrl({q[0]}, {q[1]}, [&](ValueRange /*targets*/) {});
+}
+
 void nestedCtrl(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
@@ -1389,6 +1395,12 @@ void ctrlInvSandwich(QCProgramBuilder& b) {
       });
     });
   });
+}
+
+void emptyInv(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.rxx(0.123, q[0], q[1]);
+  b.inv({q[0], q[1]}, [&](ValueRange /*targets*/) {});
 }
 
 void nestedInv(QCProgramBuilder& b) {

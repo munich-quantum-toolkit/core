@@ -223,6 +223,8 @@ INSTANTIATE_TEST_SUITE_P(
     QCOCtrlOpTest, QCOTest,
     testing::Values(QCOTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
                                 MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"EmptyCtrl", MQT_NAMED_BUILDER(emptyCtrl),
+                                MQT_NAMED_BUILDER(rxx)},
                     QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
                                 MQT_NAMED_BUILDER(multipleControlledRxx)},
                     QCOTestCase{"TripleNestedCtrl",
@@ -240,7 +242,9 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOInvOpTest, QCOTest,
-    testing::Values(QCOTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
+    testing::Values(QCOTestCase{"EmptyInv", MQT_NAMED_BUILDER(emptyInv),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
                                 MQT_NAMED_BUILDER(rxx)},
                     QCOTestCase{"TripleNestedInv",
                                 MQT_NAMED_BUILDER(tripleNestedInv),
