@@ -52,7 +52,9 @@ public:
   /// (https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm) where dist[i][j]
   /// denotes the distance between i and j.
   [[nodiscard]] Matrix<size_t> getDistMatrix() const;
-  /// Return cycle in graph or std::nullopt if none exists.
+  /// Return reverse cycle in graph or `std::nullopt` if none exists.
+  /// Implements an iterative depth-first search inspired by LLVM's SCC
+  /// utilities.
   [[nodiscard]] std::optional<Vector<IdT>> findCycle() const;
 
 private:

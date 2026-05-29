@@ -11,7 +11,7 @@
 #pragma once
 
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/Algorithms.h"
+#include "mlir/Dialect/QCO/Utils/Graph.h"
 
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Region.h>

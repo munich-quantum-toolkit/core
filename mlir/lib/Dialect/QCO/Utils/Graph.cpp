@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Algorithms.h"
+#include "mlir/Dialect/QCO/Utils/Graph.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
