@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -21,6 +22,7 @@
 
 #include <iterator>
 #include <memory>
+#include <tuple>
 #include <utility>
 
 using namespace mlir;
@@ -55,12 +57,19 @@ TEST_P(WireIteratorTest, Traversal) {
   const auto [q02, q11] = builder.cx(q01, q10);
   const auto [q03, c0] = builder.measure(q02);
   const auto q04 = builder.reset(q03);
-  const auto loopOut = builder.scfFor(
-      1, 4, 1, {q04, q11}, [&builder](Value, ValueRange iterArgs) {
-        const auto iterQ00 = iterArgs[0];
-        const auto iterQ10 = iterArgs[1];
-        const auto iterQ01 = builder.h(iterQ00);
-        const auto [iterQ02, iterQ11] = builder.cx(iterQ01, iterQ10);
+
+  Value iterQ00;
+  Value iterQ01;
+  Value iterQ02;
+  Value iterQ10;
+  Value iterQ11;
+
+  const auto loopOut =
+      builder.scfFor(1, 4, 1, {q04, q11}, [&](Value, ValueRange iterArgs) {
+        iterQ00 = iterArgs[0];
+        iterQ10 = iterArgs[1];
+        iterQ01 = builder.h(iterQ00);
+        std::tie(iterQ02, iterQ11) = builder.cx(iterQ01, iterQ10);
         return SmallVector{iterQ02, iterQ11};
       });
   const auto q05 = loopOut[0];
@@ -162,6 +171,44 @@ TEST_P(WireIteratorTest, Traversal) {
   //
   // Test: Recursive use with block-argument.
   //
+
+  qco::WireIterator recIt(iterQ00);
+  ASSERT_EQ(recIt.operation(), nullptr); // Blockargument
+  ASSERT_EQ(recIt.qubit(), iterQ00);
+
+  ++recIt;
+  ASSERT_EQ(recIt.operation(), iterQ01.getDefiningOp()); // qco.h
+  ASSERT_EQ(recIt.qubit(), iterQ01);
+
+  ++recIt;
+  ASSERT_EQ(recIt.operation(), iterQ02.getDefiningOp()); // qco.ctrl
+  ASSERT_EQ(recIt.qubit(), iterQ02);
+
+  ++recIt;
+  ASSERT_EQ(recIt.operation(), *(iterQ02.getUsers().begin())); // scf.yield
+  ASSERT_EQ(recIt.qubit(), nullptr);
+
+  ++recIt;
+  ASSERT_EQ(recIt, std::default_sentinel);
+
+  ++recIt;
+  ASSERT_EQ(recIt, std::default_sentinel);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), *(iterQ02.getUsers().begin())); // scf.yield
+  ASSERT_EQ(recIt.qubit(), nullptr);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), iterQ02.getDefiningOp()); // qco.ctrl
+  ASSERT_EQ(recIt.qubit(), iterQ02);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), iterQ01.getDefiningOp()); // qco.h
+  ASSERT_EQ(recIt.qubit(), iterQ01);
+
+  --recIt;
+  ASSERT_EQ(recIt.operation(), nullptr); // Blockargument
+  ASSERT_EQ(recIt.qubit(), iterQ00);
 }
 
 INSTANTIATE_TEST_SUITE_P(DynamicAndStatic, WireIteratorTest, ::testing::Bool(),

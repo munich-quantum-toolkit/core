@@ -26,8 +26,9 @@
 
 namespace mlir::qco {
 Value WireIterator::qubit() const {
-  // A sink/deallocation/insert doesn't have an OpResult.
-  if (op_ != nullptr && (isa<SinkOp, qtensor::InsertOp>(op_))) {
+  // The following operations don't have an OpResult.
+  if (op_ != nullptr &&
+      (isa<SinkOp, scf::YieldOp, YieldOp, qtensor::InsertOp>(op_))) {
     return nullptr;
   }
   return qubit_;
@@ -49,8 +50,8 @@ void WireIterator::forward() {
   assert(qubit_.hasOneUse() && "expected linear typing");
   op_ = *(qubit_.user_begin());
 
-  // A sink/insert defines the end of the qubit wire (dynamic and static).
-  if (isa<SinkOp, YieldOp, qtensor::InsertOp>(op_)) {
+  // The following operations define the end of the qubit wire.
+  if (isa<SinkOp, YieldOp, scf::YieldOp, qtensor::InsertOp>(op_)) {
     isFinal_ = true;
     return;
   }
@@ -93,9 +94,8 @@ void WireIterator::backward() {
     return;
   }
 
-  // For sinks/deallocations/inserts, qubit_ is an OpOperand. Hence, only get
-  // the def-op.
-  if (isa<SinkOp, YieldOp, qtensor::InsertOp>(op_)) {
+  // For these operations, qubit_ is an OpOperand. Hence, only get the def-op.
+  if (isa<SinkOp, YieldOp, scf::YieldOp, qtensor::InsertOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     isFinal_ = false;
     return;
