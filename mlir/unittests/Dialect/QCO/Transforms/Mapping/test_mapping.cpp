@@ -14,7 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/Algorithms.h"
+#include "mlir/Dialect/QCO/Utils/Graph.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Qubits.h"
 
@@ -289,6 +289,93 @@ TEST_P(MappingPassTest, GHZUnrolled) {
         return SmallVector{loopTensor};
       })[0];
   builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
+  auto res = pm.run(m.get());
+  auto entry = getEntryPoint(m.get());
+
+  ASSERT_TRUE(res.succeeded());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), couplingSet).succeeded());
+}
+
+TEST_P(MappingPassTest, GroverLike) {
+  const auto& couplingSet = GetParam();
+
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(couplingSet, MappingPassOptions{}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value tensor = builder.qtensorAlloc(4);
+  Value flagTensor = builder.qtensorAlloc(1);
+  Value q0;
+  Value q1;
+  Value q2;
+  Value q3;
+  Value flag;
+
+  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+  std::tie(tensor, q1) = builder.qtensorExtract(tensor, 1);
+  std::tie(tensor, q2) = builder.qtensorExtract(tensor, 2);
+  std::tie(tensor, q3) = builder.qtensorExtract(tensor, 3);
+  std::tie(flagTensor, flag) = builder.qtensorExtract(flagTensor, 0);
+
+  q0 = builder.h(q0);
+  q1 = builder.h(q1);
+  q2 = builder.h(q2);
+  q3 = builder.h(q3);
+  flag = builder.x(flag);
+
+  const auto forResults = builder.scfFor(
+      1, 3, 1, {q0, q1, q2, q3, flag}, [&builder](Value, ValueRange iterArgs) {
+        Value iterQ0 = iterArgs[0];
+        Value iterQ1 = iterArgs[1];
+        Value iterQ2 = iterArgs[2];
+        Value iterQ3 = iterArgs[3];
+        Value iterFlag = iterArgs[4];
+
+        std::tie(iterQ0, iterQ2) = builder.cx(iterQ0, iterQ2);
+        std::tie(iterQ2, iterQ3) = builder.cx(iterQ2, iterQ3);
+        std::tie(iterQ3, iterQ0) = builder.cx(iterQ3, iterQ0);
+        std::tie(iterQ0, iterFlag) = builder.cx(iterQ0, iterFlag);
+
+        return SmallVector{iterQ0, iterQ1, iterQ2, iterQ3, iterFlag};
+      });
+
+  q0 = forResults[0];
+  q1 = forResults[1];
+  q2 = forResults[2];
+  q3 = forResults[3];
+  flag = forResults[4];
+
+  const auto barrierResults = builder.barrier({q0, q1, q2, q3, flag});
+  q0 = barrierResults[0];
+  q1 = barrierResults[1];
+  q2 = barrierResults[2];
+  q3 = barrierResults[3];
+  flag = barrierResults[4];
+
+  Value c0;
+  Value c1;
+  Value c2;
+  Value c3;
+  Value c4;
+
+  std::tie(q0, c0) = builder.measure(q0);
+  std::tie(q1, c1) = builder.measure(q1);
+  std::tie(q2, c2) = builder.measure(q2);
+  std::tie(q3, c3) = builder.measure(q3);
+  std::tie(flag, c4) = builder.measure(flag);
+
+  tensor = builder.qtensorInsert(q0, tensor, 1);
+  tensor = builder.qtensorInsert(q1, tensor, 2);
+  tensor = builder.qtensorInsert(q2, tensor, 3);
+  tensor = builder.qtensorInsert(q3, tensor, 4);
+  flagTensor = builder.qtensorInsert(flag, flagTensor, 0);
+
+  builder.qtensorDealloc(tensor);
+  builder.qtensorDealloc(flagTensor);
 
   auto m = builder.finalize();
   auto res = pm.run(m.get());
