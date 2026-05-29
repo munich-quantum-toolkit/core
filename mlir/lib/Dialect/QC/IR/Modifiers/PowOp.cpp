@@ -16,8 +16,8 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -109,7 +109,6 @@ static LogicalResult tryReplaceWithNamedPhaseGate(double angle, PowOp op,
 static Value scaleByExponent(Value param, PowOp op, PatternRewriter& rewriter) {
   return arith::MulFOp::create(rewriter, op.getLoc(), op.getExponent(), param);
 }
-
 
 namespace {
 
@@ -263,30 +262,28 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         .Case<RXOp, RYOp, RZOp, POp>([&](auto gate) {
           auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
           rewriter.replaceOpWithNewOp<decltype(gate)>(op, op.getTarget(0),
-                                                       newParam);
+                                                      newParam);
           return success();
         })
         // pow(r) { rxx/ryy/rzx/rzz(θ) } => rxx/ryy/rzx/rzz(r*θ)
         .Case<RXXOp, RYYOp, RZXOp, RZZOp>([&](auto gate) {
           auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
-          rewriter.replaceOpWithNewOp<decltype(gate)>(op, op.getTarget(0),
-                                                       op.getTarget(1),
-                                                       newParam);
+          rewriter.replaceOpWithNewOp<decltype(gate)>(
+              op, op.getTarget(0), op.getTarget(1), newParam);
           return success();
         })
         // pow(r) { r(θ, φ) } => r(r*θ, φ)
         .Case<ROp>([&](auto gate) {
           auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
           rewriter.replaceOpWithNewOp<ROp>(op, op.getTarget(0), mul,
-                                            gate.getPhi());
+                                           gate.getPhi());
           return success();
         })
         // pow(r) { xx±yy(θ, β) } => xx±yy(r*θ, β)
         .Case<XXPlusYYOp, XXMinusYYOp>([&](auto gate) {
           auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
-          rewriter.replaceOpWithNewOp<decltype(gate)>(op, op.getTarget(0),
-                                                       op.getTarget(1), mul,
-                                                       gate.getBeta());
+          rewriter.replaceOpWithNewOp<decltype(gate)>(
+              op, op.getTarget(0), op.getTarget(1), mul, gate.getBeta());
           return success();
         })
         // --- Pauli gates: decompose to rotation + global phase ---
