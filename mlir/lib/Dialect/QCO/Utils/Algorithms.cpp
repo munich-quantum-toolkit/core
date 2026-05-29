@@ -18,24 +18,25 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 namespace mlir::qco {
 Graph::Graph(const EdgeSet& edges) {
   for (const auto& [u, v] : edges) {
-    if (!nodes_.contains(u)) {
-      nodes_[u] = Vector<size_t>();
+    if (!adj_.contains(u)) {
+      adj_[u] = Vector<size_t>();
     }
-    nodes_[u].emplace_back(v);
+    adj_[u].emplace_back(v);
   }
 }
 void Graph::addNode(size_t id) {
-  const auto r = nodes_.try_emplace(id, SmallVector<size_t, 0>{});
-  assert(r.second && "addNode: didn't insert node");
+  const auto r = adj_.try_emplace(id, SmallVector<size_t, 0>{});
+  assert(r.second && "expected to insert node");
 }
 
 void Graph::addEdge(size_t id, size_t neighbourId) {
-  assert(nodes_.contains(id) && "addEdge: missing node id");
-  nodes_[id].emplace_back(neighbourId);
+  assert(adj_.contains(id) && "addEdge: missing node id");
+  adj_[id].emplace_back(neighbourId);
 }
 
 void Graph::addEdge(std::pair<size_t, size_t> edge) {
@@ -48,7 +49,7 @@ void Graph::addEdges(SmallVector<std::pair<size_t, size_t>> edges) {
 
 Graph::EdgeSet Graph::getEdges() const {
   EdgeSet set;
-  for (const auto& [u, nbrs] : nodes_) {
+  for (const auto& [u, nbrs] : adj_) {
     for (const auto& v : nbrs) {
       set.insert(std::make_pair(u, v));
     }
@@ -56,11 +57,11 @@ Graph::EdgeSet Graph::getEdges() const {
   return set;
 }
 
-ArrayRef<size_t> Graph::getEdges(size_t id) const { return nodes_.at(id); }
+ArrayRef<size_t> Graph::getEdges(size_t id) const { return adj_.at(id); }
 
 size_t Graph::getMaxDegree() const {
   size_t deg = 0;
-  for (const auto& [u, nbrs] : nodes_) {
+  for (const auto& [u, nbrs] : adj_) {
     deg = std::max(deg, nbrs.size());
   }
   return deg;
@@ -91,5 +92,74 @@ Matrix<size_t> Graph::getDistMatrix() const {
   }
 
   return dist;
+}
+
+[[nodiscard]] std::optional<Vector<Graph::IdT>> Graph::findCycle() const {
+  enum struct State : uint8_t { Unseen, Seen, Finished };
+
+  struct Frame {
+    IdT id;
+    size_t neighbourIdx;
+  };
+
+  SmallVector<Frame> stack;
+  llvm::DenseMap<IdT, IdT> parents;
+  llvm::DenseMap<IdT, State> states;
+
+  // Preparation step: Mark all nodes as unseen.
+  for_each(adj_.keys(), [&](IdT id) { states[id] = State::Unseen; });
+
+  for (const auto initId : adj_.keys()) {
+    // Only start from unseen nodes.
+    if (states[initId] != State::Unseen) {
+      continue;
+    }
+
+    stack.emplace_back(initId, 0);
+
+    while (!stack.empty()) {
+      Frame& top = stack.back();
+
+      // If we haven't seen this node before, mark it as seen.
+      if (states[top.id] == State::Unseen) {
+        states[top.id] = State::Seen;
+      }
+
+      auto it = adj_.find(top.id);
+      assert(it != adj_.end() && "expected node id in adjacency map");
+      const auto nbrs = it->getSecond();
+
+      // Once all neighbours have been visited (indicated by the index exceeding
+      // the number of neighbours - 1), set the frame on node to finished and
+      // pop it from the stack.
+      if (top.neighbourIdx >= nbrs.size()) {
+        states[top.id] = State::Finished;
+        stack.pop_back();
+        continue;
+      }
+
+      // Collect the neighbour and advance the index on the
+      // frame for the next iteration.
+      const auto nbrId = nbrs[top.neighbourIdx];
+      ++top.neighbourIdx;
+
+      if (states[nbrId] == State::Unseen) {
+        parents[nbrId] = top.id;
+        stack.emplace_back(nbrId, 0);
+      } else if (states[nbrId] == State::Seen) {
+        SmallVector<IdT> path;
+        for (auto curr = top.id; curr != nbrId; curr = parents[curr]) {
+          path.emplace_back(curr);
+        }
+        path.emplace_back(nbrId);
+        return path;
+      }
+    }
+
+    // Preparse stack for next iteration.
+    stack.clear();
+  }
+
+  return std::nullopt;
 }
 } // namespace mlir::qco
