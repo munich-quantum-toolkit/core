@@ -19,6 +19,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
+#include <utility>
+
 namespace mlir::qco {
 #define GEN_PASS_DEF_SWAPABSORPTIONPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
@@ -55,7 +57,7 @@ protected:
   }
 
 private:
-  void findSwapsReadyForAbsorption(SmallVector<WireIterator> wires, SmallVector<SWAPOp> &readyToAbsorb)
+  static void findSwapsReadyForAbsorption(SmallVector<WireIterator> wires, SmallVector<SWAPOp> &readyToAbsorb)
   {
     std::ignore = walkProgramGraph<WireDirection::Forward>(
         wires, [&](const ReadyRange& ready, ReleasedOps& released) {
@@ -69,7 +71,7 @@ private:
         });
   }
 
-  void absorbSingleSwap(SWAPOp swapOp, IRRewriter &rewriter) {
+  static void absorbSingleSwap(SWAPOp swapOp, IRRewriter &rewriter) {
     auto in0 = swapOp.getQubit0In();
     auto in1 = swapOp.getQubit1In();
 
