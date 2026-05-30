@@ -22,6 +22,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -59,7 +60,8 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mlir::qc::QCDialect, mlir::arith::ArithDialect,
-                    mlir::func::FuncDialect, mlir::memref::MemRefDialect>();
+                    mlir::func::FuncDialect, mlir::memref::MemRefDialect,
+                    mlir::scf::SCFDialect>();
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -415,4 +417,10 @@ INSTANTIATE_TEST_SUITE_P(
         QuantumComputationTranslationTestCase{
             "BarrierMultipleQubits",
             MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
-            MQT_NAMED_BUILDER(mlir::qc::barrierMultipleQubits)}));
+            MQT_NAMED_BUILDER(mlir::qc::barrierMultipleQubits)},
+        QuantumComputationTranslationTestCase{
+            "SimpleIf", MQT_NAMED_BUILDER(qc::simpleIf),
+            MQT_NAMED_BUILDER(mlir::qc::simpleIf)},
+        QuantumComputationTranslationTestCase{
+            "IfElse", MQT_NAMED_BUILDER(qc::ifElse),
+            MQT_NAMED_BUILDER(mlir::qc::ifElse)}));

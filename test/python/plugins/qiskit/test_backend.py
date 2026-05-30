@@ -581,6 +581,23 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
     assert sum(counts.values()) == 100
 
 
+def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDMIBackend) -> None:
+    """Ensures the backend can run circuits with gates that are not natively supported by OpenQASM 3.
+
+    The DDSIM backend defines support for `mcx` gates, which are not native to OpenQASM3.
+    Qiskit's OpenQASM3 exporter has problems providing proper definitions for such gates,
+    which we work around by declaring the device's basis gates in the export call.
+    This test ensures that this workaround is effective and that the backend can successfully run such circuits.
+    """
+    qc = QuantumCircuit(6)
+    qc.mcx([0, 1, 2, 3, 4], 5)
+    qc.measure_all()
+
+    job = ddsim_backend.run(qc, shots=100)
+    counts = job.result().get_counts()
+    assert sum(counts.values()) == 100
+
+
 def test_zoned_operation_rejected_at_backend_init() -> None:
     """Backend rejects devices exposing zoned operations."""
     session = fomac.Session()
