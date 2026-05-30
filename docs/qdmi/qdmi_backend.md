@@ -69,7 +69,7 @@ The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` discovers QDMI devices ava
 Backends should always be obtained through the provider rather than instantiated directly.
 
 The IQM QDMI device is the main exception to that rule.
-It is loaded explicitly through {py:class}`~mqt.core.plugins.qiskit.iqm.IQMBackend` rather than auto-discovered by {py:class}`~mqt.core.plugins.qiskit.QDMIProvider`, which keeps external device loading opt-in.
+It is loaded explicitly through {py:class}`~mqt.core.plugins.iqm.IQMBackend` rather than auto-discovered by {py:class}`~mqt.core.plugins.qiskit.QDMIProvider`, which keeps external device loading opt-in.
 
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import QDMIProvider
@@ -105,10 +105,11 @@ exact = provider.backends(name="MQT Core DDSIM QDMI Device")
 
 ## External IQM Backend
 
-The IQM integration is exposed from a dedicated module so the optional {code}`iqm-qdmi` dependency is only loaded when requested explicitly.
+The IQM integration is exposed through a dedicated plugin module so the optional {code}`iqm-qdmi` dependency is only loaded when requested explicitly.
+That module directly exposes the upstream {py:class}`iqm.qdmi.qiskit.IQMBackend` implementation as an IQM device integration in MQT Core.
 
 ```python
-from mqt.core.plugins.qiskit.iqm import IQMBackend
+from mqt.core.plugins.iqm import IQMBackend
 
 backend = IQMBackend(
     base_url="https://resonance.iqm.tech",
@@ -116,7 +117,7 @@ backend = IQMBackend(
 )
 ```
 
-If you omit these parameters, {py:class}`~mqt.core.plugins.qiskit.iqm.IQMBackend` falls back to the following environment variables:
+If you omit these parameters, {py:class}`~mqt.core.plugins.iqm.IQMBackend` falls back to the following environment variables:
 
 - {code}`IQM_BASE_URL`
 - {code}`IQM_TOKEN` or {code}`RESONANCE_API_KEY`
@@ -124,7 +125,7 @@ If you omit these parameters, {py:class}`~mqt.core.plugins.qiskit.iqm.IQMBackend
 - {code}`IQM_QC_ID`
 - {code}`IQM_QC_ALIAS`
 
-Once instantiated, the IQM backend behaves like every other QDMI-backed Qiskit backend in MQT Core and supports the same {py:meth}`~mqt.core.plugins.qiskit.iqm.IQMBackend.sampler` and {py:meth}`~mqt.core.plugins.qiskit.iqm.IQMBackend.estimator` helper methods.
+Once instantiated, the IQM backend behaves like every other QDMI-backed Qiskit backend in MQT Core and supports the same {py:meth}`~mqt.core.plugins.iqm.IQMBackend.sampler` and {py:meth}`~mqt.core.plugins.iqm.IQMBackend.estimator` helper methods.
 
 See the [IQM QDMI Documentation](https://iqm-finland.github.io/QDMI-on-IQM/) for more details on authentication, device capabilities, and error handling.
 

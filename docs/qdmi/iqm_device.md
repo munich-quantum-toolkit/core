@@ -41,11 +41,12 @@ If you prefer to work directly with the upstream IQM package, the {code}`iqm-qdm
 
 ## Usage
 
-The IQM integration is exposed through {py:class}`~mqt.core.plugins.qiskit.iqm.IQMBackend`.
-Importing that class loads the packaged IQM device library explicitly through the path exported as {code}`iqm.qdmi.IQM_QDMI_LIBRARY_PATH`, so {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` remains reserved for devices that are already visible through the FoMaC session.
+The IQM integration is exposed through {py:class}`~mqt.core.plugins.iqm.IQMBackend`.
+This top-level plugin module keeps the IQM device integration separate from MQT Core's frontend-specific plugin packages while utilizing the upstream implementation and its packaged device library path export.
+The backend is loaded explicitly, which leaves {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` reserved for devices that are already visible through the FoMaC session.
 
 ```python
-from mqt.core.plugins.qiskit.iqm import IQMBackend
+from mqt.core.plugins.iqm import IQMBackend
 from qiskit import QuantumCircuit
 from qiskit.compiler import transpile
 
@@ -64,7 +65,7 @@ result = backend.run(transpiled_qc, shots=128).result()
 print(result.get_counts())
 ```
 
-If you do not pass configuration explicitly, {py:class}`~mqt.core.plugins.qiskit.iqm.IQMBackend` reads the same [environment variables as `iqm-qdmi`](https://iqm-finland.github.io/QDMI-on-IQM/usage.html):
+If you do not pass configuration explicitly, {py:class}`~mqt.core.plugins.iqm.IQMBackend` reads the same [environment variables as `iqm-qdmi`](https://iqm-finland.github.io/QDMI-on-IQM/usage.html):
 
 - {code}`IQM_BASE_URL`
 - {code}`IQM_TOKEN` or {code}`RESONANCE_API_KEY`
@@ -81,6 +82,6 @@ estimator = backend.estimator(default_precision=0.0)
 
 ## Relationship to the Upstream IQM Device Library
 
-The {code}`iqm-qdmi` project still ships its own direct wrapper at {code}`iqm.qdmi.qiskit`.
-The MQT Core integration in {py:mod}`mqt.core.plugins.qiskit.iqm` exists to provide a first-class MQT-side installation and import path.
+The {code}`iqm-qdmi` project ships the implementation in {code}`iqm.qdmi.qiskit`.
+MQT Core exposes that backend through the module {py:mod}`mqt.core.plugins.iqm`.
 See the [IQM QDMI Documentation](https://iqm-finland.github.io/QDMI-on-IQM/) for more details on authentication, device capabilities, and error handling.
