@@ -92,7 +92,7 @@ struct LoweringState : QIRMetadata {
   DenseMap<int64_t, Value> resultPtrs;
 
   /// Modifier information
-  int64_t inCtrlOp = 0;
+  size_t inCtrlOp = 0;
   SmallVector<Value> controls;
 
   /// Allocator and StringSaver for stable StringRefs

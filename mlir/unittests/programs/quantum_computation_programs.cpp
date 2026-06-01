@@ -11,10 +11,13 @@
 #include "quantum_computation_programs.h"
 
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/CompoundOperation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace qc {

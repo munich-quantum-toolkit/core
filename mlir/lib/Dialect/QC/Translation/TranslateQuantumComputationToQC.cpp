@@ -12,6 +12,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
+#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
@@ -19,6 +20,7 @@
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
@@ -78,21 +80,21 @@ struct TranslationState {
   bool inCtrlOp = false;
 
   /// Mapping from physical qubit index to block argument
-  DenseMap<size_t, Value> ctrlTargets{};
+  DenseMap<size_t, Value> ctrlTargets;
 
-  Value getQubit(size_t index) const {
-    if (!inCtrlOp) {
-      if (index >= qubits.size()) {
-        llvm::reportFatalInternalError("Qubit index out of bounds");
-      }
-      return qubits[index];
-    } else {
+  [[nodiscard]] Value getQubit(size_t index) const {
+    if (inCtrlOp) {
       auto it = ctrlTargets.find(index);
       if (it == ctrlTargets.end()) {
         llvm::reportFatalInternalError("Qubit index out of bounds");
       }
       return it->second;
     }
+
+    if (index >= qubits.size()) {
+      llvm::reportFatalInternalError("Qubit index out of bounds");
+    }
+    return qubits[index];
   };
 };
 
@@ -603,8 +605,8 @@ static LogicalResult addCompoundOp(QCProgramBuilder& builder,
     }
     SmallVector<std::pair<uint32_t, Value>> sortedPairs(targetMap.begin(),
                                                         targetMap.end());
-    std::sort(sortedPairs.begin(), sortedPairs.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    llvm::sort(sortedPairs.begin(), sortedPairs.end(),
+               [](const auto& a, const auto& b) { return a.first < b.first; });
     SmallVector<Value> targets;
     for (const auto& pair : sortedPairs) {
       targets.push_back(pair.second);
@@ -845,8 +847,10 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   // Allocate result map
   SmallVector<Value> results(quantumComputation.getNcbits(), nullptr);
 
-  TranslationState state{
-      .qubits = qubits, .bitMap = bitMap, .results = std::move(results)};
+  TranslationState state{.qubits = qubits,
+                         .bitMap = bitMap,
+                         .results = std::move(results),
+                         .ctrlTargets = DenseMap<size_t, Value>{}};
 
   // Translate operations
   if (translateOperations(builder, quantumComputation, state).failed()) {
