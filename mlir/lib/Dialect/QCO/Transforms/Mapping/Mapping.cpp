@@ -11,9 +11,10 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Graph.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
+#include "mlir/Dialect/QCO/Utils/Graph.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
@@ -23,9 +24,12 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
@@ -217,7 +221,8 @@ private:
   public:
     AugmentedDevice() = default;
 
-    explicit AugmentedDevice(const Graph::EdgeSet& couplingSet)
+    explicit AugmentedDevice(
+        const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet)
         : coupling_(couplingSet), dist_(coupling_.getDistMatrix()) {}
 
     /**
@@ -251,12 +256,26 @@ private:
     }
 
     /**
+     * @returns the qubit identifiers.
+     */
+    [[nodiscard]] ArrayRef<size_t> qubits() const {
+      return coupling_.getNodes();
+    }
+
+    /**
+     * @returns the links of the device.
+     */
+    [[nodiscard]] llvm::DenseSet<std::pair<size_t, size_t>> links() const {
+      return coupling_.getEdges();
+    }
+
+    /**
      * @returns the max degree (connectivity) of any qubit of the device.
      */
     [[nodiscard]] size_t maxDegree() const { return coupling_.getMaxDegree(); }
 
   private:
-    Graph coupling_;
+    Graph<GraphType::Undirected, size_t> coupling_;
     Matrix<size_t> dist_;
   };
 
@@ -357,12 +376,21 @@ private:
     }
   };
 
+  /// A unit is a (to be) routeable region.
+  struct Unit {
+    SmallVector<WireIterator> wires;
+    Layout layout;
+  };
+
 public:
+  /// Construct default mapping pass.
   MappingPass() = default;
+  /// Construct default mapping pass with options.
   explicit MappingPass(MappingPassOptions options) : MappingPassBase(options) {}
-  /// @brief Construct Mapping Pass from coupling-set.
-  explicit MappingPass(const Graph::EdgeSet& couplingSet,
-                       MappingPassOptions options = {})
+  /// Construct mapping from coupling set.
+  explicit MappingPass(
+      const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
+      MappingPassOptions options = {})
       : MappingPassBase(options), device(couplingSet) {}
 
 protected:
@@ -398,37 +426,44 @@ protected:
 
     // Create trials for initial layout refining. Currently, this includes
     // `ntrials` many random layouts.
-    SmallVector<Trial> trials;
-    trials.reserve(ntrials);
-    for (size_t i = 0; i < ntrials; ++i) {
-      trials.emplace_back(Layout::random(device.nqubits(), rng()));
-    }
+    // SmallVector<Trial> trials;
+    // trials.reserve(ntrials);
+    // for (size_t i = 0; i < ntrials; ++i) {
+    //   trials.emplace_back(Layout::random(device.nqubits(), rng()));
+    // }
 
     // Execute each of the trials (possibly in parallel). Collect the results
     // and find the one with the fewest SWAPs on the final backwards pass.
-    parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
-      if (const auto res = refineLayout(*comp, trial.layout); succeeded(res)) {
-        trial.success = true;
-        trial.nswaps = *res;
-      }
-    });
+    // parallelForEach(&getContext(), trials, [&, this](Trial& trial) {
+    //   if (const auto res = refineLayout(*comp, trial.layout); succeeded(res))
+    //   {
+    //     trial.success = true;
+    //     trial.nswaps = *res;
+    //   }
+    // });
 
-    Trial* best = findBestTrial(trials);
-    if (best == nullptr) {
-      func.emitError() << "failed to find the best layout trial";
-      signalPassFailure();
-      return;
-    }
+    // Trial* best = findBestTrial(trials);
+    // if (best == nullptr) {
+    //   func.emitError() << "failed to find the best layout trial";
+    //   signalPassFailure();
+    //   return;
+    // }
 
+    Layout l = Layout::identity(device.nqubits());
     // Perform placement and hot routing by inserting SWAPs into the IR.
-    auto placedWires = place(func, best->layout, rewriter);
-    const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
-        placedWires, best->layout, &rewriter);
+    auto placedWires = place(func, l, rewriter);
+    Unit u{.wires = placedWires, .layout = l};
+    const auto res =
+        route<WireDirection::Forward, RoutingMode::Hot>(u, &rewriter);
     if (failed(res)) {
       func.emitError() << "failed to map the " << func.getName() << " function";
       signalPassFailure();
       return;
     }
+
+    assert(llvm::all_of(u.wires,
+                        [](auto& it) { return isa<SinkOp>(it.operation());
+                        }));
 
     // Collect statistics.
     numSwaps += *res;
@@ -560,7 +595,7 @@ private:
    * @brief Find the best trial result in terms of the number of SWAPs.
    * @returns the best trial result or nullptr if no result is valid.
    */
-  [[nodiscard]] static Trial* findBestTrial(MutableArrayRef<Trial> trials) {
+  static Trial* findBestTrial(MutableArrayRef<Trial> trials) {
     Trial* best = nullptr;
     for (auto& trial : trials) {
       if (!trial.success) {
@@ -583,15 +618,14 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns failure() if routing fails.
    */
-  FailureOr<size_t> refineLayout(SmallVector<WireIterator> wires,
-                                 Layout& layout) {
+  FailureOr<size_t> refineLayout(Unit& u) {
     size_t nswaps{0};
     for (size_t i = 0; i < niterations; ++i) {
-      if (failed(route<WireDirection::Forward>(wires, layout))) {
+      if (failed(route<WireDirection::Forward>(u))) {
         return failure();
       }
 
-      const auto resB = route<WireDirection::Backward>(wires, layout);
+      const auto resB = route<WireDirection::Backward>(u);
       if (failed(resB)) {
         return failure();
       }
@@ -618,8 +652,8 @@ private:
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
-  [[nodiscard]] FailureOr<SmallVector<IndexPairType>>
-  search(const Window& window, const Layout& layout) {
+  FailureOr<SmallVector<IndexPairType>> search(const Window& window,
+                                               const Layout& layout) {
     constexpr size_t cap = 25'000'000UL;
 
     const size_t b = device.maxDegree() * ((device.nqubits() + 1) / 2);
@@ -768,10 +802,12 @@ private:
           }
 
           for (const auto& [op, progs] : ready) {
-            if (isa<BarrierOp>(op)) {
+            if (isa<BarrierOp, scf::ForOp>(op)) {
               released.emplace_back(op);
               continue;
             }
+
+            assert(isa<UnitaryOpInterface>(op));
 
             const auto p0 = progs[0];
             const auto p1 = progs[1];
@@ -791,27 +827,49 @@ private:
   }
 
   /**
+   * @todo UPDATE THIS DESCRIPTION
    * @brief Advance past all executable gates.
    * @details Traverses the multi-qubit gates of the circuit until no more
    * executable gates are found.
    */
   template <WireDirection Direction>
-  void skipExecutableGates(MutableArrayRef<WireIterator> wires,
-                           Layout& layout) {
+  std::pair<Operation*, SmallVector<Unit>> advanceFrame(Unit& unit) {
+    Operation* subOp = nullptr;
+    SmallVector<Unit> subs;
+
     std::ignore = walkProgramGraph<Direction>(
-        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
+        unit.wires, [&](const ReadyRange& ready, ReleasedOps& released) {
           if (ready.empty()) {
             return WalkResult::advance();
           }
 
           for (const auto& [op, progs] : ready) {
+            /// TODO: TypeSwitch
             if (isa<BarrierOp>(op)) {
               released.emplace_back(op);
               continue;
             }
 
+            if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+              SmallVector<WireIterator> rWires;
+              for (auto prog : progs) {
+                const auto res = cast<OpResult>(unit.wires[prog].qubit());
+                auto& it =
+                    rWires.emplace_back(forOp.getTiedLoopRegionIterArg(res));
+                // The iterator points at a block argument. Move the iterator to
+                // a position where it.operation() != nullptr.
+                std::ranges::advance(it,
+                                     WireTraversalTraits<Direction>::stride());
+              }
+              subOp = op;
+              subs.emplace_back(rWires, unit.layout);
+              return WalkResult::interrupt();
+            }
+
+            assert(isa<UnitaryOpInterface>(op));
+
             const auto [hw0, hw1] =
-                layout.getHardwareIndices(progs[0], progs[1]);
+                unit.layout.getHardwareIndices(progs[0], progs[1]);
 
             if (device.areAdjacent(hw0, hw1)) {
               released.emplace_back(op);
@@ -825,6 +883,101 @@ private:
 
           return WalkResult::advance();
         });
+
+    return std::make_pair(subOp, subs);
+  }
+
+  SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
+    SmallVector<IndexPairType> swaps;
+
+    Layout curr(from);
+
+    Graph<GraphType::Directed, size_t> g;
+    const auto constructEdge = [&](size_t hwX, size_t hwY) {
+      const auto prog = curr.getProgramIndex(hwX);
+
+      const auto hwGoal = to.getHardwareIndex(prog);
+      const auto distPre = device.distanceBetween(hwX, hwGoal);
+      const auto distPost = device.distanceBetween(hwY, hwGoal);
+
+      if (distPost < distPre) {
+        llvm::dbgs() << "prog=" << prog << " edge=(" << hwX << ", " << hwY
+                     << ")"
+                     << " dist(pre)=" << distPre << " dist(post)=" << distPost
+                     << '\n';
+        g.addEdge(hwX, hwY);
+      }
+    };
+
+    do {
+      // Construct 'F' graph.
+      g.clear();
+      for (const auto& [hwA, hwB] : device.links()) {
+        constructEdge(hwA, hwB);
+        constructEdge(hwB, hwA);
+      }
+
+      // Find happy swap chain or unhappy swap.
+      if (const auto cycle = g.findCycle(); cycle) {
+        // Apply happy SWAP chain.
+        for (size_t i = 0; i < cycle->size() - 1; ++i) {
+          llvm::dbgs() << "happySWAP=(" << (*cycle)[i] << ", "
+                       << (*cycle)[i + 1] << ")\n";
+          curr.swap((*cycle)[i], (*cycle)[i + 1]);
+          swaps.emplace_back((*cycle)[i], (*cycle)[i + 1]);
+        }
+
+        continue;
+      }
+
+      for (const auto e : g.getEdges()) {
+        if (g.getDegree(e.second) == 0) {
+          llvm::dbgs() << "unhappySWAP=(" << e.first << ", " << e.second
+                       << ")\n";
+          curr.swap(e.first, e.second);
+          swaps.emplace_back(e.first, e.second);
+          break;
+        }
+      }
+    } while (!g.empty());
+
+    return swaps;
+  }
+
+  template <RoutingMode Mode = RoutingMode::Cold>
+  void applySWAPs(Unit& unit, ArrayRef<IndexPairType> swaps,
+                  IRRewriter* rewriter) {
+    for (const auto& [hw0, hw1] : swaps) {
+      if constexpr (Mode == RoutingMode::Hot) {
+        const auto& [prog0, prog1] = unit.layout.getProgramIndices(hw0, hw1);
+        const auto& w0 = unit.wires[prog0];
+        const auto& w1 = unit.wires[prog1];
+
+        assert(!isa<SinkOp>(w0.operation()));
+        assert(!isa<SinkOp>(w1.operation()));
+
+        const auto in0 = w0.qubit();
+        const auto in1 = w1.qubit();
+
+        rewriter->setInsertionPointAfter(in0.getDefiningOp());
+        auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
+
+        const auto out0 = swapOp.getQubit0Out();
+        const auto out1 = swapOp.getQubit1Out();
+
+        rewriter->replaceAllUsesExcept(in0, out1, swapOp);
+        rewriter->replaceAllUsesExcept(in1, out0, swapOp);
+
+        // Preserve program-indexed wire semantics.
+        unit.wires[prog0] = WireIterator(out1);
+        unit.wires[prog1] = WireIterator(out0);
+
+        assert(isa<SWAPOp>(w0.operation()));
+        assert(isa<SWAPOp>(w1.operation()));
+      }
+
+      unit.layout.swap(hw0, hw1);
+    }
   }
 
   /**
@@ -836,82 +989,95 @@ private:
    * @returns failure() if A* search isn't able to find a solution, the number
    * of SWAPs otherwise.
    */
-  template <WireDirection Direction, RoutingMode mode = RoutingMode::Cold>
-  FailureOr<size_t> route(SmallVector<WireIterator>& wires, Layout& layout,
-                          IRRewriter* rewriter = nullptr) {
+  template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
+  FailureOr<size_t> route(Unit& unit, IRRewriter* rewriter = nullptr) {
+    assert(Mode == RoutingMode::Cold ||
+           (Mode == RoutingMode::Hot && Direction == WireDirection::Forward));
+
     using Traits = WireTraversalTraits<Direction>;
 
     size_t nswaps{0};
-    while (true) {
-      skipExecutableGates<Direction>(wires, layout);
 
-      const auto window = getWindow<Direction>(wires);
+    while (true) {
+      auto [op, subUnits] = advanceFrame<Direction>(unit);
+      if (op != nullptr) {
+        for (auto& subUnit : subUnits) {
+          const auto res = route<Direction, Mode>(subUnit, rewriter);
+          if (failed(res)) {
+            return failure();
+          }
+          nswaps += *res;
+        }
+
+        assert(isa<scf::ForOp>(op));
+
+        // An scf.for operation has exactly one sub-unit.
+        // To finalize the mapping of the sub-unit, we append an appendix
+        // of SWAPs to restore the base-layout.
+
+        auto& subUnit = subUnits.front();
+        const auto swaps = restore(subUnit.layout, unit.layout);
+
+        if constexpr (Mode == RoutingMode::Hot) {
+
+          // At this point the wire iterators point to scf.yield ops. Thus,
+          // decrement the iterator to point at a valid insertion point. Because
+          // the wire iterators are not required any more, there is no need to
+          // increment them again after applying the SWAP sequence.
+
+          for_each(subUnit.wires, [](auto& it) {
+            std::ranges::advance(it, -Traits::stride());
+          });
+        }
+
+        applySWAPs<Mode>(subUnit, swaps, rewriter);
+        nswaps += swaps.size();
+      }
+
+      const auto window = getWindow<Direction>(unit.wires);
       if (window.empty()) {
         break;
       }
 
-      if constexpr (mode == RoutingMode::Hot) {
+      for (const auto [i0, i1] : window) {
+        llvm::dbgs() << "(" << i0 << ", " << i1 << ") ";
+      }
+      llvm::dbgs() << '\n';
+
+      const auto swaps = search(window, unit.layout);
+      if (failed(swaps)) {
+        return failure();
+      }
+
+      if constexpr (Mode == RoutingMode::Hot) {
 
         // At this point the wire iterators either point to
         // std::default_sentinel or a multi-qubit gate (including barriers) of
         // the current or subsequent layers. The former must be decremented
-        // twice (sentinel -> sink -> unitary/static). For the latter we simply
-        // must ensure the insertion point is before the multi-qubit gates.
+        // twice (sentinel -> sink -> unitary/static). For the latter we
+        // simply must ensure the insertion point is before the multi-qubit
+        // gates.
 
-        for (auto& it : wires) {
+        for (auto& it : unit.wires) {
           std::ranges::advance(it, it == std::default_sentinel
                                        ? -2 * Traits::stride()
                                        : -Traits::stride());
         }
       }
 
-      const auto swaps = search(window, layout);
-      if (failed(swaps)) {
-        return failure();
-      }
+      applySWAPs<Mode>(unit, *swaps, rewriter);
 
-      for (const auto& [hw0, hw1] : *swaps) {
-        if constexpr (mode == RoutingMode::Hot) {
-          const auto& [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
-          const auto& w0 = wires[prog0];
-          const auto& w1 = wires[prog1];
-
-          assert(!isa<SinkOp>(w0.operation()));
-          assert(!isa<SinkOp>(w1.operation()));
-
-          const auto in0 = w0.qubit();
-          const auto in1 = w1.qubit();
-
-          rewriter->setInsertionPointAfter(in0.getDefiningOp());
-          auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
-
-          const auto out0 = swapOp.getQubit0Out();
-          const auto out1 = swapOp.getQubit1Out();
-
-          rewriter->replaceAllUsesExcept(in0, out1, swapOp);
-          rewriter->replaceAllUsesExcept(in1, out0, swapOp);
-
-          // Preserve program-indexed wire semantics.
-          wires[prog0] = WireIterator(out1);
-          wires[prog1] = WireIterator(out0);
-
-          assert(isa<SWAPOp>(w0.operation()));
-          assert(isa<SWAPOp>(w1.operation()));
-        }
-        layout.swap(hw0, hw1);
-      }
-
-      if constexpr (mode == RoutingMode::Hot) {
+      if constexpr (Mode == RoutingMode::Hot) {
 
         // After SWAP insertion, a wire is either untouched by the SWAP
-        // insertion or pointing at a SWAP operation. If the former is the case,
-        // incrementing the wire iterator will undo the previous decrement,
-        // leaving it at the same position as before the SWAP insertion.
-        // Otherwise, an increment will move the iterator to the multi-qubit op
-        // of the current or subsequent layer or to a sink (and thus
-        // std::default_sentinel).
+        // insertion or pointing at a SWAP operation. If the former is the
+        // case, incrementing the wire iterator will undo the previous
+        // decrement, leaving it at the same position as before the SWAP
+        // insertion. Otherwise, an increment will move the iterator to the
+        // multi-qubit op of the current or subsequent layer or to a sink (and
+        // thus std::default_sentinel).
 
-        for_each(wires,
+        for_each(unit.wires,
                  [](auto& it) { std::ranges::advance(it, Traits::stride()); });
       }
 
@@ -926,8 +1092,9 @@ private:
 
 } // namespace
 
-std::unique_ptr<Pass> createMappingPass(const Graph::EdgeSet& couplingSet,
-                                        MappingPassOptions options) {
+std::unique_ptr<Pass>
+createMappingPass(const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
+                  MappingPassOptions options) {
   return std::make_unique<MappingPass>(couplingSet, options);
 }
 

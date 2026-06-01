@@ -18,6 +18,8 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
@@ -88,13 +90,22 @@ LogicalResult walkProgram(Region& region, const WalkProgramFn& fn) {
   return success();
 }
 
-using ReleasedOps = SmallVector<UnitaryOpInterface, 8>;
-using PendingWiresMap =
-    DenseMap<UnitaryOpInterface, SmallVector<std::size_t, 2>>;
+using ReleasedOps = SmallVector<Operation*, 8>;
+using PendingWiresMap = DenseMap<Operation*, SmallVector<size_t, 2>>;
 
 struct IsReady {
   bool operator()(PendingWiresMap::value_type& kv) const {
-    return kv.second.size() == kv.first.getNumQubits();
+    const auto npending = kv.second.size();
+    return TypeSwitch<Operation*, bool>(kv.first)
+        .Case<UnitaryOpInterface>(
+            [&](auto& op) { return op.getNumQubits() == npending; })
+        .template Case<scf::ForOp>(
+            [&](auto& op) { return op.getInits().size() == npending; })
+        .Default([&](Operation* op) {
+          const auto name = op->getName().getStringRef();
+          reportFatalInternalError("unknown pending op: " + name);
+          return false;
+        });
   }
 };
 
@@ -138,20 +149,20 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
   PendingWiresMap pending;
   pending.reserve(wires.size());
 
-  SmallVector<std::size_t> curr(wires.size());
+  SmallVector<size_t> curr(wires.size());
   std::iota(curr.begin(), curr.end(), 0UL);
 
-  SmallVector<std::size_t> next;
+  SmallVector<size_t> next;
   next.reserve(wires.size());
 
   while (!curr.empty()) {
-    for (std::size_t i : curr) {
+    for (size_t i : curr) {
       auto& it = wires[i];
       while (Traits::isActive(it)) {
         const auto res =
             TypeSwitch<Operation*, WalkResult>(it.operation())
-                .template Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
-                  // If there are fewer wires than the qubit requires inputs,
+                .template Case<UnitaryOpInterface>([&](auto& op) {
+                  // If there are fewer wires than the unitary requires inputs,
                   // it's impossible to release the operation. Hence, fail.
                   if (op.getNumQubits() > wires.size()) {
                     return WalkResult::interrupt();
@@ -173,19 +184,45 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
                   indices.emplace_back(i);
 
-                  return WalkResult::skip(); // Stop at multi-qubit gate.
+                  return WalkResult::skip(); // Stop at multi-qubit unitary.
+                })
+                .template Case<scf::ForOp>([&](scf::ForOp& op) {
+                  // If there are fewer wires than the loop requires inputs,
+                  // it's impossible to release the operation. Hence, fail.
+                  if (op.getInits().size() > wires.size()) {
+                    return WalkResult::interrupt();
+                  }
+
+                  if (op.getInits().size() == 1) {
+                    std::ranges::advance(it, Traits::stride());
+                    return WalkResult::advance();
+                  }
+
+                  // Insert the loop to the pending map.
+                  // The caller decides if this op should be released.
+                  const auto [mapIt, inserted] = pending.try_emplace(op);
+                  auto& indices = mapIt->second;
+
+                  if (inserted) {
+                    indices.reserve(op.getInits().size());
+                  }
+
+                  indices.emplace_back(i);
+
+                  return WalkResult::skip(); // Stop at multi-qubit loop.
                 })
                 // AllocOp, StaticOp, and qtensor::ExtractOp are only reachable
                 // on the forward path; backward isActive() halts before
                 // reaching them (decrementing at a source op is a no-op).
-                .template Case<AllocOp, StaticOp, qtensor::ExtractOp, ResetOp,
-                               MeasureOp, SinkOp, qtensor::InsertOp>([&](auto) {
+                .template Case<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp,
+                               YieldOp, scf::YieldOp, qtensor::ExtractOp,
+                               qtensor::InsertOp>([&](auto) {
                   std::ranges::advance(it, Traits::stride());
                   return WalkResult::advance();
                 })
                 .Default([&](Operation* op) -> WalkResult {
                   const auto name = op->getName().getStringRef();
-                  report_fatal_error("unknown op encountered: " + name);
+                  reportFatalInternalError("unknown op encountered: " + name);
                 });
 
         if (res.wasSkipped()) {
@@ -212,11 +249,11 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       }
     }
 
-    for (const UnitaryOpInterface& op : released) {
+    for (Operation* op : released) {
       const auto mapIt = pending.find(op);
       assert(mapIt != pending.end());
 
-      for (std::size_t i : mapIt->second) {
+      for (size_t i : mapIt->second) {
         std::ranges::advance(wires[i], Traits::stride());
         next.emplace_back(i);
       }
