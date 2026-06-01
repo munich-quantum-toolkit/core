@@ -1487,13 +1487,6 @@ void simpleIf(QCProgramBuilder& b) {
   b.scfIf(cond, [&] { b.x(q[0]); });
 }
 
-void ifElse(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.h(q[0]);
-  auto cond = b.measure(q[0]);
-  b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
-}
-
 void ifTwoQubits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
@@ -1502,6 +1495,13 @@ void ifTwoQubits(QCProgramBuilder& b) {
     b.x(q[0]);
     b.x(q[1]);
   });
+}
+
+void ifElse(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0]);
+  b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
 }
 
 void nestedIfOpForLoop(QCProgramBuilder& b) {

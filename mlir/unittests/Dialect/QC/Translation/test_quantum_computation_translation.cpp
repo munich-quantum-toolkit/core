@@ -419,8 +419,14 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
             MQT_NAMED_BUILDER(mlir::qc::barrierMultipleQubits)},
         QuantumComputationTranslationTestCase{
+            "CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+            MQT_NAMED_BUILDER(mlir::qc::ctrlTwo)},
+        QuantumComputationTranslationTestCase{
             "SimpleIf", MQT_NAMED_BUILDER(qc::simpleIf),
             MQT_NAMED_BUILDER(mlir::qc::simpleIf)},
+        QuantumComputationTranslationTestCase{
+            "IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
+            MQT_NAMED_BUILDER(mlir::qc::ifTwoQubits)},
         QuantumComputationTranslationTestCase{
             "IfElse", MQT_NAMED_BUILDER(qc::ifElse),
             MQT_NAMED_BUILDER(mlir::qc::ifElse)}));

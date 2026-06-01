@@ -865,11 +865,11 @@ void invCtrlTwo(QCProgramBuilder& b);
 /// Creates a circuit with a simple if operation with one qubit.
 void simpleIf(QCProgramBuilder& b);
 
-/// Creates a circuit with an if operation with an else branch.
-void ifElse(QCProgramBuilder& b);
-
 /// Creates a circuit with an if operation with two qubits.
 void ifTwoQubits(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with an else branch.
+void ifElse(QCProgramBuilder& b);
 
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.
