@@ -52,7 +52,7 @@ qiskit = [
   "qiskit[qasm3-import]>=1.1.0",
 ]
 iqm = [
-  "iqm-qdmi>=1.1.0",
+  "iqm-qdmi>=1.1.1",
   "qiskit[qasm3-import]>=1.1.0",
 ]
 
@@ -363,7 +363,7 @@ test = [
   "qiskit[qasm3-import]>=1.1.0",
   "numpy>=2.1; python_version >= '3.13'",
   "numpy>=2.3.2; python_version >= '3.14'",
-  "iqm-qdmi>=1.1.0",
+  "iqm-qdmi>=1.1.1",
 ]
 dev = [
   {include-group = "build"},
