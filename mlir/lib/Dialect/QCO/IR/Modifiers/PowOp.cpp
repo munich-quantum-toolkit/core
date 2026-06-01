@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <numbers>
 #include <optional>
+#include <variant>
 
 using namespace mlir;
 using namespace mlir::qco;
