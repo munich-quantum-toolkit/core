@@ -117,13 +117,13 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
 TEST_F(QCOTest, CheckDeadGateElimination) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
-  auto q0_0 = builder.allocQubit();
-  auto q1_0 = builder.allocQubit();
-  auto q0_1 = builder.h(q0_0);
-  auto [q0_2, q1_1] = builder.cx(q0_1, q1_0);
-  auto q1_2 = builder.h(q1_1);
-  builder.sink(q0_2);
-  builder.sink(q1_2);
+  auto q0S0 = builder.allocQubit();
+  auto q1S0 = builder.allocQubit();
+  auto q0S1 = builder.h(q0S0);
+  auto [q0S2, q1S1] = builder.cx(q0S1, q1S0);
+  auto q1S2 = builder.h(q1S1);
+  builder.sink(q0S2);
+  builder.sink(q1S2);
   auto module = builder.finalize();
 
   QCOProgramBuilder reference(context.get());
