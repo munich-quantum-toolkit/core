@@ -78,7 +78,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
         [&](ValueRange targetArgs) -> SmallVector<Value> {
           auto* innerCtrlBody = innerCtrlOp.getBody();
           IRMapping mapping;
-          utils::populateMapping(*innerCtrlBody, mapping, innerTargets,
+          utils::populateMapping(mapping, *innerCtrlBody, innerTargets,
                                  outerTargets, targets, targetArgs);
           for (auto& op : innerCtrlBody->without_terminator()) {
             rewriter.clone(op, mapping);

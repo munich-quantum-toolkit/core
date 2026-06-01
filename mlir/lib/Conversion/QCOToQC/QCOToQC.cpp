@@ -128,7 +128,8 @@ static void inlineRegion(Region& sourceRegion, Region& targetRegion,
                          ConversionPatternRewriter& rewriter) {
   rewriter.inlineRegionBefore(sourceRegion, targetRegion, targetRegion.end());
   auto& block = targetRegion.front();
-
+  assert(block.getNumArguments() == offset + replacementValues.size() &&
+         "Number of replacement values must match number of block arguments");
   for (auto [arg, replacementVal] : llvm::zip_equal(
            block.getArguments().drop_front(offset), replacementValues)) {
     arg.replaceAllUsesWith(replacementVal);

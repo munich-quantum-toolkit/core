@@ -969,7 +969,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"ControlledTwoX", MQT_NAMED_BUILDER(controlledTwoX),
                     MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"inverseTwoX", MQT_NAMED_BUILDER(twoX),
+        QCOTestCase{"InverseTwoX", MQT_NAMED_BUILDER(inverseTwoX),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 

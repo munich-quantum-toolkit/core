@@ -66,7 +66,7 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
                      [&](ValueRange qubitArgs) -> SmallVector<Value> {
                        auto* innerCtrlBody = innerCtrlOp.getBody();
                        IRMapping mapping;
-                       utils::populateMapping(*innerCtrlBody, mapping,
+                       utils::populateMapping(mapping, *innerCtrlBody,
                                               innerCtrlOp.getTargetsIn(),
                                               outerQubits, targets, qubitArgs);
                        for (auto& op : innerCtrlBody->without_terminator()) {

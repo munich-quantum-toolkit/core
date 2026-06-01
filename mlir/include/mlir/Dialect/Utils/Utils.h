@@ -16,6 +16,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
 
+#include <cassert>
 #include <variant>
 
 namespace mlir::utils {
@@ -178,9 +179,11 @@ static Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
  * @details This helper function is used to resolve block arguments for nested
  * modifiers.
  */
-static void populateMapping(Block& block, IRMapping& mapping,
+static void populateMapping(IRMapping& mapping, Block& block,
                             ValueRange innerQubits, ValueRange outerQubits,
                             ValueRange newQubits, ValueRange qubitArgs) {
+  assert(innerQubits.size() == block.getNumArguments() &&
+         "Size of innerQubits must match number of block arguments");
   for (auto arg : block.getArguments()) {
     auto innerQubit = innerQubits[arg.getArgNumber()];
     auto outerQubit = getValueFromBlockArgument(innerQubit, outerQubits);

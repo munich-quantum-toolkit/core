@@ -209,9 +209,11 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
   // Clean up modifier information
-  state.inCtrlOp--;
-  if (inCtrlOp == 0) {
-    state.controls.clear();
+  if (inCtrlOp != 0) {
+    state.inCtrlOp--;
+    if (state.inCtrlOp == 0) {
+      state.controls.clear();
+    }
   }
 
   // Replace operation with CallOp
