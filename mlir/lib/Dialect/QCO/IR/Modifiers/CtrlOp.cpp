@@ -49,7 +49,6 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // TODO: Relax this condition?
     if (op.getNumBodyUnitaries() != 1) {
       return failure();
     }
@@ -104,7 +103,6 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    // TODO: Relax this condition?
     if (op.getNumBodyUnitaries() != 1) {
       return failure();
     }
@@ -365,7 +363,6 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
-  // TODO: Relax this condition
   if (getNumBodyUnitaries() != 1) {
     return std::nullopt;
   }

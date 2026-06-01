@@ -44,7 +44,6 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    // TODO: Relax this condition?
     if (op.getNumBodyUnitaries() != 1) {
       return failure();
     }
@@ -331,7 +330,6 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    // TODO: Relax this condition?
     if (op.getNumBodyUnitaries() != 1) {
       return failure();
     }
@@ -340,7 +338,6 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    // TODO: Relax this condition?
     if (innerInvOp.getNumBodyUnitaries() != 1) {
       return failure();
     }
@@ -494,7 +491,6 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
-  // TODO: Relax this condition
   if (getNumBodyUnitaries() != 1) {
     return std::nullopt;
   }
