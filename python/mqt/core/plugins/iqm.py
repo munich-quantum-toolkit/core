@@ -18,7 +18,7 @@ from .._compat.optional import OptionalDependencyTester
 
 HAS_IQM_QDMI = OptionalDependencyTester(
     "iqm.qdmi.qiskit",
-    install_msg="Install with 'pip install mqt-core[iqm]'",
+    install_msg="Install with 'uv pip install mqt-core[iqm]'",
 )
 
 if HAS_IQM_QDMI:

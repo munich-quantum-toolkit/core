@@ -120,7 +120,7 @@ backend = IQMBackend(
 If you omit these parameters, {py:class}`~mqt.core.plugins.iqm.IQMBackend` falls back to the following environment variables:
 
 - {code}`IQM_BASE_URL`
-- {code}`IQM_TOKEN` or {code}`RESONANCE_API_KEY`
+- {code}`IQM_TOKEN`
 - {code}`IQM_TOKENS_FILE`
 - {code}`IQM_QC_ID`
 - {code}`IQM_QC_ALIAS`
