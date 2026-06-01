@@ -67,9 +67,9 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
                      [&](ValueRange qubitArgs) -> SmallVector<Value> {
                        auto* innerCtrlBody = innerCtrlOp.getBody();
                        IRMapping mapping;
-                       utils::prova(*innerCtrlBody, mapping,
-                                    innerCtrlOp.getTargetsIn(), outerQubits,
-                                    targets, qubitArgs);
+                       utils::populateMapping(*innerCtrlBody, mapping,
+                                              innerCtrlOp.getTargetsIn(),
+                                              outerQubits, targets, qubitArgs);
                        for (auto& op : innerCtrlBody->without_terminator()) {
                          rewriter.clone(op, mapping);
                        }
@@ -483,16 +483,6 @@ LogicalResult InvOp::verify() {
       return emitOpError("duplicate qubit found");
     }
   }
-
-  // TODO: Re-enable
-  // for (size_t i = 0; i < getNumBodyUnitaries(); ++i) {
-  //   auto bodyUnitary = getBodyUnitary(i);
-  //   for (size_t j = 0; j < bodyUnitary.getNumQubits(); ++j) {
-  //     if (!uniqueQubitsIn.contains(bodyUnitary.getInputQubit(j))) {
-  //       return emitOpError("unitary is using an unknown qubit");
-  //     }
-  //   }
-  // }
 
   return success();
 }

@@ -61,8 +61,9 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
               rewriter, op.getLoc(), targetArgs, [&](ValueRange qubitArgs) {
                 auto* innerCtrlBody = innerCtrlOp.getBody();
                 IRMapping mapping;
-                utils::prova(*innerCtrlBody, mapping, innerCtrlOp.getTargets(),
-                             outerQubits, targets, qubitArgs);
+                utils::populateMapping(*innerCtrlBody, mapping,
+                                       innerCtrlOp.getTargets(), outerQubits,
+                                       targets, qubitArgs);
                 for (auto& op : innerCtrlBody->without_terminator()) {
                   rewriter.clone(op, mapping);
                 }

@@ -517,7 +517,6 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
 
   ValueRange lhsOperands;
   ValueRange rhsOperands;
-  // TODO: Extend this
   if (auto lhsCtrl = dyn_cast<qc::CtrlOp>(lhs)) {
     auto rhsCtrl = dyn_cast<qc::CtrlOp>(rhs);
     if (!rhsCtrl) {

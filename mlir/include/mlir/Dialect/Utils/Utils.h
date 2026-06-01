@@ -161,7 +161,10 @@ static void printTargetAliasing(OpAsmPrinter& printer, Region& region,
   printer.printRegion(region, false);
 }
 
-// TODO: Document
+/**
+ * @brief Get the value corresponding to @p qubit from the block arguments @p
+ * qubits if @p qubit is a block argument, otherwise return @p qubit itself.
+ */
 static Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
   if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
     return qubits[blockArg.getArgNumber()];
@@ -169,10 +172,15 @@ static Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
   return qubit;
 }
 
-// TODO: Rename and document
-static void prova(Block& block, IRMapping& mapping, ValueRange innerQubits,
-                  ValueRange outerQubits, ValueRange newQubits,
-                  ValueRange qubitArgs) {
+/**
+ * @brief Create a mapping between block arguments and qubit values.
+ *
+ * @details This helper function is used to resolve block arguments for nested
+ * modifiers.
+ */
+static void populateMapping(Block& block, IRMapping& mapping,
+                            ValueRange innerQubits, ValueRange outerQubits,
+                            ValueRange newQubits, ValueRange qubitArgs) {
   for (auto arg : block.getArguments()) {
     auto innerQubit = innerQubits[arg.getArgNumber()];
     auto outerQubit = getValueFromBlockArgument(innerQubit, outerQubits);
@@ -180,7 +188,7 @@ static void prova(Block& block, IRMapping& mapping, ValueRange innerQubits,
       auto index = std::distance(newQubits.begin(), it);
       mapping.map(arg, qubitArgs[index]);
     } else {
-      llvm::reportFatalInternalError("TODO");
+      llvm::reportFatalInternalError("Outer qubit not found in new qubits");
     }
   }
 }

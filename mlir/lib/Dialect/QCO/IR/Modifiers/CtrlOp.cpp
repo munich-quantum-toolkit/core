@@ -79,8 +79,8 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
         [&](ValueRange targetArgs) -> SmallVector<Value> {
           auto* innerCtrlBody = innerCtrlOp.getBody();
           IRMapping mapping;
-          utils::prova(*innerCtrlBody, mapping, innerTargets, outerTargets,
-                       targets, targetArgs);
+          utils::populateMapping(*innerCtrlBody, mapping, innerTargets,
+                                 outerTargets, targets, targetArgs);
           for (auto& op : innerCtrlBody->without_terminator()) {
             rewriter.clone(op, mapping);
           }
@@ -333,7 +333,6 @@ LogicalResult CtrlOp::verify() {
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;
-  SmallPtrSet<Value, 4> uniqueTargetsIn;
   for (const auto& control : getControlsIn()) {
     if (!uniqueQubitsIn.insert(control).second) {
       return emitOpError("duplicate control qubit found");
@@ -343,20 +342,7 @@ LogicalResult CtrlOp::verify() {
     if (!uniqueQubitsIn.insert(target).second) {
       return emitOpError("duplicate target qubit found");
     }
-    if (!uniqueTargetsIn.insert(target).second) {
-      return emitOpError("duplicate target qubit found");
-    }
   }
-
-  // TODO: Re-enable
-  // for (size_t i = 0; i < getNumBodyUnitaries(); ++i) {
-  //   auto bodyUnitary = getBodyUnitary(i);
-  //   for (size_t j = 0; j < bodyUnitary.getNumQubits(); ++j) {
-  //     if (!uniqueTargetsIn.contains(bodyUnitary.getInputQubit(j))) {
-  //       return emitOpError("unitary is using an unknown input qubit");
-  //     }
-  //   }
-  // }
 
   SmallPtrSet<Value, 4> uniqueQubitsOut;
   for (const auto& control : getControlsOut()) {
