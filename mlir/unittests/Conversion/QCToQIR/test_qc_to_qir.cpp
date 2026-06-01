@@ -649,3 +649,11 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::allocDeallocPair),
                         MQT_NAMED_BUILDER(qir::emptyQIR)}));
 /// @}
+
+/// \name QCToQIR/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(QCToQIRCtrlOpTest, QCToQIRTest,
+                         testing::Values(QCToQIRTestCase{
+                             "NestedCtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                             MQT_NAMED_BUILDER(qir::ctrlTwo)}));
+/// @}
