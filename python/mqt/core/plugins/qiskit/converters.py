@@ -77,7 +77,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
         """
         raise exception_type(message)
 
-    try:
+    try:  # noqa: PLW0717
         # Check for unbound parameters
         if circuit.parameters:
             param_names = ", ".join(sorted(p.name for p in circuit.parameters))
@@ -174,6 +174,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
 
     except UnsupportedOperationError:
         raise
+
     except Exception as exc:
         msg = f"Failed to convert circuit to IQM JSON: {exc}"
         raise TranslationError(msg) from exc
