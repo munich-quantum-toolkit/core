@@ -35,7 +35,8 @@ removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   }
 
   // Unlink both operations
-  rewriter.replaceAllUsesWith(nextOp->getResult(0), op.getInputQubit(0));
+  rewriter.replaceOp(op, op.getInputQubits());
+  rewriter.replaceOp(nextOp, nextOp.getInputQubits());
 
   return success();
 }
@@ -64,7 +65,8 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   }
 
   // Unlink both operations
-  rewriter.replaceAllUsesWith(nextOp->getResults(), op.getOperands());
+  rewriter.replaceOp(op, op.getInputQubits());
+  rewriter.replaceOp(nextOp, nextOp.getInputQubits());
 
   return success();
 }
@@ -95,8 +97,8 @@ removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
   }
 
   // Unlink both operations
-  rewriter.replaceAllUsesWith(nextOp->getResults(),
-                              {op.getInputQubit(1), op.getInputQubit(0)});
+  rewriter.replaceOp(op, op.getInputQubits());
+  rewriter.replaceOp(nextOp, nextOp.getInputQubits());
 
   return success();
 }
