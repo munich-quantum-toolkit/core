@@ -237,4 +237,22 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
   return success();
 }
 
+/**
+ * @brief Check if given quantum operation is unused (i.e., only used by
+ * deallocations) and remove it if so.
+ *
+ * @param op The operation to check.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+LogicalResult checkAndRemoveDeadGate(Operation* op, PatternRewriter& rewriter) {
+  if (std::all_of(op->getUsers().begin(), op->getUsers().end(),
+                  [](Operation* user) { return isa<SinkOp>(user); })) {
+    // If the operation is only used by deallocs, we can safely remove it.
+    rewriter.replaceOp(op, op->getOperands());
+    return success();
+  }
+  return failure();
+}
+
 } // namespace mlir::qco

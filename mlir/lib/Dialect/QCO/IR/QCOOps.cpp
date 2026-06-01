@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/Block.h>
@@ -29,6 +30,21 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+
+//===----------------------------------------------------------------------===//
+// Dialect-Level Canonicalizers
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct DeadGateElimination
+    : public mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
+
+  LogicalResult matchAndRewrite(UnitaryOpInterface op,
+                                PatternRewriter& rewriter) const override {
+    return checkAndRemoveDeadGate(op.getOperation(), rewriter);
+  }
+};
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // Custom Parsers
@@ -256,6 +272,10 @@ void QCODialect::initialize() {
 #include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
 
       >();
+}
+
+void QCODialect::getCanonicalizationPatterns(RewritePatternSet& results) const {
+  results.add<DeadGateElimination>(getContext());
 }
 
 //===----------------------------------------------------------------------===//

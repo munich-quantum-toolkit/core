@@ -136,6 +136,7 @@ def MeasureOp : QCOOp<"measure"> {
         }]>];
 
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 }
 
 def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType]> {
