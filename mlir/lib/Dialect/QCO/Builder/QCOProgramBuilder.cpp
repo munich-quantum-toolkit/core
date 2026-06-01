@@ -74,6 +74,11 @@ Value QCOProgramBuilder::intConstant(const int64_t value) {
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
+Value QCOProgramBuilder::boolConstant(const bool value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getBoolAttr(value)).getResult();
+}
+
 Value& QCOProgramBuilder::QubitRegister::operator[](const size_t index) {
   if (index >= qubits.size()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");
@@ -1096,6 +1101,11 @@ void QCOProgramBuilder::ensureAllocationMode(
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
+  auto exitCode = intConstant(0);
+  return finalize(exitCode);
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(Value exitCode) {
   checkFinalized();
 
   // Ensure that main function exists and insertion point is valid
@@ -1145,9 +1155,6 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   }
   validQubits.clear();
   validTensors.clear();
-
-  // Create constant 0 for successful exit code
-  auto exitCode = intConstant(0);
 
   // Add return statement with exit code 0 to the main function
   func::ReturnOp::create(*this, exitCode);

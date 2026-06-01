@@ -105,6 +105,21 @@ public:
    */
   Value intConstant(int64_t value);
 
+  /**
+   * @brief Create a constant boolean value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.boolConstant(true);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i1
+   * ```
+   */
+  Value boolConstant(bool value);
+
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
@@ -1374,6 +1389,21 @@ public:
    * @return OwningOpRef containing the constructed quantum program module
    */
   OwningOpRef<ModuleOp> finalize();
+
+  /**
+   * @brief Finalize the program with a given exit code and return the
+   * constructed module
+   * @param exitCode Value representing the exit code to return
+   *
+   * @details
+   * Automatically deallocates all remaining valid qubits and tensors of qubits,
+   * adds a return statement with a given exit code,
+   * and transfers ownership of the module to the caller. The builder should not
+   * be used after calling this method.
+   *
+   * @return OwningOpRef containing the constructed quantum program module
+   */
+  OwningOpRef<ModuleOp> finalize(Value exitCode);
 
   /**
    * @brief Convenience method for building quantum programs
