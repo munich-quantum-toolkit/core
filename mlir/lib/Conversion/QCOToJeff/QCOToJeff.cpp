@@ -880,18 +880,24 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
   LogicalResult
   matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 1) {
+      return rewriter.notifyMatchFailure(
+          op,
+          "Control modifiers with multiple body unitaries are not supported.");
+    }
+
     auto& state = getState();
 
     if (state.inCtrlOp) {
       return rewriter.notifyMatchFailure(
-          op, "Nested control operations are not supported. Run the "
+          op, "Nested control modifiers are not supported. Run the "
               "canonicalization pass before the conversion");
     }
 
     if (state.inInvOp) {
       return rewriter.notifyMatchFailure(
-          op, "Control operations inside inversion operations are not "
-              "supported. Run the canonicalization pass before the conversion");
+          op, "Control modifiers inside inversion modifiers are not supported. "
+              "Run the canonicalization pass before the conversion");
     }
 
     // Set modifier information
@@ -930,11 +936,17 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
   LogicalResult
   matchAndRewrite(InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 1) {
+      return rewriter.notifyMatchFailure(op,
+                                         "Inversion modifiers with multiple "
+                                         "body unitaries are not supported.");
+    }
+
     auto& state = getState();
 
     if (state.inInvOp) {
       return rewriter.notifyMatchFailure(
-          op, "Nested inversion operations are not supported. Run the "
+          op, "Nested inversion modifiers are not supported. Run the "
               "canonicalization pass before the conversion");
     }
 

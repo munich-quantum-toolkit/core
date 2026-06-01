@@ -422,6 +422,9 @@ INSTANTIATE_TEST_SUITE_P(
             "CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
             MQT_NAMED_BUILDER(mlir::qc::ctrlTwo)},
         QuantumComputationTranslationTestCase{
+            "CtrlTwoMixed", MQT_NAMED_BUILDER(qc::ctrlTwoMixed),
+            MQT_NAMED_BUILDER(mlir::qc::ctrlTwoMixed)},
+        QuantumComputationTranslationTestCase{
             "SimpleIf", MQT_NAMED_BUILDER(qc::simpleIf),
             MQT_NAMED_BUILDER(mlir::qc::simpleIf)},
         QuantumComputationTranslationTestCase{

@@ -390,6 +390,10 @@ void barrierMultipleQubits(QuantumComputation& comp);
 /// Creates a circuit with a control modifier applied to two gates.
 void ctrlTwo(QuantumComputation& comp);
 
+/// Creates a circuit with a control modifier applied to a controlled and a
+/// non-controlled gate.
+void ctrlTwoMixed(QuantumComputation& comp);
+
 // --- IfOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.

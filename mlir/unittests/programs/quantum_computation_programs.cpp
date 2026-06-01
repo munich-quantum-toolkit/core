@@ -553,6 +553,17 @@ void ctrlTwo(QuantumComputation& comp) {
   comp.emplace_back<CompoundOperation>(std::move(compound));
 }
 
+void ctrlTwoMixed(QuantumComputation& comp) {
+  const auto& q = comp.addQubitRegister(4, "q");
+  CompoundOperation compound;
+  compound.emplace_back<StandardOperation>(2, 3, X);
+  compound.emplace_back<StandardOperation>(Targets{2, 3}, RXX,
+                                           std::vector{0.123});
+  compound.addControl(0);
+  compound.addControl(1);
+  comp.emplace_back<CompoundOperation>(std::move(compound));
+}
+
 void simpleIf(QuantumComputation& comp) {
   const auto& q = comp.addQubitRegister(1, "q");
   const auto& c = comp.addClassicalRegister(1, "c");

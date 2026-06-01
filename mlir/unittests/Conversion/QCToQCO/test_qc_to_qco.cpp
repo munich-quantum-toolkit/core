@@ -149,6 +149,9 @@ INSTANTIATE_TEST_SUITE_P(
     QCCtrlOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
                                     MQT_NAMED_BUILDER(qco::ctrlTwo)},
+                    QCToQCOTestCase{"CtrlTwoMixed",
+                                    MQT_NAMED_BUILDER(qc::ctrlTwoMixed),
+                                    MQT_NAMED_BUILDER(qco::ctrlTwoMixed)},
                     QCToQCOTestCase{"CtrlInvTwo",
                                     MQT_NAMED_BUILDER(qc::ctrlInvTwo),
                                     MQT_NAMED_BUILDER(qco::ctrlInvTwo)}));

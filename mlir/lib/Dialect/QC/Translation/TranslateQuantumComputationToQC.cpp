@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
 #include "ir/operations/CompoundOperation.hpp"
@@ -80,12 +81,15 @@ struct TranslationState {
   bool inCtrlOp = false;
 
   /// Mapping from physical qubit index to block argument
-  DenseMap<size_t, Value> ctrlTargets;
+  DenseMap<size_t, Value> targetArgs;
+
+  /// Control qubits of the current CompoundOperation
+  DenseSet<::qc::Qubit> compoundControls;
 
   [[nodiscard]] Value getQubit(size_t index) const {
     if (inCtrlOp) {
-      auto it = ctrlTargets.find(index);
-      if (it == ctrlTargets.end()) {
+      auto it = targetArgs.find(index);
+      if (it == targetArgs.end()) {
         llvm::reportFatalInternalError("Qubit index out of bounds");
       }
       return it->second;
@@ -286,11 +290,11 @@ static void addResetOp(QCProgramBuilder& builder,
  */
 static SmallVector<Value> getControls(const ::qc::Operation& operation,
                                       TranslationState& state) {
-  if (state.inCtrlOp) {
-    return {};
-  }
   SmallVector<Value> controls;
   for (const auto& [control, type] : operation.getControls()) {
+    if (state.compoundControls.contains(control)) {
+      continue;
+    }
     if (type == ::qc::Control::Type::Neg) {
       llvm::reportFatalInternalError(
           "Negative controls cannot be translated to QC at the moment");
@@ -602,6 +606,18 @@ static LogicalResult addCompoundOp(QCProgramBuilder& builder,
           targetMap[target] = state.getQubit(target);
         }
       }
+      for (const auto& control : op->getControls()) {
+        if (compoundOp.getControls().contains(control)) {
+          continue;
+        }
+        const auto& qubit = control.qubit;
+        if (!targetMap.contains(qubit)) {
+          targetMap[qubit] = state.getQubit(qubit);
+        }
+      }
+    }
+    for (const auto& [control, _] : compoundOp.getControls()) {
+      state.compoundControls.insert(control);
     }
     SmallVector<std::pair<uint32_t, Value>> sortedPairs(targetMap.begin(),
                                                         targetMap.end());
@@ -615,7 +631,7 @@ static LogicalResult addCompoundOp(QCProgramBuilder& builder,
     builder.ctrl(controls, targets, [&](ValueRange targetArgs) {
       state.inCtrlOp = true;
       for (size_t i = 0; i < sortedPairs.size(); ++i) {
-        state.ctrlTargets[sortedPairs[i].first] = targetArgs[i];
+        state.targetArgs[sortedPairs[i].first] = targetArgs[i];
       }
       for (const auto& op : compoundOp) {
         if (failed(translateOperation(builder, *op, state))) {
@@ -623,7 +639,7 @@ static LogicalResult addCompoundOp(QCProgramBuilder& builder,
                                          "controlled CompoundOperation");
         }
       }
-      state.ctrlTargets.clear();
+      state.targetArgs.clear();
       state.inCtrlOp = false;
     });
   }
@@ -850,7 +866,7 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   TranslationState state{.qubits = qubits,
                          .bitMap = bitMap,
                          .results = std::move(results),
-                         .ctrlTargets = DenseMap<size_t, Value>{}};
+                         .targetArgs = DenseMap<size_t, Value>{}};
 
   // Translate operations
   if (translateOperations(builder, quantumComputation, state).failed()) {

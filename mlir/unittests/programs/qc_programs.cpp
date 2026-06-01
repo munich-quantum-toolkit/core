@@ -1405,6 +1405,14 @@ void ctrlTwo(QCProgramBuilder& b) {
   });
 }
 
+void ctrlTwoMixed(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+    b.cx(targets[0], targets[1]);
+    b.rxx(0.123, targets[0], targets[1]);
+  });
+}
+
 void nestedCtrlTwo(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {

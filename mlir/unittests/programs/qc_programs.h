@@ -832,6 +832,10 @@ void ctrlInvSandwich(QCProgramBuilder& b);
 /// Creates a circuit with a control modifier applied to two gates.
 void ctrlTwo(QCProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to a controlled and a
+/// non-controlled gate.
+void ctrlTwoMixed(QCProgramBuilder& b);
+
 /// Creates a circuit with nested control modifiers applied to two gates.
 void nestedCtrlTwo(QCProgramBuilder& b);
 

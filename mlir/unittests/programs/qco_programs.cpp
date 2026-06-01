@@ -2038,6 +2038,17 @@ void ctrlTwo(QCOProgramBuilder& b) {
   });
 }
 
+void ctrlTwoMixed(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+    auto i0 = targets[0];
+    auto i1 = targets[1];
+    std::tie(i0, i1) = b.cx(i0, i1);
+    std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+    return SmallVector{i0, i1};
+  });
+}
+
 void nestedCtrlTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
