@@ -36,11 +36,19 @@ using namespace mlir::qco;
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct DeadGateElimination
-    : public mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
+struct DeadGateElimination final
+    : public OpInterfaceRewritePattern<UnitaryOpInterface> {
+
+  explicit DeadGateElimination(MLIRContext* context)
+      : OpInterfaceRewritePattern(context) {}
 
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
+    if (op->use_empty()) {
+      // This effectively ignores the GPhase operation and variants such as its
+      // inverse, which should never be considered dead.
+      return failure();
+    }
     return checkAndRemoveDeadGate(op.getOperation(), rewriter);
   }
 };

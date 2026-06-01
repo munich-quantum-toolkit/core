@@ -245,12 +245,21 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
  * @param rewriter The pattern rewriter.
  * @return LogicalResult Success or failure of the removal.
  */
-LogicalResult checkAndRemoveDeadGate(Operation* op, PatternRewriter& rewriter) {
+inline LogicalResult checkAndRemoveDeadGate(Operation* op,
+                                            PatternRewriter& rewriter) {
   if (std::all_of(op->getUsers().begin(), op->getUsers().end(),
                   [](Operation* user) { return isa<SinkOp>(user); })) {
     // If the operation is only used by deallocs, we can safely remove it.
-    rewriter.replaceOp(op, op->getOperands());
-    return success();
+    if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
+      // We specifically have to replace the output *qubits* with the input
+      // *qubits* to ignore parameters.
+      rewriter.replaceOp(op, u.getInputQubits());
+      return success();
+    } else {
+      // This includes the `IfOp` as well as `Reset` and `Measure`.
+      rewriter.replaceOp(op, op->getOperands());
+      return success();
+    }
   }
   return failure();
 }
