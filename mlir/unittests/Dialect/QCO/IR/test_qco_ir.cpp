@@ -114,6 +114,39 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCOTest, CheckDeadGateElimination) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q0_0 = builder.allocQubit();
+  auto q1_0 = builder.allocQubit();
+  auto q0_1 = builder.h(q0_0);
+  auto [q0_2, q1_1] = builder.cx(q0_1, q1_0);
+  auto q1_2 = builder.h(q1_1);
+  builder.sink(q0_2);
+  builder.sink(q1_2);
+  auto module = builder.finalize();
+
+  QCOProgramBuilder reference(context.get());
+  reference.initialize();
+  auto r0 = reference.allocQubit();
+  auto r1 = reference.allocQubit();
+  reference.sink(r0);
+  reference.sink(r1);
+  auto ref = reference.finalize();
+
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(verify(*module).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(module.get()).succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+
+  ASSERT_TRUE(ref);
+  EXPECT_TRUE(verify(*ref).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
+  EXPECT_TRUE(verify(*ref).succeeded());
+
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(module.get(), ref.get()));
+}
+
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
   QCOProgramBuilder builder(context.get());
