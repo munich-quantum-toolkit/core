@@ -54,29 +54,31 @@ struct Device {
 static LogicalResult
 isExecutable(Region& region,
              const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet) {
-  return walkProgram(region, [&](Operation* curr, const Qubits& qubits) {
-    if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
-      if (isa<BarrierOp>(op)) {
-        return WalkResult::advance();
-      }
+  Qubits qubits;
+  return walkProgram(
+      region, qubits, [&](Operation* curr, const Qubits& qubits) {
+        if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
+          if (isa<BarrierOp>(op)) {
+            return WalkResult::advance();
+          }
 
-      assert(op.getNumQubits() <= 2 &&
-             "isExecutable: expected two-qubit gate decomposition");
+          assert(op.getNumQubits() <= 2 &&
+                 "isExecutable: expected two-qubit gate decomposition");
 
-      if (op.getNumQubits() > 1) {
-        const auto q0 = cast<TypedValue<QubitType>>(op.getInputQubit(0));
-        const auto q1 = cast<TypedValue<QubitType>>(op.getInputQubit(1));
-        const auto i0 = qubits.getIndex(q0);
-        const auto i1 = qubits.getIndex(q1);
+          if (op.getNumQubits() > 1) {
+            const auto q0 = cast<TypedValue<QubitType>>(op.getInputQubit(0));
+            const auto q1 = cast<TypedValue<QubitType>>(op.getInputQubit(1));
+            const auto i0 = qubits.getIndex(q0);
+            const auto i1 = qubits.getIndex(q1);
 
-        if (!couplingSet.contains(std::make_pair(i0, i1))) {
-          return WalkResult::interrupt();
+            if (!couplingSet.contains(std::make_pair(i0, i1))) {
+              return WalkResult::interrupt();
+            }
+          }
         }
-      }
-    }
 
-    return WalkResult::advance();
-  });
+        return WalkResult::advance();
+      });
 }
 
 /**

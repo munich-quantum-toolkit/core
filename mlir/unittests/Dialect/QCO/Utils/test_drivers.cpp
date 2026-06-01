@@ -20,6 +20,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -36,7 +37,8 @@ class DriversTest : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<qco::QCODialect, scf::SCFDialect, arith::ArithDialect,
+                    func::FuncDialect>();
 
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
@@ -50,27 +52,45 @@ protected:
 TEST_F(DriversTest, ProgramWalk) {
   qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
-  const auto q00 = builder.allocQubit();
-  const auto q10 = builder.allocQubit();
-  const auto q20 = builder.allocQubit();
-  const auto q30 = builder.allocQubit();
 
-  const auto q01 = builder.h(q00);
-  const auto [q02, q11] = builder.cx(q01, q10);
-  const auto [q21, q31] = builder.cx(q20, q30);
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  Value q2 = builder.allocQubit();
+  Value q3 = builder.allocQubit();
 
-  const auto [q03, c0] = builder.measure(q02);
-  const auto [q12, c1] = builder.measure(q11);
-  const auto [q22, c2] = builder.measure(q21);
-  const auto [q32, c3] = builder.measure(q31);
+  q0 = builder.h(q0);
+  std::tie(q0, q1) = builder.cx(q0, q1);
+  std::tie(q2, q3) = builder.cx(q2, q3);
 
-  builder.sink(q03);
-  builder.sink(q12);
-  builder.sink(q22);
-  builder.sink(q32);
+  const auto forOut = builder.scfFor(
+      1, 3, 1, {q0, q1, q2, q3}, [&builder](Value, ValueRange iterArgs) {
+        return SmallVector{iterArgs[0], iterArgs[1], iterArgs[2], iterArgs[3]};
+      });
 
-  auto mod = builder.finalize();
-  auto func = *(mod->getOps<func::FuncOp>().begin());
+  q0 = forOut[0];
+  q1 = forOut[1];
+  q2 = forOut[2];
+  q3 = forOut[3];
+
+  Value c0;
+  Value c1;
+  Value c2;
+  Value c3;
+
+  std::tie(q0, c0) = builder.measure(q0);
+  Operation* firstMeasure = q0.getDefiningOp();
+
+  std::tie(q1, c1) = builder.measure(q1);
+  std::tie(q2, c2) = builder.measure(q2);
+  std::tie(q3, c3) = builder.measure(q3);
+
+  builder.sink(q0);
+  builder.sink(q1);
+  builder.sink(q2);
+  builder.sink(q3);
+
+  auto m = builder.finalize();
+  auto func = qco::getEntryPoint(m.get());
 
   Value ex0 = nullptr;
   Value ex1 = nullptr;
@@ -81,9 +101,10 @@ TEST_F(DriversTest, ProgramWalk) {
   // Since WalkOrder::PreOrder is used here, the state of the qubits is not yet
   // updated with the SSA values of the measurement op.
   // Consequently, the program qubits point at the outputs of the controlled-Xs.
-  std::ignore = qco::walkProgram(func.getBody(),
+  qco::Qubits qubits;
+  std::ignore = qco::walkProgram(func.getBody(), qubits,
                                  [&](Operation* op, const qco::Qubits& qubits) {
-                                   if (op == q03.getDefiningOp()) {
+                                   if (op == firstMeasure) {
                                      ex0 = qubits.getProgramQubit(0);
                                      ex1 = qubits.getProgramQubit(1);
                                      ex2 = qubits.getProgramQubit(2);
@@ -93,10 +114,10 @@ TEST_F(DriversTest, ProgramWalk) {
                                    return WalkResult::advance();
                                  });
 
-  ASSERT_EQ(ex0, q02);
-  ASSERT_EQ(ex1, q11);
-  ASSERT_EQ(ex2, q21);
-  ASSERT_EQ(ex3, q31);
+  ASSERT_EQ(ex0, forOut[0]);
+  ASSERT_EQ(ex1, forOut[1]);
+  ASSERT_EQ(ex2, forOut[2]);
+  ASSERT_EQ(ex3, forOut[3]);
 }
 
 TEST_F(DriversTest, ProgramGraphWalk) {

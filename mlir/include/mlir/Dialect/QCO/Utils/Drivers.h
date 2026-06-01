@@ -46,12 +46,13 @@ using WalkProgramFn = function_ref<WalkResult(Operation*, Qubits&)>;
  * Depending on the template parameter, the callback is executed before or after
  * updating the Qubits state.
  * @param region The targeted region.
+ * @param qubits An empty or filled qubits object.
  * @param fn The callback function.
  * @returns success(), if all operations have been visited.
  */
 template <WalkOrder Order = WalkOrder::PreOrder>
-LogicalResult walkProgram(Region& region, const WalkProgramFn& fn) {
-  Qubits qubits;
+LogicalResult walkProgram(Region& region, Qubits& qubits,
+                          const WalkProgramFn& fn) {
   for (Operation& curr : region.getOps()) {
     if constexpr (Order == WalkOrder::PreOrder) {
       if (fn(&curr, qubits).wasInterrupted()) {
@@ -71,6 +72,14 @@ LogicalResult walkProgram(Region& region, const WalkProgramFn& fn) {
             qubits.remap(prevQ, nextQ);
           }
         })
+        .template Case<scf::ForOp>([&](scf::ForOp op) {
+          for (OpOperand& operand : op.getInitsMutable()) {
+            auto result = op.getTiedLoopResult(&operand);
+            const auto prevQ = cast<TypedValue<QubitType>>(operand.get());
+            const auto nextQ = cast<TypedValue<QubitType>>(result);
+            qubits.remap(prevQ, nextQ);
+          }
+        })
         .template Case<ResetOp>([&](ResetOp op) {
           qubits.remap(op.getQubitIn(), op.getQubitOut());
         })
@@ -86,7 +95,6 @@ LogicalResult walkProgram(Region& region, const WalkProgramFn& fn) {
       }
     }
   }
-
   return success();
 }
 
