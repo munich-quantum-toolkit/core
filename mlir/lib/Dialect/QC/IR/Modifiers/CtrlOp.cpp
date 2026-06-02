@@ -166,13 +166,8 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 size_t CtrlOp::getNumBodyUnitaries() {
-  size_t count = 0;
-  for (auto& op : *getBody()) {
-    if (isa<UnitaryOpInterface>(op)) {
-      count++;
-    }
-  }
-  return count;
+  return llvm::count_if(
+      *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
 }
 
 UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {

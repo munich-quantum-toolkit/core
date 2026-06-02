@@ -379,13 +379,8 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
 } // namespace
 
 size_t InvOp::getNumBodyUnitaries() {
-  size_t count = 0;
-  for (auto& op : *getBody()) {
-    if (isa<UnitaryOpInterface>(op)) {
-      count++;
-    }
-  }
-  return count;
+  return llvm::count_if(
+      *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
 }
 
 UnitaryOpInterface InvOp::getBodyUnitary(const size_t i) {
