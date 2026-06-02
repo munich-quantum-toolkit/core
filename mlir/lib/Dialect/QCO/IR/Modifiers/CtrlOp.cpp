@@ -308,21 +308,27 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
+  if (llvm::any_of(*getBody(), [](Operation& op) {
+        return isa<AllocOp, SinkOp, MeasureOp, ResetOp>(op);
+      })) {
+    return emitOpError("body must not contain non-unitary quantum operations");
+  }
+  if (!isa<YieldOp>(block.back())) {
+    return emitOpError(
+        "last operation in body region must be a yield operation");
+  }
+
   const auto numTargets = getNumTargets();
   if (block.getArguments().size() != numTargets) {
     return emitOpError(
         "number of block arguments must match the number of targets");
   }
-  const auto qubitType = QubitType::get(getContext());
+  auto qubitType = QubitType::get(getContext());
   for (size_t i = 0; i < numTargets; ++i) {
     if (block.getArgument(i).getType() != qubitType) {
       return emitOpError("block argument type at index ")
              << i << " does not match target type";
     }
-  }
-  if (!isa<YieldOp>(block.back())) {
-    return emitOpError(
-        "last operation in body region must be a yield operation");
   }
   if (const auto numYieldOperands = block.back().getNumOperands();
       numYieldOperands != numTargets) {

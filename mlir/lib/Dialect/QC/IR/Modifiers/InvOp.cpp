@@ -395,6 +395,11 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult InvOp::verify() {
   auto& block = *getBody();
+  if (llvm::any_of(*getBody(), [](Operation& op) {
+        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp>(op);
+      })) {
+    return emitOpError("body must not contain non-unitary quantum operations");
+  }
   if (!isa<YieldOp>(block.back())) {
     return emitOpError(
         "last operation in body region must be a yield operation");
