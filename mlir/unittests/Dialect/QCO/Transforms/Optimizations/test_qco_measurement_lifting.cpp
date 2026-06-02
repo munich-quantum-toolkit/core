@@ -215,18 +215,18 @@ TEST_F(QCOMeasurementLiftingTest,
   auto r1_0 = referenceBuilder.allocQubit();
   auto r2_0 = referenceBuilder.allocQubit();
 
-  auto [r1_1, cr1] = programBuilder.measure(r1_0);
-  auto [r2_1, cr2] = programBuilder.measure(r2_0);
+  auto [r1_1, cr1] = referenceBuilder.measure(r1_0);
+  auto [r2_1, cr2] = referenceBuilder.measure(r2_0);
 
   auto [r12_0, r0_1] =
-      programBuilder.ctrl({r1_1, r2_1}, {r0_0}, [&](const ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
+      referenceBuilder.ctrl({r1_1, r2_1}, {r0_0}, [&](const ValueRange target) {
+        return SmallVector{referenceBuilder.x(target[0])};
       });
 
   referenceBuilder.sink(r0_1[0]);
   referenceBuilder.sink(r12_0[0]);
   referenceBuilder.sink(r12_0[1]);
-  module = referenceBuilder.finalize();
+  reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
@@ -289,9 +289,6 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
-  reference.get().dump();
-  module.get().dump();
-
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
@@ -306,8 +303,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   auto r_0 = referenceBuilder.allocQubit();
   auto true_constant = referenceBuilder.boolConstant(true);
   auto [r_1, cr] = referenceBuilder.measure(r_0);
-  referenceBuilder.insert(arith::XOrIOp::create(
-      referenceBuilder, referenceBuilder.getLoc(), cr, true_constant));
+  auto xorOp = arith::XOrIOp::create(
+      referenceBuilder, referenceBuilder.getLoc(), cr, true_constant);
   referenceBuilder.sink(r_1);
   reference = referenceBuilder.finalize();
 
