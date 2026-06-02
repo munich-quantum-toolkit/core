@@ -177,7 +177,6 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
 def SwapAbsorptionPass : Pass<"absorb-swaps", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Eliminate SWAP operations by rewiring circuit";
-  let options = [];
   let description = [{
     This pass removes SWAP operations by absorbing their effect into the surrounding circuit.
 
