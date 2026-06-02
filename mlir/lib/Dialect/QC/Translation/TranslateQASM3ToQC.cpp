@@ -412,9 +412,11 @@ public:
     applyGateCallStatement(stmt, qubitRegisters);
   }
 
-  /** Emit measure ops for \p target = measure \p measureExpr.
-   * Handles both full-register and single-bit assignments; wires measure
-   * results into the classical register's bit-value map for later use.
+  /**
+   * @brief Emit measure ops for \p target = measure \p measureExpr.
+   *
+   * @details Handles both full-register and single-bit assignments; wires
+   * measure results into the classical register's bit-value map for later use.
    */
   void visitMeasureAssignment(
       const std::shared_ptr<qasm3::IndexedIdentifier>& target,
@@ -920,9 +922,8 @@ public:
     return resolveGateOperandInScope(operand, qubitRegisters, debugInfo);
   }
 
-  /** Resolve a gate operand against \p scope (top-level registers or a
-   * compound-gate local argument scope). Returns the MLIR Values for the
-   * qubit(s) named by \p operand — a full register or a single indexed qubit.
+  /**
+   * @brief Resolve a gate operand against \p scope.
    */
   SmallVector<Value> resolveGateOperandInScope(
       const std::shared_ptr<qasm3::GateOperand>& operand,
