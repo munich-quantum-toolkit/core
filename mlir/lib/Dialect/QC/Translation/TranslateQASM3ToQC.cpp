@@ -360,7 +360,6 @@ public:
       return;
     }
 
-    // TODO: In the future, handle classical computation.
     throw qasm3::CompilerError("Classical computation not yet supported.",
                                stmt->debugInfo);
   }
@@ -540,8 +539,6 @@ public:
         ctrlSpec.emplace_back(n, ctrlMod->ctrlType);
         nModifierControls += n;
       } else {
-        // TODO: add pow(n) support here once PowOp lands in main — detect
-        // qasm3::PowGateModifier, evaluate n, wrap gate emission in PowOp.
         throw qasm3::CompilerError(
             "Only ctrl/negctrl/inv modifiers are supported.", stmt->debugInfo);
       }
