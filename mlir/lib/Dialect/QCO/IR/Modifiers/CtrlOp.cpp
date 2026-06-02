@@ -28,6 +28,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 
 using namespace mlir;
@@ -196,7 +197,7 @@ size_t CtrlOp::getNumBodyUnitaries() {
 UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
   auto unitaries = llvm::make_filter_range(
       *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
-  auto it = std::next(unitaries.begin(), i);
+  auto it = std::next(unitaries.begin(), static_cast<std::ptrdiff_t>(i));
   if (it == unitaries.end()) {
     llvm::reportFatalUsageError("Unitary index out of bounds");
   }

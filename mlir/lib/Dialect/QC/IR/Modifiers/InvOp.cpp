@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -24,6 +25,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
+#include <iterator>
 #include <numbers>
 
 using namespace mlir;
@@ -361,7 +363,7 @@ size_t InvOp::getNumBodyUnitaries() {
 UnitaryOpInterface InvOp::getBodyUnitary(const size_t i) {
   auto unitaries = llvm::make_filter_range(
       *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
-  auto it = std::next(unitaries.begin(), i);
+  auto it = std::next(unitaries.begin(), static_cast<std::ptrdiff_t>(i));
   if (it == unitaries.end()) {
     llvm::reportFatalUsageError("Unitary index out of bounds");
   }
