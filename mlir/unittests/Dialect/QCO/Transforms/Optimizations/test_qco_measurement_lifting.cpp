@@ -75,11 +75,6 @@ protected:
     pm.addPass(createCanonicalizerPass());
     return pm.run(module);
   }
-
-  static Value i1ToI64(Value i1Value, ImplicitLocOpBuilder& builder) {
-    return arith::ExtUIOp::create(builder, builder.getI64Type(), i1Value)
-        .getResult();
-  }
 };
 
 } // namespace
@@ -102,7 +97,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r0S0 = referenceBuilder.allocQubit();
   auto r1S0 = referenceBuilder.allocQubit();
 
@@ -159,9 +154,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
 
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({programBuilder.getI1Type(),
-                               programBuilder.getI1Type(),
-                               programBuilder.getI1Type()});
+  referenceBuilder.initialize({referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type(),
+                               referenceBuilder.getI1Type()});
   auto r0S0 = referenceBuilder.allocQubit();
   auto r1S0 = referenceBuilder.allocQubit();
   auto r2S0 = referenceBuilder.allocQubit();
@@ -223,7 +218,7 @@ TEST_F(QCOMeasurementLiftingTest,
   module = programBuilder.finalize({c1, c2});
 
   referenceBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r0S0 = referenceBuilder.allocQubit();
   auto r1S0 = referenceBuilder.allocQubit();
   auto r2S0 = referenceBuilder.allocQubit();
@@ -265,7 +260,7 @@ TEST_F(QCOMeasurementLiftingTest,
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
-      {programBuilder.getI1Type(), programBuilder.getI1Type()});
+      {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r0S0 = referenceBuilder.allocQubit();
   auto r1S0 = referenceBuilder.allocQubit();
 
@@ -295,7 +290,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
   programBuilder.sink(q2);
   module = programBuilder.finalize(c);
 
-  referenceBuilder.initialize({programBuilder.getI1Type()});
+  referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto trueConstant = referenceBuilder.boolConstant(true);
   auto [r1, cr] = referenceBuilder.measure(r0);
@@ -320,7 +315,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c});
 
-  referenceBuilder.initialize({programBuilder.getI1Type()});
+  referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto trueConstant = referenceBuilder.boolConstant(true);
   auto [r1, cr] = referenceBuilder.measure(r0);
@@ -351,7 +346,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   programBuilder.sink(q9);
   module = programBuilder.finalize({c});
 
-  referenceBuilder.initialize({programBuilder.getI1Type()});
+  referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto [r1, cr] = referenceBuilder.measure(r0);
   referenceBuilder.sink(r1);
@@ -373,7 +368,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   programBuilder.sink(q3);
   module = programBuilder.finalize({c});
 
-  referenceBuilder.initialize({programBuilder.getI1Type()});
+  referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r0 = referenceBuilder.allocQubit();
   auto [r1, cr] = referenceBuilder.measure(r0);
   referenceBuilder.sink(r1);
@@ -402,7 +397,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   programBuilder.sink(q1S2);
   module = programBuilder.finalize({c0});
 
-  referenceBuilder.initialize({programBuilder.getI1Type()});
+  referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r0S0 = referenceBuilder.allocQubit();
   auto r1S0 = referenceBuilder.allocQubit();
 
@@ -436,7 +431,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   programBuilder.sink(q1S1);
   module = programBuilder.finalize({c0});
 
-  referenceBuilder.initialize({programBuilder.getI1Type()});
+  referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r0S0 = referenceBuilder.allocQubit();
   auto r1S0 = referenceBuilder.allocQubit();
 
