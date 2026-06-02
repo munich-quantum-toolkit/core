@@ -24,6 +24,9 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <cassert>
+#include <iterator>
+#include <numeric>
 #include <utility>
 
 namespace mlir::qco {
