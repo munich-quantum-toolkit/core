@@ -16,9 +16,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
@@ -26,7 +24,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <numbers>
 #include <utility>
 
 namespace mlir::qco {
@@ -34,21 +31,21 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_MEASUREMENTLIFTING
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-namespace {
-
 /**
  * @brief Checks if the given operation is an inverting gate.
  * @param op The operation to check.
  * @return True if the operation is an inverting gate, false otherwise.
  */
-bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
+static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
 
 /**
  * @brief Checks if the given operation is a diagonal gate.
  * @param op The operation to check.
  * @return True if the operation is a diagonal gate, false otherwise.
  */
-bool isDiagonal(Operation* op) { return isa<ZOp, SOp, TOp, POp, RZOp>(op); }
+static bool isDiagonal(Operation* op) {
+  return isa<ZOp, SOp, TOp, POp, RZOp>(op);
+}
 
 /**
  * @brief This method swaps a gate with a measurement.
@@ -56,8 +53,9 @@ bool isDiagonal(Operation* op) { return isa<ZOp, SOp, TOp, POp, RZOp>(op); }
  * @param measurement The measurement to swap.
  * @param rewriter The used rewriter.
  */
-void swapGateWithMeasurement(UnitaryOpInterface gate, MeasureOp measurement,
-                             mlir::PatternRewriter& rewriter) {
+static void swapGateWithMeasurement(UnitaryOpInterface gate,
+                                    MeasureOp measurement,
+                                    mlir::PatternRewriter& rewriter) {
   auto measurementInput = measurement.getQubitIn();
   auto gateInput = gate.getInputForOutput(measurementInput);
   rewriter.replaceUsesWithIf(measurementInput, gateInput,
@@ -81,6 +79,7 @@ void swapGateWithMeasurement(UnitaryOpInterface gate, MeasureOp measurement,
   rewriter.moveOpBefore(measurement, gate);
 }
 
+namespace {
 /**
  * @brief This pattern is responsible for lifting measurements above any phase
  * gates.
