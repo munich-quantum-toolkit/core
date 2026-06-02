@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -238,7 +239,7 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
 }
 
 /**
- * @brief Check if given quantum operation is unused (i.e., only used by
+ * @brief Check if a given quantum operation is unused (i.e., only used by
  * sinks) and remove it if so.
  *
  * @param op The operation to check.
@@ -247,32 +248,35 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
  */
 inline LogicalResult checkAndRemoveDeadGate(Operation* op,
                                             PatternRewriter& rewriter) {
-  if (llvm::all_of(op->getUsers(),
-                   [](Operation* user) { return isa<SinkOp>(user); })) {
-    // If the operation is only used by sinks, we can safely remove it.
-    if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
-      // We specifically have to replace the output *qubits* with the input
-      // *qubits* to ignore parameters.
-      rewriter.replaceOp(op, u.getInputQubits());
-      return success();
-    } else if (auto m = dyn_cast<MeasureOp>(op)) {
-      // We specifically have to replace the output *qubits* with the input
-      // *qubits* to ignore the classical outcome.
-      rewriter.replaceAllUsesWith(m.getQubitOut(), m.getQubitIn());
-      rewriter.eraseOp(op);
-      return success();
-    } else if (auto i = dyn_cast<IfOp>(op)) {
-      // We specifically have to replace the output *qubits* with the input
-      // *qubits* to ignore the condition.
-      rewriter.replaceOp(op, i.getQubits());
-      return success();
-    } else {
-      // This currently only includes the `Reset` operation.
-      rewriter.replaceOp(op, op->getOperands());
-      return success();
-    }
+  if (!llvm::all_of(op->getUsers(),
+                    [](Operation* user) { return isa<SinkOp>(user); })) {
+    return failure();
   }
-  return failure();
+
+  // If the operation is only used by sinks, we can safely remove it.
+  return TypeSwitch<Operation*, LogicalResult>(op)
+      .Case<UnitaryOpInterface>([&](auto u) {
+        // Replace output *qubits* with input *qubits* to ignore parameters.
+        rewriter.replaceOp(op, u.getInputQubits());
+        return success();
+      })
+      .Case<MeasureOp>([&](auto m) {
+        // Replace output *qubits* with input *qubits* to ignore classical
+        // outcome.
+        rewriter.replaceAllUsesWith(m.getQubitOut(), m.getQubitIn());
+        rewriter.eraseOp(op);
+        return success();
+      })
+      .Case<IfOp>([&](auto i) {
+        // Replace output *qubits* with input *qubits* to ignore the condition.
+        rewriter.replaceOp(op, i.getQubits());
+        return success();
+      })
+      .Default([&](auto*) {
+        // This currently only includes the `Reset` operation.
+        rewriter.replaceOp(op, op->getOperands());
+        return success();
+      });
 }
 
 } // namespace mlir::qco
