@@ -52,12 +52,14 @@ QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
   ctx->loadDialect<QCODialect, qtensor::QTensorDialect>();
 }
 
-void QCOProgramBuilder::initialize() {
+void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
+
+void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
   setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
-  auto funcType = getFunctionType({}, {getI64Type()});
+  auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
   // Add entry_point attribute to identify the main function
@@ -72,6 +74,11 @@ void QCOProgramBuilder::initialize() {
 Value QCOProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value QCOProgramBuilder::boolConstant(const bool value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getBoolAttr(value)).getResult();
 }
 
 Value& QCOProgramBuilder::QubitRegister::operator[](const size_t index) {
@@ -1098,6 +1105,13 @@ void QCOProgramBuilder::ensureAllocationMode(
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   checkFinalized();
 
+  auto exitCode = intConstant(0);
+  return finalize({exitCode});
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
+  checkFinalized();
+
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
@@ -1146,11 +1160,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   validQubits.clear();
   validTensors.clear();
 
-  // Create constant 0 for successful exit code
-  auto exitCode = intConstant(0);
-
   // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, exitCode);
+  func::ReturnOp::create(*this, returnValues);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
