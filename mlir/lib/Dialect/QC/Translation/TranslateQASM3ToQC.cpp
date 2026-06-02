@@ -58,7 +58,7 @@ namespace {
 /// For gates with implicit controls (cx, ccx, ...) all qubits including
 /// the controls are in the qubits array, matching QASM3 operand order.
 using GateFn =
-    std::function<void(QCProgramBuilder&, ArrayRef<Value>, ArrayRef<double>)>;
+    std::function<void(QCProgramBuilder&, ValueRange, ArrayRef<double>)>;
 
 } // namespace
 
@@ -655,31 +655,32 @@ public:
   }
 
   /// Emit a single gate application, wrapping with ctrl/inv as needed.
-  void emitGate(const GateFn& gateFn, ArrayRef<Value> qubits,
+  void emitGate(const GateFn& gateFn, ArrayRef<Value> targets,
                 ArrayRef<double> params, ArrayRef<Value> posControls,
                 ArrayRef<Value> negControls, bool invert) {
-    auto inner = [&] { gateFn(builder, qubits, params); };
+    auto inner = [&](ValueRange qubits) { gateFn(builder, qubits, params); };
 
-    auto withInv = [&] {
+    auto withInv = [&](ValueRange qubits) {
       if (invert) {
-        builder.inv(function_ref<void()>(inner));
+        builder.inv(qubits, function_ref<void(ValueRange)>(inner));
       } else {
-        inner();
+        inner(qubits);
       }
     };
 
     if (posControls.empty() && negControls.empty()) {
-      withInv();
+      withInv(targets);
       return;
     }
 
-    // Negative controls: X-bracket
+    SmallVector<Value> controls;
+    controls.append(posControls.begin(), posControls.end());
+    controls.append(negControls.begin(), negControls.end());
+
     for (auto q : negControls) {
       builder.x(q);
     }
-    SmallVector<Value> allControls(posControls.begin(), posControls.end());
-    allControls.append(negControls.begin(), negControls.end());
-    builder.ctrl(allControls, function_ref<void()>(withInv));
+    builder.ctrl(controls, targets, function_ref<void(ValueRange)>(withInv));
     for (auto q : negControls) {
       builder.x(q);
     }
