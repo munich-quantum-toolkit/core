@@ -359,16 +359,13 @@ size_t InvOp::getNumBodyUnitaries() {
 }
 
 UnitaryOpInterface InvOp::getBodyUnitary(const size_t i) {
-  size_t count = 0;
-  for (auto& op : *getBody()) {
-    if (isa<UnitaryOpInterface>(op)) {
-      if (count == i) {
-        return cast<UnitaryOpInterface>(op);
-      }
-      count++;
-    }
+  auto unitaries = llvm::make_filter_range(
+      *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
+  auto it = std::next(unitaries.begin(), i);
+  if (it == unitaries.end()) {
+    llvm::reportFatalUsageError("Unitary index out of bounds");
   }
-  llvm::reportFatalUsageError("Invalid unitary index");
+  return cast<UnitaryOpInterface>(*it);
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
