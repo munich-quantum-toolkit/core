@@ -121,7 +121,7 @@ TEST_F(QCOTest, CheckDeadGateElimination) {
   auto q1S0 = builder.allocQubit();
   auto q0S1 = builder.h(q0S0);
   auto [q0S2, q1S1] = builder.cx(q0S1, q1S0);
-  auto q1S2 = builder.h(q1S1);
+  auto [q1S2, c1] = builder.measure(q1S1);
   builder.sink(q0S2);
   builder.sink(q1S2);
   auto module = builder.finalize();
@@ -143,6 +143,8 @@ TEST_F(QCOTest, CheckDeadGateElimination) {
   EXPECT_TRUE(verify(*ref).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
   EXPECT_TRUE(verify(*ref).succeeded());
+
+  module.get().dump();
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(module.get(), ref.get()));
 }

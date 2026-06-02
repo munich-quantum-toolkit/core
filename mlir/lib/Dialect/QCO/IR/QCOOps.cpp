@@ -39,6 +39,10 @@ using namespace mlir::qco;
 //===----------------------------------------------------------------------===//
 
 namespace {
+
+/**
+ * @brief Remove dead measurements.
+ */
 struct DeadGateElimination final
     : public OpInterfaceRewritePattern<UnitaryOpInterface> {
 
@@ -47,9 +51,10 @@ struct DeadGateElimination final
 
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    if (op->use_empty()) {
+    if (!isMemoryEffectFree(op)) {
       // This effectively ignores the GPhase operation and variants such as its
-      // inverse, which should never be considered dead.
+      // inverse or `if` ops containing it, which should never be considered
+      // dead.
       return failure();
     }
     return checkAndRemoveDeadGate(op.getOperation(), rewriter);

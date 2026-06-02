@@ -239,7 +239,7 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
 
 /**
  * @brief Check if given quantum operation is unused (i.e., only used by
- * deallocations) and remove it if so.
+ * sinks) and remove it if so.
  *
  * @param op The operation to check.
  * @param rewriter The pattern rewriter.
@@ -249,14 +249,20 @@ inline LogicalResult checkAndRemoveDeadGate(Operation* op,
                                             PatternRewriter& rewriter) {
   if (std::all_of(op->getUsers().begin(), op->getUsers().end(),
                   [](Operation* user) { return isa<SinkOp>(user); })) {
-    // If the operation is only used by deallocs, we can safely remove it.
+    // If the operation is only used by sinks, we can safely remove it.
     if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
       // We specifically have to replace the output *qubits* with the input
       // *qubits* to ignore parameters.
       rewriter.replaceOp(op, u.getInputQubits());
       return success();
+    } else if (auto m = dyn_cast<MeasureOp>(op)) {
+      // We specifically have to replace the output *qubits* with the input
+      // *qubits* to ignore the classical outcome.
+      rewriter.replaceAllUsesWith(m.getQubitOut(), m.getQubitIn());
+      rewriter.eraseOp(op);
+      return success();
     } else {
-      // This includes the `IfOp` as well as `Reset` and `Measure`.
+      // This includes the `IfOp` as well as `Reset`.
       rewriter.replaceOp(op, op->getOperands());
       return success();
     }

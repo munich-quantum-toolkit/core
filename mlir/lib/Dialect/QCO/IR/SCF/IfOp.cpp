@@ -237,7 +237,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
 };
 
 /**
- * @brief Remove dead resets.
+ * @brief Remove dead `IfOp` instructions.
  */
 struct DeadIfRemoval final : OpRewritePattern<IfOp> {
   using OpRewritePattern::OpRewritePattern;
