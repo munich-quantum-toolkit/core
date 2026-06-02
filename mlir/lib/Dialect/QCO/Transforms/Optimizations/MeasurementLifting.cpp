@@ -44,7 +44,7 @@ static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
  * @return True if the operation is a diagonal gate, false otherwise.
  */
 static bool isDiagonal(Operation* op) {
-  return isa<ZOp, SOp, TOp, POp, RZOp>(op);
+  return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
 }
 
 /**

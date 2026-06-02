@@ -103,7 +103,6 @@ public:
    * @param returnTypes The new return types for the main function
    */
   void retype(TypeRange returnTypes);
-
   //===--------------------------------------------------------------------===//
   // Constants
   //===--------------------------------------------------------------------===//
