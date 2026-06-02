@@ -45,6 +45,7 @@
 #include <fstream>
 #include <functional>
 #include <istream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <string>
@@ -732,7 +733,7 @@ public:
     llvm::StringMap<SmallVector<size_t>> targetsMap;
     for (size_t i = 0; i < gate.targetNames.size(); ++i) {
       for (auto target : gateOperands[i]) {
-        auto it = llvm::find(targets, target);
+        auto* it = llvm::find(targets, target);
         if (it == targets.end()) {
           targets.push_back(target);
         }
