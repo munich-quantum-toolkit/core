@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -86,34 +87,34 @@ protected:
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0_0 = programBuilder.allocQubit();
-  auto q1_0 = programBuilder.allocQubit();
+  auto q0S0 = programBuilder.allocQubit();
+  auto q1S0 = programBuilder.allocQubit();
 
-  auto [q1_1, q0_1] = programBuilder.cx(q1_0, q0_0);
-  auto [q0_2, q1_2] = programBuilder.ch(q0_1, q1_1);
-  auto [q0_3, q1_3] = programBuilder.cx(q0_2, q1_2);
+  auto [q1S1, q0S1] = programBuilder.cx(q1S0, q0S0);
+  auto [q0S2, q1S2] = programBuilder.ch(q0S1, q1S1);
+  auto [q0S3, q1S3] = programBuilder.cx(q0S2, q1S2);
 
-  auto [q0_4, c0] = programBuilder.measure(q0_3);
-  auto [q1_4, c1] = programBuilder.measure(q1_3);
+  auto [q0S4, c0] = programBuilder.measure(q0S3);
+  auto [q1S4, c1] = programBuilder.measure(q1S3);
 
-  programBuilder.sink(q0_4);
-  programBuilder.sink(q1_4);
+  programBuilder.sink(q0S4);
+  programBuilder.sink(q1S4);
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto r0_0 = referenceBuilder.allocQubit();
-  auto r1_0 = referenceBuilder.allocQubit();
+  auto r0S0 = referenceBuilder.allocQubit();
+  auto r1S0 = referenceBuilder.allocQubit();
 
-  auto [r1_1, r0_1] = referenceBuilder.cx(r1_0, r0_0);
-  auto [r0_2, cr0] = referenceBuilder.measure(r0_1);
-  auto [r0_3, r1_2] = referenceBuilder.ch(r0_2, r1_1);
-  auto [r0_4, r1_3] = referenceBuilder.cx(r0_3, r1_2);
+  auto [r1S1, r0S1] = referenceBuilder.cx(r1S0, r0S0);
+  auto [r0S2, cr0] = referenceBuilder.measure(r0S1);
+  auto [r0S3, r1S2] = referenceBuilder.ch(r0S2, r1S1);
+  auto [r0S4, r1S3] = referenceBuilder.cx(r0S3, r1S2);
 
-  auto [r1_4, cr1] = referenceBuilder.measure(r1_3);
+  auto [r1S4, cr1] = referenceBuilder.measure(r1S3);
 
-  referenceBuilder.sink(r0_4);
-  referenceBuilder.sink(r1_4);
+  referenceBuilder.sink(r0S4);
+  referenceBuilder.sink(r1S4);
   reference = referenceBuilder.finalize({cr0, cr1});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -127,68 +128,68 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   programBuilder.initialize({programBuilder.getI1Type(),
                              programBuilder.getI1Type(),
                              programBuilder.getI1Type()});
-  auto q0_0 = programBuilder.allocQubit();
-  auto q1_0 = programBuilder.allocQubit();
-  auto q2_0 = programBuilder.allocQubit();
+  auto q0S0 = programBuilder.allocQubit();
+  auto q1S0 = programBuilder.allocQubit();
+  auto q2S0 = programBuilder.allocQubit();
 
-  auto [q12_0, q0_1] =
-      programBuilder.ctrl({q1_0, q2_0}, {q0_0}, [&](const ValueRange target) {
+  auto [q12_0, q0S1] =
+      programBuilder.ctrl({q1S0, q2S0}, {q0S0}, [&](const ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
-  auto [q12_1, q0_2] = programBuilder.ctrl(
-      {q12_0[1], q12_0[0]}, q0_1, [&](const ValueRange target) {
+  auto [q12_1, q0S2] = programBuilder.ctrl(
+      {q12_0[1], q12_0[0]}, q0S1, [&](const ValueRange target) {
         return SmallVector{programBuilder.h(target[0])};
       });
-  auto [q12_2, q0_3] = programBuilder.ctrl(
-      {q12_1[1], q12_1[0]}, q0_2, [&](const ValueRange target) {
+  auto [q12_2, q0S3] = programBuilder.ctrl(
+      {q12_1[1], q12_1[0]}, q0S2, [&](const ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
 
-  auto [q1_4, c1] = programBuilder.measure(q12_2[0]);
+  auto [q1S4, c1] = programBuilder.measure(q12_2[0]);
 
-  auto q0_4 = programBuilder.h(q0_3[0]);
-  auto q2_4 = programBuilder.h(q12_2[1]);
+  auto q0S4 = programBuilder.h(q0S3[0]);
+  auto q2S4 = programBuilder.h(q12_2[1]);
 
-  auto [q0_5, c0] = programBuilder.measure(q0_4);
-  auto [q2_5, c2] = programBuilder.measure(q2_4);
+  auto [q0S5, c0] = programBuilder.measure(q0S4);
+  auto [q2S5, c2] = programBuilder.measure(q2S4);
 
-  programBuilder.sink(q0_5);
-  programBuilder.sink(q1_4);
-  programBuilder.sink(q2_5);
+  programBuilder.sink(q0S5);
+  programBuilder.sink(q1S4);
+  programBuilder.sink(q2S5);
 
   module = programBuilder.finalize({c0, c1, c2});
 
   referenceBuilder.initialize({programBuilder.getI1Type(),
                                programBuilder.getI1Type(),
                                programBuilder.getI1Type()});
-  auto r0_0 = referenceBuilder.allocQubit();
-  auto r1_0 = referenceBuilder.allocQubit();
-  auto r2_0 = referenceBuilder.allocQubit();
+  auto r0S0 = referenceBuilder.allocQubit();
+  auto r1S0 = referenceBuilder.allocQubit();
+  auto r2S0 = referenceBuilder.allocQubit();
 
-  auto [r1_1, cr1] = referenceBuilder.measure(r1_0);
+  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
 
-  auto [r12_0, r0_1] =
-      referenceBuilder.ctrl({r1_1, r2_0}, {r0_0}, [&](const ValueRange target) {
+  auto [r12_0, r0S1] =
+      referenceBuilder.ctrl({r1S1, r2S0}, {r0S0}, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
-  auto [r12_1, r0_2] = referenceBuilder.ctrl(
-      {r12_0[1], r12_0[0]}, r0_1, [&](const ValueRange target) {
+  auto [r12_1, r0S2] = referenceBuilder.ctrl(
+      {r12_0[1], r12_0[0]}, r0S1, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.h(target[0])};
       });
-  auto [r12_2, r0_3] = referenceBuilder.ctrl(
-      {r12_1[1], r12_1[0]}, r0_2, [&](const ValueRange target) {
+  auto [r12_2, r0S3] = referenceBuilder.ctrl(
+      {r12_1[1], r12_1[0]}, r0S2, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
 
-  auto r0_4 = referenceBuilder.h(r0_3[0]);
-  auto r2_4 = referenceBuilder.h(r12_2[1]);
+  auto r0S4 = referenceBuilder.h(r0S3[0]);
+  auto r2S4 = referenceBuilder.h(r12_2[1]);
 
-  auto [r0_5, cr0] = referenceBuilder.measure(r0_4);
-  auto [r2_5, cr2] = referenceBuilder.measure(r2_4);
+  auto [r0S5, cr0] = referenceBuilder.measure(r0S4);
+  auto [r2S5, cr2] = referenceBuilder.measure(r2S4);
 
-  referenceBuilder.sink(r0_5);
+  referenceBuilder.sink(r0S5);
   referenceBuilder.sink(r12_2[0]);
-  referenceBuilder.sink(r2_5);
+  referenceBuilder.sink(r2S5);
 
   reference = referenceBuilder.finalize({cr0, cr1, cr2});
 
@@ -204,38 +205,38 @@ TEST_F(QCOMeasurementLiftingTest,
 
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0_0 = programBuilder.allocQubit();
-  auto q1_0 = programBuilder.allocQubit();
-  auto q2_0 = programBuilder.allocQubit();
+  auto q0S0 = programBuilder.allocQubit();
+  auto q1S0 = programBuilder.allocQubit();
+  auto q2S0 = programBuilder.allocQubit();
 
-  auto [q12_0, q0_1] =
-      programBuilder.ctrl({q1_0, q2_0}, {q0_0}, [&](const ValueRange target) {
+  auto [q12_0, q0S1] =
+      programBuilder.ctrl({q1S0, q2S0}, {q0S0}, [&](const ValueRange target) {
         return SmallVector{programBuilder.x(target[0])};
       });
 
-  auto [q1_1, c1] = programBuilder.measure(q12_0[0]);
-  auto [q2_1, c2] = programBuilder.measure(q12_0[1]);
+  auto [q1S1, c1] = programBuilder.measure(q12_0[0]);
+  auto [q2S1, c2] = programBuilder.measure(q12_0[1]);
 
-  programBuilder.sink(q0_1[0]);
-  programBuilder.sink(q1_1);
-  programBuilder.sink(q2_1);
+  programBuilder.sink(q0S1[0]);
+  programBuilder.sink(q1S1);
+  programBuilder.sink(q2S1);
   module = programBuilder.finalize({c1, c2});
 
   referenceBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto r0_0 = referenceBuilder.allocQubit();
-  auto r1_0 = referenceBuilder.allocQubit();
-  auto r2_0 = referenceBuilder.allocQubit();
+  auto r0S0 = referenceBuilder.allocQubit();
+  auto r1S0 = referenceBuilder.allocQubit();
+  auto r2S0 = referenceBuilder.allocQubit();
 
-  auto [r1_1, cr1] = referenceBuilder.measure(r1_0);
-  auto [r2_1, cr2] = referenceBuilder.measure(r2_0);
+  auto [r1S1, cr1] = referenceBuilder.measure(r1S0);
+  auto [r2S1, cr2] = referenceBuilder.measure(r2S0);
 
-  auto [r12_0, r0_1] =
-      referenceBuilder.ctrl({r1_1, r2_1}, {r0_0}, [&](const ValueRange target) {
+  auto [r12_0, r0S1] =
+      referenceBuilder.ctrl({r1S1, r2S1}, {r0S0}, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
 
-  referenceBuilder.sink(r0_1[0]);
+  referenceBuilder.sink(r0S1[0]);
   referenceBuilder.sink(r12_0[0]);
   referenceBuilder.sink(r12_0[1]);
   reference = referenceBuilder.finalize({cr1, cr2});
@@ -251,31 +252,31 @@ TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementOverControlledParametrizedGate) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0_0 = programBuilder.allocQubit();
-  auto q1_0 = programBuilder.allocQubit();
+  auto q0S0 = programBuilder.allocQubit();
+  auto q1S0 = programBuilder.allocQubit();
 
-  auto [q0_1, q1_1] = programBuilder.crx(std::numbers::pi / 2, q0_0, q1_0);
+  auto [q0S1, q1S1] = programBuilder.crx(std::numbers::pi / 2, q0S0, q1S0);
 
-  auto [q0_2, c0] = programBuilder.measure(q0_1);
-  auto [q1_2, c1] = programBuilder.measure(q1_1);
+  auto [q0S2, c0] = programBuilder.measure(q0S1);
+  auto [q1S2, c1] = programBuilder.measure(q1S1);
 
-  programBuilder.sink(q0_2);
-  programBuilder.sink(q1_2);
+  programBuilder.sink(q0S2);
+  programBuilder.sink(q1S2);
   module = programBuilder.finalize({c0, c1});
 
   referenceBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto r0_0 = referenceBuilder.allocQubit();
-  auto r1_0 = referenceBuilder.allocQubit();
+  auto r0S0 = referenceBuilder.allocQubit();
+  auto r1S0 = referenceBuilder.allocQubit();
 
-  auto [r0_1, cr0] = referenceBuilder.measure(r0_0);
+  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
 
-  auto [r0_2, r1_1] = referenceBuilder.crx(std::numbers::pi / 2, r0_1, r1_0);
+  auto [r0S2, r1S1] = referenceBuilder.crx(std::numbers::pi / 2, r0S1, r1S0);
 
-  auto [r1_2, cr1] = referenceBuilder.measure(r1_1);
+  auto [r1S2, cr1] = referenceBuilder.measure(r1S1);
 
-  referenceBuilder.sink(r0_2);
-  referenceBuilder.sink(r1_2);
+  referenceBuilder.sink(r0S2);
+  referenceBuilder.sink(r1S2);
   reference = referenceBuilder.finalize({cr0, cr1});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -288,20 +289,20 @@ TEST_F(QCOMeasurementLiftingTest,
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
 
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q_0 = programBuilder.allocQubit();
-  auto q_1 = programBuilder.x(q_0);
-  auto [q_2, c] = programBuilder.measure(q_1);
-  programBuilder.sink(q_2);
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.x(q0);
+  auto [q2, c] = programBuilder.measure(q1);
+  programBuilder.sink(q2);
   module = programBuilder.finalize(c);
 
   referenceBuilder.initialize({programBuilder.getI1Type()});
-  auto r_0 = referenceBuilder.allocQubit();
-  auto true_constant = referenceBuilder.boolConstant(true);
-  auto [r_1, cr] = referenceBuilder.measure(r_0);
+  auto r0 = referenceBuilder.allocQubit();
+  auto trueConstant = referenceBuilder.boolConstant(true);
+  auto [r1, cr] = referenceBuilder.measure(r0);
 
   auto xorOp = arith::XOrIOp::create(
-      referenceBuilder, referenceBuilder.getLoc(), cr, true_constant);
-  referenceBuilder.sink(r_1);
+      referenceBuilder, referenceBuilder.getLoc(), cr, trueConstant);
+  referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize(xorOp.getResult());
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -313,19 +314,19 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleX) {
 
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q_0 = programBuilder.allocQubit();
-  auto q_1 = programBuilder.y(q_0);
-  auto [q_2, c] = programBuilder.measure(q_1);
-  programBuilder.sink(q_2);
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.y(q0);
+  auto [q2, c] = programBuilder.measure(q1);
+  programBuilder.sink(q2);
   module = programBuilder.finalize({c});
 
   referenceBuilder.initialize({programBuilder.getI1Type()});
-  auto r_0 = referenceBuilder.allocQubit();
-  auto true_constant = referenceBuilder.boolConstant(true);
-  auto [r_1, cr] = referenceBuilder.measure(r_0);
+  auto r0 = referenceBuilder.allocQubit();
+  auto trueConstant = referenceBuilder.boolConstant(true);
+  auto [r1, cr] = referenceBuilder.measure(r0);
   auto xorOp = arith::XOrIOp::create(
-      referenceBuilder, referenceBuilder.getLoc(), cr, true_constant);
-  referenceBuilder.sink(r_1);
+      referenceBuilder, referenceBuilder.getLoc(), cr, trueConstant);
+  referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({xorOp.getResult()});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -337,23 +338,23 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverSingleY) {
 
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q_0 = programBuilder.allocQubit();
-  auto q_1 = programBuilder.id(q_0);
-  auto q_2 = programBuilder.z(q_1);
-  auto q_3 = programBuilder.s(q_2);
-  auto q_4 = programBuilder.sdg(q_3);
-  auto q_5 = programBuilder.t(q_4);
-  auto q_6 = programBuilder.tdg(q_5);
-  auto q_7 = programBuilder.p(std::numbers::pi / 2, q_6);
-  auto q_8 = programBuilder.rz(std::numbers::pi / 2, q_7);
-  auto [q_9, c] = programBuilder.measure(q_8);
-  programBuilder.sink(q_9);
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.id(q0);
+  auto q2 = programBuilder.z(q1);
+  auto q3 = programBuilder.s(q2);
+  auto q4 = programBuilder.sdg(q3);
+  auto q5 = programBuilder.t(q4);
+  auto q6 = programBuilder.tdg(q5);
+  auto q7 = programBuilder.p(std::numbers::pi / 2, q6);
+  auto q8 = programBuilder.rz(std::numbers::pi / 2, q7);
+  auto [q9, c] = programBuilder.measure(q8);
+  programBuilder.sink(q9);
   module = programBuilder.finalize({c});
 
   referenceBuilder.initialize({programBuilder.getI1Type()});
-  auto r_0 = referenceBuilder.allocQubit();
-  auto [r_1, cr] = referenceBuilder.measure(r_0);
-  referenceBuilder.sink(r_1);
+  auto r0 = referenceBuilder.allocQubit();
+  auto [r1, cr] = referenceBuilder.measure(r0);
+  referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -365,17 +366,17 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
 
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q_0 = programBuilder.allocQubit();
-  auto q_1 = programBuilder.x(q_0);
-  auto q_2 = programBuilder.y(q_1);
-  auto [q_3, c] = programBuilder.measure(q_2);
-  programBuilder.sink(q_3);
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.x(q0);
+  auto q2 = programBuilder.y(q1);
+  auto [q3, c] = programBuilder.measure(q2);
+  programBuilder.sink(q3);
   module = programBuilder.finalize({c});
 
   referenceBuilder.initialize({programBuilder.getI1Type()});
-  auto r_0 = referenceBuilder.allocQubit();
-  auto [r_1, cr] = referenceBuilder.measure(r_0);
-  referenceBuilder.sink(r_1);
+  auto r0 = referenceBuilder.allocQubit();
+  auto [r1, cr] = referenceBuilder.measure(r0);
+  referenceBuilder.sink(r1);
   reference = referenceBuilder.finalize({cr});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -387,32 +388,32 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
 
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0_0 = programBuilder.allocQubit();
-  auto q1_0 = programBuilder.allocQubit();
+  auto q0S0 = programBuilder.allocQubit();
+  auto q1S0 = programBuilder.allocQubit();
 
-  auto [q0_1, q1_1] = programBuilder.cy(q0_0, q1_0);
-  auto q0_2 = programBuilder.x(q0_1);
-  auto [q0_3, q1_2] = programBuilder.cy(q0_2, q1_1);
-  auto q0_4 = programBuilder.x(q0_3);
+  auto [q0S1, q1S1] = programBuilder.cy(q0S0, q1S0);
+  auto q0S2 = programBuilder.x(q0S1);
+  auto [q0S3, q1S2] = programBuilder.cy(q0S2, q1S1);
+  auto q0S4 = programBuilder.x(q0S3);
 
-  auto [q0_5, c0] = programBuilder.measure(q0_4);
+  auto [q0S5, c0] = programBuilder.measure(q0S4);
 
-  programBuilder.sink(q0_5);
-  programBuilder.sink(q1_2);
+  programBuilder.sink(q0S5);
+  programBuilder.sink(q1S2);
   module = programBuilder.finalize({c0});
 
   referenceBuilder.initialize({programBuilder.getI1Type()});
-  auto r0_0 = referenceBuilder.allocQubit();
-  auto r1_0 = referenceBuilder.allocQubit();
+  auto r0S0 = referenceBuilder.allocQubit();
+  auto r1S0 = referenceBuilder.allocQubit();
 
-  auto [r0_1, cr0] = referenceBuilder.measure(r0_0);
+  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
 
-  auto [r0_2, r1_1] = referenceBuilder.cx(r0_1, r1_0);
-  auto r0_3 = referenceBuilder.x(r0_2);
-  auto [r0_4, r1_2] = referenceBuilder.cx(r0_3, r1_1);
+  auto [r0S2, r1S1] = referenceBuilder.cx(r0S1, r1S0);
+  auto r0S3 = referenceBuilder.x(r0S2);
+  auto [r0S4, r1S2] = referenceBuilder.cx(r0S3, r1S1);
 
-  referenceBuilder.sink(r0_4);
-  referenceBuilder.sink(r1_2);
+  referenceBuilder.sink(r0S4);
+  referenceBuilder.sink(r1S2);
   reference = referenceBuilder.finalize({cr0});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
@@ -424,25 +425,25 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
 
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0_0 = programBuilder.allocQubit();
-  auto q1_0 = programBuilder.allocQubit();
+  auto q0S0 = programBuilder.allocQubit();
+  auto q1S0 = programBuilder.allocQubit();
 
-  auto [q0_1, q1_1] = programBuilder.cz(q0_0, q1_0);
+  auto [q0S1, q1S1] = programBuilder.cz(q0S0, q1S0);
 
-  auto [q0_2, c0] = programBuilder.measure(q0_1);
+  auto [q0S2, c0] = programBuilder.measure(q0S1);
 
-  programBuilder.sink(q0_2);
-  programBuilder.sink(q1_1);
+  programBuilder.sink(q0S2);
+  programBuilder.sink(q1S1);
   module = programBuilder.finalize({c0});
 
   referenceBuilder.initialize({programBuilder.getI1Type()});
-  auto r0_0 = referenceBuilder.allocQubit();
-  auto r1_0 = referenceBuilder.allocQubit();
+  auto r0S0 = referenceBuilder.allocQubit();
+  auto r1S0 = referenceBuilder.allocQubit();
 
-  auto [r0_1, cr0] = referenceBuilder.measure(r0_0);
+  auto [r0S1, cr0] = referenceBuilder.measure(r0S0);
 
-  referenceBuilder.sink(r0_1);
-  referenceBuilder.sink(r1_0);
+  referenceBuilder.sink(r0S1);
+  referenceBuilder.sink(r1S0);
   reference = referenceBuilder.finalize({cr0});
 
   ASSERT_TRUE(runMeasurementLiftingPass(module.get()).succeeded());
