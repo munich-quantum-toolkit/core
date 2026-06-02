@@ -14,7 +14,6 @@
 
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
-#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -37,6 +36,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::utils;
+using llvm::reportFatalUsageError;
+using llvm::to_vector;
 
 /**
  * @brief If the computed P-gate angle corresponds to a named gate, emit it
@@ -176,17 +177,17 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
     rewriter.replaceOpWithNewOp<PowOp>(
         op, op.getQubitsIn(), -exp,
         [&](ValueRange powArgs) -> SmallVector<Value> {
-          return InvOp::create(
-                     rewriter, op.getLoc(), powArgs,
-                     [&](ValueRange invArgs) -> SmallVector<Value> {
-                       auto* invBody = rewriter.getInsertionBlock();
-                       rewriter.inlineBlockBefore(op.getBody(), invBody,
-                                                  invBody->begin(), invArgs);
-                       auto yieldedValues =
-                           llvm::to_vector(invBody->back().getOperands());
-                       rewriter.eraseOp(&invBody->back());
-                       return yieldedValues;
-                     })
+          return InvOp::create(rewriter, op.getLoc(), powArgs,
+                               [&](ValueRange invArgs) -> SmallVector<Value> {
+                                 auto* invBody = rewriter.getInsertionBlock();
+                                 rewriter.inlineBlockBefore(
+                                     op.getBody(), invBody, invBody->begin(),
+                                     invArgs);
+                                 auto yieldedValues =
+                                     to_vector(invBody->back().getOperands());
+                                 rewriter.eraseOp(&invBody->back());
+                                 return yieldedValues;
+                               })
               .getResults();
         });
 
@@ -246,8 +247,8 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
                                  rewriter.inlineBlockBefore(
                                      innerCtrlOp.getBody(), powBody,
                                      powBody->begin(), powArgs);
-                                 auto yieldedValues = llvm::to_vector(
-                                     powBody->back().getOperands());
+                                 auto yieldedValues =
+                                     to_vector(powBody->back().getOperands());
                                  rewriter.eraseOp(&powBody->back());
                                  return yieldedValues;
                                })
@@ -549,7 +550,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 double PowOp::getExponentValue() {
   FloatAttr attr;
   if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    llvm::reportFatalUsageError("PowOp exponent must be a constant");
+    reportFatalUsageError("PowOp exponent must be a constant");
   }
   return attr.getValueAsDouble();
 }
@@ -565,14 +566,14 @@ UnitaryOpInterface PowOp::getBodyUnitary() {
 
 Value PowOp::getInputQubit(const size_t i) {
   if (i >= getNumTargets()) {
-    llvm::reportFatalUsageError("Qubit index out of bounds");
+    reportFatalUsageError("Qubit index out of bounds");
   }
   return getQubitsIn()[i];
 }
 
 Value PowOp::getOutputQubit(const size_t i) {
   if (i >= getNumTargets()) {
-    llvm::reportFatalUsageError("Qubit index out of bounds");
+    reportFatalUsageError("Qubit index out of bounds");
   }
   return getQubitsOut()[i];
 }
@@ -583,7 +584,7 @@ Value PowOp::getInputForOutput(Value output) {
       return getQubitsIn()[i];
     }
   }
-  llvm::reportFatalUsageError("Given qubit is not an output of the operation");
+  reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
 Value PowOp::getOutputForInput(Value input) {
@@ -592,7 +593,7 @@ Value PowOp::getOutputForInput(Value input) {
       return getQubitsOut()[i];
     }
   }
-  llvm::reportFatalUsageError("Given qubit is not an input of the operation");
+  reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,

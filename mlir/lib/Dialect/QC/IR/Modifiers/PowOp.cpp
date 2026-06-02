@@ -12,7 +12,6 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -21,6 +20,7 @@
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
@@ -30,6 +30,8 @@
 using namespace mlir;
 using namespace mlir::qc;
 using namespace mlir::utils;
+using llvm::make_early_inc_range;
+using llvm::reportFatalUsageError;
 
 /**
  * @brief If the computed P-gate angle corresponds to a named gate, emit it
@@ -245,7 +247,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive PowOp erasure.
-    for (auto& bodyOp : llvm::make_early_inc_range(*op.getBody())) {
+    for (auto& bodyOp : make_early_inc_range(*op.getBody())) {
       if (&bodyOp != innerOp && !isa<YieldOp>(&bodyOp)) {
         rewriter.moveOpBefore(&bodyOp, op);
       }
@@ -487,7 +489,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 double PowOp::getExponentValue() {
   FloatAttr attr;
   if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    llvm::reportFatalUsageError("PowOp exponent must be a constant");
+    reportFatalUsageError("PowOp exponent must be a constant");
   }
   return attr.getValueAsDouble();
 }
