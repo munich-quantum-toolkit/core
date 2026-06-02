@@ -23,6 +23,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/ShapedOpInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 // The following headers are needed for some template instantiations.

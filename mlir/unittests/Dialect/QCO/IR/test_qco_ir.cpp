@@ -132,21 +132,94 @@ TEST_F(QCOTest, CheckDeadGateElimination) {
   auto r1 = reference.allocQubit();
   reference.sink(r0);
   reference.sink(r1);
-  auto ref = reference.finalize();
+  auto refModule = reference.finalize();
 
   ASSERT_TRUE(module);
   EXPECT_TRUE(verify(*module).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(module.get()).succeeded());
   EXPECT_TRUE(verify(*module).succeeded());
 
-  ASSERT_TRUE(ref);
-  EXPECT_TRUE(verify(*ref).succeeded());
-  EXPECT_TRUE(runQCOCleanupPipeline(ref.get()).succeeded());
-  EXPECT_TRUE(verify(*ref).succeeded());
+  ASSERT_TRUE(refModule);
+  EXPECT_TRUE(verify(*refModule).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(refModule.get()).succeeded());
+  EXPECT_TRUE(verify(*refModule).succeeded());
 
-  module.get().dump();
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), refModule.get()));
+}
 
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(module.get(), ref.get()));
+TEST_F(QCOTest, CheckIfOpDeadGateElimination) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q0S0 = builder.allocQubit();
+  auto q1S0 = builder.allocQubit();
+  auto q0S1 = builder.h(q0S0);
+  auto [q0S2, c0] = builder.measure(q0S1);
+
+  // This is an `if` with memory effects - it can't be removed.
+  auto q1S1 = builder.qcoIf(
+      c0, {q1S0},
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Then = builder.x(qubits[0]);
+        builder.gphase(0.5);
+        return SmallVector<Value>{q1Then};
+      },
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Else = builder.h(qubits[0]);
+        return SmallVector<Value>{q1Else};
+      })[0];
+
+  // This is an `if` without memory effects - it can be removed.
+  auto q1S2 = builder.qcoIf(
+      c0, {q1S1},
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Then = builder.x(qubits[0]);
+        return SmallVector<Value>{q1Then};
+      },
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Else = builder.h(qubits[0]);
+        return SmallVector<Value>{q1Else};
+      })[0];
+  builder.sink(q0S2);
+  builder.sink(q1S2);
+  auto module = builder.finalize();
+
+  QCOProgramBuilder reference(context.get());
+  reference.initialize();
+  auto r0S0 = reference.allocQubit();
+  auto r1S0 = reference.allocQubit();
+  auto r0S1 = reference.h(r0S0);
+  auto [r0S2, cr0] = reference.measure(r0S1);
+
+  // This is an `if` with memory effects - it can't be removed.
+  auto r1S1 = reference.qcoIf(
+      cr0, {r1S0},
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Then = reference.x(qubits[0]);
+        reference.gphase(0.5);
+        return SmallVector<Value>{q1Then};
+      },
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Else = reference.h(qubits[0]);
+        return SmallVector<Value>{q1Else};
+      })[0];
+
+  reference.sink(r0S2);
+  reference.sink(r1S1);
+  auto refModule = reference.finalize();
+
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(verify(*module).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(module.get()).succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
+
+  ASSERT_TRUE(refModule);
+  EXPECT_TRUE(verify(*refModule).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(refModule.get()).succeeded());
+  EXPECT_TRUE(verify(*refModule).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), refModule.get()));
 }
 
 TEST_F(QCOTest, DirectIfBuilder) {

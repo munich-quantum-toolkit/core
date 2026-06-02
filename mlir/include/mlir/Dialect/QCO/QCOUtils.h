@@ -261,8 +261,13 @@ inline LogicalResult checkAndRemoveDeadGate(Operation* op,
       rewriter.replaceAllUsesWith(m.getQubitOut(), m.getQubitIn());
       rewriter.eraseOp(op);
       return success();
+    } else if (auto i = dyn_cast<IfOp>(op)) {
+      // We specifically have to replace the output *qubits* with the input
+      // *qubits* to ignore the condition.
+      rewriter.replaceOp(op, i.getQubits());
+      return success();
     } else {
-      // This includes the `IfOp` as well as `Reset`.
+      // This currently only includes the `Reset` operation.
       rewriter.replaceOp(op, op->getOperands());
       return success();
     }
