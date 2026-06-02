@@ -37,7 +37,6 @@ class SwapAbsorbPassTest : public testing::Test {
 
 protected:
   void SetUp() override {
-    // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
