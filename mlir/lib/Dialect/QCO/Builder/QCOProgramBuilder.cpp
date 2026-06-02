@@ -52,12 +52,14 @@ QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
   ctx->loadDialect<QCODialect, qtensor::QTensorDialect>();
 }
 
-void QCOProgramBuilder::initialize() {
+void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
+
+void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
   setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
 
   // Create main function as entry point
-  auto funcType = getFunctionType({}, {getI64Type()});
+  auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
   // Add entry_point attribute to identify the main function
@@ -1101,11 +1103,13 @@ void QCOProgramBuilder::ensureAllocationMode(
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
+  checkFinalized();
+
   auto exitCode = intConstant(0);
-  return finalize(exitCode);
+  return finalize({exitCode});
 }
 
-OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(Value exitCode) {
+OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
   checkFinalized();
 
   // Ensure that main function exists and insertion point is valid
@@ -1157,7 +1161,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(Value exitCode) {
   validTensors.clear();
 
   // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, exitCode);
+  func::ReturnOp::create(*this, returnValues);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
