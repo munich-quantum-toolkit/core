@@ -271,6 +271,15 @@ void trivialControlledX(QCOProgramBuilder& b) {
   b.mcx({}, q[0]);
 }
 
+void repeatedControlledX(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto control = b.h(q0);
+  for (auto i = 0; i < 50; i++) {
+    auto qubit = b.allocQubit();
+    control = b.cx(control, qubit).first;
+  }
+}
+
 void inverseX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv({q[0]}, [&](ValueRange qubits) { return SmallVector{b.x(qubits[0])}; });

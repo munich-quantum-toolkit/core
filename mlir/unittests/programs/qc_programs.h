@@ -171,6 +171,9 @@ void nestedControlledX(QCProgramBuilder& b);
 /// Creates a circuit with a trivial controlled X gate.
 void trivialControlledX(QCProgramBuilder& b);
 
+/// Creates a circuit with repeated controlled X gates.
+void repeatedControlledX(QCProgramBuilder& b);
+
 /// Creates a circuit with an inverse modifier applied to an X gate.
 void inverseX(QCProgramBuilder& b);
 
