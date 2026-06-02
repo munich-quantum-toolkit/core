@@ -26,6 +26,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
@@ -244,6 +245,10 @@ struct DeadIfRemoval final : OpRewritePattern<IfOp> {
 
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter& rewriter) const override {
+    if (!isMemoryEffectFree(op)) {
+      // This effectively ignores `IfOp`s with memory effects.
+      return failure();
+    }
     return checkAndRemoveDeadGate(op, rewriter);
   }
 };

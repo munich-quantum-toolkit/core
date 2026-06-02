@@ -247,8 +247,8 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
  */
 inline LogicalResult checkAndRemoveDeadGate(Operation* op,
                                             PatternRewriter& rewriter) {
-  if (std::all_of(op->getUsers().begin(), op->getUsers().end(),
-                  [](Operation* user) { return isa<SinkOp>(user); })) {
+  if (llvm::all_of(op->getUsers(),
+                   [](Operation* user) { return isa<SinkOp>(user); })) {
     // If the operation is only used by sinks, we can safely remove it.
     if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
       // We specifically have to replace the output *qubits* with the input

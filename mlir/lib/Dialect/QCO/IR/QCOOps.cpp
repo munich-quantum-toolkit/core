@@ -24,6 +24,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/ShapedOpInterfaces.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 // The following headers are needed for some template instantiations.
@@ -42,7 +43,7 @@ using namespace mlir::qco;
 namespace {
 
 /**
- * @brief Remove dead measurements.
+ * @brief Remove dead gates.
  */
 struct DeadGateElimination final
     : public OpInterfaceRewritePattern<UnitaryOpInterface> {
@@ -54,7 +55,7 @@ struct DeadGateElimination final
                                 PatternRewriter& rewriter) const override {
     if (!isMemoryEffectFree(op)) {
       // This effectively ignores the GPhase operation and variants such as its
-      // inverse or `if` ops containing it, which should never be considered
+      // inverse or `ctrl` ops containing it, which should never be considered
       // dead.
       return failure();
     }
