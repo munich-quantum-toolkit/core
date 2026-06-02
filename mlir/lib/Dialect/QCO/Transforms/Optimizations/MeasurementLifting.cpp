@@ -44,6 +44,12 @@ static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
  * @return True if the operation is a diagonal gate, false otherwise.
  */
 static bool isDiagonal(Operation* op) {
+  if (auto c = dyn_cast<CtrlOp>(op)) {
+    return isDiagonal(c.getBodyUnitary());
+  }
+  if (auto i = dyn_cast<InvOp>(op)) {
+    return isDiagonal(i.getBodyUnitary());
+  }
   return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
 }
 
@@ -136,10 +142,6 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
   mlir::LogicalResult
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
-    if (!outputQubitRemainsUnused(op.getQubitOut())) {
-      return mlir::failure(); // if the qubit is still used after the
-                              // measurement, we cannot lift it above the gate.
-    }
     const auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
 
@@ -185,19 +187,19 @@ struct LiftMeasurementsAboveControlsPattern final
                   mlir::PatternRewriter& rewriter) const override {
     const auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
-    auto predecessorUnitary = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
+    auto predecessorCtrl = mlir::dyn_cast<CtrlOp>(predecessor);
 
-    if (!predecessorUnitary) {
+    if (!predecessorCtrl) {
       return mlir::failure();
     }
 
-    if (llvm::find(predecessorUnitary.getOutputQubits(), qubitVariable) !=
-        predecessorUnitary.getOutputQubits().end()) {
+    if (llvm::find(predecessorCtrl.getControlsOut(), qubitVariable) ==
+        predecessorCtrl.getControlsOut().end()) {
       // The measured qubit is a target, not a control of the gate.
       return mlir::failure();
     }
 
-    swapGateWithMeasurement(predecessorUnitary, op, rewriter);
+    swapGateWithMeasurement(predecessorCtrl, op, rewriter);
 
     return mlir::success();
   }
