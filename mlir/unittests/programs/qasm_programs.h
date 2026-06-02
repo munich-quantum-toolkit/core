@@ -322,8 +322,18 @@ extern const std::string barrierTwoQubits;
 /// Creates a circuit with a barrier on multiple qubits.
 extern const std::string barrierMultipleQubits;
 
+/// Creates a circuit with a control modifier applied to two gates.
+extern const std::string ctrlTwo;
+
+/// Creates a circuit with a control modifier applied to a controlled and a
+/// non-controlled gate.
+extern const std::string ctrlTwoMixed;
+
 /// Creates a circuit with a simple if operation with one qubit.
 extern const std::string simpleIf;
+
+/// Creates a circuit with an if operation with two qubits.
+extern const std::string ifTwoQubits;
 
 /// Creates a circuit with an if operation with an else branch.
 extern const std::string ifElse;

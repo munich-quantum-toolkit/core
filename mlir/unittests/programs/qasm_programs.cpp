@@ -642,6 +642,26 @@ qubit[3] q;
 barrier q[0], q[1], q[2];
 )qasm";
 
+const std::string ctrlTwo = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+gate compound q0, q1 {
+  x q0;
+  rxx(0.123) q0, q1;
+}
+ctrl(2) @ compound q[0], q[1], q[2], q[3];
+)qasm";
+
+const std::string ctrlTwoMixed = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+gate compound q0, q1 {
+  ctrl @ x q0, q1;
+  rxx(0.123) q0, q1;
+}
+ctrl(2) @ compound q[0], q[1], q[2], q[3];
+)qasm";
+
 const std::string simpleIf = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
@@ -649,6 +669,17 @@ h q[0];
 bit c = measure q[0];
 if (c) {
   x q[0];
+}
+)qasm";
+
+const std::string ifTwoQubits = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+bit c = measure q[0];
+if (c) {
+  x q[0];
+  x q[1];
 }
 )qasm";
 

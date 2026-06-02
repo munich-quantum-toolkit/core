@@ -340,7 +340,13 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"BarrierMultipleQubits",
                                  qasm::barrierMultipleQubits,
                                  MQT_NAMED_BUILDER(qc::barrierMultipleQubits)},
+        QASM3TranslationTestCase{"CtrlTwo", qasm::ctrlTwo,
+                                 MQT_NAMED_BUILDER(mlir::qc::ctrlTwo)},
+        QASM3TranslationTestCase{"CtrlTwoMixed", qasm::ctrlTwoMixed,
+                                 MQT_NAMED_BUILDER(mlir::qc::ctrlTwoMixed)},
         QASM3TranslationTestCase{"SimpleIf", qasm::simpleIf,
-                                 MQT_NAMED_BUILDER(qc::simpleIf)},
+                                 MQT_NAMED_BUILDER(mlir::qc::simpleIf)},
+        QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
+                                 MQT_NAMED_BUILDER(mlir::qc::ifTwoQubits)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
-                                 MQT_NAMED_BUILDER(qc::ifElse)}));
+                                 MQT_NAMED_BUILDER(mlir::qc::ifElse)}));

@@ -691,14 +691,14 @@ public:
       }
     };
 
-    if (posControls.empty() && negControls.empty()) {
-      withInv(targets);
-      return;
-    }
-
     SmallVector<Value> controls;
     controls.append(posControls.begin(), posControls.end());
     controls.append(negControls.begin(), negControls.end());
+
+    if (controls.empty()) {
+      withInv(targets);
+      return;
+    }
 
     for (auto q : negControls) {
       builder.x(q);
@@ -726,10 +726,17 @@ public:
     }
 
     // Build local scope: argument name → Values
-    QubitScope localScope;
+    llvm::SmallVector<Value> targets;
+    llvm::StringMap<SmallVector<size_t>> targetsMap;
     for (size_t i = 0; i < gate.targetNames.size(); ++i) {
-      localScope[gate.targetNames[i]] =
-          SmallVector<Value>(gateOperands[i].begin(), gateOperands[i].end());
+      for (auto target : gateOperands[i]) {
+        auto it = llvm::find(targets, target);
+        if (it == targets.end()) {
+          targets.push_back(target);
+        }
+        targetsMap[gate.targetNames[i]].push_back(
+            std::distance(targets.begin(), it));
+      }
     }
 
     // Bind parameters as constants
@@ -739,7 +746,15 @@ public:
                              qasm3::const_eval::ConstEvalValue(params[i]));
     }
 
-    auto bodyFn = [&] {
+    auto bodyFn = [&](ValueRange qubits) {
+      QubitScope localScope;
+      for (const auto& [name, indices] : targetsMap) {
+        SmallVector<Value> args;
+        for (auto index : indices) {
+          args.push_back(qubits[index]);
+        }
+        localScope[name] = std::move(args);
+      }
       for (const auto& bodyStmt : gate.body) {
         if (const auto gateCall =
                 std::dynamic_pointer_cast<qasm3::GateCallStatement>(bodyStmt)) {
@@ -765,23 +780,25 @@ public:
       }
     };
 
-    auto withInv = [&] {
+    auto withInv = [&](ValueRange qubits) {
       if (invert) {
-        builder.inv(function_ref<void()>(bodyFn));
+        builder.inv(qubits, function_ref<void(ValueRange)>(bodyFn));
       } else {
-        bodyFn();
+        bodyFn(qubits);
       }
     };
 
-    if (posControls.empty() && negControls.empty()) {
-      withInv();
+    SmallVector<Value> controls;
+    controls.append(posControls.begin(), posControls.end());
+    controls.append(negControls.begin(), negControls.end());
+
+    if (controls.empty()) {
+      withInv(targets);
     } else {
       for (auto q : negControls) {
         builder.x(q);
       }
-      SmallVector<Value> allControls(posControls.begin(), posControls.end());
-      allControls.append(negControls.begin(), negControls.end());
-      builder.ctrl(allControls, function_ref<void()>(withInv));
+      builder.ctrl(controls, targets, function_ref<void(ValueRange)>(withInv));
       for (auto q : negControls) {
         builder.x(q);
       }
