@@ -37,10 +37,14 @@ protected:
 
     for (auto func : anchor.getOps<func::FuncOp>()) {
       SmallVector<SWAPOp> readyToAbsorb;
+      SmallVector<WireIterator> wires;
       do {
-        SmallVector<WireIterator> wires;
+        wires.clear();
         for (auto op : func.getOps<StaticOp>()) {
           wires.emplace_back(op.getQubit());
+        }
+        if (wires.empty()) {
+          return;
         }
 
         readyToAbsorb.clear();
