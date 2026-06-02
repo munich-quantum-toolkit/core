@@ -23,6 +23,7 @@
 #include <jeff/Translation/Serialize.hpp>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -64,7 +65,7 @@ protected:
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<arith::ArithDialect, func::FuncDialect, jeff::JeffDialect,
-                    mlir::qco::QCODialect>();
+                    qco::QCODialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -633,4 +634,42 @@ INSTANTIATE_TEST_SUITE_P(
             "ResetMultipleQubitsAfterSingleOp",
             MQT_NAMED_BUILDER(qco::resetMultipleQubitsAfterSingleOp),
             MQT_NAMED_BUILDER(qco::resetMultipleQubitsAfterSingleOp)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/IfOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOIfOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qco::simpleIf),
+                              MQT_NAMED_BUILDER(qco::simpleIf)},
+        JeffRoundTripTestCase{"IfTwoQubits",
+                              MQT_NAMED_BUILDER(qco::ifTwoQubits),
+                              MQT_NAMED_BUILDER(qco::ifTwoQubits)},
+        JeffRoundTripTestCase{"IfElse", MQT_NAMED_BUILDER(qco::ifElse),
+                              MQT_NAMED_BUILDER(qco::ifElse)},
+        JeffRoundTripTestCase{"NestedIfOpForLoop",
+                              MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
+                              MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/ForOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    SCFForOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"SimpleForLoop",
+                              MQT_NAMED_BUILDER(qco::simpleForLoop),
+                              MQT_NAMED_BUILDER(qco::simpleForLoop)},
+        JeffRoundTripTestCase{"NestedForLoopIfOp",
+                              MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
+                              MQT_NAMED_BUILDER(qco::nestedForLoopIfOp)},
+        JeffRoundTripTestCase{
+            "nestedForLoopCtrlOpWithSeparateQubit",
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit)},
+        JeffRoundTripTestCase{
+            "nestedForLoopCtrlOpWithExtractedQubit",
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
 /// @}

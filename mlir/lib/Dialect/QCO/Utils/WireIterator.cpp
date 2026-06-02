@@ -39,8 +39,8 @@ void WireIterator::forward() {
   }
 
   // Find the user-operation of the qubit SSA value.
-  assert(qubit_.getNumUses() == 1 && "expected linear typing");
-  op_ = *(qubit_.getUsers().begin());
+  assert(qubit_.hasOneUse() && "expected linear typing");
+  op_ = *(qubit_.user_begin());
 
   // A sink/insert defines the end of the qubit wire (dynamic and static).
   if (isa<SinkOp, YieldOp, qtensor::InsertOp>(op_)) {
@@ -57,8 +57,8 @@ void WireIterator::forward() {
         .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
         .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
         .Default([&](Operation* op) {
-          report_fatal_error("unknown op in def-use chain: " +
-                             op->getName().getStringRef());
+          llvm::reportFatalInternalError("unknown op in def-use chain: " +
+                                         op->getName().getStringRef());
         });
   }
 }
@@ -90,8 +90,8 @@ void WireIterator::backward() {
       .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
       .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
       .Default([&](Operation* op) {
-        report_fatal_error("unknown op in def-use chain: " +
-                           op->getName().getStringRef());
+        llvm::reportFatalInternalError("unknown op in def-use chain: " +
+                                       op->getName().getStringRef());
       });
 
   // Get the operation that produces the qubit value.

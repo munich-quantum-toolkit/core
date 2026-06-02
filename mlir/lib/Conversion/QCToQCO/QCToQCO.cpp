@@ -515,13 +515,7 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
  */
 static std::pair<SetVector<Value>, SetVector<Value>>
 collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
-  // Get the regions of the current operation
-  const auto& regions = op->getRegions();
-  auto& regionQubitMap = state->regionQubitMap[op];
-  auto& regionRegisterMap = state->regionRegisterMap[op];
-
-  for (auto& region : regions) {
-    auto& qubitInfoMap = state->qubitInfoMap[&region];
+  for (auto& region : op->getRegions()) {
     // Skip empty regions e.g. empty else region of an If operation
     if (region.empty()) {
       continue;
@@ -534,12 +528,16 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
       if (operation.getNumRegions() > 0) {
         auto [qubits, registers] =
             collectQubitValuesInsideSCFOps(&operation, state);
+        auto& regionQubitMap = state->regionQubitMap[op];
+        auto& qubitInfoMap = state->qubitInfoMap[&region];
         regionQubitMap.set_union(qubits);
         // Remove duplicate qubits
         regionQubitMap.remove_if(
             [&](Value qubit) { return qubitInfoMap.contains(qubit); });
-        regionRegisterMap.set_union(registers);
+        state->regionRegisterMap[op].set_union(registers);
       }
+      auto& qubitInfoMap = state->qubitInfoMap[&region];
+      auto& regionRegisterMap = state->regionRegisterMap[op];
       // Track qubits from loadOp
       if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
         QubitInfo info{.reg = loadOp.getMemRef(),
@@ -548,6 +546,7 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
         regionRegisterMap.insert(loadOp.getMemRef());
         continue;
       }
+      auto& regionQubitMap = state->regionQubitMap[op];
       // Add the QC qubit and memref operands to the maps
       for (const auto& operand : operation.getOperands()) {
         if (isa<qc::QubitType>(operand.getType())) {
@@ -564,7 +563,7 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
     }
   }
 
-  return {regionQubitMap, regionRegisterMap};
+  return {state->regionQubitMap[op], state->regionRegisterMap[op]};
 }
 
 namespace {

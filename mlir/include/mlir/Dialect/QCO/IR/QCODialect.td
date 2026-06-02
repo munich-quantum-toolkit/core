@@ -38,6 +38,8 @@ def QCODialect : Dialect {
   let cppNamespace = "::mlir::qco";
 
   let useDefaultTypePrinterParser = 1;
+
+  let hasCanonicalizer = 1;
 }
 
 #endif // MLIR_DIALECT_QCO_IR_QCODIALECT_TD

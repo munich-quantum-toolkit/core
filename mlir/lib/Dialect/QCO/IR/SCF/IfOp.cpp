@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -25,6 +26,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
@@ -234,11 +236,28 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
     return success(changed);
   }
 };
+
+/**
+ * @brief Remove dead `IfOp` instructions.
+ */
+struct DeadIfRemoval final : OpRewritePattern<IfOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter& rewriter) const override {
+    if (!isMemoryEffectFree(op)) {
+      // This effectively ignores `IfOp`s with memory effects.
+      return failure();
+    }
+    return checkAndRemoveDeadGate(op, rewriter);
+  }
+};
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveStaticCondition, ConditionPropagation>(context);
+  results.add<DeadIfRemoval>(context);
   populateRegionBranchOpInterfaceCanonicalizationPatterns(
       results, IfOp::getOperationName());
 }
