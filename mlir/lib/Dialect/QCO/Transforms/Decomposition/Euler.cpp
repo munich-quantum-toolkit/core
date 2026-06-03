@@ -91,6 +91,8 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
   GPhaseOp::create(builder, loc, phase);
 }
 
+namespace {
+
 /**
  * @brief Planned RZ-middle-RZ chain; fields are angles in circuit (time) order.
  */
@@ -101,6 +103,8 @@ struct PSXSequence {
   double midRZ = 0.0;
   double lastRZ = 0.0;
 };
+
+} // namespace
 
 /**
  * @brief Builds the RZ/SX chain realizing `RZ(phi)*RY(theta)*RZ(lambda)`.
