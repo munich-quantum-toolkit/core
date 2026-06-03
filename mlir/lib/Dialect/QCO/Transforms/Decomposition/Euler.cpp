@@ -14,6 +14,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
@@ -21,13 +22,12 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <numbers>
 #include <optional>
 
 namespace mlir::qco::decomposition {
-
-namespace {
 
 /**
  * @brief Wraps `angle` into `[-pi, pi)`, mapping `+pi` (within `atol`) to
@@ -37,8 +37,8 @@ namespace {
  * @param atol Absolute tolerance for snapping `+pi` to `-pi`.
  * @return The wrapped angle in `[-pi, pi)`.
  */
-[[nodiscard]] double mod2pi(double angle,
-                            double atol = mlir::utils::TOLERANCE) {
+[[nodiscard]] static double mod2pi(double angle,
+                                   double atol = mlir::utils::TOLERANCE) {
   if (!std::isfinite(angle)) {
     return angle;
   }
@@ -67,7 +67,8 @@ namespace {
  * @param m The single-qubit matrix to conjugate.
  * @return `H * m * H`.
  */
-[[nodiscard]] Eigen::Matrix2cd hadamardConjugate(const Eigen::Matrix2cd& m) {
+[[nodiscard]] static Eigen::Matrix2cd
+hadamardConjugate(const Eigen::Matrix2cd& m) {
   const auto a = m(0, 0);
   const auto b = m(0, 1);
   const auto c = m(1, 0);
@@ -83,7 +84,7 @@ namespace {
  * @param loc Source location for the created operation.
  * @param phase Global phase in radians; skipped when within tolerance of zero.
  */
-void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
+static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
   if (std::abs(phase) <= mlir::utils::TOLERANCE) {
     return;
   }
@@ -113,8 +114,8 @@ struct PSXSequence {
  * @param lambda Leading Z-rotation angle.
  * @return The planned PSX sequence.
  */
-[[nodiscard]] PSXSequence sequenceFromZYZForPSX(double theta, double phi,
-                                                double lambda) {
+[[nodiscard]] static PSXSequence sequenceFromZYZForPSX(double theta, double phi,
+                                                       double lambda) {
   constexpr double eps = mlir::utils::TOLERANCE;
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
@@ -146,7 +147,7 @@ struct PSXSequence {
  * @param lambda The `lambda` Euler angle.
  * @return The global-phase offset in radians.
  */
-[[nodiscard]] double globalPhaseOffsetForU(double phi, double lambda) {
+[[nodiscard]] static double globalPhaseOffsetForU(double phi, double lambda) {
   return -0.5 * (phi + lambda);
 }
 
@@ -159,7 +160,7 @@ struct PSXSequence {
  * @param angle The unwrapped RZ angle.
  * @return The global-phase contribution in radians.
  */
-[[nodiscard]] double globalPhaseFromRZWrap(double angle) {
+[[nodiscard]] static double globalPhaseFromRZWrap(double angle) {
   constexpr double eps = mlir::utils::TOLERANCE;
   return 0.5 * (mod2pi(angle, eps) - angle);
 }
@@ -170,7 +171,7 @@ struct PSXSequence {
  * @param seq The planned PSX sequence.
  * @return The global-phase offset in radians.
  */
-[[nodiscard]] double globalPhaseOffsetForPSX(const PSXSequence& seq) {
+[[nodiscard]] static double globalPhaseOffsetForPSX(const PSXSequence& seq) {
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double quarterPi = std::numbers::pi / 4.0;
 
@@ -200,8 +201,8 @@ struct PSXSequence {
  * @param lambda Leading Z-rotation angle from `paramsZYZ`.
  * @return The global-phase offset in radians.
  */
-[[nodiscard]] double globalPhaseOffsetForPSX(double theta, double phi,
-                                             double lambda) {
+[[nodiscard]] static double globalPhaseOffsetForPSX(double theta, double phi,
+                                                    double lambda) {
   return globalPhaseOffsetForPSX(sequenceFromZYZForPSX(theta, phi, lambda));
 }
 
@@ -213,10 +214,10 @@ struct PSXSequence {
  * @param onSX Called for each SX gate.
  * @param onX Called for each X gate.
  */
-void visitSequenceInTimeOrder(const PSXSequence& seq,
-                              llvm::function_ref<void(double)> onRZ,
-                              llvm::function_ref<void()> onSX,
-                              llvm::function_ref<void()> onX) {
+static void visitSequenceInTimeOrder(const PSXSequence& seq,
+                                     llvm::function_ref<void(double)> onRZ,
+                                     llvm::function_ref<void()> onSX,
+                                     llvm::function_ref<void()> onX) {
   onRZ(seq.firstRZ);
   switch (seq.middle) {
   case PSXSequence::Middle::OneSX:
@@ -246,9 +247,10 @@ void visitSequenceInTimeOrder(const PSXSequence& seq,
  * @param phase Global phase to emit, in radians.
  * @return The transformed qubit value.
  */
-[[nodiscard]] Value emitFromPSXSequence(OpBuilder& builder, Location loc,
-                                        Value qubit, const PSXSequence& seq,
-                                        double phase) {
+[[nodiscard]] static Value emitFromPSXSequence(OpBuilder& builder, Location loc,
+                                               Value qubit,
+                                               const PSXSequence& seq,
+                                               double phase) {
   constexpr double eps = mlir::utils::TOLERANCE;
   visitSequenceInTimeOrder(
       seq,
@@ -275,8 +277,9 @@ void visitSequenceInTimeOrder(const PSXSequence& seq,
  * @param basis Euler basis selecting the K and A rotation axes.
  * @return The transformed qubit value.
  */
-Value emitKAK(OpBuilder& builder, Location loc, Value qubit, double theta,
-              double phi, double lambda, double phase, EulerBasis basis) {
+static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
+                     double theta, double phi, double lambda, double phase,
+                     EulerBasis basis) {
   auto emitK = [&](double a) {
     switch (basis) {
     case EulerBasis::ZYZ:
@@ -315,8 +318,6 @@ Value emitKAK(OpBuilder& builder, Location loc, Value qubit, double theta,
   emitGPhaseIfNeeded(builder, loc, phase);
   return qubit;
 }
-
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // Euler decomposition (angles)
