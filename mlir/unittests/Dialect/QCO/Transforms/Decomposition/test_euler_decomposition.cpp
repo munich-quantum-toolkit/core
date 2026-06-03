@@ -15,11 +15,11 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/Utils/Utils.h"
-#include "qco_programs.h"
 
 #include <Eigen/Core>
 #include <Eigen/QR>
 #include <gtest/gtest.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -140,6 +140,13 @@ static bool isAllowedBasisGate(Operation& op, StringRef basis) {
   return false;
 }
 
+[[nodiscard]] static bool isTwoQubitGate(Operation& op) {
+  if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
+    return u.isTwoQubit();
+  }
+  return false;
+}
+
 static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
   auto& block = funcOp.getBody().front();
   for (Operation& op : block.without_terminator()) {
@@ -147,8 +154,7 @@ static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
       continue;
     }
 
-    // Allow the separator modifiers themselves.
-    if (isa<CtrlOp>(op)) {
+    if (isTwoQubitGate(op)) {
       continue;
     }
 
@@ -171,7 +177,7 @@ static Eigen::Matrix2cd compute1QMatrixFromFunction(func::FuncOp funcOp) {
       continue;
     }
 
-    if (isa<CtrlOp>(op)) {
+    if (isTwoQubitGate(op)) {
       continue;
     }
 
@@ -204,6 +210,36 @@ static LogicalResult runFuse(ModuleOp module, StringRef basis) {
   opts.basis = basis.str();
   pm.addPass(qco::createFuseSingleQubitUnitaryRuns(opts));
   return pm.run(module);
+}
+
+static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.t(q[0]);
+  q[0] = b.rz(0.123, q[0]);
+  // Keep `inv` inside the single-qubit run so it gets fused/resynthesized too.
+  q[0] = b.inv({q[0]}, [&](ValueRange targets) -> SmallVector<Value> {
+    return {b.sx(targets[0])};
+  })[0];
+  q[0] = b.ry(-0.456, q[0]);
+}
+
+static void singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  q[0] = b.h(q[0]);
+  q[0] = b.t(q[0]);
+  std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
+  q[0] = b.rz(0.321, q[0]);
+  q[0] = b.sx(q[0]);
+}
+
+static void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.t(q[0]);
+  q[0] = b.barrier({q[0]})[0];
+  q[0] = b.rz(0.321, q[0]);
+  q[0] = b.sx(q[0]);
 }
 
 static OwningOpRef<ModuleOp> buildProgram(MLIRContext* ctx,
@@ -263,23 +299,16 @@ static void runFuseOnProgramForAllBases(MLIRContext* ctx,
   });
 }
 
-[[nodiscard]] static Eigen::Matrix2cd rxMatrix(double theta) {
-  const auto halfTheta = theta / 2.0;
-  const std::complex<double> cosHalf{std::cos(halfTheta), 0.0};
-  const std::complex<double> iSinHalf{0.0, -std::sin(halfTheta)};
-  return Eigen::Matrix2cd{{cosHalf, iSinHalf}, {iSinHalf, cosHalf}};
-}
-
-[[nodiscard]] static Eigen::Matrix2cd ryMatrix(double theta) {
-  const auto halfTheta = theta / 2.0;
-  const std::complex<double> cosHalf{std::cos(halfTheta), 0.0};
-  const std::complex<double> sinHalf{std::sin(halfTheta), 0.0};
-  return Eigen::Matrix2cd{{cosHalf, -sinHalf}, {sinHalf, cosHalf}};
-}
-
-[[nodiscard]] static Eigen::Matrix2cd rzMatrix(double theta) {
-  return Eigen::Matrix2cd{{{std::cos(theta / 2.0), -std::sin(theta / 2.0)}, 0},
-                          {0, {std::cos(theta / 2.0), std::sin(theta / 2.0)}}};
+template <typename RotationOp>
+[[nodiscard]] static Eigen::Matrix2cd rotationMatrix(MLIRContext* ctx,
+                                                     double theta) {
+  OpBuilder builder(ctx);
+  auto module = ModuleOp::create(UnknownLoc::get(ctx));
+  builder.setInsertionPointToStart(module.getBody());
+  const Location loc = module.getLoc();
+  Value q = builder.create<AllocOp>(loc).getResult();
+  auto op = builder.create<RotationOp>(loc, q, theta);
+  return *cast<RotationOp>(op).getUnitaryMatrix();
 }
 
 [[nodiscard]] static SynthesizedCircuit
@@ -306,6 +335,16 @@ template <typename OpTy>
 [[nodiscard]] static std::size_t countOps(func::FuncOp funcOp) {
   std::size_t count = 0;
   funcOp.walk([&](OpTy) { ++count; });
+  return count;
+}
+
+[[nodiscard]] static std::size_t countTwoQubitGates(func::FuncOp funcOp) {
+  std::size_t count = 0;
+  funcOp.walk([&](UnitaryOpInterface op) {
+    if (op.isTwoQubit()) {
+      ++count;
+    }
+  });
   return count;
 }
 
@@ -360,7 +399,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, ReconstructsOriginalRunAllBases) {
   fx.setUp();
 
   runFuseOnProgramForAllBases(
-      fx.context.get(), &mlir::qco::singleQubitRunWithSingleQubitGate,
+      fx.context.get(), &singleQubitRunWithSingleQubitGate,
       /*checksAfter=*/
       [&](func::FuncOp funcOp, StringRef basis,
           const Eigen::Matrix2cd& original) {
@@ -448,14 +487,14 @@ TEST(EulerDecompositionTest, ZYZAnglesFromUnitaryReconstructHadamard) {
 // NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class EulerSynthesisExactTest
     : public testing::TestWithParam<
-          std::tuple<EulerBasis, Eigen::Matrix2cd (*)()>> {};
+          std::tuple<EulerBasis, Eigen::Matrix2cd (*)(MLIRContext*)>> {};
 
 TEST_P(EulerSynthesisExactTest, WithoutSimplification) {
   SynthesisFixture fx;
   fx.setUp();
 
-  const auto [basis, matrixFactory] = GetParam();
-  const Eigen::Matrix2cd original = matrixFactory();
+  const auto [basis, matrixFn] = GetParam();
+  const Eigen::Matrix2cd original = matrixFn(fx.context.get());
   const auto circuit = synthesizeMatrix(fx.context.get(), original, basis,
                                         /*simplify=*/false);
 
@@ -466,28 +505,35 @@ TEST_P(EulerSynthesisExactTest, WithoutSimplification) {
 
 INSTANTIATE_TEST_SUITE_P(
     SingleQubitMatrices, EulerSynthesisExactTest,
-    testing::Combine(
-        testing::Values(EulerBasis::XYX, EulerBasis::XZX, EulerBasis::ZYZ,
-                        EulerBasis::ZXZ),
-        testing::Values(
-            []() -> Eigen::Matrix2cd { return Eigen::Matrix2cd::Identity(); },
-            []() -> Eigen::Matrix2cd { return ryMatrix(2.0); },
-            []() -> Eigen::Matrix2cd { return rxMatrix(0.5); },
-            []() -> Eigen::Matrix2cd { return rzMatrix(3.14); },
-            []() -> Eigen::Matrix2cd { return HOp::getUnitaryMatrix(); })));
+    testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
+                                     EulerBasis::ZYZ, EulerBasis::ZXZ),
+                     testing::Values(
+                         [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
+                           return Eigen::Matrix2cd::Identity();
+                         },
+                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+                           return rotationMatrix<RYOp>(ctx, 2.0);
+                         },
+                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+                           return rotationMatrix<RXOp>(ctx, 0.5);
+                         },
+                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+                           return rotationMatrix<RZOp>(ctx, 3.14);
+                         },
+                         [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
+                           return HOp::getUnitaryMatrix();
+                         })));
 
-TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossCtrlAllBases) {
+TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossTwoQGateAllBases) {
   SynthesisFixture fx;
   fx.setUp();
 
   runFuseOnProgramForAllBases(
-      fx.context.get(), &mlir::qco::singleQubitRunsSplitByTwoQGate,
+      fx.context.get(), &singleQubitRunsSplitByTwoQGate,
       /*checksAfter=*/
       [&](func::FuncOp funcOp, StringRef basis,
           const Eigen::Matrix2cd& original) {
-        int numCtrl = 0;
-        funcOp.walk([&](CtrlOp) { ++numCtrl; });
-        EXPECT_EQ(numCtrl, 1) << "basis=" << basis.str();
+        EXPECT_EQ(countTwoQubitGates(funcOp), 1U) << "basis=" << basis.str();
         EXPECT_TRUE(compute1QMatrixFromFunction(funcOp).isApprox(
             original, mlir::utils::TOLERANCE))
             << "basis=" << basis.str();
@@ -500,7 +546,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBarrierAllBases) {
   fx.setUp();
 
   runFuseOnProgramForAllBases(
-      fx.context.get(), &mlir::qco::singleQubitRunsSplitByBarrier,
+      fx.context.get(), &singleQubitRunsSplitByBarrier,
       /*checksAfter=*/
       [&](func::FuncOp funcOp, StringRef basis,
           const Eigen::Matrix2cd& original) {
@@ -516,8 +562,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, InvalidBasisFailsPass) {
   SynthesisFixture fx;
   fx.setUp();
 
-  auto owned = buildProgram(fx.context.get(),
-                            &mlir::qco::singleQubitRunWithSingleQubitGate);
+  auto owned =
+      buildProgram(fx.context.get(), &singleQubitRunWithSingleQubitGate);
   ASSERT_TRUE(static_cast<bool>(owned));
   ModuleOp module = *owned;
   ASSERT_TRUE(succeeded(verify(module)));
