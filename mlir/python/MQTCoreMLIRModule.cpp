@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir-c/IR.h"
 #include "mlir/Bindings/Python/NanobindAdaptors.h" // NOLINT(misc-include-cleaner)
 #include "mlir/CAPI/Dialects.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h" // NOLINT(misc-include-cleaner)
@@ -33,11 +32,12 @@ NB_MODULE(_mqtCoreMlir, m) {
 
   m.doc() = "MQT Core MLIR Python bindings";
 
-  m.def(
-      "register_dialects",
-      [](MlirContext context) { mqtMlirRegisterAllDialects(context); },
-      nb::arg("context"),
-      "Register and load QC, QCO, QTensor, and dependent MLIR dialects.");
+  // NOLINTNEXTLINE(misc-include-cleaner)
+  auto registerDialects = [](MlirContext context) {
+    mqtMlirRegisterAllDialects(context);
+  };
+  m.def("register_dialects", registerDialects, nb::arg("context"),
+        "Register and load QC, QCO, QTensor, and dependent MLIR dialects.");
 
   m.def(
       "qasm_to_qco",
@@ -45,6 +45,7 @@ NB_MODULE(_mqtCoreMlir, m) {
         auto qc = qasm3::Importer::imports(qasm);
 
         mlir::MLIRContext ctx;
+        // NOLINTNEXTLINE(misc-include-cleaner)
         MlirContext cCtx{&ctx};
         mqtMlirRegisterAllDialects(cCtx);
 
