@@ -9,11 +9,36 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qco;
+
+namespace {
+
+/**
+ * @brief Remove dead measurements.
+ */
+struct DeadMeasurementRemoval final : OpRewritePattern<MeasureOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(MeasureOp op,
+                                PatternRewriter& rewriter) const override {
+    if (!checkDeadGate(op)) {
+      return failure();
+    }
+
+    rewriter.replaceAllUsesWith(op.getQubitOut(), op.getQubitIn());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+} // namespace
 
 LogicalResult MeasureOp::verify() {
   const auto registerName = getRegisterName();
@@ -36,4 +61,9 @@ LogicalResult MeasureOp::verify() {
     }
   }
   return success();
+}
+
+void MeasureOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                            MLIRContext* context) {
+  results.add<DeadMeasurementRemoval>(context);
 }

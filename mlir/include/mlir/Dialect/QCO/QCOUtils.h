@@ -10,8 +10,10 @@
 
 #pragma once
 
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 namespace mlir::qco {
@@ -235,6 +237,23 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
   // nextOp results correspond to swapped operands, so swap replacements too
   rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
   return success();
+}
+
+/**
+ * @brief Check if given quantum operation is unused (i.e., only used by
+ * sinks and no memory effects).
+ *
+ * @param op The operation to check.
+ * @return bool True if the operation is unused, false otherwise.
+ */
+inline bool checkDeadGate(Operation* op) {
+  if (!isMemoryEffectFree(op)) {
+    // This ignores operations with and regions that have children with memory
+    // effects, which should never be considered dead.
+    return false;
+  }
+  return llvm::all_of(op->getUsers(),
+                      [](Operation* user) { return isa<SinkOp>(user); });
 }
 
 } // namespace mlir::qco

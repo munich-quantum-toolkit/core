@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -234,11 +235,29 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
     return success(changed);
   }
 };
+
+/**
+ * @brief Remove dead `IfOp` instructions.
+ */
+struct DeadIfRemoval final : OpRewritePattern<IfOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter& rewriter) const override {
+    if (!checkDeadGate(op)) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op, op.getQubits());
+    return success();
+  }
+};
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveStaticCondition, ConditionPropagation>(context);
+  results.add<DeadIfRemoval>(context);
   populateRegionBranchOpInterfaceCanonicalizationPatterns(
       results, IfOp::getOperationName());
 }
