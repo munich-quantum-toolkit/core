@@ -33,6 +33,8 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/Dominance.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Threading.h>
@@ -462,8 +464,7 @@ protected:
     }
 
     assert(llvm::all_of(u.wires,
-                        [](auto& it) { return isa<SinkOp>(it.operation());
-                        }));
+                        [](auto& it) { return isa<SinkOp>(it.operation()); }));
 
     // Collect statistics.
     numSwaps += *res;
@@ -531,8 +532,8 @@ private:
    * @returns a vector of wire iterators, where the i-th wire points at the i-th
    * static program qubit.
    */
-  static SmallVector<WireIterator>
-  place(func::FuncOp func, const Layout& layout, IRRewriter& rewriter) {
+  SmallVector<WireIterator> place(func::FuncOp func, const Layout& layout,
+                                  IRRewriter& rewriter) {
     SmallVector<StaticOp> staticOps;
     staticOps.reserve(layout.nqubits());
 
@@ -586,6 +587,61 @@ private:
       const auto qubit = staticOps[hw].getQubit();
       placedWires[prog] = WireIterator(qubit);
       SinkOp::create(rewriter, func->getLoc(), qubit);
+    }
+
+    for (auto forOp : make_early_inc_range(func.getOps<scf::ForOp>())) {
+      rewriter.setInsertionPoint(forOp);
+
+      const auto& domInfo = getAnalysis<DominanceInfo>();
+
+      // TODO: Idea use the IRMapping to map old to new, use nxt and "tied"
+      // method to find block arguments. use below and replace. Use then results
+      // of for loop for wires in next iteration.
+      
+      SmallVector<Value> newInitArgs(placedWires.size());
+      SmallVector<WireIterator> wires{placedWires};
+
+      IRMapping m;
+      for (const auto& [i, it] : enumerate(wires)) {
+        for (; it != std::default_sentinel; ++it) {
+          const auto nxt = std::next(it);
+          if (nxt.operation() == forOp ||
+              !domInfo.dominates(nxt.operation(), forOp)) {
+            newInitArgs[i] = it.qubit();
+            break;
+          }
+        }
+      }
+
+      for (Value q : newInitArgs) {
+        llvm::dbgs() << q << '\n';
+      }
+
+      // Replace old for with a new one with updated init arguments.
+      // TODO: argValues in mergeBlocks is probably not right. This needs some
+      // additional map built above to map the correct old with the correct new
+      // value.
+      const size_t nargs = forOp.getBody()->getNumArguments();
+
+      auto newForOp = rewriter.create<scf::ForOp>(
+          forOp.getLoc(), forOp.getLowerBound(), forOp.getUpperBound(),
+          forOp.getStep(), newInitArgs);
+      rewriter.mergeBlocks(
+          forOp.getBody(), newForOp.getBody(),
+          newForOp.getBody()->getArguments().take_front(nargs));
+      auto newYieldOp = cast<scf::YieldOp>(newForOp.getBody()->getTerminator());
+
+      // Once the new for loop has been created, we can use it to update the
+      // yield operation inside. Particularly, we extend the yielded results
+      // with the newly added, unused block arguments.
+
+      SmallVector<Value> newResults(newYieldOp.getResults());
+      for (BlockArgument& arg : newForOp.getRegionIterArgs()) {
+        if (arg.use_empty()) {
+          newResults.emplace_back(arg);
+        }
+      }
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(newYieldOp, newResults);
     }
 
     return placedWires;
@@ -1001,6 +1057,10 @@ private:
     while (true) {
       auto [op, subUnits] = advanceFrame<Direction>(unit);
       if (op != nullptr) {
+        assert(isa<scf::ForOp>(op));
+        assert(
+            all_of(unit.wires, [&](auto& it) { return it.operation() == op; }));
+
         for (auto& subUnit : subUnits) {
           const auto res = route<Direction, Mode>(subUnit, rewriter);
           if (failed(res)) {
@@ -1009,13 +1069,11 @@ private:
           nswaps += *res;
         }
 
-        assert(isa<scf::ForOp>(op));
-
         // An scf.for operation has exactly one sub-unit.
         // To finalize the mapping of the sub-unit, we append an appendix
         // of SWAPs to restore the base-layout.
 
-        auto& subUnit = subUnits.front();
+        Unit& subUnit = subUnits.front();
         const auto swaps = restore(subUnit.layout, unit.layout);
 
         if constexpr (Mode == RoutingMode::Hot) {
@@ -1024,6 +1082,10 @@ private:
           // decrement the iterator to point at a valid insertion point. Because
           // the wire iterators are not required any more, there is no need to
           // increment them again after applying the SWAP sequence.
+
+          assert(all_of(subUnit.wires, [](auto& it) {
+            return isa<scf::YieldOp>(it.operation());
+          }));
 
           for_each(subUnit.wires, [](auto& it) {
             std::ranges::advance(it, -Traits::stride());

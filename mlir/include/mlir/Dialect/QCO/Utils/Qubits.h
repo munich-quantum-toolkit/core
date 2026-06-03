@@ -20,46 +20,27 @@
 #include <utility>
 
 namespace mlir::qco {
+
 class Qubits {
-  /**
-   * @brief Specifies the qubit "location" (hardware or program).
-   */
+  /// Specifies the qubit "location" (hardware or program).
   enum class QubitLocation : std::uint8_t { Hardware, Program };
 
 public:
-  /**
-   * @brief Add qubit with automatically assigned dynamic index.
-   */
+  /// Update the qubits map based on the given op.
+  void update(Operation*);
+  /// Add qubit with automatically assigned dynamic index.
   void add(TypedValue<QubitType> q);
-
-  /**
-   * @brief Add qubit with static index.
-   */
+  /// Add qubit with static index.
   void add(TypedValue<QubitType> q, std::size_t hw);
-
-  /**
-   * @brief Remap the qubit value from prev to next.
-   */
+  /// Remap the qubit value from prev to next.
   void remap(TypedValue<QubitType> prev, TypedValue<QubitType> next);
-
-  /**
-   * @brief Remove the qubit value.
-   */
+  /// Remove the qubit value.
   void remove(TypedValue<QubitType> q);
-
-  /**
-   * @returns the qubit value assigned to a program index.
-   */
+  /// Return the qubit value assigned to a program index.
   [[nodiscard]] TypedValue<QubitType> getProgramQubit(std::size_t index) const;
-
-  /**
-   * @returns the qubit value assigned to a hardware index.
-   */
+  /// Return the qubit value assigned to a hardware index.
   [[nodiscard]] TypedValue<QubitType> getHardwareQubit(std::size_t index) const;
-
-  /**
-   * @returns the index assigned to the qubit value.
-   */
+  /// Return the index assigned to the qubit value.
   [[nodiscard]] std::size_t getIndex(TypedValue<QubitType> q) const;
 
 private:

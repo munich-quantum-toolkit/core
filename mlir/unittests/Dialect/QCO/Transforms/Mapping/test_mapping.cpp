@@ -44,7 +44,7 @@ using namespace mlir::qco;
 
 struct Device {
   size_t nqubits{};
-  llvm::DenseSet<std::pair<size_t, size_t>> couplingSet;
+  DenseSet<std::pair<size_t, size_t>> couplingSet;
 };
 
 /**
@@ -53,7 +53,7 @@ struct Device {
  */
 static LogicalResult
 isExecutable(Region& region,
-             const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet) {
+             const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
   Qubits qubits;
   return walkProgram(
       region, qubits, [&](Operation* curr, const Qubits& qubits) {
@@ -107,8 +107,7 @@ protected:
   }
 
   static LogicalResult
-  runPass(ModuleOp m,
-          const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
+  runPass(ModuleOp m, const DenseSet<std::pair<size_t, size_t>>& couplingSet,
           const MappingPassOptions& options) {
     PassManager pm(m->getContext());
     pm.addPass(createMappingPass(couplingSet, options));

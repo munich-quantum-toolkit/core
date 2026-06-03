@@ -11,7 +11,12 @@
 #include "mlir/Dialect/QCO/Utils/Qubits.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Value.h>
 
 #include <cassert>
@@ -19,6 +24,37 @@
 #include <utility>
 
 namespace mlir::qco {
+void Qubits::update(Operation* op) {
+  TypeSwitch<Operation*>(op)
+      .Case<StaticOp>([&](StaticOp op) { add(op.getQubit(), op.getIndex()); })
+      .Case<AllocOp>([&](AllocOp op) { add(op.getResult()); })
+      .Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
+        for (const auto& [prevV, nextV] :
+             llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
+          const auto prevQ = cast<TypedValue<QubitType>>(prevV);
+          const auto nextQ = cast<TypedValue<QubitType>>(nextV);
+          remap(prevQ, nextQ);
+        }
+      })
+      .Case<scf::ForOp>([&](scf::ForOp op) {
+        for (OpOperand& operand : op.getInitsMutable()) {
+          auto result = op.getTiedLoopResult(&operand);
+          const auto prevQ = cast<TypedValue<QubitType>>(operand.get());
+          const auto nextQ = cast<TypedValue<QubitType>>(result);
+          remap(prevQ, nextQ);
+        }
+      })
+      .Case<ResetOp>(
+          [&](ResetOp op) { remap(op.getQubitIn(), op.getQubitOut()); })
+      .Case<MeasureOp>(
+          [&](MeasureOp op) { remap(op.getQubitIn(), op.getQubitOut()); })
+      .Case<SinkOp>([&](SinkOp op) { remove(op.getQubit()); })
+      .Default([&](Operation* op) -> WalkResult {
+        const auto name = op->getName().getStringRef();
+        reportFatalInternalError("unexpected op" + name);
+      });
+}
+
 void Qubits::add(TypedValue<QubitType> q) {
   const auto index = programToValue_.size();
   programToValue_.try_emplace(index, q);

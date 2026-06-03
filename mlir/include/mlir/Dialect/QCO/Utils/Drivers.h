@@ -52,7 +52,7 @@ using WalkProgramFn = function_ref<WalkResult(Operation*, Qubits&)>;
  */
 template <WalkOrder Order = WalkOrder::PreOrder>
 LogicalResult walkProgram(Region& region, Qubits& qubits,
-                          const WalkProgramFn& fn) {
+                          const WalkProgramFn& fn) {                           
   for (Operation& curr : region.getOps()) {
     if constexpr (Order == WalkOrder::PreOrder) {
       if (fn(&curr, qubits).wasInterrupted()) {
