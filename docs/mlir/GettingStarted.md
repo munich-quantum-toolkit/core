@@ -15,18 +15,14 @@ Once this is done, you can compile the project as follows:
 Run the following commands from the repository root.
 
 ```console
-$ cmake -B build \
-    -DMLIR_DIR=<path to MLIR> \
-    -DLLVM_DIR=<path to LLVM> \
-    -DCMAKE_BUILD_TYPE:STRING=Release \
-    -DBUILD_MQT_CORE_MLIR=ON
-$ cd build && cmake --build . --target mqt-cc
+$ cmake --preset release
+$ cmake --build --preset release --target mqt-cc
 ```
 
 If everything worked correctly, the following command should print a usage message.
 
 ```console
-$ ./mlir/tools/mqt-cc/mqt-cc --help
+$ ./build/release/mlir/tools/mqt-cc/mqt-cc --help
 ```
 
 ## Fundamentals
@@ -42,7 +38,7 @@ Mathematically, we denote a qubit as follows.
 
 ```{math}
 :label: qubit_equation
-|\psi\rangle = \alpha|0\rangle + \beta|1\rangle
+|\psi\rangle = \alpha|0\rangle + \beta|1\rangle,
 ```
 
 where $\alpha$ and $\beta$ are complex numbers such that $|\alpha|^2 + |\beta|^2 = 1$.
@@ -81,7 +77,7 @@ A quantum gate may target multiple qubits. The controlled-X gate acts on two qub
 {CX}|01\rangle &= |01\rangle \\
 {CX}|10\rangle &= |11\rangle \\
 {CX}|11\rangle &= |10\rangle
-\end{aligned}
+\end{aligned},
 ```
 
 where the first qubit is the control qubit.
@@ -220,7 +216,7 @@ Generally, a block consists of multiple operations, with the final one being the
 
 Note that the `@select` function body consists of two blocks.
 The respective enveloping structure in MLIR is a _region_.
-A region is always attached to an operation (its parent), encompasses multiple blocks, and is usually indicated by curly braces.
+A region is always attached to an operation (its parent), encompasses one or more blocks, and is usually indicated by curly braces.
 The following figure illustrates the interplay of operations, blocks, and regions graphically.
 
 ```{figure} ../_static/mlir/mlir-ir-structure.svg
@@ -277,7 +273,7 @@ A conversion is a specific class of transformation within the _pass infrastructu
 Simply put, a pass traverses the nested substructures of a program and optionally rewrites some parts of it.
 Moreover, multiple passes can be orchestrated into a _pass pipeline_, which executes a series of configurable passes sequentially.
 
-That's it! Now that we've covered the fundamentals, we can move on and explore how the MQT Compiler Collection utilizes MLIR to build a compiler for quantum computing.
+That's it! Now that we've covered the fundamentals, we can move on and explore how the MQT Compiler Collection utilizes MLIR to build a quantum-classical compilation framework.
 
 ## The MQT Compiler Collection
 
@@ -290,7 +286,7 @@ The MQT Compiler Collection defines two dialects in MLIR, each with a distinct p
 While the Quantum Circuit (QC) dialect is tailored to exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is --- as the name suggests --- specifically designed for optimizations.
 Let's explore their differences.
 
-The following snippet allocates and subsequently deallocates a dynamic qubit using the `alloc` operation of each dialect.
+The following snippets allocate and subsequently deallocate a dynamic qubit using the `alloc` operation of each dialect.
 In the QC dialect, we can deallocate dynamic qubits using the `dealloc` operation, whereas in the QCO dialect we mark the end of a qubit's lifespan with the `sink` operation.
 
 ::::{grid} 2
@@ -371,7 +367,7 @@ Notice how the Hadamard operation in the QCO dialect consumes and produces SSA v
 We say that the QC dialect uses "reference semantics" whereas the QCO dialect uses "value semantics".
 Semantically, the operations in the QCO dialect return the new state of a qubit after modifying it.
 
-Instead of the Hadamard, we can also achieve the same transformation with X and Y rotations using parameterized gates as follows:
+Instead of a Hadamard gate, we can also achieve the same transformation with X and Y rotations using parameterized gates as follows:
 
 ::::{grid} 2
 :::{grid-item}
@@ -491,7 +487,7 @@ The figure below illustrates the data-flow graph of the textual intermediate rep
 :width: 75%
 :figclass: only-light
 
-The data-flow graph of the IR shown above.
+The data-flow graph of the QCO IR shown above.
 ```
 
 ```{figure} ../_static/mlir/data-flow-dark.svg
@@ -499,13 +495,13 @@ The data-flow graph of the IR shown above.
 :width: 75%
 :figclass: only-dark
 
-The data-flow graph of the IR shown above.
+The data-flow graph of the QCO IR shown above.
 ```
 
 The dependencies between operations are naturally expressed because the QCO dialect models quantum computations as directed acyclic "data-flow" graphs (DAGs).
 For instance, the controlled-X operation depends on the application of the Hadamard operation.
 This is especially useful for gate cancellation: if one gate is the inverse of another, cancel both.
-Consequently, the expressive data-flow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
+Consequently, the expressive data-flow representation is what makes the QCO dialect so powerful for optimization and, more generally, algorithms.
 
 However, that expressiveness also increases syntax complexity. This is best seen in the `qco.ctrl` operation:
 
@@ -611,7 +607,7 @@ qtensor.dealloc %r0_6 : tensor<3x!qco.qubit>
 
 Similarly to the earlier argument, the QCO dialect requires `insert` operations for qubit SSA values to satisfy linear typing.
 Moreover, the QCO dialect also enforces this property for registers (`%r0_1`, `%r0_2`, etc.).
-Consequently, in the QCO dialect the SSA value of a register represents its state.
+Consequently, in the QCO dialect, the SSA value of a register represents its state.
 
 What if we wanted to construct a four-qubit GHZ state?
 A straightforward solution would be to simply increase the size of the register and add another controlled-X.
@@ -779,8 +775,8 @@ The following code snippets illustrate their usage.
 qc::QCProgramBuilder builder(/*MLIRContext*/ &ctx);
 builder.initialize();
 
-const auto q0 = builder.allocQubit();
-const auto q1 = builder.allocQubit();
+auto q0 = builder.allocQubit();
+auto q1 = builder.allocQubit();
 
 builder.h(q0);
 builder.ctrl(q0, [&] { builder.x(q1); });
@@ -796,8 +792,8 @@ builder.barrier({q0, q1});
 
 
 
-const auto c0 = builder.measure(q0);
-const auto c1 = builder.measure(q1);
+auto c0 = builder.measure(q0);
+auto c1 = builder.measure(q1);
 
 builder.dealloc(q0);
 builder.dealloc(q1);
@@ -813,8 +809,8 @@ auto program = builder.finalize();
 qco::QCOProgramBuilder builder(&ctx);
 builder.initialize();
 
-Value q0 = builder.allocQubit();
-Value q1 = builder.allocQubit();
+auto q0 = builder.allocQubit();
+auto q1 = builder.allocQubit();
 
 q0 = builder.h(q0);
 const auto [ctrlsOut, targOut] = builder.ctrl(q0, q1,
@@ -824,7 +820,7 @@ const auto [ctrlsOut, targOut] = builder.ctrl(q0, q1,
 q0 = ctrlsOut[0];
 q1 = targOut[0];
 
-const auto barrierOut = builder.barrier({q0, q1});
+auto barrierOut = builder.barrier({q0, q1});
 q0 = barrierOut[0];
 q1 = barrierOut[1];
 
@@ -847,7 +843,7 @@ auto program = builder.finalize();
 The goal of any compiler is to take a (quantum) program and transform it into a more efficient, executable one.
 The MQT Compiler Collection achieves this using the following compilation pipeline:
 
-- First, a program in a front-end quantum language (e.g. OpenQASM) is translated to the QC dialect.
+- First, a program in a front-end quantum language (e.g., OpenQASM) is translated to the QC dialect.
 - Next, the compiler transforms the program to the QCO dialect and subsequently applies hardware-agnostic and optionally hardware-dependent passes. Finally, the program is transformed back to the QC dialect.
 - Optionally, the optimized and transpiled program can be transformed into a target representation such as LLVM using the Quantum Intermediate Representation (QIR) extension.
 
@@ -919,7 +915,7 @@ This folder contains unit-tests for the MQT Compiler Collection.
 
 ### Consecutive Hadamard Cancellation Pass
 
-Because the Hadamard is a Hermitian matrix, two consecutive Hadamards cancel each other.
+Because the Hadamard gate corresponds to a Hermitian matrix, two consecutive Hadamards cancel each other.
 
 ```{math}
 :label: hh=i
@@ -930,7 +926,7 @@ We can use this equality to simplify a given quantum program.
 Towards that end, we want to implement an optimization pass within the MQT Compiler Collection.
 By doing so, everyone using the MQT Compiler Collection as a backend benefits from the work we put into the optimization pass.
 
-First, we need to define the pass in the QCO's TableGen file.
+First, we need to define the pass in one of QCO's TableGen files.
 
 ```{code-block} cpp
 // file: mlir/include/mlir/Dialect/QCO/IR/QCOOps.td
@@ -1044,7 +1040,7 @@ void runOnOperation() override {
 }
 ```
 
-Congratulations, you have written your first optimization pass in MLIR 🎉
+Congratulations, you have written your first optimization pass in MLIR! 🎉
 
 The MQT Compiler Collection implements a generic version of this pass.
 If you are curious about how this is achieved using C++ templates, see [QCOUtils.h](https://github.com/munich-quantum-toolkit/core/blob/main/mlir/include/mlir/Dialect/QCO/QCOUtils.h).
