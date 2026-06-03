@@ -241,9 +241,7 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
   op->setOperand(2, newParameter.getResult());
 
   // nextOp results correspond to swapped operands, so swap replacements too
-  rewriter.replaceAllUsesWith(nextOp->getResults(),
-                              {op.getOutputQubit(1), op.getOutputQubit(0)});
-  rewriter.eraseOp(nextOp);
+  rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
 
   return success();
 }
