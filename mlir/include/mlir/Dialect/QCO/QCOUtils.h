@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>

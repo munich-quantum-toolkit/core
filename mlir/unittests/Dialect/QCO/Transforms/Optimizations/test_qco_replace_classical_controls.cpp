@@ -377,8 +377,6 @@ TEST_F(QCOReplaceClassicalControlsTest,
   ASSERT_TRUE(runReplaceClassicalControlsPass(module.get()).succeeded());
   ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
-  module->dump();
-
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
