@@ -26,7 +26,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
