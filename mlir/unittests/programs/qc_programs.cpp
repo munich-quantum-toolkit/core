@@ -272,11 +272,10 @@ void trivialControlledX(QCProgramBuilder& b) {
 }
 
 void repeatedControlledX(QCProgramBuilder& b) {
-  auto control = b.allocQubit();
-  b.h(control);
-  for (auto i = 0; i < 50; i++) {
-    auto qubit = b.allocQubit();
-    b.cx(control, qubit);
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  for (auto i = 0; i < 2; i++) {
+    b.cx(q[0], q[1]);
   }
 }
 

@@ -20,6 +20,9 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Debug.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -29,7 +32,9 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
@@ -43,6 +48,8 @@
 using namespace mlir;
 
 namespace {
+
+using Slice = SetVector<Operation*>;
 
 /// Compute a structural hash for an operation (excluding SSA value identities).
 /// This hash is based on operation name, types, and attributes only.
@@ -515,7 +522,7 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
 
   // Check operands according to value mapping
   for (auto [lhsOperand, rhsOperand] :
-       llvm::zip(lhs->getOperands(), rhs->getOperands())) {
+       llvm::zip_equal(lhs->getOperands(), rhs->getOperands())) {
     if (auto it = valueMap.find(lhsOperand); it != valueMap.end()) {
       // Value already mapped, must match
       if (it->second != rhsOperand) {
@@ -531,26 +538,6 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
   for (auto [lhsResult, rhsResult] :
        llvm::zip(lhs->getResults(), rhs->getResults())) {
     valueMap[lhsResult] = rhsResult;
-  }
-
-  return true;
-}
-
-/// Forward declaration for mutual recursion.
-static bool areBlocksEquivalent(Block& lhs, Block& rhs,
-                                ValueEquivalenceMap& valueMap);
-
-/// Compare two regions for structural equivalence.
-static bool areRegionsEquivalent(Region& lhs, Region& rhs,
-                                 ValueEquivalenceMap& valueMap) {
-  if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
-    return false;
-  }
-
-  for (auto [lhsBlock, rhsBlock] : llvm::zip(lhs, rhs)) {
-    if (!areBlocksEquivalent(lhsBlock, rhsBlock, valueMap)) {
-      return false;
-    }
   }
 
   return true;
@@ -593,117 +580,170 @@ static bool hasOrderingConstraints(Operation* op) {
   return false;
 }
 
-/// Build a dependence graph for operations.
-/// Returns a map from each operation to the set of operations it depends on.
-DenseMap<Operation*, DenseSet<Operation*>> static buildDependenceGraph(
-    ArrayRef<Operation*> ops) {
-  DenseMap<Operation*, DenseSet<Operation*>> dependsOn;
-  DenseMap<Value, Operation*> valueProducers;
+/// Returns a vector of maximum reachable independent DAGs, as defined via their
+/// def-use chain, where the operations of the setvector are topologically
+/// sorted. The vector is sorted by the size of the DAG (i.e., the number of
+/// operations).
+static SmallVector<Slice> getDisjointSlices(Block& b) {
+  const auto filter = [&b](Operation* op) { return op->getBlock() == &b; };
 
-  // Build value-to-producer map and dependence relationships
-  for (Operation* op : ops) {
-    dependsOn[op] = DenseSet<Operation*>();
+  const BackwardSliceOptions backwardSliceOptions(filter);
+  const SliceOptions forwardSliceOptions(filter);
 
-    // This operation depends on the producers of its operands
-    for (const auto operand : op->getOperands()) {
-      if (auto it = valueProducers.find(operand); it != valueProducers.end()) {
-        dependsOn[op].insert(it->second);
-      }
+  DenseSet<Operation*> visited;
+  visited.reserve(range_size(b.getOperations()));
+
+  SmallVector<SetVector<Operation*>> dags;
+  for (Operation& op : b.getOperations()) {
+    if (visited.contains(&op)) {
+      continue;
     }
-
-    // Register this operation as the producer of its results
-    for (auto result : op->getResults()) {
-      valueProducers[result] = op;
-    }
+    const auto slice = getSlice(&op, backwardSliceOptions, forwardSliceOptions);
+    const auto& dag = dags.emplace_back(slice);
+    visited.insert_range(dag);
   }
 
-  return dependsOn;
+  sort(dags, [](const auto& lhs, const auto& rhs) {
+    return lhs.size() < rhs.size();
+  });
+
+  return dags;
 }
 
-/// Partition operations into groups that can be compared as multisets.
-/// Operations in the same group are independent and can be reordered.
-SmallVector<SmallVector<Operation*>> static partitionIndependentGroups(
-    ArrayRef<Operation*> ops) {
-  SmallVector<SmallVector<Operation*>> groups;
-  if (ops.empty()) {
-    return groups;
+static bool areTopLevelEquivalent(Operation* lhs, Operation* rhs) {
+  return lhs->getName() == rhs->getName() &&
+         lhs->getNumOperands() == rhs->getNumOperands() &&
+         lhs->getOperandTypes() == rhs->getOperandTypes() &&
+         lhs->getNumResults() == rhs->getNumResults() &&
+         lhs->getResultTypes() == rhs->getResultTypes() &&
+         lhs->getAttrs().size() == rhs->getAttrs().size() &&
+         lhs->getNumRegions() == rhs->getNumRegions();
+
+  
+}
+
+/// Extract and return "ready" operations from the slice.
+static Slice getReadyOps(Slice& slice, DenseSet<Operation*> finished) {
+  const auto isReady = [&](OpOperand& operand) {
+    if (isa<BlockArgument>(operand.get())) {
+      return true; // The defining op is finished?
+    }
+    return finished.contains(operand.get().getDefiningOp());
+  };
+
+  Slice ready;
+  for (Operation* op : slice) {
+    if (llvm::all_of(op->getOpOperands(), isReady)) {
+      ready.insert(op);
+      continue;
+    }
+
+    // If the destination of a tensor insert, has been produced by an insert
+    // operation as well, these two should be interchangable. Thus, also add it
+    // to the ready set vector. Any valid IR will ensure that the indices of the
+    // two insertions are not equivalent, hence, we don't check them here.
+
+    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      Operation* prev = insert.getDest().getDefiningOp();
+      if (isa<qtensor::InsertOp>(prev)) {
+        if (ready.contains(prev)) {
+          ready.insert(insert.getOperation());
+        }
+      }
+    }
+
+    // Analogously for the extract operation.
+
+    if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+      Operation* prev = extract.getTensor().getDefiningOp();
+      if (isa<qtensor::ExtractOp>(prev)) {
+        if (ready.contains(prev)) {
+          ready.insert(extract.getOperation());
+        }
+      }
+    }
   }
 
-  auto dependsOn = buildDependenceGraph(ops);
-  SmallVector<Operation*> currentGroup;
+  return ready;
+}
 
-  for (auto* op : ops) {
-    bool dependsOnCurrent = false;
+static bool areEquivalent(Region& lhs, Region& rhs, IRMapping& m);
 
-    // Check if this operation depends on any operation in the current group
-    for (auto* groupOp : currentGroup) {
-      if (!dependsOn[op].contains(groupOp)) {
-        continue;
-      }
-      if (isCommutableQTensorInsertDependency(op, groupOp)) {
-        continue;
-      }
-      dependsOnCurrent = true;
+static bool areEquivalent(Slice& lhs, Slice& rhs, IRMapping& m) {
+  DenseSet<Operation*> finished;
+  finished.reserve(lhs.size() + rhs.size());
+
+  while (true) {
+    const auto readyLhs = getReadyOps(lhs, finished);
+    const auto readyRhs = getReadyOps(rhs, finished);
+
+    if (readyLhs.empty() || readyRhs.empty()) {
       break;
     }
 
-    // Check if this operation has ordering constraints
-    const auto hasConstraints = hasOrderingConstraints(op);
+    if (readyLhs.size() != readyRhs.size()) {
+      return false;
+    }
 
-    // If it depends on current group or has ordering constraints,
-    // finalize the current group and start a new one
-    if (dependsOnCurrent || (hasConstraints && !currentGroup.empty())) {
-      if (!currentGroup.empty()) {
-        groups.push_back(std::move(currentGroup));
-        currentGroup = {};
+    // Greedily search for a structural equivalent operation.
+    for (Operation* opLhs : readyLhs) {
+      for (Operation* opRhs : readyRhs) {
+        if (areTopLevelEquivalent(opLhs, opRhs)) { // TODO: Full equivalence check with attrs etc. 
+          m.map(opLhs, opRhs); // Map operations.
+          // Map operands.
+          // Map results.
+
+          llvm::dbgs() << opLhs->getName() << " == " << opRhs->getName()
+                       << '\n';
+        }
       }
     }
 
-    currentGroup.push_back(op);
+    // for (Operation* op : readyLhs) {
+    //   op->dumpPretty();
+    //   for (Region& region : op->getRegions()) {
+    //     IRMapping m;
+    //     if (!areEquivalent(region, region, m)) {
+    //       return false;
+    //     }
+    //   }
+    // }
 
-    // If this operation has ordering constraints, finalize the group
-    if (hasConstraints) {
-      groups.push_back(std::move(currentGroup));
-      currentGroup = {};
-    }
+    finished.insert_range(readyLhs);
+    lhs.set_subtract(readyLhs);
+
+    finished.insert_range(readyRhs);
+    rhs.set_subtract(readyRhs);
   }
 
-  // Add any remaining operations
-  if (!currentGroup.empty()) {
-    groups.push_back(std::move(currentGroup));
-  }
-
-  return groups;
+  return lhs.empty() && rhs.empty();
 }
 
-/// Compare two groups of independent operations using multiset equivalence.
-static bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
-                                           ArrayRef<Operation*> rhsOps) {
-  if (lhsOps.size() != rhsOps.size()) {
+/// Compare two blocks for structural equivalence, allowing permutations
+/// of independent operations.
+static bool areEquivalent(Block& lhs, Block& rhs, IRMapping& m) {
+  if (lhs.getNumArguments() != rhs.getNumArguments()) {
     return false;
   }
 
-  // Build frequency maps for both groups
-  DenseMap<StructuralOperationKey, size_t> lhsFrequencyMap;
-  DenseMap<StructuralOperationKey, size_t> rhsFrequencyMap;
+  for (auto [lArg, rArg] :
+       llvm::zip_equal(lhs.getArguments(), rhs.getArguments())) {
+    if (lArg.getType() != rArg.getType()) {
+      return false;
+    }
 
-  for (auto* op : lhsOps) {
-    lhsFrequencyMap[StructuralOperationKey(op)]++;
+    m.map(lArg, rArg);
   }
 
-  for (auto* op : rhsOps) {
-    rhsFrequencyMap[StructuralOperationKey(op)]++;
-  }
+  auto lDAGs = getDisjointSlices(lhs);
+  auto rDAGs = getDisjointSlices(rhs);
 
-  // Check structural equivalence
-  if (lhsFrequencyMap.size() != rhsFrequencyMap.size()) {
+  if (lDAGs.size() != rDAGs.size()) {
     return false;
   }
 
-  // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
-  for (const auto& [lhsKey, lhsCount] : lhsFrequencyMap) {
-    auto it = rhsFrequencyMap.find(lhsKey);
-    if (it == rhsFrequencyMap.end() || it->second != lhsCount) {
+  for (const auto& [lDAG, rDAG] : llvm::zip_equal(lDAGs, rDAGs)) {
+    if (lDAG.size() != rDAG.size() || !areEquivalent(lDAG, rDAG, m)) {
       return false;
     }
   }
@@ -711,102 +751,15 @@ static bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
   return true;
 }
 
-/// Compare two blocks for structural equivalence, allowing permutations
-/// of independent operations.
-static bool areBlocksEquivalent(Block& lhs, Block& rhs,
-                                ValueEquivalenceMap& valueMap) {
-  // Check block arguments
-  if (lhs.getNumArguments() != rhs.getNumArguments()) {
+/// Compare two regions for structural equivalence.
+static bool areEquivalent(Region& lhs, Region& rhs, IRMapping& m) {
+  if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
     return false;
   }
 
-  for (auto [lhsArg, rhsArg] :
-       llvm::zip(lhs.getArguments(), rhs.getArguments())) {
-    if (lhsArg.getType() != rhsArg.getType()) {
+  for (auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
+    if (!areEquivalent(lhsBlock, rhsBlock, m)) {
       return false;
-    }
-    valueMap[lhsArg] = rhsArg;
-  }
-
-  // Collect all operations
-  SmallVector<Operation*> lhsOps;
-  SmallVector<Operation*> rhsOps;
-
-  for (Operation& op : lhs) {
-    lhsOps.push_back(&op);
-  }
-
-  for (Operation& op : rhs) {
-    rhsOps.push_back(&op);
-  }
-
-  if (lhsOps.size() != rhsOps.size()) {
-    return false;
-  }
-
-  // Partition operations into independent groups
-  auto lhsGroups = partitionIndependentGroups(lhsOps);
-  auto rhsGroups = partitionIndependentGroups(rhsOps);
-
-  if (lhsGroups.size() != rhsGroups.size()) {
-    return false;
-  }
-
-  // Compare each group
-  for (size_t groupIdx = 0; groupIdx < lhsGroups.size(); ++groupIdx) {
-    auto& lhsGroup = lhsGroups[groupIdx];
-    auto& rhsGroup = rhsGroups[groupIdx];
-
-    const bool lhsInsertGroup = llvm::all_of(lhsGroup, isQTensorInsertOp);
-    const bool rhsInsertGroup = llvm::all_of(rhsGroup, isQTensorInsertOp);
-    if (lhsInsertGroup || rhsInsertGroup) {
-      if (!lhsInsertGroup || !rhsInsertGroup) {
-        return false;
-      }
-      if (!areInsertGroupsEquivalent(lhsGroup, rhsGroup, valueMap)) {
-        return false;
-      }
-      continue;
-    }
-
-    if (!areIndependentGroupsEquivalent(lhsGroup, rhsGroup)) {
-      return false;
-    }
-
-    // Update value mappings for operations in this group
-    // We need to match operations and update the value map
-    // Since they are structurally equivalent, we can match them
-    // by trying all permutations (for small groups) or use a greedy approach
-
-    // Use a simple greedy matching
-    DenseSet<Operation*> matchedRhs;
-    for (Operation* lhsOp : lhsGroup) {
-      bool matched = false;
-      for (Operation* rhsOp : rhsGroup) {
-        if (matchedRhs.contains(rhsOp)) {
-          continue;
-        }
-
-        ValueEquivalenceMap tempMap = valueMap;
-        if (areOperationsEquivalent(lhsOp, rhsOp, tempMap)) {
-          valueMap = std::move(tempMap);
-          matchedRhs.insert(rhsOp);
-          matched = true;
-
-          // Recursively compare regions
-          for (auto [lhsRegion, rhsRegion] :
-               llvm::zip(lhsOp->getRegions(), rhsOp->getRegions())) {
-            if (!areRegionsEquivalent(lhsRegion, rhsRegion, valueMap)) {
-              return false;
-            }
-          }
-          break;
-        }
-      }
-
-      if (!matched) {
-        return false;
-      }
     }
   }
 
@@ -814,7 +767,6 @@ static bool areBlocksEquivalent(Block& lhs, Block& rhs,
 }
 
 bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
-  ValueEquivalenceMap valueMap;
-  return areRegionsEquivalent(lhs.getBodyRegion(), rhs.getBodyRegion(),
-                              valueMap);
+  IRMapping m;
+  return areEquivalent(lhs.getBodyRegion(), rhs.getBodyRegion(), m);
 }
