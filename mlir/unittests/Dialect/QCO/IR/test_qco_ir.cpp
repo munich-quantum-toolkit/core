@@ -116,23 +116,29 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
 
 TEST_F(QCOTest, CheckDeadGateElimination) {
   QCOProgramBuilder builder(context.get());
-  builder.initialize();
+  builder.initialize({builder.getI1Type(), builder.getI1Type()});
   auto q0S0 = builder.allocQubit();
   auto q1S0 = builder.allocQubit();
-  auto q0S1 = builder.h(q0S0);
-  auto [q0S2, q1S1] = builder.cx(q0S1, q1S0);
+
+  auto [q0Measured, m0] = builder.measure(q0S0);
+  auto [q1Measured, m1] = builder.measure(q1S0);
+
+  auto q0S1 = builder.h(q0Measured);
+  auto [q0S2, q1S1] = builder.cx(q0S1, q1Measured);
   auto [q1S2, c1] = builder.measure(q1S1);
   builder.sink(q0S2);
   builder.sink(q1S2);
-  auto module = builder.finalize();
+  auto module = builder.finalize({m0, m1});
 
   QCOProgramBuilder reference(context.get());
-  reference.initialize();
+  reference.initialize({reference.getI1Type(), reference.getI1Type()});
   auto r0 = reference.allocQubit();
   auto r1 = reference.allocQubit();
-  reference.sink(r0);
-  reference.sink(r1);
-  auto refModule = reference.finalize();
+  auto [r0Measured, mr0] = reference.measure(r0);
+  auto [r1Measured, mr1] = reference.measure(r1);
+  reference.sink(r0Measured);
+  reference.sink(r1Measured);
+  auto refModule = reference.finalize({mr0, mr1});
 
   ASSERT_TRUE(module);
   EXPECT_TRUE(verify(*module).succeeded());
@@ -143,6 +149,9 @@ TEST_F(QCOTest, CheckDeadGateElimination) {
   EXPECT_TRUE(verify(*refModule).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(refModule.get()).succeeded());
   EXPECT_TRUE(verify(*refModule).succeeded());
+
+  module->dump();
+  refModule->dump();
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), refModule.get()));
