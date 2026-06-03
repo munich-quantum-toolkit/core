@@ -10,13 +10,14 @@
 
 #include "mlir/CAPI/Dialects.h"
 
+#include "mlir-c/IR.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/CAPI/Registration.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h" // NOLINT(misc-include-cleaner)
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
