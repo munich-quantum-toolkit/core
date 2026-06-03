@@ -176,14 +176,15 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
 
 def SwapAbsorption : Pass<"absorb-swaps", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "This pass absorbs SWAP operations into the initial program-to-hardware mapping.";
+  let summary = "This pass absorbs SWAP operations into the initial "
+                "program-to-hardware mapping.";
   let description = [{
-    For a SWAP operation exchanging static qubits q0 and q1, the pass replaces the use of the 
-    first (second) input qubit with the second (first) output qubit of the SWAP and subsequently 
-    removes the operation. As a result, the initial program-to-hardware mapping is changed. 
+    For a SWAP operation exchanging static qubits q0 and q1, the pass replaces the use of the
+    first (second) input qubit with the second (first) output qubit of the SWAP and subsequently
+    removes the operation. As a result, the initial program-to-hardware mapping is changed.
     This process is repeated until no more SWAP operations can be absorbed.
-    
-    The pass assumes that the quantum program is already mapped to static qubits. 
+
+    The pass assumes that the quantum program is already mapped to static qubits.
   }];
 }
 
