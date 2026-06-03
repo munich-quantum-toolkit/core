@@ -51,7 +51,6 @@ EulerDecomposition::anglesFromUnitary(const Eigen::Matrix2cd& matrix,
   case EulerBasis::U:
     // The `u` gate parameterization is derived from the standard Z-Y-Z form.
     return paramsZYZ(matrix);
-  case EulerBasis::ZSX:
   case EulerBasis::ZSXX:
     return paramsPSX(matrix);
   }
@@ -227,26 +226,22 @@ static Value emitU(OpBuilder& builder, Location loc, Value qubit, double theta,
 
 static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
                      const Eigen::Matrix2cd& targetMatrix, double theta,
-                     double phi, double lambda, EulerBasis basis,
-                     bool simplify) {
-  const double eps = simplify ? mlir::utils::TOLERANCE : -1.0;
+                     double phi, double lambda, EulerBasis basis) {
   Eigen::Matrix2cd emitted = Eigen::Matrix2cd::Identity();
 
   auto emitK = [&](double a) {
-    const double canonical = helpers::mod2pi(a, eps);
-    if (std::abs(canonical) > eps) {
-      switch (basis) {
-      case EulerBasis::ZYZ:
-      case EulerBasis::ZXZ:
-        qubit = emitRZ(builder, loc, qubit, canonical, emitted);
-        break;
-      case EulerBasis::XZX:
-      case EulerBasis::XYX:
-        qubit = emitRX(builder, loc, qubit, canonical, emitted);
-        break;
-      default:
-        llvm::reportFatalInternalError("Invalid K gate for KAK emission");
-      }
+    const double canonical = helpers::mod2pi(a, mlir::utils::TOLERANCE);
+    switch (basis) {
+    case EulerBasis::ZYZ:
+    case EulerBasis::ZXZ:
+      qubit = emitRZ(builder, loc, qubit, canonical, emitted);
+      break;
+    case EulerBasis::XZX:
+    case EulerBasis::XYX:
+      qubit = emitRX(builder, loc, qubit, canonical, emitted);
+      break;
+    default:
+      llvm::reportFatalInternalError("Invalid K gate for KAK emission");
     }
   };
 
@@ -269,12 +264,6 @@ static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
     }
   };
 
-  if (std::abs(theta) <= eps) {
-    emitK(lambda + phi);
-    emitGPhaseIfNeeded(builder, loc, phaseToMatchTarget(targetMatrix, emitted));
-    return qubit;
-  }
-
   emitK(lambda);
   emitA(theta);
   emitK(phi);
@@ -284,23 +273,14 @@ static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
 
 static Value emitPSXGen(OpBuilder& builder, Location loc, Value qubit,
                         const Eigen::Matrix2cd& targetMatrix, double theta,
-                        double phi, double lambda, bool allowXShortcut,
-                        bool simplify) {
-  const double eps = simplify ? mlir::utils::TOLERANCE : -1.0;
+                        double phi, double lambda) {
+  constexpr double eps = mlir::utils::TOLERANCE;
   Eigen::Matrix2cd emitted = Eigen::Matrix2cd::Identity();
 
   auto emitRzAsP = [&](double angle) {
     const double canonicalAngle = helpers::mod2pi(angle, eps);
-    if (std::abs(canonicalAngle) > eps) {
-      qubit = emitRZ(builder, loc, qubit, canonicalAngle, emitted);
-    }
+    qubit = emitRZ(builder, loc, qubit, canonicalAngle, emitted);
   };
-
-  if (std::abs(theta) <= eps) {
-    emitRzAsP(lambda + phi);
-    emitGPhaseIfNeeded(builder, loc, phaseToMatchTarget(targetMatrix, emitted));
-    return qubit;
-  }
 
   if (std::abs(theta - (std::numbers::pi / 2.0)) < eps) {
     emitRzAsP(lambda - (std::numbers::pi / 2.0));
@@ -328,7 +308,8 @@ static Value emitPSXGen(OpBuilder& builder, Location loc, Value qubit,
 
   emitRzAsP(lambda);
 
-  if (allowXShortcut && std::abs(helpers::mod2pi(theta, eps)) < eps) {
+  // `sx · rz(θ) · sx` equals `x` when θ ≡ 0 (mod 2π).
+  if (std::abs(helpers::mod2pi(theta, eps)) < eps) {
     qubit = emitX(builder, loc, qubit, emitted);
   } else {
     qubit = emitSX(builder, loc, qubit, emitted);
@@ -358,9 +339,6 @@ std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
   if (b == "u") {
     return EulerBasis::U;
   }
-  if (b == "zsx") {
-    return EulerBasis::ZSX;
-  }
   if (b == "zsxx") {
     return EulerBasis::ZSXX;
   }
@@ -369,7 +347,7 @@ std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
 
 Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                                const Eigen::Matrix2cd& targetMatrix,
-                               EulerBasis basis, bool simplify) {
+                               EulerBasis basis) {
   const auto [theta, phi, lambda, /*phase=*/phase] =
       EulerDecomposition::anglesFromUnitary(targetMatrix, basis);
 
@@ -378,8 +356,8 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
   case EulerBasis::ZXZ:
   case EulerBasis::XZX:
   case EulerBasis::XYX:
-    qubit = emitKAK(builder, loc, qubit, targetMatrix, theta, phi, lambda,
-                    basis, simplify);
+    qubit =
+        emitKAK(builder, loc, qubit, targetMatrix, theta, phi, lambda, basis);
     break;
   case EulerBasis::U: {
     Eigen::Matrix2cd emitted = Eigen::Matrix2cd::Identity();
@@ -387,19 +365,11 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
     emitGPhaseIfNeeded(builder, loc, phaseToMatchTarget(targetMatrix, emitted));
     break;
   }
-  case EulerBasis::ZSX:
-    qubit = emitPSXGen(builder, loc, qubit, targetMatrix, theta, phi, lambda,
-                       /*allowXShortcut=*/false, simplify);
-    break;
   case EulerBasis::ZSXX:
-    qubit = emitPSXGen(builder, loc, qubit, targetMatrix, theta, phi, lambda,
-                       /*allowXShortcut=*/true, simplify);
+    qubit = emitPSXGen(builder, loc, qubit, targetMatrix, theta, phi, lambda);
     break;
   }
 
-  // `anglesFromUnitary` returns a phase term for exact reconstruction; some
-  // emission modes compute the phase from matrices directly, but for bases that
-  // already incorporate it we keep it available for debugging parity.
   (void)phase;
   return qubit;
 }

@@ -26,17 +26,11 @@ namespace mlir::qco::decomposition {
 /**
  * Target gate set for single-qubit Euler synthesis.
  *
- * Selects which QCO operations `synthesizeUnitary1QEuler` emits when lowering a
- * 2×2 unitary. Angle extraction (`EulerDecomposition::anglesFromUnitary`) and
- * IR emission are separate; several enumerators share the same
- * `(theta, phi, lambda, phase)` computation and differ only in the emitted
- * sequence.
- *
  * - **KAK bases** (`ZYZ`, `ZXZ`, `XZX`, `XYX`): Euler decompositions named by
  *   the middle and outer rotation axes.
  * - **`U`**: single `u(theta, phi, lambda)` gate (angles from the Z-Y-Z form).
- * - **`ZSX` / `ZSXX`**: `rz`/`sx` templates; `ZSXX` may emit `x` instead of
- *   `sx · rz · sx` when simplification is on.
+ * - **`ZSXX`**: `rz · sx · rz · sx · rz`, or `rz · x · rz` when the middle
+ *   angle is ~0.
  */
 enum class EulerBasis : std::uint8_t {
   ZYZ = 0,  ///< `rz · ry · rz`.
@@ -44,8 +38,7 @@ enum class EulerBasis : std::uint8_t {
   XZX = 2,  ///< `rx · rz · rx`.
   XYX = 3,  ///< `rx · ry · rx`.
   U = 4,    ///< `u(theta, phi, lambda)`.
-  ZSXX = 5, ///< `rz · sx · rz · sx · rz`.
-  ZSX = 6,  ///< `rz · sx · rz · sx · rz`.
+  ZSXX = 5, ///< `rz · sx · rz · sx · rz`, or `rz · x · rz` if middle angle ~0.
 };
 
 } // namespace mlir::qco::decomposition
@@ -54,18 +47,6 @@ enum class EulerBasis : std::uint8_t {
 // decomposition/synthesis is the only current user and we want to avoid
 // scattering tiny utilities across multiple files.
 namespace mlir::qco::helpers {
-
-/// Check whether `matrix` is unitary within `tolerance` (i.e. `M^H M` is
-/// approximately `I`, using Eigen's `isIdentity`).
-template <typename T, int N, int M>
-[[nodiscard]] inline bool
-isUnitaryMatrix(const Eigen::Matrix<T, N, M>& matrix,
-                double tolerance = mlir::utils::TOLERANCE) {
-  if (matrix.rows() != matrix.cols()) {
-    return false;
-  }
-  return (matrix.adjoint() * matrix).isIdentity(tolerance);
-}
 
 /**
  * Wrap angle into interval [-pi, pi). If within atol of the endpoint, clamp to
@@ -104,13 +85,7 @@ isUnitaryMatrix(const Eigen::Matrix<T, N, M>& matrix,
 
 namespace mlir::qco::decomposition {
 
-/**
- * Extract Euler parameters from single-qubit unitary matrices.
- *
- * Angle extraction is separate from IR emission (`synthesizeUnitary1QEuler`),
- * which tracks global phase via `qco.gphase` so the synthesized circuit matches
- * the target matrix exactly (not only up to global phase).
- */
+/// Extract Euler parameters from single-qubit unitary matrices.
 class EulerDecomposition {
 public:
   /**
@@ -141,7 +116,7 @@ private:
   paramsXZX(const Eigen::Matrix2cd& matrix);
 
   /**
-   * Extract Euler angles for `ZSX` / `ZSXX` (`rz` / `sx`) synthesis.
+   * Extract Euler angles for `ZSXX` (`rz` / `sx`) synthesis.
    *
    * Reuses `(theta, phi, lambda)` from `paramsZYZ` and sets the scalar phase to
    * `phase - 0.5 * (theta + phi + lambda)` so `emitPSXGen` reproduces `matrix`
@@ -173,12 +148,9 @@ private:
 /// The emitted circuit includes a `qco.gphase` correction when needed so the
 /// overall unitary matches `targetMatrix` exactly (not only up to global
 /// phase).
-///
-/// When `simplify` is false, near-zero rotations and basis-specific shortcuts
-/// are not applied.
 [[nodiscard]] Value
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
-                         const Eigen::Matrix2cd& targetMatrix, EulerBasis basis,
-                         bool simplify = true);
+                         const Eigen::Matrix2cd& targetMatrix,
+                         EulerBasis basis);
 
 } // namespace mlir::qco::decomposition

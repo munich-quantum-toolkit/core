@@ -85,9 +85,8 @@ protected:
 
     const auto parsed = decomposition::parseEulerBasis(this->basis);
     if (!parsed) {
-      module.emitError()
-          << "Invalid Euler basis '" << this->basis
-          << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsx, zsxx.";
+      module.emitError() << "Invalid Euler basis '" << this->basis
+                         << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx.";
       signalPassFailure();
       return;
     }

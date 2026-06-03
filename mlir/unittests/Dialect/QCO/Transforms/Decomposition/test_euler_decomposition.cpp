@@ -35,7 +35,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <array>
-#include <cassert>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -96,14 +95,12 @@ template <typename MatrixType>
     dMatrix(i, i) =
         absRii > 0.0 ? (rii / absRii) : std::complex<double>{1.0, 0.0};
   }
-  const MatrixType unitaryMatrix = qMatrix * dMatrix;
-  assert(helpers::isUnitaryMatrix(unitaryMatrix));
-  return unitaryMatrix;
+  return qMatrix * dMatrix;
 }
 
 template <typename Fn> static void forEachBasis(Fn fn) {
-  const std::array<const char*, 7> bases = {"zyz", "zxz", "xzx", "xyx",
-                                            "u",   "zsx", "zsxx"};
+  const std::array<const char*, 6> bases = {"zyz", "zxz", "xzx",
+                                            "xyx", "u",   "zsxx"};
   for (const char* basis : bases) {
     fn(StringRef{basis});
   }
@@ -130,9 +127,6 @@ static bool isAllowedBasisGate(Operation& op, StringRef basis) {
   }
   if (b == "u") {
     return isa<UOp>(op);
-  }
-  if (b == "zsx") {
-    return isa<RZOp, SXOp>(op);
   }
   if (b == "zsxx") {
     return isa<RZOp, SXOp, XOp>(op);
@@ -313,7 +307,7 @@ template <typename RotationOp>
 
 [[nodiscard]] static SynthesizedCircuit
 synthesizeMatrix(MLIRContext* ctx, const Eigen::Matrix2cd& matrix,
-                 EulerBasis basis, bool simplify) {
+                 EulerBasis basis) {
   OwningOpRef<ModuleOp> module = ModuleOp::create(UnknownLoc::get(ctx));
   OpBuilder builder(ctx);
   builder.setInsertionPointToStart(module->getBody());
@@ -325,8 +319,7 @@ synthesizeMatrix(MLIRContext* ctx, const Eigen::Matrix2cd& matrix,
 
   builder.setInsertionPointToStart(entry);
   Value q = entry->getArgument(0);
-  q = synthesizeUnitary1QEuler(builder, module->getLoc(), q, matrix, basis,
-                               simplify);
+  q = synthesizeUnitary1QEuler(builder, module->getLoc(), q, matrix, basis);
   builder.create<func::ReturnOp>(module->getLoc(), q);
   return SynthesizedCircuit{.module = std::move(module), .func = func};
 }
@@ -345,12 +338,6 @@ template <typename OpTy>
       ++count;
     }
   });
-  return count;
-}
-
-[[nodiscard]] static std::size_t countUnitaryMatrixOps(func::FuncOp funcOp) {
-  std::size_t count = 0;
-  funcOp.walk([&](UnitaryMatrixOpInterface) { ++count; });
   return count;
 }
 
@@ -410,21 +397,17 @@ TEST(FuseSingleQubitUnitaryRunsTest, ReconstructsOriginalRunAllBases) {
       });
 }
 
-TEST(EulerSynthesisTest, ZsxxPauliXUsesSingleXGate) {
+TEST(EulerSynthesisTest, ZsxxPauliXUsesXGateShortcut) {
   SynthesisFixture fx;
   fx.setUp();
 
   const Eigen::Matrix2cd pauliX = XOp::getUnitaryMatrix();
   const auto circuit =
-      synthesizeMatrix(fx.context.get(), pauliX, EulerBasis::ZSXX,
-                       /*simplify=*/true);
+      synthesizeMatrix(fx.context.get(), pauliX, EulerBasis::ZSXX);
 
   ASSERT_TRUE(succeeded(verify(*circuit.module)));
-  EXPECT_EQ(countUnitaryMatrixOps(circuit.func), 1U);
   EXPECT_EQ(countOps<XOp>(circuit.func), 1U);
-  EXPECT_EQ(countOps<RZOp>(circuit.func), 0U);
   EXPECT_EQ(countOps<SXOp>(circuit.func), 0U);
-  EXPECT_EQ(countOps<UOp>(circuit.func), 0U);
   EXPECT_TRUE(compute1QMatrixFromFunction(circuit.func)
                   .isApprox(pauliX, mlir::utils::TOLERANCE));
 }
@@ -436,8 +419,7 @@ TEST(EulerSynthesisTest, UGateReconstruction) {
   std::mt19937 rng{99991};
   for (int i = 0; i < 32; ++i) {
     const auto u = randomUnitaryMatrix<Eigen::Matrix2cd>(rng);
-    const auto circuit = synthesizeMatrix(fx.context.get(), u, EulerBasis::U,
-                                          /*simplify=*/true);
+    const auto circuit = synthesizeMatrix(fx.context.get(), u, EulerBasis::U);
     ASSERT_TRUE(succeeded(verify(*circuit.module)));
     EXPECT_LE(countOps<UOp>(circuit.func), 1U);
     EXPECT_TRUE(compute1QMatrixFromFunction(circuit.func)
@@ -489,14 +471,13 @@ class EulerSynthesisExactTest
     : public testing::TestWithParam<
           std::tuple<EulerBasis, Eigen::Matrix2cd (*)(MLIRContext*)>> {};
 
-TEST_P(EulerSynthesisExactTest, WithoutSimplification) {
+TEST_P(EulerSynthesisExactTest, ReconstructsReferenceMatrices) {
   SynthesisFixture fx;
   fx.setUp();
 
   const auto [basis, matrixFn] = GetParam();
   const Eigen::Matrix2cd original = matrixFn(fx.context.get());
-  const auto circuit = synthesizeMatrix(fx.context.get(), original, basis,
-                                        /*simplify=*/false);
+  const auto circuit = synthesizeMatrix(fx.context.get(), original, basis);
 
   ASSERT_TRUE(succeeded(verify(*circuit.module)));
   EXPECT_TRUE(compute1QMatrixFromFunction(circuit.func)
