@@ -27,7 +27,7 @@ authors:
 affiliations:
   - name: Chair for Design Automation, Technical University of Munich, Germany
     index: 1
-  - name: MQSC GmbH, Garching near Munich, Germany
+  - name: Munich Quantum Software Company GmbH, Garching near Munich, Germany
     index: 2
   - name: Software Competence Center Hagenberg GmbH, Hagenberg, Austria
     index: 3
