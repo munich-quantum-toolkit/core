@@ -238,4 +238,21 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
   return success();
 }
 
+/**
+ * @brief Check if given quantum operation is unused (i.e., only used by
+ * sinks and no memory effects).
+ *
+ * @param op The operation to check.
+ * @return bool True if the operation is unused, false otherwise.
+ */
+inline bool checkDeadGate(Operation* op) {
+  if (!isMemoryEffectFree(op)) {
+    // This ignores operations with and regions that have children with memory
+    // effects, which should never be considered dead.
+    return false;
+  }
+  return llvm::all_of(op->getUsers(),
+                      [](Operation* user) { return isa<SinkOp>(user); });
+}
+
 } // namespace mlir::qco

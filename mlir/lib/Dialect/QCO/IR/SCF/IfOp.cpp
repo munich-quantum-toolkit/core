@@ -245,13 +245,7 @@ struct DeadIfRemoval final : OpRewritePattern<IfOp> {
 
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter& rewriter) const override {
-    if (!isMemoryEffectFree(op)) {
-      // This effectively ignores `IfOp`s with memory effects.
-      return failure();
-    }
-
-    if (!llvm::all_of(op->getUsers(),
-                      [](Operation* user) { return isa<SinkOp>(user); })) {
+    if (!checkDeadGate(op)) {
       return failure();
     }
 

@@ -52,14 +52,7 @@ struct DeadGateElimination final
 
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    if (!isMemoryEffectFree(op)) {
-      // This effectively ignores the GPhase operation and variants such as its
-      // inverse or `ctrl` ops containing it, which should never be considered
-      // dead.
-      return failure();
-    }
-    if (!llvm::all_of(op->getUsers(),
-                      [](Operation* user) { return isa<SinkOp>(user); })) {
+    if (!checkDeadGate(op)) {
       return failure();
     }
 
