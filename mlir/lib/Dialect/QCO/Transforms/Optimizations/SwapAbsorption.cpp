@@ -22,13 +22,13 @@
 #include <utility>
 
 namespace mlir::qco {
-#define GEN_PASS_DEF_SWAPABSORPTIONPASS
+#define GEN_PASS_DEF_SWAPABSORPTION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
-struct SwapAbsorption : impl::SwapAbsorptionPassBase<SwapAbsorption> {
+struct SwapAbsorption : impl::SwapAbsorptionBase<SwapAbsorption> {
 public:
-  using SwapAbsorptionPassBase::SwapAbsorptionPassBase;
+  using SwapAbsorptionBase::SwapAbsorptionBase;
 
 protected:
   void runOnOperation() override {

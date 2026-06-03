@@ -46,7 +46,7 @@ protected:
 
   static void applySwapAbsorb(OwningOpRef<ModuleOp>& moduleOp) {
     PassManager pm(moduleOp->getContext());
-    pm.addPass(qco::createSwapAbsorptionPass());
+    pm.addPass(qco::createSwapAbsorption());
     auto res = pm.run(*moduleOp);
 
     ASSERT_TRUE(succeeded(res));

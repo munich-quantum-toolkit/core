@@ -174,19 +174,16 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   }];
 }
 
-def SwapAbsorptionPass : Pass<"absorb-swaps", "mlir::ModuleOp"> {
+def SwapAbsorption : Pass<"absorb-swaps", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "Eliminate SWAP operations by rewiring circuit";
+  let summary = "This pass absorbs SWAP operations into the initial program-to-hardware mapping.";
   let description = [{
-    This pass removes SWAP operations by absorbing their effect into the surrounding circuit.
-
-    For a SWAP operation exchanging qubits q0 and q1, the pass replaces all uses of the first output wire
-    with the second input wire and vice versa. As a result, the logical permutation introduced by the SWAP is
-    propagated through the IR and the SWAP operation itself can be removed.
-
-    The pass repeatedly identifies SWAP operations that are ready to be processed and absorbs them one by one.
-    Each absorption may expose additional SWAP operations that can subsequently be eliminated.
-    This process continues until no further SWAP operations can be absorbed.
+    For a SWAP operation exchanging static qubits q0 and q1, the pass replaces the use of the 
+    first (second) input qubit with the second (first) output qubit of the SWAP and subsequently 
+    removes the operation. As a result, the initial program-to-hardware mapping is changed. 
+    This process is repeated until no more SWAP operations can be absorbed.
+    
+    The pass assumes that the quantum program is already mapped to static qubits. 
   }];
 }
 
