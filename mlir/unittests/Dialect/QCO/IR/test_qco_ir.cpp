@@ -150,9 +150,6 @@ TEST_F(QCOTest, CheckDeadGateElimination) {
   EXPECT_TRUE(runQCOCleanupPipeline(refModule.get()).succeeded());
   EXPECT_TRUE(verify(*refModule).succeeded());
 
-  module->dump();
-  refModule->dump();
-
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), refModule.get()));
 }
