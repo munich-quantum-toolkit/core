@@ -126,6 +126,5 @@ OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
 
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
-  results.add<RemoveResetAfterExtract>(context);
-  results.add<DeadResetRemoval>(context);
+results.add<RemoveResetAfterExtract,DeadResetRemoval>(context);
 }
