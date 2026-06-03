@@ -24,13 +24,14 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -322,9 +323,26 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   module->setAttr("jeff.toolVersion", builder.getStringAttr(MQT_CORE_VERSION));
 
   module->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
-  module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 1));
+  module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 2));
   module->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
 
+  return success();
+}
+
+/**
+ * @brief Move a region from QCO/SCF operation to a jeff operation
+ */
+static LogicalResult moveRegion(Region& source, Region& dest,
+                                ConversionPatternRewriter& rewriter,
+                                const TypeConverter* typeConverter) {
+  rewriter.inlineRegionBefore(source, dest, dest.end());
+  Block* block = &dest.front();
+  TypeConverter::SignatureConversion sc(block->getNumArguments());
+  if (failed(
+          typeConverter->convertSignatureArgs(block->getArgumentTypes(), sc))) {
+    return failure();
+  }
+  rewriter.applySignatureConversion(block, sc);
   return success();
 }
 
@@ -353,17 +371,10 @@ struct ConvertQTensorAllocOp final
                                                op.getOperation()))) {
       return failure();
     }
-    // TODO: Why is this not happening in native conversion?
-    auto sizeValue = getConstantIntValue(adaptor.getSize());
-    Value size;
-    if (sizeValue.has_value()) {
-      size = jeff::IntConst32Op::create(rewriter, op.getLoc(), *sizeValue);
-    } else {
-      size = adaptor.getSize();
-    }
     auto qregType =
         jeff::QuregType::get(rewriter.getContext(), op.getType().getShape()[0]);
-    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, qregType, size);
+    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, qregType,
+                                                    adaptor.getSize());
     return success();
   }
 };
@@ -388,16 +399,8 @@ struct ConvertQTensorExtractOp final
   LogicalResult
   matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // TODO: Why is this not happening in native conversion?
-    auto indexValue = getConstantIntValue(adaptor.getIndex());
-    Value index;
-    if (indexValue.has_value()) {
-      index = jeff::IntConst32Op::create(rewriter, op.getLoc(), *indexValue);
-    } else {
-      index = adaptor.getIndex();
-    }
     rewriter.replaceOpWithNewOp<jeff::QuregExtractIndexOp>(
-        op, adaptor.getTensor(), index);
+        op, adaptor.getTensor(), adaptor.getIndex());
     return success();
   }
 };
@@ -421,16 +424,8 @@ struct ConvertQTensorInsertOp final
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // TODO: Why is this not happening in native conversion?
-    auto indexValue = getConstantIntValue(adaptor.getIndex());
-    Value index;
-    if (indexValue.has_value()) {
-      index = jeff::IntConst32Op::create(rewriter, op.getLoc(), *indexValue);
-    } else {
-      index = adaptor.getIndex();
-    }
     rewriter.replaceOpWithNewOp<jeff::QuregInsertIndexOp>(
-        op, adaptor.getDest(), index, adaptor.getScalar());
+        op, adaptor.getDest(), adaptor.getIndex(), adaptor.getScalar());
     return success();
   }
 };
@@ -950,14 +945,19 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
 };
 
 /**
- * @brief Erases qco.yield operation
+ * @brief Converts qco.yield to jeff
  */
 struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(YieldOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (isa<jeff::SwitchOp>(op->getParentOp())) {
+      rewriter.replaceOpWithNewOp<jeff::YieldOp>(op, adaptor.getOperands());
+      return success();
+    }
+
     auto& state = getState();
 
     if (state.inInvOp) {
@@ -985,6 +985,141 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
 
     rewriter.eraseOp(op);
 
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qco.if to jeff.switch
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = qco.if %condition args(%a = %q_in) -> (!qco.qubit) {
+ *   %q_res = qco.x %a : !qco.qubit -> !qco.qubit
+ *   qco.yield %q_res : !qco.qubit
+ * } else args(%a = %q_in) {
+ *   qco.yield %a : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = jeff.switch(%condition) : i1 -> (!jeff.qubit)
+ * case 0 args(%a = %q_in) {
+ *   %jeff.yield %a : !jeff.qubit
+ * }
+ * case 1 args(%a = %q_in) {
+ *   %q_res = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %a
+ * : !jeff.qubit
+ *   jeff.yield %q_res : !jeff.qubit
+ * }
+ * default args(%a = %q_in) {
+ *   jeff.yield %a : !jeff.qubit
+ * }
+ * ```
+ */
+struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(IfOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto loc = op.getLoc();
+    SmallVector<Type> outTypes;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
+      return failure();
+    }
+
+    auto jeffIf =
+        jeff::SwitchOp::create(rewriter, loc, outTypes, adaptor.getCondition(),
+                               adaptor.getQubits(), 2);
+
+    if (failed(moveRegion(op.getElseRegion(), jeffIf.getBranches()[0], rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
+    if (failed(moveRegion(op.getThenRegion(), jeffIf.getBranches()[1], rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
+
+    // Add trivial default case
+    {
+      auto* block = &jeffIf.getDefault().emplaceBlock();
+      for (auto value : adaptor.getQubits()) {
+        block->addArgument(value.getType(), loc);
+      }
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToStart(block);
+      jeff::YieldOp::create(rewriter, loc, block->getArguments());
+    }
+
+    rewriter.replaceOp(op, jeffIf.getResults());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.for to jeff.for
+ *
+ * @par Example:
+ * ```mlir
+ * %reg_out = scf.for %iv = %start to %stop step %step iter_args(%a = %reg_in)
+ * -> (tensor<2x!qco.qubit>) {
+ *   %reg0, %q0 = qtensor.extract %a[%iv] : tensor<2x!qco.qubit>
+ *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+ *   %reg1 = qtensor.insert %q1 into %reg0[%iv] : tensor<2x!qco.qubit>
+ *   scf.yield %reg1 : tensor<2x!qco.qubit>
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %reg_out = jeff.for %iv = %start to %stop step %step args(%a = %reg_in) ->
+ * (!jeff.qureg<2>) : i32 {
+ *   %reg0, %q0 = jeff.qureg_extract_index(%iv) %a : (!jeff.qureg<2>, i32) ->
+ * (!jeff.qureg<2>, !jeff.qubit)
+ *   %q1 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0 :
+ * !jeff.qubit
+ *   %reg1 = jeff.qureg_insert_index(%iv) %reg0 %q1 : (!jeff.qureg<2>, i32,
+ * !jeff.qubit) -> !jeff.qureg<2>
+ *   jeff.yield %reg1 : !jeff.qureg<2>
+ * }
+ * ```
+ */
+struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    SmallVector<Type> outTypes;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
+      return failure();
+    }
+
+    auto jeffFor = jeff::ForOp::create(
+        rewriter, op.getLoc(), outTypes, adaptor.getLowerBound(),
+        adaptor.getUpperBound(), adaptor.getStep(), adaptor.getInitArgs());
+
+    if (failed(moveRegion(op.getRegion(), jeffFor.getRegion(), rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op, jeffFor.getResults());
+    return success();
+  }
+};
+
+struct ConvertSCFYieldOpToJeff final
+    : StatefulOpConversionPattern<scf::YieldOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<jeff::YieldOp>(op, adaptor.getResults());
     return success();
   }
 };
@@ -1053,16 +1188,16 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
 
 /**
  * @brief Type converter for QCO-to-jeff conversion
- *
- * @details
- * Converts `!qco.qubit` to `!jeff.qubit` and `tensor<?x!qco.qubit>` to
- * `!jeff.qureg`.
  */
 class QCOToJeffTypeConverter final : public TypeConverter {
 public:
   explicit QCOToJeffTypeConverter(MLIRContext* ctx) {
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
+
+    addConversion([ctx](IndexType /*type*/) -> Type {
+      return IntegerType::get(ctx, 32);
+    });
 
     addConversion([ctx](QubitType /*type*/) -> Type {
       return jeff::QubitType::get(ctx);
@@ -1105,11 +1240,11 @@ struct PPRPaulis {
 } // namespace
 
 /**
- * @brief Registers one QCO→jeff rewrite pattern for a gate described at compile
- * time.
+ * @brief Registers one QCO → `jeff` rewrite pattern for a gate described at
+ * compile time.
  *
  * @tparam Kind How to lower: well-known jeff op, `jeff.custom`, `jeff.ppr`, or
- *        special-case `qco.u2` → `jeff.u`.
+ * special-case `qco.u2` → `jeff.u`.
  * @tparam Targets Number of target qubits for the QCO op.
  * @tparam Params Number of real parameters on the QCO op.
  * @tparam QCOOpType MLIR QCO operation type.
@@ -1191,7 +1326,7 @@ protected:
     // Configure conversion target
     target.addIllegalDialect<QCODialect, qtensor::QTensorDialect,
                              arith::ArithDialect, math::MathDialect,
-                             tensor::TensorDialect>();
+                             tensor::TensorDialect, scf::SCFDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>(
@@ -1269,7 +1404,9 @@ protected:
 
     patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
                  ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
-                 ConvertQCOMainToJeff>(typeConverter, context, &state);
+                 ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff,
+                 ConvertSCFYieldOpToJeff, ConvertQCOMainToJeff>(
+        typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
