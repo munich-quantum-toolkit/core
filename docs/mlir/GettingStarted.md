@@ -1,6 +1,6 @@
 # Getting Started
 
-The MQT Compiler Collection establishes a "classical-first" approach to quantum compilation.
+The MQT Compiler Collection adopts a quantum-classical approach to quantum compilation.
 Following an open-source philosophy, the project welcomes external contributions.
 However, because quantum compilers are complex programs by nature, it can sometimes be difficult to know where and how to start.
 
@@ -480,7 +480,7 @@ qco.sink %q1_2 : !qco.qubit
 :::
 ::::
 
-The figure below illustrates the data-flow graph of the textual intermediate representation above.
+The figure below illustrates the data-flow graph of the textual QCO intermediate representation above.
 
 ```{figure} ../_static/mlir/data-flow.svg
 :align: center
@@ -929,7 +929,7 @@ By doing so, everyone using the MQT Compiler Collection as a backend benefits fr
 First, we need to define the pass in one of QCO's TableGen files.
 
 ```{code-block} cpp
-// file: mlir/include/mlir/Dialect/QCO/IR/QCOOps.td
+// file: mlir/include/mlir/Dialect/QCO/Transforms/Passes.td
 
 def CancelConsecutiveHadamards : Pass<"cancel-consecutive-hadamards", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
