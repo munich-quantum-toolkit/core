@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add a `absorb-swaps` pass for absorbing initial SWAPs ([#1750]) ([**@jmoosburger**], [**@MatthiasReumann**])
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to configure builds ([#1660]) ([**@denialhaag**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
@@ -402,6 +403,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1750]: https://github.com/munich-quantum-toolkit/core/pull/1750
 [#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
 [#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
@@ -649,6 +651,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@simon1hofmann**]: https://github.com/simon1hofmann
 [**@keefehuang**]: https://github.com/keefehuang
 [**@J4MMlE**]: https://github.com/J4MMlE
+[**@jmoosburger**]: https://github.com/jmoosburger
 
 <!-- General links -->
 
