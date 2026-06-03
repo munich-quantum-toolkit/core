@@ -8,23 +8,24 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Bindings/Python/NanobindAdaptors.h"
+#include "mlir-c/IR.h"
+#include "mlir/Bindings/Python/NanobindAdaptors.h" // NOLINT(misc-include-cleaner)
 #include "mlir/CAPI/Dialects.h"
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
-#include "mlir/Support/Passes.h"
+#include "mlir/Conversion/QCToQCO/QCToQCO.h" // NOLINT(misc-include-cleaner)
+#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h" // NOLINT(misc-include-cleaner)
+#include "mlir/Support/Passes.h" // NOLINT(misc-include-cleaner)
 #include "qasm3/Importer.hpp"
 
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include <llvm/Support/raw_ostream.h>   // NOLINT(misc-include-cleaner)
+#include <mlir/IR/BuiltinOps.h>         // NOLINT(misc-include-cleaner)
+#include <mlir/IR/MLIRContext.h>        // NOLINT(misc-include-cleaner)
+#include <mlir/Pass/PassManager.h>      // NOLINT(misc-include-cleaner)
+#include <mlir/Support/LogicalResult.h> // NOLINT(misc-include-cleaner)
 
 #include <stdexcept> // NOLINT(misc-include-cleaner)
 #include <string>    // NOLINT(misc-include-cleaner)
 
-namespace nb = nanobind;
+namespace nb = nanobind; // NOLINT(misc-unused-alias-decls)
 
 // NOLINTNEXTLINE(misc-use-internal-linkage,readability-identifier-naming,readability-named-parameter)
 NB_MODULE(_mqtCoreMlir, m) {

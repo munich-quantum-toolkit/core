@@ -7,7 +7,7 @@
  *   ./build/poc/poc-test-pipeline
  */
 
-#include "ir/QuantumComputation.hpp"
+#include "ir/QuantumComputation.hpp" // NOLINT(misc-include-cleaner)
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
