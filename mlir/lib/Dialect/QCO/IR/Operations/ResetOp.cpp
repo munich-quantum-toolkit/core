@@ -110,7 +110,12 @@ struct DeadResetRemoval final : OpRewritePattern<ResetOp> {
 
   LogicalResult matchAndRewrite(ResetOp op,
                                 PatternRewriter& rewriter) const override {
-    return checkAndRemoveDeadGate(op, rewriter);
+    if (!llvm::all_of(op->getUsers(),
+                      [](Operation* user) { return isa<SinkOp>(user); })) {
+      return failure();
+    }
+    rewriter.replaceOp(op, op->getOperands());
+    return success();
   }
 };
 

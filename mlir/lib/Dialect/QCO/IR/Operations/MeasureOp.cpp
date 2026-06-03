@@ -28,7 +28,12 @@ struct DeadMeasurementRemoval final : OpRewritePattern<MeasureOp> {
 
   LogicalResult matchAndRewrite(MeasureOp op,
                                 PatternRewriter& rewriter) const override {
-    return checkAndRemoveDeadGate(op, rewriter);
+    if (!llvm::all_of(op->getUsers(),
+                      [](Operation* user) { return isa<SinkOp>(user); })) {
+      return failure();
+    }
+    rewriter.replaceAllUsesWith(op.getQubitOut(), op.getQubitIn());
+    rewriter.eraseOp(op);
   }
 };
 

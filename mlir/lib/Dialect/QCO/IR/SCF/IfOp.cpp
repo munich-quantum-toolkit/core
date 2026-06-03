@@ -249,7 +249,14 @@ struct DeadIfRemoval final : OpRewritePattern<IfOp> {
       // This effectively ignores `IfOp`s with memory effects.
       return failure();
     }
-    return checkAndRemoveDeadGate(op, rewriter);
+
+    if (!llvm::all_of(op->getUsers(),
+                      [](Operation* user) { return isa<SinkOp>(user); })) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op, op.getQubits());
+    return success();
   }
 };
 } // namespace

@@ -58,7 +58,13 @@ struct DeadGateElimination final
       // dead.
       return failure();
     }
-    return checkAndRemoveDeadGate(op.getOperation(), rewriter);
+    if (!llvm::all_of(op->getUsers(),
+                      [](Operation* user) { return isa<SinkOp>(user); })) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op, op.getInputQubits());
+    return success();
   }
 };
 } // namespace
