@@ -1,5 +1,5 @@
 # Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
-# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# Copyright (c) 2025 - 2026 MQSC GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -48,9 +48,9 @@ except ModuleNotFoundError:
 release = version.split("+")[0]
 
 project = "MQT Core"
-author = "Chair for Design Automation, TUM & Munich Quantum Software Company"
+author = "Chair for Design Automation, TUM & MQSC GmbH"
 language = "en"
-project_copyright = "2023 - 2026 Chair for Design Automation, TUM & 2025 - 2026 Munich Quantum Software Company"
+project_copyright = "2023 - 2026 Chair for Design Automation, TUM & 2025 - 2026 MQSC GmbH"
 
 master_doc = "index"
 
@@ -224,7 +224,7 @@ latex_documents = [
         r"MQT Core\\{\Large The Backbone of the Munich Quantum Toolkit}",
         r"""Chair for Design Automation\\ Technical University of Munich, Germany\\
         \href{mailto:quantum.cda@xcit.tum.de}{quantum.cda@xcit.tum.de}\\
-        Munich Quantum Software Company GmbH\\Garching near Munich, Germany""",
+        MQSC GmbH\\Garching near Munich, Germany""",
         "howto",
         False,
     ),
