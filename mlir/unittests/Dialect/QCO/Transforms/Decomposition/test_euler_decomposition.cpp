@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
@@ -19,7 +20,6 @@
 #include <Eigen/Core>
 #include <Eigen/QR>
 #include <gtest/gtest.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -39,6 +39,7 @@
 #include <complex>
 #include <cstddef>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <random>
 #include <string>
@@ -486,24 +487,29 @@ TEST_P(EulerSynthesisExactTest, ReconstructsReferenceMatrices) {
 
 INSTANTIATE_TEST_SUITE_P(
     SingleQubitMatrices, EulerSynthesisExactTest,
-    testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
-                                     EulerBasis::ZYZ, EulerBasis::ZXZ),
-                     testing::Values(
-                         [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
-                           return Eigen::Matrix2cd::Identity();
-                         },
-                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
-                           return rotationMatrix<RYOp>(ctx, 2.0);
-                         },
-                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
-                           return rotationMatrix<RXOp>(ctx, 0.5);
-                         },
-                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
-                           return rotationMatrix<RZOp>(ctx, 3.14);
-                         },
-                         [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
-                           return HOp::getUnitaryMatrix();
-                         })));
+    testing::Combine(
+        testing::Values(EulerBasis::XYX, EulerBasis::XZX, EulerBasis::ZYZ,
+                        EulerBasis::ZXZ, EulerBasis::U, EulerBasis::ZSXX),
+        testing::Values(
+            [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
+              return Eigen::Matrix2cd::Identity();
+            },
+            [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+              return rotationMatrix<RYOp>(ctx, 2.0);
+            },
+            // RY(pi/2) hits the ZSXX single-SX branch (theta == pi/2).
+            [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+              return rotationMatrix<RYOp>(ctx, std::numbers::pi / 2.0);
+            },
+            [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+              return rotationMatrix<RXOp>(ctx, 0.5);
+            },
+            [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+              return rotationMatrix<RZOp>(ctx, 3.14);
+            },
+            [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
+              return HOp::getUnitaryMatrix();
+            })));
 
 TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossTwoQGateAllBases) {
   SynthesisFixture fx;

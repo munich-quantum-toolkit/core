@@ -11,143 +11,133 @@
 #pragma once
 
 #include <Eigen/Core>
-#include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
 #include <mlir/Support/LLVM.h>
 
-#include <array>
-#include <cmath>
 #include <cstdint>
-#include <numbers>
 #include <optional>
 
 namespace mlir::qco::decomposition {
+
 /**
- * Target gate set for single-qubit Euler synthesis.
- *
- * - **KAK bases** (`ZYZ`, `ZXZ`, `XZX`, `XYX`): Euler decompositions named by
- *   the middle and outer rotation axes.
- * - **`U`**: single `u(theta, phi, lambda)` gate (angles from the Z-Y-Z form).
- * - **`ZSXX`**: `rz · sx · rz · sx · rz`, or `rz · x · rz` when the middle
- *   angle is ~0.
+ * @brief Euler angles `(theta, phi, lambda)` and global phase for a 2x2
+ * unitary.
  */
-enum class EulerBasis : std::uint8_t {
-  ZYZ = 0,  ///< `rz · ry · rz`.
-  ZXZ = 1,  ///< `rz · rx · rz`.
-  XZX = 2,  ///< `rx · rz · rx`.
-  XYX = 3,  ///< `rx · ry · rx`.
-  U = 4,    ///< `u(theta, phi, lambda)`.
-  ZSXX = 5, ///< `rz · sx · rz · sx · rz`, or `rz · x · rz` if middle angle ~0.
+struct EulerAngles {
+  double theta = 0.0;
+  double phi = 0.0;
+  double lambda = 0.0;
+  double phase = 0.0;
 };
 
-} // namespace mlir::qco::decomposition
-
-// NOTE: We keep the small numeric helpers in this header because Euler
-// decomposition/synthesis is the only current user and we want to avoid
-// scattering tiny utilities across multiple files.
-namespace mlir::qco::helpers {
+/**
+ * @brief Native gate sets for single-qubit Euler synthesis.
+ */
+enum class EulerBasis : std::uint8_t {
+  ZYZ = 0, ///< `RZ(phi) * RY(theta) * RZ(lambda)`.
+  ZXZ = 1, ///< `RZ(phi) * RX(theta) * RZ(lambda)`.
+  XZX = 2, ///< `RX(phi) * RZ(theta) * RX(lambda)`.
+  XYX = 3, ///< `RX(phi) * RY(theta) * RX(lambda)`.
+  U = 4,   ///< `U(theta, phi, lambda)`.
+  ZSXX =
+      5, ///< ZYZ-equivalent chain over `RZ`, `SX`, and `X` (see `paramsPSX`).
+};
 
 /**
- * Wrap angle into interval [-pi, pi). If within atol of the endpoint, clamp to
- * -pi.
+ * @brief Extracts Euler parameters from single-qubit unitary matrices.
  */
-[[nodiscard]] inline double mod2pi(double angle,
-                                   double atol = mlir::utils::TOLERANCE) {
-  // Wrap angle into the half-open interval [-pi, pi).
-  // For non-finite values, keep the original (caller error / upstream issue).
-  if (!std::isfinite(angle)) {
-    return angle;
-  }
-
-  constexpr double pi = std::numbers::pi;
-  constexpr double twoPi = 2.0 * std::numbers::pi;
-
-  // Euclidean remainder of (angle + pi) modulo 2pi, then shift back by pi.
-  // This ensures correct wrapping for negative angles as well.
-  double r = std::fmod(angle + pi, twoPi);
-  if (r < 0.0) {
-    r += twoPi;
-  }
-  double wrapped = r - pi;
-
-  // Canonicalize the upper endpoint back to -pi so callers always receive a
-  // half-open interval [-pi, pi). We use an epsilon guard since rounding can
-  // produce wrapped ~= +pi.
-  if (wrapped >= pi - atol) {
-    wrapped = -pi;
-  }
-
-  return wrapped;
-}
-
-} // namespace mlir::qco::helpers
-
-namespace mlir::qco::decomposition {
-
-/// Extract Euler parameters from single-qubit unitary matrices.
 class EulerDecomposition {
+  friend Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc,
+                                        Value qubit,
+                                        const Eigen::Matrix2cd& targetMatrix,
+                                        EulerBasis basis);
+
 public:
   /**
-   * Extract canonical Euler parameters for `matrix` in the requested basis.
+   * @brief Extracts `(theta, phi, lambda, phase)` for the requested basis.
    *
-   * Some target bases reuse the same parameter extraction routine and differ
-   * only during circuit emission. The returned array always contains
-   * `(theta, phi, lambda, phase)` in this order.
+   * @param matrix The single-qubit unitary to decompose.
+   * @param basis The target Euler basis.
+   * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static std::array<double, 4>
+  [[nodiscard]] static EulerAngles
   anglesFromUnitary(const Eigen::Matrix2cd& matrix, EulerBasis basis);
 
 private:
-  /// Extract parameters for a `rz(phi) · ry(theta) · rz(lambda)` factorization.
-  [[nodiscard]] static std::array<double, 4>
-  paramsZYZ(const Eigen::Matrix2cd& matrix);
-
-  /// Extract parameters for a `rz(phi) · rx(theta) · rz(lambda)` factorization.
-  [[nodiscard]] static std::array<double, 4>
-  paramsZXZ(const Eigen::Matrix2cd& matrix);
-
-  /// Extract parameters for a `rx(phi) · ry(theta) · rx(lambda)` factorization.
-  [[nodiscard]] static std::array<double, 4>
-  paramsXYX(const Eigen::Matrix2cd& matrix);
-
-  /// Extract parameters for a `rx(phi) · rz(theta) · rx(lambda)` factorization.
-  [[nodiscard]] static std::array<double, 4>
-  paramsXZX(const Eigen::Matrix2cd& matrix);
+  /**
+   * @brief Extracts parameters for `RZ(phi) * RY(theta) * RZ(lambda)`.
+   *
+   * @param matrix The single-qubit unitary to decompose.
+   * @return The extracted Euler angles and global phase.
+   */
+  [[nodiscard]] static EulerAngles paramsZYZ(const Eigen::Matrix2cd& matrix);
 
   /**
-   * Extract Euler angles for `ZSXX` (`rz` / `sx`) synthesis.
+   * @brief Extracts parameters for a `U(theta, phi, lambda)` factorization.
    *
-   * Reuses `(theta, phi, lambda)` from `paramsZYZ` and sets the scalar phase to
-   * `phase - 0.5 * (theta + phi + lambda)` so `emitPSXGen` reproduces `matrix`
-   * exactly, including the global phase induced by the `rz`/`sx`
-   * parameterization.
-   *
-   * @note Adapted from `params_u1x_inner` in the IBM Qiskit framework.
-   *       (C) Copyright IBM 2022
-   *
-   *       This code is licensed under the Apache License, Version 2.0. You may
-   *       obtain a copy of this license in the LICENSE.txt file in the root
-   *       directory of this source tree or at
-   *       https://www.apache.org/licenses/LICENSE-2.0.
-   *
-   *       Any modifications or derivative works of this code must retain this
-   *       copyright notice, and modified files need to carry a notice
-   *       indicating that they have been altered from the originals.
+   * @param matrix The single-qubit unitary to decompose.
+   * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static std::array<double, 4>
-  paramsPSX(const Eigen::Matrix2cd& matrix);
+  [[nodiscard]] static EulerAngles paramsU(const Eigen::Matrix2cd& matrix);
+
+  /**
+   * @brief Extracts parameters for `RZ(phi) * RX(theta) * RZ(lambda)`.
+   *
+   * @param matrix The single-qubit unitary to decompose.
+   * @return The extracted Euler angles and global phase.
+   */
+  [[nodiscard]] static EulerAngles paramsZXZ(const Eigen::Matrix2cd& matrix);
+
+  /**
+   * @brief Extracts parameters for `RX(phi) * RY(theta) * RX(lambda)`.
+   *
+   * @param matrix The single-qubit unitary to decompose.
+   * @return The extracted Euler angles and global phase.
+   */
+  [[nodiscard]] static EulerAngles paramsXYX(const Eigen::Matrix2cd& matrix);
+
+  /**
+   * @brief Extracts parameters for `RX(phi) * RZ(theta) * RX(lambda)`.
+   *
+   * @param matrix The single-qubit unitary to decompose.
+   * @return The extracted Euler angles and global phase.
+   */
+  [[nodiscard]] static EulerAngles paramsXZX(const Eigen::Matrix2cd& matrix);
+
+  /**
+   * @brief Extracts ZYZ-equivalent angles and global phase for `ZSXX`
+   * synthesis.
+   *
+   * Returns the same `(theta, phi, lambda)` as `paramsZYZ`; `phase` includes
+   * the offset to the native `RZ`/`SX`/`X` chain emitted for `ZSXX`.
+   *
+   * @param matrix The single-qubit unitary to decompose.
+   * @return The extracted Euler angles and global phase.
+   */
+  [[nodiscard]] static EulerAngles paramsPSX(const Eigen::Matrix2cd& matrix);
 };
 
-/// Parse a user-facing basis string (e.g. "zyz", "zsxx") into an Euler basis.
+/**
+ * @brief Parses a user-facing basis string (e.g. "zyz", "zsxx").
+ *
+ * @param basis The basis name (case-insensitive).
+ * @return The parsed Euler basis, or `std::nullopt` if unrecognized.
+ */
 [[nodiscard]] std::optional<EulerBasis> parseEulerBasis(StringRef basis);
 
-/// Emit an Euler-basis gate sequence implementing `targetMatrix` on `qubit`.
-/// Returns the output qubit value.
-///
-/// The emitted circuit includes a `qco.gphase` correction when needed so the
-/// overall unitary matches `targetMatrix` exactly (not only up to global
-/// phase).
+/**
+ * @brief Emits gates reconstructing `targetMatrix` in the given basis.
+ *
+ * Includes a global phase (`qco.gphase`) when needed for an exact match.
+ *
+ * @param builder Builder used to create the operations.
+ * @param loc Source location for the created operations.
+ * @param qubit Input qubit value.
+ * @param targetMatrix The single-qubit unitary to synthesize.
+ * @param basis The target Euler basis.
+ * @return The transformed qubit value.
+ */
 [[nodiscard]] Value
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          const Eigen::Matrix2cd& targetMatrix,
