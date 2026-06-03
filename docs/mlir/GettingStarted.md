@@ -874,11 +874,13 @@ The MQT Compiler Collection attempts to establish this design philosophy in the 
 
 Optimizations are a core part of the MQT Compiler Collection, as they are for any compiler.
 In this section, you will implement a simple optimization pass and see how it fits into the MQT Compiler Collection workflow.
+So where should this pass live in the codebase?
 
 ### Directory Layout
 
-The folder structure of MLIR projects can be confusing at first.
-To help you navigate the project, the following paragraphs provide a brief introduction to its directory layout.
+To show where this pass belongs, let’s look at the directory layout.
+
+---
 
 **`mlir/include/mlir/`**
 
@@ -912,6 +914,11 @@ This folder contains the entry-point function for the `mqt-cc` executable.
 **`mlir/unittests/`**
 
 This folder contains unit-tests for the MQT Compiler Collection.
+
+---
+
+With that in place, let’s move on to the pass implementation.
+
 
 ### Consecutive Hadamard Cancellation Pass
 
