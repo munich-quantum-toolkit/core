@@ -34,9 +34,10 @@ removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
     return failure();
   }
 
-  // Unlink both operations
-  rewriter.replaceOp(op, op.getInputQubits());
-  rewriter.replaceOp(nextOp, nextOp.getInputQubits());
+  // Erase both operations
+  rewriter.replaceAllUsesWith(nextOp->getResult(0), op.getInputQubit(0));
+  rewriter.eraseOp(nextOp);
+  rewriter.eraseOp(op);
 
   return success();
 }
@@ -64,9 +65,11 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
     return failure();
   }
 
-  // Unlink both operations
-  rewriter.replaceOp(op, op.getInputQubits());
-  rewriter.replaceOp(nextOp, nextOp.getInputQubits());
+  // Erase both operations
+  rewriter.replaceAllUsesWith(nextOp->getResults(),
+                              {op.getInputQubit(0), op.getInputQubit(1)});
+  rewriter.eraseOp(nextOp);
+  rewriter.eraseOp(op);
 
   return success();
 }
@@ -96,9 +99,11 @@ removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
     return failure();
   }
 
-  // Unlink both operations
-  rewriter.replaceOp(op, op.getInputQubits());
-  rewriter.replaceOp(nextOp, nextOp.getInputQubits());
+  // Erase both operations
+  rewriter.replaceAllUsesWith(nextOp->getResults(),
+                              {op.getInputQubit(1), op.getInputQubit(0)});
+  rewriter.eraseOp(nextOp);
+  rewriter.eraseOp(op);
 
   return success();
 }
@@ -196,6 +201,7 @@ LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter) {
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResults());
+
   return success();
 }
 
@@ -236,6 +242,7 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
 
   // nextOp results correspond to swapped operands, so swap replacements too
   rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
+
   return success();
 }
 
