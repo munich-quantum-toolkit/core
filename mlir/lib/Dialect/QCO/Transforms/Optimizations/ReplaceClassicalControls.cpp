@@ -50,14 +50,14 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
 }
 
 /**
- * @brief Checks if the given operation is a diagonal gate, i.e., it only
- * applies a phase to the target qubit(s) and does not change their state.
+ * @brief Checks if the given operation is a phase gate, i.e., it only
+ * applies a phase to the target qubit(s) in the 1 state.
  * @param op The operation to check
  * @return true if the operation is a diagonal gate, false otherwise
  */
-static bool isDiagonal(Operation* op) {
+static bool isPhaseGate(Operation* op) {
   if (auto i = dyn_cast<InvOp>(op)) {
-    return isDiagonal(i.getBodyUnitary());
+    return isPhaseGate(i.getBodyUnitary());
   }
   return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp>(op);
 }
@@ -109,7 +109,7 @@ struct ReplaceBasisStateControlsWithIfPattern final
 
   mlir::LogicalResult
   matchAndRewrite(CtrlOp op, mlir::PatternRewriter& rewriter) const override {
-    if (isDiagonal(op.getBodyUnitary())) {
+    if (isPhaseGate(op.getBodyUnitary())) {
       trySwapControlsOfDiagonalGate(op, rewriter);
     }
 
