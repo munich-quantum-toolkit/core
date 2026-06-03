@@ -78,13 +78,25 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Initialize the builder and prepare for program construction
+   * @brief Initialize the builder and prepare for program construction, with
+   * a default return type of i64.
    *
    * @details
    * Creates a main function with an entry_point attribute. Must be called
    * before adding operations.
    */
   void initialize();
+
+  /**
+   * @brief Initialize the builder and prepare for program construction
+   * with specified return types.
+   * @param returnTypes The return types for the main function
+   *
+   * @details
+   * Creates a main function with an entry_point attribute. Must be called
+   * before adding operations.
+   */
+  void initialize(TypeRange returnTypes);
 
   //===--------------------------------------------------------------------===//
   // Constants
@@ -104,6 +116,21 @@ public:
    * ```
    */
   Value intConstant(int64_t value);
+
+  /**
+   * @brief Create a constant boolean value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.boolConstant(true);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i1
+   * ```
+   */
+  Value boolConstant(bool value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -1374,6 +1401,25 @@ public:
    * @return OwningOpRef containing the constructed quantum program module
    */
   OwningOpRef<ModuleOp> finalize();
+
+  /**
+   * @brief Finalize the program with a given exit code and return the
+   * constructed module
+   * @param returnValues Values representing the exit code to return
+   *
+   * @details
+   * Automatically deallocates all remaining valid qubits and tensors of qubits,
+   * adds a return statement with a given exit code,
+   * and transfers ownership of the module to the caller. The builder should not
+   * be used after calling this method.
+   *
+   * The return values must have the types indicated by the function signature
+   * of the main function, which returns an `i64` by default and can be
+   * modified by passing different arguments to the `initialize()` method.
+   *
+   * @return OwningOpRef containing the constructed quantum program module
+   */
+  OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
 
   /**
    * @brief Convenience method for building quantum programs

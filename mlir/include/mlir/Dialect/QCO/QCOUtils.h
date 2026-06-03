@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -235,6 +237,44 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
   // nextOp results correspond to swapped operands, so swap replacements too
   rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
   return success();
+}
+
+/**
+ * @brief Check if given quantum operation is unused (i.e., only used by
+ * sinks) and remove it if so.
+ *
+ * @param op The operation to check.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+inline LogicalResult checkAndRemoveDeadGate(Operation* op,
+                                            PatternRewriter& rewriter) {
+  if (llvm::all_of(op->getUsers(),
+                   [](Operation* user) { return isa<SinkOp>(user); })) {
+    // If the operation is only used by sinks, we can safely remove it.
+    if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
+      // We specifically have to replace the output *qubits* with the input
+      // *qubits* to ignore parameters.
+      rewriter.replaceOp(op, u.getInputQubits());
+      return success();
+    } else if (auto m = dyn_cast<MeasureOp>(op)) {
+      // We specifically have to replace the output *qubits* with the input
+      // *qubits* to ignore the classical outcome.
+      rewriter.replaceAllUsesWith(m.getQubitOut(), m.getQubitIn());
+      rewriter.eraseOp(op);
+      return success();
+    } else if (auto i = dyn_cast<IfOp>(op)) {
+      // We specifically have to replace the output *qubits* with the input
+      // *qubits* to ignore the condition.
+      rewriter.replaceOp(op, i.getQubits());
+      return success();
+    } else {
+      // This currently only includes the `Reset` operation.
+      rewriter.replaceOp(op, op->getOperands());
+      return success();
+    }
+  }
+  return failure();
 }
 
 } // namespace mlir::qco
