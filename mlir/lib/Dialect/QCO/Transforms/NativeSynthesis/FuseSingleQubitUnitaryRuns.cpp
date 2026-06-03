@@ -43,12 +43,12 @@ static bool isFuseCandidate(UnitaryOpInterface op) {
 }
 
 static std::optional<Eigen::Matrix2cd> getConstMatrix(UnitaryOpInterface op) {
-  if (!isa<UnitaryMatrixOpInterface>(op.getOperation())) {
+  auto matrixOp = dyn_cast<UnitaryMatrixOpInterface>(op.getOperation());
+  if (!matrixOp) {
     return std::nullopt;
   }
   Eigen::Matrix2cd m;
-  if (!cast<UnitaryMatrixOpInterface>(op.getOperation())
-           .getUnitaryMatrix2x2(m)) {
+  if (!matrixOp.getUnitaryMatrix2x2(m)) {
     return std::nullopt;
   }
   return m;
@@ -92,17 +92,18 @@ protected:
     }
 
     SmallVector<Value, 16> wireStarts;
-    module.walk([&](AllocOp op) { wireStarts.push_back(op.getResult()); });
-    module.walk([&](StaticOp op) { wireStarts.push_back(op.getQubit()); });
-    module.walk(
-        [&](qtensor::ExtractOp op) { wireStarts.push_back(op.getResult()); });
+    module.walk([&](AllocOp op) { wireStarts.emplace_back(op.getResult()); });
+    module.walk([&](StaticOp op) { wireStarts.emplace_back(op.getQubit()); });
+    module.walk([&](qtensor::ExtractOp op) {
+      wireStarts.emplace_back(op.getResult());
+    });
     module.walk([&](func::FuncOp func) {
       if (func.empty()) {
         return;
       }
       for (BlockArgument arg : func.getBody().front().getArguments()) {
         if (isa<QubitType>(arg.getType())) {
-          wireStarts.push_back(arg);
+          wireStarts.emplace_back(arg);
         }
       }
     });
@@ -113,7 +114,7 @@ protected:
 
     auto flushRun = [&](SmallVector<UnitaryOpInterface, 8>& current) {
       if (current.size() > 1) {
-        runs.push_back(std::move(current));
+        runs.emplace_back(std::move(current));
         current = SmallVector<UnitaryOpInterface, 8>();
       } else {
         current.clear();
@@ -156,7 +157,7 @@ protected:
           continue;
         }
 
-        current.push_back(iface);
+        current.emplace_back(iface);
         seen.insert(op);
       }
 
