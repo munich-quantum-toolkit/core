@@ -31,6 +31,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -205,37 +206,45 @@ static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
 static Eigen::Matrix2cd compute1QMatrixFromFunction(func::FuncOp funcOp) {
   Eigen::Matrix2cd acc = Eigen::Matrix2cd::Identity();
   std::complex<double> global{1.0, 0.0};
+  bool failed = false;
 
-  auto& block = funcOp.getBody().front();
-  for (Operation& op : block.without_terminator()) {
-    if (isa<arith::ConstantOp>(op)) {
-      continue;
+  // Walk every block, descending into nested regions (e.g. `scf.for` bodies) so
+  // loop-body gates contribute too. The pre-order walk lets us account for a
+  // matrix-backed modifier (`inv`/`ctrl`) via its combined matrix and then skip
+  // its body, avoiding double-counting the gates nested inside it. The 1q gates
+  // of these tests live in a single block, so the walk order matches the
+  // execution order.
+  funcOp.walk<WalkOrder::PreOrder>([&](Operation* op) -> WalkResult {
+    if (isa<arith::ConstantOp>(*op) || isTwoQubitGate(*op)) {
+      return WalkResult::advance();
     }
 
-    if (isTwoQubitGate(op)) {
-      continue;
-    }
-
-    if (auto gphase = dyn_cast<GPhaseOp>(op)) {
+    if (auto gphase = dyn_cast<GPhaseOp>(*op)) {
       if (auto m = gphase.getUnitaryMatrix()) {
         global *= (*m)(0, 0);
       }
-      continue;
+      return WalkResult::advance();
     }
 
-    if (auto iface = dyn_cast<UnitaryMatrixOpInterface>(op)) {
-      // All ops in this test should be 1q ops after synthesis.
+    if (auto iface = dyn_cast<UnitaryMatrixOpInterface>(*op)) {
+      // All matrix-backed ops in these tests should be 1q ops after synthesis.
       const auto maybeM = iface.getUnitaryMatrix<Eigen::Matrix2cd>();
       if (!maybeM) {
         ADD_FAILURE() << "Expected constant unitary matrix for op: "
-                      << op.getName().getStringRef().str();
-        return Eigen::Matrix2cd::Zero();
+                      << op->getName().getStringRef().str();
+        failed = true;
+        return WalkResult::interrupt();
       }
       acc = (*maybeM) * acc;
-      continue;
+      return WalkResult::skip();
     }
-  }
 
+    return WalkResult::advance();
+  });
+
+  if (failed) {
+    return Eigen::Matrix2cd::Zero();
+  }
   return global * acc;
 }
 

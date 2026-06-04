@@ -26,8 +26,10 @@
 
 namespace mlir::qco {
 Value WireIterator::qubit() const {
-  // A sink/deallocation/insert doesn't have an OpResult.
-  if (op_ != nullptr && (isa<SinkOp, qtensor::InsertOp>(op_))) {
+  // Boundary ops (sink/deallocation/insert/yield) consume the wire via an
+  // operand and have no OpResult, matching the boundaries in forward/backward.
+  if (op_ != nullptr &&
+      (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_))) {
     return nullptr;
   }
   return qubit_;
@@ -43,7 +45,7 @@ void WireIterator::forward() {
   assert(qubit_.hasOneUse() && "expected linear typing");
   op_ = *(qubit_.user_begin());
 
-  // A sink/insert defines the end of the qubit wire (dynamic and static).
+  // A sink/insert/yield defines the end of the qubit wire (dynamic and static).
   if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_)) {
     isSentinel_ = true;
     return;
@@ -71,8 +73,8 @@ void WireIterator::backward() {
     return;
   }
 
-  // For sinks/deallocations/inserts, qubit_ is an OpOperand. Hence, only get
-  // the def-op.
+  // For sinks/deallocations/inserts/yields, qubit_ is an OpOperand. Hence, only
+  // get the def-op.
   if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     return;
