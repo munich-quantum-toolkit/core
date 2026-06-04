@@ -23,6 +23,7 @@
 
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <numbers>
 #include <optional>
@@ -464,6 +465,28 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
   }
 
   return qubit;
+}
+
+std::size_t synthesisGateCount(const Eigen::Matrix2cd& targetMatrix,
+                               EulerBasis basis) {
+  switch (basis) {
+  case EulerBasis::U:
+    return 1;
+  case EulerBasis::ZYZ:
+  case EulerBasis::ZXZ:
+  case EulerBasis::XZX:
+  case EulerBasis::XYX:
+    // emitKAK always emits the full K-A-K rotation triple.
+    return 3;
+  case EulerBasis::ZSXX: {
+    const auto angles =
+        EulerDecomposition::anglesFromUnitary(targetMatrix, EulerBasis::ZSXX);
+    const auto seq =
+        sequenceFromZYZForPSX(angles.theta, angles.phi, angles.lambda);
+    return seq.middle == PSXSequence::Middle::SXRZSX ? 5U : 3U;
+  }
+  }
+  llvm::reportFatalInternalError("Unhandled Euler basis in synthesisGateCount");
 }
 
 } // namespace mlir::qco::decomposition

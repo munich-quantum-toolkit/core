@@ -47,9 +47,9 @@ def FuseSingleQubitUnitaryRuns
                            "::mlir::qtensor::QTensorDialect"];
   let summary = "Fuse single-qubit unitary runs using Euler resynthesis";
   let description = [{
-    Collects maximal runs of consecutive single-qubit unitary operations on the
-    same qubit wire, composes their constant unitary matrices, and replaces each
-    run with an equivalent sequence of basis gates.
+    Matches maximal runs of consecutive single-qubit unitary operations on the
+    same qubit wire (anchored at each run head), composes their constant unitary
+    matrices, and replaces each run with an equivalent sequence of basis gates.
 
     The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
     A `gphase` correction is inserted when needed so the rewritten sequence

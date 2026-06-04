@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -57,7 +58,8 @@ struct SynthesisFixture {
 
   void setUp() {
     DialectRegistry registry;
-    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect,
+                    scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -140,6 +142,44 @@ static bool isAllowedBasisGate(Operation& op, StringRef basis) {
     return u.isTwoQubit();
   }
   return false;
+}
+
+// A single-qubit gate carrying a unitary matrix (excludes barriers, the
+// 2-qubit boundary gate, and the global-phase correction).
+[[nodiscard]] static bool isOneQubitGate(Operation& op) {
+  if (isa<GPhaseOp>(op) || !isa<UnitaryMatrixOpInterface>(op)) {
+    return false;
+  }
+  auto u = dyn_cast<UnitaryOpInterface>(op);
+  return u && u.isSingleQubit();
+}
+
+// Asserts that at least one 1Q gate remains on each side of the first op
+// matching `isBoundary` in the function's entry block.
+template <typename BoundaryPred>
+static void expectOneQubitGatesAroundBoundary(func::FuncOp funcOp,
+                                              StringRef basis,
+                                              BoundaryPred isBoundary) {
+  auto& block = funcOp.getBody().front();
+  std::size_t before = 0;
+  std::size_t after = 0;
+  bool seenBoundary = false;
+  for (Operation& op : block.without_terminator()) {
+    if (!seenBoundary && isBoundary(op)) {
+      seenBoundary = true;
+      continue;
+    }
+    if (!isOneQubitGate(op)) {
+      continue;
+    }
+    if (seenBoundary) {
+      ++after;
+    } else {
+      ++before;
+    }
+  }
+  EXPECT_GE(before, 1U) << "basis=" << basis.str();
+  EXPECT_GE(after, 1U) << "basis=" << basis.str();
 }
 
 static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
@@ -235,6 +275,50 @@ static void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
   q[0] = b.barrier({q[0]})[0];
   q[0] = b.rz(0.321, q[0]);
   q[0] = b.sx(q[0]);
+}
+
+// A lone gate that is not part of any of the target bases. The pass should
+// still resynthesize it into the requested basis.
+static void singleNonBasisGate(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+}
+
+// A run made up solely of `RZ`/`RY` gates: already in the `zyz` basis, but
+// longer than the canonical three-gate Euler form, so it should still shrink.
+static void overlongZyzRun(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.rz(0.3, q[0]);
+  q[0] = b.ry(0.5, q[0]);
+  q[0] = b.rz(0.7, q[0]);
+  q[0] = b.ry(0.9, q[0]);
+  q[0] = b.rz(1.1, q[0]);
+  q[0] = b.ry(1.3, q[0]);
+}
+
+static void singleQubitRunInScfFor(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.scfFor(0, 1, 1, ValueRange{q[0]}, [&](Value, ValueRange iterArgs) {
+    Value wire = iterArgs[0];
+    wire = b.h(wire);
+    wire = b.t(wire);
+    wire = b.rz(0.123, wire);
+    return SmallVector<Value>{wire};
+  });
+}
+
+[[nodiscard]] static std::size_t countUOpsInScfFor(func::FuncOp funcOp) {
+  std::size_t count = 0;
+  funcOp.walk([&](UOp op) {
+    for (Operation* parent = op->getParentOp(); parent != nullptr;
+         parent = parent->getParentOp()) {
+      if (parent->getName().getStringRef() == "scf.for") {
+        ++count;
+        break;
+      }
+    }
+  });
+  return count;
 }
 
 static OwningOpRef<ModuleOp> buildProgram(MLIRContext* ctx,
@@ -382,6 +466,29 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
   }
 }
 
+TEST(FuseSingleQubitUnitaryRunsTest, FusesRunInScfForBody) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  auto owned = buildProgram(fx.context.get(), &singleQubitRunInScfFor);
+  ASSERT_TRUE(owned);
+  ModuleOp module = *owned;
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  auto funcOp = lookupMain(module);
+  ASSERT_TRUE(funcOp);
+  const Eigen::Matrix2cd original = compute1QMatrixFromFunction(funcOp);
+
+  ASSERT_TRUE(succeeded(runFuse(module, "u")));
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  funcOp = lookupMain(module);
+  ASSERT_TRUE(funcOp);
+  EXPECT_GE(countUOpsInScfFor(funcOp), 1U);
+  EXPECT_TRUE(compute1QMatrixFromFunction(funcOp).isApprox(
+      original, mlir::utils::TOLERANCE));
+}
+
 TEST(FuseSingleQubitUnitaryRunsTest, ReconstructsOriginalRunAllBases) {
   SynthesisFixture fx;
   fx.setUp();
@@ -396,6 +503,52 @@ TEST(FuseSingleQubitUnitaryRunsTest, ReconstructsOriginalRunAllBases) {
             << "basis=" << basis.str();
         expectBasisGatesOnly(funcOp, basis);
       });
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, ResynthesizesLoneNonBasisGateAllBases) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  runFuseOnProgramForAllBases(
+      fx.context.get(), &singleNonBasisGate,
+      /*checksAfter=*/
+      [&](func::FuncOp funcOp, StringRef basis,
+          const Eigen::Matrix2cd& original) {
+        EXPECT_EQ(countOps<HOp>(funcOp), 0U)
+            << "basis=" << basis.str() << " left a non-basis gate";
+        EXPECT_TRUE(compute1QMatrixFromFunction(funcOp).isApprox(
+            original, mlir::utils::TOLERANCE))
+            << "basis=" << basis.str();
+        expectBasisGatesOnly(funcOp, basis);
+      });
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, FusesOverlongInBasisRun) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  auto owned = buildProgram(fx.context.get(), &overlongZyzRun);
+  ASSERT_TRUE(owned);
+  ModuleOp module = *owned;
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  auto funcOp = lookupMain(module);
+  ASSERT_TRUE(funcOp);
+  const Eigen::Matrix2cd original = compute1QMatrixFromFunction(funcOp);
+  const std::size_t before = countOps<RZOp>(funcOp) + countOps<RYOp>(funcOp);
+  ASSERT_EQ(before, 6U);
+
+  ASSERT_TRUE(succeeded(runFuse(module, "zyz")));
+  ASSERT_TRUE(succeeded(verify(module)));
+
+  funcOp = lookupMain(module);
+  ASSERT_TRUE(funcOp);
+  const std::size_t after = countOps<RZOp>(funcOp) + countOps<RYOp>(funcOp);
+  EXPECT_LE(after, 3U);
+  EXPECT_LT(after, before);
+  EXPECT_TRUE(compute1QMatrixFromFunction(funcOp).isApprox(
+      original, mlir::utils::TOLERANCE));
+  expectBasisGatesOnly(funcOp, "zyz");
 }
 
 TEST(EulerSynthesisTest, ZsxxPauliXUsesXGateShortcut) {
@@ -525,6 +678,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossTwoQGateAllBases) {
             original, mlir::utils::TOLERANCE))
             << "basis=" << basis.str();
         expectBasisGatesOnly(funcOp, basis);
+        expectOneQubitGatesAroundBoundary(
+            funcOp, basis, [](Operation& op) { return isTwoQubitGate(op); });
       });
 }
 
@@ -542,6 +697,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBarrierAllBases) {
             original, mlir::utils::TOLERANCE))
             << "basis=" << basis.str();
         expectBasisGatesOnly(funcOp, basis);
+        expectOneQubitGatesAroundBoundary(
+            funcOp, basis, [](Operation& op) { return isa<BarrierOp>(op); });
       });
 }
 

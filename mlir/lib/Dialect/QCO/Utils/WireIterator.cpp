@@ -16,6 +16,7 @@
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -43,7 +44,7 @@ void WireIterator::forward() {
   op_ = *(qubit_.user_begin());
 
   // A sink/insert defines the end of the qubit wire (dynamic and static).
-  if (isa<SinkOp, YieldOp, qtensor::InsertOp>(op_)) {
+  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_)) {
     isSentinel_ = true;
     return;
   }
@@ -72,7 +73,7 @@ void WireIterator::backward() {
 
   // For sinks/deallocations/inserts, qubit_ is an OpOperand. Hence, only get
   // the def-op.
-  if (isa<SinkOp, YieldOp, qtensor::InsertOp>(op_)) {
+  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     return;
   }

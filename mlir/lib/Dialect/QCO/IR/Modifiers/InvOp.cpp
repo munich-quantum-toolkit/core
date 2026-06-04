@@ -407,9 +407,12 @@ std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto&& targetMatrix =
-      cast<UnitaryMatrixOpInterface>(bodyUnitary.getOperation())
-          .getUnitaryMatrix<Eigen::MatrixXcd>();
+  auto matrixOp =
+      dyn_cast<UnitaryMatrixOpInterface>(bodyUnitary.getOperation());
+  if (!matrixOp) {
+    return std::nullopt;
+  }
+  auto targetMatrix = matrixOp.getUnitaryMatrix<Eigen::MatrixXcd>();
   if (!targetMatrix) {
     return std::nullopt;
   }

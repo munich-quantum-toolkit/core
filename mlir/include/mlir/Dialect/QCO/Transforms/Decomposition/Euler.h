@@ -15,6 +15,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -142,5 +143,21 @@ private:
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          const Eigen::Matrix2cd& targetMatrix,
                          EulerBasis basis);
+
+/**
+ * @brief Number of gates `synthesizeUnitary1QEuler` emits for `targetMatrix`.
+ *
+ * Counts only the single-qubit basis gates; the optional global-phase
+ * (`qco.gphase`) correction is excluded. This is the canonical length of the
+ * synthesized run and lets callers decide whether an in-basis run is longer
+ * than necessary.
+ *
+ * @param targetMatrix The single-qubit unitary that would be synthesized.
+ * @param basis The target Euler basis.
+ * @return The number of emitted basis gates (1 for `U`, 3 for the KAK bases,
+ *         3 or 5 for `ZSXX`).
+ */
+[[nodiscard]] std::size_t
+synthesisGateCount(const Eigen::Matrix2cd& targetMatrix, EulerBasis basis);
 
 } // namespace mlir::qco::decomposition
