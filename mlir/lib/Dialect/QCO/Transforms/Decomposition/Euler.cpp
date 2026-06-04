@@ -35,7 +35,7 @@ namespace mlir::qco::decomposition {
  * `-pi`.
  *
  * @param angle The angle to wrap, in radians.
- * @param atol Absolute tolerance for snapping `+pi` to `-pi`.
+ * @param atol Tolerance for snapping `+pi` to `-pi`.
  * @return The wrapped angle in `[-pi, pi)`.
  */
 [[nodiscard]] static double mod2pi(double angle,
@@ -63,7 +63,7 @@ namespace mlir::qco::decomposition {
 /**
  * @brief Conjugates a single-qubit matrix by Hadamard (`H * m * H`).
  *
- * Maps X-Y-X / X-Z-X decompositions to Z-Y-Z / Z-X-Z.
+ * Maps XYX / XZX parameterizations to ZYZ / ZXZ.
  *
  * @param m The single-qubit matrix to conjugate.
  * @return `H * m * H`.
@@ -79,11 +79,11 @@ hadamardConjugate(const Eigen::Matrix2cd& m) {
 }
 
 /**
- * @brief Emits a `GPhaseOp` when `phase` is non-negligible.
+ * @brief Emits `qco.gphase` when `phase` is outside tolerance.
  *
- * @param builder Builder used to create the operation.
- * @param loc Source location for the created operation.
- * @param phase Global phase in radians; skipped when within tolerance of zero.
+ * @param builder Builder for the operation.
+ * @param loc Location of the operation.
+ * @param phase Global phase in radians.
  */
 static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
   if (std::abs(phase) <= mlir::utils::TOLERANCE) {
@@ -95,7 +95,7 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
 namespace {
 
 /**
- * @brief Planned RZ-middle-RZ chain; fields are angles in circuit (time) order.
+ * @brief Planned PSX (`RZ` / `SX` / `X`) chain; angles in circuit order.
  */
 struct PSXSequence {
   enum class Middle : std::uint8_t { OneSX, X, SXRZSX };
@@ -108,11 +108,33 @@ struct PSXSequence {
 } // namespace
 
 /**
- * @brief Builds the RZ/SX chain realizing `RZ(phi)*RY(theta)*RZ(lambda)`.
+ * @brief Classifies the PSX middle-gate case from ZYZ `theta`.
  *
- * Uses the identity `SX*RZ(theta+pi)*SX = Z*RY(theta)`. `theta` from
- * `paramsZYZ` lies in `[0, pi]`: `pi/2` collapses to a single SX; `pi` becomes
- * an X gate (since `SX*SX = X`).
+ * For `theta` in `[0, pi]`: `pi/2` → one `SX`, `pi` → `X`, otherwise
+ * `SX*RZ*SX`.
+ *
+ * @param theta Y-rotation angle from `paramsZYZ`.
+ * @return The PSX middle-gate case.
+ */
+[[nodiscard]] static PSXSequence::Middle
+classifyPSXMiddleFromZYZTheta(double theta) {
+  constexpr double eps = mlir::utils::TOLERANCE;
+  constexpr double halfPi = std::numbers::pi / 2.0;
+  constexpr double pi = std::numbers::pi;
+
+  if (std::abs(theta - halfPi) < eps) {
+    return PSXSequence::Middle::OneSX;
+  }
+  if (std::abs(theta - pi) < eps) {
+    return PSXSequence::Middle::X;
+  }
+  return PSXSequence::Middle::SXRZSX;
+}
+
+/**
+ * @brief Builds the PSX sequence for `RZ(phi)*RY(theta)*RZ(lambda)`.
+ *
+ * Uses `SX*RZ(theta+pi)*SX = Z*RY(theta)`.
  *
  * @param theta Y-rotation angle in `[0, pi]`.
  * @param phi Trailing Z-rotation angle.
@@ -121,35 +143,34 @@ struct PSXSequence {
  */
 [[nodiscard]] static PSXSequence sequenceFromZYZForPSX(double theta, double phi,
                                                        double lambda) {
-  constexpr double eps = mlir::utils::TOLERANCE;
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
 
-  if (std::abs(theta - halfPi) < eps) {
+  switch (classifyPSXMiddleFromZYZTheta(theta)) {
+  case PSXSequence::Middle::OneSX:
     return {.middle = PSXSequence::Middle::OneSX,
             .firstRZ = lambda - halfPi,
             .midRZ = 0.0,
             .lastRZ = phi + halfPi};
-  }
-  if (std::abs(theta - pi) < eps) {
+  case PSXSequence::Middle::X:
     return {.middle = PSXSequence::Middle::X,
             .firstRZ = lambda,
             .midRZ = 0.0,
             .lastRZ = phi + pi};
+  case PSXSequence::Middle::SXRZSX:
+    return {.middle = PSXSequence::Middle::SXRZSX,
+            .firstRZ = lambda,
+            .midRZ = theta + pi,
+            .lastRZ = phi + pi};
   }
-  return {.middle = PSXSequence::Middle::SXRZSX,
-          .firstRZ = lambda,
-          .midRZ = theta + pi,
-          .lastRZ = phi + pi};
+  llvm::reportFatalInternalError("Unhandled PSX middle gate");
 }
 
 /**
- * @brief Global phase between `UOp(theta, phi, lambda)` and the ZYZ product.
+ * @brief Global phase offset of `UOp` vs `RZ(phi)*RY(theta)*RZ(lambda)`.
  *
- * Relates `UOp` to `RZ(phi)*RY(theta)*RZ(lambda)` on the same angles.
- *
- * @param phi The `phi` Euler angle.
- * @param lambda The `lambda` Euler angle.
+ * @param phi Trailing Z-rotation angle.
+ * @param lambda Leading Z-rotation angle.
  * @return The global-phase offset in radians.
  */
 [[nodiscard]] static double globalPhaseOffsetForU(double phi, double lambda) {
@@ -157,10 +178,10 @@ struct PSXSequence {
 }
 
 /**
- * @brief Global phase contributed by wrapping an RZ angle with `mod2pi`.
+ * @brief Global phase from wrapping an RZ angle with `mod2pi`.
  *
- * `mod2pi(angle) - angle` is a multiple of `2*pi`, so the emitted
- * `RZ(mod2pi(angle))` equals `exp(i*(mod2pi(angle)-angle)/2) * RZ(angle)`.
+ * `RZ(angle + 2*pi) = -RZ(angle)`, so `RZ(mod2pi(angle))` differs from
+ * `RZ(angle)` by `exp(i*(mod2pi(angle) - angle)/2)`.
  *
  * @param angle The unwrapped RZ angle.
  * @return The global-phase contribution in radians.
@@ -171,7 +192,7 @@ struct PSXSequence {
 }
 
 /**
- * @brief Global phase between the ZYZ product and the emitted PSX product.
+ * @brief Global phase offset of the PSX chain vs the ZYZ product.
  *
  * @param seq The planned PSX sequence.
  * @return The global-phase offset in radians.
@@ -199,20 +220,7 @@ struct PSXSequence {
 }
 
 /**
- * @brief Global phase between the ZYZ product and the emitted PSX product.
- *
- * @param theta Y-rotation angle from `paramsZYZ`.
- * @param phi Trailing Z-rotation angle from `paramsZYZ`.
- * @param lambda Leading Z-rotation angle from `paramsZYZ`.
- * @return The global-phase offset in radians.
- */
-[[nodiscard]] static double globalPhaseOffsetForPSX(double theta, double phi,
-                                                    double lambda) {
-  return globalPhaseOffsetForPSX(sequenceFromZYZForPSX(theta, phi, lambda));
-}
-
-/**
- * @brief Invokes callbacks for each gate of `seq` in circuit (time) order.
+ * @brief Invokes callbacks for each gate of `seq` in circuit order.
  *
  * @param seq The planned PSX sequence.
  * @param onRZ Called with each RZ angle.
@@ -243,14 +251,14 @@ static void visitSequenceInTimeOrder(const PSXSequence& seq,
 }
 
 /**
- * @brief Emits the RZ/SX/X gates of `seq` followed by the global phase.
+ * @brief Emits the gates of `seq` and optional `gphase`.
  *
- * @param builder Builder used to create the operations.
- * @param loc Source location for the created operations.
+ * @param builder Builder for the operations.
+ * @param loc Location of the operations.
  * @param qubit Input qubit value.
  * @param seq The planned PSX sequence.
- * @param phase Global phase to emit, in radians.
- * @return The transformed qubit value.
+ * @param phase Global phase in radians.
+ * @return The output qubit value.
  */
 [[nodiscard]] static Value emitFromPSXSequence(OpBuilder& builder, Location loc,
                                                Value qubit,
@@ -270,17 +278,17 @@ static void visitSequenceInTimeOrder(const PSXSequence& seq,
 }
 
 /**
- * @brief Emits a K-A-K rotation triple plus global phase for `basis`.
+ * @brief Emits a K-A-K rotation triple and optional `gphase` for `basis`.
  *
- * @param builder Builder used to create the operations.
- * @param loc Source location for the created operations.
+ * @param builder Builder for the operations.
+ * @param loc Location of the operations.
  * @param qubit Input qubit value.
  * @param theta Middle (A) rotation angle.
  * @param phi Trailing (K) rotation angle.
  * @param lambda Leading (K) rotation angle.
- * @param phase Global phase to emit, in radians.
- * @param basis Euler basis selecting the K and A rotation axes.
- * @return The transformed qubit value.
+ * @param phase Global phase in radians.
+ * @param basis Euler basis selecting the rotation axes.
+ * @return The output qubit value.
  */
 static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
                      double theta, double phi, double lambda, double phase,
@@ -342,8 +350,14 @@ EulerDecomposition::anglesFromUnitary(const Eigen::Matrix2cd& matrix,
     return paramsZXZ(matrix);
   case EulerBasis::U:
     return paramsU(matrix);
-  case EulerBasis::ZSXX:
-    return paramsPSX(matrix);
+  case EulerBasis::ZSXX: {
+    const auto zyz = paramsZYZ(matrix);
+    const auto seq = sequenceFromZYZForPSX(zyz.theta, zyz.phi, zyz.lambda);
+    return {.theta = zyz.theta,
+            .phi = zyz.phi,
+            .lambda = zyz.lambda,
+            .phase = zyz.phase + globalPhaseOffsetForPSX(seq)};
+  }
   }
   llvm::reportFatalInternalError(
       "Unsupported Euler basis for angle computation in decomposition!");
@@ -396,15 +410,6 @@ EulerAngles EulerDecomposition::paramsU(const Eigen::Matrix2cd& matrix) {
           .phi = zyz.phi,
           .lambda = zyz.lambda,
           .phase = zyz.phase + globalPhaseOffsetForU(zyz.phi, zyz.lambda)};
-}
-
-EulerAngles EulerDecomposition::paramsPSX(const Eigen::Matrix2cd& matrix) {
-  const auto zyz = paramsZYZ(matrix);
-  return {.theta = zyz.theta,
-          .phi = zyz.phi,
-          .lambda = zyz.lambda,
-          .phase = zyz.phase +
-                   globalPhaseOffsetForPSX(zyz.theta, zyz.phi, zyz.lambda)};
 }
 
 //===----------------------------------------------------------------------===//
@@ -479,11 +484,11 @@ std::size_t synthesisGateCount(const Eigen::Matrix2cd& targetMatrix,
     // emitKAK always emits the full K-A-K rotation triple.
     return 3;
   case EulerBasis::ZSXX: {
-    const auto angles =
-        EulerDecomposition::anglesFromUnitary(targetMatrix, EulerBasis::ZSXX);
-    const auto seq =
-        sequenceFromZYZForPSX(angles.theta, angles.phi, angles.lambda);
-    return seq.middle == PSXSequence::Middle::SXRZSX ? 5U : 3U;
+    const double theta = 2. * std::atan2(std::abs(targetMatrix(1, 0)),
+                                         std::abs(targetMatrix(0, 0)));
+    return classifyPSXMiddleFromZYZTheta(theta) == PSXSequence::Middle::SXRZSX
+               ? 5U
+               : 3U;
   }
   }
   llvm::reportFatalInternalError("Unhandled Euler basis in synthesisGateCount");

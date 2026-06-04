@@ -111,7 +111,7 @@ template <typename Fn> static void forEachBasis(Fn fn) {
 }
 
 static bool isAllowedBasisGate(Operation& op, StringRef basis) {
-  // Always allow global phase as correction term.
+  // `gphase` is always allowed.
   if (isa<GPhaseOp>(op)) {
     return true;
   }
@@ -145,8 +145,7 @@ static bool isAllowedBasisGate(Operation& op, StringRef basis) {
   return false;
 }
 
-// A single-qubit gate carrying a unitary matrix (excludes barriers, the
-// 2-qubit boundary gate, and the global-phase correction).
+// Matrix-backed 1Q gate (not barrier, 2Q, or `gphase`).
 [[nodiscard]] static bool isOneQubitGate(Operation& op) {
   if (isa<GPhaseOp>(op) || !isa<UnitaryMatrixOpInterface>(op)) {
     return false;
@@ -155,8 +154,7 @@ static bool isAllowedBasisGate(Operation& op, StringRef basis) {
   return u && u.isSingleQubit();
 }
 
-// Asserts that at least one 1Q gate remains on each side of the first op
-// matching `isBoundary` in the function's entry block.
+// At least one 1Q gate before and after the first `isBoundary` op in `main`.
 template <typename BoundaryPred>
 static void expectOneQubitGatesAroundBoundary(func::FuncOp funcOp,
                                               StringRef basis,
@@ -194,7 +192,7 @@ static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
       continue;
     }
 
-    // Only check ops that claim to carry a unitary matrix (i.e., actual gates).
+    // Matrix-backed ops must be allowed basis gates.
     if (isa<UnitaryMatrixOpInterface>(op)) {
       EXPECT_TRUE(isAllowedBasisGate(op, basis))
           << "basis=" << basis.str()
@@ -208,12 +206,8 @@ static Eigen::Matrix2cd compute1QMatrixFromFunction(func::FuncOp funcOp) {
   std::complex<double> global{1.0, 0.0};
   bool failed = false;
 
-  // Walk every block, descending into nested regions (e.g. `scf.for` bodies) so
-  // loop-body gates contribute too. The pre-order walk lets us account for a
-  // matrix-backed modifier (`inv`/`ctrl`) via its combined matrix and then skip
-  // its body, avoiding double-counting the gates nested inside it. The 1q gates
-  // of these tests live in a single block, so the walk order matches the
-  // execution order.
+  // Include nested regions (`scf.for`); skip `inv`/`ctrl` bodies after the
+  // modifier op (combined matrix already counted).
   funcOp.walk<WalkOrder::PreOrder>([&](Operation* op) -> WalkResult {
     if (isa<arith::ConstantOp>(*op) || isTwoQubitGate(*op)) {
       return WalkResult::advance();
@@ -227,7 +221,6 @@ static Eigen::Matrix2cd compute1QMatrixFromFunction(func::FuncOp funcOp) {
     }
 
     if (auto iface = dyn_cast<UnitaryMatrixOpInterface>(*op)) {
-      // All matrix-backed ops in these tests should be 1q ops after synthesis.
       const auto maybeM = iface.getUnitaryMatrix<Eigen::Matrix2cd>();
       if (!maybeM) {
         ADD_FAILURE() << "Expected constant unitary matrix for op: "
@@ -261,7 +254,7 @@ static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   q[0] = b.rz(0.123, q[0]);
-  // Keep `inv` inside the single-qubit run so it gets fused/resynthesized too.
+  // `inv` is part of the fusable run.
   q[0] = b.inv({q[0]}, [&](ValueRange targets) -> SmallVector<Value> {
     return {b.sx(targets[0])};
   })[0];
@@ -286,15 +279,13 @@ static void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
   q[0] = b.sx(q[0]);
 }
 
-// A lone gate that is not part of any of the target bases. The pass should
-// still resynthesize it into the requested basis.
+// Single `H` gate — not in any target basis; should still be resynthesized.
 static void singleNonBasisGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
 }
 
-// A run made up solely of `RZ`/`RY` gates: already in the `zyz` basis, but
-// longer than the canonical three-gate Euler form, so it should still shrink.
+// Six `RZ`/`RY` gates in `zyz` basis — longer than canonical (3).
 static void overlongZyzRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.rz(0.3, q[0]);
@@ -649,29 +640,30 @@ TEST_P(EulerSynthesisExactTest, ReconstructsReferenceMatrices) {
 
 INSTANTIATE_TEST_SUITE_P(
     SingleQubitMatrices, EulerSynthesisExactTest,
-    testing::Combine(
-        testing::Values(EulerBasis::XYX, EulerBasis::XZX, EulerBasis::ZYZ,
-                        EulerBasis::ZXZ, EulerBasis::U, EulerBasis::ZSXX),
-        testing::Values(
-            [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
-              return Eigen::Matrix2cd::Identity();
-            },
-            [](MLIRContext* ctx) -> Eigen::Matrix2cd {
-              return rotationMatrix<RYOp>(ctx, 2.0);
-            },
-            // RY(pi/2) hits the ZSXX single-SX branch (theta == pi/2).
-            [](MLIRContext* ctx) -> Eigen::Matrix2cd {
-              return rotationMatrix<RYOp>(ctx, std::numbers::pi / 2.0);
-            },
-            [](MLIRContext* ctx) -> Eigen::Matrix2cd {
-              return rotationMatrix<RXOp>(ctx, 0.5);
-            },
-            [](MLIRContext* ctx) -> Eigen::Matrix2cd {
-              return rotationMatrix<RZOp>(ctx, 3.14);
-            },
-            [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
-              return HOp::getUnitaryMatrix();
-            })));
+    testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
+                                     EulerBasis::ZYZ, EulerBasis::ZXZ,
+                                     EulerBasis::U, EulerBasis::ZSXX),
+                     testing::Values(
+                         [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
+                           return Eigen::Matrix2cd::Identity();
+                         },
+                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+                           return rotationMatrix<RYOp>(ctx, 2.0);
+                         },
+                         // RY(pi/2): ZSXX single-SX branch.
+                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+                           return rotationMatrix<RYOp>(ctx,
+                                                       std::numbers::pi / 2.0);
+                         },
+                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+                           return rotationMatrix<RXOp>(ctx, 0.5);
+                         },
+                         [](MLIRContext* ctx) -> Eigen::Matrix2cd {
+                           return rotationMatrix<RZOp>(ctx, 3.14);
+                         },
+                         [](MLIRContext* /*ctx*/) -> Eigen::Matrix2cd {
+                           return HOp::getUnitaryMatrix();
+                         })));
 
 TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossTwoQGateAllBases) {
   SynthesisFixture fx;

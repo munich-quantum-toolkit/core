@@ -36,13 +36,12 @@ struct EulerAngles {
  * @brief Native gate sets for single-qubit Euler synthesis.
  */
 enum class EulerBasis : std::uint8_t {
-  ZYZ = 0, ///< `RZ(phi) * RY(theta) * RZ(lambda)`.
-  ZXZ = 1, ///< `RZ(phi) * RX(theta) * RZ(lambda)`.
-  XZX = 2, ///< `RX(phi) * RZ(theta) * RX(lambda)`.
-  XYX = 3, ///< `RX(phi) * RY(theta) * RX(lambda)`.
-  U = 4,   ///< `U(theta, phi, lambda)`.
-  ZSXX =
-      5, ///< ZYZ-equivalent chain over `RZ`, `SX`, and `X` (see `paramsPSX`).
+  ZYZ = 0,  ///< `RZ(phi) * RY(theta) * RZ(lambda)`.
+  ZXZ = 1,  ///< `RZ(phi) * RX(theta) * RZ(lambda)`.
+  XZX = 2,  ///< `RX(phi) * RZ(theta) * RX(lambda)`.
+  XYX = 3,  ///< `RX(phi) * RY(theta) * RX(lambda)`.
+  U = 4,    ///< `U(theta, phi, lambda)`.
+  ZSXX = 5, ///< `RZ` / `SX` / `X` chain equivalent to ZYZ.
 };
 
 /**
@@ -75,7 +74,7 @@ private:
   [[nodiscard]] static EulerAngles paramsZYZ(const Eigen::Matrix2cd& matrix);
 
   /**
-   * @brief Extracts parameters for a `U(theta, phi, lambda)` factorization.
+   * @brief Extracts parameters for `U(theta, phi, lambda)`.
    *
    * @param matrix The single-qubit unitary to decompose.
    * @return The extracted Euler angles and global phase.
@@ -105,39 +104,28 @@ private:
    * @return The extracted Euler angles and global phase.
    */
   [[nodiscard]] static EulerAngles paramsXZX(const Eigen::Matrix2cd& matrix);
-
-  /**
-   * @brief Extracts ZYZ-equivalent angles and global phase for `ZSXX`
-   * synthesis.
-   *
-   * Returns the same `(theta, phi, lambda)` as `paramsZYZ`; `phase` includes
-   * the offset to the native `RZ`/`SX`/`X` chain emitted for `ZSXX`.
-   *
-   * @param matrix The single-qubit unitary to decompose.
-   * @return The extracted Euler angles and global phase.
-   */
-  [[nodiscard]] static EulerAngles paramsPSX(const Eigen::Matrix2cd& matrix);
 };
 
 /**
- * @brief Parses a user-facing basis string (e.g. "zyz", "zsxx").
+ * @brief Parses a basis name (e.g. `zyz`, `zsxx`; case-insensitive).
  *
- * @param basis The basis name (case-insensitive).
- * @return The parsed Euler basis, or `std::nullopt` if unrecognized.
+ * @param basis The basis name.
+ * @return The parsed basis, or `std::nullopt` if unrecognized.
  */
 [[nodiscard]] std::optional<EulerBasis> parseEulerBasis(StringRef basis);
 
 /**
- * @brief Emits gates reconstructing `targetMatrix` in the given basis.
+ * @brief Synthesizes `targetMatrix` as gates in `basis`.
  *
- * Includes a global phase (`qco.gphase`) when needed for an exact match.
+ * Emits `qco.gphase` when needed so the result matches exactly, not only up to
+ * global phase.
  *
- * @param builder Builder used to create the operations.
- * @param loc Source location for the created operations.
+ * @param builder Builder for the emitted operations.
+ * @param loc Location for the emitted operations.
  * @param qubit Input qubit value.
  * @param targetMatrix The single-qubit unitary to synthesize.
  * @param basis The target Euler basis.
- * @return The transformed qubit value.
+ * @return The output qubit value.
  */
 [[nodiscard]] Value
 synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
@@ -145,17 +133,14 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          EulerBasis basis);
 
 /**
- * @brief Number of gates `synthesizeUnitary1QEuler` emits for `targetMatrix`.
+ * @brief Number of basis gates `synthesizeUnitary1QEuler` would emit.
  *
- * Counts only the single-qubit basis gates; the optional global-phase
- * (`qco.gphase`) correction is excluded. This is the canonical length of the
- * synthesized run and lets callers decide whether an in-basis run is longer
- * than necessary.
+ * Excludes `qco.gphase`. Used by the fuse pass to detect overlong in-basis
+ * runs.
  *
  * @param targetMatrix The single-qubit unitary that would be synthesized.
  * @param basis The target Euler basis.
- * @return The number of emitted basis gates (1 for `U`, 3 for the KAK bases,
- *         3 or 5 for `ZSXX`).
+ * @return The gate count (1 for `U`, 3 for KAK bases, 3 or 5 for `ZSXX`).
  */
 [[nodiscard]] std::size_t
 synthesisGateCount(const Eigen::Matrix2cd& targetMatrix, EulerBasis basis);

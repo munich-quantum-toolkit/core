@@ -39,15 +39,13 @@ namespace mlir::qco {
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 /**
- * @brief Whether `op` lives inside an `inv`/`ctrl` modifier body.
+ * @brief Whether `op` is inside an `inv`/`ctrl` body.
  *
- * A modifier exposes its body's combined unitary through `getUnitaryMatrix` and
- * is fused as a single, atomic run member (when single-qubit). Fusing the gates
- * inside its body would invalidate that matrix, so body gates are never run
- * members themselves.
+ * The modifier's combined unitary is fused as one run member; gates inside its
+ * body are not separate run members.
  *
  * @param op The operation to test.
- * @return `true` if `op`'s parent is an `inv` or `ctrl` op.
+ * @return `true` if the parent is `inv` or `ctrl`.
  */
 static bool isNestedInModifierRegion(Operation* op) {
   Operation* parent = op->getParentOp();
@@ -58,8 +56,8 @@ static bool isNestedInModifierRegion(Operation* op) {
  * @brief Whether `op` may participate in a fusable single-qubit run.
  *
  * @param op The unitary operation to test.
- * @return `true` for a single-qubit, matrix-backed unitary that lives directly
- *         on a wire (not inside a modifier body).
+ * @return `true` for a single-qubit, matrix-backed unitary on the wire, outside
+ *         a modifier body.
  */
 static bool isFuseCandidate(UnitaryOpInterface op) {
   if (!op || !op.isSingleQubit() || isNestedInModifierRegion(op)) {
@@ -72,8 +70,7 @@ static bool isFuseCandidate(UnitaryOpInterface op) {
  * @brief Returns the compile-time 2x2 unitary matrix of `op`, if available.
  *
  * @param op The unitary operation to query.
- * @return The constant matrix, or `std::nullopt` if `op` is not matrix-backed
- * or its matrix is not known at compile time.
+ * @return The matrix, or `std::nullopt` if not known at compile time.
  */
 static std::optional<Eigen::Matrix2cd> getConstMatrix(UnitaryOpInterface op) {
   auto matrixOp = dyn_cast<UnitaryMatrixOpInterface>(op.getOperation());
@@ -91,8 +88,7 @@ static std::optional<Eigen::Matrix2cd> getConstMatrix(UnitaryOpInterface op) {
  * @brief Whether `op` can participate in a fusable run.
  *
  * @param op The operation to test.
- * @return `true` for a single-qubit, matrix-backed unitary outside a modifier
- *         body whose matrix is known at compile time.
+ * @return `true` for a fuse candidate with a known compile-time matrix.
  */
 static bool isRunMember(Operation* op) {
   auto iface = dyn_cast<UnitaryOpInterface>(op);
@@ -102,29 +98,27 @@ static bool isRunMember(Operation* op) {
 /**
  * @brief Composes a run of unitary ops into a single matrix.
  *
- * @param run The run members in execution (circuit) order.
- * @return The product of the members' matrices.
+ * @param run The run members in circuit order.
+ * @return The product of their matrices.
  */
 static Eigen::Matrix2cd composeRun(ArrayRef<UnitaryOpInterface> run) {
   Eigen::Matrix2cd composed = Eigen::Matrix2cd::Identity();
   for (auto op : run) {
-    // Execution order: first op applied first => multiply on the left.
+    // First gate in the run is applied first (left factor).
     composed = (*getConstMatrix(op)) * composed;
   }
   return composed;
 }
 
 /**
- * @brief Whether `op` is one of the gates the target `basis` emits.
+ * @brief Whether `op` is a gate the target `basis` emits.
  *
- * The gate sets mirror `emitKAK` and `emitFromPSXSequence` in `Euler.cpp`. The
- * greedy driver re-visits the gates produced by a rewrite, so this lets the
- * pattern detect a run that is already expressed entirely in the target basis
- * and avoid re-fusing the gates it just produced.
+ * Gate sets match `emitKAK` and `emitFromPSXSequence` in `Euler.cpp`. Used to
+ * skip runs that are already in the target basis at canonical length.
  *
  * @param op The operation to classify.
  * @param basis The target Euler basis.
- * @return `true` if `op` is a gate the `basis` emits.
+ * @return `true` if `op` is emitted by synthesis in `basis`.
  */
 static bool isTargetBasisGate(Operation* op, decomposition::EulerBasis basis) {
   using decomposition::EulerBasis;
@@ -148,7 +142,9 @@ static bool isTargetBasisGate(Operation* op, decomposition::EulerBasis basis) {
 namespace {
 
 /**
- * @brief Replaces a maximal single-qubit unitary run with its Euler synthesis.
+ * @brief Fuses maximal single-qubit unitary runs via Euler resynthesis.
+ *
+ * Matches at each run head so each run is rewritten once.
  */
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
@@ -161,11 +157,8 @@ struct FuseSingleQubitUnitaryRunsPattern final
   /**
    * @brief Whether `op` is the head of a run.
    *
-   * A run head is a fusable op whose predecessor on the wire is not itself a
-   * fusable run member, so each run is matched exactly once at its start.
-   *
    * @param op The candidate run head.
-   * @return `true` if `op` starts a run.
+   * @return `true` if the wire predecessor is not a run member.
    */
   static bool isRunStart(UnitaryOpInterface op) {
     if (!isRunMember(op.getOperation())) {
@@ -176,11 +169,9 @@ struct FuseSingleQubitUnitaryRunsPattern final
   }
 
   /**
-   * @brief Collects the maximal run of fusable ops starting at `start`.
+   * @brief Collects the maximal fusable run starting at `start`.
    *
-   * Follows the wire forward while staying within the same block.
-   *
-   * @param start The run head (must satisfy `isRunStart`).
+   * @param start The run head.
    * @return The run members in circuit order.
    */
   static SmallVector<UnitaryOpInterface> collectRun(UnitaryOpInterface start) {
@@ -198,10 +189,13 @@ struct FuseSingleQubitUnitaryRunsPattern final
   }
 
   /**
-   * @brief Fuses the run anchored at `op` into its Euler resynthesis.
+   * @brief Fuses the run anchored at `op` when beneficial.
+   *
+   * Fuses if the run contains a non-basis gate or is longer than the canonical
+   * synthesis for its composed matrix.
    *
    * @param op The matched unitary operation.
-   * @param rewriter Pattern rewriter used to apply the transformation.
+   * @param rewriter The pattern rewriter.
    * @return `success()` if a run was fused, `failure()` otherwise.
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
@@ -212,13 +206,6 @@ struct FuseSingleQubitUnitaryRunsPattern final
 
     auto run = collectRun(op);
     const Eigen::Matrix2cd composed = composeRun(run);
-
-    // Resynthesize a run when it either contains a gate outside the target
-    // basis (so it is not yet expressed in the native gate set) or is already
-    // in-basis but longer than the canonical Euler form (so fusing shortens
-    // it). A run that is in-basis and already at canonical length is left
-    // untouched, which is also what keeps the greedy driver from re-matching
-    // the gates this pattern just produced.
     const bool hasNonBasisGate =
         llvm::any_of(run, [&](UnitaryOpInterface member) {
           return !isTargetBasisGate(member.getOperation(), basis);
