@@ -88,7 +88,7 @@ static llvm::cl::opt<bool> enableHadamardLifting(
 /**
  * @brief Load and parse a .qasm file
  */
-static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
+static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
                                           MLIRContext* context) {
   try {
     // Parse the input QASM file
@@ -109,7 +109,7 @@ static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
 /**
  * @brief Load and parse a .mlir file
  */
-static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
+static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
                                           MLIRContext* context) {
   // Set up the input file
   std::string errorMessage;
@@ -121,7 +121,7 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
   }
 
   // Parse the input MLIR
-  SourceMgr sourceMgr;
+  llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
   return parseSourceFile<ModuleOp>(sourceMgr, context);
 }
@@ -129,7 +129,8 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
 /**
  * @brief Write the module to the output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
+static mlir::LogicalResult writeOutput(ModuleOp module,
+                                       llvm::StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -143,7 +144,7 @@ static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
 }
 
 int main(int argc, char** argv) {
-  const InitLLVM y(argc, argv);
+  const llvm::InitLLVM y(argc, argv);
 
   // Parse command-line options; exit on error and print to stderr
   llvm::cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
