@@ -33,6 +33,8 @@
 #include <string_view>
 #endif
 
+namespace {
+
 class HistogramKeysAndValuesSumToShots : public ::testing::Test {
 protected:
   static void Run(QDMI_Program_Format format, std::string_view program) {
@@ -52,6 +54,8 @@ protected:
     EXPECT_EQ(sum, shots);
   }
 };
+
+} // namespace
 
 TEST_F(HistogramKeysAndValuesSumToShots, QASM3Program) {
   const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
