@@ -121,7 +121,8 @@ endif()
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
 
-option(BUILD_MQT_CORE_QDMI_WITH_QIR "Enable QIR format support for QDMI" OFF)
+cmake_dependent_option(BUILD_MQT_CORE_QDMI_WITH_QIR "Enable QIR format support for QDMI" OFF
+                       "BUILD_MQT_CORE_MLIR" OFF)
 
 # add main library code
 add_subdirectory(src)

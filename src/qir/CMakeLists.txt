@@ -6,7 +6,9 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(jit)
+if(BUILD_MQT_CORE_QIR_RUNNER OR BUILD_MQT_CORE_QDMI_WITH_QIR)
+  add_subdirectory(jit)
+endif()
 
 add_subdirectory(runtime)
 
