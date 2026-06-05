@@ -1145,6 +1145,26 @@ public:
    */
   ValueRange barrier(ValueRange qubits);
 
+  // PPRotationOp
+
+  /**
+   * @brief Apply a PPRotationOp.
+   *
+   * @param qubits Input qubits (must be valid/unconsumed)
+   * @param piFraction Denotes the fraction of pi for the rotation angle. Valid
+   * values are ±1 (±π), ±2 (±π/2), ±4 (±π/4).
+   * @param pauliProduct Denotes the Pauli product for the rotation. Valid
+   * values are "I", "X", "Y", "Z".
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * builder.ppr({q0, q1}, -2, {"X", "Y"}); // -pi/2 rotation
+   * ```
+   */
+  ValueRange ppr(ValueRange qubits, std::int8_t piFraction,
+                 ArrayRef<StringRef> pauliProduct);
+
   //===--------------------------------------------------------------------===//
   // Modifiers
   //===--------------------------------------------------------------------===//

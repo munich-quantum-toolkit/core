@@ -1037,6 +1037,77 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
   let hasCanonicalizer = 1;
 }
 
+// Constraint for Pauli rotation angles: must be one of ±1, ±2, ±4.
+def PauliRotationConstraint
+    : AttrConstraint<
+          CPred<"[&]() {"
+                "  auto val = "
+                "::llvm::cast<::mlir::IntegerAttr>($_self).getSInt();"
+                "  auto absVal = val < 0 ? -val : val;"
+                "  return absVal == 1 || absVal == 2 || absVal == 4;"
+                "}()">,
+          "whose value is ±1, ±2, or ±4">;
+
+def PPRotationOp : QCOOp<"ppr", traits = [UnitaryOpInterface]> {
+  let summary = "Apply a Pauli Product Rotation (PPR) gate to a set of qubits";
+  let description = [{
+        Applies a Pauli Product Rotation (PPR) gate to a set of qubits,
+        modifying them in place. The PPR gate applies a rotation of exp(-iPθ/2) where
+        P is a tensor product of Pauli operators (I,X,Y,Z) and θ is the rotation
+        angle.
+
+        `%rotation` is the rotation in fractions of π, e.g. a value of 2 corresponds
+        to a rotation of π/2 radians. Possible values are ±1, ±2 (Clifford), or
+        ±4 (non-Clifford).
+
+        Example:
+        ```mlir
+        %q0_out, %q1_out = qco.ppr(2) ["X", "Y", "Z"] %q0_in, %q1_in : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$qubits_in,
+          ConfinedAttr<SI8Attr, [PauliRotationConstraint]>:$rotation,
+          TypedArrayAttrBase<StrAttr,
+                             "A product of Pauli operators.">:$pauli_product);
+  let results = (outs Variadic<QubitType>:$qubits_out);
+  let assemblyFormat = "`(` $rotation `)` $pauli_product $qubits_in attr-dict "
+                       "`:` type($qubits_in) `->` type($qubits_out)";
+
+  let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubitsIn().size(); }
+        static size_t getNumControls() { return 0; }
+        Value getInputQubit(size_t i) { return getInputTarget(i); }
+        OperandRange getInputQubits() { return getQubitsIn(); }
+        OperandRange getInputTargets() { return getInputQubits(); }
+        Value getOutputQubit(size_t i) { return getOutputTarget(i); }
+        ResultRange getOutputQubits() { return getQubitsOut(); }
+        Value getInputTarget(size_t i);
+        Value getOutputTarget(size_t i);
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("PPRotationOp cannot be controlled"); }
+        static OperandRange getInputControls() { return {nullptr, 0}; }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("PPRotationOp cannot be controlled"); }
+        static ResultRange getOutputControls() { return {nullptr, 0}; }
+        ResultRange getOutputTargets() { return getOutputQubits(); }
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        static size_t getNumParams() { return 0; }
+        static Value getParameter(size_t i) { llvm::reportFatalUsageError("PPRotationOp has no parameters"); }
+        static OperandRange getParameters() { return {nullptr, 0}; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "ppr"; }
+        bool isClifford();
+        bool isNonClifford();
+    }];
+
+  let builders = [OpBuilder<(ins "ValueRange":$qubits, "int8_t":$rotation,
+                      "ArrayRef<StringRef>":$pauli_product)>,
+  ];
+
+  let hasVerifier = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//
