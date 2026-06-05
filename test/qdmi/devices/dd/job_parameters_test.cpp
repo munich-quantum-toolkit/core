@@ -90,8 +90,12 @@ TEST(JobParameters, ProgramFormatSupport) {
   const qdmi_test::JobGuard j{s.session};
 
   // Supported
-  for (QDMI_Program_Format fmt :
-       {QDMI_PROGRAM_FORMAT_QASM2, QDMI_PROGRAM_FORMAT_QASM3}) {
+  for (QDMI_Program_Format fmt : {
+           QDMI_PROGRAM_FORMAT_QASM2,
+           QDMI_PROGRAM_FORMAT_QASM3,
+           QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+           QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+       }) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                   j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
                   sizeof(QDMI_Program_Format), &fmt),
@@ -100,8 +104,6 @@ TEST(JobParameters, ProgramFormatSupport) {
 
   // Unsupported → NOTSUPPORTED
   for (QDMI_Program_Format fmt : {
-           QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-           QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
            QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
            QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
            QDMI_PROGRAM_FORMAT_CALIBRATION,

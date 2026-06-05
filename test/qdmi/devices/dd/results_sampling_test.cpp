@@ -13,31 +13,67 @@
  */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
+#include "llvm/AsmParser/Parser.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <gtest/gtest.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include <cstddef>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
-TEST(ResultsSampling, HistogramKeysAndValuesSumToShots) {
-  const qdmi_test::SessionGuard s{};
-  const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
-            QDMI_SUCCESS);
-  constexpr size_t shots = 1024;
-  ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+class HistogramKeysAndValuesSumToShots : public ::testing::Test {
+protected:
+  static void Run(QDMI_Program_Format format, std::string_view program) {
+    const qdmi_test::SessionGuard s{};
+    const qdmi_test::JobGuard j{s.session};
+    ASSERT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
+    constexpr size_t shots = 1024;
+    ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  auto [keys, vals] = qdmi_test::getHistogram(j.job);
-  ASSERT_EQ(keys.size(), vals.size());
-  size_t sum = 0U;
-  for (const auto& v : vals) {
-    sum += v;
+    auto [keys, vals] = qdmi_test::getHistogram(j.job);
+    ASSERT_EQ(keys.size(), vals.size());
+    size_t sum = 0U;
+    for (const auto& v : vals) {
+      sum += v;
+    }
+    EXPECT_EQ(sum, shots);
   }
-  EXPECT_EQ(sum, shots);
+};
+
+TEST_F(HistogramKeysAndValuesSumToShots, QASM3Program) {
+  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
+  const std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
+  Run(format, program);
+}
+
+TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModule) {
+  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  const std::string_view program = qdmi_test::QIR_BELL_PAIR_STATIC;
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic err;
+  auto module = llvm::parseAssemblyString(program, err, context);
+  ASSERT_NE(module, nullptr)
+      << "parseAssemblyString failed: " << err.getMessage().str();
+  std::string bitcodeBuffer;
+  llvm::raw_string_ostream os(bitcodeBuffer);
+  llvm::WriteBitcodeToFile(*module, os);
+  os.flush();
+  Run(format, bitcodeBuffer);
+}
+
+TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseString) {
+  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  const std::string_view program = qdmi_test::QIR_BELL_PAIR_STATIC;
+  Run(format, program);
 }
 
 TEST(ResultsSampling, BufferTooSmallErrors) {

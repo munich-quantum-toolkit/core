@@ -234,6 +234,12 @@ private:
   auto getProbabilities(size_t size, void* data, size_t* sizeRet)
       -> QDMI_STATUS;
 
+  /// Helper function to submit a QASM 2 or QASM 3 program
+  auto submitQASMProgram() -> QDMI_STATUS;
+
+  /// Helper function to submit a QIR base module or string program
+  auto submitQIRProgram() -> QDMI_STATUS;
+
 public:
   /// Constructor for the MQT_DDSIM_QDMI_Device_Job_impl_d.
   explicit MQT_DDSIM_QDMI_Device_Job_impl_d(

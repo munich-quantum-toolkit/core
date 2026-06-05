@@ -98,8 +98,7 @@ int setProgram(MQT_DDSIM_QDMI_Device_Job job, const QDMI_Program_Format fmt,
     return rc;
   }
   rc = MQT_DDSIM_QDMI_device_job_set_parameter(
-      job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, program.size() + 1,
-      program.data());
+      job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, program.size(), program.data());
   return rc;
 }
 

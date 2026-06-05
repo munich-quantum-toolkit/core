@@ -20,7 +20,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
                                        FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/jit/Session.hpp)
 
-  # Get the native target libraries
+  # Get the LLVM native target libraries
   llvm_map_components_to_libnames(
     llvm_native_libs
     codegen
@@ -35,5 +35,5 @@ if(NOT TARGET ${TARGET_NAME})
     targetparser)
 
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PUBLIC MQT::CoreQIRRuntime ${llvm_native_libs})
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime ${llvm_native_libs})
 endif()

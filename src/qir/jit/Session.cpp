@@ -138,9 +138,10 @@ Session::Session(const llvm::StringRef irBytes,
 
 Session::~Session() { deinitialize(); }
 
-int Session::run() { return mainFn_(0, nullptr); }
+int Session::run() const { return mainFn_(0, nullptr); }
 
-int Session::run(llvm::ArrayRef<std::string> args, llvm::StringRef progName) {
+int Session::run(llvm::ArrayRef<std::string> args,
+                 llvm::StringRef progName) const {
   return llvm::orc::runAsMain(mainFn_, args, progName);
 }
 
@@ -225,6 +226,8 @@ void Session::registerRuntimeSymbols() {
 void Session::initNativeTargets() {
   static std::once_flag flag;
   std::call_once(flag, []() {
+    static const llvm::codegen::RegisterCodeGenFlags CGF;
+
     // If we have a native target, initialize it to ensure it is linked in and
     // usable by the JIT.
     llvm::InitializeNativeTarget();

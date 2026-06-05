@@ -29,8 +29,9 @@ public:
   explicit Session(llvm::StringRef inputFile);
   Session(llvm::StringRef irBytes, llvm::StringRef bufferName);
   ~Session();
-  int run();
-  int run(llvm::ArrayRef<std::string> args, llvm::StringRef progName = "");
+  int run() const;
+  int run(llvm::ArrayRef<std::string> args,
+          llvm::StringRef progName = "") const;
 
 private:
   llvm::orc::ThreadSafeContext tsCtx_{std::make_unique<llvm::LLVMContext>()};

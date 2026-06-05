@@ -164,4 +164,8 @@ auto Runtime::equal(Result* result1, Result* result2) -> bool {
   return deref(result1).r == deref(result2).r;
 }
 
+auto Runtime::getResults() const -> std::unordered_map<Result*, ResultStruct> {
+  return rRegister;
+}
+
 } // namespace qir

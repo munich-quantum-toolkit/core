@@ -356,5 +356,7 @@ public:
   auto deref(Result* result) -> ResultStruct&;
   auto rFree(Result* result) -> void;
   auto equal(Result* result1, Result* result2) -> bool;
+
+  auto getResults() const -> std::unordered_map<Result*, ResultStruct>;
 };
 } // namespace qir
