@@ -1069,12 +1069,14 @@ def CtrlOp
                       RecursiveMemoryEffects]> {
   let summary = "Add control qubits to a unitary operation";
   let description = [{
-        A modifier operation that adds control qubits to the unitary operation
-        defined in its body region. The controlled operation applies the
-        underlying unitary only when all control qubits are in the |1⟩ state.
-        The operation takes a variadic number of control and target qubits as
-        inputs and produces corresponding output qubits. Control qubits are not
-        modified by the operation and simply pass through to the outputs.
+        A modifier operation that adds control qubits to the unitary operation defined in its body region.
+        The controlled operation applies the underlying unitary only when all control qubits are in the $|1\rangle$ state.
+
+        The operation takes a variadic number of control and target qubits as inputs and produces corresponding output qubits.
+        Control qubits are not modified by the operation and simply pass through to the outputs.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir
@@ -1147,9 +1149,12 @@ def InvOp
                       RecursiveMemoryEffects]> {
   let summary = "Invert a unitary operation";
   let description = [{
-        A modifier operation that inverts the unitary operation defined in its body
-        region. The operation takes a variadic number of qubits as inputs and
-        produces corresponding output qubits.
+        A modifier operation that inverts the unitary operation defined in its body region.
+
+        The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir

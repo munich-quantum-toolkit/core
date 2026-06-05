@@ -921,18 +921,19 @@ def CtrlOp
                      RecursiveMemoryEffects]> {
   let summary = "Add control qubits to a unitary operation";
   let description = [{
-        A modifier operation that adds control qubits to the unitary operation
-        defined in its body region. The controlled operation applies the
-        underlying unitary only when all control qubits are in the |1⟩ state.
+        A modifier operation that adds control qubits to the unitary operation defined in its body region.
+        The controlled operation applies the underlying unitary only when all control qubits are in the $|1\rangle$ state.
 
-        Note that control qubits are logically unmodified by this operation in that
-        their quantum state remains unchanged. However, the `controls` argument
-        is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
+        Note that control qubits are logically unmodified by this operation in that their quantum state remains unchanged.
+        However, the `controls` argument is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir
-        qc.ctrl(%q0) {
-          qc.x %q1 : !qc.qubit
+        qc.ctrl(%q0) targets(%a0 = %q1) {
+          qc.x %a0 : !qc.qubit
         } : !qc.qubit
         ```
     }];
@@ -978,13 +979,15 @@ def InvOp : QCOp<"inv",
                            RecursiveMemoryEffects]> {
   let summary = "Invert a unitary operation";
   let description = [{
-        A modifier operation that inverts the unitary operation defined in its body
-        region.
+        A modifier operation that inverts the unitary operation defined in its body region.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir
-        qc.inv {
-          qc.s %q0 : !qc.qubit
+        qc.inv (%a0 = %q0) {
+          qc.s %a0 : !qc.qubit
         }
         ```
     }];

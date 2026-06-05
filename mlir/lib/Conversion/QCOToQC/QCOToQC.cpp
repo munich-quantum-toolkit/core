@@ -630,8 +630,8 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
  * ```
  * is converted to
  * ```mlir
- * qc.ctrl(%q0) {
- *   qc.x %q1 : !qc.qubit
+ * qc.ctrl(%q0) targets(%a0 = %q1) {
+ *   qc.x %a0 : !qc.qubit
  * } : !qc.qubit
  * ```
  */
