@@ -29,8 +29,7 @@ public:
   explicit Session(llvm::StringRef inputFile);
   Session(llvm::StringRef irBytes, llvm::StringRef bufferName);
   ~Session();
-  int run() const;
-  int run(llvm::ArrayRef<std::string> args,
+  int run(llvm::ArrayRef<std::string> args = {},
           llvm::StringRef progName = "") const;
 
 private:

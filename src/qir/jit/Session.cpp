@@ -138,8 +138,6 @@ Session::Session(const llvm::StringRef irBytes,
 
 Session::~Session() { deinitialize(); }
 
-int Session::run() const { return mainFn_(0, nullptr); }
-
 int Session::run(llvm::ArrayRef<std::string> args,
                  llvm::StringRef progName) const {
   return llvm::orc::runAsMain(mainFn_, args, progName);
