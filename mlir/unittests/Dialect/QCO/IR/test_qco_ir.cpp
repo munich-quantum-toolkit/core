@@ -167,7 +167,7 @@ TEST_F(QCOTest, CheckIfOpDeadGateElimination) {
       c0, {q1S0},
       [&](ValueRange qubits) -> SmallVector<Value> {
         auto q1Then = builder.x(qubits[0]);
-        builder.gphase(0.5);
+        builder.gphase(0.5); // This adds memory effects to the `IfOp`.
         return SmallVector<Value>{q1Then};
       },
       [&](ValueRange qubits) -> SmallVector<Value> {
@@ -202,7 +202,7 @@ TEST_F(QCOTest, CheckIfOpDeadGateElimination) {
       cr0, {r1S0},
       [&](ValueRange qubits) -> SmallVector<Value> {
         auto q1Then = reference.x(qubits[0]);
-        reference.gphase(0.5);
+        reference.gphase(0.5); // Due to memory effect, the `IfOp` stays.
         return SmallVector<Value>{q1Then};
       },
       [&](ValueRange qubits) -> SmallVector<Value> {
