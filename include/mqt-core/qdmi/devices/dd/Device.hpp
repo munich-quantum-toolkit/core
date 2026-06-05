@@ -237,8 +237,10 @@ private:
   /// Helper function to submit a QASM 2 or QASM 3 program
   auto submitQASMProgram() -> QDMI_STATUS;
 
+#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
   /// Helper function to submit a QIR base module or string program
   auto submitQIRProgram() -> QDMI_STATUS;
+#endif
 
 public:
   /// Constructor for the MQT_DDSIM_QDMI_Device_Job_impl_d.

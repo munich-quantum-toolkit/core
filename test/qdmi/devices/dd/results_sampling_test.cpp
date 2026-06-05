@@ -13,21 +13,25 @@
  */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
-#include "llvm/AsmParser/Parser.h"
-#include "llvm/Bitcode/BitcodeWriter.h"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <gtest/gtest.h>
+
+#include <cstddef>
+#include <vector>
+
+#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#include <llvm/AsmParser/Parser.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 
-#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
+#endif
 
 class HistogramKeysAndValuesSumToShots : public ::testing::Test {
 protected:
@@ -55,6 +59,7 @@ TEST_F(HistogramKeysAndValuesSumToShots, QASM3Program) {
   Run(format, program);
 }
 
+#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
 TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModule) {
   const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
   const std::string_view program = qdmi_test::QIR_BELL_PAIR_STATIC;
@@ -75,6 +80,7 @@ TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseString) {
   const std::string_view program = qdmi_test::QIR_BELL_PAIR_STATIC;
   Run(format, program);
 }
+#endif
 
 TEST(ResultsSampling, BufferTooSmallErrors) {
   const qdmi_test::SessionGuard s{};

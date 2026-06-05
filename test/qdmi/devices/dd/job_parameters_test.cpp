@@ -93,8 +93,10 @@ TEST(JobParameters, ProgramFormatSupport) {
   for (QDMI_Program_Format fmt : {
            QDMI_PROGRAM_FORMAT_QASM2,
            QDMI_PROGRAM_FORMAT_QASM3,
+#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
            QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
            QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+#endif
        }) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                   j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
@@ -106,6 +108,10 @@ TEST(JobParameters, ProgramFormatSupport) {
   for (QDMI_Program_Format fmt : {
            QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
            QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+#ifndef BUILD_MQT_CORE_QDMI_WITH_QIR
+           QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+           QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+#endif
            QDMI_PROGRAM_FORMAT_CALIBRATION,
            QDMI_PROGRAM_FORMAT_QPY,
            QDMI_PROGRAM_FORMAT_IQMJSON,

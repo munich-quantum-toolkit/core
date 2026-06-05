@@ -33,11 +33,11 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
   target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-  # Get the LLVM native target libraries
-  llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
-
-  # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
+  if(BUILD_MQT_CORE_QDMI_WITH_QIR)
+    llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
+    target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
+    target_compile_definitions(${TARGET_NAME} PRIVATE BUILD_MQT_CORE_QDMI_WITH_QIR)
+  endif()
 
   # On Windows, we need to copy the DLL to the test executable directory
   if(WIN32)
