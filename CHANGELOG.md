@@ -20,6 +20,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
   ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717], [#1728], [#1730], [#1749])
   ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+- ✨ Add QIR program format support to the QDMI DDSim device ([#1766]) ([**@rturrado**])
 
 ### Changed
 
@@ -402,6 +403,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
 [#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
 [#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
@@ -649,6 +651,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@simon1hofmann**]: https://github.com/simon1hofmann
 [**@keefehuang**]: https://github.com/keefehuang
 [**@J4MMlE**]: https://github.com/J4MMlE
+[**@rturrado**]: https://github.com/rturrado
 
 <!-- General links -->
 
