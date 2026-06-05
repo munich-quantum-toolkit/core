@@ -11,12 +11,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runner)
 if(NOT TARGET ${TARGET_NAME})
   add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
 
-  # Get the native target libraries
-  llvm_map_components_to_libnames(llvm_native_libs native)
-
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime LLVMOrcDebugging
-                                               ${llvm_native_libs})
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRJIT)
 
   # Set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
