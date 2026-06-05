@@ -98,6 +98,12 @@ public:
    */
   void initialize(TypeRange returnTypes);
 
+  /**
+   * @brief Modify the return types of the main function after initialization.
+   * @param returnTypes The new return types for the main function
+   */
+  void retype(TypeRange returnTypes);
+
   //===--------------------------------------------------------------------===//
   // Constants
   //===--------------------------------------------------------------------===//
@@ -384,7 +390,7 @@ public:
    *
    * @param qubit Input qubit (must be valid/unconsumed)
    * @param bit The classical bit to record the result
-   * @return Output qubit value
+   * @return Pair of (output_qubit, measurement_result)
    *
    * @par Example:
    * ```c++
@@ -394,7 +400,7 @@ public:
    * %q0_out, %r0 = qco.measure("c", 3, 0) %q0 : !qco.qubit
    * ```
    */
-  Value measure(Value qubit, const Bit& bit);
+  std::pair<Value, Value> measure(Value qubit, const Bit& bit);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -1418,6 +1424,22 @@ public:
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
         const function_ref<void(QCOProgramBuilder&)>& buildFunc);
+
+  /**
+   * @brief Convenience method for building quantum programs with returns.
+   * @param context The MLIR context to use for building the program
+   * @param returnTypes The types of the values to be returned by the program.
+   * @param buildFunc A function that takes a reference to a QCOProgramBuilder
+   * and uses it to build the desired quantum program. The builder will be
+   * properly initialized before calling this function, and the resulting module
+   * will be finalized using the returned ValueRange after this function
+   * completes.
+   * @return The module containing the quantum program built by buildFunc.
+   */
+  static OwningOpRef<ModuleOp> buildWithReturn(
+      MLIRContext* context,
+      const function_ref<std::pair<SmallVector<Value>, SmallVector<Type>>(
+          QCOProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };

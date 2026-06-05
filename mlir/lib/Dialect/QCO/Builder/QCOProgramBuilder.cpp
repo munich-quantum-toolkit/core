@@ -71,6 +71,16 @@ void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   setInsertionPointToStart(&entryBlock);
 }
 
+void QCOProgramBuilder::retype(TypeRange returnTypes) {
+  auto mainFunc = dyn_cast<ModuleOp>(module).lookupSymbol<func::FuncOp>("main");
+  if (!mainFunc) {
+    llvm::reportFatalUsageError("Main function not found for retyping");
+  }
+  auto funcType =
+      getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
+  mainFunc.setType(funcType);
+}
+
 Value QCOProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
@@ -397,7 +407,8 @@ std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
   return {qubitOut, result};
 }
 
-Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
+std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit,
+                                                   const Bit& bit) {
   checkFinalized();
 
   auto nameAttr = getStringAttr(bit.registerName);
@@ -410,7 +421,7 @@ Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
-  return qubitOut;
+  return {qubitOut, measureOp.getResult()};
 }
 
 Value QCOProgramBuilder::reset(Value qubit) {
@@ -1171,6 +1182,17 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::build(
   builder.initialize();
   buildFunc(builder);
   return builder.finalize();
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::buildWithReturn(
+    MLIRContext* context,
+    const function_ref<std::pair<SmallVector<Value>, SmallVector<Type>>(
+        QCOProgramBuilder&)>& buildFunc) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  auto [result, resultTypes] = buildFunc(builder);
+  builder.retype(resultTypes);
+  return builder.finalize(result);
 }
 
 } // namespace mlir::qco

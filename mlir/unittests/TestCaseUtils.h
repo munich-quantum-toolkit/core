@@ -28,9 +28,13 @@ namespace mqt::test {
 
 template <typename BuilderT> struct NamedBuilder {
   const char* name = nullptr;
-  void (*fn)(BuilderT&) = nullptr;
+  std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>> (
+      *fn)(BuilderT&) = nullptr;
 
-  constexpr NamedBuilder(const char* nameIn, void (*fnIn)(BuilderT&)) noexcept
+  constexpr NamedBuilder(
+      const char* nameIn,
+      std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>> (
+          *fnIn)(BuilderT&)) noexcept
       : name(nameIn), fn(fnIn) {}
 
   // NOLINTNEXTLINE(*-explicit-constructor)
@@ -42,8 +46,10 @@ template <typename BuilderT> struct NamedBuilder {
 };
 
 template <typename BuilderT>
-[[nodiscard]] constexpr NamedBuilder<BuilderT>
-namedBuilder(const char* name, void (*fn)(BuilderT&)) noexcept {
+[[nodiscard]] constexpr NamedBuilder<BuilderT> namedBuilder(
+    const char* name,
+    std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>> (
+        *fn)(BuilderT&)) noexcept {
   return NamedBuilder<BuilderT>{name, fn};
 }
 
