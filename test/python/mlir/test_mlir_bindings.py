@@ -142,9 +142,7 @@ def test_compile_hadamard_lifting() -> None:
 
 
 def test_compile_disable_rotation_merging() -> None:
-    result = compile(
-        SINGLE_QUBIT, disable_merge_single_qubit_rotation_gates=True
-    )
+    result = compile(SINGLE_QUBIT, disable_merge_single_qubit_rotation_gates=True)
     assert isinstance(result, str)
     assert "module" in result
 

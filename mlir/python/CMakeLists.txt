@@ -16,10 +16,8 @@ set(MQT_MLIR_PYTHON_PACKAGES_DIR "${CMAKE_CURRENT_BINARY_DIR}/python_packages")
 # Python sources
 # ##################################################################################################
 
-declare_mlir_python_sources(
-  MQTCoreMLIRPythonSources
-  ROOT_DIR "${MQT_MLIR_PYTHON_ROOT_DIR}"
-  SOURCES __init__.py _pipeline.py)
+declare_mlir_python_sources(MQTCoreMLIRPythonSources ROOT_DIR "${MQT_MLIR_PYTHON_ROOT_DIR}" SOURCES
+                            __init__.py _pipeline.py)
 
 declare_mlir_python_sources(MQTCoreMLIRPythonExtensions)
 
@@ -52,15 +50,24 @@ set(_source_components MQTCoreMLIRPythonSources MQTCoreMLIRPythonExtensions)
 
 add_mlir_python_common_capi_library(
   MQTCoreMLIRAggregateCAPI
-  INSTALL_COMPONENT MQTCoreMLIRPythonModules
-  INSTALL_DESTINATION python_packages/mqt/core/mlir/_mlir_libs
-  OUTPUT_DIRECTORY "${MQT_MLIR_PYTHON_PACKAGES_DIR}/mqt/core/mlir/_mlir_libs"
-  RELATIVE_INSTALL_ROOT "../../../../"
-  DECLARED_SOURCES ${_source_components})
+  INSTALL_COMPONENT
+  MQTCoreMLIRPythonModules
+  INSTALL_DESTINATION
+  python_packages/mqt/core/mlir/_mlir_libs
+  OUTPUT_DIRECTORY
+  "${MQT_MLIR_PYTHON_PACKAGES_DIR}/mqt/core/mlir/_mlir_libs"
+  RELATIVE_INSTALL_ROOT
+  "../../../../"
+  DECLARED_SOURCES
+  ${_source_components})
 
 add_mlir_python_modules(
   MQTCoreMLIRPythonModules
-  ROOT_PREFIX "${MQT_MLIR_PYTHON_PACKAGES_DIR}/mqt/core/mlir"
-  INSTALL_PREFIX "python_packages/mqt/core/mlir"
-  DECLARED_SOURCES ${_source_components}
-  COMMON_CAPI_LINK_LIBS MQTCoreMLIRAggregateCAPI)
+  ROOT_PREFIX
+  "${MQT_MLIR_PYTHON_PACKAGES_DIR}/mqt/core/mlir"
+  INSTALL_PREFIX
+  "python_packages/mqt/core/mlir"
+  DECLARED_SOURCES
+  ${_source_components}
+  COMMON_CAPI_LINK_LIBS
+  MQTCoreMLIRAggregateCAPI)

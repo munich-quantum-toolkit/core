@@ -11,15 +11,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from mlir.ir import Context, Module
 from mlir.passmanager import PassManager
 
-from ._mlir_libs._mqtCoreMlir import _register_dialects, compile, load_qasm
-
-if TYPE_CHECKING:
-    pass
+from ._mlir_libs._mqtCoreMlir import _register_dialects, compile
 
 
 @dataclass
@@ -71,9 +67,7 @@ def qc_to_qco(mlir_text: str) -> str:
     """
     with MQTContext() as ctx:
         module = Module.parse(mlir_text, ctx)
-        PassManager.parse("builtin.module(qc-to-qco)", ctx).run(
-            module.operation
-        )
+        PassManager.parse("builtin.module(qc-to-qco)", ctx).run(module.operation)
         return str(module)
 
 

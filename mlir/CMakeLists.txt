@@ -40,14 +40,12 @@ add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(tools)
 
-# Python bindings are built whenever the main Python bindings are enabled.
-# MLIR must have been built with MLIR_ENABLE_BINDINGS_PYTHON=ON.
+# Python bindings are built whenever the main Python bindings are enabled. MLIR must have been built
+# with MLIR_ENABLE_BINDINGS_PYTHON=ON.
 if(BUILD_MQT_CORE_BINDINGS)
   if(NOT MLIR_ENABLE_BINDINGS_PYTHON)
-    message(
-      FATAL_ERROR
-        "MQT MLIR Python bindings require MLIR to be built with "
-        "MLIR_ENABLE_BINDINGS_PYTHON=ON.")
+    message(FATAL_ERROR "MQT MLIR Python bindings require MLIR to be built with "
+                        "MLIR_ENABLE_BINDINGS_PYTHON=ON.")
   endif()
   include(AddMLIRPython)
   include(MLIRDetectPythonEnv)

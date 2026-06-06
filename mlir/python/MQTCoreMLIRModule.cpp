@@ -37,8 +37,8 @@ mlir::MLIRContext makeContext() {
 
 /// Parse a QASM string and translate it to a QC-dialect module.
 /// Throws std::runtime_error on parse or translation failure.
-mlir::OwningOpRef<mlir::ModuleOp>
-importQasm(const std::string& qasm, mlir::MLIRContext& ctx) {
+mlir::OwningOpRef<mlir::ModuleOp> importQasm(const std::string& qasm,
+                                             mlir::MLIRContext& ctx) {
   const auto qc = qasm3::Importer::imports(qasm);
   auto module = mlir::translateQuantumComputationToQC(&ctx, qc);
   if (!module) {
@@ -59,10 +59,10 @@ NB_MODULE(_mqtCoreMlir, m) {
   // -------------------------------------------------------------------------
   // Dialect registration — exposed so MQTContext can delegate to C++.
   // -------------------------------------------------------------------------
-  m.def("_register_dialects",
-        [](MlirContext ctx) { mqtRegisterAllDialects(ctx); },
-        nb::arg("context"),
-        "Register all MQT MLIR dialects into the given context.");
+  m.def(
+      "_register_dialects",
+      [](MlirContext ctx) { mqtRegisterAllDialects(ctx); }, nb::arg("context"),
+      "Register all MQT MLIR dialects into the given context.");
 
   // -------------------------------------------------------------------------
   // Stage 1: QASM → QC dialect IR string.
@@ -83,8 +83,7 @@ NB_MODULE(_mqtCoreMlir, m) {
   m.def(
       "compile",
       [](const std::string& qasm, bool convertToQIR,
-         bool disableMergeSingleQubitRotationGates,
-         bool enableHadamardLifting,
+         bool disableMergeSingleQubitRotationGates, bool enableHadamardLifting,
          bool captureIntermediates) -> nb::object {
         mlir::MLIRContext ctx = makeContext();
         auto module = importQasm(qasm, ctx);
@@ -109,28 +108,20 @@ NB_MODULE(_mqtCoreMlir, m) {
         // Return a dict whose keys mirror CompilationRecord field names
         // (snake_case) plus "result" for the final module.
         nb::dict stages;
-        stages["result"] =
-            nb::str(mlir::captureIR(module.get()).c_str());
-        stages["after_qc_import"] =
-            nb::str(rec.afterQCImport.c_str());
-        stages["after_initial_canon"] =
-            nb::str(rec.afterInitialCanon.c_str());
+        stages["result"] = nb::str(mlir::captureIR(module.get()).c_str());
+        stages["after_qc_import"] = nb::str(rec.afterQCImport.c_str());
+        stages["after_initial_canon"] = nb::str(rec.afterInitialCanon.c_str());
         stages["after_qco_conversion"] =
             nb::str(rec.afterQCOConversion.c_str());
-        stages["after_qco_canon"] =
-            nb::str(rec.afterQCOCanon.c_str());
-        stages["after_optimization"] =
-            nb::str(rec.afterOptimization.c_str());
+        stages["after_qco_canon"] = nb::str(rec.afterQCOCanon.c_str());
+        stages["after_optimization"] = nb::str(rec.afterOptimization.c_str());
         stages["after_optimization_canon"] =
             nb::str(rec.afterOptimizationCanon.c_str());
-        stages["after_qc_conversion"] =
-            nb::str(rec.afterQCConversion.c_str());
-        stages["after_qc_canon"] =
-            nb::str(rec.afterQCCanon.c_str());
+        stages["after_qc_conversion"] = nb::str(rec.afterQCConversion.c_str());
+        stages["after_qc_canon"] = nb::str(rec.afterQCCanon.c_str());
         stages["after_qir_conversion"] =
             nb::str(rec.afterQIRConversion.c_str());
-        stages["after_qir_canon"] =
-            nb::str(rec.afterQIRCanon.c_str());
+        stages["after_qir_canon"] = nb::str(rec.afterQIRCanon.c_str());
         return stages;
       },
       nb::arg("qasm"), nb::arg("convert_to_qir") = false,
