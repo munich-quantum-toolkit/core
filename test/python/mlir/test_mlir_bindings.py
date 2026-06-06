@@ -207,7 +207,7 @@ def test_compile_with_record_result_is_mlir() -> None:
 
 def test_compile_with_record_qc_import_non_empty() -> None:
     """CompilationResult.after_qc_import must be non-empty."""
-    assert compile_with_record(BELL).after_qc_import.strip() != ""
+    assert compile_with_record(BELL).after_qc_import.strip()
 
 
 def test_compile_with_record_all_fields_are_strings() -> None:

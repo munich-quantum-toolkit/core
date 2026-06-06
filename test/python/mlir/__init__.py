@@ -5,3 +5,5 @@
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
+
+"""Tests for the MQT MLIR Python bindings package."""
