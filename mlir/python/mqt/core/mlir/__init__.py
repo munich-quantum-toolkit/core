@@ -10,11 +10,11 @@
 
 Typical usage::
 
-    from mqt.core.mlir import load_qasm, compile, compile_with_record
+    from mqt.core.mlir import load_qasm, compile_qasm, compile_with_record
 
     # Stage-by-stage
-    qc_ir = load_qasm(qasm_string)  # QASM → QC dialect
-    result = compile(qasm_string)  # full pipeline → final IR string
+    qc_ir = load_qasm(qasm_string)          # QASM -> QC dialect
+    result = compile_qasm(qasm_string)      # full pipeline -> final IR string
 
     # With all intermediate snapshots
     rec = compile_with_record(qasm_string)
@@ -23,13 +23,13 @@ Typical usage::
 
 from __future__ import annotations
 
-from ._mlir_libs._mqtCoreMlir import compile, load_qasm
+from ._mlir_libs._mqtCoreMlir import compile_qasm, load_qasm
 from ._pipeline import CompilationResult, MQTContext, compile_with_record, qc_to_qco
 
 __all__ = [
     "CompilationResult",
     "MQTContext",
-    "compile",
+    "compile_qasm",
     "compile_with_record",
     "load_qasm",
     "qc_to_qco",

@@ -11,11 +11,12 @@
 from __future__ import annotations
 
 import pytest
+from mlir.ir import Context, Module
 
 from mqt.core.mlir import (
     CompilationResult,
     MQTContext,
-    compile,
+    compile_qasm,
     compile_with_record,
     load_qasm,
     qc_to_qco,
@@ -45,19 +46,18 @@ h q[0];
 
 
 def test_mqt_context_is_mlir_context() -> None:
-    from mlir.ir import Context
-
+    """MQTContext must be a subclass of mlir.ir.Context."""
     assert isinstance(MQTContext(), Context)
 
 
 def test_mqt_context_usable_as_context_manager() -> None:
+    """MQTContext must work as a context manager without error."""
     with MQTContext():
         pass
 
 
 def test_mqt_context_allows_module_parse() -> None:
-    from mlir.ir import Module
-
+    """A module parsed inside MQTContext must be a valid mlir.ir.Module."""
     qc_ir = load_qasm(BELL)
     with MQTContext() as ctx:
         module = Module.parse(qc_ir, ctx)
@@ -65,101 +65,109 @@ def test_mqt_context_allows_module_parse() -> None:
 
 
 # ---------------------------------------------------------------------------
-# load_qasm — Stage 1: QASM → QC dialect
+# load_qasm
 # ---------------------------------------------------------------------------
 
 
 def test_load_qasm_returns_string() -> None:
+    """load_qasm must return a str."""
     assert isinstance(load_qasm(BELL), str)
 
 
 def test_load_qasm_output_is_mlir_module() -> None:
-    ir = load_qasm(BELL)
-    assert ir.strip().startswith("module")
+    """load_qasm output must begin with 'module'."""
+    assert load_qasm(BELL).strip().startswith("module")
 
 
 def test_load_qasm_does_not_contain_openqasm() -> None:
+    """load_qasm output must not contain the original QASM source."""
     assert "OPENQASM" not in load_qasm(BELL)
 
 
 def test_load_qasm_single_qubit() -> None:
-    ir = load_qasm(SINGLE_QUBIT)
-    assert "module" in ir
+    """load_qasm must handle single-qubit circuits."""
+    assert "module" in load_qasm(SINGLE_QUBIT)
 
 
 def test_load_qasm_invalid_raises() -> None:
-    with pytest.raises(Exception):  # noqa: B017
+    """load_qasm must raise on invalid QASM input."""
+    with pytest.raises(RuntimeError):
         load_qasm("not qasm")
 
 
 # ---------------------------------------------------------------------------
-# qc_to_qco — Stage 2: QC dialect → QCO dialect
+# qc_to_qco
 # ---------------------------------------------------------------------------
 
 
 def test_qc_to_qco_returns_string() -> None:
-    qc_ir = load_qasm(BELL)
-    assert isinstance(qc_to_qco(qc_ir), str)
+    """qc_to_qco must return a str."""
+    assert isinstance(qc_to_qco(load_qasm(BELL)), str)
 
 
 def test_qc_to_qco_output_is_module() -> None:
-    result = qc_to_qco(load_qasm(BELL))
-    assert "module" in result
+    """qc_to_qco output must contain 'module'."""
+    assert "module" in qc_to_qco(load_qasm(BELL))
 
 
 def test_qc_to_qco_chained_from_load_qasm() -> None:
-    qc_ir = load_qasm(SINGLE_QUBIT)
-    qco_ir = qc_to_qco(qc_ir)
-    assert isinstance(qco_ir, str)
-    assert "module" in qco_ir
+    """qc_to_qco chained from load_qasm must succeed for single-qubit circuits."""
+    result = qc_to_qco(load_qasm(SINGLE_QUBIT))
+    assert isinstance(result, str)
+    assert "module" in result
 
 
 # ---------------------------------------------------------------------------
-# compile — full pipeline
+# compile_qasm
 # ---------------------------------------------------------------------------
 
 
-def test_compile_returns_string_by_default() -> None:
-    result = compile(BELL)
+def test_compile_qasm_returns_string_by_default() -> None:
+    """compile_qasm must return a str when capture_intermediates is False."""
+    result = compile_qasm(BELL)
     assert isinstance(result, str)
     assert "module" in result
 
 
-def test_compile_bell_circuit() -> None:
-    result = compile(BELL)
-    assert "OPENQASM" not in result
+def test_compile_qasm_bell_circuit() -> None:
+    """compile_qasm output must not contain the original QASM source."""
+    assert "OPENQASM" not in compile_qasm(BELL)
 
 
-def test_compile_single_qubit() -> None:
-    result = compile(SINGLE_QUBIT)
-    assert isinstance(result, str)
+def test_compile_qasm_single_qubit() -> None:
+    """compile_qasm must handle single-qubit circuits."""
+    assert isinstance(compile_qasm(SINGLE_QUBIT), str)
 
 
-def test_compile_hadamard_lifting() -> None:
-    result = compile(BELL, enable_hadamard_lifting=True)
-    assert isinstance(result, str)
-    assert "module" in result
-
-
-def test_compile_disable_rotation_merging() -> None:
-    result = compile(SINGLE_QUBIT, disable_merge_single_qubit_rotation_gates=True)
+def test_compile_qasm_hadamard_lifting() -> None:
+    """compile_qasm must accept enable_hadamard_lifting=True."""
+    result = compile_qasm(BELL, enable_hadamard_lifting=True)
     assert isinstance(result, str)
     assert "module" in result
 
 
-def test_compile_capture_intermediates_returns_dict() -> None:
-    result = compile(BELL, capture_intermediates=True)
-    assert isinstance(result, dict)
+def test_compile_qasm_disable_rotation_merging() -> None:
+    """compile_qasm must accept disable_merge_single_qubit_rotation_gates=True."""
+    result = compile_qasm(SINGLE_QUBIT, disable_merge_single_qubit_rotation_gates=True)
+    assert isinstance(result, str)
+    assert "module" in result
 
 
-def test_compile_intermediates_has_result_key() -> None:
-    result = compile(BELL, capture_intermediates=True)
+def test_compile_qasm_capture_intermediates_returns_dict() -> None:
+    """compile_qasm must return a dict when capture_intermediates=True."""
+    assert isinstance(compile_qasm(BELL, capture_intermediates=True), dict)
+
+
+def test_compile_qasm_intermediates_has_result_key() -> None:
+    """compile_qasm intermediate dict must contain a 'result' key with MLIR."""
+    result = compile_qasm(BELL, capture_intermediates=True)
     assert "result" in result
     assert "module" in result["result"]
 
 
-def test_compile_intermediates_all_stage_keys_present() -> None:
-    result = compile(BELL, capture_intermediates=True)
+def test_compile_qasm_intermediates_all_stage_keys_present() -> None:
+    """compile_qasm intermediate dict must contain all 11 expected stage keys."""
+    result = compile_qasm(BELL, capture_intermediates=True)
     expected = {
         "result",
         "after_qc_import",
@@ -176,43 +184,47 @@ def test_compile_intermediates_all_stage_keys_present() -> None:
     assert expected == set(result.keys())
 
 
-def test_compile_invalid_qasm_raises() -> None:
-    with pytest.raises(Exception):  # noqa: B017
-        compile("not valid qasm")
+def test_compile_qasm_invalid_raises() -> None:
+    """compile_qasm must raise on invalid QASM input."""
+    with pytest.raises(RuntimeError):
+        compile_qasm("not valid qasm")
 
 
 # ---------------------------------------------------------------------------
-# compile_with_record — typed CompilationResult
+# compile_with_record
 # ---------------------------------------------------------------------------
 
 
 def test_compile_with_record_returns_compilation_result() -> None:
-    result = compile_with_record(BELL)
-    assert isinstance(result, CompilationResult)
+    """compile_with_record must return a CompilationResult."""
+    assert isinstance(compile_with_record(BELL), CompilationResult)
 
 
 def test_compile_with_record_result_is_mlir() -> None:
-    rec = compile_with_record(BELL)
-    assert "module" in rec.result
+    """CompilationResult.result must contain 'module'."""
+    assert "module" in compile_with_record(BELL).result
 
 
 def test_compile_with_record_qc_import_non_empty() -> None:
-    rec = compile_with_record(BELL)
-    assert rec.after_qc_import.strip() != ""
+    """CompilationResult.after_qc_import must be non-empty."""
+    assert compile_with_record(BELL).after_qc_import.strip() != ""
 
 
 def test_compile_with_record_all_fields_are_strings() -> None:
+    """Every field of CompilationResult must be a str."""
     rec = compile_with_record(BELL)
     for fname in CompilationResult.__dataclass_fields__:
-        assert isinstance(getattr(rec, fname), str), f"field {fname!r} not str"
+        assert isinstance(getattr(rec, fname), str), f"field {fname!r} is not str"
 
 
 def test_compile_with_record_single_qubit() -> None:
+    """compile_with_record must handle single-qubit circuits."""
     rec = compile_with_record(SINGLE_QUBIT)
     assert isinstance(rec, CompilationResult)
     assert "module" in rec.result
 
 
 def test_compile_with_record_hadamard_lifting() -> None:
+    """compile_with_record must accept enable_hadamard_lifting=True."""
     rec = compile_with_record(BELL, enable_hadamard_lifting=True)
     assert isinstance(rec, CompilationResult)

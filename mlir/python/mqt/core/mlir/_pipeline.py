@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from mlir.ir import Context, Module
 from mlir.passmanager import PassManager
 
-from ._mlir_libs._mqtCoreMlir import _register_dialects, compile
+from ._mlir_libs._mqtCoreMlir import _register_dialects, compile_qasm, load_qasm
 
 
 @dataclass
@@ -90,7 +90,7 @@ def compile_with_record(
     Returns:
         A :class:`CompilationResult` with the final IR and all stage snapshots.
     """
-    stages: dict[str, str] = compile(  # type: ignore[assignment]
+    stages: dict[str, str] = compile_qasm(  # type: ignore[assignment]
         qasm,
         convert_to_qir=convert_to_qir,
         disable_merge_single_qubit_rotation_gates=disable_merge_single_qubit_rotation_gates,

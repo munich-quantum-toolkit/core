@@ -81,7 +81,7 @@ NB_MODULE(_mqtCoreMlir, m) {
   // Full pipeline: QASM → compile → final IR (+ optional record).
   // -------------------------------------------------------------------------
   m.def(
-      "compile",
+      "compile_qasm",
       [](const std::string& qasm, bool convertToQIR,
          bool disableMergeSingleQubitRotationGates, bool enableHadamardLifting,
          bool captureIntermediates) -> nb::object {
@@ -129,7 +129,6 @@ NB_MODULE(_mqtCoreMlir, m) {
       nb::arg("enable_hadamard_lifting") = false,
       nb::arg("capture_intermediates") = false,
       "Run the full MQT compiler pipeline on a QASM string.\n\n"
-      "Returns the final IR as a string by default. Pass\n"
-      "capture_intermediates=True to receive a dict of all stage snapshots\n"
-      "plus a 'result' key for the final module.");
+      "Returns the final IR string by default. Pass capture_intermediates=True\n"
+      "to receive a dict of all stage snapshots plus a 'result' key.");
 }

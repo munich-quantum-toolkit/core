@@ -22,7 +22,7 @@ declare_mlir_python_sources(MQTCoreMLIRPythonSources ROOT_DIR "${MQT_MLIR_PYTHON
 declare_mlir_python_sources(MQTCoreMLIRPythonExtensions)
 
 # ##################################################################################################
-# Nanobind extension module
+# nanobind extension module
 # ##################################################################################################
 
 declare_mlir_python_extension(
