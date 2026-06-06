@@ -35,7 +35,7 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
 
   if(BUILD_MQT_CORE_QDMI_WITH_QIR)
     llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
-    target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
+    target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime ${llvm_native_libs})
     target_compile_definitions(${TARGET_NAME} PRIVATE BUILD_MQT_CORE_QDMI_WITH_QIR)
   endif()
 

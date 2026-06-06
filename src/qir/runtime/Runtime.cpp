@@ -21,10 +21,12 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <numeric>
+#include <ostream>
 #include <random>
 #include <ranges>
 #include <sstream>
@@ -188,6 +190,12 @@ auto Runtime::getResults() const -> std::map<Result*, bool> {
                                                resultsView.end());
   return orderedResults;
 }
+
+auto Runtime::getOstream() -> std::ostream& { return *os; }
+
+auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
+
+auto Runtime::resetOstream() -> void { os = &std::cout; }
 
 std::string toBitString(const std::map<Result*, bool>& results) {
   std::string ret;

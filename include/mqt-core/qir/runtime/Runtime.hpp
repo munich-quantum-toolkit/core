@@ -214,6 +214,7 @@ private:
   std::unique_ptr<dd::Package> dd;
   dd::vEdge qState;
   std::mt19937_64 mt;
+  std::ostream* os = &std::cout;
 
   Runtime();
   explicit Runtime(uint64_t randomSeed);
@@ -362,6 +363,10 @@ public:
   auto equal(Result* result1, Result* result2) -> bool;
 
   auto getResults() const -> std::map<Result*, bool>;
+
+  auto getOstream() -> std::ostream&;
+  auto setOstream(std::ostream& other) -> void;
+  auto resetOstream() -> void;
 };
 
 /// Build a bit string from a list of measurement results.

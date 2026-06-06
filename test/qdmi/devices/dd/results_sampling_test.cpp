@@ -22,6 +22,8 @@
 #include <vector>
 
 #ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#include "qir/runtime/Runtime.hpp"
+
 #include <llvm/AsmParser/Parser.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
@@ -29,6 +31,7 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <memory>
+#include <sstream>
 #include <string>
 #include <string_view>
 #endif
@@ -37,6 +40,12 @@ namespace {
 
 class HistogramKeysAndValuesSumToShots : public ::testing::Test {
 protected:
+#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+  std::ostringstream sink;
+  void SetUp() override { qir::Runtime::getInstance().setOstream(sink); }
+  void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
+#endif
+
   static void Run(QDMI_Program_Format format, std::string_view program) {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};

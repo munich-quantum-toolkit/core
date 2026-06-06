@@ -10,6 +10,7 @@
 
 #include "ir/Definitions.hpp"
 #include "qir/runtime/QIR.h"
+#include "qir/runtime/Runtime.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -18,9 +19,7 @@
 #include <array>
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <sstream>
-#include <streambuf>
 
 #ifdef _WIN32
 #define SYSTEM _wsystem
@@ -34,10 +33,9 @@ namespace {
 
 class QIRRuntimeTest : public testing::Test {
 protected:
-  std::stringstream buffer;
-  std::streambuf* old = nullptr;
-  void SetUp() override { old = std::cout.rdbuf(buffer.rdbuf()); }
-  void TearDown() override { std::cout.rdbuf(old); }
+  std::ostringstream sink;
+  void SetUp() override { Runtime::getInstance().setOstream(sink); }
+  void TearDown() override { Runtime::getInstance().resetOstream(); }
 };
 
 } // namespace
@@ -263,7 +261,7 @@ TEST_F(QIRRuntimeTest, SwapGate) {
   __quantum__qis__mz__body(q1, r1);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_EQ(buffer.str(), "r0: 0\nr1: 1\n");
+  EXPECT_EQ(sink.str(), "r0: 0\nr1: 1\n");
 }
 
 TEST_F(QIRRuntimeTest, CSwapGate) {
@@ -366,7 +364,7 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
 }
 
 TEST_F(QIRRuntimeTest, BellPairDynamic) {
@@ -384,7 +382,7 @@ TEST_F(QIRRuntimeTest, BellPairDynamic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
   __quantum__rt__result_update_reference_count(r0, -1);
   __quantum__rt__result_update_reference_count(r1, -1);
 }
@@ -404,7 +402,7 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
 }
 
 TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
@@ -422,7 +420,7 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
   __quantum__rt__result_update_reference_count(r0, -1);
   __quantum__rt__result_update_reference_count(r1, -1);
 }
