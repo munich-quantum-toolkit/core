@@ -140,6 +140,7 @@ Session::~Session() { deinitialize(); }
 
 int Session::run(llvm::ArrayRef<std::string> args,
                  llvm::StringRef progName) const {
+  // Manual in-process execution with RuntimeDyld.
   return llvm::orc::runAsMain(mainFn_, args, progName);
 }
 

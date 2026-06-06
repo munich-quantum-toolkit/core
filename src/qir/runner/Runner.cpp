@@ -39,7 +39,10 @@ auto main(int argc, char* argv[]) -> int {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "qir interpreter & dynamic compiler\n");
 
-  // Manual in-process execution with RuntimeDyld.
-  auto jitSession = qir::jit::Session(llvm::StringRef(InputFile));
-  return jitSession.run(InputArgv, InputFile);
+  try {
+    auto jitSession = qir::jit::Session(llvm::StringRef(InputFile));
+    return jitSession.run(InputArgv, InputFile);
+  } catch (const std::exception& e) {
+    ExitOnError(llvm::createStringError(e.what()));
+  }
 }
