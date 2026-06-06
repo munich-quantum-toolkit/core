@@ -15,8 +15,8 @@ import pytest
 pytest.importorskip("mlir.ir")
 pytest.importorskip("mqt.core.mlir")
 
-from mlir.ir import Context, Module  # noqa: E402
-from mqt.core.mlir import (  # noqa: E402
+from mlir.ir import Context, Module
+from mqt.core.mlir import (
     CompilationResult,
     MQTContext,
     compile_qasm,
