@@ -18,6 +18,7 @@
 #include <llvm/Support/raw_ostream.h>   // NOLINT(misc-include-cleaner)
 #include <mlir/IR/BuiltinOps.h>         // NOLINT(misc-include-cleaner)
 #include <mlir/IR/MLIRContext.h>        // NOLINT(misc-include-cleaner)
+#include <mlir/IR/OwningOpRef.h>        // NOLINT(misc-include-cleaner)
 #include <mlir/Support/LogicalResult.h> // NOLINT(misc-include-cleaner)
 
 #include <stdexcept> // NOLINT(misc-include-cleaner)
@@ -25,10 +26,8 @@
 
 namespace nb = nanobind; // NOLINT(misc-unused-alias-decls)
 
-namespace {
-
 /// Build a fresh MLIRContext with all MQT dialects registered.
-mlir::MLIRContext makeContext() {
+static mlir::MLIRContext makeContext() {
   mlir::MLIRContext ctx;
   MlirContext cCtx{&ctx};
   mqtRegisterAllDialects(cCtx);
@@ -37,8 +36,8 @@ mlir::MLIRContext makeContext() {
 
 /// Parse a QASM string and translate it to a QC-dialect module.
 /// Throws std::runtime_error on parse or translation failure.
-mlir::OwningOpRef<mlir::ModuleOp> importQasm(const std::string& qasm,
-                                             mlir::MLIRContext& ctx) {
+static mlir::OwningOpRef<mlir::ModuleOp> importQasm(const std::string& qasm,
+                                                     mlir::MLIRContext& ctx) {
   const auto qc = qasm3::Importer::imports(qasm);
   auto module = mlir::translateQuantumComputationToQC(&ctx, qc);
   if (!module) {
@@ -47,8 +46,6 @@ mlir::OwningOpRef<mlir::ModuleOp> importQasm(const std::string& qasm,
   }
   return module;
 }
-
-} // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage,readability-identifier-naming,readability-named-parameter)
 NB_MODULE(_mqtCoreMlir, m) {
