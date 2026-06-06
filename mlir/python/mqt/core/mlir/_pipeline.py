@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from mlir.ir import Context, Module
 from mlir.passmanager import PassManager
 
-from ._mlir_libs._mqtCoreMlir import _register_dialects, compile_qasm, load_qasm
+from ._mlir_libs._mqtCoreMlir import _register_dialects, compile_qasm
 
 
 @dataclass

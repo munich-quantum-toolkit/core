@@ -129,6 +129,7 @@ NB_MODULE(_mqtCoreMlir, m) {
       nb::arg("enable_hadamard_lifting") = false,
       nb::arg("capture_intermediates") = false,
       "Run the full MQT compiler pipeline on a QASM string.\n\n"
-      "Returns the final IR string by default. Pass capture_intermediates=True\n"
+      "Returns the final IR string by default. Pass "
+      "capture_intermediates=True\n"
       "to receive a dict of all stage snapshots plus a 'result' key.");
 }

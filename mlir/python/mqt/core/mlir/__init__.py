@@ -13,8 +13,8 @@ Typical usage::
     from mqt.core.mlir import load_qasm, compile_qasm, compile_with_record
 
     # Stage-by-stage
-    qc_ir = load_qasm(qasm_string)          # QASM -> QC dialect
-    result = compile_qasm(qasm_string)      # full pipeline -> final IR string
+    qc_ir = load_qasm(qasm_string)  # QASM -> QC dialect
+    result = compile_qasm(qasm_string)  # full pipeline -> final IR string
 
     # With all intermediate snapshots
     rec = compile_with_record(qasm_string)

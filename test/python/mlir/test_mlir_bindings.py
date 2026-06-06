@@ -11,8 +11,8 @@
 from __future__ import annotations
 
 import pytest
-from mlir.ir import Context, Module
 
+from mlir.ir import Context, Module
 from mqt.core.mlir import (
     CompilationResult,
     MQTContext,
