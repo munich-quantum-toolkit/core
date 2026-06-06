@@ -15,6 +15,7 @@
 #include <llvm/Support/Error.h>
 #include <llvm/Support/InitLLVM.h>
 
+#include <exception>
 #include <span>
 #include <string>
 
