@@ -317,7 +317,6 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
   LogicalResult
   matchAndRewrite(ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
     auto* ctx = getContext();
 
     // Declare QIR function
