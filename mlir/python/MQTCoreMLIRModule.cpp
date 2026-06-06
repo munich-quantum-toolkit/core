@@ -37,7 +37,7 @@ static mlir::MLIRContext makeContext() {
 /// Parse a QASM string and translate it to a QC-dialect module.
 /// Throws std::runtime_error on parse or translation failure.
 static mlir::OwningOpRef<mlir::ModuleOp> importQasm(const std::string& qasm,
-                                                     mlir::MLIRContext& ctx) {
+                                                    mlir::MLIRContext& ctx) {
   const auto qc = qasm3::Importer::imports(qasm);
   auto module = mlir::translateQuantumComputationToQC(&ctx, qc);
   if (!module) {
