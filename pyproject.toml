@@ -229,6 +229,7 @@ known-first-party = ["mqt.core"]
 
 [tool.ruff.lint.per-file-ignores]
 "test/python/**" = ["T20", "INP001"]
+"test/python/mlir/**" = ["T20", "INP001", "E402"]
 "docs/**" = ["T20", "INP001"]
 "noxfile.py" = ["T20", "TID251", "PLC0415"]
 "mlir/unittests/**/*.py" = ["INP001", "T201"]
@@ -323,6 +324,7 @@ exclude = [
     "docs/**",
     "eval/**",
     "mlir/**",
+    "test/python/mlir/**",
 ]
 
 

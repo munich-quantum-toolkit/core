@@ -44,13 +44,14 @@ add_subdirectory(tools)
 # with MLIR_ENABLE_BINDINGS_PYTHON=ON.
 if(BUILD_MQT_CORE_BINDINGS)
   if(NOT MLIR_ENABLE_BINDINGS_PYTHON)
-    message(FATAL_ERROR "MQT MLIR Python bindings require MLIR to be built with "
-                        "MLIR_ENABLE_BINDINGS_PYTHON=ON.")
+    message(STATUS "MQT MLIR Python bindings skipped: MLIR was not built with "
+                   "MLIR_ENABLE_BINDINGS_PYTHON=ON.")
+  else()
+    include(AddMLIRPython)
+    include(MLIRDetectPythonEnv)
+    mlir_configure_python_dev_packages()
+    add_subdirectory(python)
   endif()
-  include(AddMLIRPython)
-  include(MLIRDetectPythonEnv)
-  mlir_configure_python_dev_packages()
-  add_subdirectory(python)
 endif()
 
 # add test code
