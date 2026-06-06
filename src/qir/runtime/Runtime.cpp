@@ -21,11 +21,15 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <iterator>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <random>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -164,8 +168,33 @@ auto Runtime::equal(Result* result1, Result* result2) -> bool {
   return deref(result1).r == deref(result2).r;
 }
 
-auto Runtime::getResults() const -> std::unordered_map<Result*, ResultStruct> {
-  return rRegister;
+auto Runtime::getResults() const -> std::map<Result*, bool> {
+  auto addressIsNotZeroOrOne = [](Result* resultPtr) {
+    const auto addr = reinterpret_cast<uintptr_t>(resultPtr);
+    return addr != RESULT_ZERO_ADDRESS && addr != RESULT_ONE_ADDRESS;
+  };
+  // Filter results with addresses 0 and 1 out.
+  // And keep the boolean value from ResultStruct only, not the ref count.
+  auto&& resultsView =
+      rRegister |
+      std::views::filter([addressIsNotZeroOrOne](const auto& result) {
+        return addressIsNotZeroOrOne(result.first);
+      }) |
+      std::views::transform([](const auto& result) {
+        return std::pair{result.first, result.second.r};
+      });
+  // Order the results by address.
+  const std::map<Result*, bool> orderedResults(resultsView.begin(),
+                                               resultsView.end());
+  return orderedResults;
+}
+
+std::string toBitString(const std::map<Result*, bool>& results) {
+  std::string ret;
+  ret.reserve(results.size());
+  std::ranges::transform(results, std::back_inserter(ret),
+                         [](const auto& kv) { return kv.second ? '1' : '0'; });
+  return ret;
 }
 
 } // namespace qir

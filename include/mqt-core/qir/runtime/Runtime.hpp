@@ -24,11 +24,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -49,6 +51,7 @@ struct ArrayImpl {
 };
 
 namespace qir {
+
 // Primary template
 template <typename T> static constexpr bool IS_STD_ARRAY_V = false;
 // Specialization for std::array
@@ -183,6 +186,7 @@ public:
     return array;
   }
 };
+
 /**
  * @note This class is implemented following the design pattern Singleton in
  * order to access an instance of this class from the C function without having
@@ -357,6 +361,10 @@ public:
   auto rFree(Result* result) -> void;
   auto equal(Result* result1, Result* result2) -> bool;
 
-  auto getResults() const -> std::unordered_map<Result*, ResultStruct>;
+  auto getResults() const -> std::map<Result*, bool>;
 };
+
+/// Build a bit string from a list of measurement results.
+std::string toBitString(const std::map<Result*, bool>& results);
+
 } // namespace qir

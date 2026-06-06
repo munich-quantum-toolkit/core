@@ -46,13 +46,10 @@
 
 #ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
 #include "qir/jit/Session.hpp"
-#include "qir/runtime/QIR.h"
 #include "qir/runtime/Runtime.hpp"
 
 #include <llvm/Support/FormatVariadic.h>
 
-#include <iterator>
-#include <map>
 #include <stdexcept>
 #endif
 
@@ -456,34 +453,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
           throw std::runtime_error(
               llvm::formatv("QIR program failed with error: {}", rc));
         }
-
-        auto addressIsNotZeroOrOne = [](Result* resultPtr) {
-          const auto addr = reinterpret_cast<uintptr_t>(resultPtr);
-          return addr != qir::Runtime::RESULT_ZERO_ADDRESS &&
-                 addr != qir::Runtime::RESULT_ONE_ADDRESS;
-        };
-        const auto results = runtime.getResults();
-        // Filter results with addresses 0 and 1 out.
-        // And keep the boolean value from ResultStrut only, not the ref count.
-        auto&& resultsView =
-            results |
-            std::views::filter([addressIsNotZeroOrOne](const auto& result) {
-              return addressIsNotZeroOrOne(result.first);
-            }) |
-            std::views::transform([](const auto& result) {
-              return std::pair{result.first, result.second.r};
-            });
-        // Order the results by address.
-        const std::map<Result*, bool> orderedResults(resultsView.begin(),
-                                                     resultsView.end());
-        // Build a bit string from the ordered results.
-        std::string bitString;
-        bitString.reserve(orderedResults.size());
-        std::ranges::transform(
-            orderedResults, std::back_inserter(bitString),
-            [](const auto& kv) { return kv.second ? '1' : '0'; });
         // Update the measurement counts.
-        ++counts_[bitString];
+        ++counts_[qir::toBitString(runtime.getResults())];
       }
       status_.store(QDMI_JOB_STATUS_DONE);
     } catch (const std::exception& e) {
