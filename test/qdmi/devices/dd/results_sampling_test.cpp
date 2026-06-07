@@ -30,6 +30,9 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -46,7 +49,8 @@ protected:
   void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
 #endif
 
-  static void Run(QDMI_Program_Format format, std::string_view program) {
+  static void Run(const QDMI_Program_Format format,
+                  const std::string_view program) {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
     ASSERT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
@@ -67,15 +71,19 @@ protected:
 } // namespace
 
 TEST_F(HistogramKeysAndValuesSumToShots, QASM3Program) {
-  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
-  const std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
   Run(format, program);
 }
 
 #ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
 TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModule) {
-  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
-  const std::string_view program = qdmi_test::QIR_BELL_PAIR_STATIC;
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  const std::filesystem::path path =
+      std::filesystem::path(QIR_FILES_DIR) / "BellPairStatic.ll";
+  std::ifstream ifs(path);
+  ASSERT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
+  const std::string program(std::istreambuf_iterator<char>{ifs}, {});
   llvm::LLVMContext context;
   llvm::SMDiagnostic err;
   auto module = llvm::parseAssemblyString(program, err, context);
@@ -89,14 +97,22 @@ TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModule) {
 }
 
 TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseString) {
-  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-  const std::string_view program = qdmi_test::QIR_BELL_PAIR_STATIC;
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  const std::filesystem::path path =
+      std::filesystem::path(QIR_FILES_DIR) / "BellPairStatic.ll";
+  std::ifstream ifs(path);
+  ASSERT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
+  const std::string program(std::istreambuf_iterator<char>{ifs}, {});
   Run(format, program);
 }
 
 TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModuleDynamic) {
-  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
-  const std::string_view program = qdmi_test::QIR_BELL_PAIR_DYNAMIC;
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  const std::filesystem::path path =
+      std::filesystem::path(QIR_FILES_DIR) / "BellPairDynamic.ll";
+  std::ifstream ifs(path);
+  ASSERT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
+  const std::string program(std::istreambuf_iterator<char>{ifs}, {});
   llvm::LLVMContext context;
   llvm::SMDiagnostic err;
   auto module = llvm::parseAssemblyString(program, err, context);
@@ -110,8 +126,12 @@ TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModuleDynamic) {
 }
 
 TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseStringDynamic) {
-  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-  const std::string_view program = qdmi_test::QIR_BELL_PAIR_DYNAMIC;
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  const std::filesystem::path path =
+      std::filesystem::path(QIR_FILES_DIR) / "BellPairDynamic.ll";
+  std::ifstream ifs(path);
+  ASSERT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
+  const std::string program(std::istreambuf_iterator<char>{ifs}, {});
   Run(format, program);
 }
 #endif
