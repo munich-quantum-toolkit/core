@@ -24,7 +24,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <map>
 #include <memory>
 #include <ostream>
 #include <random>
@@ -207,6 +206,7 @@ private:
   std::vector<qc::Qubit> qubitPermutation;
   static constexpr uintptr_t MIN_DYN_RESULT_ADDRESS = 0x10000;
   std::unordered_map<Result*, ResultStruct> rRegister;
+  std::string recordedOutputs;
   uintptr_t currentMaxQubitAddress;
   qc::Qubit currentMaxQubitId;
   uintptr_t currentMaxResultAddress;
@@ -362,14 +362,17 @@ public:
   auto rFree(Result* result) -> void;
   auto equal(Result* result1, Result* result2) -> bool;
 
-  auto getResults() const -> std::map<Result*, bool>;
+  /// Append the value referenced by `result` to the recorded outputs bit
+  /// string in record order.
+  auto recordOutput(Result* result) -> void;
+
+  /// Return the outputs declared by the program as a bit string in record
+  /// order.
+  auto getRecordedOutputs() const -> const std::string&;
 
   auto getOstream() -> std::ostream&;
   auto setOstream(std::ostream& other) -> void;
   auto resetOstream() -> void;
 };
-
-/// Build a bit string from a list of measurement results.
-std::string toBitString(const std::map<Result*, bool>& results);
 
 } // namespace qir

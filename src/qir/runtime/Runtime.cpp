@@ -22,13 +22,10 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
-#include <iterator>
-#include <map>
 #include <memory>
 #include <numeric>
 #include <ostream>
 #include <random>
-#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -63,6 +60,7 @@ auto Runtime::reset() -> void {
   mt.seed(generateRandomSeed());
   qRegister.clear();
   rRegister.clear();
+  recordedOutputs.clear();
   // NOLINTBEGIN(performance-no-int-to-ptr)
   rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
                     ResultStruct{.refcount = 0, .r = false});
@@ -170,25 +168,12 @@ auto Runtime::equal(Result* result1, Result* result2) -> bool {
   return deref(result1).r == deref(result2).r;
 }
 
-auto Runtime::getResults() const -> std::map<Result*, bool> {
-  auto addressIsNotZeroOrOne = [](Result* resultPtr) {
-    const auto addr = reinterpret_cast<uintptr_t>(resultPtr);
-    return addr != RESULT_ZERO_ADDRESS && addr != RESULT_ONE_ADDRESS;
-  };
-  // Filter results with addresses 0 and 1 out.
-  // And keep the boolean value from ResultStruct only, not the ref count.
-  auto&& resultsView =
-      rRegister |
-      std::views::filter([addressIsNotZeroOrOne](const auto& result) {
-        return addressIsNotZeroOrOne(result.first);
-      }) |
-      std::views::transform([](const auto& result) {
-        return std::pair{result.first, result.second.r};
-      });
-  // Order the results by address.
-  const std::map<Result*, bool> orderedResults(resultsView.begin(),
-                                               resultsView.end());
-  return orderedResults;
+auto Runtime::recordOutput(Result* result) -> void {
+  recordedOutputs.push_back(deref(result).r ? '1' : '0');
+}
+
+auto Runtime::getRecordedOutputs() const -> const std::string& {
+  return recordedOutputs;
 }
 
 auto Runtime::getOstream() -> std::ostream& { return *os; }
@@ -196,13 +181,5 @@ auto Runtime::getOstream() -> std::ostream& { return *os; }
 auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
 
 auto Runtime::resetOstream() -> void { os = &std::cout; }
-
-std::string toBitString(const std::map<Result*, bool>& results) {
-  std::string ret;
-  ret.reserve(results.size());
-  std::ranges::transform(results, std::back_inserter(ret),
-                         [](const auto& kv) { return kv.second ? '1' : '0'; });
-  return ret;
-}
 
 } // namespace qir

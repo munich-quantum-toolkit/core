@@ -93,6 +93,27 @@ TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseString) {
   const std::string_view program = qdmi_test::QIR_BELL_PAIR_STATIC;
   Run(format, program);
 }
+
+TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModuleDynamic) {
+  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  const std::string_view program = qdmi_test::QIR_BELL_PAIR_DYNAMIC;
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic err;
+  auto module = llvm::parseAssemblyString(program, err, context);
+  ASSERT_NE(module, nullptr)
+      << "parseAssemblyString failed: " << err.getMessage().str();
+  std::string bitcodeBuffer;
+  llvm::raw_string_ostream os(bitcodeBuffer);
+  llvm::WriteBitcodeToFile(*module, os);
+  os.flush();
+  Run(format, bitcodeBuffer);
+}
+
+TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseStringDynamic) {
+  const QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  const std::string_view program = qdmi_test::QIR_BELL_PAIR_DYNAMIC;
+  Run(format, program);
+}
 #endif
 
 TEST(ResultsSampling, BufferTooSmallErrors) {

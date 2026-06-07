@@ -382,6 +382,7 @@ bool __quantum__rt__read_result(Result* result) {
 
 void __quantum__rt__result_record_output(Result* result, const char* label) {
   auto& runtime = qir::Runtime::getInstance();
+  runtime.recordOutput(result);
   runtime.getOstream() << label << ": "
                        << (__quantum__rt__read_result(result) ? 1 : 0) << "\n";
 }
