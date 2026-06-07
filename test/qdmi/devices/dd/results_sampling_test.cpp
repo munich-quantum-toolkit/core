@@ -18,7 +18,13 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <numeric>
+#include <ranges>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
@@ -35,13 +41,11 @@
 #include <iterator>
 #include <memory>
 #include <sstream>
-#include <string>
-#include <string_view>
 #endif
 
 namespace {
 
-class HistogramKeysAndValuesSumToShots : public ::testing::Test {
+class HistogramTest : public ::testing::Test {
 protected:
 #ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
   std::ostringstream sink;
@@ -49,90 +53,109 @@ protected:
   void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
 #endif
 
-  static void Run(const QDMI_Program_Format format,
-                  const std::string_view program) {
+  using Histogram = std::pair<std::vector<std::string>, std::vector<size_t>>;
+  static constexpr size_t SHOTS = 1024;
+
+  static Histogram runProgram(const QDMI_Program_Format format,
+                              const std::string_view program) {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
-    ASSERT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
-    constexpr size_t shots = 1024;
-    ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);
-    ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+    EXPECT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
+    EXPECT_EQ(qdmi_test::setShots(j.job, SHOTS), QDMI_SUCCESS);
+    EXPECT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+    return qdmi_test::getHistogram(j.job);
+  }
 
-    auto [keys, vals] = qdmi_test::getHistogram(j.job);
+  static void checkHistogram(const Histogram& hist) {
+    const auto& [keys, vals] = hist;
+    // Keys and values come from two independent device queries.
+    // Check both vectors have the same size.
     ASSERT_EQ(keys.size(), vals.size());
-    size_t sum = 0U;
-    for (const auto& v : vals) {
-      sum += v;
-    }
-    EXPECT_EQ(sum, shots);
+    // Values should sum up to the number of SHOTS.
+    const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
+    EXPECT_EQ(sum, SHOTS);
+    // Both keys '00' and '11' should be expected.
+    ASSERT_EQ(keys.size(), 2U);
+    // And no other keys should be expected.
+    EXPECT_TRUE(std::ranges::all_of(
+        keys, [](const auto& k) { return k == "00" || k == "11"; }));
   }
 };
 
+#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+class QIRHistogramTestModule : public HistogramTest {
+protected:
+  static std::string getProgram(const std::string_view file) {
+    const std::filesystem::path path =
+        std::filesystem::path(QIR_FILES_DIR) / file;
+    std::ifstream ifs(path);
+    EXPECT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
+    const std::string text(std::istreambuf_iterator<char>{ifs}, {});
+    llvm::LLVMContext context;
+    llvm::SMDiagnostic err;
+    auto llvmModule = llvm::parseAssemblyString(text, err, context);
+    EXPECT_NE(llvmModule, nullptr)
+        << "parseAssemblyString failed: " << err.getMessage().str();
+    if (llvmModule == nullptr) {
+      return {};
+    }
+    std::string bitcodeBuffer;
+    llvm::raw_string_ostream os(bitcodeBuffer);
+    llvm::WriteBitcodeToFile(*llvmModule, os);
+    os.flush();
+    return bitcodeBuffer;
+  }
+};
+
+class QIRHistogramTestString : public HistogramTest {
+protected:
+  static std::string getProgram(const std::string_view file) {
+    const std::filesystem::path path =
+        std::filesystem::path(QIR_FILES_DIR) / file;
+    std::ifstream ifs(path);
+    EXPECT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
+    return {std::istreambuf_iterator<char>{ifs}, {}};
+  }
+};
+#endif
+
 } // namespace
 
-TEST_F(HistogramKeysAndValuesSumToShots, QASM3Program) {
+TEST_F(HistogramTest, QASM3Program) {
   constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
   constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
-  Run(format, program);
+  checkHistogram(runProgram(format, program));
 }
 
 #ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
-TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModule) {
-  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
-  const std::filesystem::path path =
-      std::filesystem::path(QIR_FILES_DIR) / "BellPairStatic.ll";
-  std::ifstream ifs(path);
-  ASSERT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
-  const std::string program(std::istreambuf_iterator<char>{ifs}, {});
-  llvm::LLVMContext context;
-  llvm::SMDiagnostic err;
-  auto module = llvm::parseAssemblyString(program, err, context);
-  ASSERT_NE(module, nullptr)
-      << "parseAssemblyString failed: " << err.getMessage().str();
-  std::string bitcodeBuffer;
-  llvm::raw_string_ostream os(bitcodeBuffer);
-  llvm::WriteBitcodeToFile(*module, os);
-  os.flush();
-  Run(format, bitcodeBuffer);
+TEST_F(QIRHistogramTestModule, BaseStatic) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  checkHistogram(runProgram(format, getProgram("BellPairStatic.ll")));
 }
 
-TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseString) {
-  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-  const std::filesystem::path path =
-      std::filesystem::path(QIR_FILES_DIR) / "BellPairStatic.ll";
-  std::ifstream ifs(path);
-  ASSERT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
-  const std::string program(std::istreambuf_iterator<char>{ifs}, {});
-  Run(format, program);
+TEST_F(QIRHistogramTestString, BaseStatic) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  checkHistogram(runProgram(format, getProgram("BellPairStatic.ll")));
 }
 
-TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseModuleDynamic) {
-  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
-  const std::filesystem::path path =
-      std::filesystem::path(QIR_FILES_DIR) / "BellPairDynamic.ll";
-  std::ifstream ifs(path);
-  ASSERT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
-  const std::string program(std::istreambuf_iterator<char>{ifs}, {});
-  llvm::LLVMContext context;
-  llvm::SMDiagnostic err;
-  auto module = llvm::parseAssemblyString(program, err, context);
-  ASSERT_NE(module, nullptr)
-      << "parseAssemblyString failed: " << err.getMessage().str();
-  std::string bitcodeBuffer;
-  llvm::raw_string_ostream os(bitcodeBuffer);
-  llvm::WriteBitcodeToFile(*module, os);
-  os.flush();
-  Run(format, bitcodeBuffer);
+TEST_F(QIRHistogramTestModule, BaseDynamic) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  checkHistogram(runProgram(format, getProgram("BellPairDynamic.ll")));
 }
 
-TEST_F(HistogramKeysAndValuesSumToShots, QIRBaseStringDynamic) {
-  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-  const std::filesystem::path path =
-      std::filesystem::path(QIR_FILES_DIR) / "BellPairDynamic.ll";
-  std::ifstream ifs(path);
-  ASSERT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
-  const std::string program(std::istreambuf_iterator<char>{ifs}, {});
-  Run(format, program);
+TEST_F(QIRHistogramTestString, BaseDynamic) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  checkHistogram(runProgram(format, getProgram("BellPairDynamic.ll")));
+}
+
+TEST_F(QIRHistogramTestModule, Adaptive) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  checkHistogram(runProgram(format, getProgram("BellPairAdaptive.ll")));
+}
+
+TEST_F(QIRHistogramTestString, Adaptive) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  checkHistogram(runProgram(format, getProgram("BellPairAdaptive.ll")));
 }
 #endif
 

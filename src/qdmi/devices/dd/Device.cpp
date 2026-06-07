@@ -358,7 +358,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
           format != QDMI_PROGRAM_FORMAT_QASM3
 #ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
           && format != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
-          format != QDMI_PROGRAM_FORMAT_QIRBASESTRING
+          format != QDMI_PROGRAM_FORMAT_QIRBASESTRING &&
+          format != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE &&
+          format != QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING
 #endif
       ) {
         return QDMI_ERROR_NOTSUPPORTED;
@@ -477,7 +479,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   }
 #ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
   if (format_ == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
-      format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING) {
+      format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
+      format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
+      format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING) {
     return submitQIRProgram();
   }
 #endif
