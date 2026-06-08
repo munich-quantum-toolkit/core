@@ -72,7 +72,7 @@ void QCOProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCOProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = dyn_cast<ModuleOp>(module).lookupSymbol<func::FuncOp>("main");
+  auto mainFunc = getEntryPoint(mlir::cast<ModuleOp>(module));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }
