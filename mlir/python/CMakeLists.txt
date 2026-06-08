@@ -32,7 +32,7 @@ declare_mlir_python_extension(
   ADD_TO_PARENT
   MQTCoreMLIRPythonExtensions
   SOURCES
-  MQTCoreMLIRModule.cpp
+  ${CMAKE_SOURCE_DIR}/bindings/mlir/MQTCoreMLIRModule.cpp
   EMBED_CAPI_LINK_LIBS
   MQTMLIRCoreDialectsCAPI
   MLIRQCTranslation

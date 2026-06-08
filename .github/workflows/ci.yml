@@ -186,12 +186,17 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@fe2cdef83f21c972314c8040a1a31af9803b5498 # v2.0.2
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      llvm-version: 22.1.0
 
   python-coverage:
     name: 🐍 Coverage
     needs: [change-detection, python-tests]
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@fe2cdef83f21c972314c8040a1a31af9803b5498 # v2.0.2
+    with:
+      setup-mlir: true
+      llvm-version: 22.1.0
     permissions:
       contents: read
       id-token: write
@@ -208,6 +213,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@fe2cdef83f21c972314c8040a1a31af9803b5498 # v2.0.2
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      llvm-version: 22.1.0
 
   python-linter:
     name: 🐍 Lint
