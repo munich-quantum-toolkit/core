@@ -861,18 +861,48 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
           op, "qco.if requires exactly two branches");
     }
 
-    auto qcoIf = IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(),
-                              adaptor.getInValues());
+    auto inValues = adaptor.getInValues();
+
+    SmallVector<Value> qubits;
+    for (auto [i, value] : llvm::enumerate(op.getInValues())) {
+      if (isa<jeff::QubitType, jeff::QuregType>(value.getType())) {
+        qubits.push_back(inValues[i]);
+      }
+    }
+
+    auto qcoIf =
+        IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(), qubits);
 
     auto moveRegion = [&](Region& source, Region& dest) -> LogicalResult {
-      rewriter.inlineRegionBefore(source, dest, dest.end());
-      Block* block = &dest.front();
-      TypeConverter::SignatureConversion sc(block->getNumArguments());
-      if (failed(getTypeConverter()->convertSignatureArgs(
-              block->getArgumentTypes(), sc))) {
-        return failure();
+      auto* oldBlock = &source.back();
+      auto* newBlock = &dest.emplaceBlock();
+      rewriter.setInsertionPointToEnd(newBlock);
+
+      IRMapping mapping;
+      for (auto i = 0; i < oldBlock->getNumArguments(); ++i) {
+        auto oldArg = oldBlock->getArgument(i);
+        auto oldType = oldArg.getType();
+        if (isa<jeff::QubitType, jeff::QuregType>(oldType)) {
+          auto newType = typeConverter->convertType(oldType);
+          auto newArg = newBlock->addArgument(newType, oldArg.getLoc());
+          mapping.map(oldArg, newArg);
+        } else {
+          mapping.map(oldArg, inValues[i]);
+        }
       }
-      rewriter.applySignatureConversion(block, sc);
+
+      for (auto& op : oldBlock->without_terminator()) {
+        rewriter.clone(op, mapping);
+      }
+
+      SmallVector<Value> yields;
+      for (auto value : oldBlock->getTerminator()->getOperands()) {
+        if (isa<jeff::QubitType, jeff::QuregType>(value.getType())) {
+          yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
+        }
+      }
+      YieldOp::create(rewriter, oldBlock->getTerminator()->getLoc(), yields);
+
       return success();
     };
 
@@ -883,7 +913,17 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       return failure();
     }
 
-    rewriter.replaceOp(op, qcoIf.getResults());
+    SmallVector<Value> results;
+    size_t index = 0;
+    for (auto [i, value] : llvm::enumerate(op.getResults())) {
+      if (isa<jeff::QubitType, jeff::QuregType>(value.getType())) {
+        results.push_back(qcoIf.getResults()[index++]);
+      } else {
+        results.push_back(inValues[i]);
+      }
+    }
+    rewriter.replaceOp(op, results);
+
     return success();
   }
 };
@@ -934,8 +974,8 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
     auto scfFor = scf::ForOp::create(rewriter, loc, start, stop, step,
                                      adaptor.getInValues());
 
-    Block* jeffBody = &op.getBody().front();
-    Block* scfBody = scfFor.getBody();
+    auto* jeffBody = &op.getBody().front();
+    auto* scfBody = scfFor.getBody();
 
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointToStart(scfBody);
@@ -944,7 +984,7 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
                                          jeffBody->getArgument(0).getType(),
                                          scfFor.getInductionVar());
     SmallVector<Value> args = {iv.getResult()};
-    for (Value arg : scfFor.getRegionIterArgs()) {
+    for (auto arg : scfFor.getRegionIterArgs()) {
       args.push_back(arg);
     }
 
@@ -965,7 +1005,7 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
   matchAndRewrite(jeff::YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (isa<IfOp>(op->getParentOp())) {
-      rewriter.replaceOpWithNewOp<YieldOp>(op, adaptor.getOperands());
+      rewriter.eraseOp(op);
       return success();
     }
 

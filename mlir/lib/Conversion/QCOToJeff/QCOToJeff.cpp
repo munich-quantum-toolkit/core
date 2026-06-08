@@ -10,7 +10,6 @@
 
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 
-#include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -39,6 +38,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/RegionUtils.h>
 
 #include <cassert>
 #include <cstddef>
@@ -338,6 +338,46 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   module->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
   module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 2));
   module->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
+
+  return success();
+}
+
+/**
+ * @brief Move a region from QCO/SCF operation to a jeff operation
+ */
+static LogicalResult moveRegion(Region& source, Region& dest,
+                                ConversionPatternRewriter& rewriter,
+                                const TypeConverter* typeConverter,
+                                SetVector<Value> aboveValues) {
+  auto* oldBlock = &source.back();
+  auto* newBlock = &dest.emplaceBlock();
+  rewriter.setInsertionPointToEnd(newBlock);
+
+  IRMapping mapping;
+  for (auto i = 0; i < oldBlock->getNumArguments(); ++i) {
+    auto oldArg = oldBlock->getArgument(i);
+    auto newType = typeConverter->convertType(oldArg.getType());
+    auto newArg = newBlock->addArgument(newType, oldArg.getLoc());
+    mapping.map(oldArg, newArg);
+  }
+  SmallVector<Value> newArgs;
+  for (auto value : aboveValues) {
+    auto newType = typeConverter->convertType(value.getType());
+    auto newArg = newBlock->addArgument(newType, value.getLoc());
+    mapping.map(value, newArg);
+    newArgs.push_back(newArg);
+  }
+
+  for (auto& op : oldBlock->without_terminator()) {
+    rewriter.clone(op, mapping);
+  }
+
+  SmallVector<Value> yields;
+  for (auto value : oldBlock->getTerminator()->getOperands()) {
+    yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
+  }
+  llvm::append_range(yields, newArgs);
+  jeff::YieldOp::create(rewriter, oldBlock->getTerminator()->getLoc(), yields);
 
   return success();
 }
@@ -1036,37 +1076,55 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
   matchAndRewrite(IfOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto loc = op.getLoc();
+
+    SetVector<Value> aboveValues;
+    getUsedValuesDefinedAbove(op.getElseRegion(), aboveValues);
+    getUsedValuesDefinedAbove(op.getThenRegion(), aboveValues);
+
+    SmallVector<Value> initArgs;
+    llvm::append_range(initArgs, adaptor.getQubits());
+
     SmallVector<Type> outTypes;
     if (failed(
             getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
       return failure();
     }
 
-    auto jeffIf =
-        jeff::SwitchOp::create(rewriter, loc, outTypes, adaptor.getCondition(),
-                               adaptor.getQubits(), 2);
+    for (auto value : aboveValues) {
+      auto remappedValue = rewriter.getRemappedValue(value);
+      initArgs.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
+    }
 
-    if (failed(moveRegion(op.getElseRegion(), jeffIf.getBranches()[0], rewriter,
-                          getTypeConverter()))) {
+    auto jeffSwitch = jeff::SwitchOp::create(
+        rewriter, loc, outTypes, adaptor.getCondition(), initArgs, 2);
+
+    if (failed(moveRegion(op.getElseRegion(), jeffSwitch.getBranches()[0],
+                          rewriter, getTypeConverter(), aboveValues))) {
       return failure();
     }
-    if (failed(moveRegion(op.getThenRegion(), jeffIf.getBranches()[1], rewriter,
-                          getTypeConverter()))) {
+    if (failed(moveRegion(op.getThenRegion(), jeffSwitch.getBranches()[1],
+                          rewriter, getTypeConverter(), aboveValues))) {
       return failure();
     }
 
     // Add trivial default case
     {
-      auto* block = &jeffIf.getDefault().emplaceBlock();
+      auto* block = &jeffSwitch.getDefault().emplaceBlock();
       for (auto value : adaptor.getQubits()) {
         block->addArgument(value.getType(), loc);
+      }
+      for (auto value : aboveValues) {
+        block->addArgument(typeConverter->convertType(value.getType()), loc);
       }
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(block);
       jeff::YieldOp::create(rewriter, loc, block->getArguments());
     }
 
-    rewriter.replaceOp(op, jeffIf.getResults());
+    rewriter.replaceOp(op,
+                       jeffSwitch.getResults().take_front(op.getNumResults()));
+
     return success();
   }
 };
@@ -1104,22 +1162,35 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
   LogicalResult
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    SetVector<Value> aboveValues;
+    getUsedValuesDefinedAbove(op.getRegion(), aboveValues);
+
+    SmallVector<Value> initArgs;
+    llvm::append_range(initArgs, adaptor.getInitArgs());
+
     SmallVector<Type> outTypes;
     if (failed(
             getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
       return failure();
     }
 
+    for (auto value : aboveValues) {
+      auto remappedValue = rewriter.getRemappedValue(value);
+      initArgs.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
+    }
+
     auto jeffFor = jeff::ForOp::create(
         rewriter, op.getLoc(), outTypes, adaptor.getLowerBound(),
-        adaptor.getUpperBound(), adaptor.getStep(), adaptor.getInitArgs());
+        adaptor.getUpperBound(), adaptor.getStep(), initArgs);
 
     if (failed(moveRegion(op.getRegion(), jeffFor.getRegion(), rewriter,
-                          getTypeConverter()))) {
+                          getTypeConverter(), aboveValues))) {
       return failure();
     }
 
-    rewriter.replaceOp(op, jeffFor.getResults());
+    rewriter.replaceOp(op, jeffFor.getResults().take_front(op.getNumResults()));
+
     return success();
   }
 };
@@ -1131,7 +1202,7 @@ struct ConvertSCFYieldOpToJeff final
   LogicalResult
   matchAndRewrite(scf::YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<jeff::YieldOp>(op, adaptor.getResults());
+    rewriter.eraseOp(op);
     return success();
   }
 };

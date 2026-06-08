@@ -1064,6 +1064,9 @@ void simpleDoWhileReset(QCOProgramBuilder& b);
 /// Creates a circuit with a simple for operation with a register.
 void simpleForLoop(QCOProgramBuilder& b);
 
+/// Creates a circuit with a for operation with a parameterized gate.
+void forLoopWithAngle(QCOProgramBuilder& b);
+
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.
 void nestedForLoopIfOp(QCOProgramBuilder& b);

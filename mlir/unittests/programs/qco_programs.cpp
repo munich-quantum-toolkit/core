@@ -2363,6 +2363,17 @@ void simpleForLoop(QCOProgramBuilder& b) {
   });
 };
 
+void forLoopWithAngle(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto theta = b.floatConstant(0.123);
+  b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.rx(theta, q0);
+    auto insert = b.qtensorInsert(q1, t0, iv);
+    return SmallVector{insert};
+  });
+};
+
 void nestedForLoopIfOp(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto q0 = b.allocQubit();
