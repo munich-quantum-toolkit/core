@@ -58,7 +58,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         if (auto matrix = $_op.getUnitaryMatrix()) {
           if constexpr (std::is_same_v<
                             std::remove_cvref_t<decltype(*matrix)>,
-                            ::mlir::qco::Matrix2>) {
+                            ::mlir::qco::Matrix2x2>) {
             out = *matrix;
             return true;
           }
@@ -67,7 +67,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
       } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
         if constexpr (std::is_same_v<
                           std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>,
-                          ::mlir::qco::Matrix2>) {
+                          ::mlir::qco::Matrix2x2>) {
           out = $_op.getUnitaryMatrix();
           return true;
         }
@@ -82,7 +82,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         if (auto matrix = $_op.getUnitaryMatrix()) {
           if constexpr (std::is_same_v<
                             std::remove_cvref_t<decltype(*matrix)>,
-                            ::mlir::qco::Matrix4>) {
+                            ::mlir::qco::Matrix4x4>) {
             out = *matrix;
             return true;
           }
@@ -91,7 +91,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
       } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
         if constexpr (std::is_same_v<
                           std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>,
-                          ::mlir::qco::Matrix4>) {
+                          ::mlir::qco::Matrix4x4>) {
           out = $_op.getUnitaryMatrix();
           return true;
         }
@@ -178,11 +178,11 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       unitaryMatrix1x1MethodBody>,
       InterfaceMethod<"Populates the given 2x2 unitary matrix if possible.",
                       "bool", "getUnitaryMatrix2x2",
-                      (ins "::mlir::qco::Matrix2&":$out),
+                      (ins "::mlir::qco::Matrix2x2&":$out),
                       unitaryMatrix2x2MethodBody>,
       InterfaceMethod<"Populates the given 4x4 unitary matrix if possible.",
                       "bool", "getUnitaryMatrix4x4",
-                      (ins "::mlir::qco::Matrix4&":$out),
+                      (ins "::mlir::qco::Matrix4x4&":$out),
                       unitaryMatrix4x4MethodBody>,
       InterfaceMethod<"Populates the given dynamic unitary matrix.", "bool",
                       "getUnitaryMatrixDynamic",
@@ -203,15 +203,15 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         template<typename MatrixType>
         std::optional<MatrixType> getUnitaryMatrix() {
           static_assert(::mlir::qco::IS_UNITARY_MATRIX_V<MatrixType>,
-                        "MatrixType must be Matrix1x1, Matrix2, Matrix4, or DynamicMatrix");
+                        "MatrixType must be Matrix1x1, Matrix2x2, Matrix4x4, or DynamicMatrix");
           MatrixType out;
           bool result = false;
 
           if constexpr (std::is_same_v<MatrixType, ::mlir::qco::Matrix1x1>) {
             result = this->getUnitaryMatrix1x1(out);
-          } else if constexpr (std::is_same_v<MatrixType, ::mlir::qco::Matrix2>) {
+          } else if constexpr (std::is_same_v<MatrixType, ::mlir::qco::Matrix2x2>) {
             result = this->getUnitaryMatrix2x2(out);
-          } else if constexpr (std::is_same_v<MatrixType, ::mlir::qco::Matrix4>) {
+          } else if constexpr (std::is_same_v<MatrixType, ::mlir::qco::Matrix4x4>) {
             result = this->getUnitaryMatrix4x4(out);
           } else if constexpr (std::is_same_v<MatrixType, ::mlir::qco::DynamicMatrix>) {
             result = this->getUnitaryMatrixDynamic(out);

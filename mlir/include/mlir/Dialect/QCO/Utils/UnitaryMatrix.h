@@ -90,7 +90,7 @@ struct Matrix1x1 {
  * Represents single-qubit gate unitaries. Elements are stored in a flat array
  * with index `(row * K_COLS) + col`.
  */
-struct Matrix2 {
+struct Matrix2x2 {
   /// Number of rows.
   static constexpr std::size_t K_ROWS = 2;
   /// Number of columns.
@@ -107,11 +107,11 @@ struct Matrix2 {
    * @param m01 Element at row 0, column 1.
    * @param m10 Element at row 1, column 0.
    * @param m11 Element at row 1, column 1.
-   * @return A new `Matrix2` with the given elements.
+   * @return A new `Matrix2x2` with the given elements.
    */
-  [[nodiscard]] static Matrix2 fromElements(Complex m00, Complex m01,
-                                            Complex m10, Complex m11) {
-    Matrix2 m{};
+  [[nodiscard]] static Matrix2x2 fromElements(Complex m00, Complex m01,
+                                              Complex m10, Complex m11) {
+    Matrix2x2 m{};
     m.data = {m00, m01, m10, m11};
     return m;
   }
@@ -120,7 +120,7 @@ struct Matrix2 {
    * @brief Returns the 2x2 identity matrix.
    * @return Identity matrix `[[1, 0], [0, 1]]`.
    */
-  [[nodiscard]] static Matrix2 identity() { return fromElements(1, 0, 0, 1); }
+  [[nodiscard]] static Matrix2x2 identity() { return fromElements(1, 0, 0, 1); }
 
   /**
    * @brief Mutable element access.
@@ -147,8 +147,8 @@ struct Matrix2 {
    * @param rhs Right-hand factor.
    * @return Product of the two matrices.
    */
-  [[nodiscard]] Matrix2 operator*(const Matrix2& rhs) const {
-    Matrix2 out{};
+  [[nodiscard]] Matrix2x2 operator*(const Matrix2x2& rhs) const {
+    Matrix2x2 out{};
     for (std::size_t i = 0; i < K_ROWS; ++i) {
       for (std::size_t j = 0; j < K_COLS; ++j) {
         out(i, j) = (*this)(i, 0) * rhs(0, j) + (*this)(i, 1) * rhs(1, j);
@@ -161,7 +161,7 @@ struct Matrix2 {
    * @brief Returns the conjugate transpose (adjoint) of this matrix.
    * @return Adjoint matrix `A^\dagger`.
    */
-  [[nodiscard]] Matrix2 adjoint() const {
+  [[nodiscard]] Matrix2x2 adjoint() const {
     return fromElements(std::conj((*this)(0, 0)), std::conj((*this)(1, 0)),
                         std::conj((*this)(0, 1)), std::conj((*this)(1, 1)));
   }
@@ -190,7 +190,7 @@ struct Matrix2 {
    * @param tol Maximum allowed absolute difference per entry.
    * @return True if every entry differs by at most @p tol.
    */
-  [[nodiscard]] bool isApprox(const Matrix2& other,
+  [[nodiscard]] bool isApprox(const Matrix2x2& other,
                               double tol = UNITARY_MATRIX_TOLERANCE) const {
     for (std::size_t i = 0; i < data.size(); ++i) {
       if (std::abs(data[i] - other.data[i]) > tol) {
@@ -207,7 +207,7 @@ struct Matrix2 {
  * Represents two-qubit gate unitaries. Elements are stored in a flat array with
  * index `(row * K_COLS) + col`.
  */
-struct Matrix4 {
+struct Matrix4x4 {
   /// Number of rows.
   static constexpr std::size_t K_ROWS = 4;
   /// Number of columns.
@@ -236,14 +236,14 @@ struct Matrix4 {
    * @param m31 Element at row 3, column 1.
    * @param m32 Element at row 3, column 2.
    * @param m33 Element at row 3, column 3.
-   * @return A new `Matrix4` with the given elements.
+   * @return A new `Matrix4x4` with the given elements.
    */
-  [[nodiscard]] static Matrix4
+  [[nodiscard]] static Matrix4x4
   fromElements(Complex m00, Complex m01, Complex m02, Complex m03, Complex m10,
                Complex m11, Complex m12, Complex m13, Complex m20, Complex m21,
                Complex m22, Complex m23, Complex m30, Complex m31, Complex m32,
                Complex m33) {
-    Matrix4 m{};
+    Matrix4x4 m{};
     m.data = {m00, m01, m02, m03, m10, m11, m12, m13,
               m20, m21, m22, m23, m30, m31, m32, m33};
     return m;
@@ -253,8 +253,8 @@ struct Matrix4 {
    * @brief Returns the 4x4 identity matrix.
    * @return Identity matrix with ones on the diagonal.
    */
-  [[nodiscard]] static Matrix4 identity() {
-    Matrix4 m{};
+  [[nodiscard]] static Matrix4x4 identity() {
+    Matrix4x4 m{};
     for (std::size_t i = 0; i < K_ROWS; ++i) {
       m(i, i) = 1.0;
     }
@@ -286,8 +286,8 @@ struct Matrix4 {
    * @param rhs Right-hand factor.
    * @return Product of the two matrices.
    */
-  [[nodiscard]] Matrix4 operator*(const Matrix4& rhs) const {
-    Matrix4 out{};
+  [[nodiscard]] Matrix4x4 operator*(const Matrix4x4& rhs) const {
+    Matrix4x4 out{};
     for (std::size_t i = 0; i < K_ROWS; ++i) {
       for (std::size_t j = 0; j < K_COLS; ++j) {
         Complex sum{0.0, 0.0};
@@ -304,8 +304,8 @@ struct Matrix4 {
    * @brief Returns the conjugate transpose (adjoint) of this matrix.
    * @return Adjoint matrix `A^\dagger`.
    */
-  [[nodiscard]] Matrix4 adjoint() const {
-    Matrix4 out{};
+  [[nodiscard]] Matrix4x4 adjoint() const {
+    Matrix4x4 out{};
     for (std::size_t i = 0; i < K_ROWS; ++i) {
       for (std::size_t j = 0; j < K_COLS; ++j) {
         out(i, j) = std::conj((*this)(j, i));
@@ -338,7 +338,7 @@ struct Matrix4 {
    * @param tol Maximum allowed absolute difference per entry.
    * @return True if every entry differs by at most @p tol.
    */
-  [[nodiscard]] bool isApprox(const Matrix4& other,
+  [[nodiscard]] bool isApprox(const Matrix4x4& other,
                               double tol = UNITARY_MATRIX_TOLERANCE) const {
     for (std::size_t i = 0; i < data.size(); ++i) {
       if (std::abs(data[i] - other.data[i]) > tol) {
@@ -417,7 +417,7 @@ public:
    * @param block Source block placed at indices `(dim-2, dim-2)` through
    * `(dim-1, dim-1)`.
    */
-  void setBottomRightCorner(const Matrix2& block) {
+  void setBottomRightCorner(const Matrix2x2& block) {
     const std::int64_t offset = dim_ - 2;
     for (std::int64_t i = 0; i < 2; ++i) {
       for (std::int64_t j = 0; j < 2; ++j) {
@@ -432,7 +432,7 @@ public:
    * @param block Source block placed at indices `(dim-4, dim-4)` through
    * `(dim-1, dim-1)`.
    */
-  void setBottomRightCorner(const Matrix4& block) {
+  void setBottomRightCorner(const Matrix4x4& block) {
     const std::int64_t offset = dim_ - 4;
     for (std::int64_t i = 0; i < 4; ++i) {
       for (std::int64_t j = 0; j < 4; ++j) {
@@ -479,7 +479,7 @@ public:
    * @param tol Maximum allowed absolute difference per entry.
    * @return True if dimensions match and every entry differs by at most @p tol.
    */
-  [[nodiscard]] bool isApprox(const Matrix4& other,
+  [[nodiscard]] bool isApprox(const Matrix4x4& other,
                               double tol = UNITARY_MATRIX_TOLERANCE) const {
     if (dim_ != 4) {
       return false;
@@ -530,7 +530,7 @@ private:
  *
  * Computed via Laplace expansion along the first row.
  */
-inline Complex Matrix4::determinant() const {
+inline Complex Matrix4x4::determinant() const {
   auto det3 = [](Complex m00, Complex m01, Complex m02, Complex m10,
                  Complex m11, Complex m12, Complex m20, Complex m21,
                  Complex m22) {
@@ -559,10 +559,10 @@ template <typename T> struct IsUnitaryMatrix : std::false_type {};
 
 /// @brief Specialization for `Matrix1x1`.
 template <> struct IsUnitaryMatrix<Matrix1x1> : std::true_type {};
-/// @brief Specialization for `Matrix2`.
-template <> struct IsUnitaryMatrix<Matrix2> : std::true_type {};
-/// @brief Specialization for `Matrix4`.
-template <> struct IsUnitaryMatrix<Matrix4> : std::true_type {};
+/// @brief Specialization for `Matrix2x2`.
+template <> struct IsUnitaryMatrix<Matrix2x2> : std::true_type {};
+/// @brief Specialization for `Matrix4x4`.
+template <> struct IsUnitaryMatrix<Matrix4x4> : std::true_type {};
 /// @brief Specialization for `DynamicMatrix`.
 template <> struct IsUnitaryMatrix<DynamicMatrix> : std::true_type {};
 
@@ -590,10 +590,10 @@ inline void copyInto(DynamicMatrix& out, const Matrix1x1& src) {
  * @param out Destination matrix, resized to 2x2.
  * @param src Source matrix.
  */
-inline void copyInto(DynamicMatrix& out, const Matrix2& src) {
+inline void copyInto(DynamicMatrix& out, const Matrix2x2& src) {
   out = DynamicMatrix(2);
-  for (std::size_t i = 0; i < Matrix2::K_ROWS; ++i) {
-    for (std::size_t j = 0; j < Matrix2::K_COLS; ++j) {
+  for (std::size_t i = 0; i < Matrix2x2::K_ROWS; ++i) {
+    for (std::size_t j = 0; j < Matrix2x2::K_COLS; ++j) {
       out(static_cast<std::int64_t>(i), static_cast<std::int64_t>(j)) =
           src(i, j);
     }
@@ -605,10 +605,10 @@ inline void copyInto(DynamicMatrix& out, const Matrix2& src) {
  * @param out Destination matrix, resized to 4x4.
  * @param src Source matrix.
  */
-inline void copyInto(DynamicMatrix& out, const Matrix4& src) {
+inline void copyInto(DynamicMatrix& out, const Matrix4x4& src) {
   out = DynamicMatrix(4);
-  for (std::size_t i = 0; i < Matrix4::K_ROWS; ++i) {
-    for (std::size_t j = 0; j < Matrix4::K_COLS; ++j) {
+  for (std::size_t i = 0; i < Matrix4x4::K_ROWS; ++i) {
+    for (std::size_t j = 0; j < Matrix4x4::K_COLS; ++j) {
       out(static_cast<std::int64_t>(i), static_cast<std::int64_t>(j)) =
           src(i, j);
     }

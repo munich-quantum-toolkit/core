@@ -69,15 +69,15 @@ void RZXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRZX>(context);
 }
 
-std::optional<Matrix4> RZXOp::getUnitaryMatrix() {
+std::optional<Matrix4x4> RZXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   if (const auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
     const auto mc = std::complex<double>{std::cos(*theta / 2.0)};
     const auto ms = std::complex<double>{0.0, std::sin(*theta / 2.0)};
-    return Matrix4::fromElements(mc, -ms, m0, m0, -ms, mc, m0, m0, m0, m0, mc,
-                                 ms, m0, m0, ms, mc);
+    return Matrix4x4::fromElements(mc, -ms, m0, m0, -ms, mc, m0, m0, m0, m0, mc,
+                                   ms, m0, m0, ms, mc);
   }
   return std::nullopt;
 }

@@ -43,7 +43,7 @@ void HOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentH>(context);
 }
 
-Matrix2 HOp::getUnitaryMatrix() {
+Matrix2x2 HOp::getUnitaryMatrix() {
   constexpr auto x = 1.0 / std::numbers::sqrt2;
-  return Matrix2::fromElements(x, x, x, -1.0 * x);
+  return Matrix2x2::fromElements(x, x, x, -1.0 * x);
 }

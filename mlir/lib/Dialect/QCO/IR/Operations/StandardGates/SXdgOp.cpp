@@ -56,10 +56,10 @@ void SXdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSXdgAfterSX, MergeSubsequentSXdg>(context);
 }
 
-Matrix2 SXdgOp::getUnitaryMatrix() {
+Matrix2x2 SXdgOp::getUnitaryMatrix() {
   constexpr auto m00 = std::complex<double>{0.5, -0.5};
   constexpr auto m01 = std::complex<double>{0.5, 0.5};
   constexpr auto m10 = m01;
   constexpr auto m11 = m00;
-  return Matrix2::fromElements(m00, m01, m10, m11);
+  return Matrix2x2::fromElements(m00, m01, m10, m11);
 }

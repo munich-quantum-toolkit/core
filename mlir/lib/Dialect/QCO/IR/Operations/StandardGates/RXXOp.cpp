@@ -82,15 +82,15 @@ void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRXX, MergeSwappedTargetsRXX>(context);
 }
 
-std::optional<Matrix4> RXXOp::getUnitaryMatrix() {
+std::optional<Matrix4x4> RXXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   if (const auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
     const auto mc = std::cos(*theta / 2.0) + 0i;
     const auto ms = -1i * std::sin(*theta / 2.0);
-    return Matrix4::fromElements(mc, m0, m0, ms, m0, mc, ms, m0, m0, ms, mc, m0,
-                                 ms, m0, m0, mc);
+    return Matrix4x4::fromElements(mc, m0, m0, ms, m0, mc, ms, m0, m0, ms, mc,
+                                   m0, ms, m0, m0, mc);
   }
   return std::nullopt;
 }

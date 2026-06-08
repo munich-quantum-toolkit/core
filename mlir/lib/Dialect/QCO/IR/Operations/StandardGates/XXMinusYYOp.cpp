@@ -101,7 +101,7 @@ void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentXXMinusYY>(context);
 }
 
-std::optional<Matrix4> XXMinusYYOp::getUnitaryMatrix() {
+std::optional<Matrix4x4> XXMinusYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   const auto theta = valueToDouble(getTheta());
@@ -116,6 +116,6 @@ std::optional<Matrix4> XXMinusYYOp::getUnitaryMatrix() {
   const auto s = std::sin(*theta / 2.0);
   const auto msp = std::polar(s, *beta - (std::numbers::pi / 2.));
   const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2.));
-  return Matrix4::fromElements(mc, m0, m0, msm, m0, m1, m0, m0, m0, m0, m1, m0,
-                               msp, m0, m0, mc);
+  return Matrix4x4::fromElements(mc, m0, m0, msm, m0, m1, m0, m0, m0, m0, m1,
+                                 m0, msp, m0, m0, mc);
 }

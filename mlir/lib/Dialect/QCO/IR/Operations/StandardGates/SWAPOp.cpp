@@ -55,6 +55,7 @@ void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentSWAP, RemoveSwappedTargetsSWAP>(context);
 }
 
-Matrix4 SWAPOp::getUnitaryMatrix() {
-  return Matrix4::fromElements(1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1);
+Matrix4x4 SWAPOp::getUnitaryMatrix() {
+  return Matrix4x4::fromElements(1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
+                                 1);
 }

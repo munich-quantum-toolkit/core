@@ -41,4 +41,6 @@ void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentX>(context);
 }
 
-Matrix2 XOp::getUnitaryMatrix() { return Matrix2::fromElements(0, 1, 1, 0); }
+Matrix2x2 XOp::getUnitaryMatrix() {
+  return Matrix2x2::fromElements(0, 1, 1, 0);
+}

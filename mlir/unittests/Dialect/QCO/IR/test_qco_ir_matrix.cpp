@@ -34,14 +34,14 @@
 using namespace mlir;
 using namespace qco;
 
-[[nodiscard]] static Matrix2 matrix2FromFlat(const dd::GateMatrix& def) {
-  return Matrix2::fromElements(def[0], def[1], def[2], def[3]);
+[[nodiscard]] static Matrix2x2 matrix2FromFlat(const dd::GateMatrix& def) {
+  return Matrix2x2::fromElements(def[0], def[1], def[2], def[3]);
 }
 
 template <typename Definition>
-[[nodiscard]] static Matrix4
+[[nodiscard]] static Matrix4x4
 matrix4FromDefinition(const Definition& definition) {
-  return Matrix4::fromElements(
+  return Matrix4x4::fromElements(
       definition[0][0], definition[0][1], definition[0][2], definition[0][3],
       definition[1][0], definition[1][1], definition[1][2], definition[1][3],
       definition[2][0], definition[2][1], definition[2][2], definition[2][3],
@@ -88,7 +88,7 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
   const auto cxDD = dd::getDD(cx, *dd);
   const auto definition = cxDD.getMatrix(2);
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
@@ -111,7 +111,7 @@ TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {
   const auto iswapdgDD = dd::getDD(iswapdg, *dd);
   const auto definition = iswapdgDD.getMatrix(2);
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
@@ -126,7 +126,7 @@ TEST_F(QCOMatrixTest, DCXOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::DCX);
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -141,7 +141,7 @@ TEST_F(QCOMatrixTest, ECROpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::ECR);
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -176,7 +176,7 @@ TEST_F(QCOMatrixTest, HOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::H);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -191,7 +191,7 @@ TEST_F(QCOMatrixTest, IdOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::I);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -206,7 +206,7 @@ TEST_F(QCOMatrixTest, iSWAPOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::iSWAP);
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -226,7 +226,7 @@ TEST_F(QCOMatrixTest, POpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::P, {0.123});
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -246,7 +246,7 @@ TEST_F(QCOMatrixTest, ROpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::R, {0.123, 0.456});
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -267,7 +267,7 @@ TEST_F(QCOMatrixTest, RXOpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::RX, {0.123});
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -287,7 +287,7 @@ TEST_F(QCOMatrixTest, RXXOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RXX, {0.123});
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -308,7 +308,7 @@ TEST_F(QCOMatrixTest, RYOpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::RY, {0.456});
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -328,7 +328,7 @@ TEST_F(QCOMatrixTest, RYYOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RYY, {0.123});
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -349,7 +349,7 @@ TEST_F(QCOMatrixTest, RZOpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::RZ, {0.789});
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -369,7 +369,7 @@ TEST_F(QCOMatrixTest, RZXOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RZX, {0.123});
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -389,7 +389,7 @@ TEST_F(QCOMatrixTest, RZZOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RZZ, {0.123});
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -404,7 +404,7 @@ TEST_F(QCOMatrixTest, SOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::S);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -419,7 +419,7 @@ TEST_F(QCOMatrixTest, SdgOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::Sdg);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -434,7 +434,7 @@ TEST_F(QCOMatrixTest, SWAPOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::SWAP);
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -449,7 +449,7 @@ TEST_F(QCOMatrixTest, SXOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::SX);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -464,7 +464,7 @@ TEST_F(QCOMatrixTest, SXdgOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::SXdg);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -479,7 +479,7 @@ TEST_F(QCOMatrixTest, TOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::T);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -494,7 +494,7 @@ TEST_F(QCOMatrixTest, TdgOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::Tdg);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -515,7 +515,7 @@ TEST_F(QCOMatrixTest, U2OpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::U2, {0.234, 0.567});
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -536,7 +536,7 @@ TEST_F(QCOMatrixTest, UOpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::U, {0.1, 0.2, 0.3});
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -551,7 +551,7 @@ TEST_F(QCOMatrixTest, XOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::X);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -572,7 +572,7 @@ TEST_F(QCOMatrixTest, XXMinusYYOpMatrix) {
   const auto definition =
       dd::opToTwoQubitGateMatrix(qc::OpType::XXminusYY, {0.123, 0.456});
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -593,7 +593,7 @@ TEST_F(QCOMatrixTest, XXPlusYYOp) {
   const auto definition =
       dd::opToTwoQubitGateMatrix(qc::OpType::XXplusYY, {0.123, 0.456});
 
-  const Matrix4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -608,7 +608,7 @@ TEST_F(QCOMatrixTest, YOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::Y);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -623,7 +623,7 @@ TEST_F(QCOMatrixTest, ZOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::Z);
 
-  const Matrix2 expected = matrix2FromFlat(definition);
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }

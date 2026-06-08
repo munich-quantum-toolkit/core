@@ -41,4 +41,6 @@ void IdOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveId>(context);
 }
 
-Matrix2 IdOp::getUnitaryMatrix() { return Matrix2::fromElements(1, 0, 0, 1); }
+Matrix2x2 IdOp::getUnitaryMatrix() {
+  return Matrix2x2::fromElements(1, 0, 0, 1);
+}

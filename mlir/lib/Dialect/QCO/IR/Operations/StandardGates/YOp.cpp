@@ -43,8 +43,8 @@ void YOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentY>(context);
 }
 
-Matrix2 YOp::getUnitaryMatrix() {
+Matrix2x2 YOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  return Matrix2::fromElements(0, -1i, 1i, 0);
+  return Matrix2x2::fromElements(0, -1i, 1i, 0);
 }

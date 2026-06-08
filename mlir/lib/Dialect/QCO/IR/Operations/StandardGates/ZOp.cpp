@@ -41,6 +41,6 @@ void ZOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentZ>(context);
 }
 
-Matrix2 ZOp::getUnitaryMatrix() {
-  return Matrix2::fromElements(1.0, 0.0, 0.0, -1.0);
+Matrix2x2 ZOp::getUnitaryMatrix() {
+  return Matrix2x2::fromElements(1.0, 0.0, 0.0, -1.0);
 }

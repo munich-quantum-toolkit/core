@@ -65,11 +65,11 @@ void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRY>(context);
 }
 
-std::optional<Matrix2> RYOp::getUnitaryMatrix() {
+std::optional<Matrix2x2> RYOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
     const auto m00 = std::complex<double>{std::cos(*theta / 2.0)};
     const auto m01 = std::complex<double>{-std::sin(*theta / 2.0)};
-    return Matrix2::fromElements(m00, m01, -m01, m00);
+    return Matrix2x2::fromElements(m00, m01, -m01, m00);
   }
   return std::nullopt;
 }

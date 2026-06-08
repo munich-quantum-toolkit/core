@@ -55,8 +55,8 @@ void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSAfterSdg, MergeSubsequentS>(context);
 }
 
-Matrix2 SOp::getUnitaryMatrix() {
+Matrix2x2 SOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  return Matrix2::fromElements(1.0, 0.0, 0.0, 1i);
+  return Matrix2x2::fromElements(1.0, 0.0, 0.0, 1i);
 }

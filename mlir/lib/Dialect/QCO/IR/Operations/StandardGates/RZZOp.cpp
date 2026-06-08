@@ -82,15 +82,15 @@ void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ>(context);
 }
 
-std::optional<Matrix4> RZZOp::getUnitaryMatrix() {
+std::optional<Matrix4x4> RZZOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   if (const auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
     const auto mp = std::polar(1.0, *theta / 2.0);
     const auto mm = std::polar(1.0, -*theta / 2.0);
-    return Matrix4::fromElements(mm, m0, m0, m0, m0, mp, m0, m0, m0, m0, mp, m0,
-                                 m0, m0, m0, mm);
+    return Matrix4x4::fromElements(mm, m0, m0, m0, m0, mp, m0, m0, m0, m0, mp,
+                                   m0, m0, m0, m0, mm);
   }
   return std::nullopt;
 }

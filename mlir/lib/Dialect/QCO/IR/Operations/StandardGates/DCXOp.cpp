@@ -43,6 +43,7 @@ void DCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveInversePairDCX>(context);
 }
 
-Matrix4 DCXOp::getUnitaryMatrix() {
-  return Matrix4::fromElements(1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0);
+Matrix4x4 DCXOp::getUnitaryMatrix() {
+  return Matrix4x4::fromElements(1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0,
+                                 0);
 }

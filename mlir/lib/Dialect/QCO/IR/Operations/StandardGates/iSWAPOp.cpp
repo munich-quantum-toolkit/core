@@ -16,9 +16,9 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-Matrix4 iSWAPOp::getUnitaryMatrix() {
+Matrix4x4 iSWAPOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  return Matrix4::fromElements(1, 0, 0, 0, 0, 0, 1i, 0, 0, 1i, 0, 0, 0, 0, 0,
-                               1);
+  return Matrix4x4::fromElements(1, 0, 0, 0, 0, 0, 1i, 0, 0, 1i, 0, 0, 0, 0, 0,
+                                 1);
 }
