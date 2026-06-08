@@ -71,6 +71,45 @@ def qc_to_qco(mlir_text: str) -> str:
         return str(module)
 
 
+def register_dialects(context: object) -> None:
+    """Register all MQT MLIR dialects into the given MLIR context.
+
+    Args:
+        context: An ``mlir.ir.Context`` instance to register dialects into.
+    """
+    _register_dialects(context)
+
+
+def compile_program(
+    qasm: str,
+    *,
+    convert_to_qir: bool = False,
+    disable_merge_single_qubit_rotation_gates: bool = False,
+    enable_hadamard_lifting: bool = False,
+) -> str:
+    """Push an OpenQASM program through the full MQT compiler pipeline.
+
+    This is the main user-facing entry point. It accepts an OpenQASM string
+    and returns the final compiled MLIR module as a text string.
+
+    Args:
+        qasm: OpenQASM 2/3 source string.
+        convert_to_qir: Also lower to QIR at the end.
+        disable_merge_single_qubit_rotation_gates: Skip quaternion-based
+            single-qubit rotation gate merging.
+        enable_hadamard_lifting: Apply Hadamard lifting during optimisation.
+
+    Returns:
+        The final compiled MLIR module as a string.
+    """
+    return compile_qasm(
+        qasm,
+        convert_to_qir=convert_to_qir,
+        disable_merge_single_qubit_rotation_gates=disable_merge_single_qubit_rotation_gates,
+        enable_hadamard_lifting=enable_hadamard_lifting,
+    )
+
+
 def compile_with_record(
     qasm: str,
     *,
