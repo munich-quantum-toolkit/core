@@ -37,8 +37,8 @@ measureAndReturn(mlir::qco::QCOProgramBuilder& b,
 namespace mlir::qco {
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
-emptyQCO([[maybe_unused]] QCOProgramBuilder& builder) {
-  return measureAndReturn(builder, {});
+emptyQCO(QCOProgramBuilder& b) {
+  return measureAndReturn(b, {});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
