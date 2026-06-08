@@ -9,6 +9,7 @@
  */
 
 #include "TestCaseUtils.h"
+#include "dd/DDDefinitions.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
@@ -33,20 +34,21 @@
 using namespace mlir;
 using namespace qco;
 
-namespace {
-
-[[nodiscard]] Matrix2 matrix2FromFlat(const dd::GateMatrix& def) {
+[[nodiscard]] static Matrix2 matrix2FromFlat(const dd::GateMatrix& def) {
   return Matrix2::fromElements(def[0], def[1], def[2], def[3]);
 }
 
 template <typename Definition>
-[[nodiscard]] Matrix4 matrix4FromDefinition(const Definition& definition) {
+[[nodiscard]] static Matrix4
+matrix4FromDefinition(const Definition& definition) {
   return Matrix4::fromElements(
       definition[0][0], definition[0][1], definition[0][2], definition[0][3],
       definition[1][0], definition[1][1], definition[1][2], definition[1][3],
       definition[2][0], definition[2][1], definition[2][2], definition[2][3],
       definition[3][0], definition[3][1], definition[3][2], definition[3][3]);
 }
+
+namespace {
 
 struct QCOMatrixTestCase {
   std::string name;

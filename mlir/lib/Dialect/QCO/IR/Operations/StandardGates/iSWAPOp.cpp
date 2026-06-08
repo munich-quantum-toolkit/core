@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/UnitaryMatrix.h"
 
 #include <complex>
 

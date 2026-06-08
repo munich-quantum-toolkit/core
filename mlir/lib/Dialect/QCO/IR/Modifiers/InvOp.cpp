@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/UnitaryMatrix.h"
 
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
