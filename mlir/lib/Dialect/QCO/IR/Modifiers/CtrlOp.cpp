@@ -340,12 +340,12 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeNestedCtrl, ReduceCtrl>(context);
 }
 
-std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
+std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   auto&& bodyUnitary = getBodyUnitary();
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
+  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
   if (!targetMatrix) {
     return std::nullopt;
   }
@@ -359,10 +359,10 @@ std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
   const auto dim = static_cast<int64_t>((1ULL << getNumControls()) * targetDim);
 
   // initialize result with identity
-  Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Identity(dim, dim);
+  DynamicMatrix matrix = DynamicMatrix::identity(dim);
 
   // apply target matrix
-  matrix.bottomRightCorner(targetDim, targetDim) = *targetMatrix;
+  matrix.setBottomRightCorner(*targetMatrix);
 
   return matrix;
 }

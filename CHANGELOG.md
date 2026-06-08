@@ -29,6 +29,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Removed
 
+- 🔥 Remove the Eigen dependency from the QCO MLIR dialect ([#1774]) ([**@simon1hofmann**])
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
 
@@ -402,6 +403,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
 [#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
 [#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
 [#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749

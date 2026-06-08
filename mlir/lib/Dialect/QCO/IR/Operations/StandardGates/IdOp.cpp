@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -41,6 +40,4 @@ void IdOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveId>(context);
 }
 
-Eigen::Matrix2cd IdOp::getUnitaryMatrix() {
-  return Eigen::Matrix2cd{{1, 0}, {0, 1}};
-}
+Matrix2 IdOp::getUnitaryMatrix() { return Matrix2::fromElements(1, 0, 0, 1); }

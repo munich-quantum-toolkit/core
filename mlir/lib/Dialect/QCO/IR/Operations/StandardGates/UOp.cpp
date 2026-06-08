@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -125,7 +124,7 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
       context);
 }
 
-std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
+std::optional<Matrix2> UOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   const auto theta = valueToDouble(getTheta());
@@ -141,5 +140,5 @@ std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
   const auto m01 = std::polar(s, *lambda + std::numbers::pi);
   const auto m10 = std::polar(s, *phi);
   const auto m11 = std::polar(c, *phi + *lambda);
-  return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
+  return Matrix2::fromElements(m00, m01, m10, m11);
 }

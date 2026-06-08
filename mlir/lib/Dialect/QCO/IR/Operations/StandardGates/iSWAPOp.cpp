@@ -10,18 +10,14 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <Eigen/Core>
-
 #include <complex>
 
 using namespace mlir;
 using namespace mlir::qco;
 
-Eigen::Matrix4cd iSWAPOp::getUnitaryMatrix() {
+Matrix4 iSWAPOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  return Eigen::Matrix4cd{{1, 0, 0, 0},  // row 0
-                          {0, 0, 1i, 0}, // row 1
-                          {0, 1i, 0, 0}, // row 2
-                          {0, 0, 0, 1}}; // row 3
+  return Matrix4::fromElements(1, 0, 0, 0, 0, 0, 1i, 0, 0, 1i, 0, 0, 0, 0, 0,
+                               1);
 }

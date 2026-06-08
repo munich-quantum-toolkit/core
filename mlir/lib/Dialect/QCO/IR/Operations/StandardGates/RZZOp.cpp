@@ -12,7 +12,6 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -82,17 +81,15 @@ void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ>(context);
 }
 
-std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {
+std::optional<Matrix4> RZZOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   if (const auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
     const auto mp = std::polar(1.0, *theta / 2.0);
     const auto mm = std::polar(1.0, -*theta / 2.0);
-    return Eigen::Matrix4cd{{mm, m0, m0, m0},  // row 0
-                            {m0, mp, m0, m0},  // row 1
-                            {m0, m0, mp, m0},  // row 2
-                            {m0, m0, m0, mm}}; // row 3
+    return Matrix4::fromElements(mm, m0, m0, m0, m0, mp, m0, m0, m0, m0, mp, m0,
+                                 m0, m0, m0, mm);
   }
   return std::nullopt;
 }

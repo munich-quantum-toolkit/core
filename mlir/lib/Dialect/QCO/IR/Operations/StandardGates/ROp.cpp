@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -80,7 +79,7 @@ void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<ReplaceRWithRX, ReplaceRWithRY>(context);
 }
 
-std::optional<Eigen::Matrix2cd> ROp::getUnitaryMatrix() {
+std::optional<Matrix2> ROp::getUnitaryMatrix() {
   const auto theta = valueToDouble(getTheta());
   const auto phi = valueToDouble(getPhi());
   if (!theta || !phi) {
@@ -91,5 +90,5 @@ std::optional<Eigen::Matrix2cd> ROp::getUnitaryMatrix() {
   const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
   const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
   const std::complex<double> thetaCos = std::cos(*theta / 2.0);
-  return Eigen::Matrix2cd{{thetaCos, m01}, {m10, thetaCos}};
+  return Matrix2::fromElements(thetaCos, m01, m10, thetaCos);
 }

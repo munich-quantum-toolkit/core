@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -401,12 +400,12 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
               CancelNestedInv>(context);
 }
 
-std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
+std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
   auto&& bodyUnitary = getBodyUnitary();
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
+  auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
   if (!targetMatrix) {
     return std::nullopt;
   }

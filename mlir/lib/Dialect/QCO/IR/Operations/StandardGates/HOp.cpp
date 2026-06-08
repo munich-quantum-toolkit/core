@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -43,7 +42,7 @@ void HOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentH>(context);
 }
 
-Eigen::Matrix2cd HOp::getUnitaryMatrix() {
+Matrix2 HOp::getUnitaryMatrix() {
   constexpr auto x = 1.0 / std::numbers::sqrt2;
-  return Eigen::Matrix2cd{{x, x}, {x, -1.0 * x}};
+  return Matrix2::fromElements(x, x, x, -1.0 * x);
 }

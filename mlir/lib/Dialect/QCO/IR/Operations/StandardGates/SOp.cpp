@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -55,9 +54,8 @@ void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSAfterSdg, MergeSubsequentS>(context);
 }
 
-Eigen::Matrix2cd SOp::getUnitaryMatrix() {
+Matrix2 SOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  return Eigen::Matrix2cd{{1.0, 0.0}, // row 0
-                          {0.0, 1i}}; // row 1
+  return Matrix2::fromElements(1.0, 0.0, 0.0, 1i);
 }

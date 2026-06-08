@@ -28,9 +28,7 @@ add_mlir_dialect_library(
   MLIRIR
   MLIRArithDialect
   MLIRInferTypeOpInterface
-  MLIRSideEffectInterfaces
-  PUBLIC
-  Eigen3::Eigen)
+  MLIRSideEffectInterfaces)
 
 mqt_mlir_target_use_project_options(MLIRQCODialect)
 

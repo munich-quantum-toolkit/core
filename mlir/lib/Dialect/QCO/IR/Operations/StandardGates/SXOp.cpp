@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -55,8 +54,10 @@ void SXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSXAfterSXdg, MergeSubsequentSX>(context);
 }
 
-Eigen::Matrix2cd SXOp::getUnitaryMatrix() {
+Matrix2 SXOp::getUnitaryMatrix() {
   constexpr auto m00 = std::complex<double>{0.5, 0.5};
   constexpr auto m01 = std::complex<double>{0.5, -0.5};
-  return Eigen::Matrix2cd{{m00, m01}, {m01, m00}};
+  constexpr auto m10 = m01;
+  constexpr auto m11 = m00;
+  return Matrix2::fromElements(m00, m01, m10, m11);
 }

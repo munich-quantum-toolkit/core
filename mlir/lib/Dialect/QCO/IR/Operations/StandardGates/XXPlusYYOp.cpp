@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -101,7 +100,7 @@ void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentXXPlusYY>(context);
 }
 
-std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {
+std::optional<Matrix4> XXPlusYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   const auto theta = valueToDouble(getTheta());
@@ -116,8 +115,6 @@ std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {
   const auto s = std::sin(*theta / 2.0);
   const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
   const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
-  return Eigen::Matrix4cd{{m1, m0, m0, m0},  // row 0
-                          {m0, mc, msp, m0}, // row 1
-                          {m0, msm, mc, m0}, // row 2
-                          {m0, m0, m0, m1}}; // row 3
+  return Matrix4::fromElements(m1, m0, m0, m0, m0, mc, msp, m0, m0, msm, mc, m0,
+                               m0, m0, m0, m1);
 }

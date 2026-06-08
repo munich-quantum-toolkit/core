@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -56,7 +55,7 @@ void TOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveTAfterTdg, MergeSubsequentT>(context);
 }
 
-Eigen::Matrix2cd TOp::getUnitaryMatrix() {
+Matrix2 TOp::getUnitaryMatrix() {
   const auto m11 = std::polar(1.0, std::numbers::pi / 4.0);
-  return Eigen::Matrix2cd{{1.0, 0.0}, {0.0, m11}};
+  return Matrix2::fromElements(1.0, 0.0, 0.0, m11);
 }

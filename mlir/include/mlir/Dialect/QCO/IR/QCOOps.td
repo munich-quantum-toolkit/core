@@ -200,7 +200,7 @@ def GPhaseOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "gphase"; }
-        [[nodiscard]] std::optional<Eigen::Matrix<std::complex<double>, 1, 1>> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix1x1> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$theta)>];
@@ -226,7 +226,7 @@ def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "id"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -250,7 +250,7 @@ def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "x"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -274,7 +274,7 @@ def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "y"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -298,7 +298,7 @@ def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "z"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -322,7 +322,7 @@ def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "h"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -346,7 +346,7 @@ def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "s"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -371,7 +371,7 @@ def SdgOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -395,7 +395,7 @@ def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "t"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -420,7 +420,7 @@ def TdgOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "tdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -444,7 +444,7 @@ def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sx"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -469,7 +469,7 @@ def SXdgOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sxdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -494,7 +494,7 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -523,7 +523,7 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ry"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -552,7 +552,7 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rz"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -581,7 +581,7 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "p"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -611,7 +611,7 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "r"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -641,7 +641,7 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "u2"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -672,7 +672,7 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "u"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -705,7 +705,7 @@ def SWAPOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "swap"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -733,7 +733,7 @@ def iSWAPOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "iswap"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix4 getUnitaryMatrix();
     }];
 }
 
@@ -759,7 +759,7 @@ def DCXOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "dcx"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -787,7 +787,7 @@ def ECROp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ecr"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static ::mlir::qco::Matrix4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -815,7 +815,7 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rxx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -847,7 +847,7 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ryy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -879,7 +879,7 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -911,7 +911,7 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzz"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -945,7 +945,7 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_plus_yy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -980,7 +980,7 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_minus_yy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::Matrix4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -1124,7 +1124,7 @@ def CtrlOp
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
-        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::DynamicMatrix> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets),
@@ -1195,7 +1195,7 @@ def InvOp
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
-        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<::mlir::qco::DynamicMatrix> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits), [{

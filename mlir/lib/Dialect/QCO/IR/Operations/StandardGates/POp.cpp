@@ -12,7 +12,6 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -65,9 +64,9 @@ void POp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentP>(context);
 }
 
-std::optional<Eigen::Matrix2cd> POp::getUnitaryMatrix() {
+std::optional<Matrix2> POp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    return Eigen::Matrix2cd{{1.0, 0.0}, {0.0, std::polar(1.0, *theta)}};
+    return Matrix2::fromElements(1.0, 0.0, 0.0, std::polar(1.0, *theta));
   }
   return std::nullopt;
 }
