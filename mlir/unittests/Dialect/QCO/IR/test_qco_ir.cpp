@@ -1237,7 +1237,7 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCOTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubitNoMeasure),
                     MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubitsNoMeasure),
+        QCOTestCase{"StaticQubitsNoMeasure", MQT_NAMED_BUILDER(staticQubitsNoMeasure),
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"StaticQubitsWithOps",
                     MQT_NAMED_BUILDER(staticQubitsWithOps),
