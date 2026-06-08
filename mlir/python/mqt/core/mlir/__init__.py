@@ -29,7 +29,6 @@ from __future__ import annotations
 from ._mlir_libs._mqtCoreMlir import compile_qasm, load_qasm
 from ._pipeline import CompilationResult, MQTContext, compile_program, compile_with_record, qc_to_qco, register_dialects
 
-
 __all__ = [
     "CompilationResult",
     "MQTContext",
