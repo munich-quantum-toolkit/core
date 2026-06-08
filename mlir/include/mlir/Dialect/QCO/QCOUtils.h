@@ -248,7 +248,7 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
  */
 inline bool checkDeadGate(Operation* op) {
   if (!isMemoryEffectFree(op)) {
-    // This ignores operations with and regions that have children with memory
+    // This ignores operations and regions that have children with memory
     // effects, which should never be considered dead.
     return false;
   }
