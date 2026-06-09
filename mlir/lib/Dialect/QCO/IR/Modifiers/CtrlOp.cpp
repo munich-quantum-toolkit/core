@@ -355,12 +355,17 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   const auto targetDim = targetMatrix->cols();
   assert(targetMatrix->cols() == targetMatrix->rows());
 
+  if (getNumControls() >= 32) {
+    llvm::reportFatalUsageError(
+        "Creating the unitary matrix for a CtrlOp with more than 31 controls "
+        "is not supported due to memory constraints.");
+  }
+
   // define dimensions and type of output matrix
-  assert(getNumControls() < sizeof(unsigned long long) * 8);
   const auto dim = static_cast<int64_t>((1ULL << getNumControls()) * targetDim);
 
   // initialize result with identity
-  DynamicMatrix matrix = DynamicMatrix::identity(dim);
+  auto matrix = DynamicMatrix::identity(dim);
 
   // apply target matrix
   matrix.setBottomRightCorner(*targetMatrix);
