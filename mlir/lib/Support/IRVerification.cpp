@@ -11,7 +11,6 @@
 #include "mlir/Support/IRVerification.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <llvm/ADT/ArrayRef.h>
@@ -22,6 +21,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -46,379 +46,11 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <utility>
 
 using namespace mlir;
-
-namespace {
-
-using Slice = SetVector<Operation*>;
-
-/// Compute a structural hash for an operation (excluding SSA value identities).
-/// This hash is based on operation name, types, and attributes only.
-struct OperationStructuralHash {
-  size_t operator()(Operation* op) const {
-    size_t hash = llvm::hash_value(op->getName().getStringRef());
-
-    // Hash result types
-    for (auto type : op->getResultTypes()) {
-      hash = llvm::hash_combine(hash, type.getAsOpaquePointer());
-    }
-
-    // Hash operand types (not values)
-    for (auto operand : op->getOperands()) {
-      hash = llvm::hash_combine(hash, operand.getType().getAsOpaquePointer());
-    }
-
-    // Hash attributes
-    // for (const auto& attr : op->getAttrDictionary()) {
-    //   hash = llvm::hash_combine(hash, attr.getName().str());
-    //   hash = llvm::hash_combine(hash, attr.getValue().getAsOpaquePointer());
-    // }
-
-    return hash;
-  }
-};
-
-/// Check if two operations are structurally equivalent (excluding SSA value
-/// identities).
-struct OperationStructuralEquality {
-  bool operator()(Operation* lhs, Operation* rhs) const {
-    // Check operation name
-    if (lhs->getName() != rhs->getName()) {
-      return false;
-    }
-
-    // Check result types
-    if (lhs->getResultTypes() != rhs->getResultTypes()) {
-      return false;
-    }
-
-    // Check operand types (not values)
-    auto lhsOperandTypes = lhs->getOperandTypes();
-    auto rhsOperandTypes = rhs->getOperandTypes();
-    return llvm::equal(lhsOperandTypes, rhsOperandTypes);
-
-    // Note: Attributes are intentionally not checked here to allow relaxed
-    // comparison. Attributes like function names, parameter names, etc. may
-    // differ while operations are still structurally equivalent.
-  }
-};
-
-/// Wrapper for Operation* with structural comparison semantics
-struct StructuralOperationKey {
-  Operation* op;
-
-  explicit StructuralOperationKey(Operation* operation = nullptr)
-      : op(operation) {}
-
-  bool operator==(const StructuralOperationKey& other) const {
-    if (op == other.op) {
-      return true;
-    }
-    if (op == nullptr || other.op == nullptr) {
-      return false;
-    }
-    return OperationStructuralEquality{}(op, other.op);
-  }
-
-  bool operator!=(const StructuralOperationKey& other) const {
-    return !(*this == other);
-  }
-};
-
-/// Map to track value equivalence between two modules.
-using ValueEquivalenceMap = DenseMap<mlir::Value, mlir::Value>;
-
-using OperationSet = DenseSet<Operation*>;
-
-struct InsertWrite {
-  Value scalar;
-  Value index;
-};
-
-struct InsertChainSummary {
-  Value baseTensor;
-  Value finalTensor;
-  SmallVector<InsertWrite> writes;
-};
-
-} // namespace
-
-static bool areValuesEquivalent(Value lhs, Value rhs,
-                                ValueEquivalenceMap& valueMap) {
-  if (auto it = valueMap.find(lhs); it != valueMap.end()) {
-    return it->second == rhs;
-  }
-  valueMap[lhs] = rhs;
-  return true;
-}
-
-static bool areIndexValuesEquivalent(Value lhs, Value rhs,
-                                     ValueEquivalenceMap& valueMap) {
-  if (qtensor::areEquivalentIndices(lhs, rhs)) {
-    return true;
-  }
-  return areValuesEquivalent(lhs, rhs, valueMap);
-}
-
-static bool isQTensorInsertOp(Operation* op) {
-  return isa<qtensor::InsertOp>(op);
-}
-
-static bool isCommutableQTensorInsertDependency(Operation* dependent,
-                                                Operation* dependency) {
-  auto dependentInsert = dyn_cast<qtensor::InsertOp>(dependent);
-  auto dependencyInsert = dyn_cast<qtensor::InsertOp>(dependency);
-  if (!dependentInsert || !dependencyInsert) {
-    return false;
-  }
-  if (dependentInsert.getDest() != dependencyInsert.getResult()) {
-    return false;
-  }
-  auto dependentIndex = dependentInsert.getIndex();
-  auto dependencyIndex = dependencyInsert.getIndex();
-  if (!getConstantIntValue(dependentIndex) ||
-      !getConstantIntValue(dependencyIndex)) {
-    return false;
-  }
-  return !qtensor::areEquivalentIndices(dependentIndex, dependencyIndex);
-}
-
-static Value getInsertChainBaseTensor(Value tensor, const OperationSet& group) {
-  auto current = tensor;
-  while (auto insertOp = current.getDefiningOp<qtensor::InsertOp>()) {
-    if (!group.contains(insertOp.getOperation())) {
-      break;
-    }
-    current = insertOp.getDest();
-  }
-  return current;
-}
-
-static bool summarizeInsertGroup(ArrayRef<Operation*> ops,
-                                 SmallVectorImpl<InsertChainSummary>& chains) {
-  OperationSet groupOps;
-  for (Operation* op : ops) {
-    groupOps.insert(op);
-  }
-
-  DenseSet<Value> consumedInsertResults;
-  for (Operation* op : ops) {
-    auto insertOp = cast<qtensor::InsertOp>(op);
-    if (auto definingInsert =
-            insertOp.getDest().getDefiningOp<qtensor::InsertOp>()) {
-      if (groupOps.contains(definingInsert.getOperation())) {
-        consumedInsertResults.insert(insertOp.getDest());
-      }
-    }
-  }
-
-  DenseMap<Value, size_t> chainByBaseTensor;
-  for (Operation* op : ops) {
-    auto insertOp = cast<qtensor::InsertOp>(op);
-    const Value baseTensor =
-        getInsertChainBaseTensor(insertOp.getDest(), groupOps);
-
-    size_t chainIdx = 0;
-    if (auto it = chainByBaseTensor.find(baseTensor);
-        it != chainByBaseTensor.end()) {
-      chainIdx = it->second;
-    } else {
-      chainIdx = chains.size();
-      chainByBaseTensor[baseTensor] = chainIdx;
-      InsertChainSummary summary;
-      summary.baseTensor = baseTensor;
-      chains.emplace_back(std::move(summary));
-    }
-
-    auto& chain = chains[chainIdx];
-    chain.writes.push_back(InsertWrite{.scalar = insertOp.getScalar(),
-                                       .index = insertOp.getIndex()});
-
-    if (!consumedInsertResults.contains(insertOp.getResult())) {
-      if (chain.finalTensor) {
-        return false;
-      }
-      chain.finalTensor = insertOp.getResult();
-    }
-  }
-
-  for (const auto& chain : chains) {
-    if (!chain.finalTensor) {
-      return false;
-    }
-
-    // Reordering writes to the same index is not semantics-preserving.
-    SmallVector<Value> seenIndices;
-    for (const auto& write : chain.writes) {
-      if (llvm::any_of(seenIndices, [&](Value seenIndex) {
-            return qtensor::areEquivalentIndices(seenIndex, write.index);
-          })) {
-        return false;
-      }
-      seenIndices.push_back(write.index);
-    }
-  }
-
-  return true;
-}
-
-static bool areInsertWritesEquivalentRec(const size_t lhsIdx,
-                                         ArrayRef<InsertWrite> lhsWrites,
-                                         ArrayRef<InsertWrite> rhsWrites,
-                                         SmallVectorImpl<char>& rhsUsed,
-                                         ValueEquivalenceMap& valueMap) {
-  if (lhsIdx == lhsWrites.size()) {
-    return true;
-  }
-
-  for (size_t rhsIdx = 0; rhsIdx < rhsWrites.size(); ++rhsIdx) {
-    if (rhsUsed[rhsIdx] != 0) {
-      continue;
-    }
-
-    ValueEquivalenceMap tempMap = valueMap;
-    if (!areValuesEquivalent(lhsWrites[lhsIdx].scalar, rhsWrites[rhsIdx].scalar,
-                             tempMap) ||
-        !areIndexValuesEquivalent(lhsWrites[lhsIdx].index,
-                                  rhsWrites[rhsIdx].index, tempMap)) {
-      continue;
-    }
-
-    rhsUsed[rhsIdx] = 1;
-    if (areInsertWritesEquivalentRec(lhsIdx + 1, lhsWrites, rhsWrites, rhsUsed,
-                                     tempMap)) {
-      valueMap = std::move(tempMap);
-      return true;
-    }
-    rhsUsed[rhsIdx] = 0;
-  }
-
-  return false;
-}
-
-static bool areInsertWritesEquivalent(ArrayRef<InsertWrite> lhsWrites,
-                                      ArrayRef<InsertWrite> rhsWrites,
-                                      ValueEquivalenceMap& valueMap) {
-  if (lhsWrites.size() != rhsWrites.size()) {
-    return false;
-  }
-  SmallVector<char> rhsUsed(rhsWrites.size(), 0);
-  return areInsertWritesEquivalentRec(0, lhsWrites, rhsWrites, rhsUsed,
-                                      valueMap);
-}
-
-static bool areInsertChainsEquivalent(const InsertChainSummary& lhsChain,
-                                      const InsertChainSummary& rhsChain,
-                                      ValueEquivalenceMap& valueMap) {
-  ValueEquivalenceMap tempMap = valueMap;
-  if (!areValuesEquivalent(lhsChain.baseTensor, rhsChain.baseTensor, tempMap)) {
-    return false;
-  }
-
-  if (!areInsertWritesEquivalent(lhsChain.writes, rhsChain.writes, tempMap)) {
-    return false;
-  }
-
-  if (!areValuesEquivalent(lhsChain.finalTensor, rhsChain.finalTensor,
-                           tempMap)) {
-    return false;
-  }
-
-  valueMap = std::move(tempMap);
-  return true;
-}
-
-static bool areInsertGroupsEquivalentRec(const size_t lhsChainIdx,
-                                         ArrayRef<InsertChainSummary> lhsChains,
-                                         ArrayRef<InsertChainSummary> rhsChains,
-                                         SmallVectorImpl<char>& rhsChainUsed,
-                                         ValueEquivalenceMap& valueMap) {
-  if (lhsChainIdx == lhsChains.size()) {
-    return true;
-  }
-
-  for (size_t rhsChainIdx = 0; rhsChainIdx < rhsChains.size(); ++rhsChainIdx) {
-    if (rhsChainUsed[rhsChainIdx] != 0) {
-      continue;
-    }
-
-    ValueEquivalenceMap tempMap = valueMap;
-    if (!areInsertChainsEquivalent(lhsChains[lhsChainIdx],
-                                   rhsChains[rhsChainIdx], tempMap)) {
-      continue;
-    }
-
-    rhsChainUsed[rhsChainIdx] = 1;
-    if (areInsertGroupsEquivalentRec(lhsChainIdx + 1, lhsChains, rhsChains,
-                                     rhsChainUsed, tempMap)) {
-      valueMap = std::move(tempMap);
-      return true;
-    }
-    rhsChainUsed[rhsChainIdx] = 0;
-  }
-
-  return false;
-}
-
-static bool areInsertGroupsEquivalent(ArrayRef<Operation*> lhsOps,
-                                      ArrayRef<Operation*> rhsOps,
-                                      ValueEquivalenceMap& valueMap) {
-  if (lhsOps.size() != rhsOps.size()) {
-    return false;
-  }
-
-  SmallVector<InsertChainSummary> lhsChains;
-  SmallVector<InsertChainSummary> rhsChains;
-  if (!summarizeInsertGroup(lhsOps, lhsChains) ||
-      !summarizeInsertGroup(rhsOps, rhsChains)) {
-    return false;
-  }
-  if (lhsChains.size() != rhsChains.size()) {
-    return false;
-  }
-
-  SmallVector<char> rhsChainUsed(rhsChains.size(), 0);
-  return areInsertGroupsEquivalentRec(0, lhsChains, rhsChains, rhsChainUsed,
-                                      valueMap);
-}
-
-/// DenseMapInfo specialization for StructuralOperationKey
-template <> struct llvm::DenseMapInfo<StructuralOperationKey> {
-  static StructuralOperationKey getEmptyKey() {
-    return StructuralOperationKey(DenseMapInfo<Operation*>::getEmptyKey());
-  }
-
-  static StructuralOperationKey getTombstoneKey() {
-    return StructuralOperationKey(DenseMapInfo<Operation*>::getTombstoneKey());
-  }
-
-  static unsigned getHashValue(const StructuralOperationKey& key) {
-    if (key.op == getEmptyKey().op || key.op == getTombstoneKey().op) {
-      return DenseMapInfo<Operation*>::getHashValue(key.op);
-    }
-    return OperationStructuralHash{}(key.op);
-  }
-
-  static bool isEqual(const StructuralOperationKey& lhs,
-                      const StructuralOperationKey& rhs) {
-    // Handle special keys
-    if (lhs.op == getEmptyKey().op) {
-      return rhs.op == getEmptyKey().op;
-    }
-    if (lhs.op == getTombstoneKey().op) {
-      return rhs.op == getTombstoneKey().op;
-    }
-    if (rhs.op == getEmptyKey().op || rhs.op == getTombstoneKey().op) {
-      return false;
-    }
-    return lhs == rhs;
-  }
-};
 
 static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
                                 const unsigned width) {
@@ -513,7 +145,7 @@ static bool compareAttributes(const Attribute& attrA, const Attribute& attrB) {
   return true;
 }
 
-static bool isQubitTensor(Value v) {
+static bool hasTypeQubitTensor(Value v) {
   auto tensor = dyn_cast<RankedTensorType>(v.getType());
   if (!tensor) {
     return false;
@@ -563,8 +195,8 @@ static bool compareOperations(Operation* opA, Operation* opB, IRMapping& m) {
   for (const auto& [operandA, operandB] :
        llvm::zip_equal(opA->getOperands(), opB->getOperands())) {
 
-    if (isQubitTensor(operandA)) {
-      if (!isQubitTensor(operandB)) { // TODO: Assertion?
+    if (hasTypeQubitTensor(operandA)) {
+      if (!hasTypeQubitTensor(operandB)) { // TODO: Assertion?
         return false;
       }
 
@@ -596,8 +228,8 @@ static bool compareOperations(Operation* opA, Operation* opB, IRMapping& m) {
 
   for (const auto& [resA, resB] :
        llvm::zip_equal(opA->getResults(), opB->getResults())) {
-    if (!isa<qtensor::AllocOp>(opA) && isQubitTensor(resA)) {
-      if (!isQubitTensor(resB)) {
+    if (!isa<qtensor::AllocOp>(opA) && hasTypeQubitTensor(resA)) {
+      if (!hasTypeQubitTensor(resB)) {
         return false;
       }
       continue;
@@ -609,38 +241,9 @@ static bool compareOperations(Operation* opA, Operation* opB, IRMapping& m) {
   return true;
 }
 
-/// Returns a vector of maximum reachable independent DAGs, as defined via their
-/// def-use chain, where the operations of the setvector are topologically
-/// sorted. The vector is sorted by the size of the DAG (i.e., the number of
-/// operations).
-static SmallVector<Slice> getDisjointSlices(Block& b) {
-  const auto filter = [&b](Operation* op) { return op->getBlock() == &b; };
-
-  const BackwardSliceOptions backwardSliceOptions(filter);
-  const SliceOptions forwardSliceOptions(filter);
-
-  DenseSet<Operation*> visited;
-  visited.reserve(range_size(b.getOperations()));
-
-  SmallVector<SetVector<Operation*>> dags;
-  for (Operation& op : b.getOperations()) {
-    if (visited.contains(&op)) {
-      continue;
-    }
-    const auto slice = getSlice(&op, backwardSliceOptions, forwardSliceOptions);
-    const auto& dag = dags.emplace_back(slice);
-    visited.insert_range(dag);
-  }
-
-  sort(dags, [](const auto& lhs, const auto& rhs) {
-    return lhs.size() < rhs.size();
-  });
-
-  return dags;
-}
-
-/// Extract and return "ready" operations from the slice.
-static Slice getReadyOps(const Slice& slice, DenseSet<Operation*>& visited) {
+/// Extract and return "ready" operations.
+static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> ops,
+                                         DenseSet<Operation*>& visited) {
   const auto isReady = [&](OpOperand& operand) {
     if (isa<BlockArgument>(operand.get())) {
       return true;
@@ -648,8 +251,8 @@ static Slice getReadyOps(const Slice& slice, DenseSet<Operation*>& visited) {
     return visited.contains(operand.get().getDefiningOp());
   };
 
-  Slice ready;
-  for (Operation* op : slice) {
+  SetVector<Operation*> ready;
+  for (Operation* op : ops) {
     if (visited.contains(op)) {
       continue;
     }
@@ -693,11 +296,39 @@ static Slice getReadyOps(const Slice& slice, DenseSet<Operation*>& visited) {
 static bool compareRegions(Region& regionA, Region& regionB,
                            DenseSet<Operation*>& visited, IRMapping& m);
 
-static bool compareSlices(const Slice& lhs, const Slice& rhs,
+/// Compare two blocks for structural equivalence, allowing permutations
+/// of independent operations.
+static bool compareBlocks(Block& blockA, Block& blockB,
                           DenseSet<Operation*>& visited, IRMapping& m) {
+  if (blockA.getNumArguments() != blockB.getNumArguments()) {
+    return false;
+  }
+
+  for (auto [lArg, rArg] :
+       llvm::zip_equal(blockA.getArguments(), blockB.getArguments())) {
+    if (lArg.getType() != rArg.getType()) {
+      return false;
+    }
+
+    m.map(lArg, rArg);
+  }
+
+  SmallVector<Operation*> opsA;
+  opsA.reserve(llvm::range_size(blockA.getOperations()));
+  SmallVector<Operation*> opsB;
+  opsB.reserve(llvm::range_size(blockB.getOperations()));
+
+  for (Operation& op : blockA.getOperations()) {
+    opsA.emplace_back(&op);
+  }
+
+  for (Operation& op : blockB.getOperations()) {
+    opsB.emplace_back(&op);
+  }
+
   while (true) {
-    const auto readyLhs = getReadyOps(lhs, visited);
-    const auto readyRhs = getReadyOps(rhs, visited);
+    const auto readyLhs = getReadyOps(opsA, visited);
+    const auto readyRhs = getReadyOps(opsB, visited);
 
     if (readyLhs.empty() || readyRhs.empty()) {
       break;
@@ -745,39 +376,6 @@ static bool compareSlices(const Slice& lhs, const Slice& rhs,
     }
   }
 
-  return lhs.empty() && rhs.empty();
-}
-
-/// Compare two blocks for structural equivalence, allowing permutations
-/// of independent operations.
-static bool compareBlocks(Block& blockA, Block& blockB,
-                          DenseSet<Operation*>& visited, IRMapping& m) {
-  if (blockA.getNumArguments() != blockB.getNumArguments()) {
-    return false;
-  }
-
-  for (auto [lArg, rArg] :
-       llvm::zip_equal(blockA.getArguments(), blockB.getArguments())) {
-    if (lArg.getType() != rArg.getType()) {
-      return false;
-    }
-
-    m.map(lArg, rArg);
-  }
-
-  auto lDAGs = getDisjointSlices(blockA);
-  auto rDAGs = getDisjointSlices(blockB);
-
-  if (lDAGs.size() != rDAGs.size()) {
-    return false;
-  }
-
-  for (const auto& [lDAG, rDAG] : llvm::zip_equal(lDAGs, rDAGs)) {
-    if (lDAG.size() != rDAG.size() || !compareSlices(lDAG, rDAG, visited, m)) {
-      return false;
-    }
-  }
-
   return true;
 }
 
@@ -800,6 +398,5 @@ static bool compareRegions(Region& regionA, Region& regionB,
 bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
   IRMapping m;
   DenseSet<Operation*> visited;
-
   return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), visited, m);
 }
