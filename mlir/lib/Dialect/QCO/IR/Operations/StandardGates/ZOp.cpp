@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -41,7 +41,7 @@ void ZOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentZ>(context);
 }
 
-Eigen::Matrix2cd ZOp::getUnitaryMatrix() {
-  return Eigen::Matrix2cd{{1.0, 0.0},   // row 0
-                          {0.0, -1.0}}; // row 1
+Matrix2x2 ZOp::getUnitaryMatrix() {
+  return Matrix2x2::fromElements(1, 0,   // row 0
+                                 0, -1); // row 1
 }

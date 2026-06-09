@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -489,7 +489,7 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
               CancelNestedInv, EraseEmptyInv>(context);
 }
 
-std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
+std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
   if (getNumBodyUnitaries() != 1) {
     return std::nullopt;
   }
@@ -498,12 +498,10 @@ std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
+  const auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
   if (!targetMatrix) {
     return std::nullopt;
   }
 
-  targetMatrix->adjointInPlace();
-
-  return targetMatrix;
+  return targetMatrix->adjoint();
 }

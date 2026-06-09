@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -361,7 +362,7 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
 }
 
-std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
+std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   if (getNumBodyUnitaries() != 1) {
     return std::nullopt;
   }
@@ -370,7 +371,7 @@ std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
+  const auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
   if (!targetMatrix) {
     return std::nullopt;
   }
@@ -379,15 +380,20 @@ std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
   const auto targetDim = targetMatrix->cols();
   assert(targetMatrix->cols() == targetMatrix->rows());
 
+  if (getNumControls() >= 32) {
+    llvm::reportFatalUsageError(
+        "Creating the unitary matrix for a CtrlOp with more than 31 controls "
+        "is not supported due to memory constraints.");
+  }
+
   // define dimensions and type of output matrix
-  assert(getNumControls() < sizeof(unsigned long long) * 8);
   const auto dim = static_cast<int64_t>((1ULL << getNumControls()) * targetDim);
 
   // initialize result with identity
-  Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Identity(dim, dim);
+  auto matrix = DynamicMatrix::identity(dim);
 
   // apply target matrix
-  matrix.bottomRightCorner(targetDim, targetDim) = *targetMatrix;
+  matrix.setBottomRightCorner(*targetMatrix);
 
   return matrix;
 }
