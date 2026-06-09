@@ -20,6 +20,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -67,11 +68,34 @@ isApproxFixedImpl(const std::int64_t dim, llvm::ArrayRef<Complex> data,
   return entriesAreApprox(data, other, tol);
 }
 
+/// Returns @p dim as `size_t` after asserting it is non-negative and squarable.
+[[nodiscard]] static std::size_t checkedDim(const std::int64_t dim) {
+  assert(dim >= 0 && "DynamicMatrix dimension must be non-negative");
+  const auto udim = static_cast<std::size_t>(dim);
+  assert(udim == 0 || udim <= std::numeric_limits<std::size_t>::max() / udim);
+  return udim;
+}
+
+[[nodiscard]] static std::size_t checkedStorageSize(const std::int64_t dim) {
+  const auto udim = checkedDim(dim);
+  return udim * udim;
+}
+
+static void validateCornerDims(const std::int64_t matrixDim,
+                               const std::int64_t blockDim) {
+  assert(matrixDim >= 0 && blockDim >= 0 && blockDim <= matrixDim &&
+         "block must fit in the bottom-right corner of the matrix");
+  checkedDim(matrixDim);
+}
+
 /// Copies @p blockData into the bottom-right @p blockDim x @p blockDim corner.
 static void copyBottomRightCorner(const std::int64_t matrixDim,
                                   llvm::MutableArrayRef<Complex> matrixData,
                                   const std::int64_t blockDim,
                                   llvm::ArrayRef<Complex> blockData) {
+  validateCornerDims(matrixDim, blockDim);
+  assert(matrixData.size() >= checkedStorageSize(matrixDim));
+  assert(blockData.size() >= checkedStorageSize(blockDim));
   const std::int64_t offset = matrixDim - blockDim;
   for (std::int64_t row = 0; row < blockDim; ++row) {
     for (std::int64_t col = 0; col < blockDim; ++col) {
@@ -217,7 +241,7 @@ DynamicMatrix::DynamicMatrix() : impl_(std::make_unique<Impl>()) {}
 DynamicMatrix::DynamicMatrix(const std::int64_t dim)
     : impl_(std::make_unique<Impl>()) {
   impl_->dim = dim;
-  impl_->data.assign(static_cast<std::size_t>(dim * dim), Complex{});
+  impl_->data.assign(checkedStorageSize(dim), Complex{});
 }
 
 DynamicMatrix::DynamicMatrix(const DynamicMatrix& other)
@@ -243,7 +267,7 @@ std::int64_t DynamicMatrix::cols() const { return impl_->dim; }
 
 DynamicMatrix DynamicMatrix::identity(const std::int64_t dim) {
   DynamicMatrix matrix(dim);
-  const auto udim = static_cast<std::size_t>(dim);
+  const auto udim = checkedDim(dim);
   for (std::size_t i = 0; i < udim; ++i) {
     matrix.impl_->data[(i * udim) + i] = 1.0;
   }
@@ -279,8 +303,7 @@ void DynamicMatrix::setBottomRightCorner(const DynamicMatrix& block) {
 
 DynamicMatrix DynamicMatrix::adjoint() const {
   DynamicMatrix out(impl_->dim);
-  adjointInto(impl_->data, out.impl_->data,
-              static_cast<std::size_t>(impl_->dim));
+  adjointInto(impl_->data, out.impl_->data, checkedDim(impl_->dim));
   return out;
 }
 
