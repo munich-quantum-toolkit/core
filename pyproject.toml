@@ -95,7 +95,6 @@ build.targets = [
   "mqt-core-dd-bindings",
   "mqt-core-fomac-bindings",
   "mqt-core-na-bindings",
-  "mqt-core-mlir-bindings",
   "mqt-core-qdmi-ddsim-device",
   "mqt-core-qdmi-na-device",
   "mqt-core-qdmi-sc-device",
@@ -134,7 +133,7 @@ git-only = [
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
-BUILD_MQT_CORE_MLIR = "ON"
+BUILD_MQT_CORE_MLIR = "OFF"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"
@@ -324,6 +323,8 @@ exclude = [
     "docs/**",
     "eval/**",
     "mlir/**",
+    "python/mqt/core/mlir/**",
+    "test/python/mlir/**",
 ]
 
 

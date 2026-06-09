@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("mqt.core.mlir", reason="mqt-core built without MLIR support")
+
 from mqt.core.mlir import compile_program, convert_qc_to_qco, load_qasm
 
 BELL = """
