@@ -126,8 +126,6 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
   const auto theta = valueToDouble(getTheta());
   const auto phi = valueToDouble(getPhi());
   const auto lambda = valueToDouble(getLambda());
@@ -135,12 +133,12 @@ std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  const auto c = std::cos(*theta / 2.0);
-  const auto s = std::sin(*theta / 2.0);
-  const auto m00 = c + 0i;
+  const auto c = std::cos(*theta / 2);
+  const auto s = std::sin(*theta / 2);
+
   const auto m01 = std::polar(s, *lambda + std::numbers::pi);
   const auto m10 = std::polar(s, *phi);
   const auto m11 = std::polar(c, *phi + *lambda);
-  return Matrix2x2::fromElements(m00, m01,  // row 0
+  return Matrix2x2::fromElements(c, m01,    // row 0
                                  m10, m11); // row 1
 }

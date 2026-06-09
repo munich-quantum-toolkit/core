@@ -87,10 +87,10 @@ std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  const auto thetaSin = std::sin(*theta / 2.0);
+  const auto thetaSin = std::sin(*theta / 2);
   const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
   const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
-  const std::complex<double> thetaCos = std::cos(*theta / 2.0);
+  const auto thetaCos = std::cos(*theta / 2);
   return Matrix2x2::fromElements(thetaCos, m01,  // row 0
                                  m10, thetaCos); // row 1
 }

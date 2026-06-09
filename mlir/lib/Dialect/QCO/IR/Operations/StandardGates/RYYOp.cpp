@@ -86,13 +86,12 @@ std::optional<Matrix4x4> RYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m0 = 0i;
-    const auto mc = std::complex<double>{std::cos(*theta / 2.0)};
-    const auto ms = std::complex<double>{0.0, std::sin(*theta / 2.0)};
-    return Matrix4x4::fromElements(mc, m0, m0, ms,  // row 0
-                                   m0, mc, -ms, m0, // row 1
-                                   m0, -ms, mc, m0, // row 2
-                                   ms, m0, m0, mc); // row 3
+    const auto mc = std::cos(*theta / 2);
+    const auto ms = 1i * std::sin(*theta / 2);
+    return Matrix4x4::fromElements(mc, 0, 0, ms,  // row 0
+                                   0, mc, -ms, 0, // row 1
+                                   0, -ms, mc, 0, // row 2
+                                   ms, 0, 0, mc); // row 3
   }
   return std::nullopt;
 }

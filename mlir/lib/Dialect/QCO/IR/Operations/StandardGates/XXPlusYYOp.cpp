@@ -102,22 +102,18 @@ void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Matrix4x4> XXPlusYYOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
   const auto theta = valueToDouble(getTheta());
   const auto beta = valueToDouble(getBeta());
   if (!theta || !beta) {
     return std::nullopt;
   }
 
-  const auto m0 = 0.0 + 0i;
-  const auto m1 = 1.0 + 0i;
-  const auto mc = std::cos(*theta / 2.0) + 0i;
-  const auto s = std::sin(*theta / 2.0);
+  const auto mc = std::cos(*theta / 2);
+  const auto s = std::sin(*theta / 2);
   const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
   const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
-  return Matrix4x4::fromElements(m1, m0, m0, m0,  // row 0
-                                 m0, mc, msp, m0, // row 1
-                                 m0, msm, mc, m0, // row 2
-                                 m0, m0, m0, m1); // row 3
+  return Matrix4x4::fromElements(1, 0, 0, 0,    // row 0
+                                 0, mc, msp, 0, // row 1
+                                 0, msm, mc, 0, // row 2
+                                 0, 0, 0, 1);   // row 3
 }

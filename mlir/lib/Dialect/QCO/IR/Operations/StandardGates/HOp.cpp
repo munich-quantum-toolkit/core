@@ -45,6 +45,6 @@ void HOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 Matrix2x2 HOp::getUnitaryMatrix() {
   constexpr auto x = 1.0 / std::numbers::sqrt2;
-  return Matrix2x2::fromElements(x, x,         // row 0
-                                 x, -1.0 * x); // row 1
+  return Matrix2x2::fromElements(x, x,   // row 0
+                                 x, -x); // row 1
 }

@@ -57,8 +57,8 @@ void SXdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Matrix2x2 SXdgOp::getUnitaryMatrix() {
-  constexpr auto m00 = std::complex<double>{0.5, -0.5};
-  constexpr auto m01 = std::complex<double>{0.5, 0.5};
-  return Matrix2x2::fromElements(m00, m01,  // row 0
-                                 m01, m00); // row 1
+  constexpr auto diag = std::complex{0.5, -0.5};
+  constexpr auto offDiag = std::complex{0.5, 0.5};
+  return Matrix2x2::fromElements(diag, offDiag,  // row 0
+                                 offDiag, diag); // row 1
 }

@@ -83,16 +83,13 @@ void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Matrix4x4> RZZOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m0 = 0i;
-    const auto mp = std::polar(1.0, *theta / 2.0);
-    const auto mm = std::polar(1.0, -*theta / 2.0);
-    return Matrix4x4::fromElements(mm, m0, m0, m0,  // row 0
-                                   m0, mp, m0, m0,  // row 1
-                                   m0, m0, mp, m0,  // row 2
-                                   m0, m0, m0, mm); // row 3
+    const auto mp = std::polar(1.0, *theta / 2);
+    const auto mm = std::polar(1.0, -*theta / 2);
+    return Matrix4x4::fromElements(mm, 0, 0, 0,  // row 0
+                                   0, mp, 0, 0,  // row 1
+                                   0, 0, mp, 0,  // row 2
+                                   0, 0, 0, mm); // row 3
   }
   return std::nullopt;
 }

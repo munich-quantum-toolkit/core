@@ -57,7 +57,7 @@ void TOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Matrix2x2 TOp::getUnitaryMatrix() {
-  const auto m11 = std::polar(1.0, std::numbers::pi / 4.0);
-  return Matrix2x2::fromElements(1.0, 0.0,  // row 0
-                                 0.0, m11); // row 1
+  const auto m11 = std::polar(1.0, std::numbers::pi / 4);
+  return Matrix2x2::fromElements(1, 0,    // row 0
+                                 0, m11); // row 1
 }

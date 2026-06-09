@@ -69,10 +69,10 @@ std::optional<Matrix2x2> RXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m00 = std::cos(*theta / 2.0) + 0i;
-    const auto m01 = -1i * std::sin(*theta / 2.0);
-    return Matrix2x2::fromElements(m00, m01,  // row 0
-                                   m01, m00); // row 1
+    const auto diag = std::cos(*theta / 2);
+    const auto offDiag = -1i * std::sin(*theta / 2);
+    return Matrix2x2::fromElements(diag, offDiag,  // row 0
+                                   offDiag, diag); // row 1
   }
   return std::nullopt;
 }

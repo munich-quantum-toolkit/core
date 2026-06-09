@@ -66,14 +66,11 @@ void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Matrix2x2> RZOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m00 = std::polar(1.0, -*theta / 2.0);
-    const auto m01 = 0i;
-    const auto m11 = std::polar(1.0, *theta / 2.0);
-    return Matrix2x2::fromElements(m00, m01,  // row 0
-                                   m01, m11); // row 1
+    const auto m00 = std::polar(1.0, -*theta / 2);
+    const auto m11 = std::polar(1.0, *theta / 2);
+    return Matrix2x2::fromElements(m00, 0,  // row 0
+                                   0, m11); // row 1
   }
   return std::nullopt;
 }

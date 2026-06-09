@@ -67,8 +67,8 @@ void POp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 std::optional<Matrix2x2> POp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    return Matrix2x2::fromElements(1.0, 0.0,                      // row 0
-                                   0.0, std::polar(1.0, *theta)); // row 1
+    return Matrix2x2::fromElements(1, 0,                        // row 0
+                                   0, std::polar(1.0, *theta)); // row 1
   }
   return std::nullopt;
 }
