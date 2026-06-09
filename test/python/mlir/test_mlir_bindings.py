@@ -35,49 +35,60 @@ cx q[0], q[2];
 
 
 def test_load_qasm_returns_qc_dialect() -> None:
-    """Load a Bell circuit and check that the output is in the QC dialect."""
+    """Test that loading a Bell circuit produces a QC dialect MLIR module."""
     result = load_qasm(BELL)
+    print(result)
+
     assert "func.func" in result
-    assert "qc." in result
+    assert "qc.h" in result
 
 
 def test_load_qasm_ghz() -> None:
-    """Load a GHZ circuit and verify the QC dialect output."""
+    """Test that loading a GHZ circuit produces a QC dialect MLIR module."""
     result = load_qasm(GHZ)
+    print(result)
+
     assert "func.func" in result
     assert "qc." in result
 
 
 def test_convert_qc_to_qco_produces_qco_dialect() -> None:
-    """Convert a QC module to QCO and verify the dialect changed."""
+    """Test that converting a QC module produces a QCO dialect module."""
     qc = load_qasm(BELL)
     qco = convert_qc_to_qco(qc)
+    print(qco)
+
     assert "qco." in qco
     assert "qc." not in qco
 
 
 def test_compile_program_full_pipeline() -> None:
-    """Run the full compiler pipeline on a Bell circuit."""
+    """Test that the full compiler pipeline runs without error."""
     result = compile_program(BELL)
+    print(result)
+
     assert "func.func" in result
 
 
 def test_compile_program_convert_to_qir() -> None:
-    """Run the full pipeline including QIR lowering."""
+    """Test the full pipeline with QIR lowering enabled."""
     result = compile_program(BELL, convert_to_qir=True)
+    print(result)
+
     assert "func.func" in result
 
 
 def test_pipeline_is_composable() -> None:
-    """Verify that load_qasm and convert_qc_to_qco can be chained."""
+    """Test that load_qasm and convert_qc_to_qco can be chained."""
     qc = load_qasm(GHZ)
     qco = convert_qc_to_qco(qc)
+
     assert isinstance(qc, str)
     assert isinstance(qco, str)
     assert len(qco) > 0
 
 
 def test_load_qasm_invalid_raises() -> None:
-    """Invalid QASM input should raise a RuntimeError."""
-    with pytest.raises(RuntimeError):
+    """Test that invalid QASM input raises a RuntimeError."""
+    with pytest.raises(RuntimeError, match="failed to translate"):
         load_qasm("this is not valid qasm")
