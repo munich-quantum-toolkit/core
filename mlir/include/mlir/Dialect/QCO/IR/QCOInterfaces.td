@@ -31,19 +31,19 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
   // Size-specific bodies: each helper only accepts the matching matrix type.
   defvar unitaryMatrix1x1MethodBody = [{
       if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
-        if (auto matrix = $_op.getUnitaryMatrix()) {
-          if constexpr (std::is_same_v<
-                            std::remove_cvref_t<decltype(*matrix)>,
-                            Matrix1x1>) {
+        using ValueT = std::remove_cvref_t<decltype(*std::declval<decltype($_op.getUnitaryMatrix())>())>;
+        if constexpr (std::is_same_v<ValueT, Matrix1x1>) {
+          if (auto matrix = $_op.getUnitaryMatrix()) {
             out = *matrix;
             return true;
           }
+          return false;
+        } else {
+          return false;
         }
-        return false;
       } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
-        if constexpr (std::is_same_v<
-                          std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>,
-                          Matrix1x1>) {
+        using ValueT = std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>;
+        if constexpr (std::is_same_v<ValueT, Matrix1x1>) {
           out = $_op.getUnitaryMatrix();
           return true;
         }
@@ -55,19 +55,19 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
   defvar unitaryMatrix2x2MethodBody = [{
       if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
-        if (auto matrix = $_op.getUnitaryMatrix()) {
-          if constexpr (std::is_same_v<
-                            std::remove_cvref_t<decltype(*matrix)>,
-                            Matrix2x2>) {
+        using ValueT = std::remove_cvref_t<decltype(*std::declval<decltype($_op.getUnitaryMatrix())>())>;
+        if constexpr (std::is_same_v<ValueT, Matrix2x2>) {
+          if (auto matrix = $_op.getUnitaryMatrix()) {
             out = *matrix;
             return true;
           }
+          return false;
+        } else {
+          return false;
         }
-        return false;
       } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
-        if constexpr (std::is_same_v<
-                          std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>,
-                          Matrix2x2>) {
+        using ValueT = std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>;
+        if constexpr (std::is_same_v<ValueT, Matrix2x2>) {
           out = $_op.getUnitaryMatrix();
           return true;
         }
@@ -79,19 +79,19 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
   defvar unitaryMatrix4x4MethodBody = [{
       if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
-        if (auto matrix = $_op.getUnitaryMatrix()) {
-          if constexpr (std::is_same_v<
-                            std::remove_cvref_t<decltype(*matrix)>,
-                            Matrix4x4>) {
+        using ValueT = std::remove_cvref_t<decltype(*std::declval<decltype($_op.getUnitaryMatrix())>())>;
+        if constexpr (std::is_same_v<ValueT, Matrix4x4>) {
+          if (auto matrix = $_op.getUnitaryMatrix()) {
             out = *matrix;
             return true;
           }
+          return false;
+        } else {
+          return false;
         }
-        return false;
       } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
-        if constexpr (std::is_same_v<
-                          std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>,
-                          Matrix4x4>) {
+        using ValueT = std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>;
+        if constexpr (std::is_same_v<ValueT, Matrix4x4>) {
           out = $_op.getUnitaryMatrix();
           return true;
         }
