@@ -348,7 +348,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
 static LogicalResult moveRegion(Region& source, Region& dest,
                                 ConversionPatternRewriter& rewriter,
                                 const TypeConverter* typeConverter,
-                                SetVector<Value> aboveValues) {
+                                const SetVector<Value>& aboveValues) {
   auto* oldBlock = &source.back();
   auto* newBlock = &dest.emplaceBlock();
   rewriter.setInsertionPointToEnd(newBlock);
@@ -1200,7 +1200,7 @@ struct ConvertSCFYieldOpToJeff final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::YieldOp op, OpAdaptor adaptor,
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.eraseOp(op);
     return success();
