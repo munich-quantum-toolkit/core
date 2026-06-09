@@ -128,8 +128,8 @@ bool Matrix1x1::isApprox(const Matrix1x1& other, const double tol) const {
   return std::abs(value - other.value) <= tol;
 }
 
-Matrix2x2 Matrix2x2::fromElements(const Complex m00, const Complex m01,
-                                  const Complex m10, const Complex m11) {
+Matrix2x2 Matrix2x2::fromElements(const Complex& m00, const Complex& m01,
+                                  const Complex& m10, const Complex& m11) {
   return {{m00, m01, m10, m11}};
 }
 
@@ -164,14 +164,14 @@ bool Matrix2x2::isApprox(const Matrix2x2& other, const double tol) const {
   return entriesAreApprox(data, other.data, tol);
 }
 
-Matrix4x4 Matrix4x4::fromElements(const Complex m00, const Complex m01,
-                                  const Complex m02, const Complex m03,
-                                  const Complex m10, const Complex m11,
-                                  const Complex m12, const Complex m13,
-                                  const Complex m20, const Complex m21,
-                                  const Complex m22, const Complex m23,
-                                  const Complex m30, const Complex m31,
-                                  const Complex m32, const Complex m33) {
+Matrix4x4 Matrix4x4::fromElements(const Complex& m00, const Complex& m01,
+                                  const Complex& m02, const Complex& m03,
+                                  const Complex& m10, const Complex& m11,
+                                  const Complex& m12, const Complex& m13,
+                                  const Complex& m20, const Complex& m21,
+                                  const Complex& m22, const Complex& m23,
+                                  const Complex& m30, const Complex& m31,
+                                  const Complex& m32, const Complex& m33) {
   return {{m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31,
            m32, m33}};
 }
@@ -189,10 +189,10 @@ Matrix4x4 Matrix4x4::operator*(const Matrix4x4& rhs) const {
   Matrix4x4 out{};
   for (std::size_t row = 0; row < K_ROWS; ++row) {
     const std::size_t rowBase = row * K_COLS;
-    const Complex a0 = data[rowBase + 0];
-    const Complex a1 = data[rowBase + 1];
-    const Complex a2 = data[rowBase + 2];
-    const Complex a3 = data[rowBase + 3];
+    const Complex& a0 = data[rowBase + 0];
+    const Complex& a1 = data[rowBase + 1];
+    const Complex& a2 = data[rowBase + 2];
+    const Complex& a3 = data[rowBase + 3];
     out.data[rowBase + 0] = a0 * rhs.data[0] + a1 * rhs.data[4] +
                             a2 * rhs.data[8] + a3 * rhs.data[12];
     out.data[rowBase + 1] = a0 * rhs.data[1] + a1 * rhs.data[5] +
@@ -216,9 +216,9 @@ Complex Matrix4x4::trace() const {
 }
 
 Complex Matrix4x4::determinant() const {
-  auto det3 = [](const Complex m00, const Complex m01, const Complex m02,
-                 const Complex m10, const Complex m11, const Complex m12,
-                 const Complex m20, const Complex m21, const Complex m22) {
+  auto det3 = [](const Complex& m00, const Complex& m01, const Complex& m02,
+                 const Complex& m10, const Complex& m11, const Complex& m12,
+                 const Complex& m20, const Complex& m21, const Complex& m22) {
     return m00 * (m11 * m22 - m12 * m21) - m01 * (m10 * m22 - m12 * m20) +
            m02 * (m10 * m21 - m11 * m20);
   };

@@ -93,8 +93,10 @@ struct Matrix2x2 {
    * @param m11 Element at row 1, column 1.
    * @return A new `Matrix2x2` with the given elements.
    */
-  [[nodiscard]] static Matrix2x2 fromElements(Complex m00, Complex m01,
-                                              Complex m10, Complex m11);
+  [[nodiscard]] static Matrix2x2 fromElements(const Complex& m00,
+                                              const Complex& m01,
+                                              const Complex& m10,
+                                              const Complex& m11);
 
   /**
    * @brief Returns the 2x2 identity matrix.
@@ -195,10 +197,12 @@ struct Matrix4x4 {
    * @return A new `Matrix4x4` with the given elements.
    */
   [[nodiscard]] static Matrix4x4
-  fromElements(Complex m00, Complex m01, Complex m02, Complex m03, Complex m10,
-               Complex m11, Complex m12, Complex m13, Complex m20, Complex m21,
-               Complex m22, Complex m23, Complex m30, Complex m31, Complex m32,
-               Complex m33);
+  fromElements(const Complex& m00, const Complex& m01, const Complex& m02,
+               const Complex& m03, const Complex& m10, const Complex& m11,
+               const Complex& m12, const Complex& m13, const Complex& m20,
+               const Complex& m21, const Complex& m22, const Complex& m23,
+               const Complex& m30, const Complex& m31, const Complex& m32,
+               const Complex& m33);
 
   /**
    * @brief Returns the 4x4 identity matrix.
