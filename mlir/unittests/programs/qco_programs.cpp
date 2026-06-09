@@ -276,8 +276,8 @@ void repeatedControlledX(QCOProgramBuilder& b) {
   Value q1;
   auto tensor = b.qtensorAlloc(2);
   std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
-  q0 = b.h(q0);
   std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+  q0 = b.h(q0);
   for (auto i = 0; i < 2; i++) {
     std::tie(q0, q1) = b.cx(q0, q1);
   }

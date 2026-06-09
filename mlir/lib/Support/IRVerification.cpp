@@ -10,7 +10,9 @@
 
 #include "mlir/Support/IRVerification.h"
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
+#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
@@ -20,7 +22,9 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -30,6 +34,7 @@
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/IRMapping.h>
@@ -41,6 +46,7 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <utility>
@@ -414,8 +420,8 @@ template <> struct llvm::DenseMapInfo<StructuralOperationKey> {
   }
 };
 
-static bool areFloatValuesNear(const APFloat& lhs, const APFloat& rhs,
-                               const unsigned width) {
+static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
+                                const unsigned width) {
   if (lhs.isNaN() || rhs.isNaN()) {
     return lhs.isNaN() && rhs.isNaN();
   }
@@ -443,141 +449,164 @@ static bool areFloatValuesNear(const APFloat& lhs, const APFloat& rhs,
   return absDiff <= absTol + (relTol * scale);
 }
 
-static bool areConstantAttributesEquivalent(const Attribute& lhs,
-                                            const Attribute& rhs) {
-  if (lhs == rhs) {
-    return true;
-  }
-
-  if (auto lhsFloat = dyn_cast<FloatAttr>(lhs)) {
-    auto rhsFloat = dyn_cast<FloatAttr>(rhs);
-    if (!rhsFloat) {
+static bool compareAttributes(const Attribute& attrA, const Attribute& attrB) {
+  if (dyn_cast<UnitAttr>(attrA)) {
+    if (!dyn_cast<UnitAttr>(attrB)) {
       return false;
     }
-    return areFloatValuesNear(lhsFloat.getValue(), rhsFloat.getValue(),
-                              lhsFloat.getType().getIntOrFloatBitWidth());
-  }
+  } else if (auto intAttrA = dyn_cast<IntegerAttr>(attrA)) {
+    auto intAttrB = dyn_cast<IntegerAttr>(attrB);
+    if (!intAttrB || intAttrA.getValue() != intAttrB.getValue()) {
+      return false;
+    }
+  } else if (auto floatAttrA = dyn_cast<FloatAttr>(attrA)) {
+    auto floatAttrB = dyn_cast<FloatAttr>(attrB);
 
-  return false;
-}
-
-/// Compare two operations for structural equivalence.
-/// Updates valueMap to track corresponding SSA values.
-static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
-                                    ValueEquivalenceMap& valueMap) {
-  // Check operation name
-  if (lhs->getName() != rhs->getName()) {
-    return false;
-  }
-
-  // Check arith::ConstantOp
-  if (auto lhsConst = dyn_cast<arith::ConstantOp>(lhs)) {
-    auto rhsConst = dyn_cast<arith::ConstantOp>(rhs);
-    if (!rhsConst) {
+    if (!floatAttrB ||
+        !approxCompareFloats(floatAttrA.getValue(), floatAttrB.getValue(),
+                             floatAttrA.getType().getIntOrFloatBitWidth())) {
+      return false;
+    }
+  } else if (auto strAttrA = dyn_cast<StringAttr>(attrA)) {
+    auto strAttrB = dyn_cast<StringAttr>(attrB);
+    if (!strAttrB || strAttrA.getValue() != strAttrB.getValue()) {
+      return false;
+    }
+  } else if (auto arrayAttrA = dyn_cast<ArrayAttr>(attrA)) {
+    auto arrayAttrB = dyn_cast<ArrayAttr>(attrB);
+    if (!arrayAttrB) {
       return false;
     }
 
-    if (!areConstantAttributesEquivalent(lhsConst.getValue(),
-                                         rhsConst.getValue())) {
+    if (arrayAttrA.size() != arrayAttrB.size()) {
       return false;
     }
-  }
 
-  // Check LLVM::ConstantOp
-  if (auto lhsConst = dyn_cast<LLVM::ConstantOp>(lhs)) {
-    auto rhsConst = dyn_cast<LLVM::ConstantOp>(rhs);
-    if (!rhsConst) {
-      return false;
-    }
-    if (!areConstantAttributesEquivalent(lhsConst.getValue(),
-                                         rhsConst.getValue())) {
-      return false;
-    }
-  }
-
-  // Check LLVM::CallOp
-  if (auto lhsCall = dyn_cast<LLVM::CallOp>(lhs)) {
-    auto rhsCall = dyn_cast<LLVM::CallOp>(rhs);
-    if (!rhsCall) {
-      return false;
-    }
-    if (lhsCall.getCallee() != rhsCall.getCallee()) {
-      return false;
-    }
-  }
-
-  // Check number of operands and results
-  if (lhs->getNumOperands() != rhs->getNumOperands() ||
-      lhs->getNumResults() != rhs->getNumResults() ||
-      lhs->getNumRegions() != rhs->getNumRegions()) {
-    return false;
-  }
-
-  // Note: Attributes are intentionally not checked to allow relaxed comparison
-
-  // Check result types
-  if (lhs->getResultTypes() != rhs->getResultTypes()) {
-    return false;
-  }
-
-  // Check operands according to value mapping
-  for (auto [lhsOperand, rhsOperand] :
-       llvm::zip_equal(lhs->getOperands(), rhs->getOperands())) {
-    if (auto it = valueMap.find(lhsOperand); it != valueMap.end()) {
-      // Value already mapped, must match
-      if (it->second != rhsOperand) {
+    // Note: This assumes that the array attributes are equivalently ordered.
+    for (const auto [elementAttrA, elementAttrB] :
+         llvm::zip_equal(arrayAttrA, arrayAttrB)) {
+      if (!compareAttributes(elementAttrA, elementAttrB)) {
         return false;
       }
-    } else {
-      // Establish new mapping
-      valueMap[lhsOperand] = rhsOperand;
     }
-  }
+  } else if (auto denseArrayAttrA =
+                 llvm::dyn_cast<mlir::DenseArrayAttr>(attrA)) {
+    auto denseArrayAttrB = llvm::dyn_cast<mlir::DenseArrayAttr>(attrB);
+    if (!denseArrayAttrB || denseArrayAttrA.size() != denseArrayAttrB.size() ||
+        denseArrayAttrA.getElementType() != denseArrayAttrB.getElementType()) {
+      return false;
+    }
 
-  // Update value mapping for results
-  for (auto [lhsResult, rhsResult] :
-       llvm::zip(lhs->getResults(), rhs->getResults())) {
-    valueMap[lhsResult] = rhsResult;
+    for (const auto [valA, valB] : llvm::zip_equal(
+             denseArrayAttrA.getRawData(), denseArrayAttrB.getRawData())) {
+      if (valA != valB) {
+        return false;
+      }
+    }
+
+  } else {
+    attrA.dump();
+    llvm::reportFatalInternalError("unhandled attribute type!");
+    llvm::llvm_unreachable_internal();
   }
 
   return true;
 }
 
-/// Check if an operation has memory effects or control flow side effects
-/// that would prevent reordering.
-static bool hasOrderingConstraints(Operation* op) {
-  // Terminators must maintain their position
-  if (op->hasTrait<OpTrait::IsTerminator>()) {
-    return true;
-  }
-
-  // Symbol-defining operations (like function declarations) can be reordered
-  if (op->hasTrait<OpTrait::SymbolTable>() ||
-      isa<LLVM::LLVMFuncOp, func::FuncOp>(op)) {
+static bool isQubitTensor(Value v) {
+  auto tensor = dyn_cast<RankedTensorType>(v.getType());
+  if (!tensor) {
     return false;
   }
 
-  // Check for memory effects that enforce ordering
-  if (auto memInterface = dyn_cast<MemoryEffectOpInterface>(op)) {
-    SmallVector<MemoryEffects::EffectInstance> effects;
-    memInterface.getEffects(effects);
+  return isa<qco::QubitType>(tensor.getElementType());
+}
 
-    bool hasNonAllocFreeEffects = false;
-    for (const auto& effect : effects) {
-      // Allow operations with no effects or pure allocation/free effects
-      if (!isa<MemoryEffects::Allocate, MemoryEffects::Free>(
-              effect.getEffect())) {
-        hasNonAllocFreeEffects = true;
-        break;
-      }
+static bool compareOperations(Operation* opA, Operation* opB, IRMapping& m) {
+
+  // Compare top-level signature-like characteristics.
+
+  if (opA->getName() != opB->getName() ||
+      opA->getNumOperands() != opB->getNumOperands() ||
+      opA->getOperandTypes() != opB->getOperandTypes() ||
+      opA->getNumResults() != opB->getNumResults() ||
+      opA->getResultTypes() != opB->getResultTypes() ||
+      opA->getAttrs().size() != opB->getAttrs().size() ||
+      opA->getNumRegions() != opB->getNumRegions() ||
+      opA->getDialect()->getNamespace() != opB->getDialect()->getNamespace()) {
+    return false;
+  }
+
+  // Compare attributes.
+
+  const DenseSet<StringRef> ignore{"function_type"};
+
+  for (const auto& namedAttrA : opA->getAttrs()) {
+    const StringRef keyA = namedAttrA.getName().strref();
+
+    if (ignore.contains(keyA)) {
+      return true;
     }
 
-    if (hasNonAllocFreeEffects) {
-      return true;
+    if (!opB->hasAttr(keyA)) {
+      return false;
+    }
+
+    if (!compareAttributes(namedAttrA.getValue(), opB->getAttr(keyA))) {
+      return false;
     }
   }
 
-  return false;
+  // Compare operands.
+  // TODO: Equal type check.
+
+  for (const auto& [operandA, operandB] :
+       llvm::zip_equal(opA->getOperands(), opB->getOperands())) {
+
+    if (isQubitTensor(operandA)) {
+      if (!isQubitTensor(operandB)) { // TODO: Assertion?
+        return false;
+      }
+
+      auto tensorA = cast<TypedValue<RankedTensorType>>(operandA);
+      qtensor::TensorIterator itA(tensorA);
+      while (std::prev(itA) != itA) {
+        --itA;
+      }
+
+      auto tensorB = cast<TypedValue<RankedTensorType>>(operandB);
+      qtensor::TensorIterator itB(tensorB);
+      while (std::prev(itB) != itB) {
+        --itB;
+      }
+
+      if (itA.operation() == nullptr) { // Block-Argument.
+        if (itB.operation() != nullptr) {
+          return false;
+        }
+      } else {
+        auto allocA = cast<qtensor::AllocOp>(itA.operation());
+        auto allocB = cast<qtensor::AllocOp>(itB.operation());
+        if (m.lookup(allocA.getResult()) != allocB.getResult()) {
+          return false;
+        }
+      }
+    }
+  }
+
+  for (const auto& [resA, resB] :
+       llvm::zip_equal(opA->getResults(), opB->getResults())) {
+    if (!isa<qtensor::AllocOp>(opA) && isQubitTensor(resA)) {
+      if (!isQubitTensor(resB)) {
+        return false;
+      }
+      continue;
+    }
+
+    m.map(resA, resB);
+  }
+
+  return true;
 }
 
 /// Returns a vector of maximum reachable independent DAGs, as defined via their
@@ -610,29 +639,21 @@ static SmallVector<Slice> getDisjointSlices(Block& b) {
   return dags;
 }
 
-static bool areTopLevelEquivalent(Operation* lhs, Operation* rhs) {
-  return lhs->getName() == rhs->getName() &&
-         lhs->getNumOperands() == rhs->getNumOperands() &&
-         lhs->getOperandTypes() == rhs->getOperandTypes() &&
-         lhs->getNumResults() == rhs->getNumResults() &&
-         lhs->getResultTypes() == rhs->getResultTypes() &&
-         lhs->getAttrs().size() == rhs->getAttrs().size() &&
-         lhs->getNumRegions() == rhs->getNumRegions();
-
-  
-}
-
 /// Extract and return "ready" operations from the slice.
-static Slice getReadyOps(Slice& slice, DenseSet<Operation*> finished) {
+static Slice getReadyOps(const Slice& slice, DenseSet<Operation*>& visited) {
   const auto isReady = [&](OpOperand& operand) {
     if (isa<BlockArgument>(operand.get())) {
-      return true; // The defining op is finished?
+      return true;
     }
-    return finished.contains(operand.get().getDefiningOp());
+    return visited.contains(operand.get().getDefiningOp());
   };
 
   Slice ready;
   for (Operation* op : slice) {
+    if (visited.contains(op)) {
+      continue;
+    }
+
     if (llvm::all_of(op->getOpOperands(), isReady)) {
       ready.insert(op);
       continue;
@@ -648,6 +669,7 @@ static Slice getReadyOps(Slice& slice, DenseSet<Operation*> finished) {
       if (isa<qtensor::InsertOp>(prev)) {
         if (ready.contains(prev)) {
           ready.insert(insert.getOperation());
+          continue;
         }
       }
     }
@@ -659,6 +681,7 @@ static Slice getReadyOps(Slice& slice, DenseSet<Operation*> finished) {
       if (isa<qtensor::ExtractOp>(prev)) {
         if (ready.contains(prev)) {
           ready.insert(extract.getOperation());
+          continue;
         }
       }
     }
@@ -667,15 +690,14 @@ static Slice getReadyOps(Slice& slice, DenseSet<Operation*> finished) {
   return ready;
 }
 
-static bool areEquivalent(Region& lhs, Region& rhs, IRMapping& m);
+static bool compareRegions(Region& regionA, Region& regionB,
+                           DenseSet<Operation*>& visited, IRMapping& m);
 
-static bool areEquivalent(Slice& lhs, Slice& rhs, IRMapping& m) {
-  DenseSet<Operation*> finished;
-  finished.reserve(lhs.size() + rhs.size());
-
+static bool compareSlices(const Slice& lhs, const Slice& rhs,
+                          DenseSet<Operation*>& visited, IRMapping& m) {
   while (true) {
-    const auto readyLhs = getReadyOps(lhs, finished);
-    const auto readyRhs = getReadyOps(rhs, finished);
+    const auto readyLhs = getReadyOps(lhs, visited);
+    const auto readyRhs = getReadyOps(rhs, visited);
 
     if (readyLhs.empty() || readyRhs.empty()) {
       break;
@@ -685,35 +707,42 @@ static bool areEquivalent(Slice& lhs, Slice& rhs, IRMapping& m) {
       return false;
     }
 
-    // Greedily search for a structural equivalent operation.
-    for (Operation* opLhs : readyLhs) {
-      for (Operation* opRhs : readyRhs) {
-        if (areTopLevelEquivalent(opLhs, opRhs)) { // TODO: Full equivalence check with attrs etc. 
-          m.map(opLhs, opRhs); // Map operations.
-          // Map operands.
-          // Map results.
+    // Greedily find structural equivalent operation for each op on the lefthand
+    // side.
+    SmallVector<std::pair<Operation*, Operation*>> nested;
+    for (Operation* opA : readyLhs) {
+      bool partnerFound{false};
+      for (Operation* opB : readyRhs) {
+        if (compareOperations(opA, opB, m)) {
+          llvm::dbgs() << opA->getName() << " == " << opB->getName() << '\n';
+          m.map(opA, opB); // Create op mapping.
 
-          llvm::dbgs() << opLhs->getName() << " == " << opRhs->getName()
-                       << '\n';
+          if (opA->getNumRegions() != 0) {
+            nested.emplace_back(opA, opB);
+          }
+
+          partnerFound = true;
+          break;
         }
+      }
+
+      if (!partnerFound) {
+        llvm::dbgs() << "no matching op found: " << opA->getName() << '\n';
+        return false;
       }
     }
 
-    // for (Operation* op : readyLhs) {
-    //   op->dumpPretty();
-    //   for (Region& region : op->getRegions()) {
-    //     IRMapping m;
-    //     if (!areEquivalent(region, region, m)) {
-    //       return false;
-    //     }
-    //   }
-    // }
+    visited.insert_range(readyLhs);
+    visited.insert_range(readyRhs);
 
-    finished.insert_range(readyLhs);
-    lhs.set_subtract(readyLhs);
-
-    finished.insert_range(readyRhs);
-    rhs.set_subtract(readyRhs);
+    for (auto& [opA, opB] : nested) {
+      for (const auto [regionA, regionB] :
+           llvm::zip_equal(opA->getRegions(), opB->getRegions())) {
+        if (!compareRegions(regionA, regionB, visited, m)) {
+          return false;
+        }
+      }
+    }
   }
 
   return lhs.empty() && rhs.empty();
@@ -721,13 +750,14 @@ static bool areEquivalent(Slice& lhs, Slice& rhs, IRMapping& m) {
 
 /// Compare two blocks for structural equivalence, allowing permutations
 /// of independent operations.
-static bool areEquivalent(Block& lhs, Block& rhs, IRMapping& m) {
-  if (lhs.getNumArguments() != rhs.getNumArguments()) {
+static bool compareBlocks(Block& blockA, Block& blockB,
+                          DenseSet<Operation*>& visited, IRMapping& m) {
+  if (blockA.getNumArguments() != blockB.getNumArguments()) {
     return false;
   }
 
   for (auto [lArg, rArg] :
-       llvm::zip_equal(lhs.getArguments(), rhs.getArguments())) {
+       llvm::zip_equal(blockA.getArguments(), blockB.getArguments())) {
     if (lArg.getType() != rArg.getType()) {
       return false;
     }
@@ -735,15 +765,15 @@ static bool areEquivalent(Block& lhs, Block& rhs, IRMapping& m) {
     m.map(lArg, rArg);
   }
 
-  auto lDAGs = getDisjointSlices(lhs);
-  auto rDAGs = getDisjointSlices(rhs);
+  auto lDAGs = getDisjointSlices(blockA);
+  auto rDAGs = getDisjointSlices(blockB);
 
   if (lDAGs.size() != rDAGs.size()) {
     return false;
   }
 
   for (const auto& [lDAG, rDAG] : llvm::zip_equal(lDAGs, rDAGs)) {
-    if (lDAG.size() != rDAG.size() || !areEquivalent(lDAG, rDAG, m)) {
+    if (lDAG.size() != rDAG.size() || !compareSlices(lDAG, rDAG, visited, m)) {
       return false;
     }
   }
@@ -752,13 +782,14 @@ static bool areEquivalent(Block& lhs, Block& rhs, IRMapping& m) {
 }
 
 /// Compare two regions for structural equivalence.
-static bool areEquivalent(Region& lhs, Region& rhs, IRMapping& m) {
-  if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
+static bool compareRegions(Region& regionA, Region& regionB,
+                           DenseSet<Operation*>& visited, IRMapping& m) {
+  if (regionA.getBlocks().size() != regionB.getBlocks().size()) {
     return false;
   }
 
-  for (auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
-    if (!areEquivalent(lhsBlock, rhsBlock, m)) {
+  for (const auto [blockA, blockB] : llvm::zip_equal(regionA, regionB)) {
+    if (!compareBlocks(blockA, blockB, visited, m)) {
       return false;
     }
   }
@@ -768,5 +799,7 @@ static bool areEquivalent(Region& lhs, Region& rhs, IRMapping& m) {
 
 bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
   IRMapping m;
-  return areEquivalent(lhs.getBodyRegion(), rhs.getBodyRegion(), m);
+  DenseSet<Operation*> visited;
+
+  return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), visited, m);
 }
