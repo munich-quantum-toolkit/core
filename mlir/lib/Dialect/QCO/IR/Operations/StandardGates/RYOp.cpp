@@ -20,7 +20,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
-#include <complex>
 #include <optional>
 #include <variant>
 
