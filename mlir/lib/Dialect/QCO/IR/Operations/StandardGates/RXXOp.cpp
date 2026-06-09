@@ -89,8 +89,10 @@ std::optional<Matrix4x4> RXXOp::getUnitaryMatrix() {
     const auto m0 = 0i;
     const auto mc = std::cos(*theta / 2.0) + 0i;
     const auto ms = -1i * std::sin(*theta / 2.0);
-    return Matrix4x4::fromElements(mc, m0, m0, ms, m0, mc, ms, m0, m0, ms, mc,
-                                   m0, ms, m0, m0, mc);
+    return Matrix4x4::fromElements(mc, m0, m0, ms,  // row 0
+                                   m0, mc, ms, m0,  // row 1
+                                   m0, ms, mc, m0,  // row 2
+                                   ms, m0, m0, mc); // row 3
   }
   return std::nullopt;
 }

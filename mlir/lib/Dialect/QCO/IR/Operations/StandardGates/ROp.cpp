@@ -91,5 +91,6 @@ std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
   const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
   const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
   const std::complex<double> thetaCos = std::cos(*theta / 2.0);
-  return Matrix2x2::fromElements(thetaCos, m01, m10, thetaCos);
+  return Matrix2x2::fromElements(thetaCos, m01,  // row 0
+                                 m10, thetaCos); // row 1
 }

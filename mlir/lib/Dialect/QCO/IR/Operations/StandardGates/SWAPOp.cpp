@@ -56,6 +56,8 @@ void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Matrix4x4 SWAPOp::getUnitaryMatrix() {
-  return Matrix4x4::fromElements(1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0,
-                                 1);
+  return Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
+                                 0, 0, 1, 0,  // row 1
+                                 0, 1, 0, 0,  // row 2
+                                 0, 0, 0, 1); // row 3
 }

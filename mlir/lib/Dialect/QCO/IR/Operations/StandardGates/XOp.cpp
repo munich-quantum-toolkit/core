@@ -42,5 +42,6 @@ void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Matrix2x2 XOp::getUnitaryMatrix() {
-  return Matrix2x2::fromElements(0, 1, 1, 0);
+  return Matrix2x2::fromElements(0, 1,  // row 0
+                                 1, 0); // row 1
 }

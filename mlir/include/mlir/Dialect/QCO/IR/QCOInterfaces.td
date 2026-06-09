@@ -189,11 +189,13 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       (ins "::mlir::qco::DynamicMatrix&":$out), [{
       if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
         if (auto matrix = $_op.getUnitaryMatrix()) {
-          return ::mlir::qco::detail::assignToDynamic(out, *matrix);
+          out.assignFrom(*matrix);
+          return true;
         }
         return false;
       } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
-        return ::mlir::qco::detail::assignToDynamic(out, $_op.getUnitaryMatrix());
+        out.assignFrom($_op.getUnitaryMatrix());
+        return true;
       } else {
         llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
       }
@@ -202,7 +204,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
   let extraClassDeclaration = [{
         template<typename MatrixType>
         std::optional<MatrixType> getUnitaryMatrix() {
-          static_assert(::mlir::qco::IS_UNITARY_MATRIX_V<MatrixType>,
+          static_assert(::mlir::qco::is_unitary_matrix_v<MatrixType>,
                         "MatrixType must be Matrix1x1, Matrix2x2, Matrix4x4, or DynamicMatrix");
           MatrixType out;
           bool result = false;

@@ -24,6 +24,8 @@ add_mlir_dialect_library(
   MLIRQCOOpsIncGen
   MLIRQCOInterfacesIncGen
   LINK_LIBS
+  PUBLIC
+  MLIRQCOUnitaryMatrix
   PRIVATE
   MLIRIR
   MLIRArithDialect

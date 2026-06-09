@@ -406,12 +406,10 @@ std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
+  const auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
   if (!targetMatrix) {
     return std::nullopt;
   }
 
-  targetMatrix->adjointInPlace();
-
-  return targetMatrix;
+  return targetMatrix->adjoint();
 }

@@ -42,5 +42,6 @@ void ZOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Matrix2x2 ZOp::getUnitaryMatrix() {
-  return Matrix2x2::fromElements(1.0, 0.0, 0.0, -1.0);
+  return Matrix2x2::fromElements(1.0, 0.0,   // row 0
+                                 0.0, -1.0); // row 1
 }

@@ -71,9 +71,9 @@ std::optional<Matrix2x2> RZOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
     const auto m00 = std::polar(1.0, -*theta / 2.0);
     const auto m01 = 0i;
-    const auto m10 = m01;
     const auto m11 = std::polar(1.0, *theta / 2.0);
-    return Matrix2x2::fromElements(m00, m01, m10, m11);
+    return Matrix2x2::fromElements(m00, m01,  // row 0
+                                   m01, m11); // row 1
   }
   return std::nullopt;
 }

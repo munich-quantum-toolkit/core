@@ -89,8 +89,10 @@ std::optional<Matrix4x4> RZZOp::getUnitaryMatrix() {
     const auto m0 = 0i;
     const auto mp = std::polar(1.0, *theta / 2.0);
     const auto mm = std::polar(1.0, -*theta / 2.0);
-    return Matrix4x4::fromElements(mm, m0, m0, m0, m0, mp, m0, m0, m0, m0, mp,
-                                   m0, m0, m0, m0, mm);
+    return Matrix4x4::fromElements(mm, m0, m0, m0,  // row 0
+                                   m0, mp, m0, m0,  // row 1
+                                   m0, m0, mp, m0,  // row 2
+                                   m0, m0, m0, mm); // row 3
   }
   return std::nullopt;
 }

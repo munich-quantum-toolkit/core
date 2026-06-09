@@ -50,6 +50,8 @@ Matrix4x4 ECROp::getUnitaryMatrix() {
   constexpr auto m0 = 0i;
   constexpr auto m1 = std::complex<double>{1.0 / std::numbers::sqrt2};
   constexpr auto mi = std::complex<double>{0.0, 1.0 / std::numbers::sqrt2};
-  return Matrix4x4::fromElements(m0, m0, m1, mi, m0, m0, mi, m1, m1, -mi, m0,
-                                 m0, -mi, m1, m0, m0);
+  return Matrix4x4::fromElements(m0, m0, m1, mi,   // row 0
+                                 m0, m0, mi, m1,   // row 1
+                                 m1, -mi, m0, m0,  // row 2
+                                 -mi, m1, m0, m0); // row 3
 }

@@ -46,5 +46,6 @@ void YOp::getCanonicalizationPatterns(RewritePatternSet& results,
 Matrix2x2 YOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  return Matrix2x2::fromElements(0, -1i, 1i, 0);
+  return Matrix2x2::fromElements(0, -1i, // row 0
+                                 1i, 0); // row 1
 }

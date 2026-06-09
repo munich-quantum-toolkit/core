@@ -119,5 +119,6 @@ std::optional<Matrix2x2> U2Op::getUnitaryMatrix() {
       std::polar(1.0 / std::numbers::sqrt2, *lambda + std::numbers::pi);
   const auto m10 = std::polar(1.0 / std::numbers::sqrt2, *phi);
   const auto m11 = std::polar(1.0 / std::numbers::sqrt2, *phi + *lambda);
-  return Matrix2x2::fromElements(m00, m01, m10, m11);
+  return Matrix2x2::fromElements(m00, m01,  // row 0
+                                 m10, m11); // row 1
 }

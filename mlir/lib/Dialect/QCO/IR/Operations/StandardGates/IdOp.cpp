@@ -42,5 +42,6 @@ void IdOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Matrix2x2 IdOp::getUnitaryMatrix() {
-  return Matrix2x2::fromElements(1, 0, 0, 1);
+  return Matrix2x2::fromElements(1, 0,  // row 0
+                                 0, 1); // row 1
 }

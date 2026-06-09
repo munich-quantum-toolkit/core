@@ -44,6 +44,8 @@ void DCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Matrix4x4 DCXOp::getUnitaryMatrix() {
-  return Matrix4x4::fromElements(1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0,
-                                 0);
+  return Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
+                                 0, 0, 1, 0,  // row 1
+                                 0, 0, 0, 1,  // row 2
+                                 0, 1, 0, 0); // row 3
 }

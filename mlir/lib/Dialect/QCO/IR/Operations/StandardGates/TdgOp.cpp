@@ -59,5 +59,6 @@ void TdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 Matrix2x2 TdgOp::getUnitaryMatrix() {
   const auto m11 = std::polar(1.0, -std::numbers::pi / 4.0);
-  return Matrix2x2::fromElements(1.0, 0.0, 0.0, m11);
+  return Matrix2x2::fromElements(1.0, 0.0,  // row 0
+                                 0.0, m11); // row 1
 }

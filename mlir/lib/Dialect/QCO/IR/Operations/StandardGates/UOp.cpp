@@ -141,5 +141,6 @@ std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
   const auto m01 = std::polar(s, *lambda + std::numbers::pi);
   const auto m10 = std::polar(s, *phi);
   const auto m11 = std::polar(c, *phi + *lambda);
-  return Matrix2x2::fromElements(m00, m01, m10, m11);
+  return Matrix2x2::fromElements(m00, m01,  // row 0
+                                 m10, m11); // row 1
 }

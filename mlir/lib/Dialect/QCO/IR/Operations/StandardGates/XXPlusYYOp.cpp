@@ -116,6 +116,8 @@ std::optional<Matrix4x4> XXPlusYYOp::getUnitaryMatrix() {
   const auto s = std::sin(*theta / 2.0);
   const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
   const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
-  return Matrix4x4::fromElements(m1, m0, m0, m0, m0, mc, msp, m0, m0, msm, mc,
-                                 m0, m0, m0, m0, m1);
+  return Matrix4x4::fromElements(m1, m0, m0, m0,  // row 0
+                                 m0, mc, msp, m0, // row 1
+                                 m0, msm, mc, m0, // row 2
+                                 m0, m0, m0, m1); // row 3
 }
