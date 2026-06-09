@@ -11,7 +11,7 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/SmallVector.h>
+#include <mlir/Support/LLVM.h>
 
 #include <algorithm>
 #include <array>
@@ -41,8 +41,7 @@ namespace mlir::qco {
 }
 
 /// Writes the conjugate transpose of @p in into @p out (square, row-major).
-static void adjointInto(llvm::ArrayRef<Complex> in,
-                        llvm::MutableArrayRef<Complex> out,
+static void adjointInto(ArrayRef<Complex> in, MutableArrayRef<Complex> out,
                         const std::size_t dim) {
   for (std::size_t row = 0; row < dim; ++row) {
     for (std::size_t col = 0; col < dim; ++col) {
@@ -52,7 +51,7 @@ static void adjointInto(llvm::ArrayRef<Complex> in,
 }
 
 template <std::size_t Dim, std::size_t Size>
-static void assignFixedImpl(std::int64_t& dim, llvm::SmallVector<Complex>& data,
+static void assignFixedImpl(std::int64_t& dim, SmallVector<Complex>& data,
                             const std::array<Complex, Size>& src) {
   dim = static_cast<std::int64_t>(Dim);
   data.assign(src.begin(), src.end());
@@ -60,9 +59,9 @@ static void assignFixedImpl(std::int64_t& dim, llvm::SmallVector<Complex>& data,
 
 template <std::size_t Dim, std::size_t Size>
 [[nodiscard]] static bool
-isApproxFixedImpl(const std::int64_t dim, llvm::ArrayRef<Complex> data,
+isApproxFixedImpl(const std::int64_t dim, ArrayRef<Complex> data,
                   const std::array<Complex, Size>& other, const double tol) {
-  if (std::cmp_not_equal(dim, static_cast<std::int64_t>(Dim))) {
+  if (std::cmp_not_equal(dim, Dim)) {
     return false;
   }
   return entriesAreApprox(data, other, tol);
@@ -85,14 +84,14 @@ static void validateCornerDims(const std::int64_t matrixDim,
                                const std::int64_t blockDim) {
   assert(matrixDim >= 0 && blockDim >= 0 && blockDim <= matrixDim &&
          "block must fit in the bottom-right corner of the matrix");
-  checkedDim(matrixDim);
+  std::ignore = checkedDim(matrixDim);
 }
 
 /// Copies @p blockData into the bottom-right @p blockDim x @p blockDim corner.
 static void copyBottomRightCorner(const std::int64_t matrixDim,
-                                  llvm::MutableArrayRef<Complex> matrixData,
+                                  MutableArrayRef<Complex> matrixData,
                                   const std::int64_t blockDim,
-                                  llvm::ArrayRef<Complex> blockData) {
+                                  ArrayRef<Complex> blockData) {
   validateCornerDims(matrixDim, blockDim);
   assert(matrixData.size() >= checkedStorageSize(matrixDim));
   assert(blockData.size() >= checkedStorageSize(blockDim));
@@ -108,7 +107,7 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
 
 struct DynamicMatrix::Impl {
   std::int64_t dim = 0;
-  llvm::SmallVector<Complex> data;
+  SmallVector<Complex> data;
 };
 
 Matrix1x1 Matrix1x1::fromElements(const Complex m00) { return {m00}; }
