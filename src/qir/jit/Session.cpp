@@ -54,7 +54,7 @@
 
 #define DEBUG_TYPE "mqt-core-qir-jit"
 
-namespace qir::jit {
+namespace qir {
 
 static void exitOnLazyCallThroughFailure() { exit(1); }
 
@@ -97,7 +97,7 @@ getThreadSafeModuleOrError(std::unique_ptr<llvm::Module> module,
 }
 
 llvm::Expected<llvm::orc::ThreadSafeModule>
-Session::loadModuleFromFile(const llvm::StringRef irPath) {
+JitSession::loadModuleFromFile(const llvm::StringRef irPath) {
   llvm::SMDiagnostic err;
   auto m = tsCtx_.withContextDo(
       [&](llvm::LLVMContext* ctx) { return parseIRFile(irPath, err, *ctx); });
@@ -105,8 +105,8 @@ Session::loadModuleFromFile(const llvm::StringRef irPath) {
 }
 
 llvm::Expected<llvm::orc::ThreadSafeModule>
-Session::loadModuleFromMemory(const llvm::StringRef irBytes,
-                              const llvm::StringRef bufferName) {
+JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
+                                 const llvm::StringRef bufferName) {
   llvm::SMDiagnostic err;
   auto buffer = llvm::MemoryBuffer::getMemBuffer(
       irBytes, bufferName,
@@ -117,7 +117,7 @@ Session::loadModuleFromMemory(const llvm::StringRef irBytes,
   return getThreadSafeModuleOrError(std::move(m), err, tsCtx_);
 }
 
-Session::Session(const llvm::StringRef inputFile) {
+JitSession::JitSession(const llvm::StringRef inputFile) {
   auto ret = loadModuleFromFile(inputFile);
   if (!ret) {
     throw std::runtime_error(llvm::toString(ret.takeError()));
@@ -126,8 +126,8 @@ Session::Session(const llvm::StringRef inputFile) {
   initialize();
 }
 
-Session::Session(const llvm::StringRef irBytes,
-                 const llvm::StringRef bufferName) {
+JitSession::JitSession(const llvm::StringRef irBytes,
+                       const llvm::StringRef bufferName) {
   auto ret = loadModuleFromMemory(irBytes, bufferName);
   if (!ret) {
     throw std::runtime_error(llvm::toString(ret.takeError()));
@@ -136,10 +136,10 @@ Session::Session(const llvm::StringRef irBytes,
   initialize();
 }
 
-Session::~Session() { deinitialize(); }
+JitSession::~JitSession() { deinitialize(); }
 
-int Session::run(llvm::ArrayRef<std::string> args,
-                 llvm::StringRef progName) const {
+int JitSession::run(llvm::ArrayRef<std::string> args,
+                    llvm::StringRef progName) const {
   // Manual in-process execution with RuntimeDyld.
   return llvm::orc::runAsMain(mainFn_, args, progName);
 }
@@ -153,7 +153,7 @@ std::vector<std::pair<std::string, void*>> manualSymbols;
                                        reinterpret_cast<void*>(&(name)));      \
   manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&(name)));
 
-void Session::registerRuntimeSymbols() {
+void JitSession::registerRuntimeSymbols() {
   static std::once_flag flag;
   std::call_once(flag, []() {
     REGISTER_SYMBOL(__quantum__rt__result_get_zero);
@@ -222,7 +222,7 @@ void Session::registerRuntimeSymbols() {
 
 #undef REGISTER_SYMBOL
 
-void Session::initNativeTargets() {
+void JitSession::initNativeTargets() {
   static std::once_flag flag;
   std::call_once(flag, []() {
     static const llvm::codegen::RegisterCodeGenFlags CGF;
@@ -235,7 +235,7 @@ void Session::initNativeTargets() {
   });
 }
 
-void Session::initialize() {
+void JitSession::initialize() {
   registerRuntimeSymbols();
   initNativeTargets();
 
@@ -378,14 +378,14 @@ void Session::initialize() {
   mainFn_ = mainAddr->toPtr<MainFn*>();
 }
 
-void Session::deinitialize() {
+void JitSession::deinitialize() {
   if (!jit_) {
     return;
   }
   if (auto err = jit_->deinitialize(jit_->getMainJITDylib())) {
-    llvm::errs() << "Session deinitialize failed: "
+    llvm::errs() << "JitSession deinitialize failed: "
                  << llvm::toString(std::move(err)) << "\n";
   }
 }
 
-} // namespace qir::jit
+} // namespace qir

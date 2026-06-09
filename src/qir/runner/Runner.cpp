@@ -41,7 +41,7 @@ auto main(int argc, char* argv[]) -> int {
                                     "qir interpreter & dynamic compiler\n");
 
   try {
-    auto jitSession = qir::jit::Session(llvm::StringRef(InputFile));
+    auto jitSession = qir::JitSession(llvm::StringRef(InputFile));
     return jitSession.run(InputArgv, InputFile);
   } catch (const std::exception& e) {
     ExitOnError(llvm::createStringError(e.what()));

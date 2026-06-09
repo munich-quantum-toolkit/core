@@ -448,7 +448,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
     try {
       auto& runtime = qir::Runtime::getInstance();
       auto irBytes = llvm::StringRef(program_.data(), program_.size());
-      auto jitSession = qir::jit::Session(irBytes, "QDMI job");
+      auto jitSession = qir::JitSession(irBytes, "QDMI job");
       for (size_t i = 0; i < numShots_; ++i) {
         runtime.reset();
         if (const auto rc = jitSession.run(); rc != 0) {
