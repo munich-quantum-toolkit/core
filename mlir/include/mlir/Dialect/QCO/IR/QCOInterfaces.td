@@ -28,7 +28,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
   let cppNamespace = "::mlir::qco";
 
-  // Size-specific bodies: each helper only accepts the matching matrix type.
+  // Size-specific bodies
+  // Each helper only accepts the matching matrix type.
   defvar unitaryMatrix1x1MethodBody = [{
       if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
         using ValueT = std::remove_cvref_t<decltype(*std::declval<decltype($_op.getUnitaryMatrix())>())>;
@@ -96,6 +97,21 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
           return true;
         }
         return false;
+      } else {
+        llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
+      }
+    }];
+
+  defvar unitaryMatrixDynamicMethodBody = [{
+    if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
+        if (auto matrix = $_op.getUnitaryMatrix()) {
+          out.assignFrom(*matrix);
+          return true;
+        }
+        return false;
+      } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
+        out.assignFrom($_op.getUnitaryMatrix());
+        return true;
       } else {
         llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
       }
@@ -183,20 +199,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       unitaryMatrix4x4MethodBody>,
       InterfaceMethod<"Populates the given dynamic unitary matrix.", "bool",
                       "getUnitaryMatrixDynamic", (ins "DynamicMatrix&":$out),
-                      [{
-      if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
-        if (auto matrix = $_op.getUnitaryMatrix()) {
-          out.assignFrom(*matrix);
-          return true;
-        }
-        return false;
-      } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
-        out.assignFrom($_op.getUnitaryMatrix());
-        return true;
-      } else {
-        llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
-      }
-    }]>];
+                      unitaryMatrixDynamicMethodBody>];
 
   let extraClassDeclaration = [{
         template<typename MatrixType>
