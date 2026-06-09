@@ -18,7 +18,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/UnitaryMatrix.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>

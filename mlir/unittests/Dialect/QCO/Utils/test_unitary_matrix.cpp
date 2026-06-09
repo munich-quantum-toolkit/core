@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/UnitaryMatrix.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <gtest/gtest.h>
 
@@ -18,11 +18,11 @@
 using namespace mlir::qco;
 using namespace std::complex_literals;
 
-static_assert(is_unitary_matrix_v<Matrix1x1>);
-static_assert(is_unitary_matrix_v<Matrix2x2>);
-static_assert(is_unitary_matrix_v<Matrix4x4>);
-static_assert(is_unitary_matrix_v<DynamicMatrix>);
-static_assert(!is_unitary_matrix_v<int>);
+static_assert(is_supported_matrix_v<Matrix1x1>);
+static_assert(is_supported_matrix_v<Matrix2x2>);
+static_assert(is_supported_matrix_v<Matrix4x4>);
+static_assert(is_supported_matrix_v<DynamicMatrix>);
+static_assert(!is_supported_matrix_v<int>);
 
 [[nodiscard]] static Matrix2x2 pauliX() {
   return Matrix2x2::fromElements(0, 1, 1, 0);

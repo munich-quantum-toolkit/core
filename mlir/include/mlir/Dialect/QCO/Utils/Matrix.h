@@ -19,21 +19,21 @@
 
 namespace mlir::qco {
 
-/// Complex scalar type used for unitary matrix entries.
+/// Complex scalar type used for matrix entries.
 using Complex = std::complex<double>;
 
-/// Default absolute tolerance for unitary matrix comparisons.
-inline constexpr double UNITARY_MATRIX_TOLERANCE = 1e-14;
+/// Default absolute tolerance for matrix comparisons.
+inline constexpr double MATRIX_TOLERANCE = 1e-14;
 
 /**
- * @brief 1x1 unitary matrix for global-phase gates.
+ * @brief 1x1 matrix for global-phase gates.
  *
  * Wraps a single complex scalar. Used by operations such as `GPhaseOp` whose
  * unitary is a global phase factor.
  */
 struct Matrix1x1 {
   /// The sole matrix entry.
-  Complex value{1.0, 0.0};
+  Complex value{0.0, 0.0};
 
   /**
    * @brief Constructs a matrix from its single entry.
@@ -65,13 +65,13 @@ struct Matrix1x1 {
    * @return True if the difference is within @p tol.
    */
   [[nodiscard]] bool isApprox(const Matrix1x1& other,
-                              double tol = UNITARY_MATRIX_TOLERANCE) const;
+                              double tol = MATRIX_TOLERANCE) const;
 };
 
 /**
- * @brief Fixed-size 2x2 unitary matrix in row-major layout.
+ * @brief Fixed-size 2x2 matrix in row-major layout.
  *
- * Represents single-qubit gate unitaries. Elements are stored in a flat array
+ * Used to represent single-qubit unitaries. Elements are stored in a flat array
  * with index `(row * K_COLS) + col`.
  */
 struct Matrix2x2 {
@@ -154,14 +154,14 @@ struct Matrix2x2 {
    * @return True if every entry differs by at most @p tol.
    */
   [[nodiscard]] bool isApprox(const Matrix2x2& other,
-                              double tol = UNITARY_MATRIX_TOLERANCE) const;
+                              double tol = MATRIX_TOLERANCE) const;
 };
 
 /**
- * @brief Fixed-size 4x4 unitary matrix in row-major layout.
+ * @brief Fixed-size 4x4 matrix in row-major layout.
  *
- * Represents two-qubit gate unitaries. Elements are stored in a flat array with
- * index `(row * K_COLS) + col`.
+ * Used to represent two-qubit gate unitaries. Elements are stored in a flat
+ * array with index `(row * K_COLS) + col`.
  */
 struct Matrix4x4 {
   /// Number of rows.
@@ -263,13 +263,13 @@ struct Matrix4x4 {
    * @return True if every entry differs by at most @p tol.
    */
   [[nodiscard]] bool isApprox(const Matrix4x4& other,
-                              double tol = UNITARY_MATRIX_TOLERANCE) const;
+                              double tol = MATRIX_TOLERANCE) const;
 };
 
 /**
- * @brief Square unitary matrix with runtime dimension.
+ * @brief Square matrix with runtime dimension.
  *
- * Used when the Hilbert-space dimension depends on the operation, for example
+ * Used when the Hilbert-space dimension depends on the operation, for example,
  * in controlled gates (`CtrlOp`) and inverses (`InvOp`). Storage is row-major
  * and held behind a private implementation pointer.
  */
@@ -392,7 +392,7 @@ public:
    * @return True if dimensions match and every entry differs by at most @p tol.
    */
   [[nodiscard]] bool isApprox(const Matrix2x2& other,
-                              double tol = UNITARY_MATRIX_TOLERANCE) const;
+                              double tol = MATRIX_TOLERANCE) const;
 
   /**
    * @brief Checks approximate equality against a fixed 4x4 matrix.
@@ -404,7 +404,7 @@ public:
    * @return True if dimensions match and every entry differs by at most @p tol.
    */
   [[nodiscard]] bool isApprox(const Matrix4x4& other,
-                              double tol = UNITARY_MATRIX_TOLERANCE) const;
+                              double tol = MATRIX_TOLERANCE) const;
 
   /**
    * @brief Checks approximate equality against another dynamic matrix.
@@ -416,7 +416,7 @@ public:
    * @return True if dimensions match and every entry differs by at most @p tol.
    */
   [[nodiscard]] bool isApprox(const DynamicMatrix& other,
-                              double tol = UNITARY_MATRIX_TOLERANCE) const;
+                              double tol = MATRIX_TOLERANCE) const;
 
 private:
   struct Impl;
@@ -424,7 +424,7 @@ private:
 };
 
 /**
- * @brief Type trait for the four supported unitary matrix value types.
+ * @brief Type trait for the four supported matrix types.
  *
  * True for @ref Matrix1x1, @ref Matrix2x2, @ref Matrix4x4, and @ref
  * DynamicMatrix.
@@ -433,8 +433,8 @@ private:
  */
 template <typename T>
 inline constexpr bool
-    is_unitary_matrix_v = // NOLINT(readability-identifier-naming)
-    std::is_same_v<T, Matrix1x1> || std::is_same_v<T, Matrix2x2> ||
-    std::is_same_v<T, Matrix4x4> || std::is_same_v<T, DynamicMatrix>;
-
+    is_supported_matrix_v = // NOLINT(readability-identifier-naming)
+    std::disjunction_v<std::is_same<T, Matrix1x1>, std::is_same<T, Matrix2x2>,
+                       std::is_same<T, Matrix4x4>,
+                       std::is_same<T, DynamicMatrix>>;
 } // namespace mlir::qco
