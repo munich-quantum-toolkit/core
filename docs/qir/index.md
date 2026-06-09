@@ -39,6 +39,6 @@ The runner supports the QIR Base Profile.
 
 ### QIR Support in the QDMI Device
 
-The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR base module (LLVM bitcode), and QIR base string (LLVM assembly).
+The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR Base Profile Module (LLVM bitcode), and QIR Base Profile String (LLVM assembly).
 The QIR base formats are only supported when the `BUILD_MQT_CORE_QDMI_WITH_QIR` CMake option is enabled.
 It is disabled by default to avoid the cost of linking against the MQT Core QIR JIT (built on LLVM OrcJIT) and Runtime libraries.

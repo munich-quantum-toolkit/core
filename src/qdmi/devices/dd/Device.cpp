@@ -485,7 +485,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
     return submitQIRProgram();
   }
 #endif
-  return QDMI_ERROR_NOTSUPPORTED;
+  // Format is validated against the allowed set at setParameter time.
+  qdmi::unreachable();
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
   const auto s = status_.load();

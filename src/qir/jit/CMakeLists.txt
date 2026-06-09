@@ -13,8 +13,7 @@ if(NOT TARGET ${TARGET_NAME})
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QIRJIT)
 
   # Add sources to target
-  target_sources(${TARGET_NAME} PRIVATE Session.cpp
-                                        ${MQT_CORE_INCLUDE_BUILD_DIR}/qir/jit/Session.hpp)
+  target_sources(${TARGET_NAME} PRIVATE Session.cpp)
 
   # Add headers using file sets
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
