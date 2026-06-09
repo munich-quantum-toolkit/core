@@ -513,6 +513,11 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult PowOp::verify() {
+  FloatAttr attr;
+  if (!matchPattern(getExponent(), m_Constant(&attr))) {
+    return emitOpError("exponent must be a constant");
+  }
+
   auto& block = *getBody();
   if (block.getOperations().size() < 2) {
     return emitOpError("body region must have at least two operations");
