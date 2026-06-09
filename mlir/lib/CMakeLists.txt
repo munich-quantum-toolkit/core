@@ -11,6 +11,6 @@ add_subdirectory(Compiler)
 add_subdirectory(Dialect)
 add_subdirectory(Support)
 
-if(BUILD_MQT_CORE_MLIR_PYTHON)
+if(BUILD_MQT_CORE_BINDINGS)
   add_subdirectory(CAPI)
 endif()

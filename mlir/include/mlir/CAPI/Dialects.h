@@ -8,24 +8,14 @@
  * Licensed under the MIT License
  */
 
-#pragma once
+// Implementation-detail header for the MQT MLIR dialect C API.
+// Do not include from C++ code other than C API implementations.
 
-#include "mlir-c/IR.h"
-#include "mlir-c/Support.h"
+#ifndef MQT_MLIR_CAPI_DIALECTS_H
+#define MQT_MLIR_CAPI_DIALECTS_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "mlir-c/Dialects.h" // IWYU pragma: export
+#include "mlir/CAPI/IR.h"
+#include "mlir/CAPI/Wrap.h"
 
-MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(QC, qc);
-MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(QCO, qco);
-
-/** Registers and loads all MQT MLIR dialects into a context. */
-MLIR_CAPI_EXPORTED void mqtMlirRegisterAllDialects(MlirContext context);
-
-/** Registers all MQT MLIR passes into the global registry. */
-MLIR_CAPI_EXPORTED void mqtMlirRegisterAllPasses(void);
-
-#ifdef __cplusplus
-}
-#endif
+#endif // MQT_MLIR_CAPI_DIALECTS_H

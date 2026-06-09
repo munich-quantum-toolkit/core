@@ -120,12 +120,6 @@ endif()
 
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
-cmake_dependent_option(
-  BUILD_MQT_CORE_MLIR_PYTHON
-  "Build Python bindings for the MQT MLIR compiler collection (requires MLIR_ENABLE_BINDINGS_PYTHON=ON)"
-  OFF
-  "BUILD_MQT_CORE_MLIR"
-  OFF)
 
 # add main library code
 add_subdirectory(src)
@@ -149,7 +143,6 @@ endif()
 
 if(BUILD_MQT_CORE_MLIR)
   add_subdirectory(mlir)
-  add_subdirectory(poc)
 
   # copy generated MLIR documentation
   add_custom_command(

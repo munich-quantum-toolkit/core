@@ -11,6 +11,7 @@ add_mlir_public_c_api_library(
   Dialects.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/CAPI
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir-c
   ENABLE_AGGREGATION
   LINK_LIBS
   PUBLIC
