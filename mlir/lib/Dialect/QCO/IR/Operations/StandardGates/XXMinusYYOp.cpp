@@ -9,9 +9,9 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -101,23 +101,19 @@ void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentXXMinusYY>(context);
 }
 
-std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
+std::optional<Matrix4x4> XXMinusYYOp::getUnitaryMatrix() {
   const auto theta = valueToDouble(getTheta());
   const auto beta = valueToDouble(getBeta());
   if (!theta || !beta) {
     return std::nullopt;
   }
 
-  const auto m0 = 0.0 + 0i;
-  const auto m1 = 1.0 + 0i;
-  const auto mc = std::cos(*theta / 2.0) + 0i;
-  const auto s = std::sin(*theta / 2.0);
-  const auto msp = std::polar(s, *beta - (std::numbers::pi / 2.));
-  const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2.));
-  return Eigen::Matrix4cd{{mc, m0, m0, msm},  // row 0
-                          {m0, m1, m0, m0},   // row 1
-                          {m0, m0, m1, m0},   // row 2
-                          {msp, m0, m0, mc}}; // row 3
+  const auto mc = std::cos(*theta / 2);
+  const auto s = std::sin(*theta / 2);
+  const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
+  const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
+  return Matrix4x4::fromElements(mc, 0, 0, msm,  // row 0
+                                 0, 1, 0, 0,     // row 1
+                                 0, 0, 1, 0,     // row 2
+                                 msp, 0, 0, mc); // row 3
 }

@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -43,8 +43,9 @@ void YOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentY>(context);
 }
 
-Eigen::Matrix2cd YOp::getUnitaryMatrix() {
+Matrix2x2 YOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  return Eigen::Matrix2cd{{0, -1i}, {1i, 0}};
+  return Matrix2x2::fromElements(0, -1i, // row 0
+                                 1i, 0); // row 1
 }

@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -41,6 +41,7 @@ void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentX>(context);
 }
 
-Eigen::Matrix2cd XOp::getUnitaryMatrix() {
-  return Eigen::Matrix2cd{{0, 1}, {1, 0}};
+Matrix2x2 XOp::getUnitaryMatrix() {
+  return Matrix2x2::fromElements(0, 1,  // row 0
+                                 1, 0); // row 1
 }
