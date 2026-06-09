@@ -28,16 +28,12 @@ namespace mlir::qco {
 
 /// Returns true if every entry pair differs by at most @p tol (complex
 /// modulus).
-[[nodiscard]] static bool entriesAreApprox(llvm::ArrayRef<Complex> lhs,
-                                           llvm::ArrayRef<Complex> rhs,
-                                           double tol) {
-  if (lhs.size() != rhs.size()) {
-    return false;
-  }
-  return std::equal(lhs.begin(), lhs.end(), rhs.begin(),
-                    [tol](const Complex& lhsEntry, const Complex& rhsEntry) {
-                      return std::abs(lhsEntry - rhsEntry) <= tol;
-                    });
+[[nodiscard]] static bool entriesAreApprox(ArrayRef<Complex> lhs,
+                                           ArrayRef<Complex> rhs, double tol) {
+  return std::ranges::equal(lhs, rhs,
+                            [tol](const Complex& a, const Complex& b) {
+                              return std::abs(a - b) <= tol;
+                            });
 }
 
 /// Writes the conjugate transpose of @p in into @p out (square, row-major).
