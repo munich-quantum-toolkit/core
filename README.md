@@ -148,6 +148,7 @@ When citing the compilation framework built on MLIR, cite the MQT Compiler Colle
   author       = {Burgholzer, Lukas and Haag, Daniel and Stade, Yannick and Rovara, Damian and Hopf, Patrick and Wille, Robert},
   year         = {2026},
   booktitle    = {Design, Automation and Test in Europe},
+  doi          = {10.23919/DATE69613.2026.11539504},
   eprint       = {2604.08674},
   eprinttype   = {arxiv},
 }
