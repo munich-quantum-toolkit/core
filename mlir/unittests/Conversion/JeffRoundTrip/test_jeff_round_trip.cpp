@@ -641,8 +641,11 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCOIfOpTest, JeffRoundTripTest,
     testing::Values(
-        JeffRoundTripTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qco::simpleIf),
+        JeffRoundTripTestCase{"SimpleIf", MQT_NAMED_BUILDER(qco::simpleIf),
                               MQT_NAMED_BUILDER(qco::simpleIf)},
+        JeffRoundTripTestCase{"IfWithAngle",
+                              MQT_NAMED_BUILDER(qco::ifWithAngle),
+                              MQT_NAMED_BUILDER(qco::ifWithAngle)},
         JeffRoundTripTestCase{"IfTwoQubits",
                               MQT_NAMED_BUILDER(qco::ifTwoQubits),
                               MQT_NAMED_BUILDER(qco::ifTwoQubits)},
@@ -650,7 +653,11 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::ifElse)},
         JeffRoundTripTestCase{"NestedIfOpForLoop",
                               MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
-                              MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
+                              MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)},
+        JeffRoundTripTestCase{
+            "NestedIfOpForLoopWithAngle",
+            MQT_NAMED_BUILDER(qco::nestedIfOpForLoopWithAngle),
+            MQT_NAMED_BUILDER(qco::nestedIfOpForLoopWithAngle)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/ForOp.cpp
