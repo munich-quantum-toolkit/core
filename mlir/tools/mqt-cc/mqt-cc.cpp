@@ -85,7 +85,7 @@ static llvm::cl::opt<bool> enableHadamardLifting(
 /**
  * @brief Load and parse a .qasm file, dispatching to the chosen import path.
  */
-static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
+static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
                                           MLIRContext* context) {
   return qc::translateQASM3ToQC(context, filename.str());
 }
