@@ -132,8 +132,7 @@ TEST(DynamicMatrix, CopyMoveAssign) {
   DynamicMatrix moved(std::move(copied));
   EXPECT_TRUE(moved.isApprox(original));
 
-  DynamicMatrix assigned;
-  assigned = original;
+  const DynamicMatrix assigned = original;
   EXPECT_TRUE(assigned.isApprox(original));
 
   DynamicMatrix moveAssigned(1);
