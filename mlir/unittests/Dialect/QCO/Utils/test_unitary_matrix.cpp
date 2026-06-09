@@ -13,21 +13,10 @@
 #include <gtest/gtest.h>
 
 #include <complex>
+#include <utility>
 
 using namespace mlir::qco;
-
-namespace {
-
 using namespace std::complex_literals;
-
-[[nodiscard]] Matrix2x2 pauliX() { return Matrix2x2::fromElements(0, 1, 1, 0); }
-
-[[nodiscard]] Matrix4x4 swapMatrix() {
-  return Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
-                                 0, 0, 1, 0,  // row 1
-                                 0, 1, 0, 0,  // row 2
-                                 0, 0, 0, 1); // row 3
-}
 
 static_assert(is_unitary_matrix_v<Matrix1x1>);
 static_assert(is_unitary_matrix_v<Matrix2x2>);
@@ -35,18 +24,32 @@ static_assert(is_unitary_matrix_v<Matrix4x4>);
 static_assert(is_unitary_matrix_v<DynamicMatrix>);
 static_assert(!is_unitary_matrix_v<int>);
 
-} // namespace
+[[nodiscard]] static Matrix2x2 pauliX() {
+  return Matrix2x2::fromElements(0, 1, 1, 0);
+}
+
+[[nodiscard]] static Matrix4x4 swapMatrix() {
+  return Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
+                                 0, 0, 1, 0,  // row 1
+                                 0, 1, 0, 0,  // row 2
+                                 0, 0, 0, 1); // row 3
+}
 
 TEST(UnitaryMatrix1x1, FromElementsAndAccess) {
-  Matrix1x1 matrix = Matrix1x1::fromElements(0.5 + 0.5i);
+  Matrix1x1 matrix = Matrix1x1::fromElements(Complex{0.5, 0.5});
   EXPECT_EQ(matrix(0, 0), 0.5 + 0.5i);
   matrix(0, 0) = -1i;
   EXPECT_EQ(matrix.value, -1i);
 }
 
+TEST(UnitaryMatrix1x1, ConstElementAccess) {
+  const Matrix1x1 matrix = Matrix1x1::fromElements(Complex{0.25, 0.5});
+  EXPECT_EQ(matrix(0, 0), Complex{0.25, 0.5});
+}
+
 TEST(UnitaryMatrix1x1, IsApprox) {
   const Matrix1x1 a = Matrix1x1::fromElements(1.0);
-  const Matrix1x1 b = Matrix1x1::fromElements(1.0 + 1e-16i);
+  const Matrix1x1 b = Matrix1x1::fromElements(Complex{1.0, 1e-16});
   EXPECT_TRUE(a.isApprox(b));
   EXPECT_FALSE(a.isApprox(Matrix1x1::fromElements(2.0)));
   EXPECT_TRUE(a.isApprox(Matrix1x1::fromElements(1.1), 0.2));
@@ -210,6 +213,10 @@ TEST(DynamicMatrix, Adjoint) {
   EXPECT_EQ(adjoint(0, 1), 0.0);
   EXPECT_EQ(adjoint(1, 0), -1i);
   EXPECT_EQ(adjoint(1, 1), 1.0);
+}
+
+TEST(DynamicMatrix, IsApproxRejectsMismatchedExtents) {
+  EXPECT_FALSE(DynamicMatrix::identity(1).isApprox(DynamicMatrix::identity(2)));
 }
 
 TEST(DynamicMatrix, IsApproxOverloads) {

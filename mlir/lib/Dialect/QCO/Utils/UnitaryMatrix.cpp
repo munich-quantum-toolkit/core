@@ -14,22 +14,22 @@
 #include <llvm/ADT/SmallVector.h>
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
+#include <complex>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <utility>
 
 namespace mlir::qco {
 
-struct DynamicMatrix::Impl {
-  std::int64_t dim = 0;
-  llvm::SmallVector<Complex> data;
-};
-
-namespace {
-
 /// Returns true if every entry pair differs by at most @p tol (complex
 /// modulus).
-[[nodiscard]] bool entriesAreApprox(llvm::ArrayRef<Complex> lhs,
-                                    llvm::ArrayRef<Complex> rhs, double tol) {
+[[nodiscard]] static bool entriesAreApprox(llvm::ArrayRef<Complex> lhs,
+                                           llvm::ArrayRef<Complex> rhs,
+                                           double tol) {
   if (lhs.size() != rhs.size()) {
     return false;
   }
@@ -40,8 +40,9 @@ namespace {
 }
 
 /// Writes the conjugate transpose of @p in into @p out (square, row-major).
-void adjointInto(llvm::ArrayRef<Complex> in, llvm::MutableArrayRef<Complex> out,
-                 const std::size_t dim) {
+static void adjointInto(llvm::ArrayRef<Complex> in,
+                        llvm::MutableArrayRef<Complex> out,
+                        const std::size_t dim) {
   for (std::size_t row = 0; row < dim; ++row) {
     for (std::size_t col = 0; col < dim; ++col) {
       out[(row * dim) + col] = std::conj(in[(col * dim) + row]);
@@ -50,27 +51,27 @@ void adjointInto(llvm::ArrayRef<Complex> in, llvm::MutableArrayRef<Complex> out,
 }
 
 template <std::size_t Dim, std::size_t Size>
-void assignFixedImpl(std::int64_t& dim, llvm::SmallVector<Complex>& data,
-                     const std::array<Complex, Size>& src) {
+static void assignFixedImpl(std::int64_t& dim, llvm::SmallVector<Complex>& data,
+                            const std::array<Complex, Size>& src) {
   dim = static_cast<std::int64_t>(Dim);
   data.assign(src.begin(), src.end());
 }
 
 template <std::size_t Dim, std::size_t Size>
-[[nodiscard]] bool
+[[nodiscard]] static bool
 isApproxFixedImpl(const std::int64_t dim, llvm::ArrayRef<Complex> data,
                   const std::array<Complex, Size>& other, const double tol) {
-  if (dim != static_cast<std::int64_t>(Dim)) {
+  if (std::cmp_not_equal(dim, static_cast<std::int64_t>(Dim))) {
     return false;
   }
   return entriesAreApprox(data, other, tol);
 }
 
 /// Copies @p blockData into the bottom-right @p blockDim x @p blockDim corner.
-void copyBottomRightCorner(const std::int64_t matrixDim,
-                           llvm::MutableArrayRef<Complex> matrixData,
-                           const std::int64_t blockDim,
-                           llvm::ArrayRef<Complex> blockData) {
+static void copyBottomRightCorner(const std::int64_t matrixDim,
+                                  llvm::MutableArrayRef<Complex> matrixData,
+                                  const std::int64_t blockDim,
+                                  llvm::ArrayRef<Complex> blockData) {
   const std::int64_t offset = matrixDim - blockDim;
   for (std::int64_t row = 0; row < blockDim; ++row) {
     for (std::int64_t col = 0; col < blockDim; ++col) {
@@ -81,7 +82,10 @@ void copyBottomRightCorner(const std::int64_t matrixDim,
   }
 }
 
-} // namespace
+struct DynamicMatrix::Impl {
+  std::int64_t dim = 0;
+  llvm::SmallVector<Complex> data;
+};
 
 Matrix1x1 Matrix1x1::fromElements(const Complex m00) { return {m00}; }
 
@@ -313,9 +317,6 @@ bool DynamicMatrix::isApprox(const Matrix4x4& other, const double tol) const {
 
 bool DynamicMatrix::isApprox(const DynamicMatrix& other,
                              const double tol) const {
-  if (impl_->dim != other.impl_->dim) {
-    return false;
-  }
   return entriesAreApprox(impl_->data, other.impl_->data, tol);
 }
 
