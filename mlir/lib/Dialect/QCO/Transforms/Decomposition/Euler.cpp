@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -68,14 +67,13 @@ namespace mlir::qco::decomposition {
  * @param m The single-qubit matrix to conjugate.
  * @return `H * m * H`.
  */
-[[nodiscard]] static Eigen::Matrix2cd
-hadamardConjugate(const Eigen::Matrix2cd& m) {
+[[nodiscard]] static Matrix2x2 hadamardConjugate(const Matrix2x2& m) {
   const auto a = m(0, 0);
   const auto b = m(0, 1);
   const auto c = m(1, 0);
   const auto d = m(1, 1);
-  return Eigen::Matrix2cd{{0.5 * (a + b + c + d), 0.5 * (a - b + c - d)},
-                          {0.5 * (a + b - c - d), 0.5 * (a - b - c + d)}};
+  return Matrix2x2::fromElements(0.5 * (a + b + c + d), 0.5 * (a - b + c - d),
+                                 0.5 * (a + b - c - d), 0.5 * (a - b - c + d));
 }
 
 /**
@@ -336,9 +334,8 @@ static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
 // Euler decomposition (angles)
 //===----------------------------------------------------------------------===//
 
-EulerAngles
-EulerDecomposition::anglesFromUnitary(const Eigen::Matrix2cd& matrix,
-                                      EulerBasis basis) {
+EulerAngles EulerDecomposition::anglesFromUnitary(const Matrix2x2& matrix,
+                                                  EulerBasis basis) {
   switch (basis) {
   case EulerBasis::XYX:
     return paramsXYX(matrix);
@@ -363,7 +360,7 @@ EulerDecomposition::anglesFromUnitary(const Eigen::Matrix2cd& matrix,
       "Unsupported Euler basis for angle computation in decomposition!");
 }
 
-EulerAngles EulerDecomposition::paramsZYZ(const Eigen::Matrix2cd& matrix) {
+EulerAngles EulerDecomposition::paramsZYZ(const Matrix2x2& matrix) {
   // det(U) = exp(2i*phase); invert the Z-Y-Z parameterization of U's entries.
   const std::complex<double> det =
       matrix(0, 0) * matrix(1, 1) - matrix(0, 1) * matrix(1, 0);
@@ -378,7 +375,7 @@ EulerAngles EulerDecomposition::paramsZYZ(const Eigen::Matrix2cd& matrix) {
   return {.theta = theta, .phi = phi, .lambda = lambda, .phase = phase};
 }
 
-EulerAngles EulerDecomposition::paramsZXZ(const Eigen::Matrix2cd& matrix) {
+EulerAngles EulerDecomposition::paramsZXZ(const Matrix2x2& matrix) {
   // ZXZ from ZYZ via RY(theta) = RZ(pi/2)*RX(theta)*RZ(-pi/2).
   const auto zyz = paramsZYZ(matrix);
   return {.theta = zyz.theta,
@@ -387,7 +384,7 @@ EulerAngles EulerDecomposition::paramsZXZ(const Eigen::Matrix2cd& matrix) {
           .phase = zyz.phase};
 }
 
-EulerAngles EulerDecomposition::paramsXYX(const Eigen::Matrix2cd& matrix) {
+EulerAngles EulerDecomposition::paramsXYX(const Matrix2x2& matrix) {
   // H*RY(theta)*H = RY(-theta): shift outer angles by pi and fix global phase.
   const auto zyz = paramsZYZ(hadamardConjugate(matrix));
   const auto newPhi = mod2pi(zyz.phi + std::numbers::pi, 0.);
@@ -399,12 +396,12 @@ EulerAngles EulerDecomposition::paramsXYX(const Eigen::Matrix2cd& matrix) {
               zyz.phase + ((newPhi + newLambda - zyz.phi - zyz.lambda) / 2.)};
 }
 
-EulerAngles EulerDecomposition::paramsXZX(const Eigen::Matrix2cd& matrix) {
+EulerAngles EulerDecomposition::paramsXZX(const Matrix2x2& matrix) {
   // X-Z-X -> Z-X-Z under H conjugation (no Y sign flip, unlike paramsXYX).
   return paramsZXZ(hadamardConjugate(matrix));
 }
 
-EulerAngles EulerDecomposition::paramsU(const Eigen::Matrix2cd& matrix) {
+EulerAngles EulerDecomposition::paramsU(const Matrix2x2& matrix) {
   const auto zyz = paramsZYZ(matrix);
   return {.theta = zyz.theta,
           .phi = zyz.phi,
@@ -439,7 +436,7 @@ std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
 }
 
 Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
-                               const Eigen::Matrix2cd& targetMatrix,
+                               const Matrix2x2& targetMatrix,
                                EulerBasis basis) {
   if (basis == EulerBasis::ZSXX) {
     const auto zyz = EulerDecomposition::paramsZYZ(targetMatrix);
@@ -472,7 +469,7 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
   return qubit;
 }
 
-std::size_t synthesisGateCount(const Eigen::Matrix2cd& targetMatrix,
+std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
                                EulerBasis basis) {
   switch (basis) {
   case EulerBasis::U:

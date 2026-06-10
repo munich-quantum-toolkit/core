@@ -28,6 +28,95 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
   let cppNamespace = "::mlir::qco";
 
+  // Size-specific bodies
+  // Each helper only accepts the matching matrix type.
+  defvar unitaryMatrix1x1MethodBody = [{
+      if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
+        using ValueT = std::remove_cvref_t<decltype(*std::declval<decltype($_op.getUnitaryMatrix())>())>;
+        if constexpr (std::is_same_v<ValueT, Matrix1x1>) {
+          if (auto matrix = $_op.getUnitaryMatrix()) {
+            out = *matrix;
+            return true;
+          }
+          return false;
+        } else {
+          return false;
+        }
+      } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
+        using ValueT = std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>;
+        if constexpr (std::is_same_v<ValueT, Matrix1x1>) {
+          out = $_op.getUnitaryMatrix();
+          return true;
+        }
+        return false;
+      } else {
+        llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
+      }
+    }];
+
+  defvar unitaryMatrix2x2MethodBody = [{
+      if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
+        using ValueT = std::remove_cvref_t<decltype(*std::declval<decltype($_op.getUnitaryMatrix())>())>;
+        if constexpr (std::is_same_v<ValueT, Matrix2x2>) {
+          if (auto matrix = $_op.getUnitaryMatrix()) {
+            out = *matrix;
+            return true;
+          }
+          return false;
+        } else {
+          return false;
+        }
+      } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
+        using ValueT = std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>;
+        if constexpr (std::is_same_v<ValueT, Matrix2x2>) {
+          out = $_op.getUnitaryMatrix();
+          return true;
+        }
+        return false;
+      } else {
+        llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
+      }
+    }];
+
+  defvar unitaryMatrix4x4MethodBody = [{
+      if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
+        using ValueT = std::remove_cvref_t<decltype(*std::declval<decltype($_op.getUnitaryMatrix())>())>;
+        if constexpr (std::is_same_v<ValueT, Matrix4x4>) {
+          if (auto matrix = $_op.getUnitaryMatrix()) {
+            out = *matrix;
+            return true;
+          }
+          return false;
+        } else {
+          return false;
+        }
+      } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
+        using ValueT = std::remove_cvref_t<decltype($_op.getUnitaryMatrix())>;
+        if constexpr (std::is_same_v<ValueT, Matrix4x4>) {
+          out = $_op.getUnitaryMatrix();
+          return true;
+        }
+        return false;
+      } else {
+        llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
+      }
+    }];
+
+  defvar unitaryMatrixDynamicMethodBody = [{
+    if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
+        if (auto matrix = $_op.getUnitaryMatrix()) {
+          out.assignFrom(*matrix);
+          return true;
+        }
+        return false;
+      } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
+        out.assignFrom($_op.getUnitaryMatrix());
+        return true;
+      } else {
+        llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
+      }
+    }];
+
   let methods = [
       // Qubit accessors
       InterfaceMethod<
@@ -96,7 +185,46 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
       // Identification
       InterfaceMethod<"Returns the base symbol/mnemonic of the operation.",
-                      "StringRef", "getBaseSymbol", (ins)>];
+                      "StringRef", "getBaseSymbol", (ins)>,
+
+      // Unitary matrix helpers
+      InterfaceMethod<"Populates the given 1x1 unitary matrix if possible.",
+                      "bool", "getUnitaryMatrix1x1", (ins "Matrix1x1&":$out),
+                      unitaryMatrix1x1MethodBody>,
+      InterfaceMethod<"Populates the given 2x2 unitary matrix if possible.",
+                      "bool", "getUnitaryMatrix2x2", (ins "Matrix2x2&":$out),
+                      unitaryMatrix2x2MethodBody>,
+      InterfaceMethod<"Populates the given 4x4 unitary matrix if possible.",
+                      "bool", "getUnitaryMatrix4x4", (ins "Matrix4x4&":$out),
+                      unitaryMatrix4x4MethodBody>,
+      InterfaceMethod<"Populates the given dynamic unitary matrix.", "bool",
+                      "getUnitaryMatrixDynamic", (ins "DynamicMatrix&":$out),
+                      unitaryMatrixDynamicMethodBody>];
+
+  let extraClassDeclaration = [{
+        template<typename MatrixType>
+        std::optional<MatrixType> getUnitaryMatrix() {
+          static_assert(is_supported_matrix_v<MatrixType>,
+                        "MatrixType must be Matrix1x1, Matrix2x2, Matrix4x4, or DynamicMatrix");
+          MatrixType out;
+          bool result = false;
+
+          if constexpr (std::is_same_v<MatrixType, Matrix1x1>) {
+            result = this->getUnitaryMatrix1x1(out);
+          } else if constexpr (std::is_same_v<MatrixType, Matrix2x2>) {
+            result = this->getUnitaryMatrix2x2(out);
+          } else if constexpr (std::is_same_v<MatrixType, Matrix4x4>) {
+            result = this->getUnitaryMatrix4x4(out);
+          } else if constexpr (std::is_same_v<MatrixType, DynamicMatrix>) {
+            result = this->getUnitaryMatrixDynamic(out);
+          }
+
+          if (result) {
+            return out;
+          }
+          return std::nullopt;
+        }
+    }];
 }
 
 #endif // MLIR_DIALECT_QCO_IR_QCOINTERFACES_TD

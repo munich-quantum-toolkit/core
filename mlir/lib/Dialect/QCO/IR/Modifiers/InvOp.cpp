@@ -10,9 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -402,22 +401,15 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
               CancelNestedInv>(context);
 }
 
-std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
+std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
   auto&& bodyUnitary = getBodyUnitary();
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto matrixOp =
-      dyn_cast<UnitaryMatrixOpInterface>(bodyUnitary.getOperation());
-  if (!matrixOp) {
-    return std::nullopt;
-  }
-  auto targetMatrix = matrixOp.getUnitaryMatrix<Eigen::MatrixXcd>();
+  const auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
   if (!targetMatrix) {
     return std::nullopt;
   }
 
-  targetMatrix->adjointInPlace();
-
-  return targetMatrix;
+  return targetMatrix->adjoint();
 }

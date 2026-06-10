@@ -8,9 +8,6 @@
 
 add_mlir_dialect(QCOOps qco)
 add_mlir_interface(QCOInterfaces)
-add_mlir_interface(QCOUnitaryMatrixInterfaces)
 
 add_mlir_doc(QCOOps QCODialect Dialects/ -gen-dialect-doc)
 add_mlir_doc(QCOInterfaces QCOInterfaces Dialects/ -gen-op-interface-docs -dialect=qco)
-add_mlir_doc(QCOUnitaryMatrixInterfaces QCOUnitaryMatrixInterfaces Dialects/ -gen-op-interface-docs
-             -dialect=qco)

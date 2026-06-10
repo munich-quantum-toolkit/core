@@ -10,7 +10,8 @@
 
 #pragma once
 
-#include <Eigen/Core>
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
+
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
 #include <mlir/Support/LLVM.h>
@@ -50,7 +51,7 @@ enum class EulerBasis : std::uint8_t {
 class EulerDecomposition {
   friend Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc,
                                         Value qubit,
-                                        const Eigen::Matrix2cd& targetMatrix,
+                                        const Matrix2x2& targetMatrix,
                                         EulerBasis basis);
 
 public:
@@ -61,8 +62,8 @@ public:
    * @param basis The target Euler basis.
    * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static EulerAngles
-  anglesFromUnitary(const Eigen::Matrix2cd& matrix, EulerBasis basis);
+  [[nodiscard]] static EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
+                                                     EulerBasis basis);
 
 private:
   /**
@@ -71,7 +72,7 @@ private:
    * @param matrix The single-qubit unitary to decompose.
    * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static EulerAngles paramsZYZ(const Eigen::Matrix2cd& matrix);
+  [[nodiscard]] static EulerAngles paramsZYZ(const Matrix2x2& matrix);
 
   /**
    * @brief Extracts parameters for `U(theta, phi, lambda)`.
@@ -79,7 +80,7 @@ private:
    * @param matrix The single-qubit unitary to decompose.
    * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static EulerAngles paramsU(const Eigen::Matrix2cd& matrix);
+  [[nodiscard]] static EulerAngles paramsU(const Matrix2x2& matrix);
 
   /**
    * @brief Extracts parameters for `RZ(phi) * RX(theta) * RZ(lambda)`.
@@ -87,7 +88,7 @@ private:
    * @param matrix The single-qubit unitary to decompose.
    * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static EulerAngles paramsZXZ(const Eigen::Matrix2cd& matrix);
+  [[nodiscard]] static EulerAngles paramsZXZ(const Matrix2x2& matrix);
 
   /**
    * @brief Extracts parameters for `RX(phi) * RY(theta) * RX(lambda)`.
@@ -95,7 +96,7 @@ private:
    * @param matrix The single-qubit unitary to decompose.
    * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static EulerAngles paramsXYX(const Eigen::Matrix2cd& matrix);
+  [[nodiscard]] static EulerAngles paramsXYX(const Matrix2x2& matrix);
 
   /**
    * @brief Extracts parameters for `RX(phi) * RZ(theta) * RX(lambda)`.
@@ -103,7 +104,7 @@ private:
    * @param matrix The single-qubit unitary to decompose.
    * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static EulerAngles paramsXZX(const Eigen::Matrix2cd& matrix);
+  [[nodiscard]] static EulerAngles paramsXZX(const Matrix2x2& matrix);
 };
 
 /**
@@ -127,10 +128,10 @@ private:
  * @param basis The target Euler basis.
  * @return The output qubit value.
  */
-[[nodiscard]] Value
-synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
-                         const Eigen::Matrix2cd& targetMatrix,
-                         EulerBasis basis);
+[[nodiscard]] Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc,
+                                             Value qubit,
+                                             const Matrix2x2& targetMatrix,
+                                             EulerBasis basis);
 
 /**
  * @brief Number of basis gates `synthesizeUnitary1QEuler` would emit.
@@ -142,7 +143,7 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
  * @param basis The target Euler basis.
  * @return The gate count (1 for `U`, 3 for KAK bases, 3 or 5 for `ZSXX`).
  */
-[[nodiscard]] std::size_t
-synthesisGateCount(const Eigen::Matrix2cd& targetMatrix, EulerBasis basis);
+[[nodiscard]] std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
+                                             EulerBasis basis);
 
 } // namespace mlir::qco::decomposition

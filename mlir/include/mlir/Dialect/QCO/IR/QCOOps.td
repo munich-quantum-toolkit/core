@@ -11,7 +11,6 @@
 
 include "mlir/Dialect/QCO/IR/QCODialect.td"
 include "mlir/Dialect/QCO/IR/QCOInterfaces.td"
-include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.td"
 include "mlir/Dialect/QCO/IR/QCOTypes.td"
 
 include "mlir/IR/EnumAttr.td"
@@ -184,9 +183,8 @@ def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
 //===----------------------------------------------------------------------===//
 
 def GPhaseOp
-    : QCOOp<"gphase",
-            traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                      ZeroTargetOneParameter, MemoryEffects<[MemWrite]>]> {
+    : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParameter,
+                                MemoryEffects<[MemWrite]>]> {
   let summary = "Apply a global phase to the state";
   let description = [{
         Applies a global phase to the state.
@@ -202,7 +200,7 @@ def GPhaseOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "gphase"; }
-        [[nodiscard]] std::optional<Eigen::Matrix<std::complex<double>, 1, 1>> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix1x1> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$theta)>];
@@ -210,8 +208,7 @@ def GPhaseOp
   let hasCanonicalizer = 1;
 }
 
-def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                 OneTargetZeroParameter]> {
+def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply an Id gate to a qubit";
   let description = [{
         Applies an Id gate to a qubit and returns the transformed qubit.
@@ -229,14 +226,13 @@ def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "id"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def XOp : QCOOp<"x", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetZeroParameter]> {
+def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply an X gate to a qubit";
   let description = [{
         Applies an X gate to a qubit and returns the transformed qubit.
@@ -254,14 +250,13 @@ def XOp : QCOOp<"x", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "x"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def YOp : QCOOp<"y", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetZeroParameter]> {
+def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply a Y gate to a qubit";
   let description = [{
         Applies a Y gate to a qubit and returns the transformed qubit.
@@ -279,14 +274,13 @@ def YOp : QCOOp<"y", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "y"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetZeroParameter]> {
+def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply a Z gate to a qubit";
   let description = [{
         Applies a Z gate to a qubit and returns the transformed qubit.
@@ -304,14 +298,13 @@ def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "z"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def HOp : QCOOp<"h", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetZeroParameter]> {
+def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply a H gate to a qubit";
   let description = [{
         Applies a H gate to a qubit and returns the transformed qubit.
@@ -329,14 +322,13 @@ def HOp : QCOOp<"h", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "h"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def SOp : QCOOp<"s", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetZeroParameter]> {
+def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply an S gate to a qubit";
   let description = [{
         Applies an S gate to a qubit and returns the transformed qubit.
@@ -354,14 +346,14 @@ def SOp : QCOOp<"s", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "s"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                   OneTargetZeroParameter]> {
+def SdgOp
+    : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply an Sdg gate to a qubit";
   let description = [{
         Applies an Sdg gate to a qubit and returns the transformed qubit.
@@ -379,14 +371,13 @@ def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def TOp : QCOOp<"t", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetZeroParameter]> {
+def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply a T gate to a qubit";
   let description = [{
         Applies a T gate to a qubit and returns the transformed qubit.
@@ -404,14 +395,14 @@ def TOp : QCOOp<"t", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "t"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                   OneTargetZeroParameter]> {
+def TdgOp
+    : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply a Tdg gate to a qubit";
   let description = [{
         Applies a Tdg gate to a qubit and returns the transformed qubit.
@@ -429,14 +420,13 @@ def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "tdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                 OneTargetZeroParameter]> {
+def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply an SX gate to a qubit";
   let description = [{
         Applies an SX gate to a qubit and returns the transformed qubit.
@@ -454,15 +444,14 @@ def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sx"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
 def SXdgOp
-    : QCOOp<"sxdg", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                              OneTargetZeroParameter]> {
+    : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   let summary = "Apply an SXdg gate to a qubit";
   let description = [{
         Applies an SXdg gate to a qubit and returns the transformed qubit.
@@ -480,14 +469,13 @@ def SXdgOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sxdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                 OneTargetOneParameter]> {
+def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let summary = "Apply an RX gate to a qubit";
   let description = [{
         Applies an RX gate to a qubit and returns the transformed qubit.
@@ -506,7 +494,7 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -516,8 +504,7 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                 OneTargetOneParameter]> {
+def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let summary = "Apply an RY gate to a qubit";
   let description = [{
         Applies an RY gate to a qubit and returns the transformed qubit.
@@ -536,7 +523,7 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ry"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -546,8 +533,7 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                 OneTargetOneParameter]> {
+def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let summary = "Apply an RZ gate to a qubit";
   let description = [{
         Applies an RZ gate to a qubit and returns the transformed qubit.
@@ -566,7 +552,7 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rz"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -576,8 +562,7 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def POp : QCOOp<"p", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetOneParameter]> {
+def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let summary = "Apply a P gate to a qubit";
   let description = [{
         Applies a P gate to a qubit and returns the transformed qubit.
@@ -596,7 +581,7 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "p"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -606,8 +591,7 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def ROp : QCOOp<"r", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetTwoParameter]> {
+def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
   let summary = "Apply an R gate to a qubit";
   let description = [{
         Applies an R gate to a qubit and returns the transformed qubit.
@@ -627,7 +611,7 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "r"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -637,8 +621,7 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                 OneTargetTwoParameter]> {
+def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
   let summary = "Apply a U2 gate to a qubit";
   let description = [{
         Applies a U2 gate to a qubit and returns the transformed qubit.
@@ -658,7 +641,7 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "u2"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -668,8 +651,7 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def UOp : QCOOp<"u", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               OneTargetThreeParameter]> {
+def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
   let summary = "Apply a U gate to a qubit";
   let description = [{
         Applies a U gate to a qubit and returns the transformed qubit.
@@ -690,7 +672,7 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "u"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -702,8 +684,7 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 }
 
 def SWAPOp
-    : QCOOp<"swap", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                              TwoTargetZeroParameter]> {
+    : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
   let summary = "Apply a SWAP gate to two qubits";
   let description = [{
         Applies a SWAP gate to two qubits and returns the transformed qubits.
@@ -724,15 +705,14 @@ def SWAPOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "swap"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
 def iSWAPOp
-    : QCOOp<"iswap", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                               TwoTargetZeroParameter]> {
+    : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
   let summary = "Apply a iSWAP gate to two qubits";
   let description = [{
         Applies a iSWAP gate to two qubits and returns the transformed qubits.
@@ -753,12 +733,12 @@ def iSWAPOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "iswap"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
 }
 
-def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                   TwoTargetZeroParameter]> {
+def DCXOp
+    : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
   let summary = "Apply a DCX gate to two qubits";
   let description = [{
         Applies a DCX gate to two qubits and returns the transformed qubits.
@@ -779,14 +759,14 @@ def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "dcx"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                   TwoTargetZeroParameter]> {
+def ECROp
+    : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
   let summary = "Apply an ECR gate to two qubits";
   let description = [{
         Applies an ECR gate to two qubits and returns the transformed qubits.
@@ -807,14 +787,13 @@ def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ecr"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
 }
 
-def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                   TwoTargetOneParameter]> {
+def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let summary = "Apply an RXX gate to two qubits";
   let description = [{
         Applies an RXX gate to two qubits and returns the transformed qubits.
@@ -836,7 +815,7 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rxx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -846,8 +825,7 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                   TwoTargetOneParameter]> {
+def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let summary = "Apply an RYY gate to two qubits";
   let description = [{
         Applies an RYY gate to two qubits and returns the transformed qubits.
@@ -869,7 +847,7 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ryy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -879,8 +857,7 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                   TwoTargetOneParameter]> {
+def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let summary = "Apply an RZX gate to two qubits";
   let description = [{
         Applies an RZX gate to two qubits and returns the transformed qubits.
@@ -902,7 +879,7 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -912,8 +889,7 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
   let hasCanonicalizer = 1;
 }
 
-def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                   TwoTargetOneParameter]> {
+def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
   let summary = "Apply an RZZ gate to two qubits";
   let description = [{
         Applies an RZZ gate to two qubits and returns the transformed qubits.
@@ -935,7 +911,7 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzz"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -946,8 +922,7 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
 }
 
 def XXPlusYYOp : QCOOp<"xx_plus_yy",
-                       traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                 TwoTargetTwoParameter]> {
+                       traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
   let summary = "Apply an XX+YY gate to two qubits";
   let description = [{
         Applies an XX+YY gate to two qubits and returns the transformed qubits.
@@ -970,7 +945,7 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_plus_yy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -982,8 +957,7 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy",
 }
 
 def XXMinusYYOp : QCOOp<"xx_minus_yy",
-                        traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                                  TwoTargetTwoParameter]> {
+                        traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
   let summary = "Apply an XX-YY gate to two qubits";
   let description = [{
         Applies an XX-YY gate to two qubits and returns the transformed qubits.
@@ -1006,7 +980,7 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_minus_yy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -1086,13 +1060,12 @@ def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
   let assemblyFormat = "attr-dict ($targets^ `:` type($targets))?";
 }
 
-def CtrlOp
-    : QCOOp<"ctrl",
-            traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                      AttrSizedOperandSegments, AttrSizedResultSegments,
-                      SameOperandsAndResultType, SameOperandsAndResultShape,
-                      SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
-                      RecursiveMemoryEffects]> {
+def CtrlOp : QCOOp<"ctrl",
+                   traits = [UnitaryOpInterface, AttrSizedOperandSegments,
+                             AttrSizedResultSegments, SameOperandsAndResultType,
+                             SameOperandsAndResultShape,
+                             SingleBlockImplicitTerminator<"YieldOp">,
+                             RecursiveMemoryEffects]> {
   let summary = "Add control qubits to a unitary operation";
   let description = [{
         A modifier operation that adds control qubits to the unitary operation
@@ -1150,7 +1123,7 @@ def CtrlOp
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
-        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets),
@@ -1165,11 +1138,9 @@ def CtrlOp
   let hasVerifier = 1;
 }
 
-def InvOp
-    : QCOOp<"inv",
-            traits = [UnitaryOpInterface, UnitaryMatrixOpInterface,
-                      SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
-                      RecursiveMemoryEffects]> {
+def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
+                                   SingleBlockImplicitTerminator<"YieldOp">,
+                                   RecursiveMemoryEffects]> {
   let summary = "Invert a unitary operation";
   let description = [{
         A modifier operation that inverts the unitary operation defined in its body
@@ -1221,7 +1192,7 @@ def InvOp
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
-        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits), [{
@@ -1246,8 +1217,7 @@ def IfOp
                         RegionBranchOpInterface, ["getNumRegionInvocations",
                                                   "getRegionInvocationBounds",
                                                   "getEntrySuccessorRegions"]>,
-                    SingleBlock,
-                    SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
+                    SingleBlock, SingleBlockImplicitTerminator<"YieldOp">,
                     RecursiveMemoryEffects]> {
 
   let summary = "If-then-else operation for linear (qubit) types";

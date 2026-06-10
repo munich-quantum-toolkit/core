@@ -10,12 +10,11 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/IR/QCOUnitaryMatrixInterfaces.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -60,10 +59,12 @@ static bool isNestedInModifierRegion(Operation* op) {
  *         a modifier body.
  */
 static bool isFuseCandidate(UnitaryOpInterface op) {
-  if (!op || !op.isSingleQubit() || isNestedInModifierRegion(op)) {
+  if (!op || !op.isSingleQubit() || isNestedInModifierRegion(op) ||
+      isa<BarrierOp>(op.getOperation())) {
     return false;
   }
-  return isa<UnitaryMatrixOpInterface>(op.getOperation());
+  Matrix2x2 matrix;
+  return op.getUnitaryMatrix2x2(matrix);
 }
 
 /**
@@ -72,16 +73,12 @@ static bool isFuseCandidate(UnitaryOpInterface op) {
  * @param op The unitary operation to query.
  * @return The matrix, or `std::nullopt` if not known at compile time.
  */
-static std::optional<Eigen::Matrix2cd> getConstMatrix(UnitaryOpInterface op) {
-  auto matrixOp = dyn_cast<UnitaryMatrixOpInterface>(op.getOperation());
-  if (!matrixOp) {
+static std::optional<Matrix2x2> getConstMatrix(UnitaryOpInterface op) {
+  Matrix2x2 matrix;
+  if (!op.getUnitaryMatrix2x2(matrix)) {
     return std::nullopt;
   }
-  Eigen::Matrix2cd m;
-  if (!matrixOp.getUnitaryMatrix2x2(m)) {
-    return std::nullopt;
-  }
-  return m;
+  return matrix;
 }
 
 /**
@@ -101,8 +98,8 @@ static bool isRunMember(Operation* op) {
  * @param run The run members in circuit order.
  * @return The product of their matrices.
  */
-static Eigen::Matrix2cd composeRun(ArrayRef<UnitaryOpInterface> run) {
-  Eigen::Matrix2cd composed = Eigen::Matrix2cd::Identity();
+static Matrix2x2 composeRun(ArrayRef<UnitaryOpInterface> run) {
+  Matrix2x2 composed = Matrix2x2::identity();
   for (auto op : run) {
     // First gate in the run is applied first (left factor).
     composed = (*getConstMatrix(op)) * composed;
@@ -205,7 +202,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
     }
 
     auto run = collectRun(op);
-    const Eigen::Matrix2cd composed = composeRun(run);
+    const Matrix2x2 composed = composeRun(run);
     const bool hasNonBasisGate =
         llvm::any_of(run, [&](UnitaryOpInterface member) {
           return !isTargetBasisGate(member.getOperation(), basis);
