@@ -23,6 +23,7 @@
 #include "mqt_ddsim_qdmi/device.h"
 #include "qasm3/Importer.hpp"
 #include "qdmi/common/Common.hpp"
+#include "qdmi/devices/dd/ProgramFormat.hpp"
 
 #include <algorithm>
 #include <array>
@@ -370,7 +371,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAM:
     if (value != nullptr) {
-      program_ = std::string(static_cast<const char*>(value), size);
+      // Text payloads include the trailing '\0' in `size`.
+      // Strip it so it is not counted in `program_.size()`.
+      // `std::string` re-synthesizes its own '\0' at `data()[size()]` for
+      // c_str() consumers.
+      // Binary payloads are stored exactly as received.
+      const auto bytes =
+          qdmi::dd::isTextProgramFormat(format_) ? size - 1 : size;
+      program_ = std::string(static_cast<const char*>(value), bytes);
     }
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM:

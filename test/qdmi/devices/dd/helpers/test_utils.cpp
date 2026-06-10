@@ -12,6 +12,7 @@
 
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
+#include "qdmi/devices/dd/ProgramFormat.hpp"
 
 #include <gtest/gtest.h>
 
@@ -97,8 +98,15 @@ int setProgram(MQT_DDSIM_QDMI_Device_Job job, const QDMI_Program_Format fmt,
   if (rc != QDMI_SUCCESS && rc != QDMI_ERROR_NOTSUPPORTED) {
     return rc;
   }
+  // Text payloads include the trailing '\0' per the QDMI wire convention.
+  // Binary payloads ship the exact byte count.
+  // The `+1` is safe here because every existing call to `setProgram` with a
+  // text format passes a `program` with a string literal or `std::string`, both
+  // of which guarantee `'\0'` at `data()[size()]`.
+  const auto bytesToSend =
+      qdmi::dd::isTextProgramFormat(fmt) ? program.size() + 1 : program.size();
   rc = MQT_DDSIM_QDMI_device_job_set_parameter(
-      job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, program.size(), program.data());
+      job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, bytesToSend, program.data());
   return rc;
 }
 

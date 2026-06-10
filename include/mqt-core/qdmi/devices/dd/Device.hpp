@@ -259,6 +259,15 @@ public:
 
   /**
    * @brief Sets a parameter for the job.
+   * @note When setting @c QDMI_DEVICE_JOB_PARAMETER_PROGRAM, the device uses
+   * the current @c QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT to decide whether
+   * the payload's wire @p size:
+   * - includes a trailing @c '\0' (text formats: QASM2, QASM3,
+   *   QIR Base/Adaptive String) or
+   * - is the exact byte count (binary formats: QIR Base/Adaptive Module).
+   * Callers should therefore set @c PROGRAMFORMAT before @c PROGRAM.
+   * The default of @c QDMI_PROGRAM_FORMAT_QASM3 is assumed if @c PROGRAMFORMAT
+   * is not set.
    * @see MQT_DDSIM_QDMI_device_job_set_parameter
    */
   auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
