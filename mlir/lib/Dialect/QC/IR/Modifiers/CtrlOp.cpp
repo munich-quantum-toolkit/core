@@ -43,6 +43,11 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
+    // Only proceed when the outer body is exactly [innerCtrlOp, yield].
+    if (op.getBody()->getOperations().size() != 2) {
+      return failure();
+    }
+
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
