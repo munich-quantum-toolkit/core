@@ -8,11 +8,16 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/ErrorHandling.h>
+#include <llvm/ADT/SmallVectorExtras.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -33,23 +38,47 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto* bodyUnitary = op.getBodyUnitary().getOperation();
-    auto bodyCtrlOp = dyn_cast<CtrlOp>(bodyUnitary);
-    if (!bodyCtrlOp) {
+    // Require at least one control
+    // Trivial case is handled by ReduceCtrl
+    if (op.getNumControls() == 0) {
       return failure();
     }
 
-    // add the inner controls as operands to the outer one
-    op->insertOperands(op.getNumOperands(), bodyCtrlOp.getControls());
+    // Only proceed if body contains only one operation besides terminator
+    if (op.getBody()->getOperations().size() != 2) {
+      return failure();
+    }
 
-    // Move the inner unitary op into the outer one's body region and replace
-    // the outer one with the inner one's results
-    const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(bodyUnitary);
-    auto* innerUnitaryOp = bodyCtrlOp.getBodyUnitary().getOperation();
-    rewriter.moveOpBefore(innerUnitaryOp, bodyUnitary);
-    rewriter.replaceOp(bodyUnitary, innerUnitaryOp->getResults());
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerCtrlOp = dyn_cast<CtrlOp>(inner.getOperation());
+    if (!innerCtrlOp) {
+      return failure();
+    }
 
+    // The inner control's controls and targets are block arguments of the outer
+    // body that alias outer targets. Re-resolve them to the outer qubits: inner
+    // controls join the outer controls, inner targets become the merged
+    // targets. Keeping the inner-target order lets the inner body be reused
+    // verbatim, since its block arguments already line up with the merged
+    // targets.
+    auto outerTargets = op.getTargets();
+    SmallVector<Value> controls(op.getControls());
+    for (auto control : innerCtrlOp.getControls()) {
+      controls.push_back(
+          utils::getValueFromBlockArgument(control, outerTargets));
+    }
+    const auto targets =
+        llvm::map_to_vector(innerCtrlOp.getTargets(), [&](Value t) {
+          return utils::getValueFromBlockArgument(t, outerTargets);
+        });
+
+    auto merged = CtrlOp::create(rewriter, op.getLoc(), controls, targets);
+    rewriter.inlineRegionBefore(innerCtrlOp.getRegion(), merged.getRegion(),
+                                merged.getRegion().end());
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -63,17 +92,26 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto* bodyUnitary = op.getBodyUnitary().getOperation();
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto* innerOp = inner.getOperation();
+
     // Inline ops from empty control modifiers, IdOp and BarrierOp
-    if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(bodyUnitary)) {
-      rewriter.moveOpBefore(bodyUnitary, op);
-      rewriter.replaceOp(op, bodyUnitary->getResults());
+    if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
+      utils::inlineModifierBody(op, *op.getBody(), op.getTargets(), rewriter);
       return success();
     }
 
     // The remaining code explicitly handles GPhaseOp and nothing else
-    auto gPhaseOp = dyn_cast<GPhaseOp>(bodyUnitary);
+    auto gPhaseOp = dyn_cast<GPhaseOp>(innerOp);
     if (!gPhaseOp) {
+      return failure();
+    }
+
+    // Only proceed if the GPhaseOp is the only operation besides the terminator
+    if (op.getBody()->getOperations().size() != 2) {
       return failure();
     }
 
@@ -84,93 +122,84 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
-    // Remove the last control and replace with a single POp with the removed
-    // control as target
-    auto controls = op.getControls();
-    auto target = controls.back();
-    controls = controls.drop_back();
-    op->setOperands(controls);
+    // Reinterpret the last control as a target qubit and apply a phase gate to
+    // it inside the (smaller) controlled region
+    const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
+    auto segmentsAttr =
+        op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
+    auto newSegments = DenseI32ArrayAttr::get(
+        rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
+    op->setAttr(opSegmentsAttrName, newSegments);
 
+    // Add a block argument for the target qubit
+    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
+                                         op.getLoc());
+
+    // Replace the current GPhaseOp with a PhaseOp
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(gPhaseOp);
-    rewriter.replaceOpWithNewOp<POp>(gPhaseOp, target, gPhaseOp.getTheta());
+    POp::create(rewriter, gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
+    rewriter.eraseOp(gPhaseOp);
 
+    return success();
+  }
+};
+
+/**
+ * @brief Erase control modifiers without unitary operations in the body.
+ */
+struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 0) {
+      return failure();
+    }
+
+    rewriter.eraseOp(op);
     return success();
   }
 };
 
 } // namespace
 
-UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  // In principle, the body region should only contain exactly two operations,
-  // the actual unitary operation and a yield operation. However, the region may
-  // also contain constants and arithmetic operations, e.g., created as part of
-  // canonicalization. Thus, the only safe way to access the unitary operation
-  // is to get the second operation from the back of the region.
-  return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+size_t CtrlOp::getNumBodyUnitaries() {
+  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
 
-Value CtrlOp::getQubit(const size_t i) {
-  const auto numControls = getNumControls();
-  if (i < numControls) {
-    return getControls()[i];
-  }
-  if (numControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getQubit(i - numControls);
-  }
-  llvm::reportFatalUsageError("Invalid qubit index");
-}
-
-Value CtrlOp::getControl(const size_t i) {
-  if (i >= getNumControls()) {
-    llvm::reportFatalUsageError("Control index out of bounds");
-  }
-  return getControls()[i];
+UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
+  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                   ValueRange controls,
-                   const function_ref<void()>& bodyBuilder) {
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsState.addOperands(controls);
-  auto* region = odsState.addRegion();
-  auto& block = region->emplaceBlock();
+                   ValueRange controls, ValueRange targets,
+                   const function_ref<void(ValueRange)>& body) {
+  build(odsBuilder, odsState, controls, targets);
+  auto& block = odsState.regions.front()->emplaceBlock();
 
+  auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  bodyBuilder();
+  body(block.getArguments());
   YieldOp::create(odsBuilder, odsState.location);
 }
 
 LogicalResult CtrlOp::verify() {
-  auto& block = *getBody();
-  if (block.getOperations().size() < 2) {
-    return emitOpError("body region must have at least two operations");
-  }
-  if (!isa<YieldOp>(block.back())) {
-    return emitOpError(
-        "last operation in body region must be a yield operation");
-  }
-  auto iter = ++block.rbegin();
-  if (!isa<UnitaryOpInterface>(*iter)) {
-    return emitOpError(
-        "second to last operation in body region must be a unitary operation");
-  }
-  for (auto it = ++iter; it != block.rend(); ++it) {
-    if (isa<UnitaryOpInterface>(*it)) {
-      return emitOpError("body region may only contain a single unitary op");
-    }
+  if (llvm::any_of(*getBody(), [](Operation& op) {
+        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
+                   memref::StoreOp>(op);
+      })) {
+    return emitOpError("body must not contain non-unitary quantum operations "
+                       "or modify a quantum register");
   }
 
   SmallPtrSet<Value, 4> uniqueQubits;
-  for (const auto& control : getControls()) {
-    if (!uniqueQubits.insert(control).second) {
-      return emitOpError("duplicate control qubit found");
-    }
-  }
-  auto bodyUnitary = getBodyUnitary();
-  const auto numQubits = bodyUnitary.getNumQubits();
-  for (size_t i = 0; i < numQubits; i++) {
-    if (!uniqueQubits.insert(bodyUnitary.getQubit(i)).second) {
+  for (const auto& qubit : getQubits()) {
+    if (!uniqueQubits.insert(qubit).second) {
       return emitOpError("duplicate qubit found");
     }
   }
@@ -180,5 +209,5 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, ReduceCtrl>(context);
+  results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
 }
