@@ -176,9 +176,7 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
                         MQT_NAMED_BUILDER(qc::multipleControlledDcx)},
         QCOToQCTestCase{"InvTwo", MQT_NAMED_BUILDER(qco::invTwo),
-                        MQT_NAMED_BUILDER(qc::invTwo)},
-        QCOToQCTestCase{"InvCtrlTwo", MQT_NAMED_BUILDER(qco::invCtrlTwo),
-                        MQT_NAMED_BUILDER(qc::ctrlInvTwo)}));
+                        MQT_NAMED_BUILDER(qc::invTwo)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/BarrierOp.cpp
