@@ -188,79 +188,18 @@ UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
   return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
-Value CtrlOp::getInputQubit(const size_t i) {
-  const auto numControls = getNumControls();
-  if (i < numControls) {
-    return getControlsIn()[i];
-  }
-  if (numControls <= i && i < getNumQubits()) {
-    return getTargetsIn()[i - numControls];
-  }
-  llvm::reportFatalUsageError("Qubit index out of bounds");
-}
-
-Value CtrlOp::getOutputQubit(const size_t i) {
-  const auto numControls = getNumControls();
-  if (i < numControls) {
-    return getControlsOut()[i];
-  }
-  if (numControls <= i && i < getNumQubits()) {
-    return getTargetsOut()[i - numControls];
-  }
-  llvm::reportFatalUsageError("Qubit index out of bounds");
-}
-
-Value CtrlOp::getInputTarget(const size_t i) {
-  if (i >= getNumTargets()) {
-    llvm::reportFatalUsageError("Target index out of bounds");
-  }
-  return getTargetsIn()[i];
-}
-
-Value CtrlOp::getOutputTarget(const size_t i) {
-  if (i >= getNumTargets()) {
-    llvm::reportFatalUsageError("Target index out of bounds");
-  }
-  return getTargetsOut()[i];
-}
-
-Value CtrlOp::getInputControl(const size_t i) {
-  if (i >= getNumControls()) {
-    llvm::reportFatalUsageError("Control index out of bounds");
-  }
-  return getControlsIn()[i];
-}
-
-Value CtrlOp::getOutputControl(const size_t i) {
-  if (i >= getNumControls()) {
-    llvm::reportFatalUsageError("Control index out of bounds");
-  }
-  return getControlsOut()[i];
-}
-
 Value CtrlOp::getInputForOutput(Value output) {
-  for (size_t i = 0; i < getNumControls(); ++i) {
-    if (output == getControlsOut()[i]) {
-      return getControlsIn()[i];
-    }
-  }
-  for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (output == getTargetsOut()[i]) {
-      return getTargetsIn()[i];
-    }
+  if (const auto result = dyn_cast<OpResult>(output);
+      result && result.getOwner() == getOperation()) {
+    return getInputQubit(result.getResultNumber());
   }
   llvm::reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
 Value CtrlOp::getOutputForInput(Value input) {
-  for (size_t i = 0; i < getNumControls(); ++i) {
-    if (input == getControlsIn()[i]) {
-      return getControlsOut()[i];
-    }
-  }
-  for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (input == getTargetsIn()[i]) {
-      return getTargetsOut()[i];
+  for (auto [in, out] : llvm::zip_equal(getInputQubits(), getOutputQubits())) {
+    if (in == input) {
+      return out;
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");

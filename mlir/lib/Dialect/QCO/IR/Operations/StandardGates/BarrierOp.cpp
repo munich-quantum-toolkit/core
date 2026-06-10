@@ -77,33 +77,18 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
 } // namespace
 
-Value BarrierOp::getInputTarget(const size_t i) {
-  if (i < getNumTargets()) {
-    return getQubitsIn()[i];
-  }
-  llvm::reportFatalUsageError("Invalid qubit index");
-}
-
-Value BarrierOp::getOutputTarget(const size_t i) {
-  if (i < getNumTargets()) {
-    return getQubitsOut()[i];
-  }
-  llvm::reportFatalUsageError("Invalid qubit index");
-}
-
 Value BarrierOp::getInputForOutput(Value output) {
-  for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (output == getQubitsOut()[i]) {
-      return getQubitsIn()[i];
-    }
+  if (const auto result = dyn_cast<OpResult>(output);
+      result && result.getOwner() == getOperation()) {
+    return getQubitsIn()[result.getResultNumber()];
   }
   llvm::reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
 Value BarrierOp::getOutputForInput(Value input) {
-  for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (input == getQubitsIn()[i]) {
-      return getQubitsOut()[i];
+  for (auto [in, out] : llvm::zip_equal(getQubitsIn(), getQubitsOut())) {
+    if (in == input) {
+      return out;
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");

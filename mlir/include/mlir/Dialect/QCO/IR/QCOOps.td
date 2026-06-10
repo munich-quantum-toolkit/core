@@ -1017,8 +1017,8 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         OperandRange getInputTargets() { return getInputQubits(); }
         Value getOutputQubit(size_t i) { return getOutputTarget(i); }
         ResultRange getOutputQubits() { return getQubitsOut(); }
-        Value getInputTarget(size_t i);
-        Value getOutputTarget(size_t i);
+        Value getInputTarget(size_t i) { return getQubitsIn()[i]; }
+        Value getOutputTarget(size_t i) { return getQubitsOut()[i]; }
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
         static OperandRange getInputControls() { return {nullptr, 0}; }
         static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
@@ -1108,16 +1108,16 @@ def CtrlOp : QCOOp<"ctrl",
         size_t getNumQubits() { return getNumControls() + getNumTargets(); }
         size_t getNumTargets() { return getTargetsIn().size(); }
         size_t getNumControls() { return getControlsIn().size(); }
-        Value getInputQubit(size_t i);
         OperandRange getInputQubits() { return getOperands(); }
+        Value getInputQubit(size_t i) { return getInputQubits()[i]; }
         OperandRange getInputTargets() { return getTargetsIn(); }
-        Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getResults(); }
-        Value getInputTarget(size_t i);
-        Value getOutputTarget(size_t i);
-        Value getInputControl(size_t i);
+        Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
+        Value getInputTarget(size_t i) { return getInputTargets()[i]; }
+        Value getOutputTarget(size_t i) { return getOutputTargets()[i]; }
+        Value getInputControl(size_t i) { return getInputControls()[i]; }
         OperandRange getInputControls() { return getControlsIn(); }
-        Value getOutputControl(size_t i);
+        Value getOutputControl(size_t i) { return getOutputControls()[i]; }
         ResultRange getOutputTargets() { return getTargetsOut(); }
         ResultRange getOutputControls() { return getControlsOut(); }
         Value getInputForOutput(Value output);
@@ -1181,11 +1181,11 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
         size_t getNumQubits() { return getNumTargets(); }
         size_t getNumTargets() { return getQubitsIn().size(); }
         static size_t getNumControls() { return 0; }
-        Value getInputQubit(size_t i);
         OperandRange getInputQubits() { return getQubitsIn(); }
+        Value getInputQubit(size_t i) { return getQubitsIn()[i]; }
         OperandRange getInputTargets() { return getInputQubits(); }
-        Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getQubitsOut(); }
+        Value getOutputQubit(size_t i) { return getQubitsOut()[i]; }
         Value getInputTarget(size_t i) { return getInputQubit(i); }
         Value getOutputTarget(size_t i) { return getOutputQubit(i); }
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }

@@ -321,33 +321,18 @@ UnitaryOpInterface InvOp::getBodyUnitary(const size_t i) {
   return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
-Value InvOp::getInputQubit(const size_t i) {
-  if (i >= getNumTargets()) {
-    llvm::reportFatalUsageError("Qubit index out of bounds");
-  }
-  return getQubitsIn()[i];
-}
-
-Value InvOp::getOutputQubit(const size_t i) {
-  if (i >= getNumTargets()) {
-    llvm::reportFatalUsageError("Qubit index out of bounds");
-  }
-  return getQubitsOut()[i];
-}
-
 Value InvOp::getInputForOutput(Value output) {
-  for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (output == getQubitsOut()[i]) {
-      return getQubitsIn()[i];
-    }
+  if (const auto result = dyn_cast<OpResult>(output);
+      result && result.getOwner() == getOperation()) {
+    return getInputQubit(result.getResultNumber());
   }
   llvm::reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
 Value InvOp::getOutputForInput(Value input) {
-  for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (input == getQubitsIn()[i]) {
-      return getQubitsOut()[i];
+  for (auto [in, out] : llvm::zip_equal(getInputQubits(), getOutputQubits())) {
+    if (in == input) {
+      return out;
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
