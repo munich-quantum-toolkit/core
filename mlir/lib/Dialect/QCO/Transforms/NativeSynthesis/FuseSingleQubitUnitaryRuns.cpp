@@ -44,11 +44,11 @@ namespace mlir::qco {
  * body are not separate run members.
  *
  * @param op The operation to test.
- * @return `true` if the parent is `inv` or `ctrl`.
+ * @return `true` if any ancestor is `inv` or `ctrl`.
  */
 static bool isNestedInModifierRegion(Operation* op) {
-  Operation* parent = op->getParentOp();
-  return parent != nullptr && isa<InvOp, CtrlOp>(parent);
+  return op != nullptr && (op->getParentOfType<InvOp>() != nullptr ||
+                           op->getParentOfType<CtrlOp>() != nullptr);
 }
 
 /**

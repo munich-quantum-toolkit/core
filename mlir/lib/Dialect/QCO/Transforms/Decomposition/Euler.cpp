@@ -97,7 +97,7 @@ namespace {
  * @brief Planned PSX (`RZ` / `SX` / `X`) chain; angles in circuit order.
  */
 struct PSXSequence {
-  enum class Middle : std::uint8_t { OneSX, X, SXRZSX };
+  enum class Middle : std::uint8_t { OnlyRZ, OneSX, X, SXRZSX };
   Middle middle = Middle::SXRZSX;
   double firstRZ = 0.0;
   double midRZ = 0.0;
@@ -109,8 +109,8 @@ struct PSXSequence {
 /**
  * @brief Classifies the PSX middle-gate case from ZYZ `theta`.
  *
- * For `theta` in `[0, pi]`: `pi/2` → one `SX`, `pi` → `X`, otherwise
- * `SX*RZ*SX`.
+ * For `theta` in `[0, pi]`: `0` → pure `RZ` chain, `pi/2` → one `SX`, `pi` →
+ * `X`, otherwise `SX*RZ*SX`.
  *
  * @param theta Y-rotation angle from `paramsZYZ`.
  * @return The PSX middle-gate case.
@@ -121,6 +121,9 @@ classifyPSXMiddleFromZYZTheta(double theta) {
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
 
+  if (theta < eps) {
+    return PSXSequence::Middle::OnlyRZ;
+  }
   if (std::abs(theta - halfPi) < eps) {
     return PSXSequence::Middle::OneSX;
   }
@@ -146,6 +149,11 @@ classifyPSXMiddleFromZYZTheta(double theta) {
   constexpr double pi = std::numbers::pi;
 
   switch (classifyPSXMiddleFromZYZTheta(theta)) {
+  case PSXSequence::Middle::OnlyRZ:
+    return {.middle = PSXSequence::Middle::OnlyRZ,
+            .firstRZ = lambda,
+            .midRZ = 0.0,
+            .lastRZ = phi};
   case PSXSequence::Middle::OneSX:
     return {.middle = PSXSequence::Middle::OneSX,
             .firstRZ = lambda - halfPi,
@@ -201,6 +209,9 @@ classifyPSXMiddleFromZYZTheta(double theta) {
   constexpr double quarterPi = std::numbers::pi / 4.0;
 
   switch (seq.middle) {
+  case PSXSequence::Middle::OnlyRZ:
+    return globalPhaseFromRZWrap(seq.firstRZ) +
+           globalPhaseFromRZWrap(seq.lastRZ);
   case PSXSequence::Middle::OneSX:
     // `SX = exp(i*pi/4)*RZ(-pi/2)*RY(pi/2)*RZ(pi/2)`; the outer RZ angles
     // absorb the +-pi/2, leaving the exp(i*pi/4) phase. RZ wraps add too.
@@ -232,6 +243,9 @@ static void visitSequenceInTimeOrder(const PSXSequence& seq,
                                      llvm::function_ref<void()> onX) {
   onRZ(seq.firstRZ);
   switch (seq.middle) {
+  case PSXSequence::Middle::OnlyRZ:
+    onRZ(seq.lastRZ);
+    break;
   case PSXSequence::Middle::OneSX:
     onSX();
     onRZ(seq.lastRZ);
@@ -348,14 +362,6 @@ EulerAngles EulerDecomposition::anglesFromUnitary(const Matrix2x2& matrix,
     return paramsZXZ(matrix);
   case EulerBasis::U:
     return paramsU(matrix);
-  case EulerBasis::ZSXX: {
-    const auto zyz = paramsZYZ(matrix);
-    const auto seq = sequenceFromZYZForPSX(zyz.theta, zyz.phi, zyz.lambda);
-    return {.theta = zyz.theta,
-            .phi = zyz.phi,
-            .lambda = zyz.lambda,
-            .phase = zyz.phase + globalPhaseOffsetForPSX(seq)};
-  }
   }
   llvm::reportFatalInternalError(
       "Unsupported Euler basis for angle computation in decomposition!");
@@ -484,9 +490,16 @@ std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
   case EulerBasis::ZSXX: {
     const double theta = 2. * std::atan2(std::abs(targetMatrix(1, 0)),
                                          std::abs(targetMatrix(0, 0)));
-    return classifyPSXMiddleFromZYZTheta(theta) == PSXSequence::Middle::SXRZSX
-               ? 5U
-               : 3U;
+    switch (classifyPSXMiddleFromZYZTheta(theta)) {
+    case PSXSequence::Middle::OnlyRZ:
+      return 2U;
+    case PSXSequence::Middle::SXRZSX:
+      return 5U;
+    case PSXSequence::Middle::OneSX:
+    case PSXSequence::Middle::X:
+      return 3U;
+    }
+    llvm::reportFatalInternalError("Unhandled PSX middle gate");
   }
   }
   llvm::reportFatalInternalError("Unhandled Euler basis in synthesisGateCount");

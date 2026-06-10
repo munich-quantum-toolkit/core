@@ -56,7 +56,10 @@ class EulerDecomposition {
 
 public:
   /**
-   * @brief Extracts `(theta, phi, lambda, phase)` for the requested basis.
+   * @brief Extracts `(theta, phi, lambda, phase)` for KAK and `U` bases.
+   *
+   * Does not support `EulerBasis::ZSXX`; use `synthesizeUnitary1QEuler` or
+   * `synthesisGateCount` instead.
    *
    * @param matrix The single-qubit unitary to decompose.
    * @param basis The target Euler basis.
