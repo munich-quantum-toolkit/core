@@ -49,7 +49,11 @@ def FuseSingleQubitUnitaryRuns
   let description = [{
     Matches maximal runs of consecutive single-qubit unitary operations on the
     same qubit wire (anchored at each run head), composes their constant unitary
-    matrices, and replaces each run with an equivalent sequence of basis gates.
+    matrices, and replaces a run with an equivalent sequence of basis gates when
+    beneficial: when the run contains a gate outside the target `basis`, or when
+    its length exceeds `synthesisGateCount` for the composed matrix. Runs that
+    are already in the target `basis` and no longer than that canonical count
+    are left unchanged.
 
     The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
     A `gphase` correction is inserted when needed so the rewritten sequence

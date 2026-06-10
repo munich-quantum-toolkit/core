@@ -91,6 +91,16 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
   GPhaseOp::create(builder, loc, phase);
 }
 
+/**
+ * @brief Whether `angle` is numerically zero for gate-emission purposes.
+ *
+ * @param angle Rotation angle in radians.
+ * @return `true` when no rotation gate should be emitted.
+ */
+[[nodiscard]] static bool isNearZeroRotationAngle(double angle) {
+  return std::abs(angle) <= mlir::utils::TOLERANCE;
+}
+
 namespace {
 
 /**
@@ -109,10 +119,11 @@ struct PSXSequence {
 /**
  * @brief Classifies the PSX middle-gate case from ZYZ `theta`.
  *
- * For `theta` in `[0, pi]`: `0` → pure `RZ` chain, `pi/2` → one `SX`, `pi` →
- * `X`, otherwise `SX*RZ*SX`.
+ * Shortcut branches are checked in fixed order (`OnlyRZ`, `OneSX`, `X`) so
+ * `theta` values within `TOLERANCE` of `0`, `pi/2`, or `pi` always pick the
+ * same case.
  *
- * @param theta Y-rotation angle from `paramsZYZ`.
+ * @param theta Y-rotation angle from `paramsZYZ` in `[0, pi]`.
  * @return The PSX middle-gate case.
  */
 [[nodiscard]] static PSXSequence::Middle
@@ -124,10 +135,10 @@ classifyPSXMiddleFromZYZTheta(double theta) {
   if (theta < eps) {
     return PSXSequence::Middle::OnlyRZ;
   }
-  if (std::abs(theta - halfPi) < eps) {
+  if (std::abs(theta - halfPi) <= eps) {
     return PSXSequence::Middle::OneSX;
   }
-  if (std::abs(theta - pi) < eps) {
+  if (std::abs(theta - pi) <= eps) {
     return PSXSequence::Middle::X;
   }
   return PSXSequence::Middle::SXRZSX;
@@ -281,8 +292,11 @@ static void visitSequenceInTimeOrder(const PSXSequence& seq,
   visitSequenceInTimeOrder(
       seq,
       [&](const double angle) {
-        qubit =
-            RZOp::create(builder, loc, qubit, mod2pi(angle, eps)).getQubitOut();
+        const double wrapped = mod2pi(angle, eps);
+        if (isNearZeroRotationAngle(wrapped)) {
+          return;
+        }
+        qubit = RZOp::create(builder, loc, qubit, wrapped).getQubitOut();
       },
       [&] { qubit = SXOp::create(builder, loc, qubit).getQubitOut(); },
       [&] { qubit = XOp::create(builder, loc, qubit).getQubitOut(); });
@@ -307,6 +321,9 @@ static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
                      double theta, double phi, double lambda, double phase,
                      EulerBasis basis) {
   auto emitK = [&](double a) {
+    if (isNearZeroRotationAngle(a)) {
+      return;
+    }
     switch (basis) {
     case EulerBasis::ZYZ:
     case EulerBasis::ZXZ:
@@ -322,6 +339,9 @@ static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
   };
 
   auto emitA = [&](double a) {
+    if (isNearZeroRotationAngle(a)) {
+      return;
+    }
     switch (basis) {
     case EulerBasis::ZYZ:
     case EulerBasis::XYX:
@@ -376,7 +396,13 @@ EulerAngles EulerDecomposition::paramsZYZ(const Matrix2x2& matrix) {
   const auto theta =
       2. * std::atan2(std::abs(matrix(1, 0)), std::abs(matrix(0, 0)));
   const auto ang1 = std::arg(matrix(1, 1));
-  const auto ang2 = std::arg(matrix(1, 0));
+  constexpr double eps = mlir::utils::TOLERANCE;
+  double ang2 = 0.0;
+  if (std::abs(matrix(1, 0)) > eps) {
+    ang2 = std::arg(matrix(1, 0));
+  } else if (std::abs(matrix(0, 1)) > eps) {
+    ang2 = std::arg(matrix(0, 1));
+  }
   const auto phi = ang1 + ang2 - detArg;
   const auto lambda = ang1 - ang2;
   return {.theta = theta, .phi = phi, .lambda = lambda, .phase = phase};
@@ -394,6 +420,8 @@ EulerAngles EulerDecomposition::paramsZXZ(const Matrix2x2& matrix) {
 EulerAngles EulerDecomposition::paramsXYX(const Matrix2x2& matrix) {
   // H*RY(theta)*H = RY(-theta): shift outer angles by pi and fix global phase.
   const auto zyz = paramsZYZ(hadamardConjugate(matrix));
+  // Keep atol=0 so `phase` tracks the unwrapped ZYZ angles; snapping to pi
+  // would change the recorded global-phase correction.
   const auto newPhi = mod2pi(zyz.phi + std::numbers::pi, 0.);
   const auto newLambda = mod2pi(zyz.lambda + std::numbers::pi, 0.);
   return {.theta = zyz.theta,
@@ -476,31 +504,86 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
   return qubit;
 }
 
+/**
+ * @brief Counts non-identity K-A-K rotations `emitKAK` would emit.
+ */
+[[nodiscard]] static std::size_t countKAKGates(double theta, double phi,
+                                               double lambda) {
+  std::size_t count = 0;
+  if (!isNearZeroRotationAngle(lambda)) {
+    ++count;
+  }
+  if (!isNearZeroRotationAngle(theta)) {
+    ++count;
+  }
+  if (!isNearZeroRotationAngle(phi)) {
+    ++count;
+  }
+  return count;
+}
+
+/**
+ * @brief Counts non-zero `RZ` slots in a PSX sequence angle.
+ */
+[[nodiscard]] static std::size_t countNonZeroPSXAngle(double angle) {
+  constexpr double eps = mlir::utils::TOLERANCE;
+  return isNearZeroRotationAngle(mod2pi(angle, eps)) ? 0 : 1;
+}
+
+/**
+ * @brief Counts basis gates `emitFromPSXSequence` would emit for `seq`.
+ */
+[[nodiscard]] static std::size_t countPSXSequenceGates(const PSXSequence& seq) {
+  switch (seq.middle) {
+  case PSXSequence::Middle::OnlyRZ:
+    return countNonZeroPSXAngle(seq.firstRZ) + countNonZeroPSXAngle(seq.lastRZ);
+  case PSXSequence::Middle::OneSX:
+  case PSXSequence::Middle::X:
+    return countNonZeroPSXAngle(seq.firstRZ) + 1 +
+           countNonZeroPSXAngle(seq.lastRZ);
+  case PSXSequence::Middle::SXRZSX:
+    return countNonZeroPSXAngle(seq.firstRZ) + 1 +
+           countNonZeroPSXAngle(seq.midRZ) + 1 +
+           countNonZeroPSXAngle(seq.lastRZ);
+  }
+  llvm::reportFatalInternalError("Unhandled PSX middle gate in gate count");
+}
+
+bool wouldShortenInBasisRun(const std::size_t runSize,
+                            const Matrix2x2& composed, EulerBasis basis) {
+  if (runSize > maxSynthesisGateCount(basis)) {
+    return true;
+  }
+  return runSize > synthesisGateCount(composed, basis);
+}
+
 std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
                                EulerBasis basis) {
-  switch (basis) {
-  case EulerBasis::U:
+  if (basis == EulerBasis::U) {
     return 1;
+  }
+
+  if (targetMatrix.isApprox(Matrix2x2::identity())) {
+    return 0;
+  }
+
+  switch (basis) {
   case EulerBasis::ZYZ:
   case EulerBasis::ZXZ:
   case EulerBasis::XZX:
-  case EulerBasis::XYX:
-    // emitKAK always emits the full K-A-K rotation triple.
-    return 3;
-  case EulerBasis::ZSXX: {
-    const double theta = 2. * std::atan2(std::abs(targetMatrix(1, 0)),
-                                         std::abs(targetMatrix(0, 0)));
-    switch (classifyPSXMiddleFromZYZTheta(theta)) {
-    case PSXSequence::Middle::OnlyRZ:
-      return 2U;
-    case PSXSequence::Middle::SXRZSX:
-      return 5U;
-    case PSXSequence::Middle::OneSX:
-    case PSXSequence::Middle::X:
-      return 3U;
-    }
-    llvm::reportFatalInternalError("Unhandled PSX middle gate");
+  case EulerBasis::XYX: {
+    const auto angles =
+        EulerDecomposition::anglesFromUnitary(targetMatrix, basis);
+    return countKAKGates(angles.theta, angles.phi, angles.lambda);
   }
+  case EulerBasis::ZSXX: {
+    const auto zyz =
+        EulerDecomposition::anglesFromUnitary(targetMatrix, EulerBasis::ZYZ);
+    const auto seq = sequenceFromZYZForPSX(zyz.theta, zyz.phi, zyz.lambda);
+    return countPSXSequenceGates(seq);
+  }
+  case EulerBasis::U:
+    llvm_unreachable("handled above");
   }
   llvm::reportFatalInternalError("Unhandled Euler basis in synthesisGateCount");
 }

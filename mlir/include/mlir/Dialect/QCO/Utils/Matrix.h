@@ -25,6 +25,8 @@ using Complex = std::complex<double>;
 /// Default absolute tolerance for matrix comparisons.
 inline constexpr double MATRIX_TOLERANCE = 1e-14;
 
+class DynamicMatrix;
+
 /**
  * @brief 1x1 matrix for global-phase gates.
  *
@@ -66,6 +68,14 @@ struct Matrix1x1 {
    */
   [[nodiscard]] bool isApprox(const Matrix1x1& other,
                               double tol = MATRIX_TOLERANCE) const;
+
+  /**
+   * @brief Replaces this matrix with a copy of a 1x1 dynamic matrix.
+   *
+   * @param src Source matrix.
+   * @return `true` when @p src is 1x1.
+   */
+  [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 };
 
 /**
@@ -157,6 +167,14 @@ struct Matrix2x2 {
    */
   [[nodiscard]] bool isApprox(const Matrix2x2& other,
                               double tol = MATRIX_TOLERANCE) const;
+
+  /**
+   * @brief Replaces this matrix with a copy of a 2x2 dynamic matrix.
+   *
+   * @param src Source matrix.
+   * @return `true` when @p src is 2x2.
+   */
+  [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 };
 
 /**
@@ -268,6 +286,14 @@ struct Matrix4x4 {
    */
   [[nodiscard]] bool isApprox(const Matrix4x4& other,
                               double tol = MATRIX_TOLERANCE) const;
+
+  /**
+   * @brief Replaces this matrix with a copy of a 4x4 dynamic matrix.
+   *
+   * @param src Source matrix.
+   * @return `true` when @p src is 4x4.
+   */
+  [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 };
 
 /**

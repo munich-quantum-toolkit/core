@@ -218,6 +218,30 @@ TEST(DynamicMatrix, IsApproxRejectsMismatchedExtents) {
   EXPECT_FALSE(DynamicMatrix::identity(1).isApprox(DynamicMatrix::identity(2)));
 }
 
+TEST(Matrix2x2, AssignFromDynamicMatrix) {
+  const Matrix2x2 x = pauliX();
+
+  DynamicMatrix dynamic;
+  dynamic.assignFrom(x);
+
+  Matrix2x2 out = Matrix2x2::identity();
+  EXPECT_TRUE(out.assignFrom(dynamic));
+  EXPECT_TRUE(out.isApprox(x));
+  EXPECT_FALSE(out.assignFrom(DynamicMatrix::identity(3)));
+}
+
+TEST(Matrix4x4, AssignFromDynamicMatrix) {
+  const Matrix4x4 swap = swapMatrix();
+
+  DynamicMatrix dynamic;
+  dynamic.assignFrom(swap);
+
+  Matrix4x4 out = Matrix4x4::identity();
+  EXPECT_TRUE(out.assignFrom(dynamic));
+  EXPECT_TRUE(out.isApprox(swap));
+  EXPECT_FALSE(out.assignFrom(DynamicMatrix::identity(2)));
+}
+
 TEST(DynamicMatrix, IsApproxOverloads) {
   const Matrix2x2 x = pauliX();
   const Matrix4x4 swap = swapMatrix();

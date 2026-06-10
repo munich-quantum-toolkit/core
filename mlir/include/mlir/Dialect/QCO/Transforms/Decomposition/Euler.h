@@ -137,14 +137,51 @@ private:
                                              EulerBasis basis);
 
 /**
+ * @brief Upper bound on basis gates `synthesizeUnitary1QEuler` may emit.
+ *
+ * @param basis The target Euler basis.
+ * @return `1` for `U`, `3` for KAK bases, `5` for `ZSXX`.
+ */
+[[nodiscard]] constexpr std::size_t maxSynthesisGateCount(EulerBasis basis) {
+  switch (basis) {
+  case EulerBasis::U:
+    return 1;
+  case EulerBasis::ZYZ:
+  case EulerBasis::ZXZ:
+  case EulerBasis::XZX:
+  case EulerBasis::XYX:
+    return 3;
+  case EulerBasis::ZSXX:
+    return 5;
+  }
+}
+
+/**
+ * @brief Whether an in-basis run would shorten after Euler resynthesis.
+ *
+ * Uses `maxSynthesisGateCount` as a cheap shortcut before falling back to
+ * `synthesisGateCount`.
+ *
+ * @param runSize Number of gates in the run.
+ * @param composed Composed unitary of the run.
+ * @param basis The target Euler basis.
+ * @return `true` when resynthesis would emit fewer basis gates than @p runSize.
+ */
+[[nodiscard]] bool wouldShortenInBasisRun(std::size_t runSize,
+                                          const Matrix2x2& composed,
+                                          EulerBasis basis);
+
+/**
  * @brief Number of basis gates `synthesizeUnitary1QEuler` would emit.
  *
- * Excludes `qco.gphase`. Used by the fuse pass to detect overlong in-basis
- * runs.
+ * Excludes `qco.gphase` and near-zero rotations that synthesis skips.
  *
  * @param targetMatrix The single-qubit unitary that would be synthesized.
  * @param basis The target Euler basis.
- * @return The gate count (1 for `U`, 3 for KAK bases, 3 or 5 for `ZSXX`).
+ * @return The gate count (1 for `U`, up to 3 for KAK bases, up to 5 for
+ *         `ZSXX`). For `ZSXX`, pure-Z (`OnlyRZ`) compositions count non-zero
+ *         `RZ` gates only (1 or 2); `OneSX` and `X` shortcuts count 3; the
+ *         generic case counts up to 5.
  */
 [[nodiscard]] std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
                                              EulerBasis basis);

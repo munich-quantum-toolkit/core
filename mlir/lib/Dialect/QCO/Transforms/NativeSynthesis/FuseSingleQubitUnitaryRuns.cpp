@@ -208,7 +208,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
           return !isTargetBasisGate(member.getOperation(), basis);
         });
     if (!hasNonBasisGate &&
-        run.size() <= decomposition::synthesisGateCount(composed, basis)) {
+        !decomposition::wouldShortenInBasisRun(run.size(), composed, basis)) {
       return failure();
     }
 

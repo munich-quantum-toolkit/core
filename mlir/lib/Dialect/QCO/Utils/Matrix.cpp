@@ -63,6 +63,23 @@ isApproxFixedImpl(const std::int64_t dim, ArrayRef<Complex> data,
   return entriesAreApprox(data, other, tol);
 }
 
+template <std::size_t Dim, std::size_t Size>
+[[nodiscard]] static bool
+assignFromDynamicImpl(const DynamicMatrix& src,
+                      std::array<Complex, Size>& dst) {
+  if (src.rows() != static_cast<std::int64_t>(Dim) ||
+      src.cols() != static_cast<std::int64_t>(Dim)) {
+    return false;
+  }
+  for (std::size_t row = 0; row < Dim; ++row) {
+    for (std::size_t col = 0; col < Dim; ++col) {
+      dst[(row * Dim) + col] =
+          src(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col));
+    }
+  }
+  return true;
+}
+
 /// Returns @p dim as `size_t` after asserting it is non-negative and squarable.
 [[nodiscard]] static std::size_t checkedDim(const std::int64_t dim) {
   assert(dim >= 0 && "DynamicMatrix dimension must be non-negative");
@@ -123,6 +140,14 @@ bool Matrix1x1::isApprox(const Matrix1x1& other, const double tol) const {
   return std::abs(value - other.value) <= tol;
 }
 
+bool Matrix1x1::assignFrom(const DynamicMatrix& src) {
+  if (src.rows() != 1 || src.cols() != 1) {
+    return false;
+  }
+  value = src(0, 0);
+  return true;
+}
+
 Matrix2x2 Matrix2x2::fromElements(const Complex& m00, const Complex& m01,
                                   const Complex& m10, const Complex& m11) {
   return {{m00, m01, m10, m11}};
@@ -157,6 +182,10 @@ Complex Matrix2x2::determinant() const {
 
 bool Matrix2x2::isApprox(const Matrix2x2& other, const double tol) const {
   return entriesAreApprox(data, other.data, tol);
+}
+
+bool Matrix2x2::assignFrom(const DynamicMatrix& src) {
+  return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
 }
 
 Matrix4x4 Matrix4x4::fromElements(const Complex& m00, const Complex& m01,
@@ -229,6 +258,10 @@ Complex Matrix4x4::determinant() const {
 
 bool Matrix4x4::isApprox(const Matrix4x4& other, const double tol) const {
   return entriesAreApprox(data, other.data, tol);
+}
+
+bool Matrix4x4::assignFrom(const DynamicMatrix& src) {
+  return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
 }
 
 DynamicMatrix::DynamicMatrix() : impl_(std::make_unique<Impl>()) {}
