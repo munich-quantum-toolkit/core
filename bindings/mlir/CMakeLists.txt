@@ -22,3 +22,11 @@ add_mqt_python_binding_nanobind(
   MLIRSupportMQT
   MQTCompilerPipeline
   MLIRParser)
+
+# install the Python stub file in editable mode for better IDE support
+if(SKBUILD_STATE STREQUAL "editable")
+  install(
+    FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/mlir.pyi
+    DESTINATION .
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+endif()

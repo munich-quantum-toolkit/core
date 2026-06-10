@@ -75,7 +75,8 @@ def test_compile_program_convert_to_qir() -> None:
     result = compile_program(BELL, convert_to_qir=True)
     print(result)
 
-    assert "func.func" in result
+    assert "llvm.func" in result
+    assert "__quantum__" in result
 
 
 def test_pipeline_is_composable() -> None:
@@ -90,5 +91,5 @@ def test_pipeline_is_composable() -> None:
 
 def test_load_qasm_invalid_raises() -> None:
     """Test that invalid QASM input raises a RuntimeError."""
-    with pytest.raises(RuntimeError, match="failed to translate"):
+    with pytest.raises(RuntimeError, match="Expected"):
         load_qasm("this is not valid qasm")

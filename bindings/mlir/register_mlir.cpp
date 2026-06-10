@@ -33,13 +33,10 @@ namespace nb = nanobind;
 
 namespace {
 
-mlir::MLIRContext* makeContext() {
-  auto* ctx =
-      new mlir::MLIRContext(); // NOLINT(cppcoreguidelines-owning-memory)
+void setupContext(mlir::MLIRContext& ctx) {
   // NOLINTNEXTLINE(misc-include-cleaner)
-  const MlirContext cCtx{ctx};
+  const MlirContext cCtx{&ctx};
   mqtMlirRegisterAllDialects(cCtx);
-  return ctx;
 }
 
 std::string moduleToString(mlir::ModuleOp module) {
@@ -61,14 +58,13 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       "load_qasm",
       [](const std::string& qasm) -> std::string {
         auto qc = qasm3::Importer::imports(qasm);
-        auto* ctx = makeContext();
-        auto module = mlir::translateQuantumComputationToQC(ctx, qc);
+        mlir::MLIRContext ctx;
+        setupContext(ctx);
+        auto module = mlir::translateQuantumComputationToQC(&ctx, qc);
         if (!module) {
           throw std::runtime_error("failed to translate QASM to QC MLIR");
         }
-        auto result = moduleToString(*module);
-        delete ctx; // NOLINT(cppcoreguidelines-owning-memory)
-        return result;
+        return moduleToString(*module);
       },
       nb::arg("qasm"),
       "Parse an OpenQASM string and return the QC dialect MLIR module as "
@@ -77,20 +73,19 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   m.def(
       "convert_qc_to_qco",
       [](const std::string& mlirText) -> std::string {
-        auto* ctx = makeContext();
-        auto module = mlir::parseSourceString<mlir::ModuleOp>(mlirText, ctx);
+        mlir::MLIRContext ctx;
+        setupContext(ctx);
+        auto module = mlir::parseSourceString<mlir::ModuleOp>(mlirText, &ctx);
         if (!module) {
           throw std::runtime_error("failed to parse QC MLIR module");
         }
-        mlir::PassManager pm(ctx);
+        mlir::PassManager pm(&ctx);
         populateQCCleanupPipeline(pm);
         pm.addPass(mlir::createQCToQCO());
         if (mlir::failed(pm.run(*module))) {
           throw std::runtime_error("qc-to-qco conversion failed");
         }
-        auto result = moduleToString(*module);
-        delete ctx; // NOLINT(cppcoreguidelines-owning-memory)
-        return result;
+        return moduleToString(*module);
       },
       nb::arg("mlir_text"),
       "Convert a QC dialect module (as text) to QCO dialect.");
@@ -99,8 +94,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       "compile_program",
       [](const std::string& qasm, bool convertToQir) -> std::string {
         auto qc = qasm3::Importer::imports(qasm);
-        auto* ctx = makeContext();
-        auto module = mlir::translateQuantumComputationToQC(ctx, qc);
+        mlir::MLIRContext ctx;
+        setupContext(ctx);
+        auto module = mlir::translateQuantumComputationToQC(&ctx, qc);
         if (!module) {
           throw std::runtime_error("failed to translate QASM to QC MLIR");
         }
@@ -109,9 +105,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
         if (mlir::failed(pipeline.runPipeline(*module))) {
           throw std::runtime_error("compilation pipeline failed");
         }
-        auto result = moduleToString(*module);
-        delete ctx; // NOLINT(cppcoreguidelines-owning-memory)
-        return result;
+        return moduleToString(*module);
       },
       nb::arg("qasm"), nb::arg("convert_to_qir") = false,
       "Run the full compiler pipeline on an OpenQASM program.");

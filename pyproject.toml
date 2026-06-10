@@ -323,7 +323,6 @@ exclude = [
     "docs/**",
     "eval/**",
     "mlir/**",
-    "python/mqt/core/mlir/**",
     "test/python/mlir/**",
 ]
 
