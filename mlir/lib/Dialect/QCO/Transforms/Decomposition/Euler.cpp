@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLFunctionalExtras.h>

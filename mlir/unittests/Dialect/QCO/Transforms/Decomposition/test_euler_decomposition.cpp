@@ -70,6 +70,8 @@ struct SynthesizedCircuit {
   func::FuncOp func;
 };
 
+} // namespace
+
 [[nodiscard]] static Matrix2x2 scaleMatrix(const Matrix2x2& matrix,
                                            Complex scale) {
   return Matrix2x2::fromElements(scale * matrix(0, 0), scale * matrix(0, 1),
@@ -87,8 +89,6 @@ struct SynthesizedCircuit {
   Matrix2x2 matrix;
   return unitary.getUnitaryMatrix2x2(matrix);
 }
-
-} // namespace
 
 [[nodiscard]] static Matrix2x2 rzMatrix(double theta) {
   const auto m00 = std::polar(1.0, -theta / 2.0);
