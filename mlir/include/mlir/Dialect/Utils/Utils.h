@@ -65,12 +65,10 @@ template <typename T>
   if (!constantOp) {
     return std::nullopt;
   }
-  auto floatAttr = dyn_cast<FloatAttr>(constantOp.getValue());
-  if (floatAttr) {
+  if (auto floatAttr = dyn_cast<FloatAttr>(constantOp.getValue())) {
     return floatAttr.getValueAsDouble();
   }
-  auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
-  if (intAttr) {
+  if (auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue())) {
     if (intAttr.getType().isUnsignedInteger()) {
       return static_cast<double>(intAttr.getValue().getZExtValue());
     }
@@ -82,7 +80,7 @@ template <typename T>
 
 template <typename QubitType>
 [[nodiscard]]
-static ParseResult
+ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
   // 1. Parse the opening parenthesis
@@ -115,7 +113,7 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       }
       operands.push_back(oldOperand);
 
-      // Hard-code QubitType since targets in qco.ctrl are always qubits.
+      // Hard-code QubitType since targets in CtrlOp are always qubits.
       // This avoids double-binding type($targets_in) in the assembly format
       // while keeping the parser simple and the assembly format clean.
       newArg.type = QubitType::get(parser.getBuilder().getContext());
@@ -138,7 +136,7 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
   return success();
 }
 
-static void printTargetAliasing(OpAsmPrinter& printer, Region& region,
+inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
                                 OperandRange targetsIn) {
   printer << "(";
   if (region.empty()) {
@@ -166,7 +164,7 @@ static void printTargetAliasing(OpAsmPrinter& printer, Region& region,
  * @brief Get the value corresponding to @p qubit from the block arguments @p
  * qubits if @p qubit is a block argument, otherwise return @p qubit itself.
  */
-static Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
+inline Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
   if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
     return qubits[blockArg.getArgNumber()];
   }
@@ -179,7 +177,7 @@ static Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
  * @details This helper function is used to resolve block arguments for nested
  * modifiers.
  */
-static void populateMapping(IRMapping& mapping, Block& block,
+inline void populateMapping(IRMapping& mapping, Block& block,
                             ValueRange innerQubits, ValueRange outerQubits,
                             ValueRange newQubits, ValueRange qubitArgs) {
   assert(innerQubits.size() == block.getNumArguments() &&
