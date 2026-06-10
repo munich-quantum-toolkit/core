@@ -963,7 +963,7 @@ def CtrlOp
         Value getControl(size_t i) { return getControls()[i]; }
         size_t getNumParams() { return 0; }
         Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
-        OperandRange getParameters() { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
+        OperandRange getParameters() { return {nullptr, 0}; }
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 
