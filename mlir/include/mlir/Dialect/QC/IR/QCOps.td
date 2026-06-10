@@ -957,10 +957,10 @@ def CtrlOp
         size_t getNumQubits() { return getNumTargets() + getNumControls(); }
         size_t getNumTargets() { return getTargets().size(); }
         size_t getNumControls() { return getControls().size(); }
-        Value getQubit(size_t i);
-        Value getTarget(size_t i) { return getTargets()[i]; }
-        Value getControl(size_t i);
         OperandRange getQubits() { return getOperands(); }
+        Value getQubit(size_t i) { return getQubits()[i]; }
+        Value getTarget(size_t i) { return getTargets()[i]; }
+        Value getControl(size_t i) { return getControls()[i]; }
         size_t getNumParams() { return 0; }
         Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
         OperandRange getParameters() { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }

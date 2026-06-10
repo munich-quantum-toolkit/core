@@ -159,24 +159,6 @@ UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
   return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
-Value CtrlOp::getQubit(const size_t i) {
-  const auto numControls = getNumControls();
-  if (i < numControls) {
-    return getControls()[i];
-  }
-  if (numControls <= i && i < getNumQubits()) {
-    return getTarget(i - numControls);
-  }
-  llvm::reportFatalUsageError("Qubit index out of bounds");
-}
-
-Value CtrlOp::getControl(const size_t i) {
-  if (i >= getNumControls()) {
-    llvm::reportFatalUsageError("Control index out of bounds");
-  }
-  return getControls()[i];
-}
-
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, ValueRange targets,
                    const function_ref<void(ValueRange)>& body) {
