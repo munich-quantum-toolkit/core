@@ -9,11 +9,12 @@
  */
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/ErrorHandling.h>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -23,7 +24,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
-#include <iterator>
 
 using namespace mlir;
 using namespace mlir::qc;
