@@ -144,6 +144,8 @@ TEST_F(TensorIteratorTest, Traversal) {
   ++it;
   ASSERT_EQ(it.operation(), *(tensor8.user_begin())); // qtensor.dealloc
   ASSERT_EQ(it.tensor(), nullptr);
+
+  ++it;
   ASSERT_EQ(it, std::default_sentinel);
 
   ++it;
@@ -211,9 +213,11 @@ TEST_F(TensorIteratorTest, Traversal) {
   ASSERT_EQ(recIt.tensor(), tensorElse2);
 
   ++recIt;
-  ASSERT_EQ(recIt, std::default_sentinel);
   ASSERT_EQ(recIt.operation(), *(tensorElse2.user_begin())); // qco.yield
   ASSERT_EQ(recIt.tensor(), nullptr);
+
+  ++recIt;
+  ASSERT_EQ(recIt, std::default_sentinel);
 
   ++recIt;
   ASSERT_EQ(recIt, std::default_sentinel);

@@ -28,9 +28,11 @@ public:
   using difference_type = std::ptrdiff_t;
   using value_type = Operation*;
 
-  TensorIterator() : op_(nullptr), tensor_(nullptr), isSentinel_(false) {}
+  TensorIterator()
+      : op_(nullptr), tensor_(nullptr), isFinal_(false), isSentinel_(false) {}
   explicit TensorIterator(TypedValue<RankedTensorType> tensor)
-      : op_(tensor.getDefiningOp()), tensor_(tensor), isSentinel_(false) {}
+      : op_(tensor.getDefiningOp()), tensor_(tensor), isFinal_(false),
+        isSentinel_(false) {}
 
   /// @returns the operation the iterator points to.
   [[nodiscard]] Operation* operation() const { return op_; }
@@ -81,6 +83,7 @@ private:
 
   Operation* op_;
   TypedValue<RankedTensorType> tensor_;
+  bool isFinal_;
   bool isSentinel_;
 };
 } // namespace mlir::qtensor
