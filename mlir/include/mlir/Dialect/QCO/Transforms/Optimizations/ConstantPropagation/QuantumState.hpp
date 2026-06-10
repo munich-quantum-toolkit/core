@@ -14,10 +14,34 @@
 
 #include <complex>
 #include <cstddef>
+#include <ostream>
 #include <span>
+#include <string>
 #include <unordered_map>
 
 namespace mlir::qco {
+
+/**
+ * @brief Result of a measurement or reset.
+ *
+ * The result contains 0, 1 or 2 QuantumStates, together with their respective
+ * results.
+ */
+struct MeasurementResult {
+  // The pair is (probability, resulting state).
+  std::array<std::pair<double, std::shared_ptr<class QuantumState>>, 2>
+      states{};
+  // How many entries in `states` are actually filled (0, 1 or 2).
+  std::size_t size = 0;
+
+  [[nodiscard]] constexpr std::size_t count() const noexcept { return size; }
+
+  // Range‑for friendliness
+  [[nodiscard]] constexpr auto begin() const noexcept { return states.begin(); }
+  [[nodiscard]] constexpr auto end() const noexcept {
+    return states.begin() + size;
+  }
+};
 
 /**
  * @brief This class represents a quantum state.
@@ -26,7 +50,6 @@ namespace mlir::qco {
  * complex amplitude. It holds the information about which global qubit number
  * corresponds to which local qubit number.
  */
-
 class QuantumState {
   std::size_t nQubits;
   std::size_t maxNonzeroAmplitudes;
@@ -41,9 +64,11 @@ public:
 
   void print(std::ostream& os) const;
 
-  std::string toString() const;
+  [[nodiscard("QuantumState::toString called but ignored")]] std::string
+  toString() const;
 
-  bool operator==(const QuantumState& that) const;
+  [[nodiscard("QuantumState::== called but ignored")]] bool
+  operator==(const QuantumState& that) const;
 
   /**
    * @brief This method unifies two QuantumState.
@@ -56,7 +81,8 @@ public:
    * @throw std::domain_error If the number of nonzero amplitudes would exceed
    * maxNonzeroAmplitudes of this.
    */
-  QuantumState unify(const QuantumState& that);
+  [[nodiscard("QuantumState::unify called but ignored")]] QuantumState
+  unify(const QuantumState& that);
 
   /**
    * @brief This method applies a gate to the qubits.
@@ -72,9 +98,9 @@ public:
    * @throw std::domain_error If the number of nonzero amplitudes would exceed
    * maxNonzeroAmplitudes.
    */
-  void propagateGate(Operation* gate, const std::span<unsigned int>& targets,
-                     const std::span<unsigned int>& posCtrls = {},
-                     const std::span<double>& params = {});
+  void propagateGate(Operation* gate, std::span<unsigned int> targets,
+                     std::span<unsigned int> posCtrls = {},
+                     std::span<double> params = {});
 
   /**
    * @brief This method applies a measurement to the qubits.
@@ -84,10 +110,11 @@ public:
    * the respective probabilities.
    *
    * @param target The global index of the qubit to be measured.
-   * @return A map of the measurement result (zero and/or one) pointing to the
-   * probability for the result and the QuantumStates after measurement.
+   * @return MeasurementResult, containing the probability for the result and
+   * the QuantumStates after measurement.
    */
-  std::map<unsigned int, std::pair<double, std::shared_ptr<QuantumState>>>
+  [[nodiscard(
+      "QuantumState::measureQubit called but ignored")]] MeasurementResult
   measureQubit(unsigned int target);
 
   /**
@@ -101,10 +128,10 @@ public:
    * will be zero (as a reset is performed).
    *
    * @param target The global index of the qubit to be measured.
-   * @return A set of one to two QuantumStates and their corresponding
-   * probabilities.
+   * @return MeasurementResult, containing the probability for the result and
+   * the QuantumStates after measurement.
    */
-  std::set<std::pair<double, std::shared_ptr<QuantumState>>>
+  [[nodiscard("QuantumState::resetQubit called but ignored")]] MeasurementResult
   resetQubit(unsigned int target);
 
   /**
@@ -116,7 +143,7 @@ public:
    * probabilities.
    */
   [[nodiscard("QuantumState::isQubitAlwaysOne called but ignored")]] bool
-  isQubitAlwaysOne(size_t q) const;
+  isQubitAlwaysOne(unsigned int q) const;
 
   /**
    * @brief This method checks if only amplitudes with a given qubit = 0 are
@@ -127,7 +154,7 @@ public:
    * probabilities.
    */
   [[nodiscard("QuantumState::isQubitAlwaysZero called but ignored")]] bool
-  isQubitAlwaysZero(size_t q) const;
+  isQubitAlwaysZero(unsigned int q) const;
 
   /**
    * @brief Returns whether the given qubits have for a given value always a
@@ -142,7 +169,7 @@ public:
    * @returns True if the amplitude is always zero, false otherwise.
    */
   [[nodiscard("QuantumState::hasAlwaysZeroAmplitude called but ignored")]] bool
-  hasAlwaysZeroAmplitude(const std::vector<unsigned int>& qubits,
+  hasAlwaysZeroAmplitude(std::span<unsigned int> qubits,
                          unsigned int value) const;
 };
 
