@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#pragma once
+
 #ifndef MQT_CORE_GATETOMAP_H
 #define MQT_CORE_GATETOMAP_H
 
@@ -20,6 +22,12 @@
 #include <span>
 #include <stdexcept>
 #include <unordered_map>
+
+/**
+ * This file provides information of available quantum gates as mappings. It is
+ * used in constant propagation to get the factors each amplitude has to be
+ * multiplied with to get the new amplitudes after a gate application.
+ */
 
 using Complex = std::complex<double>;
 
