@@ -1594,7 +1594,7 @@ void nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b) {
   b.scfFor(0, 3, 1, [&](Value iv) {
     auto q0 = b.memrefLoad(reg.value, iv);
     b.h(q0);
-    b.ctrl(control, q0, [&](ValueRange targets) { b.x(targets[0]); });
+    b.cx(control, q0);
   });
 }
 
@@ -1604,7 +1604,7 @@ void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
   b.scfFor(1, 4, 1, [&](Value iv) {
     auto q0 = b.memrefLoad(reg.value, iv);
     b.h(q0);
-    b.ctrl(reg[0], q0, [&](ValueRange targets) { b.x(targets[0]); });
+    b.cx(reg[0], q0);
   });
 }
 
