@@ -874,9 +874,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
 
     // Update modifier information
     state.inCtrlOp = op.getNumBodyUnitaries();
-    const SmallVector<Value> controls(adaptor.getControls().begin(),
-                                      adaptor.getControls().end());
-    state.controls = controls;
+    state.controls = llvm::to_vector(adaptor.getControls());
 
     // Inline block and remove operation
     rewriter.inlineBlockBefore(&op.getRegion().front(), op,
