@@ -1077,4 +1077,5 @@ void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
 void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
+
 } // namespace mlir::qco
