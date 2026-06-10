@@ -19,18 +19,9 @@
 #include <llvm/Support/Casting.h>
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 
 namespace qir {
-
-static constexpr std::array<llvm::StringRef, 5> STRIP_TARGETS = {
-    "__quantum__qis__mz__body",
-    "__quantum__qis__m__body",
-    "__quantum__qis__measure__body",
-    "__quantum__rt__result_record_output",
-    "__quantum__rt__result_update_reference_count",
-};
 
 static bool isStripTarget(const llvm::CallInst& call) {
   const auto* callee = call.getCalledFunction();
@@ -42,7 +33,7 @@ static bool isStripTarget(const llvm::CallInst& call) {
       STRIP_TARGETS, [&](llvm::StringRef target) { return name == target; });
 }
 
-std::size_t stripMeasurementsAndRecording(llvm::Module& m) {
+std::size_t stripMeasurementRelatedCalls(llvm::Module& m) {
   std::size_t erased = 0;
   for (auto& fn : m) {
     for (auto& bb : fn) {
