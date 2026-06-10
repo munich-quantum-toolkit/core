@@ -889,14 +889,14 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
         size_t getNumQubits() { return getNumTargets(); }
         size_t getNumTargets() { return getQubits().size(); }
         static size_t getNumControls() { return 0; }
-        static ValueRange getControls() { return {}; }
+        static OperandRange getControls() { return {nullptr, 0}; }
         Value getQubit(size_t i) { return getTarget(i); }
         Value getTarget(size_t i);
-        ValueRange getTargets() { return getQubits(); }
+        OperandRange getTargets() { return getQubits(); }
         static Value getControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
         static size_t getNumParams() { return 0; }
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp does not have parameters"); }
-        static ValueRange getParameters() { return {}; }
+        static OperandRange getParameters() { return {nullptr, 0}; }
         static StringRef getBaseSymbol() { return "barrier"; }
     }];
 }
@@ -960,9 +960,10 @@ def CtrlOp
         Value getQubit(size_t i);
         Value getTarget(size_t i) { return getTargets()[i]; }
         Value getControl(size_t i);
+        OperandRange getQubits() { return getOperands(); }
         size_t getNumParams() { return 0; }
         Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
-        ValueRange getParameters() { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
+        OperandRange getParameters() { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 
@@ -1010,12 +1011,12 @@ def InvOp : QCOp<"inv",
         size_t getNumControls() { return 0; }
         Value getQubit(size_t i) { return getTarget(i); }
         Value getTarget(size_t i) { return getQubits()[i]; }
-        ValueRange getTargets() { return getQubits(); }
+        OperandRange getTargets() { return getQubits(); }
         Value getControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
-        ValueRange getControls() { return {nullptr, 0}; }
+        OperandRange getControls() { return {nullptr, 0}; }
         size_t getNumParams() { return 0; }
         Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
-        ValueRange getParameters() { return {nullptr, 0}; }
+        OperandRange getParameters() { return {nullptr, 0}; }
         static StringRef getBaseSymbol() { return "inv"; }
     }];
 

@@ -51,7 +51,7 @@ public:
     static size_t getNumQubits() { return T; }
     static size_t getNumTargets() { return T; }
     static size_t getNumControls() { return 0; }
-    static ValueRange getControls() { return {}; }
+    static OperandRange getControls() { return {nullptr, 0}; }
 
     Value getQubit(size_t i) {
       if constexpr (T == 0) {
@@ -71,7 +71,8 @@ public:
       }
       return this->getOperation()->getOperand(i);
     }
-    ValueRange getTargets() {
+    OperandRange getQubits() { return getTargets(); }
+    OperandRange getTargets() {
       return this->getOperation()->getOperands().slice(0, T);
     }
 
@@ -88,7 +89,7 @@ public:
       return this->getOperation()->getOperand(T + i);
     }
 
-    ValueRange getParameters() {
+    OperandRange getParameters() {
       return this->getOperation()->getOperands().slice(T, P);
     }
   };
