@@ -103,7 +103,7 @@ public:
       }
       return this->getOperation()->getOperand(T + i);
     }
-    ValueRange getParameters() {
+    OperandRange getParameters() {
       return this->getOperation()->getOperands().slice(T, P);
     }
 
