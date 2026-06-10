@@ -28,7 +28,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <optional>
 
 using namespace mlir;
@@ -81,32 +80,12 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     rewriter.inlineRegionBefore(innerCtrlOp.getRegion(), merged.getRegion(),
                                 merged.getRegion().end());
 
-    // Outer and inner controls pass through to the merged controls; each outer
-    // target follows its block argument to either a merged control output (if
-    // it was an inner control) or a merged target output (if it was an inner
-    // target).
-    const auto numOuterControls = op.getNumControls();
-    rewriter.replaceAllUsesWith(
-        op.getControlsOut(),
-        merged.getControlsOut().take_front(numOuterControls));
-    auto innerControlsOut =
-        merged.getControlsOut().drop_front(numOuterControls);
-    auto mergedTargetsOut = merged.getTargetsOut();
-    for (auto [blockArg, outerTargetOut] :
-         llvm::zip_equal(op.getBody()->getArguments(), op.getTargetsOut())) {
-      if (auto it = llvm::find(innerControls, blockArg);
-          it != innerControls.end()) {
-        rewriter.replaceAllUsesWith(
-            outerTargetOut,
-            innerControlsOut[std::distance(innerControls.begin(), it)]);
-      } else {
-        const auto it2 = llvm::find(innerTargets, blockArg);
-        rewriter.replaceAllUsesWith(
-            outerTargetOut,
-            mergedTargetsOut[std::distance(innerTargets.begin(), it2)]);
-      }
-    }
-    rewriter.eraseOp(op);
+    // Every qubit output of the original control follows its input qubit to the
+    // corresponding output of the merged control.
+    rewriter.replaceOp(op,
+                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
+                         return merged.getOutputForInput(in);
+                       }));
     return success();
   }
 };
@@ -130,12 +109,11 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
       auto* body = op.getBody();
       auto* terminator = body->getTerminator();
-      const SmallVector<Value> targets(terminator->getOperands());
+      SmallVector<Value> outputs(op.getControlsIn());
+      llvm::append_range(outputs, terminator->getOperands());
       rewriter.inlineBlockBefore(body, op, op.getTargetsIn());
       rewriter.eraseOp(terminator);
-      rewriter.replaceAllUsesWith(op.getControlsOut(), op.getControlsIn());
-      rewriter.replaceAllUsesWith(op.getTargetsOut(), targets);
-      rewriter.eraseOp(op);
+      rewriter.replaceOp(op, outputs);
       return success();
     }
 
