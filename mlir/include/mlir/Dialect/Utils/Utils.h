@@ -198,6 +198,8 @@ inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
  */
 inline Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
   if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
+    assert(blockArg.getArgNumber() < qubits.size() &&
+           "block argument index must be within qubits range");
     return qubits[blockArg.getArgNumber()];
   }
   return qubit;
