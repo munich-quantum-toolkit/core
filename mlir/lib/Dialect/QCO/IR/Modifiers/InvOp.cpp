@@ -102,22 +102,15 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
     if (!inner) {
       return failure();
     }
-    auto* innerOp = inner.getOperation();
 
-    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(innerOp)) {
+    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(
+            inner.getOperation())) {
       return failure();
     }
 
-    const auto numQubits = op.getNumQubits();
-    auto outerQubits = op.getInputQubits();
-    SmallVector<Value> qubits;
-    for (auto qubit : innerOp->getOperands().take_front(numQubits)) {
-      qubits.push_back(utils::getValueFromBlockArgument(qubit, outerQubits));
-    }
-
-    rewriter.moveOpBefore(innerOp, op);
-    innerOp->setOperands(0, numQubits, qubits);
-    rewriter.replaceOp(op, innerOp->getResults());
+    // A self-adjoint gate is its own inverse, so the modifier can be dropped
+    // and its body applied directly to the input qubits.
+    utils::inlineModifierBody(op, *op.getBody(), op.getInputQubits(), rewriter);
     return success();
   }
 };
@@ -342,27 +335,20 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
     if (!innerInvOp) {
       return failure();
     }
-
-    auto innerInner =
-        utils::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody());
-    if (!innerInner) {
+    if (!utils::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody())) {
       return failure();
     }
-    auto* innerInnerOp = innerInner.getOperation();
 
-    const auto numQubits = op.getNumQubits();
-    auto outerQubits = op.getInputQubits();
-    auto innerQubits = innerInvOp.getInputQubits();
-    SmallVector<Value> qubits;
-    for (auto qubit : innerInnerOp->getOperands().take_front(numQubits)) {
-      auto innerQubit = utils::getValueFromBlockArgument(qubit, innerQubits);
-      qubits.push_back(
-          utils::getValueFromBlockArgument(innerQubit, outerQubits));
+    // inv(inv(x)) == x: inline the doubly-nested body directly onto the outer
+    // input qubits. The inner body's block arguments alias the inner modifier's
+    // inputs, which in turn alias the outer input qubits.
+    SmallVector<Value> replacements;
+    for (auto innerInput : innerInvOp.getInputQubits()) {
+      replacements.push_back(
+          utils::getValueFromBlockArgument(innerInput, op.getInputQubits()));
     }
-
-    rewriter.moveOpBefore(innerInnerOp, op);
-    innerInnerOp->setOperands(0, numQubits, qubits);
-    rewriter.replaceOp(op, innerInnerOp->getResults());
+    utils::inlineModifierBody(op, *innerInvOp.getBody(), replacements,
+                              rewriter);
     return success();
   }
 };

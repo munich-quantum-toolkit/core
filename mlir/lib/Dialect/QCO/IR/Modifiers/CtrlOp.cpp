@@ -114,18 +114,13 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
     // Inline ops from empty control modifiers, IdOp and BarrierOp
     if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
-      const auto numTargets = op.getNumTargets();
-      auto outerTargets = op.getTargetsIn();
-      SmallVector<Value> targets;
-      for (auto target : innerOp->getOperands().take_front(numTargets)) {
-        targets.push_back(
-            utils::getValueFromBlockArgument(target, outerTargets));
-      }
-
-      rewriter.moveOpBefore(innerOp, op);
-      innerOp->setOperands(0, numTargets, targets);
+      auto* body = op.getBody();
+      auto* terminator = body->getTerminator();
+      const SmallVector<Value> targets(terminator->getOperands());
+      rewriter.inlineBlockBefore(body, op, op.getTargetsIn());
+      rewriter.eraseOp(terminator);
       rewriter.replaceAllUsesWith(op.getControlsOut(), op.getControlsIn());
-      rewriter.replaceAllUsesWith(op.getTargetsOut(), innerOp->getResults());
+      rewriter.replaceAllUsesWith(op.getTargetsOut(), targets);
       rewriter.eraseOp(op);
       return success();
     }

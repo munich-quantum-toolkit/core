@@ -17,6 +17,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 
 #include <cassert>
@@ -241,6 +242,23 @@ template <typename UnitaryInterface>
     return {};
   }
   return unitary;
+}
+
+/**
+ * @brief Inlines a modifier body and replaces the modifier with its results.
+ *
+ * @details Inlines the operations of @p body in front of @p op, substituting
+ * the block arguments of @p body with @p blockArgReplacements, and replaces
+ * @p op with the values yielded by the body's terminator.
+ */
+inline void inlineModifierBody(Operation* op, Block& body,
+                               ValueRange blockArgReplacements,
+                               RewriterBase& rewriter) {
+  auto* terminator = body.getTerminator();
+  const SmallVector<Value> results(terminator->getOperands());
+  rewriter.inlineBlockBefore(&body, op, blockArgReplacements);
+  rewriter.eraseOp(terminator);
+  rewriter.replaceOp(op, results);
 }
 
 } // namespace mlir::utils
