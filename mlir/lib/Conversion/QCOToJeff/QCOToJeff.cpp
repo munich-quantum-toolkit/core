@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 
+#include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -338,23 +339,6 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 2));
   module->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
 
-  return success();
-}
-
-/**
- * @brief Move a region from QCO/SCF operation to a jeff operation
- */
-static LogicalResult moveRegion(Region& source, Region& dest,
-                                ConversionPatternRewriter& rewriter,
-                                const TypeConverter* typeConverter) {
-  rewriter.inlineRegionBefore(source, dest, dest.end());
-  auto* block = &dest.front();
-  TypeConverter::SignatureConversion sc(block->getNumArguments());
-  if (failed(
-          typeConverter->convertSignatureArgs(block->getArgumentTypes(), sc))) {
-    return failure();
-  }
-  rewriter.applySignatureConversion(block, sc);
   return success();
 }
 

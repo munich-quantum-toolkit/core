@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 
+#include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -645,15 +646,10 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     auto qcOp = qc::CtrlOp::create(
         rewriter, op.getLoc(), adaptor.getControlsIn(), adaptor.getTargetsIn());
 
-    auto& dstRegion = qcOp.getRegion();
-    rewriter.inlineRegionBefore(op.getRegion(), dstRegion, dstRegion.begin());
-    auto* block = &dstRegion.front();
-    TypeConverter::SignatureConversion sc(block->getNumArguments());
-    if (failed(typeConverter->convertSignatureArgs(block->getArgumentTypes(),
-                                                   sc))) {
+    if (failed(moveRegion(op.getRegion(), qcOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
       return failure();
     }
-    rewriter.applySignatureConversion(block, sc);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());
@@ -688,15 +684,10 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
     // Create qc.inv operation
     auto qcOp = qc::InvOp::create(rewriter, op.getLoc(), adaptor.getQubitsIn());
 
-    auto& dstRegion = qcOp.getRegion();
-    rewriter.inlineRegionBefore(op.getRegion(), dstRegion, dstRegion.begin());
-    auto* block = &dstRegion.front();
-    TypeConverter::SignatureConversion sc(block->getNumArguments());
-    if (failed(typeConverter->convertSignatureArgs(block->getArgumentTypes(),
-                                                   sc))) {
+    if (failed(moveRegion(op.getRegion(), qcOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
       return failure();
     }
-    rewriter.applySignatureConversion(block, sc);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());

@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 
+#include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -1110,16 +1111,11 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     auto qcArgs = op.getRegion().front().getArguments();
 
-    // Inline region
-    auto& dstRegion = qcoOp.getRegion();
-    rewriter.inlineRegionBefore(op.getRegion(), dstRegion, dstRegion.begin());
-    auto* block = &dstRegion.front();
-    TypeConverter::SignatureConversion sc(block->getNumArguments());
-    if (failed(typeConverter->convertSignatureArgs(block->getArgumentTypes(),
-                                                   sc))) {
+    // Inline region and convert the block signature to QCO types.
+    if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
       return failure();
     }
-    rewriter.applySignatureConversion(block, sc);
 
     pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
 
@@ -1163,16 +1159,11 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
 
     auto qcArgs = op.getRegion().front().getArguments();
 
-    // Inline region
-    auto& dstRegion = qcoOp.getRegion();
-    rewriter.inlineRegionBefore(op.getRegion(), dstRegion, dstRegion.begin());
-    auto* block = &dstRegion.front();
-    TypeConverter::SignatureConversion sc(block->getNumArguments());
-    if (failed(typeConverter->convertSignatureArgs(block->getArgumentTypes(),
-                                                   sc))) {
+    // Inline region and convert the block signature to QCO types.
+    if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
       return failure();
     }
-    rewriter.applySignatureConversion(block, sc);
 
     pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
 
