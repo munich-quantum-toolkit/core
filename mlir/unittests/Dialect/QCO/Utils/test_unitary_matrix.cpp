@@ -219,7 +219,7 @@ TEST(DynamicMatrix, IsApproxRejectsMismatchedExtents) {
 }
 
 TEST(Matrix1x1, AssignFromDynamicMatrix) {
-  const Matrix1x1 phase = Matrix1x1::fromElements(0.25 + 0.5i);
+  const Matrix1x1 phase = Matrix1x1::fromElements(Complex{0.25, 0.5});
 
   DynamicMatrix dynamic;
   dynamic.assignFrom(phase);

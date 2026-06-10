@@ -81,6 +81,8 @@ struct ZSXXShortcutCase {
   std::size_t expectedX;
 };
 
+class ZSXXShortcutTest : public testing::TestWithParam<ZSXXShortcutCase> {};
+
 } // namespace
 
 [[nodiscard]] static Matrix2x2 rzMatrix(double theta) {
@@ -115,7 +117,10 @@ template <typename RotationOp>
   Value q = builder.create<AllocOp>(loc).getResult();
   auto op = builder.create<RotationOp>(loc, q, theta);
   const auto matrix = cast<RotationOp>(op).getUnitaryMatrix();
-  EXPECT_TRUE(matrix.has_value());
+  if (!matrix) {
+    ADD_FAILURE() << "Expected constant unitary matrix";
+    return Matrix2x2::identity();
+  }
   return *matrix;
 }
 
@@ -237,32 +242,34 @@ static void expectMatrixPreserved(func::FuncOp funcOp,
 }
 
 static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
-  auto& block = funcOp.getBody().front();
-  for (Operation& op : block.without_terminator()) {
-    if (isa<arith::ConstantOp>(op)) {
-      continue;
+  funcOp.walk<WalkOrder::PreOrder>([&](Operation* op) -> WalkResult {
+    if (isa<arith::ConstantOp, GPhaseOp, BarrierOp>(*op)) {
+      return WalkResult::advance();
+    }
+    if (isTwoQubitGate(*op)) {
+      return WalkResult::advance();
+    }
+    if (isa<InvOp, CtrlOp>(*op)) {
+      return WalkResult::skip();
     }
 
-    if (isTwoQubitGate(op) || isa<InvOp, CtrlOp>(op)) {
-      continue;
-    }
-
-    if (isa<GPhaseOp, BarrierOp, arith::ConstantOp>(op)) {
-      continue;
-    }
-    auto unitaryOp = dyn_cast<UnitaryOpInterface>(op);
+    auto unitaryOp = dyn_cast<UnitaryOpInterface>(*op);
     if (!unitaryOp || !unitaryOp.isSingleQubit()) {
-      continue;
+      return WalkResult::advance();
     }
 
     Matrix2x2 matrix;
-    ASSERT_TRUE(unitaryOp.getUnitaryMatrix2x2(matrix))
-        << "basis=" << basis.str() << " missing constant matrix for: "
-        << op.getName().getStringRef().str();
-    EXPECT_TRUE(isAllowedBasisGate(op, basis))
+    if (!unitaryOp.getUnitaryMatrix2x2(matrix)) {
+      ADD_FAILURE() << "basis=" << basis.str()
+                    << " missing constant matrix for: "
+                    << op->getName().getStringRef().str();
+      return WalkResult::interrupt();
+    }
+    EXPECT_TRUE(isAllowedBasisGate(*op, basis))
         << "basis=" << basis.str()
-        << " unexpected gate: " << op.getName().getStringRef().str();
-  }
+        << " unexpected gate: " << op->getName().getStringRef().str();
+    return WalkResult::advance();
+  });
 }
 
 // At least one 1Q gate before and after the first `isBoundary` op in `main`.
@@ -563,8 +570,6 @@ TEST(EulerSynthesisTest, ProfitabilityAndIdentityGateCount) {
       wouldShortenInBasisRun(1, XOp::getUnitaryMatrix(), EulerBasis::ZSXX));
   EXPECT_EQ(synthesisGateCount(identity, EulerBasis::ZYZ), 0U);
 }
-
-class ZSXXShortcutTest : public testing::TestWithParam<ZSXXShortcutCase> {};
 
 TEST_P(ZSXXShortcutTest, SynthesisMatchesGateCount) {
   SynthesisFixture fx;
