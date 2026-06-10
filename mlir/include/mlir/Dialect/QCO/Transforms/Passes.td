@@ -51,9 +51,9 @@ def FuseSingleQubitUnitaryRuns
     same qubit wire (anchored at each run head), composes their constant unitary
     matrices, and replaces a run with an equivalent sequence of basis gates when
     beneficial: when the run contains a gate outside the target `basis`, or when
-    its length exceeds `synthesisGateCount` for the composed matrix. Runs that
-    are already in the target `basis` and no longer than that canonical count
-    are left unchanged.
+    Euler resynthesis would shorten it (`wouldShortenInBasisRun`). Runs that are
+    already in the target `basis` and no shorter than the canonical synthesis
+    length are left unchanged.
 
     The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
     A `gphase` correction is inserted when needed so the rewritten sequence

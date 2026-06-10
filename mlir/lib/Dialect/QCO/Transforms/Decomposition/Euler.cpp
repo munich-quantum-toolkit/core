@@ -104,9 +104,9 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
 namespace {
 
 /**
- * @brief Planned PSX (`RZ` / `SX` / `X`) chain; angles in circuit order.
+ * @brief Planned ZSXX (`RZ` / `SX` / `X`) chain; angles in circuit order.
  */
-struct PSXSequence {
+struct ZSXXSequence {
   enum class Middle : std::uint8_t { OnlyRZ, OneSX, X, SXRZSX };
   Middle middle = Middle::SXRZSX;
   double firstRZ = 0.0;
@@ -117,71 +117,71 @@ struct PSXSequence {
 } // namespace
 
 /**
- * @brief Classifies the PSX middle-gate case from ZYZ `theta`.
+ * @brief Classifies the ZSXX middle-gate case from ZYZ `theta`.
  *
  * Shortcut branches are checked in fixed order (`OnlyRZ`, `OneSX`, `X`) so
  * `theta` values within `TOLERANCE` of `0`, `pi/2`, or `pi` always pick the
  * same case.
  *
  * @param theta Y-rotation angle from `paramsZYZ` in `[0, pi]`.
- * @return The PSX middle-gate case.
+ * @return The ZSXX middle-gate case.
  */
-[[nodiscard]] static PSXSequence::Middle
-classifyPSXMiddleFromZYZTheta(double theta) {
+[[nodiscard]] static ZSXXSequence::Middle
+classifyZSXXMiddleFromZYZTheta(double theta) {
   constexpr double eps = mlir::utils::TOLERANCE;
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
 
   if (theta < eps) {
-    return PSXSequence::Middle::OnlyRZ;
+    return ZSXXSequence::Middle::OnlyRZ;
   }
   if (std::abs(theta - halfPi) <= eps) {
-    return PSXSequence::Middle::OneSX;
+    return ZSXXSequence::Middle::OneSX;
   }
   if (std::abs(theta - pi) <= eps) {
-    return PSXSequence::Middle::X;
+    return ZSXXSequence::Middle::X;
   }
-  return PSXSequence::Middle::SXRZSX;
+  return ZSXXSequence::Middle::SXRZSX;
 }
 
 /**
- * @brief Builds the PSX sequence for `RZ(phi)*RY(theta)*RZ(lambda)`.
+ * @brief Builds the ZSXX sequence for `RZ(phi)*RY(theta)*RZ(lambda)`.
  *
  * Uses `SX*RZ(theta+pi)*SX = Z*RY(theta)`.
  *
  * @param theta Y-rotation angle in `[0, pi]`.
  * @param phi Trailing Z-rotation angle.
  * @param lambda Leading Z-rotation angle.
- * @return The planned PSX sequence.
+ * @return The planned ZSXX sequence.
  */
-[[nodiscard]] static PSXSequence sequenceFromZYZForPSX(double theta, double phi,
-                                                       double lambda) {
+[[nodiscard]] static ZSXXSequence
+sequenceFromZYZForZSXX(double theta, double phi, double lambda) {
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
 
-  switch (classifyPSXMiddleFromZYZTheta(theta)) {
-  case PSXSequence::Middle::OnlyRZ:
-    return {.middle = PSXSequence::Middle::OnlyRZ,
+  switch (classifyZSXXMiddleFromZYZTheta(theta)) {
+  case ZSXXSequence::Middle::OnlyRZ:
+    return {.middle = ZSXXSequence::Middle::OnlyRZ,
             .firstRZ = lambda,
             .midRZ = 0.0,
             .lastRZ = phi};
-  case PSXSequence::Middle::OneSX:
-    return {.middle = PSXSequence::Middle::OneSX,
+  case ZSXXSequence::Middle::OneSX:
+    return {.middle = ZSXXSequence::Middle::OneSX,
             .firstRZ = lambda - halfPi,
             .midRZ = 0.0,
             .lastRZ = phi + halfPi};
-  case PSXSequence::Middle::X:
-    return {.middle = PSXSequence::Middle::X,
+  case ZSXXSequence::Middle::X:
+    return {.middle = ZSXXSequence::Middle::X,
             .firstRZ = lambda,
             .midRZ = 0.0,
             .lastRZ = phi + pi};
-  case PSXSequence::Middle::SXRZSX:
-    return {.middle = PSXSequence::Middle::SXRZSX,
+  case ZSXXSequence::Middle::SXRZSX:
+    return {.middle = ZSXXSequence::Middle::SXRZSX,
             .firstRZ = lambda,
             .midRZ = theta + pi,
             .lastRZ = phi + pi};
   }
-  llvm::reportFatalInternalError("Unhandled PSX middle gate");
+  llvm::reportFatalInternalError("Unhandled ZSXX middle gate");
 }
 
 /**
@@ -210,62 +210,62 @@ classifyPSXMiddleFromZYZTheta(double theta) {
 }
 
 /**
- * @brief Global phase offset of the PSX chain vs the ZYZ product.
+ * @brief Global phase offset of the ZSXX chain vs. the ZYZ product.
  *
- * @param seq The planned PSX sequence.
+ * @param seq The planned ZSXX sequence.
  * @return The global-phase offset in radians.
  */
-[[nodiscard]] static double globalPhaseOffsetForPSX(const PSXSequence& seq) {
+[[nodiscard]] static double globalPhaseOffsetForZSXX(const ZSXXSequence& seq) {
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double quarterPi = std::numbers::pi / 4.0;
 
   switch (seq.middle) {
-  case PSXSequence::Middle::OnlyRZ:
+  case ZSXXSequence::Middle::OnlyRZ:
     return globalPhaseFromRZWrap(seq.firstRZ) +
            globalPhaseFromRZWrap(seq.lastRZ);
-  case PSXSequence::Middle::OneSX:
+  case ZSXXSequence::Middle::OneSX:
     // `SX = exp(i*pi/4)*RZ(-pi/2)*RY(pi/2)*RZ(pi/2)`; the outer RZ angles
     // absorb the +-pi/2, leaving the exp(i*pi/4) phase. RZ wraps add too.
     return -quarterPi + globalPhaseFromRZWrap(seq.firstRZ) +
            globalPhaseFromRZWrap(seq.lastRZ);
-  case PSXSequence::Middle::X:
+  case ZSXXSequence::Middle::X:
     // `X` swaps the diagonal, so the wraps enter with opposite signs.
     return -halfPi + globalPhaseFromRZWrap(seq.lastRZ) -
            globalPhaseFromRZWrap(seq.firstRZ);
-  case PSXSequence::Middle::SXRZSX:
+  case ZSXXSequence::Middle::SXRZSX:
     // `SX*RZ(theta+pi)*SX = Z*RY(theta)`; all three RZ wraps add.
     return halfPi + globalPhaseFromRZWrap(seq.firstRZ) +
            globalPhaseFromRZWrap(seq.midRZ) + globalPhaseFromRZWrap(seq.lastRZ);
   }
-  llvm::reportFatalInternalError("Unhandled PSX middle gate");
+  llvm::reportFatalInternalError("Unhandled ZSXX middle gate");
 }
 
 /**
  * @brief Invokes callbacks for each gate of `seq` in circuit order.
  *
- * @param seq The planned PSX sequence.
+ * @param seq The planned ZSXX sequence.
  * @param onRZ Called with each RZ angle.
  * @param onSX Called for each SX gate.
  * @param onX Called for each X gate.
  */
-static void visitSequenceInTimeOrder(const PSXSequence& seq,
+static void visitSequenceInTimeOrder(const ZSXXSequence& seq,
                                      llvm::function_ref<void(double)> onRZ,
                                      llvm::function_ref<void()> onSX,
                                      llvm::function_ref<void()> onX) {
   onRZ(seq.firstRZ);
   switch (seq.middle) {
-  case PSXSequence::Middle::OnlyRZ:
+  case ZSXXSequence::Middle::OnlyRZ:
     onRZ(seq.lastRZ);
     break;
-  case PSXSequence::Middle::OneSX:
+  case ZSXXSequence::Middle::OneSX:
     onSX();
     onRZ(seq.lastRZ);
     break;
-  case PSXSequence::Middle::X:
+  case ZSXXSequence::Middle::X:
     onX();
     onRZ(seq.lastRZ);
     break;
-  case PSXSequence::Middle::SXRZSX:
+  case ZSXXSequence::Middle::SXRZSX:
     onSX();
     onRZ(seq.midRZ);
     onSX();
@@ -280,14 +280,14 @@ static void visitSequenceInTimeOrder(const PSXSequence& seq,
  * @param builder Builder for the operations.
  * @param loc Location of the operations.
  * @param qubit Input qubit value.
- * @param seq The planned PSX sequence.
+ * @param seq The planned ZSXX sequence.
  * @param phase Global phase in radians.
  * @return The output qubit value.
  */
-[[nodiscard]] static Value emitFromPSXSequence(OpBuilder& builder, Location loc,
-                                               Value qubit,
-                                               const PSXSequence& seq,
-                                               double phase) {
+[[nodiscard]] static Value emitFromZSXXSequence(OpBuilder& builder,
+                                                Location loc, Value qubit,
+                                                const ZSXXSequence& seq,
+                                                double phase) {
   constexpr double eps = mlir::utils::TOLERANCE;
   visitSequenceInTimeOrder(
       seq,
@@ -372,14 +372,14 @@ static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
 EulerAngles EulerDecomposition::anglesFromUnitary(const Matrix2x2& matrix,
                                                   EulerBasis basis) {
   switch (basis) {
-  case EulerBasis::XYX:
-    return paramsXYX(matrix);
-  case EulerBasis::XZX:
-    return paramsXZX(matrix);
   case EulerBasis::ZYZ:
     return paramsZYZ(matrix);
   case EulerBasis::ZXZ:
     return paramsZXZ(matrix);
+  case EulerBasis::XZX:
+    return paramsXZX(matrix);
+  case EulerBasis::XYX:
+    return paramsXYX(matrix);
   case EulerBasis::U:
     return paramsU(matrix);
   }
@@ -417,6 +417,11 @@ EulerAngles EulerDecomposition::paramsZXZ(const Matrix2x2& matrix) {
           .phase = zyz.phase};
 }
 
+EulerAngles EulerDecomposition::paramsXZX(const Matrix2x2& matrix) {
+  // X-Z-X -> Z-X-Z under H conjugation (no Y sign flip, unlike paramsXYX).
+  return paramsZXZ(hadamardConjugate(matrix));
+}
+
 EulerAngles EulerDecomposition::paramsXYX(const Matrix2x2& matrix) {
   // H*RY(theta)*H = RY(-theta): shift outer angles by pi and fix global phase.
   const auto zyz = paramsZYZ(hadamardConjugate(matrix));
@@ -429,11 +434,6 @@ EulerAngles EulerDecomposition::paramsXYX(const Matrix2x2& matrix) {
           .lambda = newLambda,
           .phase =
               zyz.phase + ((newPhi + newLambda - zyz.phi - zyz.lambda) / 2.)};
-}
-
-EulerAngles EulerDecomposition::paramsXZX(const Matrix2x2& matrix) {
-  // X-Z-X -> Z-X-Z under H conjugation (no Y sign flip, unlike paramsXYX).
-  return paramsZXZ(hadamardConjugate(matrix));
 }
 
 EulerAngles EulerDecomposition::paramsU(const Matrix2x2& matrix) {
@@ -475,9 +475,9 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                                EulerBasis basis) {
   if (basis == EulerBasis::ZSXX) {
     const auto zyz = EulerDecomposition::paramsZYZ(targetMatrix);
-    const auto seq = sequenceFromZYZForPSX(zyz.theta, zyz.phi, zyz.lambda);
-    return emitFromPSXSequence(builder, loc, qubit, seq,
-                               zyz.phase + globalPhaseOffsetForPSX(seq));
+    const auto seq = sequenceFromZYZForZSXX(zyz.theta, zyz.phi, zyz.lambda);
+    return emitFromZSXXSequence(builder, loc, qubit, seq,
+                                zyz.phase + globalPhaseOffsetForZSXX(seq));
   }
 
   const auto angles =
@@ -523,38 +523,32 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
 }
 
 /**
- * @brief Counts non-zero `RZ` slots in a PSX sequence angle.
+ * @brief Counts non-zero `RZ` slots in a ZSXX sequence angle.
  */
-[[nodiscard]] static std::size_t countNonZeroPSXAngle(double angle) {
+[[nodiscard]] static std::size_t countNonZeroZSXXAngle(double angle) {
   constexpr double eps = mlir::utils::TOLERANCE;
   return isNearZeroRotationAngle(mod2pi(angle, eps)) ? 0 : 1;
 }
 
 /**
- * @brief Counts basis gates `emitFromPSXSequence` would emit for `seq`.
+ * @brief Counts basis gates `emitFromZSXXSequence` would emit for `seq`.
  */
-[[nodiscard]] static std::size_t countPSXSequenceGates(const PSXSequence& seq) {
+[[nodiscard]] static std::size_t
+countZSXXSequenceGates(const ZSXXSequence& seq) {
   switch (seq.middle) {
-  case PSXSequence::Middle::OnlyRZ:
-    return countNonZeroPSXAngle(seq.firstRZ) + countNonZeroPSXAngle(seq.lastRZ);
-  case PSXSequence::Middle::OneSX:
-  case PSXSequence::Middle::X:
-    return countNonZeroPSXAngle(seq.firstRZ) + 1 +
-           countNonZeroPSXAngle(seq.lastRZ);
-  case PSXSequence::Middle::SXRZSX:
-    return countNonZeroPSXAngle(seq.firstRZ) + 1 +
-           countNonZeroPSXAngle(seq.midRZ) + 1 +
-           countNonZeroPSXAngle(seq.lastRZ);
+  case ZSXXSequence::Middle::OnlyRZ:
+    return countNonZeroZSXXAngle(seq.firstRZ) +
+           countNonZeroZSXXAngle(seq.lastRZ);
+  case ZSXXSequence::Middle::OneSX:
+  case ZSXXSequence::Middle::X:
+    return countNonZeroZSXXAngle(seq.firstRZ) + 1 +
+           countNonZeroZSXXAngle(seq.lastRZ);
+  case ZSXXSequence::Middle::SXRZSX:
+    return countNonZeroZSXXAngle(seq.firstRZ) + 1 +
+           countNonZeroZSXXAngle(seq.midRZ) + 1 +
+           countNonZeroZSXXAngle(seq.lastRZ);
   }
-  llvm::reportFatalInternalError("Unhandled PSX middle gate in gate count");
-}
-
-bool wouldShortenInBasisRun(const std::size_t runSize,
-                            const Matrix2x2& composed, EulerBasis basis) {
-  if (runSize > maxSynthesisGateCount(basis)) {
-    return true;
-  }
-  return runSize > synthesisGateCount(composed, basis);
+  llvm::reportFatalInternalError("Unhandled ZSXX middle gate in gate count");
 }
 
 std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
@@ -579,13 +573,19 @@ std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
   case EulerBasis::ZSXX: {
     const auto zyz =
         EulerDecomposition::anglesFromUnitary(targetMatrix, EulerBasis::ZYZ);
-    const auto seq = sequenceFromZYZForPSX(zyz.theta, zyz.phi, zyz.lambda);
-    return countPSXSequenceGates(seq);
+    const auto seq = sequenceFromZYZForZSXX(zyz.theta, zyz.phi, zyz.lambda);
+    return countZSXXSequenceGates(seq);
   }
-  case EulerBasis::U:
-    llvm_unreachable("handled above");
   }
   llvm::reportFatalInternalError("Unhandled Euler basis in synthesisGateCount");
+}
+
+bool wouldShortenInBasisRun(const std::size_t runSize,
+                            const Matrix2x2& composed, EulerBasis basis) {
+  if (runSize > maxSynthesisGateCount(basis)) {
+    return true;
+  }
+  return runSize > synthesisGateCount(composed, basis);
 }
 
 } // namespace mlir::qco::decomposition

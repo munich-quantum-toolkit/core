@@ -45,8 +45,9 @@ void WireIterator::forward() {
   assert(qubit_.hasOneUse() && "expected linear typing");
   op_ = *(qubit_.user_begin());
 
-  // A sink/insert/yield defines the end of the qubit wire (dynamic and static).
-  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_)) {
+  // A sink/insert/yield or region entry defines the end of the qubit wire.
+  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp, scf::ForOp,
+          scf::IfOp, scf::WhileOp>(op_)) {
     isSentinel_ = true;
     return;
   }
@@ -75,7 +76,8 @@ void WireIterator::backward() {
 
   // For sinks/deallocations/inserts/yields, qubit_ is an OpOperand. Hence, only
   // get the def-op.
-  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_)) {
+  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp, scf::ForOp,
+          scf::IfOp, scf::WhileOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     return;
   }

@@ -42,7 +42,7 @@ enum class EulerBasis : std::uint8_t {
   XZX = 2,  ///< `RX(phi) * RZ(theta) * RX(lambda)`.
   XYX = 3,  ///< `RX(phi) * RY(theta) * RX(lambda)`.
   U = 4,    ///< `U(theta, phi, lambda)`.
-  ZSXX = 5, ///< `RZ` / `SX` / `X` chain equivalent to ZYZ.
+  ZSXX = 5, ///< `RZ` / `SX` / `X` synthesis via ZYZ decomposition.
 };
 
 /**
@@ -57,9 +57,6 @@ class EulerDecomposition {
 public:
   /**
    * @brief Extracts `(theta, phi, lambda, phase)` for KAK and `U` bases.
-   *
-   * Does not support `EulerBasis::ZSXX`; use `synthesizeUnitary1QEuler` or
-   * `synthesisGateCount` instead.
    *
    * @param matrix The single-qubit unitary to decompose.
    * @param basis The target Euler basis.
@@ -78,20 +75,20 @@ private:
   [[nodiscard]] static EulerAngles paramsZYZ(const Matrix2x2& matrix);
 
   /**
-   * @brief Extracts parameters for `U(theta, phi, lambda)`.
-   *
-   * @param matrix The single-qubit unitary to decompose.
-   * @return The extracted Euler angles and global phase.
-   */
-  [[nodiscard]] static EulerAngles paramsU(const Matrix2x2& matrix);
-
-  /**
    * @brief Extracts parameters for `RZ(phi) * RX(theta) * RZ(lambda)`.
    *
    * @param matrix The single-qubit unitary to decompose.
    * @return The extracted Euler angles and global phase.
    */
   [[nodiscard]] static EulerAngles paramsZXZ(const Matrix2x2& matrix);
+
+  /**
+   * @brief Extracts parameters for `RX(phi) * RZ(theta) * RX(lambda)`.
+   *
+   * @param matrix The single-qubit unitary to decompose.
+   * @return The extracted Euler angles and global phase.
+   */
+  [[nodiscard]] static EulerAngles paramsXZX(const Matrix2x2& matrix);
 
   /**
    * @brief Extracts parameters for `RX(phi) * RY(theta) * RX(lambda)`.
@@ -102,12 +99,12 @@ private:
   [[nodiscard]] static EulerAngles paramsXYX(const Matrix2x2& matrix);
 
   /**
-   * @brief Extracts parameters for `RX(phi) * RZ(theta) * RX(lambda)`.
+   * @brief Extracts parameters for `U(theta, phi, lambda)`.
    *
    * @param matrix The single-qubit unitary to decompose.
    * @return The extracted Euler angles and global phase.
    */
-  [[nodiscard]] static EulerAngles paramsXZX(const Matrix2x2& matrix);
+  [[nodiscard]] static EulerAngles paramsU(const Matrix2x2& matrix);
 };
 
 /**
@@ -134,6 +131,21 @@ private:
 [[nodiscard]] Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc,
                                              Value qubit,
                                              const Matrix2x2& targetMatrix,
+                                             EulerBasis basis);
+
+/**
+ * @brief Number of basis gates `synthesizeUnitary1QEuler` would emit.
+ *
+ * Excludes `qco.gphase` and near-zero rotations that synthesis skips.
+ *
+ * @param targetMatrix The single-qubit unitary that would be synthesized.
+ * @param basis The target Euler basis.
+ * @return The gate count (1 for `U`, up to 3 for KAK bases, up to 5 for
+ *         `ZSXX`). For `ZSXX`, pure-Z (`OnlyRZ`) compositions count non-zero
+ *         `RZ` gates only (1 or 2); `OneSX` and `X` shortcuts count 3; the
+ *         generic case counts up to 5.
+ */
+[[nodiscard]] std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
                                              EulerBasis basis);
 
 /**
@@ -165,25 +177,11 @@ private:
  * @param runSize Number of gates in the run.
  * @param composed Composed unitary of the run.
  * @param basis The target Euler basis.
- * @return `true` when resynthesis would emit fewer basis gates than @p runSize.
+ * @return `true` when Euler resynthesis would emit fewer basis gates than @p
+ *         runSize.
  */
 [[nodiscard]] bool wouldShortenInBasisRun(std::size_t runSize,
                                           const Matrix2x2& composed,
                                           EulerBasis basis);
-
-/**
- * @brief Number of basis gates `synthesizeUnitary1QEuler` would emit.
- *
- * Excludes `qco.gphase` and near-zero rotations that synthesis skips.
- *
- * @param targetMatrix The single-qubit unitary that would be synthesized.
- * @param basis The target Euler basis.
- * @return The gate count (1 for `U`, up to 3 for KAK bases, up to 5 for
- *         `ZSXX`). For `ZSXX`, pure-Z (`OnlyRZ`) compositions count non-zero
- *         `RZ` gates only (1 or 2); `OneSX` and `X` shortcuts count 3; the
- *         generic case counts up to 5.
- */
-[[nodiscard]] std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
-                                             EulerBasis basis);
 
 } // namespace mlir::qco::decomposition

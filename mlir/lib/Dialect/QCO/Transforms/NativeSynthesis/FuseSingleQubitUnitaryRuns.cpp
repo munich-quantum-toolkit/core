@@ -40,9 +40,6 @@ namespace mlir::qco {
 /**
  * @brief Whether `op` is inside an `inv`/`ctrl` body.
  *
- * The modifier's combined unitary is fused as one run member; gates inside its
- * body are not separate run members.
- *
  * @param op The operation to test.
  * @return `true` if any ancestor is `inv` or `ctrl`.
  */
@@ -110,12 +107,12 @@ static Matrix2x2 composeRun(ArrayRef<UnitaryOpInterface> run) {
 /**
  * @brief Whether `op` is a gate the target `basis` emits.
  *
- * Gate sets match `emitKAK` and `emitFromPSXSequence` in `Euler.cpp`. Used to
+ * Gate sets match `emitKAK` and `emitFromZSXXSequence` in `Euler.cpp`. Used to
  * skip runs that are already in the target basis at canonical length.
  *
  * @param op The operation to classify.
  * @param basis The target Euler basis.
- * @return `true` if `op` is emitted by synthesis in `basis`.
+ * @return `true` if `op` is in the gate set Euler synthesis emits for `basis`.
  */
 static bool isTargetBasisGate(Operation* op, decomposition::EulerBasis basis) {
   using decomposition::EulerBasis;
@@ -188,8 +185,8 @@ struct FuseSingleQubitUnitaryRunsPattern final
   /**
    * @brief Fuses the run anchored at `op` when beneficial.
    *
-   * Fuses if the run contains a non-basis gate or is longer than the canonical
-   * synthesis for its composed matrix.
+   * Fuses if the run contains a non-basis gate or Euler resynthesis would
+   * shorten it (`wouldShortenInBasisRun`).
    *
    * @param op The matched unitary operation.
    * @param rewriter The pattern rewriter.
