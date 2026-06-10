@@ -218,6 +218,18 @@ TEST(DynamicMatrix, IsApproxRejectsMismatchedExtents) {
   EXPECT_FALSE(DynamicMatrix::identity(1).isApprox(DynamicMatrix::identity(2)));
 }
 
+TEST(Matrix1x1, AssignFromDynamicMatrix) {
+  const Matrix1x1 phase = Matrix1x1::fromElements(0.25 + 0.5i);
+
+  DynamicMatrix dynamic;
+  dynamic.assignFrom(phase);
+
+  Matrix1x1 out = Matrix1x1::fromElements(1.0);
+  EXPECT_TRUE(out.assignFrom(dynamic));
+  EXPECT_TRUE(out.isApprox(phase));
+  EXPECT_FALSE(out.assignFrom(DynamicMatrix::identity(2)));
+}
+
 TEST(Matrix2x2, AssignFromDynamicMatrix) {
   const Matrix2x2 x = pauliX();
 
