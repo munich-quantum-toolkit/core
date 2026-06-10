@@ -195,26 +195,16 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult CtrlOp::verify() {
-  auto& block = *getBody();
   if (llvm::any_of(*getBody(), [](Operation& op) {
         return isa<AllocOp, DeallocOp, MeasureOp, ResetOp>(op);
       })) {
     return emitOpError("body must not contain non-unitary quantum operations");
   }
-  if (!isa<YieldOp>(block.back())) {
-    return emitOpError(
-        "last operation in body region must be a yield operation");
-  }
 
   SmallPtrSet<Value, 4> uniqueQubits;
-  for (const auto& control : getControls()) {
-    if (!uniqueQubits.insert(control).second) {
-      return emitOpError("duplicate control qubit found");
-    }
-  }
-  for (const auto& target : getTargets()) {
-    if (!uniqueQubits.insert(target).second) {
-      return emitOpError("duplicate target qubit found");
+  for (const auto& qubit : getQubits()) {
+    if (!uniqueQubits.insert(qubit).second) {
+      return emitOpError("duplicate qubit found");
     }
   }
 

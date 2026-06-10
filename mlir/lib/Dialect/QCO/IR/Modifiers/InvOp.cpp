@@ -372,14 +372,10 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult InvOp::verify() {
   auto& block = *getBody();
-  if (llvm::any_of(*getBody(), [](Operation& op) {
+  if (llvm::any_of(block, [](Operation& op) {
         return isa<AllocOp, SinkOp, MeasureOp, ResetOp>(op);
       })) {
     return emitOpError("body must not contain non-unitary quantum operations");
-  }
-  if (!isa<YieldOp>(block.back())) {
-    return emitOpError(
-        "last operation in body region must be a yield operation");
   }
 
   const auto numTargets = getNumTargets();
@@ -394,7 +390,8 @@ LogicalResult InvOp::verify() {
              << i << " does not match target type";
     }
   }
-  if (const auto numYieldOperands = block.back().getNumOperands();
+  auto blockTerminator = block.getTerminator();
+  if (const auto numYieldOperands = blockTerminator->getNumOperands();
       numYieldOperands != numTargets) {
     return emitOpError("yield operation must yield ")
            << numTargets << " values, but found " << numYieldOperands;

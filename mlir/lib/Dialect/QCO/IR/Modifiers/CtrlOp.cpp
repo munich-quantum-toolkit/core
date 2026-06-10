@@ -285,14 +285,10 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
-  if (llvm::any_of(*getBody(), [](Operation& op) {
+  if (llvm::any_of(block, [](Operation& op) {
         return isa<AllocOp, SinkOp, MeasureOp, ResetOp>(op);
       })) {
     return emitOpError("body must not contain non-unitary quantum operations");
-  }
-  if (!isa<YieldOp>(block.back())) {
-    return emitOpError(
-        "last operation in body region must be a yield operation");
   }
 
   const auto numTargets = getNumTargets();
@@ -307,21 +303,17 @@ LogicalResult CtrlOp::verify() {
              << i << " does not match target type";
     }
   }
-  if (const auto numYieldOperands = block.back().getNumOperands();
+  auto blockTerminator = block.getTerminator();
+  if (const auto numYieldOperands = blockTerminator->getNumOperands();
       numYieldOperands != numTargets) {
     return emitOpError("yield operation must yield ")
            << numTargets << " values, but found " << numYieldOperands;
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (const auto& control : getControlsIn()) {
+  for (const auto& control : getInputQubits()) {
     if (!uniqueQubitsIn.insert(control).second) {
-      return emitOpError("duplicate control qubit found");
-    }
-  }
-  for (const auto& target : getTargetsIn()) {
-    if (!uniqueQubitsIn.insert(target).second) {
-      return emitOpError("duplicate target qubit found");
+      return emitOpError("duplicate qubit found");
     }
   }
 
@@ -331,8 +323,9 @@ LogicalResult CtrlOp::verify() {
       return emitOpError("duplicate control qubit found");
     }
   }
+
   for (size_t i = 0; i < numTargets; i++) {
-    if (!uniqueQubitsOut.insert(block.back().getOperand(i)).second) {
+    if (!uniqueQubitsOut.insert(blockTerminator->getOperand(i)).second) {
       return emitOpError("duplicate qubit found");
     }
   }
