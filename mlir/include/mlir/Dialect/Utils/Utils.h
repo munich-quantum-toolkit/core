@@ -10,13 +10,18 @@
 
 #pragma once
 
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
 
 #include <cassert>
+#include <cstddef>
+#include <iterator>
 #include <variant>
 
 namespace mlir::utils {
@@ -192,6 +197,50 @@ inline void populateMapping(IRMapping& mapping, Block& block,
       llvm::reportFatalInternalError("Outer qubit not found in new qubits");
     }
   }
+}
+
+/**
+ * @brief Returns the number of operations implementing @p UnitaryInterface in
+ * @p block.
+ */
+template <typename UnitaryInterface>
+[[nodiscard]] size_t getNumBodyUnitaries(Block& block) {
+  return static_cast<size_t>(llvm::count_if(
+      block, [](Operation& op) { return isa<UnitaryInterface>(op); }));
+}
+
+/**
+ * @brief Returns the @p i-th operation implementing @p UnitaryInterface in
+ * @p block, reporting a fatal error if @p i is out of bounds.
+ */
+template <typename UnitaryInterface>
+[[nodiscard]] UnitaryInterface getBodyUnitary(Block& block, size_t i) {
+  auto unitaries = llvm::make_filter_range(
+      block, [](Operation& op) { return isa<UnitaryInterface>(op); });
+  auto it = std::next(unitaries.begin(), static_cast<std::ptrdiff_t>(i));
+  if (it == unitaries.end()) {
+    llvm::reportFatalUsageError("Unitary index out of bounds");
+  }
+  return cast<UnitaryInterface>(*it);
+}
+
+/**
+ * @brief Returns the single operation implementing @p UnitaryInterface in
+ * @p block, or a null interface if @p block does not contain exactly one.
+ */
+template <typename UnitaryInterface>
+[[nodiscard]] UnitaryInterface getSoleBodyUnitary(Block& block) {
+  auto unitaries = llvm::make_filter_range(
+      block, [](Operation& op) { return isa<UnitaryInterface>(op); });
+  auto it = unitaries.begin();
+  if (it == unitaries.end()) {
+    return {};
+  }
+  auto unitary = cast<UnitaryInterface>(*it);
+  if (++it != unitaries.end()) {
+    return {};
+  }
+  return unitary;
 }
 
 } // namespace mlir::utils

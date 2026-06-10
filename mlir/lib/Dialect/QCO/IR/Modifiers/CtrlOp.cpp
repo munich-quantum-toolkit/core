@@ -51,10 +51,11 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    if (op.getNumBodyUnitaries() != 1) {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
       return failure();
     }
-    auto innerCtrlOp = dyn_cast<CtrlOp>(op.getBodyUnitary(0).getOperation());
+    auto innerCtrlOp = dyn_cast<CtrlOp>(inner.getOperation());
     if (!innerCtrlOp) {
       return failure();
     }
@@ -105,10 +106,11 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
       return failure();
     }
-    auto* innerOp = op.getBodyUnitary(0).getOperation();
+    auto* innerOp = inner.getOperation();
 
     // Inline ops from empty control modifiers, IdOp and BarrierOp
     if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
@@ -141,7 +143,8 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
-    // Adjust the segment sizes of the control and target operands
+    // Reinterpret the last control as a target qubit and apply a phase gate to
+    // it inside the (smaller) controlled region.
     const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
     auto segmentsAttr =
         op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
@@ -191,18 +194,11 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 size_t CtrlOp::getNumBodyUnitaries() {
-  return llvm::count_if(
-      *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
+  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
 
 UnitaryOpInterface CtrlOp::getBodyUnitary(const size_t i) {
-  auto unitaries = llvm::make_filter_range(
-      *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
-  auto it = std::next(unitaries.begin(), static_cast<std::ptrdiff_t>(i));
-  if (it == unitaries.end()) {
-    llvm::reportFatalUsageError("Unitary index out of bounds");
-  }
-  return cast<UnitaryOpInterface>(*it);
+  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 Value CtrlOp::getInputQubit(const size_t i) {
@@ -363,11 +359,7 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
-  if (getNumBodyUnitaries() != 1) {
-    return std::nullopt;
-  }
-
-  auto bodyUnitary = getBodyUnitary(0);
+  auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
   if (!bodyUnitary) {
     return std::nullopt;
   }

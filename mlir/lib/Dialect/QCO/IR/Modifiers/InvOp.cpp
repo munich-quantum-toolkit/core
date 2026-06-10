@@ -45,10 +45,11 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
       return failure();
     }
-    auto innerCtrlOp = dyn_cast<CtrlOp>(op.getBodyUnitary(0).getOperation());
+    auto innerCtrlOp = dyn_cast<CtrlOp>(inner.getOperation());
     if (!innerCtrlOp) {
       return failure();
     }
@@ -97,10 +98,11 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
       return failure();
     }
-    auto* innerOp = op.getBodyUnitary(0).getOperation();
+    auto* innerOp = inner.getOperation();
 
     if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(innerOp)) {
       return failure();
@@ -131,10 +133,11 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
       return failure();
     }
-    auto* innerOp = op.getBodyUnitary(0).getOperation();
+    auto* innerOp = inner.getOperation();
 
     auto loc = op.getLoc();
     auto outerQubits = op.getInputQubits();
@@ -331,18 +334,21 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumBodyUnitaries() != 1) {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
       return failure();
     }
-    auto innerInvOp = dyn_cast<InvOp>(op.getBodyUnitary(0).getOperation());
+    auto innerInvOp = dyn_cast<InvOp>(inner.getOperation());
     if (!innerInvOp) {
       return failure();
     }
 
-    if (innerInvOp.getNumBodyUnitaries() != 1) {
+    auto innerInner =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody());
+    if (!innerInner) {
       return failure();
     }
-    auto* innerInnerOp = innerInvOp.getBodyUnitary(0).getOperation();
+    auto* innerInnerOp = innerInner.getOperation();
 
     const auto numQubits = op.getNumQubits();
     auto outerQubits = op.getInputQubits();
@@ -380,18 +386,11 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
 } // namespace
 
 size_t InvOp::getNumBodyUnitaries() {
-  return llvm::count_if(
-      *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
+  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
 
 UnitaryOpInterface InvOp::getBodyUnitary(const size_t i) {
-  auto unitaries = llvm::make_filter_range(
-      *getBody(), [](Operation& op) { return isa<UnitaryOpInterface>(op); });
-  auto it = std::next(unitaries.begin(), static_cast<std::ptrdiff_t>(i));
-  if (it == unitaries.end()) {
-    llvm::reportFatalUsageError("Unitary index out of bounds");
-  }
-  return cast<UnitaryOpInterface>(*it);
+  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 Value InvOp::getInputQubit(const size_t i) {
@@ -490,11 +489,7 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
-  if (getNumBodyUnitaries() != 1) {
-    return std::nullopt;
-  }
-
-  auto bodyUnitary = getBodyUnitary(0);
+  auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
   if (!bodyUnitary) {
     return std::nullopt;
   }
