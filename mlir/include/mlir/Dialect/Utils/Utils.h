@@ -15,7 +15,6 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -175,29 +174,6 @@ inline Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
     return qubits[blockArg.getArgNumber()];
   }
   return qubit;
-}
-
-/**
- * @brief Create a mapping between block arguments and qubit values.
- *
- * @details This helper function is used to resolve block arguments for nested
- * modifiers.
- */
-inline void populateMapping(IRMapping& mapping, Block& block,
-                            ValueRange innerQubits, ValueRange outerQubits,
-                            ValueRange newQubits, ValueRange qubitArgs) {
-  assert(innerQubits.size() == block.getNumArguments() &&
-         "Size of innerQubits must match number of block arguments");
-  for (auto arg : block.getArguments()) {
-    auto innerQubit = innerQubits[arg.getArgNumber()];
-    auto outerQubit = getValueFromBlockArgument(innerQubit, outerQubits);
-    if (auto it = llvm::find(newQubits, outerQubit); it != newQubits.end()) {
-      auto index = std::distance(newQubits.begin(), it);
-      mapping.map(arg, qubitArgs[index]);
-    } else {
-      llvm::reportFatalInternalError("Outer qubit not found in new qubits");
-    }
-  }
 }
 
 /**

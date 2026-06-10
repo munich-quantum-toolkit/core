@@ -16,7 +16,6 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -53,33 +52,27 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    auto outerControls = op.getControls();
+    // The inner control's controls and targets are block arguments of the outer
+    // body that alias outer targets. Re-resolve them to the outer qubits: inner
+    // controls join the outer controls, inner targets become the merged
+    // targets. Keeping the inner-target order lets the inner body be reused
+    // verbatim, since its block arguments already line up with the merged
+    // targets.
     auto outerTargets = op.getTargets();
-    auto innerTargets = innerCtrlOp.getTargets();
-
-    SmallVector<Value> controls;
-    SmallVector<Value> targets;
-    llvm::append_range(controls, outerControls);
-    for (auto [arg, qubit] :
-         llvm::zip_equal(op.getBody()->getArguments(), outerTargets)) {
-      if (llvm::is_contained(innerTargets, arg)) {
-        targets.push_back(qubit);
-      } else {
-        controls.push_back(qubit);
-      }
+    SmallVector<Value> controls(op.getControls());
+    for (auto control : innerCtrlOp.getControls()) {
+      controls.push_back(
+          utils::getValueFromBlockArgument(control, outerTargets));
     }
-
-    rewriter.replaceOpWithNewOp<CtrlOp>(
-        op, controls, targets, [&](ValueRange targetArgs) {
-          auto* innerCtrlBody = innerCtrlOp.getBody();
-          IRMapping mapping;
-          utils::populateMapping(mapping, *innerCtrlBody, innerTargets,
-                                 outerTargets, targets, targetArgs);
-          for (auto& op : innerCtrlBody->without_terminator()) {
-            rewriter.clone(op, mapping);
-          }
+    const auto targets =
+        llvm::map_to_vector(innerCtrlOp.getTargets(), [&](Value t) {
+          return utils::getValueFromBlockArgument(t, outerTargets);
         });
 
+    auto merged = CtrlOp::create(rewriter, op.getLoc(), controls, targets);
+    rewriter.inlineRegionBefore(innerCtrlOp.getRegion(), merged.getRegion(),
+                                merged.getRegion().end());
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -141,7 +134,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 };
 
 /**
- * @brief Erase control modifiers that do not have any body unitaries.
+ * @brief Erase control modifiers without unitary operations in the body.
  */
 struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;

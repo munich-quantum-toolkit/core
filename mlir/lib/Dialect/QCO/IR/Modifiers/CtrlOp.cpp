@@ -20,7 +20,6 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -60,39 +59,54 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
+    // The inner control's controls and targets are block arguments of the outer
+    // body that alias outer targets. Re-resolve them to the outer qubits: inner
+    // controls join the outer controls, inner targets become the merged
+    // targets. Inner-target order is kept so the inner body's block arguments
+    // line up with the merged targets and the body can be reused verbatim.
     auto outerTargets = op.getTargetsIn();
-    auto outerControls = op.getControlsIn();
+    auto innerControls = innerCtrlOp.getControlsIn();
     auto innerTargets = innerCtrlOp.getTargetsIn();
 
-    SmallVector<Value> controls;
-    SmallVector<Value> targets;
-    llvm::append_range(controls, outerControls);
-    for (auto [arg, qubit] :
-         llvm::zip_equal(op.getBody()->getArguments(), outerTargets)) {
-      if (llvm::is_contained(innerTargets, arg)) {
-        targets.push_back(qubit);
+    SmallVector<Value> controls(op.getControlsIn());
+    for (auto control : innerControls) {
+      controls.push_back(
+          utils::getValueFromBlockArgument(control, outerTargets));
+    }
+    const auto targets = llvm::map_to_vector(innerTargets, [&](Value t) {
+      return utils::getValueFromBlockArgument(t, outerTargets);
+    });
+
+    auto merged = CtrlOp::create(rewriter, op.getLoc(), controls, targets);
+    rewriter.inlineRegionBefore(innerCtrlOp.getRegion(), merged.getRegion(),
+                                merged.getRegion().end());
+
+    // Outer and inner controls pass through to the merged controls; each outer
+    // target follows its block argument to either a merged control output (if
+    // it was an inner control) or a merged target output (if it was an inner
+    // target).
+    const auto numOuterControls = op.getNumControls();
+    rewriter.replaceAllUsesWith(
+        op.getControlsOut(),
+        merged.getControlsOut().take_front(numOuterControls));
+    auto innerControlsOut =
+        merged.getControlsOut().drop_front(numOuterControls);
+    auto mergedTargetsOut = merged.getTargetsOut();
+    for (auto [blockArg, outerTargetOut] :
+         llvm::zip_equal(op.getBody()->getArguments(), op.getTargetsOut())) {
+      if (auto it = llvm::find(innerControls, blockArg);
+          it != innerControls.end()) {
+        rewriter.replaceAllUsesWith(
+            outerTargetOut,
+            innerControlsOut[std::distance(innerControls.begin(), it)]);
       } else {
-        controls.push_back(qubit);
+        const auto it2 = llvm::find(innerTargets, blockArg);
+        rewriter.replaceAllUsesWith(
+            outerTargetOut,
+            mergedTargetsOut[std::distance(innerTargets.begin(), it2)]);
       }
     }
-
-    rewriter.replaceOpWithNewOp<CtrlOp>(
-        op, controls, targets,
-        [&](ValueRange targetArgs) -> SmallVector<Value> {
-          auto* innerCtrlBody = innerCtrlOp.getBody();
-          IRMapping mapping;
-          utils::populateMapping(mapping, *innerCtrlBody, innerTargets,
-                                 outerTargets, targets, targetArgs);
-          for (auto& op : innerCtrlBody->without_terminator()) {
-            rewriter.clone(op, mapping);
-          }
-          SmallVector<Value> yields;
-          for (auto value : innerCtrlBody->getTerminator()->getOperands()) {
-            yields.push_back(mapping.lookup(value));
-          }
-          return yields;
-        });
-
+    rewriter.eraseOp(op);
     return success();
   }
 };
