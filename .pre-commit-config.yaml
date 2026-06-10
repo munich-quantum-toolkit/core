@@ -149,5 +149,5 @@ repos:
     rev: v0.0.47
     hooks:
       - id: ty
-        args: [--no-sync]
+        args: [--only-dev]
         priority: 8
