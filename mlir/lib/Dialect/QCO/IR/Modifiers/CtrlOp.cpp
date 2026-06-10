@@ -19,6 +19,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -49,6 +50,11 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     // Require at least one control
     // Trivial case is handled by ReduceCtrl
     if (op.getNumControls() == 0) {
+      return failure();
+    }
+
+    // Only proceed if body contains only one operation besides terminator
+    if (op.getBody()->getOperations().size() != 2) {
       return failure();
     }
 
@@ -126,6 +132,11 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
+    // Only proceed if the GPhaseOp is the only operation besides the terminator
+    if (op.getBody()->getOperations().size() != 2) {
+      return failure();
+    }
+
     // Special case for single control: replace with a single POp
     if (op.getNumControls() == 1) {
       rewriter.replaceOpWithNewOp<POp>(op, op.getInputControl(0),
@@ -134,7 +145,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // Reinterpret the last control as a target qubit and apply a phase gate to
-    // it inside the (smaller) controlled region.
+    // it inside the (smaller) controlled region
     const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
     auto segmentsAttr =
         op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
@@ -228,9 +239,11 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
   if (llvm::any_of(block, [](Operation& op) {
-        return isa<AllocOp, SinkOp, MeasureOp, ResetOp>(op);
+        return isa<AllocOp, SinkOp, MeasureOp, ResetOp, qtensor::ExtractOp,
+                   qtensor::InsertOp>(op);
       })) {
-    return emitOpError("body must not contain non-unitary quantum operations");
+    return emitOpError("body must not contain non-unitary quantum operations "
+                       "or modify a quantum register");
   }
 
   const auto numTargets = getNumTargets();

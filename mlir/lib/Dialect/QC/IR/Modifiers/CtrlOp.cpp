@@ -15,6 +15,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -43,7 +44,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Only proceed when the outer body is exactly [innerCtrlOp, yield].
+    // Only proceed if body contains only one operation besides terminator
     if (op.getBody()->getOperations().size() != 2) {
       return failure();
     }
@@ -108,6 +109,12 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     if (!gPhaseOp) {
       return failure();
     }
+
+    // Only proceed if the GPhaseOp is the only operation besides the terminator
+    if (op.getBody()->getOperations().size() != 2) {
+      return failure();
+    }
+
     // Special case for single control: replace with a single POp
     if (op.getNumControls() == 1) {
       rewriter.replaceOpWithNewOp<POp>(op, op.getControl(0),
@@ -116,7 +123,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // Reinterpret the last control as a target qubit and apply a phase gate to
-    // it inside the (smaller) controlled region.
+    // it inside the (smaller) controlled region
     const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
     auto segmentsAttr =
         op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
@@ -183,9 +190,11 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult CtrlOp::verify() {
   if (llvm::any_of(*getBody(), [](Operation& op) {
-        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp>(op);
+        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
+                   memref::StoreOp>(op);
       })) {
-    return emitOpError("body must not contain non-unitary quantum operations");
+    return emitOpError("body must not contain non-unitary quantum operations "
+                       "or modify a quantum register");
   }
 
   SmallPtrSet<Value, 4> uniqueQubits;

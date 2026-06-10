@@ -83,6 +83,21 @@ template <typename T>
   return std::nullopt;
 }
 
+/**
+ * @brief Parse a list of aliased qubits.
+ *
+ * @details
+ * The modifier operations use aliased qubits inside of their region. This
+ * function resolves the relationship between the block arguments and the qubit
+ * operands. In the example below, the block argument `%a0` aliases the operand
+ * `%q1`.
+ *
+ * ```mlir
+ * qc.ctrl(%q0) targets(%a0 = %q1) {
+ *   qc.x %a0 : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ */
 template <typename QubitType>
 [[nodiscard]]
 ParseResult
@@ -118,12 +133,9 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       }
       operands.push_back(oldOperand);
 
-      // Hard-code QubitType since targets in CtrlOp are always qubits.
-      // This avoids double-binding type($targets_in) in the assembly format
-      // while keeping the parser simple and the assembly format clean.
+      // Hard-code QubitType because the modifiers only alias qubits
       newArg.type = QubitType::get(parser.getBuilder().getContext());
       blockArgs.push_back(newArg);
-
     } while (succeeded(parser.parseOptionalComma()));
 
     if (parser.parseRParen()) {
@@ -141,6 +153,21 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
   return success();
 }
 
+/**
+ * @brief Print a list of aliased qubits.
+ *
+ * @details
+ * The modifier operations use aliased qubits inside of their region. This
+ * function prints a representation of the relationship between the block
+ * arguments and the qubit operands. In the example below, the block argument
+ * `%a0` aliases the operand `%q1`.
+ *
+ * ```mlir
+ * qc.ctrl(%q0) targets(%a0 = %q1) {
+ *   qc.x %a0 : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ */
 inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
                                 OperandRange targetsIn) {
   printer << "(";
@@ -149,7 +176,7 @@ inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
     printer.printRegion(region, false);
     return;
   }
-  Block& entryBlock = region.front();
+  auto& entryBlock = region.front();
 
   const auto numTargets = targetsIn.size();
   for (unsigned i = 0; i < numTargets; ++i) {

@@ -17,6 +17,7 @@
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -326,9 +327,11 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult InvOp::verify() {
   if (llvm::any_of(*getBody(), [](Operation& op) {
-        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp>(op);
+        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
+                   memref::StoreOp>(op);
       })) {
-    return emitOpError("body must not contain non-unitary quantum operations");
+    return emitOpError("body must not contain non-unitary quantum operations "
+                       "or modify a quantum register");
   }
   return success();
 }
