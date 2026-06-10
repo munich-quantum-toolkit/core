@@ -1028,7 +1028,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         Value getOutputForInput(Value input);
         static size_t getNumParams() { return 0; }
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
-        static ValueRange getParameters() { return {}; }
+        static OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
@@ -1124,7 +1124,7 @@ def CtrlOp : QCOOp<"ctrl",
         Value getOutputForInput(Value input);
         size_t getNumParams() { return 0; }
         Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
-        ValueRange getParameters() { return {nullptr, 0}; }
+        OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
@@ -1197,7 +1197,7 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
         Value getOutputForInput(Value input);
         size_t getNumParams() { return 0; }
         Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
-        ValueRange getParameters() { return {nullptr, 0}; }
+        OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
