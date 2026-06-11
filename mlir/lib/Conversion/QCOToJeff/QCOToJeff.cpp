@@ -354,18 +354,15 @@ static LogicalResult moveRegion(Region& source, Region& dest,
   rewriter.setInsertionPointToEnd(newBlock);
 
   IRMapping mapping;
-  for (auto i = 0; i < oldBlock->getNumArguments(); ++i) {
-    auto oldArg = oldBlock->getArgument(i);
-    auto newType = typeConverter->convertType(oldArg.getType());
-    auto newArg = newBlock->addArgument(newType, oldArg.getLoc());
+  for (auto oldArg : oldBlock->getArguments()) {
+    auto newArg = newBlock->addArgument(
+        typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
     mapping.map(oldArg, newArg);
   }
-  SmallVector<Value> newArgs;
   for (auto value : aboveValues) {
-    auto newType = typeConverter->convertType(value.getType());
-    auto newArg = newBlock->addArgument(newType, value.getLoc());
+    auto newArg = newBlock->addArgument(
+        typeConverter->convertType(value.getType()), value.getLoc());
     mapping.map(value, newArg);
-    newArgs.push_back(newArg);
   }
 
   for (auto& op : oldBlock->without_terminator()) {
@@ -376,7 +373,8 @@ static LogicalResult moveRegion(Region& source, Region& dest,
   for (auto value : oldBlock->getTerminator()->getOperands()) {
     yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
   }
-  llvm::append_range(yields, newArgs);
+  llvm::append_range(yields,
+                     newBlock->getArguments().take_back(aboveValues.size()));
   jeff::YieldOp::create(rewriter, oldBlock->getTerminator()->getLoc(), yields);
 
   return success();

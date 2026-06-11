@@ -861,12 +861,16 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
           op, "qco.if requires exactly two branches");
     }
 
+    auto isLinearType = [](Type t) {
+      return isa<jeff::QubitType, jeff::QuregType>(t);
+    };
+
     auto inValues = adaptor.getInValues();
 
     SmallVector<Value> qubits;
-    for (auto [i, value] : llvm::enumerate(op.getInValues())) {
-      if (isa<jeff::QubitType, jeff::QuregType>(value.getType())) {
-        qubits.push_back(inValues[i]);
+    for (auto [value, adapted] : llvm::zip(op.getInValues(), inValues)) {
+      if (isLinearType(value.getType())) {
+        qubits.push_back(adapted);
       }
     }
 
@@ -879,15 +883,14 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       rewriter.setInsertionPointToEnd(newBlock);
 
       IRMapping mapping;
-      for (auto i = 0; i < oldBlock->getNumArguments(); ++i) {
-        auto oldArg = oldBlock->getArgument(i);
-        auto oldType = oldArg.getType();
-        if (isa<jeff::QubitType, jeff::QuregType>(oldType)) {
-          auto newType = typeConverter->convertType(oldType);
-          auto newArg = newBlock->addArgument(newType, oldArg.getLoc());
+      for (auto [oldArg, adapted] :
+           llvm::zip(oldBlock->getArguments(), inValues)) {
+        if (isLinearType(oldArg.getType())) {
+          auto newArg = newBlock->addArgument(
+              typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
           mapping.map(oldArg, newArg);
         } else {
-          mapping.map(oldArg, inValues[i]);
+          mapping.map(oldArg, adapted);
         }
       }
 
@@ -897,7 +900,7 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
 
       SmallVector<Value> yields;
       for (auto value : oldBlock->getTerminator()->getOperands()) {
-        if (isa<jeff::QubitType, jeff::QuregType>(value.getType())) {
+        if (isLinearType(value.getType())) {
           yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
         }
       }
@@ -915,12 +918,10 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
 
     SmallVector<Value> results;
     size_t index = 0;
-    for (auto [i, value] : llvm::enumerate(op.getResults())) {
-      if (isa<jeff::QubitType, jeff::QuregType>(value.getType())) {
-        results.push_back(qcoIf.getResults()[index++]);
-      } else {
-        results.push_back(inValues[i]);
-      }
+    for (auto [value, adapted] : llvm::zip(op.getResults(), inValues)) {
+      results.push_back(isLinearType(value.getType())
+                            ? qcoIf.getResults()[index++]
+                            : adapted);
     }
     rewriter.replaceOp(op, results);
 
