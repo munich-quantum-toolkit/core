@@ -1123,7 +1123,7 @@ public:
   OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
 
   /**
-   * @brief Convenience method for building quantum programs with returns.
+   * @brief Convenience method for building quantum programs.
    * @param context The MLIR context to use for building the program
    * @param returnTypes The types of the values to be returned by the program.
    * @param buildFunc A function that takes a reference to a QCProgramBuilder

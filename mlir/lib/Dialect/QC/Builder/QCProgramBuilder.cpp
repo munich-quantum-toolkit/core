@@ -68,7 +68,7 @@ void QCProgramBuilder::initialize(TypeRange returnTypes) {
   regionStack.emplace_back(entryBlock.getParent());
 }
 
-oid QCProgramBuilder::retype(TypeRange returnTypes) {
+void QCProgramBuilder::retype(TypeRange returnTypes) {
   auto mainFunc = qco::getEntryPoint(mlir::cast<ModuleOp>(module));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");

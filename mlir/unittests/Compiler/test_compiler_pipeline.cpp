@@ -207,10 +207,15 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
  */
 TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
   auto module = mlir::qc::QCProgramBuilder::build(
-      context.get(), [&](mlir::qc::QCProgramBuilder& b) {
+      context.get(),
+      [&](mlir::qc::QCProgramBuilder& b)
+          -> std::pair<mlir::SmallVector<mlir::Value>,
+                       mlir::SmallVector<mlir::Type>> {
         auto q = b.allocQubit();
         b.rz(1.0, q);
         b.rx(1.0, q);
+        auto m = b.measure(q);
+        return {{m}, {b.getI1Type()}};
       });
   ASSERT_TRUE(module);
 
@@ -230,10 +235,15 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
  */
 TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
   auto module = mlir::qc::QCProgramBuilder::build(
-      context.get(), [&](mlir::qc::QCProgramBuilder& b) {
+      context.get(),
+      [&](mlir::qc::QCProgramBuilder& b)
+          -> std::pair<mlir::SmallVector<mlir::Value>,
+                       mlir::SmallVector<mlir::Type>> {
         auto q = b.allocQubit();
         b.x(q);
         b.h(q);
+        auto m = b.measure(q);
+        return {{m}, {b.getI1Type()}};
       });
   ASSERT_TRUE(module);
 
