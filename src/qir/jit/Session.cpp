@@ -10,6 +10,7 @@
 
 #include "qir/jit/Session.hpp"
 
+#include "qir/jit/IRRewriter.hpp"
 #include "qir/runtime/QIR.h"
 
 #include <llvm/ADT/ArrayRef.h>
@@ -117,23 +118,13 @@ JitSession::loadModuleFromMemory(const llvm::StringRef irBytes,
   return getThreadSafeModuleOrError(std::move(m), err, tsCtx_);
 }
 
-JitSession::JitSession(const llvm::StringRef inputFile) {
-  auto ret = loadModuleFromFile(inputFile);
-  if (!ret) {
-    throw std::runtime_error(llvm::toString(ret.takeError()));
-  }
-  module_ = std::move(*ret);
-  initialize();
+JitSession::JitSession(const llvm::StringRef inputFile, const Execution mode) {
+  initialize(loadModuleFromFile(inputFile), mode);
 }
 
 JitSession::JitSession(const llvm::StringRef irBytes,
-                       const llvm::StringRef bufferName) {
-  auto ret = loadModuleFromMemory(irBytes, bufferName);
-  if (!ret) {
-    throw std::runtime_error(llvm::toString(ret.takeError()));
-  }
-  module_ = std::move(*ret);
-  initialize();
+                       const llvm::StringRef bufferName, const Execution mode) {
+  initialize(loadModuleFromMemory(irBytes, bufferName), mode);
 }
 
 JitSession::~JitSession() { deinitialize(); }
@@ -235,7 +226,21 @@ void JitSession::initNativeTargets() {
   });
 }
 
-void JitSession::initialize() {
+void JitSession::initialize(
+    llvm::Expected<llvm::orc::ThreadSafeModule> llvmModule,
+    const Execution mode) {
+  if (!llvmModule) {
+    throw std::runtime_error(llvm::toString(llvmModule.takeError()));
+  }
+  module_ = std::move(*llvmModule);
+
+  // In StateExtraction mode, strip QIR measurement and result-management calls
+  // so the runtime's quantum state remains intact after main returns.
+  if (mode == Execution::StateExtraction) {
+    module_.withModuleDo(
+        [](llvm::Module& m) { stripMeasurementRelatedCalls(m); });
+  }
+
   registerRuntimeSymbols();
   initNativeTargets();
 
@@ -378,7 +383,7 @@ void JitSession::initialize() {
   mainFn_ = mainAddr->toPtr<MainFn*>();
 }
 
-void JitSession::deinitialize() {
+void JitSession::deinitialize() const {
   if (!jit_) {
     return;
   }
