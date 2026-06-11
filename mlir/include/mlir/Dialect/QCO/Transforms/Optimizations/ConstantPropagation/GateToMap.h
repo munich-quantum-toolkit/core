@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <mlir/IR/Operation.h>
 #ifndef MQT_CORE_GATETOMAP_H
 #define MQT_CORE_GATETOMAP_H
 
