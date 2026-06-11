@@ -1413,20 +1413,7 @@ public:
   OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
 
   /**
-   * @brief Convenience method for building quantum programs
-   * @param context The MLIR context to use for building the program
-   * @param buildFunc A function that takes a reference to a QCOProgramBuilder
-   * and uses it to build the desired quantum program. The builder will be
-   * properly initialized before calling this function, and the resulting module
-   * will be finalized and returned after this function completes.
-   * @return The module containing the quantum program built by buildFunc.
-   */
-  static OwningOpRef<ModuleOp>
-  build(MLIRContext* context,
-        const function_ref<void(QCOProgramBuilder&)>& buildFunc);
-
-  /**
-   * @brief Convenience method for building quantum programs with returns.
+   * @brief Convenience method for building quantum programs.
    * @param context The MLIR context to use for building the program
    * @param returnTypes The types of the values to be returned by the program.
    * @param buildFunc A function that takes a reference to a QCOProgramBuilder
@@ -1436,10 +1423,10 @@ public:
    * completes.
    * @return The module containing the quantum program built by buildFunc.
    */
-  static OwningOpRef<ModuleOp> buildWithReturn(
-      MLIRContext* context,
-      const function_ref<std::pair<SmallVector<Value>, SmallVector<Type>>(
-          QCOProgramBuilder&)>& buildFunc);
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const function_ref<std::pair<SmallVector<Value>, SmallVector<Type>>(
+            QCOProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };

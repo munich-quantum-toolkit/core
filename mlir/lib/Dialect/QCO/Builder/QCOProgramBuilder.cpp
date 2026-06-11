@@ -1177,15 +1177,6 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<void(QCOProgramBuilder&)>& buildFunc) {
-  QCOProgramBuilder builder(context);
-  builder.initialize();
-  buildFunc(builder);
-  return builder.finalize();
-}
-
-OwningOpRef<ModuleOp> QCOProgramBuilder::buildWithReturn(
-    MLIRContext* context,
     const function_ref<std::pair<SmallVector<Value>, SmallVector<Type>>(
         QCOProgramBuilder&)>& buildFunc) {
   QCOProgramBuilder builder(context);
