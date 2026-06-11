@@ -1017,8 +1017,8 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         OperandRange getInputTargets() { return getInputQubits(); }
         Value getOutputQubit(size_t i) { return getOutputTarget(i); }
         ResultRange getOutputQubits() { return getQubitsOut(); }
-        Value getInputTarget(size_t i);
-        Value getOutputTarget(size_t i);
+        Value getInputTarget(size_t i) { return getQubitsIn()[i]; }
+        Value getOutputTarget(size_t i) { return getQubitsOut()[i]; }
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
         static OperandRange getInputControls() { return {nullptr, 0}; }
         static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
@@ -1028,7 +1028,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         Value getOutputForInput(Value input);
         static size_t getNumParams() { return 0; }
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
-        static ValueRange getParameters() { return {}; }
+        static OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
@@ -1068,12 +1068,14 @@ def CtrlOp : QCOOp<"ctrl",
                              RecursiveMemoryEffects]> {
   let summary = "Add control qubits to a unitary operation";
   let description = [{
-        A modifier operation that adds control qubits to the unitary operation
-        defined in its body region. The controlled operation applies the
-        underlying unitary only when all control qubits are in the |1⟩ state.
-        The operation takes a variadic number of control and target qubits as
-        inputs and produces corresponding output qubits. Control qubits are not
-        modified by the operation and simply pass through to the outputs.
+        A modifier operation that adds control qubits to the unitary operation defined in its body region.
+        The controlled operation applies the underlying unitary only when all control qubits are in the $|1\rangle$ state.
+
+        The operation takes a variadic number of control and target qubits as inputs and produces corresponding output qubits.
+        Control qubits are not modified by the operation and simply pass through to the outputs.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir
@@ -1101,27 +1103,28 @@ def CtrlOp : QCOOp<"ctrl",
     }];
 
   let extraClassDeclaration = [{
-        UnitaryOpInterface getBodyUnitary();
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumControls() + getNumTargets(); }
         size_t getNumTargets() { return getTargetsIn().size(); }
         size_t getNumControls() { return getControlsIn().size(); }
-        Value getInputQubit(size_t i);
         OperandRange getInputQubits() { return getOperands(); }
+        Value getInputQubit(size_t i) { return getInputQubits()[i]; }
         OperandRange getInputTargets() { return getTargetsIn(); }
-        Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getResults(); }
-        Value getInputTarget(size_t i);
-        Value getOutputTarget(size_t i);
-        Value getInputControl(size_t i);
+        Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
+        Value getInputTarget(size_t i) { return getInputTargets()[i]; }
+        Value getOutputTarget(size_t i) { return getOutputTargets()[i]; }
+        Value getInputControl(size_t i) { return getInputControls()[i]; }
         OperandRange getInputControls() { return getControlsIn(); }
-        Value getOutputControl(size_t i);
+        Value getOutputControl(size_t i) { return getOutputControls()[i]; }
         ResultRange getOutputTargets() { return getTargetsOut(); }
         ResultRange getOutputControls() { return getControlsOut(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
+        OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
@@ -1143,9 +1146,12 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
                                    RecursiveMemoryEffects]> {
   let summary = "Invert a unitary operation";
   let description = [{
-        A modifier operation that inverts the unitary operation defined in its body
-        region. The operation takes a variadic number of qubits as inputs and
-        produces corresponding output qubits.
+        A modifier operation that inverts the unitary operation defined in its body region.
+
+        The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir
@@ -1170,27 +1176,28 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
     }];
 
   let extraClassDeclaration = [{
-        UnitaryOpInterface getBodyUnitary();
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets(); }
         size_t getNumTargets() { return getQubitsIn().size(); }
         static size_t getNumControls() { return 0; }
-        Value getInputQubit(size_t i);
         OperandRange getInputQubits() { return getQubitsIn(); }
+        Value getInputQubit(size_t i) { return getQubitsIn()[i]; }
         OperandRange getInputTargets() { return getInputQubits(); }
-        Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getQubitsOut(); }
+        Value getOutputQubit(size_t i) { return getQubitsOut()[i]; }
         Value getInputTarget(size_t i) { return getInputQubit(i); }
         Value getOutputTarget(size_t i) { return getOutputQubit(i); }
-        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
         static OperandRange getInputControls() { return {nullptr, 0}; }
-        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
         static ResultRange getOutputControls() { return {nullptr, 0}; }
         ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
+        OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];

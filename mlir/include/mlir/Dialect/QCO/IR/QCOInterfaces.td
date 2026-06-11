@@ -183,7 +183,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       "getNumParams", (ins)>,
       InterfaceMethod<"Returns the i-th parameter.", "Value", "getParameter",
                       (ins "size_t":$i)>,
-      InterfaceMethod<"Returns a range of all parameters.", "ValueRange",
+      InterfaceMethod<"Returns a range of all parameters.", "OperandRange",
                       "getParameters", (ins)>,
 
       // Convenience methods
