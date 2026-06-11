@@ -38,30 +38,13 @@ namespace mlir::qco {
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 /**
- * @brief Whether `op` is inside an `inv`/`ctrl` body.
+ * @brief Whether `op` is inside an `inv` body.
  *
  * @param op The operation to test.
- * @return `true` if any ancestor is `inv` or `ctrl`.
+ * @return `true` if any ancestor is `inv`.
  */
-static bool isNestedInModifierRegion(Operation* op) {
-  return op != nullptr && (op->getParentOfType<InvOp>() != nullptr ||
-                           op->getParentOfType<CtrlOp>() != nullptr);
-}
-
-/**
- * @brief Whether `op` may participate in a fusable single-qubit run.
- *
- * @param op The unitary operation to test.
- * @return `true` for a single-qubit, matrix-backed unitary on the wire, outside
- *         a modifier body.
- */
-static bool isFuseCandidate(UnitaryOpInterface op) {
-  if (!op || !op.isSingleQubit() || isNestedInModifierRegion(op) ||
-      isa<BarrierOp>(op.getOperation())) {
-    return false;
-  }
-  Matrix2x2 matrix;
-  return op.getUnitaryMatrix2x2(matrix);
+static bool isInsideInvBody(Operation* op) {
+  return op != nullptr && op->getParentOfType<InvOp>() != nullptr;
 }
 
 /**
@@ -76,6 +59,20 @@ static std::optional<Matrix2x2> getConstMatrix(UnitaryOpInterface op) {
     return std::nullopt;
   }
   return matrix;
+}
+
+/**
+ * @brief Whether `op` may participate in a fusable single-qubit run.
+ *
+ * @param op The unitary operation to test.
+ * @return `true` for a single-qubit, matrix-backed unitary on the wire,
+ *         including inside `inv`/`ctrl` bodies.
+ */
+static bool isFuseCandidate(UnitaryOpInterface op) {
+  if (!op || !op.isSingleQubit() || isa<BarrierOp>(op.getOperation())) {
+    return false;
+  }
+  return getConstMatrix(op).has_value();
 }
 
 /**
@@ -156,6 +153,9 @@ struct FuseSingleQubitUnitaryRunsPattern final
    */
   static bool isRunStart(UnitaryOpInterface op) {
     if (!isRunMember(op.getOperation())) {
+      return false;
+    }
+    if (isInsideInvBody(op.getOperation())) {
       return false;
     }
     Operation* pred = op.getInputTarget(0).getDefiningOp();
