@@ -10,7 +10,8 @@
 
 #pragma once
 
-#include <Eigen/Core>
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
+
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Support/LLVM.h>

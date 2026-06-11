@@ -96,7 +96,7 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> controls =
-      inCtrlOp != 0 ? state.controls[inCtrlOp] : SmallVector<Value>{};
+      inCtrlOp != 0 ? state.controls : SmallVector<Value>{};
   const size_t numCtrls = controls.size();
 
   // Define argument types
@@ -132,8 +132,10 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
 
   // Clean up modifier information
   if (inCtrlOp != 0) {
-    state.controls.erase(inCtrlOp);
     state.inCtrlOp--;
+    if (state.inCtrlOp == 0) {
+      state.controls.clear();
+    }
   }
 
   // Replace operation with CallOp
@@ -238,7 +240,7 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.controls.size() : 0;
     const auto fnName = GetFnName(numCtrls);
     return convertUnitaryToCallOp(op, adaptor, rewriter, this->getContext(),
                                   state, fnName, NumTargets, NumParams);
@@ -358,16 +360,20 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
   LogicalResult
   matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Update modifier information
     auto& state = getState();
-    state.inCtrlOp++;
-    const SmallVector<Value> controls(adaptor.getControls().begin(),
-                                      adaptor.getControls().end());
-    state.controls[state.inCtrlOp] = controls;
 
-    // Inline region and remove operation
-    rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
-                               op->getIterator());
+    if (state.inCtrlOp != 0) {
+      return rewriter.notifyMatchFailure(op,
+                                         "Nested CtrlOps are not supported");
+    }
+
+    // Update modifier information
+    state.inCtrlOp = op.getNumBodyUnitaries();
+    state.controls = llvm::to_vector(adaptor.getControls());
+
+    // Inline block and remove operation
+    rewriter.inlineBlockBefore(&op.getRegion().front(), op,
+                               adaptor.getTargets());
     rewriter.eraseOp(op);
     return success();
   }

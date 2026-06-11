@@ -687,6 +687,9 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledXXMinusYY",
             MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxMinusYY),
-            MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxMinusYY)}));
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxMinusYY)},
+        CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
+                                 MQT_NAMED_BUILDER(mlir::qir::ctrlTwo)}));
 
 } // namespace mqt::test::compiler

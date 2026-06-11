@@ -686,7 +686,7 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(qir::emptyQIR)}));
 /// @}
 
-/// \name QCToQCO/Operations/IfOp.cpp
+/// \name QCToQIRAdaptive/Operations/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     SCFIfOpTest, QCToQIRAdaptiveTest,
@@ -703,7 +703,7 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(qir::nestedIfOpForLoop)}));
 /// @}
 
-/// \name QCToQCO/Operations/WhileOp.cpp
+/// \name QCToQIRAdaptive/Operations/WhileOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     SCFWhileOpTest, QCToQIRAdaptiveTest,
@@ -715,7 +715,7 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
                                 MQT_NAMED_BUILDER(qir::simpleDoWhileReset)}));
 
-/// \name QCToQCO/Operations/ForOp.cpp
+/// \name QCToQIRAdaptive/Operations/ForOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     SCFForOpTest, QCToQIRAdaptiveTest,
@@ -737,3 +737,11 @@ INSTANTIATE_TEST_SUITE_P(
             "nestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOpWithExtractedQubit)}));
+
+/// \name QCToQIRAdaptive/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(QCToQIRCtrlOpTest, QCToQIRAdaptiveTest,
+                         testing::Values(QCToQIRAdaptiveTestCase{
+                             "NestedCtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                             MQT_NAMED_BUILDER(qir::ctrlTwo)}));
+/// @}

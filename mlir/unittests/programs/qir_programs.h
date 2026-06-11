@@ -469,5 +469,9 @@ void nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b);
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is extracted from the register.
 void nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b);
+// --- CtrlOp --------------------------------------------------------------- //
+
+/// Creates a circuit with a control modifier applied to two gates.
+void ctrlTwo(QIRProgramBuilder& b);
 
 } // namespace mlir::qir

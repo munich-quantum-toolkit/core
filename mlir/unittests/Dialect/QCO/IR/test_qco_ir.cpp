@@ -221,33 +221,40 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOCtrlOpTest, QCOTest,
-    testing::Values(QCOTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
-                                MQT_NAMED_BUILDER(rxx)},
-                    QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
-                                MQT_NAMED_BUILDER(multipleControlledRxx)},
-                    QCOTestCase{"TripleNestedCtrl",
-                                MQT_NAMED_BUILDER(tripleNestedCtrl),
-                                MQT_NAMED_BUILDER(tripleControlledRxx)},
-                    QCOTestCase{"CtrlInvSandwich",
-                                MQT_NAMED_BUILDER(ctrlInvSandwich),
-                                MQT_NAMED_BUILDER(multipleControlledRxx)},
-                    QCOTestCase{"DoubleNestedCtrlTwoQubits",
-                                MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
-                                MQT_NAMED_BUILDER(fourControlledRxx)}));
+    testing::Values(
+        QCOTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
+                    MQT_NAMED_BUILDER(rxx)},
+        QCOTestCase{"EmptyCtrl", MQT_NAMED_BUILDER(emptyCtrl),
+                    MQT_NAMED_BUILDER(rxx)},
+        QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
+                    MQT_NAMED_BUILDER(multipleControlledRxx)},
+        QCOTestCase{"TripleNestedCtrl", MQT_NAMED_BUILDER(tripleNestedCtrl),
+                    MQT_NAMED_BUILDER(tripleControlledRxx)},
+        QCOTestCase{"CtrlInvSandwich", MQT_NAMED_BUILDER(ctrlInvSandwich),
+                    MQT_NAMED_BUILDER(multipleControlledRxx)},
+        QCOTestCase{"DoubleNestedCtrlTwoQubits",
+                    MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
+                    MQT_NAMED_BUILDER(fourControlledRxx)},
+        QCOTestCase{"NestedCtrlTwo", MQT_NAMED_BUILDER(nestedCtrlTwo),
+                    MQT_NAMED_BUILDER(ctrlTwo)}));
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOInvOpTest, QCOTest,
-    testing::Values(QCOTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
+    testing::Values(QCOTestCase{"EmptyInv", MQT_NAMED_BUILDER(emptyInv),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
                                 MQT_NAMED_BUILDER(rxx)},
                     QCOTestCase{"TripleNestedInv",
                                 MQT_NAMED_BUILDER(tripleNestedInv),
                                 MQT_NAMED_BUILDER(rxx)},
                     QCOTestCase{"InvControlSandwich",
                                 MQT_NAMED_BUILDER(invCtrlSandwich),
-                                MQT_NAMED_BUILDER(singleControlledRxx)}));
+                                MQT_NAMED_BUILDER(singleControlledRxx)},
+                    QCOTestCase{"InvCtrlTwo", MQT_NAMED_BUILDER(invCtrlTwo),
+                                MQT_NAMED_BUILDER(ctrlInvTwo)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/BarrierOp.cpp
@@ -959,6 +966,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseMultipleControlledX),
                     MQT_NAMED_BUILDER(multipleControlledX)},
         QCOTestCase{"TwoX", MQT_NAMED_BUILDER(twoX),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"ControlledTwoX", MQT_NAMED_BUILDER(controlledTwoX),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"InverseTwoX", MQT_NAMED_BUILDER(inverseTwoX),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 

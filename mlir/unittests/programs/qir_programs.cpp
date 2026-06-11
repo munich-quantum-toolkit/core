@@ -733,4 +733,10 @@ void nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b) {
   });
 }
 
+void ctrlTwo(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.mcx({q[0], q[1]}, q[2]);
+  b.mcrxx(0.123, {q[0], q[1]}, q[2], q[3]);
+}
+
 } // namespace mlir::qir

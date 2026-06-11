@@ -44,9 +44,12 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       (ins "size_t":$i)>,
       InterfaceMethod<"Returns the i-th control qubit.", "Value", "getControl",
                       (ins "size_t":$i)>,
-      InterfaceMethod<"Returns a range of all target qubits.", "ValueRange",
+      InterfaceMethod<
+          "Returns a range of all qubits (targets + controls combined).",
+          "OperandRange", "getQubits", (ins)>,
+      InterfaceMethod<"Returns a range of all target qubits.", "OperandRange",
                       "getTargets", (ins)>,
-      InterfaceMethod<"Returns a range of all control qubits.", "ValueRange",
+      InterfaceMethod<"Returns a range of all control qubits.", "OperandRange",
                       "getControls", (ins)>,
 
       // Parameter handling
@@ -54,7 +57,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       "getNumParams", (ins)>,
       InterfaceMethod<"Returns the i-th parameter.", "Value", "getParameter",
                       (ins "size_t":$i)>,
-      InterfaceMethod<"Returns a range of all parameters.", "ValueRange",
+      InterfaceMethod<"Returns a range of all parameters.", "OperandRange",
                       "getParameters", (ins)>,
 
       // Convenience methods

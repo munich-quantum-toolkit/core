@@ -21,6 +21,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -57,8 +58,8 @@ struct LoweringState : QIRMetadata {
   DenseMap<int64_t, Value> resultPtrs;
 
   /// Modifier information
-  int64_t inCtrlOp = 0;
-  DenseMap<int64_t, SmallVector<Value>> controls;
+  size_t inCtrlOp = 0;
+  SmallVector<Value> controls;
 
   /// Allocator and StringSaver for stable StringRefs
   llvm::BumpPtrAllocator allocator;
