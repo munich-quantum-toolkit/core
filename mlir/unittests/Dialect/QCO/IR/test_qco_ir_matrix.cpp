@@ -26,6 +26,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/Parser/Parser.h>
 
 #include <complex>
 #include <memory>
@@ -206,6 +207,29 @@ TEST_F(QCOMatrixTest, InverseTwoBarriersInInvOpMatrix) {
 
 TEST_F(QCOMatrixTest, InvTwoOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), invTwo);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  EXPECT_FALSE(invOp.getUnitaryMatrix());
+}
+
+TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
+  constexpr auto mlirCode = R"(
+    module {
+      func.func @test(%theta: f64) -> !qco.qubit {
+        %q_in = qco.alloc : !qco.qubit
+        %q_out = qco.inv (%q = %q_in) {
+          %q_1 = qco.rz(%theta) %q : !qco.qubit -> !qco.qubit
+          %q_2 = qco.x %q_1 : !qco.qubit -> !qco.qubit
+          qco.yield %q_2 : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %q_out : !qco.qubit
+      }
+    }
+  )";
+
+  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
   ASSERT_TRUE(moduleOp);
 
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();

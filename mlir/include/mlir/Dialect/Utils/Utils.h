@@ -19,7 +19,6 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 
-#include <cassert>
 #include <cstddef>
 #include <iterator>
 #include <variant>
@@ -200,8 +199,10 @@ inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
  */
 inline Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
   if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
-    assert(blockArg.getArgNumber() < qubits.size() &&
-           "block argument index must be within qubits range");
+    if (blockArg.getArgNumber() >= qubits.size()) {
+      llvm::reportFatalUsageError(
+          "block argument index must be within qubits range");
+    }
     return qubits[blockArg.getArgNumber()];
   }
   return qubit;

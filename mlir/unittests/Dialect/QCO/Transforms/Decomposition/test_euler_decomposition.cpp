@@ -168,12 +168,13 @@ template <typename Fn> static void forEachBasis(Fn fn) {
   }
 }
 
-static Matrix2x2 compute1QMatrixFromFunction(func::FuncOp funcOp) {
+template <typename WalkRange>
+static Matrix2x2 compute1QUnitaryMatrix(WalkRange& range) {
   Matrix2x2 acc = Matrix2x2::identity();
   std::complex<double> global{1.0, 0.0};
   bool failed = false;
 
-  funcOp.walk<WalkOrder::PreOrder>([&](Operation* op) -> WalkResult {
+  range.template walk<WalkOrder::PreOrder>([&](Operation* op) -> WalkResult {
     if (isa<arith::ConstantOp>(*op)) {
       return WalkResult::advance();
     }
@@ -233,11 +234,30 @@ static Matrix2x2 compute1QMatrixFromFunction(func::FuncOp funcOp) {
                                  global * acc(1, 0), global * acc(1, 1));
 }
 
+static Matrix2x2 compute1QMatrixFromFunction(func::FuncOp funcOp) {
+  return compute1QUnitaryMatrix(funcOp);
+}
+
+[[nodiscard]] static Matrix2x2
+compute1QMatrixFromCtrlBody(func::FuncOp funcOp) {
+  for (CtrlOp ctrl : funcOp.getOps<CtrlOp>()) {
+    return compute1QUnitaryMatrix(ctrl.getRegion());
+  }
+  ADD_FAILURE() << "Expected CtrlOp in function";
+  return Matrix2x2::fromElements(0, 0, 0, 0);
+}
+
 static void expectMatrixPreserved(func::FuncOp funcOp,
                                   const Matrix2x2& original, StringRef label) {
   EXPECT_TRUE(compute1QMatrixFromFunction(funcOp).isApprox(
       original, mlir::utils::TOLERANCE))
       << label.str();
+}
+
+static void expectCtrlBodyMatrixPreserved(func::FuncOp funcOp,
+                                          const Matrix2x2& original) {
+  EXPECT_TRUE(compute1QMatrixFromCtrlBody(funcOp).isApprox(
+      original, mlir::utils::TOLERANCE));
 }
 
 static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
@@ -634,6 +654,23 @@ TEST(EulerSynthesisTest, ProfitabilityAndIdentityGateCount) {
   EXPECT_EQ(synthesisGateCount(identity, EulerBasis::ZYZ), 0U);
 }
 
+TEST(EulerSynthesisTest, ClassifyZSXXMiddleFromZYZThetaBoundaries) {
+  using decomposition::classifyZSXXMiddleFromZYZTheta;
+  using decomposition::ZSXXMiddleGate;
+
+  constexpr double halfPi = std::numbers::pi / 2.0;
+  constexpr double pi = std::numbers::pi;
+  constexpr double tol = 0.5 * mlir::utils::TOLERANCE;
+
+  EXPECT_EQ(classifyZSXXMiddleFromZYZTheta(tol), ZSXXMiddleGate::OnlyRZ);
+  EXPECT_EQ(classifyZSXXMiddleFromZYZTheta(mlir::utils::TOLERANCE),
+            ZSXXMiddleGate::OnlyRZ);
+  EXPECT_EQ(classifyZSXXMiddleFromZYZTheta(halfPi + tol),
+            ZSXXMiddleGate::OneSX);
+  EXPECT_EQ(classifyZSXXMiddleFromZYZTheta(pi - tol), ZSXXMiddleGate::X);
+  EXPECT_EQ(classifyZSXXMiddleFromZYZTheta(pi), ZSXXMiddleGate::X);
+}
+
 TEST_P(ZSXXShortcutTest, SynthesisMatchesGateCount) {
   SynthesisFixture fx;
   fx.setUp();
@@ -679,7 +716,21 @@ INSTANTIATE_TEST_SUITE_P(
                                            (std::numbers::pi / 2.0) +
                                                (0.5 * mlir::utils::TOLERANCE));
                                      },
-                                     3, 2, 1, 0}),
+                                     3, 2, 1, 0},
+                    ZSXXShortcutCase{"RYNearZero",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx, 0.5 * mlir::utils::TOLERANCE);
+                                     },
+                                     0, 0, 0, 0},
+                    ZSXXShortcutCase{"RYNearPi",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx,
+                                           std::numbers::pi -
+                                               (0.5 * mlir::utils::TOLERANCE));
+                                     },
+                                     2, 1, 0, 1}),
     [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
       return std::string(info.param.label);
     });
@@ -910,17 +961,20 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesSingleNonBasisGateInCtrlBody) {
   SynthesisFixture fx;
   fx.setUp();
 
+  Matrix2x2 ctrlBodyBefore;
   runFuseOnProgram(
       fx.context.get(), controlledH, "u",
-      [](func::FuncOp funcOp, const Matrix2x2&) {
+      [&](func::FuncOp funcOp, const Matrix2x2&) {
         EXPECT_EQ(countOps<CtrlOp>(funcOp), 1U);
         EXPECT_EQ(countOpsInRegion<HOp>(funcOp, isInsideCtrl), 1U);
         EXPECT_EQ(countOpsInRegion<UOp>(funcOp, isInsideCtrl), 0U);
+        ctrlBodyBefore = compute1QMatrixFromCtrlBody(funcOp);
       },
-      [](func::FuncOp funcOp, const Matrix2x2&) {
+      [&](func::FuncOp funcOp, const Matrix2x2&) {
         EXPECT_EQ(countOps<CtrlOp>(funcOp), 1U);
         EXPECT_EQ(countOpsInRegion<HOp>(funcOp, isInsideCtrl), 0U);
         EXPECT_EQ(countOpsInRegion<UOp>(funcOp, isInsideCtrl), 1U);
+        expectCtrlBodyMatrixPreserved(funcOp, ctrlBodyBefore);
       });
 }
 
@@ -928,21 +982,24 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesRunInCtrlBody) {
   SynthesisFixture fx;
   fx.setUp();
 
+  Matrix2x2 ctrlBodyBefore;
   runFuseOnProgram(
       fx.context.get(), controlledInverseHT, "u",
-      [](func::FuncOp funcOp, const Matrix2x2&) {
+      [&](func::FuncOp funcOp, const Matrix2x2&) {
         EXPECT_EQ(countOps<CtrlOp>(funcOp), 1U);
         EXPECT_EQ(countOpsInRegion<InvOp>(funcOp, isInsideCtrl), 1U);
         EXPECT_EQ(countOpsInRegion<HOp>(funcOp, isInsideInv), 1U);
         EXPECT_EQ(countOpsInRegion<TOp>(funcOp, isInsideInv), 1U);
         EXPECT_EQ(countOpsInRegion<UOp>(funcOp, isInsideCtrl), 0U);
+        ctrlBodyBefore = compute1QMatrixFromCtrlBody(funcOp);
       },
-      [](func::FuncOp funcOp, const Matrix2x2&) {
+      [&](func::FuncOp funcOp, const Matrix2x2&) {
         EXPECT_EQ(countOps<CtrlOp>(funcOp), 1U);
         EXPECT_EQ(countOpsInRegion<InvOp>(funcOp, isInsideCtrl), 0U);
         EXPECT_EQ(countOpsInRegion<HOp>(funcOp, isInsideInv), 0U);
         EXPECT_EQ(countOpsInRegion<TOp>(funcOp, isInsideInv), 0U);
         EXPECT_EQ(countOpsInRegion<UOp>(funcOp, isInsideCtrl), 1U);
+        expectCtrlBodyMatrixPreserved(funcOp, ctrlBodyBefore);
       });
 }
 

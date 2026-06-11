@@ -107,8 +107,7 @@ namespace {
  * @brief Planned ZSXX (`RZ` / `SX` / `X`) chain; angles in circuit order.
  */
 struct ZSXXSequence {
-  enum class Middle : std::uint8_t { OnlyRZ, OneSX, X, SXRZSX };
-  Middle middle = Middle::SXRZSX;
+  ZSXXMiddleGate middle = ZSXXMiddleGate::SXRZSX;
   double firstRZ = 0.0;
   double midRZ = 0.0;
   double lastRZ = 0.0;
@@ -116,32 +115,21 @@ struct ZSXXSequence {
 
 } // namespace
 
-/**
- * @brief Classifies the ZSXX middle-gate case from ZYZ `theta`.
- *
- * Shortcut branches are checked in fixed order (`OnlyRZ`, `OneSX`, `X`) so
- * `theta` values within `TOLERANCE` of `0`, `pi/2`, or `pi` always pick the
- * same case.
- *
- * @param theta Y-rotation angle from `paramsZYZ` in `[0, pi]`.
- * @return The ZSXX middle-gate case.
- */
-[[nodiscard]] static ZSXXSequence::Middle
-classifyZSXXMiddleFromZYZTheta(double theta) {
+ZSXXMiddleGate classifyZSXXMiddleFromZYZTheta(double theta) {
   constexpr double eps = mlir::utils::TOLERANCE;
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
 
-  if (theta < eps) {
-    return ZSXXSequence::Middle::OnlyRZ;
+  if (std::abs(theta) <= eps) {
+    return ZSXXMiddleGate::OnlyRZ;
   }
   if (std::abs(theta - halfPi) <= eps) {
-    return ZSXXSequence::Middle::OneSX;
+    return ZSXXMiddleGate::OneSX;
   }
   if (std::abs(theta - pi) <= eps) {
-    return ZSXXSequence::Middle::X;
+    return ZSXXMiddleGate::X;
   }
-  return ZSXXSequence::Middle::SXRZSX;
+  return ZSXXMiddleGate::SXRZSX;
 }
 
 /**
@@ -160,23 +148,23 @@ sequenceFromZYZForZSXX(double theta, double phi, double lambda) {
   constexpr double pi = std::numbers::pi;
 
   switch (classifyZSXXMiddleFromZYZTheta(theta)) {
-  case ZSXXSequence::Middle::OnlyRZ:
-    return {.middle = ZSXXSequence::Middle::OnlyRZ,
+  case ZSXXMiddleGate::OnlyRZ:
+    return {.middle = ZSXXMiddleGate::OnlyRZ,
             .firstRZ = lambda,
             .midRZ = 0.0,
             .lastRZ = phi};
-  case ZSXXSequence::Middle::OneSX:
-    return {.middle = ZSXXSequence::Middle::OneSX,
+  case ZSXXMiddleGate::OneSX:
+    return {.middle = ZSXXMiddleGate::OneSX,
             .firstRZ = lambda - halfPi,
             .midRZ = 0.0,
             .lastRZ = phi + halfPi};
-  case ZSXXSequence::Middle::X:
-    return {.middle = ZSXXSequence::Middle::X,
+  case ZSXXMiddleGate::X:
+    return {.middle = ZSXXMiddleGate::X,
             .firstRZ = lambda,
             .midRZ = 0.0,
             .lastRZ = phi + pi};
-  case ZSXXSequence::Middle::SXRZSX:
-    return {.middle = ZSXXSequence::Middle::SXRZSX,
+  case ZSXXMiddleGate::SXRZSX:
+    return {.middle = ZSXXMiddleGate::SXRZSX,
             .firstRZ = lambda,
             .midRZ = theta + pi,
             .lastRZ = phi + pi};
@@ -220,19 +208,19 @@ sequenceFromZYZForZSXX(double theta, double phi, double lambda) {
   constexpr double quarterPi = std::numbers::pi / 4.0;
 
   switch (seq.middle) {
-  case ZSXXSequence::Middle::OnlyRZ:
+  case ZSXXMiddleGate::OnlyRZ:
     return globalPhaseFromRZWrap(seq.firstRZ) +
            globalPhaseFromRZWrap(seq.lastRZ);
-  case ZSXXSequence::Middle::OneSX:
+  case ZSXXMiddleGate::OneSX:
     // `SX = exp(i*pi/4)*RZ(-pi/2)*RY(pi/2)*RZ(pi/2)`; the outer RZ angles
     // absorb the +-pi/2, leaving the exp(i*pi/4) phase. RZ wraps add too.
     return -quarterPi + globalPhaseFromRZWrap(seq.firstRZ) +
            globalPhaseFromRZWrap(seq.lastRZ);
-  case ZSXXSequence::Middle::X:
+  case ZSXXMiddleGate::X:
     // `X` swaps the diagonal, so the wraps enter with opposite signs.
     return -halfPi + globalPhaseFromRZWrap(seq.lastRZ) -
            globalPhaseFromRZWrap(seq.firstRZ);
-  case ZSXXSequence::Middle::SXRZSX:
+  case ZSXXMiddleGate::SXRZSX:
     // `SX*RZ(theta+pi)*SX = Z*RY(theta)`; all three RZ wraps add.
     return halfPi + globalPhaseFromRZWrap(seq.firstRZ) +
            globalPhaseFromRZWrap(seq.midRZ) + globalPhaseFromRZWrap(seq.lastRZ);
@@ -254,18 +242,18 @@ static void visitSequenceInTimeOrder(const ZSXXSequence& seq,
                                      llvm::function_ref<void()> onX) {
   onRZ(seq.firstRZ);
   switch (seq.middle) {
-  case ZSXXSequence::Middle::OnlyRZ:
+  case ZSXXMiddleGate::OnlyRZ:
     onRZ(seq.lastRZ);
     break;
-  case ZSXXSequence::Middle::OneSX:
+  case ZSXXMiddleGate::OneSX:
     onSX();
     onRZ(seq.lastRZ);
     break;
-  case ZSXXSequence::Middle::X:
+  case ZSXXMiddleGate::X:
     onX();
     onRZ(seq.lastRZ);
     break;
-  case ZSXXSequence::Middle::SXRZSX:
+  case ZSXXMiddleGate::SXRZSX:
     onSX();
     onRZ(seq.midRZ);
     onSX();
@@ -536,14 +524,14 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
 [[nodiscard]] static std::size_t
 countZSXXSequenceGates(const ZSXXSequence& seq) {
   switch (seq.middle) {
-  case ZSXXSequence::Middle::OnlyRZ:
+  case ZSXXMiddleGate::OnlyRZ:
     return countNonZeroZSXXAngle(seq.firstRZ) +
            countNonZeroZSXXAngle(seq.lastRZ);
-  case ZSXXSequence::Middle::OneSX:
-  case ZSXXSequence::Middle::X:
+  case ZSXXMiddleGate::OneSX:
+  case ZSXXMiddleGate::X:
     return countNonZeroZSXXAngle(seq.firstRZ) + 1 +
            countNonZeroZSXXAngle(seq.lastRZ);
-  case ZSXXSequence::Middle::SXRZSX:
+  case ZSXXMiddleGate::SXRZSX:
     return countNonZeroZSXXAngle(seq.firstRZ) + 1 +
            countNonZeroZSXXAngle(seq.midRZ) + 1 +
            countNonZeroZSXXAngle(seq.lastRZ);

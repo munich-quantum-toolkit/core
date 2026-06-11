@@ -46,6 +46,24 @@ enum class EulerBasis : std::uint8_t {
 };
 
 /**
+ * @brief Middle-gate case for ZSXX synthesis from ZYZ `theta`.
+ */
+enum class ZSXXMiddleGate : std::uint8_t {
+  OnlyRZ,
+  OneSX,
+  X,
+  SXRZSX,
+};
+
+/**
+ * @brief Classifies the ZSXX middle-gate case from ZYZ `theta`.
+ *
+ * @param theta Y-rotation angle from `paramsZYZ` in `[0, pi]`.
+ * @return The ZSXX middle-gate case.
+ */
+[[nodiscard]] ZSXXMiddleGate classifyZSXXMiddleFromZYZTheta(double theta);
+
+/**
  * @brief Extracts Euler parameters from single-qubit unitary matrices.
  */
 class EulerDecomposition {

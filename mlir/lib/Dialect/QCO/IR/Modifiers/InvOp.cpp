@@ -417,14 +417,21 @@ composeSingleQubitBodyMatrix(Block& block) {
       continue;
     }
     if (auto gphase = dyn_cast<GPhaseOp>(op)) {
-      if (auto matrix = gphase.getUnitaryMatrix()) {
-        global *= (*matrix)(0, 0);
+      const auto matrix = gphase.getUnitaryMatrix();
+      if (!matrix) {
+        return std::nullopt;
       }
+      global *= (*matrix)(0, 0);
       continue;
     }
-    auto unitary = cast<UnitaryOpInterface>(op);
+    auto unitary = dyn_cast<UnitaryOpInterface>(op);
+    if (!unitary) {
+      return std::nullopt;
+    }
     Matrix2x2 matrix;
-    unitary.getUnitaryMatrix2x2(matrix);
+    if (!unitary.getUnitaryMatrix2x2(matrix)) {
+      return std::nullopt;
+    }
     acc = matrix * acc;
     found = true;
   }
