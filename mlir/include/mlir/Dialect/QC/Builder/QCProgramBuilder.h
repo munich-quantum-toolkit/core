@@ -70,13 +70,31 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Initialize the builder and prepare for program construction
+   * @brief Initialize the builder and prepare for program construction, with
+   * a default return type of i64.
    *
    * @details
    * Creates a main function with an entry_point attribute. Must be called
    * before adding operations.
    */
   void initialize();
+
+  /**
+   * @brief Initialize the builder and prepare for program construction
+   * with specified return types.
+   * @param returnTypes The return types for the main function
+   *
+   * @details
+   * Creates a main function with an entry_point attribute. Must be called
+   * before adding operations.
+   */
+  void initialize(TypeRange returnTypes);
+
+  /**
+   * @brief Modify the return types of the main function after initialization.
+   * @param returnTypes The new return types for the main function
+   */
+  void retype(TypeRange returnTypes);
 
   //===--------------------------------------------------------------------===//
   // Constants
@@ -1086,17 +1104,39 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   /**
-   * @brief Convenience method for building quantum programs
+   * @brief Finalize the program with a given exit code and return the
+   * constructed module
+   * @param returnValues Values representing the exit code to return
+   *
+   * @details
+   * Automatically deallocates all remaining valid qubits and tensors of qubits,
+   * adds a return statement with a given exit code,
+   * and transfers ownership of the module to the caller. The builder should not
+   * be used after calling this method.
+   *
+   * The return values must have the types indicated by the function signature
+   * of the main function, which returns an `i64` by default and can be
+   * modified by passing different arguments to the `initialize()` method.
+   *
+   * @return OwningOpRef containing the constructed quantum program module
+   */
+  OwningOpRef<ModuleOp> finalize(ValueRange returnValues);
+
+  /**
+   * @brief Convenience method for building quantum programs with returns.
    * @param context The MLIR context to use for building the program
+   * @param returnTypes The types of the values to be returned by the program.
    * @param buildFunc A function that takes a reference to a QCProgramBuilder
    * and uses it to build the desired quantum program. The builder will be
    * properly initialized before calling this function, and the resulting module
-   * will be finalized and returned after this function completes.
+   * will be finalized using the returned ValueRange after this function
+   * completes.
    * @return The module containing the quantum program built by buildFunc.
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const function_ref<void(QCProgramBuilder&)>& buildFunc);
+        const function_ref<std::pair<SmallVector<Value>, SmallVector<Type>>(
+            QCProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
