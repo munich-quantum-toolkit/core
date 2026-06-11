@@ -423,11 +423,8 @@ composeSingleQubitBodyMatrix(Block& block) {
       continue;
     }
     auto unitary = dyn_cast<UnitaryOpInterface>(op);
-    if (!unitary || !unitary.isSingleQubit()) {
-      return std::nullopt;
-    }
     Matrix2x2 matrix;
-    if (!unitary.getUnitaryMatrix2x2(matrix)) {
+    if (!unitary || !unitary.getUnitaryMatrix2x2(matrix)) {
       return std::nullopt;
     }
     acc = matrix * acc;

@@ -129,6 +129,104 @@ TEST_F(QCOMatrixTest, InverseTwoXOpMatrix) {
   expected.assignFrom(Matrix2x2::identity());
   ASSERT_TRUE(matrix->isApprox(expected));
 }
+
+TEST_F(QCOMatrixTest, InverseXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix expected;
+  expected.assignFrom(XOp::getUnitaryMatrix());
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseSxOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseSx);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix expected;
+  expected.assignFrom(SXdgOp::getUnitaryMatrix());
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseTwoXWithBarrierOpMatrix) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), inverseTwoXWithBarrier);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix expected;
+  expected.assignFrom(Matrix2x2::identity());
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseGphaseXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseGphaseX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  const auto composeGlobal = std::polar(1.0, -0.123);
+  Matrix2x2 body = XOp::getUnitaryMatrix();
+  body(0, 0) *= composeGlobal;
+  body(0, 1) *= composeGlobal;
+  body(1, 0) *= composeGlobal;
+  body(1, 1) *= composeGlobal;
+
+  DynamicMatrix expected;
+  expected.assignFrom(body.adjoint());
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseGphaseBarrierOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseGphaseBarrier);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  const auto global = std::conj(std::polar(1.0, 0.123));
+  DynamicMatrix expected;
+  expected.assignFrom(Matrix2x2::fromElements(global, 0, 0, global));
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseTwoBarriersInInvOpMatrix) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), inverseTwoBarriersInInv);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  EXPECT_FALSE(invOp.getUnitaryMatrix());
+}
+
+TEST_F(QCOMatrixTest, InvTwoOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), invTwo);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  EXPECT_FALSE(invOp.getUnitaryMatrix());
+}
 /// @}
 
 /// \name QCO/Operations/StandardGates/DcxOp.cpp
