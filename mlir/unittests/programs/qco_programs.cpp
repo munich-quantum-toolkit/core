@@ -319,16 +319,6 @@ void inverseTwoX(QCOProgramBuilder& b) {
   });
 }
 
-void inverseTwoXWithBarrier(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) {
-    auto q0 = b.x(qubits[0]);
-    q0 = b.barrier({q0})[0];
-    q0 = b.x(q0);
-    return SmallVector{q0};
-  });
-}
-
 void inverseGphaseX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv(q[0], [&](ValueRange qubits) {

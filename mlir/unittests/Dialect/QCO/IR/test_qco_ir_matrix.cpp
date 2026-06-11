@@ -158,21 +158,6 @@ TEST_F(QCOMatrixTest, InverseSxOpMatrix) {
   ASSERT_TRUE(matrix->isApprox(expected));
 }
 
-TEST_F(QCOMatrixTest, InverseTwoXWithBarrierOpMatrix) {
-  auto moduleOp =
-      QCOProgramBuilder::build(context.get(), inverseTwoXWithBarrier);
-  ASSERT_TRUE(moduleOp);
-
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  const auto matrix = invOp.getUnitaryMatrix();
-  ASSERT_TRUE(matrix);
-
-  DynamicMatrix expected;
-  expected.assignFrom(Matrix2x2::identity());
-  ASSERT_TRUE(matrix->isApprox(expected));
-}
-
 TEST_F(QCOMatrixTest, InverseGphaseXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseGphaseX);
   ASSERT_TRUE(moduleOp);

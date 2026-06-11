@@ -422,11 +422,9 @@ composeSingleQubitBodyMatrix(Block& block) {
       }
       continue;
     }
-    auto unitary = dyn_cast<UnitaryOpInterface>(op);
+    auto unitary = cast<UnitaryOpInterface>(op);
     Matrix2x2 matrix;
-    if (!unitary || !unitary.getUnitaryMatrix2x2(matrix)) {
-      return std::nullopt;
-    }
+    unitary.getUnitaryMatrix2x2(matrix);
     acc = matrix * acc;
     found = true;
   }
@@ -443,12 +441,6 @@ std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
     if (const auto targetMatrix =
             bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
       return targetMatrix->adjoint();
-    }
-    Matrix2x2 matrix;
-    if (bodyUnitary.getUnitaryMatrix2x2(matrix)) {
-      DynamicMatrix result;
-      result.assignFrom(matrix.adjoint());
-      return result;
     }
     return std::nullopt;
   }
