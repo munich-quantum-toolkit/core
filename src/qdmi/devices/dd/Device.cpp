@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <limits>
@@ -410,62 +411,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
                             numShots_, prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
-auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgram() -> QDMI_STATUS {
-  if (numShots_ > 0) {
-    jobHandle_ = std::async(std::launch::async, [this]() {
-      qdmi::dd::Device::get().increaseRunningJobs();
-      status_.store(QDMI_JOB_STATUS_RUNNING);
-      try {
-        const auto qc = qasm3::Importer::imports(program_);
-        counts_ = dd::sample(qc, numShots_);
-        status_.store(QDMI_JOB_STATUS_DONE);
-      } catch (const std::exception& e) {
-        status_.store(QDMI_JOB_STATUS_FAILED);
-        std::cerr << "Error: " << e.what() << '\n';
-      }
-      qdmi::dd::Device::get().decreaseRunningJobs();
-    });
-  } else {
-    jobHandle_ = std::async(std::launch::async, [this]() {
-      qdmi::dd::Device::get().increaseRunningJobs();
-      status_.store(QDMI_JOB_STATUS_RUNNING);
-      try {
-        auto qc = qasm3::Importer::imports(program_);
-        qc::CircuitOptimizer::removeFinalMeasurements(qc);
-        const auto nqubits = qc.getNqubits();
-        dd_ = std::make_unique<dd::Package>(nqubits);
-        stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nqubits, *dd_), *dd_);
-        status_.store(QDMI_JOB_STATUS_DONE);
-      } catch (const std::exception& e) {
-        status_.store(QDMI_JOB_STATUS_FAILED);
-        std::cerr << "Error: " << e.what() << '\n';
-      }
-      qdmi::dd::Device::get().decreaseRunningJobs();
-    });
-  }
-  return QDMI_SUCCESS;
-}
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
-auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
-  if (numShots_ == 0) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  }
-  jobHandle_ = std::async(std::launch::async, [this]() {
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitProgramAsync(
+    std::function<void()> body) -> QDMI_STATUS {
+  jobHandle_ = std::async(std::launch::async, [this, body = std::move(body)]() {
     qdmi::dd::Device::get().increaseRunningJobs();
     status_.store(QDMI_JOB_STATUS_RUNNING);
     try {
-      auto& runtime = qir::Runtime::getInstance();
-      auto irBytes = llvm::StringRef(program_.data(), program_.size());
-      auto jitSession = qir::JitSession(irBytes, "QDMI job");
-      for (size_t i = 0; i < numShots_; ++i) {
-        runtime.reset();
-        if (const auto rc = jitSession.run(); rc != 0) {
-          throw std::runtime_error(
-              llvm::formatv("QIR program failed with error: {}", rc));
-        }
-        // Update the measurement counts.
-        ++counts_[runtime.getRecordedOutputs()];
-      }
+      body();
       status_.store(QDMI_JOB_STATUS_DONE);
     } catch (const std::exception& e) {
       status_.store(QDMI_JOB_STATUS_FAILED);
@@ -474,6 +426,74 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
     qdmi::dd::Device::get().decreaseRunningJobs();
   });
   return QDMI_SUCCESS;
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgram() -> QDMI_STATUS {
+  return numShots_ > 0 ? submitQASMProgramSampling()
+                       : submitQASMProgramStateExtraction();
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
+    -> QDMI_STATUS {
+  return submitProgramAsync([this]() {
+    const auto qc = qasm3::Importer::imports(program_);
+    counts_ = dd::sample(qc, numShots_);
+  });
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
+    -> QDMI_STATUS {
+  return submitProgramAsync([this]() {
+    auto qc = qasm3::Importer::imports(program_);
+    qc::CircuitOptimizer::removeFinalMeasurements(qc);
+    const auto nQubits = qc.getNqubits();
+    dd_ = std::make_unique<dd::Package>(nQubits);
+    stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nQubits, *dd_), *dd_);
+  });
+}
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
+  return numShots_ > 0 ? submitQIRProgramSampling()
+                       : submitQIRProgramStateExtraction();
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
+    -> QDMI_STATUS {
+  return submitProgramAsync([this]() {
+    auto& runtime = qir::Runtime::getInstance();
+    auto irBytes = llvm::StringRef(program_.data(), program_.size());
+    auto jitSession = qir::JitSession(irBytes, "QDMI job");
+    for (size_t i = 0; i < numShots_; ++i) {
+      runtime.reset();
+      if (const auto rc = jitSession.run(); rc != 0) {
+        throw std::runtime_error(
+            llvm::formatv("QIR program failed with error: {}", rc));
+      }
+      // Update the measurement counts.
+      ++counts_[runtime.getRecordedOutputs()];
+    }
+  });
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
+    -> QDMI_STATUS {
+  // State extraction strips measurement calls from the IR, which only
+  // preserves semantics for QIR Base Profile (measurements are terminal there).
+  // Adaptive Profile has measurement-dependent control flow, so stripping would
+  // silently change the program's meaning.
+  if (format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
+      format_ != QDMI_PROGRAM_FORMAT_QIRBASESTRING) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
+  return submitProgramAsync([this]() {
+    auto& runtime = qir::Runtime::getInstance();
+    runtime.reset();
+    auto irBytes = llvm::StringRef(program_.data(), program_.size());
+    auto jitSession =
+        qir::JitSession(irBytes, "QDMI job", qir::Execution::StateExtraction);
+    if (const auto rc = jitSession.run(); rc != 0) {
+      throw std::runtime_error(
+          llvm::formatv("QIR program failed with error: {}", rc));
+    }
+    auto state = runtime.takeState();
+    dd_ = std::move(state.dd);
+    stateVecDD_ = state.edge;
+  });
 }
 #endif
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {

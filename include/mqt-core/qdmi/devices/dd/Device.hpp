@@ -22,6 +22,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <limits>
 #include <map>
@@ -234,12 +235,39 @@ private:
   auto getProbabilities(size_t size, void* data, size_t* sizeRet)
       -> QDMI_STATUS;
 
-  /// Helper function to submit a QASM 2 or QASM 3 program
+  /// Run @p body on a worker thread with the standard job lifecycle:
+  /// - increase the running-job count,
+  /// - set status to RUNNING,
+  /// - run @p body,
+  /// - set status to DONE or FAILED, and
+  /// - decrease the running-job count.
+  /// @p body is the format-specific work:
+  /// - parse the program,
+  /// - run or simulate it, and
+  /// - store the results in the job's output fields.
+  /// Returns @c QDMI_SUCCESS once the worker has been spawned.
+  /// Failures inside @p body are reported through the job status (FAILED),
+  /// not through the return value.
+  auto submitProgramAsync(std::function<void()> body) -> QDMI_STATUS;
+
+  /// Submit a QASM 2 or QASM 3 program.
+  /// Dispatches to the sampling or the state-extraction helper depending on
+  /// @c numShots_.
   auto submitQASMProgram() -> QDMI_STATUS;
+  /// Sampling path for a QASM program (@c numShots_ > 0).
+  auto submitQASMProgramSampling() -> QDMI_STATUS;
+  /// State-extraction path for a QASM program (@c numShots_ == 0).
+  auto submitQASMProgramStateExtraction() -> QDMI_STATUS;
 
 #ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
-  /// Helper function to submit a QIR base module or string program
+  /// Submit a QIR Base/Adaptive Module or String program.
+  /// Dispatches to the sampling or the state-extraction helper depending on
+  /// @c numShots_.
   auto submitQIRProgram() -> QDMI_STATUS;
+  /// Sampling path for a QIR program (@c numShots_ > 0).
+  auto submitQIRProgramSampling() -> QDMI_STATUS;
+  /// State-extraction path for a QIR Base Profile program (@c numShots_ == 0).
+  auto submitQIRProgramStateExtraction() -> QDMI_STATUS;
 #endif
 
 public:

@@ -102,7 +102,9 @@ auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
     }
 
     // Enlarge state.
-    for (auto q = qState.edge.p->v; q < qState.numQubits; ++q) {
+    // Each iteration adds one level above the current root, raising root.v by
+    // one. After the loop, root.v == numQubits - 1.
+    for (auto q = qState.edge.p->v; q + 1 < qState.numQubits; ++q) {
       auto old = qState.edge;
       qState.edge = qState.dd->makeDDNode(
           q + 1U, std::array{qState.edge, dd::vEdge::zero()});
