@@ -115,6 +115,20 @@ TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
+
+TEST_F(QCOMatrixTest, InverseTwoXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseTwoX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix expected;
+  expected.assignFrom(Matrix2x2::identity());
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
 /// @}
 
 /// \name QCO/Operations/StandardGates/DcxOp.cpp

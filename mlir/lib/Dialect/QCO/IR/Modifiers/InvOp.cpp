@@ -403,15 +403,70 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
               CancelNestedInv, EraseEmptyInv>(context);
 }
 
-std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
-  auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
-  if (!bodyUnitary) {
+namespace {
+
+/**
+ * @brief Composes compile-time single-qubit unitaries in a modifier body.
+ */
+[[nodiscard]] std::optional<Matrix2x2>
+composeSingleQubitBodyMatrix(Block& block) {
+  Matrix2x2 acc = Matrix2x2::identity();
+  std::complex<double> global{1.0, 0.0};
+  bool found = false;
+  for (Operation& op : block.without_terminator()) {
+    if (isa<arith::ConstantOp, BarrierOp>(op)) {
+      continue;
+    }
+    if (auto gphase = dyn_cast<GPhaseOp>(op)) {
+      if (auto matrix = gphase.getUnitaryMatrix()) {
+        global *= (*matrix)(0, 0);
+      }
+      continue;
+    }
+    auto unitary = dyn_cast<UnitaryOpInterface>(op);
+    if (!unitary || !unitary.isSingleQubit()) {
+      return std::nullopt;
+    }
+    Matrix2x2 matrix;
+    if (!unitary.getUnitaryMatrix2x2(matrix)) {
+      return std::nullopt;
+    }
+    acc = matrix * acc;
+    found = true;
+  }
+  if (!found && global == std::complex<double>{1.0, 0.0}) {
     return std::nullopt;
   }
-  const auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
-  if (!targetMatrix) {
+  return Matrix2x2::fromElements(global * acc(0, 0), global * acc(0, 1),
+                                 global * acc(1, 0), global * acc(1, 1));
+}
+
+} // namespace
+
+std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
+  if (auto bodyUnitary =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
+    if (const auto targetMatrix =
+            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
+      return targetMatrix->adjoint();
+    }
+    Matrix2x2 matrix;
+    if (bodyUnitary.getUnitaryMatrix2x2(matrix)) {
+      DynamicMatrix result;
+      result.assignFrom(matrix.adjoint());
+      return result;
+    }
     return std::nullopt;
   }
 
-  return targetMatrix->adjoint();
+  if (getNumTargets() != 1) {
+    return std::nullopt;
+  }
+  const auto bodyMatrix = composeSingleQubitBodyMatrix(*getBody());
+  if (!bodyMatrix) {
+    return std::nullopt;
+  }
+  DynamicMatrix result;
+  result.assignFrom(bodyMatrix->adjoint());
+  return result;
 }
