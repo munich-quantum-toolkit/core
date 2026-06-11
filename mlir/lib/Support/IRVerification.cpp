@@ -13,48 +13,39 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseMapInfo.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/Hashing.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/IRMapping.h>
-#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cmath>
-#include <cstddef>
+#include <iterator>
+#include <utility>
 
 using namespace mlir;
 
 static bool compareRegions(Region& regionA, Region& regionB,
                            DenseSet<Operation*>& closed, IRMapping& m);
 
+/// Return true, if the given value has the type `tensor<qco.qubit>`.
 static bool hasTypeQubitTensor(Value v) {
   auto tensor = dyn_cast<RankedTensorType>(v.getType());
   if (!tensor) {
@@ -64,10 +55,12 @@ static bool hasTypeQubitTensor(Value v) {
   return isa<qco::QubitType>(tensor.getElementType());
 }
 
-static void mapResults(Operation* fromOp, Operation* toOp, IRMapping& m) {
+/// Map all results from one op to another.
+/// Assumes `op->getNumResults() == other->getNumResults()`.
+static void mapResults(Operation* op, Operation* other, IRMapping& m) {
   for (const auto& [fromResult, toResult] :
-       llvm::zip_equal(fromOp->getResults(), toOp->getResults())) {
-    if (!isa<qtensor::AllocOp>(fromOp) && hasTypeQubitTensor(fromResult)) {
+       llvm::zip_equal(op->getResults(), other->getResults())) {
+    if (!isa<qtensor::AllocOp>(op) && hasTypeQubitTensor(fromResult)) {
       assert(hasTypeQubitTensor(toResult));
       continue;
     }
@@ -280,7 +273,7 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
       continue;
     }
 
-    if (llvm::all_of(op->getOpOperands(), isReady)) {
+    if (all_of(op->getOpOperands(), isReady)) {
       ready.insert(op);
       continue;
     }
