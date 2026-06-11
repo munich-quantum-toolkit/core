@@ -422,4 +422,9 @@ void singleControlledXxMinusYY(QIRProgramBuilder& b);
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
 void multipleControlledXxMinusYY(QIRProgramBuilder& b);
 
+// --- CtrlOp --------------------------------------------------------------- //
+
+/// Creates a circuit with a control modifier applied to two gates.
+void ctrlTwo(QIRProgramBuilder& b);
+
 } // namespace mlir::qir
