@@ -27,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 #include "qir/runtime/Runtime.hpp"
 
 #include <llvm/AsmParser/Parser.h>
@@ -47,7 +47,7 @@ namespace {
 
 class HistogramTest : public ::testing::Test {
 protected:
-#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
   std::ostringstream sink;
   void SetUp() override { qir::Runtime::getInstance().setOstream(sink); }
   void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
@@ -82,7 +82,7 @@ protected:
   }
 };
 
-#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 class QIRHistogramTestModule : public HistogramTest {
 protected:
   static std::string getProgram(const std::string_view file) {
@@ -127,7 +127,7 @@ TEST_F(HistogramTest, QASM3Program) {
   checkHistogram(runProgram(format, program));
 }
 
-#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 TEST_F(QIRHistogramTestModule, BaseStatic) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
   checkHistogram(runProgram(format, getProgram("BellPairStatic.ll")));

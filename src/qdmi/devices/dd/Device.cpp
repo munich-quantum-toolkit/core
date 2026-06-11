@@ -45,7 +45,7 @@
 #include <string>
 #include <utility>
 
-#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 #include "qir/jit/Session.hpp"
 #include "qir/runtime/Runtime.hpp"
 
@@ -357,7 +357,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
       }
       if (format != QDMI_PROGRAM_FORMAT_QASM2 &&
           format != QDMI_PROGRAM_FORMAT_QASM3
-#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
           && format != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
           format != QDMI_PROGRAM_FORMAT_QIRBASESTRING &&
           format != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE &&
@@ -445,7 +445,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgram() -> QDMI_STATUS {
   }
   return QDMI_SUCCESS;
 }
-#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
   if (numShots_ == 0) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -485,7 +485,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
       format_ == QDMI_PROGRAM_FORMAT_QASM3) {
     return submitQASMProgram();
   }
-#ifdef BUILD_MQT_CORE_QDMI_WITH_QIR
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
   if (format_ == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
       format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
       format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
