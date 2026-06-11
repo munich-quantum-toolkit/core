@@ -503,6 +503,22 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__rt__array_update_reference_count(rArr, -1);
 }
 
+TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
+  // Drive a small program through the runtime: H on q0.
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__h__body(q0);
+
+  auto state = Runtime::getInstance().takeState();
+  EXPECT_NE(state.dd, nullptr);
+  EXPECT_FALSE(state.edge.isTerminal());
+  EXPECT_EQ(state.numQubits, 1);
+
+  // After takeState the runtime is reset and usable again.
+  EXPECT_NO_THROW(__quantum__rt__initialize(nullptr));
+  EXPECT_NO_THROW(__quantum__qis__h__body(q0));
+}
+
 namespace {
 
 class QIRFilesTest : public ::testing::TestWithParam<std::filesystem::path> {};
