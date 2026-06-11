@@ -166,22 +166,7 @@ void QuantumState::propagateGate(Operation* gate,
   }
 
   std::unordered_map<unsigned int, std::complex<double>> newValues;
-  std::unordered_map<unsigned int, unsigned int> bitmaskForQubitTargets;
-  if (targets.size() == 2) {
-    bitmaskForQubitTargets.insert({3, pow(2, targets[1]) + pow(2, targets[0])});
-    bitmaskForQubitTargets.insert({2, pow(2, targets[0])});
-    bitmaskForQubitTargets.insert({1, pow(2, targets[1])});
-  } else {
-    bitmaskForQubitTargets.insert({1, pow(2, targets[0])});
-  }
-
-  if (targets.size() == 2) {
-    newValues = getNewMappingForTwoQubitGate(gateMapping,
-                                             bitmaskForQubitTargets, ctrlMask);
-  } else if (targets.size() == 1) {
-    newValues = getNewMappingForSingleQubitGate(
-        gateMapping, bitmaskForQubitTargets, ctrlMask);
-  }
+  newValues = getNewMappingFromQubitGate(gateMapping, targets, ctrlMask);
 
   amplitudeMap.clear();
   for (const auto& [key, value] : newValues) {
