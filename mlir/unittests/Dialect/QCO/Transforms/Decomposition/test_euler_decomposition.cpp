@@ -273,17 +273,17 @@ static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
 
 /// Composed unitary of the `h; t` segment in `singleQubitRunsSplitByBarrier`,
 /// `singleQubitRunsSplitByTwoQGate`, and `singleQubitRunsSplitByScfFor`.
-[[nodiscard]] static Matrix2x2 splitFixtureHtSegmentMatrix() {
+[[nodiscard]] static Matrix2x2 splitFixtureHTSegmentMatrix() {
   return TOp::getUnitaryMatrix() * HOp::getUnitaryMatrix();
 }
 
 /// Composed unitary of the `rz(0.321); sx` segment in the same split fixtures.
-[[nodiscard]] static Matrix2x2 splitFixtureRzSxSegmentMatrix() {
+[[nodiscard]] static Matrix2x2 splitFixtureRZSXSegmentMatrix() {
   return SXOp::getUnitaryMatrix() * rzMatrix(0.321);
 }
 
 /// Composed unitary of `overlongZSXXMixedPureZRun` (`sx; rz(pi); sx` → pure Z).
-[[nodiscard]] static Matrix2x2 overlongZsxxPureZRunMatrix() {
+[[nodiscard]] static Matrix2x2 overlongZSXXPureZRunMatrix() {
   return SXOp::getUnitaryMatrix() * rzMatrix(std::numbers::pi) *
          SXOp::getUnitaryMatrix();
 }
@@ -482,7 +482,7 @@ static void xInverseTwoX(QCOProgramBuilder& b) {
   q[0] = b.x(q[0]);
 }
 
-static void controlledInverseHt(QCOProgramBuilder& b) {
+static void controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1], [&](ValueRange targets) {
     auto wire = b.inv({targets[0]}, [&](ValueRange innerTargets) {
@@ -666,13 +666,13 @@ INSTANTIATE_TEST_SUITE_P(
                                        return rzMatrix(0.3) * rzMatrix(0.7);
                                      },
                                      2, 2, 0, 0},
-                    ZSXXShortcutCase{"RyHalfPi",
+                    ZSXXShortcutCase{"RYHalfPi",
                                      [](MLIRContext* ctx) -> Matrix2x2 {
                                        return rotationMatrix<RYOp>(
                                            ctx, std::numbers::pi / 2.0);
                                      },
                                      3, 2, 1, 0},
-                    ZSXXShortcutCase{"RyNearHalfPi",
+                    ZSXXShortcutCase{"RYNearHalfPi",
                                      [](MLIRContext* ctx) -> Matrix2x2 {
                                        return rotationMatrix<RYOp>(
                                            ctx,
@@ -822,7 +822,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
   runFuseOnProgram(
       fx.context.get(), &overlongZSXXMixedPureZRun, "zsxx",
       [](func::FuncOp funcOp, const Matrix2x2& /*original*/) {
-        EXPECT_EQ(expectedFusedGateCount(overlongZsxxPureZRunMatrix(),
+        EXPECT_EQ(expectedFusedGateCount(overlongZSXXPureZRunMatrix(),
                                          EulerBasis::ZSXX),
                   1U);
         ASSERT_EQ(countZSXXBasisGates(funcOp), 3U);
@@ -835,7 +835,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
         EXPECT_EQ(countOps<SXOp>(funcOp), 0U);
         EXPECT_EQ(countOps<XOp>(funcOp), 0U);
         EXPECT_EQ(countZSXXBasisGates(funcOp),
-                  expectedFusedGateCount(overlongZsxxPureZRunMatrix(),
+                  expectedFusedGateCount(overlongZSXXPureZRunMatrix(),
                                          EulerBasis::ZSXX));
         expectMatrixPreserved(funcOp, original, "zsxx");
         expectBasisGatesOnly(funcOp, "zsxx");
@@ -862,8 +862,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossTwoQGateAllBases) {
         ASSERT_TRUE(parsed) << "basis=" << basis.str();
         expectOneQubitGatesAroundBoundary(
             funcOp, basis, [](Operation& op) { return isTwoQubitGate(op); },
-            expectedFusedGateCount(splitFixtureHtSegmentMatrix(), *parsed),
-            expectedFusedGateCount(splitFixtureRzSxSegmentMatrix(), *parsed));
+            expectedFusedGateCount(splitFixtureHTSegmentMatrix(), *parsed),
+            expectedFusedGateCount(splitFixtureRZSXSegmentMatrix(), *parsed));
       });
 }
 
@@ -881,8 +881,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBarrierAllBases) {
         ASSERT_TRUE(parsed) << "basis=" << basis.str();
         expectOneQubitGatesAroundBoundary(
             funcOp, basis, [](Operation& op) { return isa<BarrierOp>(op); },
-            expectedFusedGateCount(splitFixtureHtSegmentMatrix(), *parsed),
-            expectedFusedGateCount(splitFixtureRzSxSegmentMatrix(), *parsed));
+            expectedFusedGateCount(splitFixtureHTSegmentMatrix(), *parsed),
+            expectedFusedGateCount(splitFixtureRZSXSegmentMatrix(), *parsed));
       });
 }
 
@@ -929,7 +929,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesRunInCtrlBody) {
   fx.setUp();
 
   runFuseOnProgram(
-      fx.context.get(), controlledInverseHt, "u",
+      fx.context.get(), controlledInverseHT, "u",
       [](func::FuncOp funcOp, const Matrix2x2&) {
         EXPECT_EQ(countOps<CtrlOp>(funcOp), 1U);
         EXPECT_EQ(countOpsInRegion<InvOp>(funcOp, isInsideCtrl), 1U);
@@ -981,7 +981,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossScfForAllBases) {
         ASSERT_TRUE(parsed) << "basis=" << basis.str();
         expectOneQubitGatesInAndOutsideScfFor(
             funcOp, basis,
-            expectedFusedGateCount(splitFixtureHtSegmentMatrix(), *parsed),
-            expectedFusedGateCount(splitFixtureRzSxSegmentMatrix(), *parsed));
+            expectedFusedGateCount(splitFixtureHTSegmentMatrix(), *parsed),
+            expectedFusedGateCount(splitFixtureRZSXSegmentMatrix(), *parsed));
       });
 }

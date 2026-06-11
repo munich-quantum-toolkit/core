@@ -29,6 +29,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <complex>
 #include <cstddef>
 #include <numbers>
 #include <optional>
@@ -403,12 +404,10 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
               CancelNestedInv, EraseEmptyInv>(context);
 }
 
-namespace {
-
 /**
  * @brief Composes compile-time single-qubit unitaries in a modifier body.
  */
-[[nodiscard]] std::optional<Matrix2x2>
+[[nodiscard]] static std::optional<Matrix2x2>
 composeSingleQubitBodyMatrix(Block& block) {
   Matrix2x2 acc = Matrix2x2::identity();
   std::complex<double> global{1.0, 0.0};
@@ -440,8 +439,6 @@ composeSingleQubitBodyMatrix(Block& block) {
   return Matrix2x2::fromElements(global * acc(0, 0), global * acc(0, 1),
                                  global * acc(1, 0), global * acc(1, 1));
 }
-
-} // namespace
 
 std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
   if (auto bodyUnitary =
