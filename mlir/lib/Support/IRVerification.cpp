@@ -10,7 +10,9 @@
 
 #include "mlir/Support/IRVerification.h"
 
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -29,6 +31,7 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/IRMapping.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
@@ -57,13 +60,19 @@ static bool hasTypeQubitTensor(Value v) {
 
 /// Map all results from one op to another.
 /// Assumes `op->getNumResults() == other->getNumResults()`.
-static void mapResults(Operation* op, Operation* other, IRMapping& m) {
+/// Assumes that the two operations are equivalent to each other.
+static void mapResults(Operation* opL, Operation* opR, IRMapping& m) {
+  if (opL->getNumResults() == 0) {
+    return;
+  }
+
   for (const auto& [fromResult, toResult] :
-       llvm::zip_equal(op->getResults(), other->getResults())) {
-    if (!isa<qtensor::AllocOp>(op) && hasTypeQubitTensor(fromResult)) {
+       llvm::zip_equal(opL->getResults(), opR->getResults())) {
+    if (!isa<qtensor::AllocOp>(opL) && hasTypeQubitTensor(fromResult)) {
       assert(hasTypeQubitTensor(toResult));
       continue;
     }
+
     m.map(fromResult, toResult);
   }
 }
@@ -214,41 +223,83 @@ static bool compareOperations(Operation* opA, Operation* opB,
   // Compare operands.
   // TODO: Equal type check.
 
-  for (const auto& [operandA, operandB] :
-       llvm::zip_equal(opA->getOperands(), opB->getOperands())) {
+  // else if (isa<qco::CtrlOp>(opA)) {
+  //   assert(isa<qco::CtrlOp>(opB));
+  //   llvm::reportFatalInternalError("not implemented");
+  // } else if (opA->hasTrait<mlir::OpTrait::IsCommutative>()) {
+  //   assert(opB->hasTrait<mlir::OpTrait::IsCommutative>());
+  //   llvm::reportFatalInternalError("not implemented");
+  // }
 
-    if (hasTypeQubitTensor(operandA)) {
-      if (!hasTypeQubitTensor(operandB)) { // TODO: Assertion?
+  if (isa<qc::CtrlOp>(opA)) {
+    assert(isa<qc::CtrlOp>(opB));
+
+    auto ctrlL = cast<qc::CtrlOp>(opA);
+    auto ctrlR = cast<qc::CtrlOp>(opB);
+
+    DenseSet<Value> workset;
+    workset.insert_range(ctrlR.getControls());
+    for (const auto& ctrl : ctrlL.getControls()) {
+      const auto& mapped = m.lookup(ctrl);
+      if (!workset.contains(mapped)) {
         return false;
       }
+      workset.erase(mapped);
+    }
 
-      auto tensorA = cast<TypedValue<RankedTensorType>>(operandA);
-      qtensor::TensorIterator itA(tensorA);
-      while (std::prev(itA) != itA) {
-        --itA;
+    assert(workset.empty());
+
+    // Analogously for the targets.
+
+    workset.clear();
+    workset.insert_range(ctrlR.getTargets());
+    for (const auto& trgt : ctrlL.getTargets()) {
+      const auto& operand = m.lookup(trgt);
+      if (!workset.contains(operand)) {
+        return false;
       }
+      workset.erase(operand);
+    }
 
-      auto tensorB = cast<TypedValue<RankedTensorType>>(operandB);
-      qtensor::TensorIterator itB(tensorB);
-      while (std::prev(itB) != itB) {
-        --itB;
-      }
+    assert(workset.empty());
 
-      if (itA.operation() == nullptr) { // Block-Argument.
-        if (itB.operation() != nullptr) {
+  } else {
+    for (const auto& [operandA, operandB] :
+         llvm::zip_equal(opA->getOperands(), opB->getOperands())) {
+
+      if (hasTypeQubitTensor(operandA)) {
+        if (!hasTypeQubitTensor(operandB)) { // TODO: Assertion?
           return false;
+        }
+
+        auto tensorA = cast<TypedValue<RankedTensorType>>(operandA);
+        qtensor::TensorIterator itA(tensorA);
+        while (std::prev(itA) != itA) {
+          --itA;
+        }
+
+        auto tensorB = cast<TypedValue<RankedTensorType>>(operandB);
+        qtensor::TensorIterator itB(tensorB);
+        while (std::prev(itB) != itB) {
+          --itB;
+        }
+
+        if (itA.operation() == nullptr) { // Block-Argument.
+          if (itB.operation() != nullptr) {
+            return false;
+          }
+        } else {
+          auto allocA = cast<qtensor::AllocOp>(itA.operation());
+          auto allocB = cast<qtensor::AllocOp>(itB.operation());
+          if (m.lookup(allocA.getResult()) != allocB.getResult()) {
+            return false;
+          }
         }
       } else {
-        auto allocA = cast<qtensor::AllocOp>(itA.operation());
-        auto allocB = cast<qtensor::AllocOp>(itB.operation());
-        if (m.lookup(allocA.getResult()) != allocB.getResult()) {
+        auto operand = m.lookup(operandA);
+        if (operand != operandB) {
           return false;
         }
-      }
-    } else {
-      auto mappedOperand = m.lookupOrNull(operandA);
-      if (!mappedOperand || mappedOperand != operandB) {
-        return false;
       }
     }
   }
@@ -309,30 +360,40 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
   return ready;
 }
 
-static void cartesianMappings(
+static void getCartesianMappings(
     const SetVector<Operation*>::const_iterator readyIt,
     const SmallVector<SmallVector<Operation*, 2>>::const_iterator partnerIt,
-    const SetVector<Operation*>::const_iterator readyEnd,
-    const SmallVector<SmallVector<Operation*, 2>>::const_iterator partnerEnd,
-    IRMapping& m, SmallVectorImpl<IRMapping>& out) {
+    const SetVector<Operation*>::const_iterator readyEnd, const IRMapping& m,
+    SmallVectorImpl<IRMapping>& mappings) {
   if (readyIt == readyEnd) {
-    assert(partnerIt == partnerEnd);
-    out.emplace_back(m);
+    mappings.emplace_back(m);
     return;
   }
 
   Operation* opA = *readyIt;
   for (Operation* opB : *partnerIt) {
-    IRMapping m2(m);
-    m2.map(opA, opB);
-    mapResults(opA, opB, m2);
-    cartesianMappings(std::next(readyIt), std::next(partnerIt), readyEnd,
-                      partnerEnd, m2, out);
+    IRMapping mNew(m);
+    mNew.map(opA, opB);
+    mapResults(opA, opB, mNew);
+    getCartesianMappings(std::next(readyIt), std::next(partnerIt), readyEnd,
+                         mNew, mappings);
   }
 }
 
-static bool compareReady(ArrayRef<Operation*> openA, ArrayRef<Operation*> openB,
-                         DenseSet<Operation*>& closed, IRMapping& m) {
+static SmallVector<IRMapping>
+getCartesianMappings(const SetVector<Operation*>& ready,
+                     const SmallVector<SmallVector<Operation*, 2>>& partners,
+                     const IRMapping& m) {
+  assert(ready.size() == partners.size());
+  SmallVector<IRMapping> mappings;
+  getCartesianMappings(ready.begin(), partners.begin(), ready.end(), m,
+                       mappings);
+  return mappings;
+}
+
+static bool compareTopologically(ArrayRef<Operation*> openA,
+                                 ArrayRef<Operation*> openB,
+                                 DenseSet<Operation*>& closed, IRMapping& m) {
   const auto readyA = getReadyOps(openA, closed);
   const auto readyB = getReadyOps(openB, closed);
 
@@ -352,11 +413,17 @@ static bool compareReady(ArrayRef<Operation*> openA, ArrayRef<Operation*> openB,
 
   SmallVector<SmallVector<Operation*, 2>> partners;
   for (Operation* opA : readyA) {
+    // llvm::dbgs() << "--- compare ---\n";
+    // llvm::dbgs() << *opA << '\n';
     const auto isEmpty =
         partners
-            .emplace_back(make_filter_range(
-                readyB,
-                [&](Operation* opB) { return compareOperations(opA, opB, m); }))
+            .emplace_back(make_filter_range(readyB,
+                                            [&](Operation* opB) {
+                                              // llvm::dbgs() << '\t' << *opB <<
+                                              // '\n';
+                                              return compareOperations(opA, opB,
+                                                                       m);
+                                            }))
             .empty();
     if (isEmpty) {
       return false;
@@ -365,54 +432,55 @@ static bool compareReady(ArrayRef<Operation*> openA, ArrayRef<Operation*> openB,
 
   assert(partners.size() == readyA.size());
 
-  closed.insert_range(readyA);
-  closed.insert_range(readyB);
+  auto mappings = getCartesianMappings(readyA, partners, m);
 
-  SmallVector<IRMapping> mappings;
-  cartesianMappings(readyA.begin(), partners.begin(), readyA.end(),
-                    partners.end(), m, mappings);
+  SmallVector<IRMapping>::iterator mapIter = mappings.begin();
+  for (; mapIter != mappings.end(); mapIter = std::next(mapIter)) {
+    IRMapping& localM = *mapIter;
+    DenseSet<Operation*> local(closed);
+    local.insert_range(readyA);
+    local.insert_range(readyB);
 
-  for (Operation* opA : readyA) {
+    // Regional comparison.
 
-    // If opA has one or more regions, try each mapping to find the equivalent
-    // operation. Each mapping uniquely identify opA with one potential
-    // partner thus use the mapping to obtain this partner and compare their
-    // respective regions.
+    SetVector<Operation*>::iterator readyIter = readyA.begin();
+    for (; readyIter != readyA.end(); readyIter = std::next(readyIter)) {
+      Operation* opA = *readyIter;
 
-    if (opA->getNumRegions() > 0) {
-      SmallVector<IRMapping>::iterator it = mappings.begin();
-      for (; it != mappings.end(); it = std::next(it)) {
-        Operation* opB = it->lookup(opA);
+      // Otherwise, if opA has one or more regions, try each mapping to find the
+      // equivalent operation. Each mapping uniquely identify opA with one
+      // potential partner thus use the mapping to obtain this partner and
+      // compare their respective regions.
+
+      if (opA->getNumRegions() > 0) {
+        Operation* opB = mapIter->lookup(opA);
         assert(opA->getNumRegions() == opB->getNumRegions());
 
         const auto nequiv = range_size(make_filter_range(
             llvm::zip_equal(opA->getRegions(), opB->getRegions()),
             [&](const auto& zip) {
               const auto& [regionA, regionB] = zip;
-              return compareRegions(regionA, regionB, closed, *it);
+              return compareRegions(regionA, regionB, local, localM);
             }));
-        if (nequiv == opA->getNumRegions()) {
+        if (nequiv != opA->getNumRegions()) {
           break;
         }
       }
+    }
 
-      if (it == mappings.end()) {
-        return false;
+    // If all regions can be matched with this mapping, try the remaining of the
+    // current block.
+
+    if (readyIter == readyA.end()) {
+      if (compareTopologically(openA, openB, local, localM)) {
+        closed = std::move(local);
+        m = std::move(localM);
+        break;
       }
     }
   }
 
-  SmallVector<IRMapping>::iterator it = mappings.begin();
-  for (; it != mappings.end(); it = std::next(it)) {
-    DenseSet<Operation*> closed2(closed);
-    if (compareReady(openA, openB, closed2, *it)) {
-      closed = std::move(closed2);
-      m = std::move(*it);
-      break;
-    }
-  }
-
-  return it != mappings.end();
+  return mapIter != mappings.end();
 }
 
 static bool compareBlocks(Block& blockA, Block& blockB,
@@ -421,7 +489,7 @@ static bool compareBlocks(Block& blockA, Block& blockB,
     return false;
   }
 
-  for (auto [lArg, rArg] :
+  for (const auto [lArg, rArg] :
        llvm::zip_equal(blockA.getArguments(), blockB.getArguments())) {
     if (lArg.getType() != rArg.getType()) {
       return false;
@@ -439,7 +507,7 @@ static bool compareBlocks(Block& blockA, Block& blockB,
   for_each(blockA.getOperations(), [&](auto& op) { openA.emplace_back(&op); });
   for_each(blockB.getOperations(), [&](auto& op) { openB.emplace_back(&op); });
 
-  return compareReady(openA, openB, closed, m);
+  return compareTopologically(openA, openB, closed, m);
 }
 
 /// Compare two regions for structural equivalence.
