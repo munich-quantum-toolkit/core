@@ -13,6 +13,7 @@
 #include <mlir/IR/Operation.h>
 
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <ostream>
@@ -61,41 +62,55 @@ class QuantumState {
   std::unordered_map<unsigned int, std::complex<double>> amplitudeMap;
 
   std::string qubitStringToBinary(unsigned int q) const {
-    std::string str;
-    for (int i = static_cast<int>(nQubits) - 1; i >= 0; i--) {
-      if (const auto currentDigit = static_cast<unsigned int>(pow(2, i));
-          q & currentDigit) {
-        str += "1";
-        q -= currentDigit;
-      } else {
-        str += "0";
-      }
+    std::string result;
+    result.reserve(nQubits);
+
+    for (std::size_t i = nQubits; i > 0; --i) {
+      result.push_back((q >> i & 1U) != 0 ? '1' : '0');
     }
-    return str;
+    return result;
   }
 
   /**
-   * @brief This method receives a two qubit gate mapping and a bitmask for
-   * targets and ctrls.
+   * @brief Create a bitstring that has ones exactly at the given positions
    *
-   * This method receives a two qubit gate mapping and a bitmask for target and
-   * ctrl qubits. The gate is applied to the valid qubit states. It returns the
-   * map which would be the qubit state after gate application.
+   * @param positions The positions at which the bits should be one.
+   * @return The finished bitstring.
+   */
+  static constexpr std::size_t
+  makeTargetMask(std::span<const unsigned int> positions) noexcept {
+    std::size_t mask = 0;
+    for (unsigned int p : positions) {
+      mask |= 1U << p;
+    }
+    return mask;
+  }
+
+  /**
+   * @brief This method receives a gate mapping and a bitmask ctrls and the
+   * positions of the one (or two) qubit targets.
+   *
+   * This method receives a two qubit gate mapping and a bitmask for ctrl qubits
+   * and a span with the first target qubit position at first position and the
+   * potential second target qubit at second position. The gate is applied to
+   * the valid qubit states. It returns the map which would be the qubit state
+   * after gate application.
    *
    * @param gateMapping The mapping representing the gate
-   * @param bitmaskForQubitTargets The bitmask of the qubit targets. I.e. 011,
-   * if zeroth and first qubit are targets.
+   * @param positionOfTargetQubits The position of the qubit targets.
    * @param bitmaskForCtrls The bitmask of the positively controlling qubits.
    * @return The qubit state after the gate has been applied.
    */
   std::unordered_map<unsigned int, std::complex<double>>
-  getNewMappingForTwoQubitGate(
+  getNewMappingFromQubitGate(
       std::unordered_map<unsigned int,
                          std::unordered_map<unsigned int, std::complex<double>>>
           gateMapping,
-      std::unordered_map<unsigned int, unsigned int> bitmaskForQubitTargets,
+      std::span<unsigned int> positionOfTargetQubits,
       const unsigned int bitmaskForCtrls) {
     std::unordered_map<unsigned int, std::complex<double>> newValues;
+    const auto numberOfTargetValues = static_cast<unsigned int>(
+        pow(2, static_cast<double>(positionOfTargetQubits.size())) + 0.1);
 
     for (const auto& [key, value] : amplitudeMap) {
       if ((bitmaskForCtrls & key) != bitmaskForCtrls) {
@@ -104,89 +119,33 @@ class QuantumState {
       }
 
       unsigned int mapFrom = 0;
-      std::vector<unsigned int> keysForNewValue(4);
 
-      if ((key & bitmaskForQubitTargets[3]) == bitmaskForQubitTargets[3]) {
-        mapFrom = 3;
-        keysForNewValue[3] = key;
-        keysForNewValue[2] = key - bitmaskForQubitTargets[1];
-        keysForNewValue[1] = key - bitmaskForQubitTargets[2];
-        keysForNewValue[0] = key - bitmaskForQubitTargets[3];
-      } else if ((key & bitmaskForQubitTargets[2]) ==
-                 bitmaskForQubitTargets[2]) {
-        mapFrom = 2;
-        keysForNewValue[3] = key + bitmaskForQubitTargets[1];
-        keysForNewValue[2] = key;
-        keysForNewValue[1] = key ^ bitmaskForQubitTargets[3];
-        keysForNewValue[0] = key - bitmaskForQubitTargets[2];
-      } else if ((key & bitmaskForQubitTargets[1]) ==
-                 bitmaskForQubitTargets[1]) {
-        mapFrom = 1;
-        keysForNewValue[3] = key + bitmaskForQubitTargets[2];
-        keysForNewValue[2] = key ^ bitmaskForQubitTargets[3];
-        keysForNewValue[1] = key;
-        keysForNewValue[0] = key - bitmaskForQubitTargets[1];
-      } else {
-        keysForNewValue[3] = key + bitmaskForQubitTargets[3];
-        keysForNewValue[2] = key + bitmaskForQubitTargets[2];
-        keysForNewValue[1] = key + bitmaskForQubitTargets[1];
-        keysForNewValue[0] = key;
+      std::vector<unsigned int> keysForNewValue(numberOfTargetValues);
+
+      // Find the target keys from the current keys
+      for (unsigned int i = 0; i < numberOfTargetValues; ++i) {
+        keysForNewValue[i] = key;
+        auto maskFirstPos = 1U << positionOfTargetQubits[0];
+        if (i % 2 == 1) {
+          keysForNewValue[i] |= maskFirstPos;
+        } else {
+          keysForNewValue[i] &= ~maskFirstPos;
+        }
+        if (numberOfTargetValues > 2) {
+          auto maskSecondPos = 1U << positionOfTargetQubits[1];
+          if (i > 2) {
+            keysForNewValue[i] |= maskSecondPos;
+          } else {
+            keysForNewValue[i] &= ~maskSecondPos;
+          }
+        }
+        if (keysForNewValue[i] == key) {
+          mapFrom = i;
+        }
       }
 
       auto mapForThisQubit = gateMapping[mapFrom];
       for (int i = 0; i < 4; i++) {
-        if (auto valueToI = mapForThisQubit[i]; abs(valueToI) > 1e-4) {
-          newValues[keysForNewValue[i]] += valueToI * value;
-        }
-      }
-    }
-
-    return newValues;
-  }
-
-  /**
-   * @brief This method receives a single qubit gate mapping and a bitmask for
-   * target and ctrls.
-   *
-   * This method receives a single qubit gate mapping and a bitmask for target
-   * and ctrl qubits. The gate is applied to the valid qubit states. It returns
-   * the map which would be the qubit state after gate application.
-   *
-   * @param gateMapping The mapping representing the gate
-   * @param bitmaskForQubitTargets The bitmask of the qubit targets. I.e. 011,
-   * if zeroth and first qubit are targets.
-   * @param bitmaskForCtrls The bitmask of the positively controlling qubits.
-   * @return The qubit state after the gate has been applied.
-   */
-  std::unordered_map<unsigned int, std::complex<double>>
-  getNewMappingForSingleQubitGate(
-      std::unordered_map<unsigned int,
-                         std::unordered_map<unsigned int, std::complex<double>>>
-          gateMapping,
-      std::unordered_map<unsigned int, unsigned int> bitmaskForQubitTargets,
-      const unsigned int bitmaskForCtrls) {
-    std::unordered_map<unsigned int, std::complex<double>> newValues;
-
-    for (const auto& [key, value] : amplitudeMap) {
-      if ((bitmaskForCtrls & key) != bitmaskForCtrls) {
-        newValues[key] += value;
-        continue;
-      }
-
-      unsigned int mapFrom = 0;
-      std::vector<unsigned int> keysForNewValue(2);
-
-      if ((key & bitmaskForQubitTargets[1]) == bitmaskForQubitTargets[1]) {
-        mapFrom = 1;
-        keysForNewValue[1] = key;
-        keysForNewValue[0] = key - bitmaskForQubitTargets[1];
-      } else {
-        keysForNewValue[1] = key + bitmaskForQubitTargets[1];
-        keysForNewValue[0] = key;
-      }
-
-      auto mapForThisQubit = gateMapping[mapFrom];
-      for (int i = 0; i < 2; i++) {
         if (auto valueToI = mapForThisQubit[i]; abs(valueToI) > 1e-4) {
           newValues[keysForNewValue[i]] += valueToI * value;
         }
