@@ -48,12 +48,11 @@
 
 #include <cmath>
 #include <cstddef>
-#include <utility>
 
 using namespace mlir;
 
 static bool compareRegions(Region& regionA, Region& regionB,
-                           DenseSet<Operation*>& visited, IRMapping& m);
+                           DenseSet<Operation*>& closed, IRMapping& m);
 
 static bool hasTypeQubitTensor(Value v) {
   auto tensor = dyn_cast<RankedTensorType>(v.getType());
@@ -64,7 +63,7 @@ static bool hasTypeQubitTensor(Value v) {
   return isa<qco::QubitType>(tensor.getElementType());
 }
 
-static void remapResults(Operation* fromOp, Operation* toOp, IRMapping& m) {
+static void mapResults(Operation* fromOp, Operation* toOp, IRMapping& m) {
   for (const auto& [fromResult, toResult] :
        llvm::zip_equal(fromOp->getResults(), toOp->getResults())) {
     if (!isa<qtensor::AllocOp>(fromOp) && hasTypeQubitTensor(fromResult)) {
@@ -75,6 +74,7 @@ static void remapResults(Operation* fromOp, Operation* toOp, IRMapping& m) {
   }
 }
 
+/// Compares two floating point numbers for approximate equivalence.
 static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
                                 const unsigned width) {
   if (lhs.isNaN() || rhs.isNaN()) {
@@ -181,7 +181,7 @@ static bool compareAttributes(const Attribute& attrA, const Attribute& attrB) {
 }
 
 static bool compareOperations(Operation* opA, Operation* opB,
-                              DenseSet<Operation*>& visited, IRMapping& m) {
+                              const IRMapping& m) {
 
   // Compare top-level signature-like characteristics.
 
@@ -192,7 +192,6 @@ static bool compareOperations(Operation* opA, Operation* opB,
       opA->getResultTypes() != opB->getResultTypes() ||
       // opA->getAttrs().size() != opB->getAttrs().size() ||
       opA->getNumRegions() != opB->getNumRegions()) {
-    llvm::dbgs() << "\t\tUNEQUAL 2!\n";
     return false;
   }
 
@@ -214,7 +213,6 @@ static bool compareOperations(Operation* opA, Operation* opB,
     }
 
     if (!compareAttributes(namedAttrA.getValue(), opB->getAttr(keyA))) {
-      llvm::dbgs() << "\t\tUNEQUAL 3!\n";
       return false;
     }
   }
@@ -256,31 +254,17 @@ static bool compareOperations(Operation* opA, Operation* opB,
     } else {
       auto mappedOperand = m.lookupOrNull(operandA);
       if (!mappedOperand || mappedOperand != operandB) {
-        llvm::dbgs() << "\t\tUNEQUAL 6!\n";
-        llvm::dbgs() << "\t\t" << mappedOperand << '\n';
-        llvm::dbgs() << "\t\t" << operandB << '\n';
         return false;
       }
     }
   }
 
-  for (const auto [regionA, regionB] :
-       llvm::zip_equal(opA->getRegions(), opB->getRegions())) {
-    if (!compareRegions(regionA, regionB, visited, m)) {
-      llvm::dbgs() << "\t\tUNEQUAL 7!\n";
-      return false;
-    }
-  }
-
-  // If the function reached this point, the two operations are equal.
-
-  llvm::dbgs() << "\t\tEQUAL!\n";
-
   return true;
 }
 
 /// Extract and return "ready" operations.
-static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> ops,
+/// These are operations that are independent from each other.
+static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
                                          DenseSet<Operation*>& visited) {
   const auto isReady = [&](OpOperand& operand) {
     if (isa<BlockArgument>(operand.get())) {
@@ -290,7 +274,7 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> ops,
   };
 
   SetVector<Operation*> ready;
-  for (Operation* op : ops) {
+  for (Operation* op : open) {
     if (visited.contains(op)) {
       continue;
     }
@@ -331,60 +315,114 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> ops,
   return ready;
 }
 
-static bool compareReady(SetVector<Operation*>::const_iterator it,
-                         const SetVector<Operation*>& readyA,
-                         const SetVector<Operation*>& readyB,
-                         DenseSet<Operation*>& visited, IRMapping& m) {
-  if (it == readyA.end()) {
+static void cartesianMappings(
+    const SetVector<Operation*>::const_iterator readyIt,
+    const SmallVector<SmallVector<Operation*, 2>>::const_iterator partnerIt,
+    const SetVector<Operation*>::const_iterator readyEnd,
+    const SmallVector<SmallVector<Operation*, 2>>::const_iterator partnerEnd,
+    IRMapping& m, SmallVectorImpl<IRMapping>& out) {
+  if (readyIt == readyEnd) {
+    assert(partnerIt == partnerEnd);
+    out.emplace_back(m);
+    return;
+  }
+
+  Operation* opA = *readyIt;
+  for (Operation* opB : *partnerIt) {
+    IRMapping m2(m);
+    m2.map(opA, opB);
+    mapResults(opA, opB, m2);
+    cartesianMappings(std::next(readyIt), std::next(partnerIt), readyEnd,
+                      partnerEnd, m2, out);
+  }
+}
+
+static bool compareReady(ArrayRef<Operation*> openA, ArrayRef<Operation*> openB,
+                         DenseSet<Operation*>& closed, IRMapping& m) {
+  const auto readyA = getReadyOps(openA, closed);
+  const auto readyB = getReadyOps(openB, closed);
+
+  if (readyA.empty() && readyB.empty()) {
     return true;
   }
 
-  Operation* opA = *it;
-
-  // Because there may be multiple structural equivalent operations,
-  // collect them in a vector for further recursive processing. If there are
-  // no partners, no matching operation has been found and the blocks are
-  // not equivalent.
-
-  llvm::dbgs() << "--- compare ---\n";
-  opA->dumpPretty();
-  SmallVector<Operation*> partners(
-      make_filter_range(readyB, [&](Operation* op) {
-        llvm::dbgs() << "\t";
-        op->dumpPretty();
-        return compareOperations(opA, op, visited, m);
-      }));
-
-  if (partners.empty()) {
-    llvm::dbgs() << "no matching op found: " << *opA << '\n';
+  if ((readyA.empty() && !readyB.empty()) ||
+      (!readyA.empty() && readyB.empty()) || readyA.size() != readyB.size()) {
     return false;
   }
 
-  // If there were only one partner, we could simply update the mapping m
-  // here. Unfortunately, multiple operations can be structurally equivalent
-  // (think arith.constant, for example). Thus, we must test each possible
-  // alternative mapping to identify (if possible) the equivalent partner.
+  // Because there may be multiple structural equivalent operations (think
+  // arith.constant, for example), collect them in a vector for further
+  // recursive processing. If there are no partners, no matching operation has
+  // been found and the blocks are not equivalent.
 
-  bool found{false};
-  for (Operation* partner : partners) {
-    llvm::dbgs() << "trying partner: " << *partner << '\n';
-    IRMapping partnerM(m);
-    remapResults(opA, partner, partnerM);
+  SmallVector<SmallVector<Operation*, 2>> partners;
+  for (Operation* opA : readyA) {
+    const auto isEmpty =
+        partners
+            .emplace_back(make_filter_range(
+                readyB,
+                [&](Operation* opB) { return compareOperations(opA, opB, m); }))
+            .empty();
+    if (isEmpty) {
+      return false;
+    }
+  }
 
-    DenseSet<Operation*> altVisited(visited);
-    if (compareReady(std::next(it), readyA, readyB, altVisited, partnerM)) {
-      visited = std::move(altVisited);
-      m = std::move(partnerM);
-      found = true;
+  assert(partners.size() == readyA.size());
+
+  closed.insert_range(readyA);
+  closed.insert_range(readyB);
+
+  SmallVector<IRMapping> mappings;
+  cartesianMappings(readyA.begin(), partners.begin(), readyA.end(),
+                    partners.end(), m, mappings);
+
+  for (Operation* opA : readyA) {
+
+    // If opA has one or more regions, try each mapping to find the equivalent
+    // operation. Each mapping uniquely identify opA with one potential
+    // partner thus use the mapping to obtain this partner and compare their
+    // respective regions.
+
+    if (opA->getNumRegions() > 0) {
+      SmallVector<IRMapping>::iterator it = mappings.begin();
+      for (; it != mappings.end(); it = std::next(it)) {
+        Operation* opB = it->lookup(opA);
+        assert(opA->getNumRegions() == opB->getNumRegions());
+
+        const auto nequiv = range_size(make_filter_range(
+            llvm::zip_equal(opA->getRegions(), opB->getRegions()),
+            [&](const auto& zip) {
+              const auto& [regionA, regionB] = zip;
+              return compareRegions(regionA, regionB, closed, *it);
+            }));
+        if (nequiv == opA->getNumRegions()) {
+          break;
+        }
+      }
+
+      if (it == mappings.end()) {
+        return false;
+      }
+    }
+  }
+
+  SmallVector<IRMapping>::iterator it = mappings.begin();
+  for (; it != mappings.end(); it = std::next(it)) {
+    DenseSet<Operation*> closed2(closed);
+    if (compareReady(openA, openB, closed2, *it)) {
+      closed = std::move(closed2);
+      m = std::move(*it);
       break;
     }
   }
 
-  return found;
+  return it != mappings.end();
 }
 
 static bool compareBlocks(Block& blockA, Block& blockB,
-                          DenseSet<Operation*>& visited, IRMapping& m) {
+                          DenseSet<Operation*>& closed, IRMapping& m) {
   if (blockA.getNumArguments() != blockB.getNumArguments()) {
     return false;
   }
@@ -398,48 +436,27 @@ static bool compareBlocks(Block& blockA, Block& blockB,
     m.map(lArg, rArg);
   }
 
-  SmallVector<Operation*> opsA;
-  SmallVector<Operation*> opsB;
+  SmallVector<Operation*> openA;
+  SmallVector<Operation*> openB;
 
-  opsA.reserve(llvm::range_size(blockA.getOperations()));
-  opsB.reserve(llvm::range_size(blockB.getOperations()));
+  openA.reserve(range_size(blockA.getOperations()));
+  openB.reserve(range_size(blockB.getOperations()));
 
-  for_each(blockA.getOperations(), [&](auto& op) { opsA.emplace_back(&op); });
-  for_each(blockB.getOperations(), [&](auto& op) { opsB.emplace_back(&op); });
+  for_each(blockA.getOperations(), [&](auto& op) { openA.emplace_back(&op); });
+  for_each(blockB.getOperations(), [&](auto& op) { openB.emplace_back(&op); });
 
-  while (true) {
-    const auto readyA = getReadyOps(opsA, visited);
-    const auto readyB = getReadyOps(opsB, visited);
-
-    visited.insert_range(readyA);
-    visited.insert_range(readyB);
-
-    if (readyA.empty() && readyB.empty()) {
-      break;
-    }
-
-    if ((readyA.empty() && !readyB.empty()) ||
-        (!readyA.empty() && readyB.empty()) || readyA.size() != readyB.size()) {
-      return false;
-    }
-
-    if (!compareReady(readyA.begin(), readyA, readyB, visited, m)) {
-      return false;
-    }
-  }
-
-  return true;
+  return compareReady(openA, openB, closed, m);
 }
 
 /// Compare two regions for structural equivalence.
 static bool compareRegions(Region& regionA, Region& regionB,
-                           DenseSet<Operation*>& visited, IRMapping& m) {
+                           DenseSet<Operation*>& closed, IRMapping& m) {
   if (regionA.getBlocks().size() != regionB.getBlocks().size()) {
     return false;
   }
 
   for (const auto [blockA, blockB] : llvm::zip_equal(regionA, regionB)) {
-    if (!compareBlocks(blockA, blockB, visited, m)) {
+    if (!compareBlocks(blockA, blockB, closed, m)) {
       return false;
     }
   }
@@ -449,6 +466,6 @@ static bool compareRegions(Region& regionA, Region& regionB,
 
 bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
   IRMapping m;
-  DenseSet<Operation*> visited;
-  return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), visited, m);
+  DenseSet<Operation*> closed;
+  return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), closed, m);
 }
