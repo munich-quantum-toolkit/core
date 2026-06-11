@@ -286,7 +286,7 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
     }
 
     // If the destination of a tensor insert, has been produced by an insert
-    // operation as well, these two should be interchangable. Thus, also add it
+    // operation as well, these two should be interchangeable. Thus, also add it
     // to the ready set vector. Any valid IR will ensure that the indices of the
     // two insertions are not equivalent, hence, we don't check them here.
 
