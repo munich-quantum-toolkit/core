@@ -898,13 +898,14 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
         rewriter.clone(op, mapping);
       }
 
+      auto* oldTerminator = oldBlock->getTerminator();
       SmallVector<Value> yields;
-      for (auto value : oldBlock->getTerminator()->getOperands()) {
+      for (auto value : oldTerminator->getOperands()) {
         if (isLinearType(value.getType())) {
           yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
         }
       }
-      YieldOp::create(rewriter, oldBlock->getTerminator()->getLoc(), yields);
+      rewriter.replaceOpWithNewOp<YieldOp>(oldTerminator, yields);
 
       return success();
     };
@@ -1005,11 +1006,6 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
   LogicalResult
   matchAndRewrite(jeff::YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (isa<IfOp>(op->getParentOp())) {
-      rewriter.eraseOp(op);
-      return success();
-    }
-
     rewriter.replaceOpWithNewOp<scf::YieldOp>(op, adaptor.getOperands());
     return success();
   }

@@ -369,13 +369,14 @@ static LogicalResult moveRegion(Region& source, Region& dest,
     rewriter.clone(op, mapping);
   }
 
+  auto* oldTerminator = oldBlock->getTerminator();
   SmallVector<Value> yields;
-  for (auto value : oldBlock->getTerminator()->getOperands()) {
+  for (auto value : oldTerminator->getOperands()) {
     yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
   }
   llvm::append_range(yields,
                      newBlock->getArguments().take_back(aboveValues.size()));
-  jeff::YieldOp::create(rewriter, oldBlock->getTerminator()->getLoc(), yields);
+  rewriter.replaceOpWithNewOp<jeff::YieldOp>(oldTerminator, yields);
 
   return success();
 }
@@ -1003,11 +1004,6 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
   LogicalResult
   matchAndRewrite(YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (isa<jeff::SwitchOp>(op->getParentOp())) {
-      rewriter.replaceOpWithNewOp<jeff::YieldOp>(op, adaptor.getOperands());
-      return success();
-    }
-
     auto& state = getState();
 
     if (state.inInvOp) {
@@ -1189,18 +1185,6 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
 
     rewriter.replaceOp(op, jeffFor.getResults().take_front(op.getNumResults()));
 
-    return success();
-  }
-};
-
-struct ConvertSCFYieldOpToJeff final
-    : StatefulOpConversionPattern<scf::YieldOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -1483,11 +1467,11 @@ protected:
     addQCOToJeffGatePattern<JK::Custom, 2, 2, XXMinusYYOp, void, false>(
         patterns, typeConverter, context, state, "xx_minus_yy");
 
-    patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
-                 ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
-                 ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff,
-                 ConvertSCFYieldOpToJeff, ConvertQCOMainToJeff>(
-        typeConverter, context, &state);
+    patterns
+        .add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
+             ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
+             ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff, ConvertQCOMainToJeff>(
+            typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
