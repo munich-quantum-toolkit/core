@@ -25,8 +25,8 @@
 #include "qasm3/passes/ConstEvalPass.hpp"
 #include "qasm3/passes/TypeCheckPass.hpp"
 
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -51,6 +51,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mlir::qc {
@@ -178,8 +179,8 @@ static llvm::StringMap<GateFn> buildGateDispatch() {
 static llvm::StringMap<std::shared_ptr<qasm3::Gate>> convertToStringMap(
     const std::map<std::string, std::shared_ptr<qasm3::Gate>>& sourceMap) {
   llvm::StringMap<std::shared_ptr<qasm3::Gate>> targetMap;
-  for (auto& [key, value] : sourceMap) {
-    targetMap.insert(std::make_pair(key, std::move(value)));
+  for (const auto& [key, value] : sourceMap) {
+    targetMap.insert(std::make_pair(key, value));
   }
   return targetMap;
 }
@@ -301,8 +302,7 @@ public:
       const auto& param = p->identifier;
       if (std::ranges::find(params, param) != params.end()) {
         throw qasm3::CompilerError(
-            "Parameter '" + param + "' already declared in gate '" + id + "'.",
-            stmt->debugInfo);
+            "Parameter is already declared in compound gate.", stmt->debugInfo);
       }
       params.push_back(param);
     }
@@ -311,8 +311,7 @@ public:
       const auto& target = t->identifier;
       if (std::ranges::find(targets, target) != targets.end()) {
         throw qasm3::CompilerError(
-            "Target '" + target + "' already declared in gate '" + id + "'.",
-            stmt->debugInfo);
+            "Target is already declared in compound gate.", stmt->debugInfo);
       }
       targets.push_back(target);
     }
@@ -353,7 +352,7 @@ public:
     switch (sizedType->type) {
     case qasm3::Qubit: {
       const auto& reg = builder.allocQubitRegister(size);
-      qubitRegisters[id] = std::move(reg.qubits);
+      qubitRegisters[id] = reg.qubits;
       break;
     }
     case qasm3::Bit:
