@@ -51,6 +51,9 @@ extern const std::string repeatedResetAfterSingleOp;
 /// Creates a circuit with just a global phase.
 extern const std::string globalPhase;
 
+/// Creates a circuit with an inverse modifier applied to a global phase gate.
+extern const std::string inverseGlobalPhase;
+
 /// Creates a circuit with just an identity gate.
 extern const std::string identity;
 
@@ -75,6 +78,12 @@ extern const std::string multipleControlledX;
 /// Creates a circuit with an X gate that is positively and negatively
 /// controlled.
 extern const std::string mixedControlledX;
+
+/// Creates a circuit with an inverse modifier applied to an X gate.
+extern const std::string inverseX;
+
+/// Creates a circuit with an inverse modifier applied to a controlled X gate.
+extern const std::string inverseMultipleControlledX;
 
 /// Creates a circuit with just a Y gate.
 extern const std::string y;

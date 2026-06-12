@@ -102,6 +102,11 @@ include "stdgates.inc";
 gphase(0.123);
 )qasm";
 
+const std::string inverseGlobalPhase = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+inv @ gphase(-0.123);
+)qasm";
+
 const std::string identity = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
@@ -148,6 +153,18 @@ const std::string mixedControlledX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 ctrl @ negctrl @ x q[0], q[1], q[2];
+)qasm";
+
+const std::string inverseX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[1] q;
+inv @ x q[0];
+)qasm";
+
+const std::string inverseMultipleControlledX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+inv @ ctrl(2) @ x q[0], q[1], q[2];
 )qasm";
 
 const std::string y = R"qasm(OPENQASM 3.0;

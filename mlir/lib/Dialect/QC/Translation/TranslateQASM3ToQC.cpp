@@ -762,28 +762,15 @@ public:
         }
         localScope[name] = std::move(args);
       }
-      for (const auto& bodyStmt : gate.body) {
-        if (const auto gateCall =
-                std::dynamic_pointer_cast<qasm3::GateCallStatement>(bodyStmt)) {
-          applyGateCallStatement(gateCall, localScope);
-        } else if (const auto barrier =
-                       std::dynamic_pointer_cast<qasm3::BarrierStatement>(
-                           bodyStmt)) {
-          SmallVector<Value> qubits;
-          for (const auto& g : barrier->gates) {
-            auto resolved =
-                resolveGateOperandInScope(g, localScope, barrier->debugInfo);
-            qubits.append(resolved.begin(), resolved.end());
-          }
-          builder.barrier(qubits);
-        } else if (const auto reset =
-                       std::dynamic_pointer_cast<qasm3::ResetStatement>(
-                           bodyStmt)) {
-          for (auto q : resolveGateOperandInScope(reset->gate, localScope,
-                                                  reset->debugInfo)) {
-            builder.reset(q);
-          }
+      for (const auto& statement : gate.body) {
+        const auto gateCall =
+            std::dynamic_pointer_cast<qasm3::GateCallStatement>(statement);
+        if (gateCall == nullptr) {
+          throw qasm3::CompilerError("Compound operations with non-quantum "
+                                     "statements are not supported.",
+                                     debugInfo);
         }
+        applyGateCallStatement(gateCall, localScope);
       }
     };
 
@@ -825,7 +812,7 @@ public:
           std::dynamic_pointer_cast<qasm3::GateCallStatement>(statement);
       if (gateCall == nullptr) {
         throw qasm3::CompilerError(
-            "Only quantum statements are supported in if/else blocks.",
+            "If statements with non-quantum statements are not supported.",
             debugInfo);
       }
       applyGateCallStatement(gateCall, qubitRegisters);
