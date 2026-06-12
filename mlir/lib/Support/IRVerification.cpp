@@ -336,11 +336,9 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
 
     if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
       Operation* prev = insert.getDest().getDefiningOp();
-      if (isa<qtensor::InsertOp>(prev)) {
-        if (ready.contains(prev)) {
-          ready.insert(insert.getOperation());
-          continue;
-        }
+      if (isa<qtensor::InsertOp>(prev) && ready.contains(prev)) {
+        ready.insert(insert.getOperation());
+        continue;
       }
     }
 
@@ -348,11 +346,9 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
 
     if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
       Operation* prev = extract.getTensor().getDefiningOp();
-      if (isa<qtensor::ExtractOp>(prev)) {
-        if (ready.contains(prev)) {
-          ready.insert(extract.getOperation());
-          continue;
-        }
+      if (isa<qtensor::ExtractOp>(prev) && ready.contains(prev)) {
+        ready.insert(extract.getOperation());
+        continue;
       }
     }
   }
@@ -371,6 +367,10 @@ static void getCartesianMappings(
   }
 
   Operation* opA = *readyIt;
+  // if (opA->getNumResults() == 0) {
+  //   return;
+  // }
+
   for (Operation* opB : *partnerIt) {
     IRMapping mNew(m);
     mNew.map(opA, opB);
@@ -413,20 +413,25 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
 
   SmallVector<SmallVector<Operation*, 2>> partners;
   for (Operation* opA : readyA) {
-    // llvm::dbgs() << "--- compare ---\n";
-    // llvm::dbgs() << *opA << '\n';
     const auto isEmpty =
         partners
-            .emplace_back(make_filter_range(readyB,
-                                            [&](Operation* opB) {
-                                              // llvm::dbgs() << '\t' << *opB <<
-                                              // '\n';
-                                              return compareOperations(opA, opB,
-                                                                       m);
-                                            }))
+            .emplace_back(make_filter_range(
+                readyB,
+                [&](Operation* opB) { return compareOperations(opA, opB, m); }))
             .empty();
     if (isEmpty) {
       return false;
+    }
+  }
+
+  for (auto& vec : partners) {
+    llvm::dbgs() << "partners:\n";
+    for (Operation* op : vec) {
+      llvm::dbgs() << *op;
+      if (op->getNextNode() != nullptr) {
+        llvm::dbgs() << " | " << *(op->getNextNode());
+      }
+      llvm::dbgs() << "\n";
     }
   }
 
@@ -441,7 +446,14 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
     local.insert_range(readyA);
     local.insert_range(readyB);
 
-    // Regional comparison.
+    // Try to compare the rest of the current block with the current mapping.
+
+    if (!compareTopologically(openA, openB, local, localM)) {
+      continue;
+    }
+
+    // If that works, compare the nested regions of each ready operation on the
+    // lhs with its partner on the rhs.
 
     SetVector<Operation*>::iterator readyIter = readyA.begin();
     for (; readyIter != readyA.end(); readyIter = std::next(readyIter)) {
@@ -468,15 +480,10 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
       }
     }
 
-    // If all regions can be matched with this mapping, try the remaining of the
-    // current block.
+    // If we visited each operation on the lhs, the two blocks are equivalent.
 
     if (readyIter == readyA.end()) {
-      if (compareTopologically(openA, openB, local, localM)) {
-        closed = std::move(local);
-        m = std::move(localM);
-        break;
-      }
+      break;
     }
   }
 
