@@ -956,6 +956,10 @@ public:
     }
     const auto& indexExpression = target->indices[0]->indexExpressions[0];
     const auto index = evaluatePositiveConstant(indexExpression, debugInfo);
+    if (std::cmp_greater_equal(index, creg.size)) {
+      throw qasm3::CompilerError("Classical bit index out of bounds.",
+                                 debugInfo);
+    }
     bits.push_back(creg[static_cast<int64_t>(index)]);
     return bits;
   }

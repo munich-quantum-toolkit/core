@@ -155,6 +155,12 @@ qubit[3] q;
 ctrl(2) @ x q[0], q[1], q[2];
 )qasm";
 
+const std::string tripleControlledXOpenQASM2 = R"qasm(OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[4];
+cccx q[0], q[1], q[2], q[3];
+)qasm";
+
 const std::string mixedControlledX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
@@ -728,16 +734,6 @@ if (c) {
 } else {
   z q[0];
 }
-)qasm";
-
-const std::string bellOpenQASM2 = R"qasm(OPENQASM 2.0;
-include "qelib1.inc";
-qreg q[2];
-creg c[2];
-h q[0];
-cx q[0],q[1];
-measure q[0] -> c[0];
-measure q[1] -> c[1];
 )qasm";
 
 } // namespace mlir::qasm

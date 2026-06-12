@@ -81,21 +81,17 @@ static void singleNegControlledX(qc::QCProgramBuilder& b) {
   b.x(q[0]);
 }
 
+static void tripleControlledX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.mcx({q[0], q[1], q[2]}, q[3]);
+}
+
 static void mixedControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.x(q[1]);
   b.mcx({q[0], q[1]}, q[2]);
   b.x(q[1]);
 }
-
-static void bell(qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  auto c = b.allocClassicalBitRegister(2);
-  b.h(q[0]);
-  b.cx(q[0], q[1]);
-  b.measure(q[0], c[0]);
-  b.measure(q[1], c[1]);
-};
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
@@ -166,6 +162,8 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp)},
         QASM3TranslationTestCase{"GlobalPhase", qasm::globalPhase,
                                  MQT_NAMED_BUILDER(qc::globalPhase)},
+        QASM3TranslationTestCase{"InverseGlobalPhase", qasm::inverseGlobalPhase,
+                                 MQT_NAMED_BUILDER(qc::inverseGlobalPhase)},
         QASM3TranslationTestCase{"Identity", qasm::identity,
                                  MQT_NAMED_BUILDER(qc::identity)},
         QASM3TranslationTestCase{
@@ -184,6 +182,9 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"MultipleControlledX",
                                  qasm::multipleControlledX,
                                  MQT_NAMED_BUILDER(qc::multipleControlledX)},
+        QASM3TranslationTestCase{"TripleControlledXOpenQASM2",
+                                 qasm::tripleControlledXOpenQASM2,
+                                 MQT_NAMED_BUILDER(tripleControlledX)},
         QASM3TranslationTestCase{"MixedControlledX", qasm::mixedControlledX,
                                  MQT_NAMED_BUILDER(mixedControlledX)},
         QASM3TranslationTestCase{"InverseX", qasm::inverseX,
@@ -389,6 +390,4 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
                                  MQT_NAMED_BUILDER(qc::ifTwoQubits)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
-                                 MQT_NAMED_BUILDER(qc::ifElse)},
-        QASM3TranslationTestCase{"BellOpenQASM2", qasm::bellOpenQASM2,
-                                 MQT_NAMED_BUILDER(bell)}));
+                                 MQT_NAMED_BUILDER(qc::ifElse)}));

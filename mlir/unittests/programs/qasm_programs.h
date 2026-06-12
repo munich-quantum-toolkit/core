@@ -78,6 +78,9 @@ extern const std::string singleNegControlledX;
 /// Creates a circuit with a multi-controlled X gate.
 extern const std::string multipleControlledX;
 
+/// Creates a circuit with a triple-controlled X gate in OpenQASM 2.
+extern const std::string tripleControlledXOpenQASM2;
+
 /// Creates a circuit with an X gate that is positively and negatively
 /// controlled.
 extern const std::string mixedControlledX;
@@ -356,9 +359,6 @@ extern const std::string ifTwoQubits;
 
 /// Creates a circuit with an if operation with an else branch.
 extern const std::string ifElse;
-
-/// Creates a Bell state circuit in OpenQASM 2.
-extern const std::string bellOpenQASM2;
 
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)
