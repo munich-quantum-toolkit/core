@@ -18,7 +18,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "qasm3/Importer.hpp"
 
-#include <exception>
 #include <mlir/CAPI/IR.h>
 #include <mlir/CAPI/Registration.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -33,6 +32,8 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <exception>
 #include <string>
 
 MLIR_DEFINE_CAPI_DIALECT_REGISTRATION(QC, qc, mlir::qc::QCDialect)
