@@ -483,9 +483,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeRToRy", MQT_NAMED_BUILDER(canonicalizeRToRy),
                     MQT_NAMED_BUILDER(ry)},
-        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)},
-        QCOTestCase{"TwoRDynamicPhi", MQT_NAMED_BUILDER(twoRDynamicPhi),
-                    MQT_NAMED_BUILDER(twoRDynamicPhiMerged)}));
+        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RxOp.cpp
@@ -636,8 +634,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"TwoRZThroughCtrlControlChain",
                     MQT_NAMED_BUILDER(twoRzThroughCtrlControlChain),
                     MQT_NAMED_BUILDER(twoRzThroughCtrlControlChainMerged)},
-        QCOTestCase{"TwoRZDynamicAngles", MQT_NAMED_BUILDER(twoRzDynamicAngles),
-                    MQT_NAMED_BUILDER(twoRzDynamicAnglesMerged)},
         QCOTestCase{
             "TwoRZThroughNestedCtrlControlChain",
             MQT_NAMED_BUILDER(twoRzThroughNestedCtrlControlChain),

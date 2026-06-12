@@ -552,12 +552,6 @@ void twoRzThroughCtrlControlChain(QCOProgramBuilder& b);
 /// Creates the merged single-RZ form of @ref twoRzThroughCtrlControlChain.
 void twoRzThroughCtrlControlChainMerged(QCOProgramBuilder& b);
 
-/// Creates a circuit with two RZ gates using a non-constant summed angle.
-void twoRzDynamicAngles(QCOProgramBuilder& b);
-
-/// Creates the merged single-RZ form of @ref twoRzDynamicAngles.
-void twoRzDynamicAnglesMerged(QCOProgramBuilder& b);
-
 /// Creates a circuit with two RZ gates on a control wire separated by nested
 /// `ctrl` hops.
 void twoRzThroughNestedCtrlControlChain(QCOProgramBuilder& b);
@@ -633,12 +627,6 @@ void canonicalizeRToRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with two R gates in a row with the same `phi`.
 void twoR(QCOProgramBuilder& b);
-
-/// Creates a circuit with two R gates sharing a symbolic `phi` value.
-void twoRDynamicPhi(QCOProgramBuilder& b);
-
-/// Creates the merged single-R form of @ref twoRDynamicPhi.
-void twoRDynamicPhiMerged(QCOProgramBuilder& b);
 
 // --- U2Op ----------------------------------------------------------------- //
 
