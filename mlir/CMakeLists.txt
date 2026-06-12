@@ -35,10 +35,17 @@ function(mqt_mlir_target_use_project_options target_name)
   endif()
 endfunction()
 
+# Optionally expose the MLIR dialects and compilation pipeline to Python.
+option(BUILD_MQT_CORE_MLIR_PYTHON "Build the Python bindings for the MQT Core MLIR dialects" OFF)
+
 # add main library code
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(tools)
+
+if(BUILD_MQT_CORE_MLIR_PYTHON)
+  add_subdirectory(python)
+endif()
 
 # add test code
 if(BUILD_MQT_CORE_TESTS)
