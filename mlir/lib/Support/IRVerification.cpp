@@ -18,10 +18,12 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -32,6 +34,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <cassert>
 #include <cmath>
@@ -41,9 +44,32 @@
 
 using namespace mlir;
 
+namespace {
+struct TensorMapping {
+  /// Maps all tensor values of the lhs to its equiv group.
+  DenseMap<Value, size_t> lhsEquivGroups;
+  /// Maps all tensor values of the rhs to its equiv group.
+  DenseMap<Value, size_t> rhsEquivGroups;
+  /// Maps the i-th group of lhs to the j-th group of rhs.
+  DenseMap<size_t, size_t> equivGroupMapping;
+
+  /// Map equivalence group identifiers of two tensors.
+  void map(Value lhs, Value rhs) {
+    equivGroupMapping[lhsEquivGroups[lhs]] = rhsEquivGroups[rhs];
+  }
+
+  /// Return true if the given tensor values have the same equiv group.
+  [[nodiscard]] bool equals(Value lhs, Value rhs) const {
+    const auto i = lhsEquivGroups.at(lhs);
+    return equivGroupMapping.at(i) == rhsEquivGroups.at(rhs);
+  }
+};
+} // namespace
+
 static bool compareRegions(Region& lhs, Region& rhs,
                            SetVector<Operation*>& lhsClosed,
-                           SetVector<Operation*>& rhsClosed, IRMapping& m);
+                           SetVector<Operation*>& rhsClosed, IRMapping& m,
+                           TensorMapping& tm);
 
 /// Return true, if the given value has the type `tensor<qco.qubit>`.
 static bool hasTypeQubitTensor(Value v) {
@@ -53,6 +79,62 @@ static bool hasTypeQubitTensor(Value v) {
   }
 
   return isa<qco::QubitType>(tensor.getElementType());
+}
+
+/// Recursively initialize the equivalence group for a tensor value.
+static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
+                           DenseMap<Value, size_t>& group) {
+  qtensor::TensorIterator it(v);
+  for (; it != std::default_sentinel; ++it) {
+    if (it.tensor() == nullptr) {
+      continue;
+    }
+
+    group[it.tensor()] = id;
+
+    if (isa<BlockArgument>(it.tensor())) {
+      continue;
+    }
+
+    if (auto op = dyn_cast<qco::IfOp>(it.operation())) {
+      const auto prev = std::prev(it);
+      const auto qIt = llvm::find(op.getQubits(), prev.tensor());
+      assert(qIt != op.getQubits().end());
+      const auto idx = std::distance(op.getQubits().begin(), qIt);
+
+      auto& thenRegion = op.getThenRegion();
+      auto& elseRegion = op.getElseRegion();
+
+      const auto& thenArg = thenRegion.getArgument(idx);
+      const auto& elseArg = elseRegion.getArgument(idx);
+
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(thenArg), id, group);
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(elseArg), id, group);
+    } else if (auto op = dyn_cast<scf::ForOp>(it.operation())) {
+      const auto& arg =
+          op.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(arg), id, group);
+    }
+  }
+}
+
+/// Generate equivalence group for all allocated and created tensors.
+static DenseMap<Value, size_t> getEquivGroup(ModuleOp mod) {
+  size_t id = 0;
+  DenseMap<Value, size_t> group;
+
+  mod->walk([&](Operation* op) {
+    if (auto alloc = dyn_cast<qtensor::AllocOp>(op)) {
+      initEquivGroup(alloc.getResult(), id, group);
+      ++id;
+    } else if (auto from = dyn_cast<qtensor::FromElementsOp>(op)) {
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(from.getResult()), id,
+                     group);
+      ++id;
+    }
+  });
+
+  return group;
 }
 
 /// Map all results from one op to another using the given permutation.
@@ -70,6 +152,7 @@ static void mapResults(Operation* lhs, Operation* rhs,
 /// Assumes that `permutation.size() == lhs.getNumArguments()`.
 static void mapArguments(Block& lhs, Block& rhs, ArrayRef<size_t> permutation,
                          IRMapping& m) {
+
   for (const auto& [i, lhsArg] : enumerate(lhs.getArguments())) {
     m.map(lhsArg, rhs.getArgument(permutation[i]));
   }
@@ -88,8 +171,8 @@ static SmallVector<size_t> getTargetPermutation(qc::CtrlOp lhs, qc::CtrlOp rhs,
   return permutation;
 }
 
-/// Return a permutation vector, where permutation[i] maps the i-th input target
-/// of the lhs to the j-th input target of the rhs.
+/// Return a permutation vector, where permutation[i] maps the i-th input
+/// target of the lhs to the j-th input target of the rhs.
 static SmallVector<size_t>
 getTargetPermutation(qco::CtrlOp lhs, qco::CtrlOp rhs, const IRMapping& m) {
   SmallVector<size_t> permutation(lhs.getNumTargets());
@@ -101,7 +184,79 @@ getTargetPermutation(qco::CtrlOp lhs, qco::CtrlOp rhs, const IRMapping& m) {
   return permutation;
 }
 
-/// Compares two floating point numbers for approximate equivalence.
+/// Return a permutation vector, where permutation[i] maps the i-th input
+/// target of the lhs to the j-th input target of the rhs.
+static SmallVector<size_t>
+getControlPermutation(qco::CtrlOp lhs, qco::CtrlOp rhs, const IRMapping& m) {
+  SmallVector<size_t> permutation(lhs.getNumControls());
+  for (const auto& [i, trgt] : llvm::enumerate(lhs.getInputControls())) {
+    const auto it = llvm::find(rhs.getInputControls(), m.lookup(trgt));
+    const auto j = std::distance(rhs.getInputControls().begin(), it);
+    permutation[i] = j;
+  }
+  return permutation;
+}
+
+/// Compare two ctrl operations, allowing permutations of control and target
+/// qubits.
+static bool compareCtrlOps(qc::CtrlOp lhs, qc::CtrlOp rhs, const IRMapping& m) {
+  DenseSet<Value> workset;
+  workset.insert_range(rhs.getControls());
+  for (const auto& ctrl : lhs.getControls()) {
+    const auto& v = m.lookup(ctrl);
+    if (!workset.contains(v)) {
+      return false;
+    }
+    workset.erase(v);
+  }
+
+  if (!workset.empty()) {
+    return false;
+  }
+
+  workset.insert_range(rhs.getTargets());
+  for (const auto& trgt : lhs.getTargets()) {
+    const auto& v = m.lookup(trgt);
+    if (!workset.contains(v)) {
+      return false;
+    }
+    workset.erase(v);
+  }
+
+  return workset.empty();
+}
+
+/// Compare two ctrl operations, allowing permutations of input control and
+/// input target qubits.
+static bool compareCtrlOps(qco::CtrlOp lhs, qco::CtrlOp rhs,
+                           const IRMapping& m) {
+  DenseSet<Value> workset;
+  workset.insert_range(rhs.getInputControls());
+  for (const auto& ctrl : lhs.getInputControls()) {
+    const auto& v = m.lookup(ctrl);
+    if (!workset.contains(v)) {
+      return false;
+    }
+    workset.erase(v);
+  }
+
+  if (!workset.empty()) {
+    return false;
+  }
+
+  workset.insert_range(rhs.getInputTargets());
+  for (const auto& trgt : lhs.getInputTargets()) {
+    const auto& v = m.lookup(trgt);
+    if (!workset.contains(v)) {
+      return false;
+    }
+    workset.erase(v);
+  }
+
+  return workset.empty();
+}
+
+/// Compare two floating point numbers for approximate equivalence.
 static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
                                 const unsigned width) {
   if (lhs.isNaN() || rhs.isNaN()) {
@@ -132,9 +287,9 @@ static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
 }
 
 /// Compare two attributes for equivality.
-/// Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`, and
-/// `FlatSymbolRefAttr`.
-/// For any other type, the function simply returns true.
+/// Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`,
+/// and `FlatSymbolRefAttr`. For any other type, the function simply returns
+/// true.
 static bool compareAttributes(Attribute lhs, Attribute rhs) {
   if (dyn_cast<UnitAttr>(lhs)) {
     if (!dyn_cast<UnitAttr>(rhs)) {
@@ -176,7 +331,7 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
 /// Compare two operations for structural equivalence, applying special
 /// rules for `CtrlOp` s and `qtensor` s.
 static bool compareOperations(Operation* lhs, Operation* rhs,
-                              const IRMapping& m) {
+                              const IRMapping& m, const TensorMapping& tm) {
 
   // Compare top-level signature-like characteristics.
 
@@ -209,87 +364,26 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
 
   if (isa<qc::CtrlOp>(lhs)) {
     assert(isa<qc::CtrlOp>(rhs));
-
-    auto ctrlLhs = cast<qc::CtrlOp>(lhs);
-    auto ctrlRhs = cast<qc::CtrlOp>(rhs);
-
-    DenseSet<Value> workset;
-    workset.insert_range(ctrlRhs.getControls());
-    for (const auto& ctrl : ctrlLhs.getControls()) {
-      const auto& mapped = m.lookup(ctrl);
-      if (!workset.contains(mapped)) {
-        return false;
-      }
-      workset.erase(mapped);
+    if (!compareCtrlOps(cast<qc::CtrlOp>(lhs), cast<qc::CtrlOp>(rhs), m)) {
+      return false;
     }
-
-    assert(workset.empty());
-
-    // Analogously for the targets.
-
-    workset.clear();
-    workset.insert_range(ctrlRhs.getTargets());
-    for (const auto& trgt : ctrlLhs.getTargets()) {
-      const auto& operand = m.lookup(trgt);
-      if (!workset.contains(operand)) {
-        return false;
-      }
-      workset.erase(operand);
+  } else if (isa<qco::CtrlOp>(lhs)) {
+    assert(isa<qco::CtrlOp>(rhs));
+    if (!compareCtrlOps(cast<qco::CtrlOp>(lhs), cast<qco::CtrlOp>(rhs), m)) {
+      return false;
     }
-
-    assert(workset.empty());
-
   } else {
-    for (const auto& [operandLhs, operandRhs] :
+    for (const auto& [lhsOperand, rhsOperand] :
          llvm::zip_equal(lhs->getOperands(), rhs->getOperands())) {
+      if (hasTypeQubitTensor(lhsOperand)) {
+        assert(hasTypeQubitTensor(rhsOperand));
 
-      if (hasTypeQubitTensor(operandLhs)) {
-        assert(hasTypeQubitTensor(operandRhs));
-
-        auto tensorLhs = cast<TypedValue<RankedTensorType>>(operandLhs);
-        qtensor::TensorIterator itLhs(tensorLhs);
-        while (std::prev(itLhs) != itLhs) {
-          --itLhs;
-        }
-
-        auto tensorRhs = cast<TypedValue<RankedTensorType>>(operandRhs);
-        qtensor::TensorIterator itRhs(tensorRhs);
-        while (std::prev(itRhs) != itRhs) {
-          --itRhs;
-        }
-
-        if (isa<BlockArgument>(itLhs.tensor())) {
-          if (!isa<BlockArgument>(itRhs.tensor())) {
-            return false;
-          }
-        } else if (isa<qtensor::AllocOp>(itLhs.operation())) {
-          if (!isa<qtensor::AllocOp>(itRhs.operation())) {
-            return false;
-          }
-
-          auto allocLhs = cast<qtensor::AllocOp>(itLhs.operation());
-          auto allocRhs = cast<qtensor::AllocOp>(itRhs.operation());
-
-          if (m.lookup(allocLhs.getResult()) != allocRhs.getResult()) {
-            return false;
-          }
-        } else if (isa<qtensor::FromElementsOp>(itLhs.operation())) {
-          if (!isa<qtensor::FromElementsOp>(itRhs.operation())) {
-            return false;
-          }
-
-          auto fromLhs = cast<qtensor::FromElementsOp>(itLhs.operation());
-          auto fromRhs = cast<qtensor::FromElementsOp>(itRhs.operation());
-
-          if (m.lookup(fromLhs.getResult()) != fromRhs.getResult()) {
-            return false;
-          }
-        } else {
-          llvm::reportFatalInternalError("unhandled qtensor source");
+        if (!tm.equals(lhsOperand, rhsOperand)) {
+          return false;
         }
       } else {
-        auto operand = m.lookup(operandLhs);
-        if (operand != operandRhs) {
+        const auto& v = m.lookup(lhsOperand);
+        if (v != rhsOperand) {
           return false;
         }
       }
@@ -366,8 +460,8 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
 
       // Deallocations are ready whenever we've visited each op on the tensor
       // chain. Because we initialize the iterator with its input tensor, the
-      // iterator already points at the previous operation. Thus use a do-while
-      // loop instead of a regular while.
+      // iterator already points at the previous operation. Thus use a
+      // do-while loop instead of a regular while.
 
       bool fullChain{true};
       qtensor::TensorIterator it(dealloc.getTensor());
@@ -400,7 +494,8 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
 
 static bool compareBlocks(Block& lhs, Block& rhs,
                           SetVector<Operation*>& lhsClosed,
-                          SetVector<Operation*>& rhsClosed, IRMapping& m) {
+                          SetVector<Operation*>& rhsClosed, IRMapping& m,
+                          TensorMapping& tm) {
   if (lhs.getNumArguments() != rhs.getNumArguments()) {
     return false;
   }
@@ -459,21 +554,36 @@ static bool compareBlocks(Block& lhs, Block& rhs,
           continue;
         }
 
-        if (compareOperations(lhsOp, rhsOp, m)) {
+        if (compareOperations(lhsOp, rhsOp, m, tm)) {
           matched.insert(rhsOp);
 
-          if (isa<qc::CtrlOp>(lhsOp)) {
-            assert(isa<qc::CtrlOp>(rhsOp));
-            auto lhsCtrl = cast<qc::CtrlOp>(lhsOp);
-            auto rhsCtrl = cast<qc::CtrlOp>(rhsOp);
-            mapResults(lhsCtrl, rhsCtrl,
-                       getTargetPermutation(lhsCtrl, rhsCtrl, m), m);
-          } else if (isa<qco::CtrlOp>(lhsOp)) {
+          if (isa<qco::CtrlOp>(lhsOp)) {
             assert(isa<qco::CtrlOp>(rhsOp));
             auto lhsCtrl = cast<qco::CtrlOp>(lhsOp);
             auto rhsCtrl = cast<qco::CtrlOp>(rhsOp);
-            mapResults(lhsCtrl, rhsCtrl,
-                       getTargetPermutation(lhsCtrl, rhsCtrl, m), m);
+
+            SmallVector<size_t> permutation;
+            permutation.reserve(lhsCtrl.getNumQubits());
+            permutation.append(getControlPermutation(lhsCtrl, rhsCtrl, m));
+            for (const auto i : getTargetPermutation(lhsCtrl, rhsCtrl, m)) {
+              permutation.emplace_back(lhsCtrl.getNumControls() + i);
+            }
+            mapResults(lhsCtrl, rhsCtrl, permutation, m);
+          } else if (isa<qtensor::AllocOp>(lhsOp)) {
+            assert(isa<qtensor::AllocOp>(rhsOp));
+            auto lhsAlloc = cast<qtensor::AllocOp>(lhsOp);
+            auto rhsAlloc = cast<qtensor::AllocOp>(rhsOp);
+            tm.map(lhsAlloc.getResult(), rhsAlloc.getResult());
+          } else if (isa<qtensor::FromElementsOp>(lhsOp)) {
+            assert(isa<qtensor::FromElementsOp>(rhsOp));
+            auto lhsFrom = cast<qtensor::FromElementsOp>(lhsOp);
+            auto rhsFrom = cast<qtensor::FromElementsOp>(rhsOp);
+            tm.map(lhsFrom.getResult(), rhsFrom.getResult());
+          } else if (isa<qtensor::ExtractOp>(lhsOp)) {
+            assert(isa<qtensor::ExtractOp>(rhsOp));
+            auto lhsExtract = cast<qtensor::ExtractOp>(lhsOp);
+            auto rhsExtract = cast<qtensor::ExtractOp>(rhsOp);
+            m.map(lhsExtract.getResult(), rhsExtract.getResult());
           } else {
             SmallVector<size_t> permutation(lhsOp->getNumResults());
             std::iota(permutation.begin(), permutation.end(), 0);
@@ -490,8 +600,8 @@ static bool compareBlocks(Block& lhs, Block& rhs,
       }
     }
 
-    // At this point, we've successfully matched each operation on the lhs with
-    // one on the rhs. Subsequently, update the open and closed sets and
+    // At this point, we've successfully matched each operation on the lhs
+    // with one on the rhs. Subsequently, update the open and closed sets and
     // recursively compare the nested regions of each operation pair.
 
     lhsOpen.set_subtract(lhsReady);
@@ -512,7 +622,7 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             [&](const auto& zip) {
               const auto& [lhsRegion, rhsRegion] = zip;
               return compareRegions(lhsRegion, rhsRegion, lhsClosed, rhsClosed,
-                                    m);
+                                    m, tm);
             }));
         if (nequiv != opLhs->getNumRegions()) {
           break;
@@ -531,16 +641,16 @@ static bool compareBlocks(Block& lhs, Block& rhs,
 /// Compare two regions for structural equivalence.
 static bool compareRegions(Region& lhs, Region& rhs,
                            SetVector<Operation*>& lhsClosed,
-                           SetVector<Operation*>& rhsClosed, IRMapping& m) {
+                           SetVector<Operation*>& rhsClosed, IRMapping& m,
+                           TensorMapping& tm) {
   if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
     return false;
   }
 
   for (const auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
-    if (!compareBlocks(lhsBlock, rhsBlock, lhsClosed, rhsClosed, m)) {
+    if (!compareBlocks(lhsBlock, rhsBlock, lhsClosed, rhsClosed, m, tm)) {
       return false;
     }
-
     m.map(&lhsBlock, &rhsBlock);
   }
 
@@ -551,6 +661,10 @@ bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
   IRMapping m;
   SetVector<Operation*> lhsClosed;
   SetVector<Operation*> rhsClosed;
+  TensorMapping tm{.lhsEquivGroups = getEquivGroup(lhs),
+                   .rhsEquivGroups = getEquivGroup(rhs),
+                   .equivGroupMapping = DenseMap<size_t, size_t>{}};
+
   return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), lhsClosed,
-                        rhsClosed, m);
+                        rhsClosed, m, tm);
 }
