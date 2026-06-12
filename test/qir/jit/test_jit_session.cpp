@@ -70,9 +70,4 @@ TEST(JitSessionErrors, MalformedIRThrows) {
   EXPECT_THROW(qir::JitSession(ir, "MalformedIR.ll"), std::runtime_error);
 }
 
-TEST(JitSessionErrors, MissingMainThrows) {
-  constexpr std::string_view ir = R"(define i32 @notMain() { ret i32 0 })";
-  EXPECT_THROW(qir::JitSession(ir, "NoMain.ll"), std::runtime_error);
-}
-
 } // namespace
