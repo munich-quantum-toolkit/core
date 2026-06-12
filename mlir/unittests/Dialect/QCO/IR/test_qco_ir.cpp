@@ -483,7 +483,9 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeRToRy", MQT_NAMED_BUILDER(canonicalizeRToRy),
                     MQT_NAMED_BUILDER(ry)},
-        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)}));
+        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)},
+        QCOTestCase{"TwoRDynamicPhi", MQT_NAMED_BUILDER(twoRDynamicPhi),
+                    MQT_NAMED_BUILDER(twoRDynamicPhiMerged)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RxOp.cpp
@@ -634,6 +636,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"TwoRZThroughCtrlControlChain",
                     MQT_NAMED_BUILDER(twoRzThroughCtrlControlChain),
                     MQT_NAMED_BUILDER(twoRzThroughCtrlControlChainMerged)},
+        QCOTestCase{"TwoRZDynamicAngles", MQT_NAMED_BUILDER(twoRzDynamicAngles),
+                    MQT_NAMED_BUILDER(twoRzDynamicAnglesMerged)},
         QCOTestCase{
             "TwoRZThroughNestedCtrlControlChain",
             MQT_NAMED_BUILDER(twoRzThroughNestedCtrlControlChain),
@@ -1027,7 +1031,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"TwoXXMinusYYSwappedTargets",
                     MQT_NAMED_BUILDER(twoXxMinusYYSwappedTargets),
-                    MQT_NAMED_BUILDER(xxMinusYY)}));
+                    MQT_NAMED_BUILDER(xxMinusYY)},
+        QCOTestCase{"TwoXXMinusYYMismatchedBeta",
+                    MQT_NAMED_BUILDER(twoXxMinusYYMismatchedBeta),
+                    MQT_NAMED_BUILDER(twoXxMinusYYMismatchedBeta)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/XxPlusYyOp.cpp

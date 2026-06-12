@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Support/LLVM.h>
 
 #include <numbers>
@@ -1080,6 +1081,28 @@ void twoRzThroughCtrlControlChainMerged(QCOProgramBuilder& b) {
   std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
 }
 
+void twoRzDynamicAngles(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto thetaA =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.1)).getResult();
+  const auto thetaB =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.2)).getResult();
+  const auto thetaSum = arith::AddFOp::create(b, thetaA, thetaB).getResult();
+  q[0] = b.rz(thetaSum, q[0]);
+  q[0] = b.rz(thetaB, q[0]);
+}
+
+void twoRzDynamicAnglesMerged(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto thetaA =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.1)).getResult();
+  const auto thetaB =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.2)).getResult();
+  const auto thetaSum = arith::AddFOp::create(b, thetaA, thetaB).getResult();
+  const auto theta = arith::AddFOp::create(b, thetaSum, thetaB).getResult();
+  b.rz(theta, q[0]);
+}
+
 void twoRzThroughNestedCtrlControlChain(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   q[0] = b.rz(0.1, q[0]);
@@ -1232,6 +1255,27 @@ void twoR(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.r(0.045, 0.456, q[0]);
   q[0] = b.r(0.078, 0.456, q[0]);
+}
+
+void twoRDynamicPhi(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto phiBase =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.1)).getResult();
+  const auto phiOffset =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.05)).getResult();
+  const auto phi = arith::AddFOp::create(b, phiBase, phiOffset).getResult();
+  q[0] = b.r(0.045, phi, q[0]);
+  q[0] = b.r(0.078, phi, q[0]);
+}
+
+void twoRDynamicPhiMerged(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto phiBase =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.1)).getResult();
+  const auto phiOffset =
+      arith::ConstantOp::create(b, b.getF64FloatAttr(0.05)).getResult();
+  const auto phi = arith::AddFOp::create(b, phiBase, phiOffset).getResult();
+  b.r(0.123, phi, q[0]);
 }
 
 void u2(QCOProgramBuilder& b) {
@@ -2025,6 +2069,12 @@ void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_minus_yy(0.045, 0.456, q[0], q[1]);
   std::tie(q[1], q[0]) = b.xx_minus_yy(0.078, 0.456, q[1], q[0]);
+}
+
+void twoXxMinusYYMismatchedBeta(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_minus_yy(0.1, 0.456, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.xx_minus_yy(0.2, 0.789, q[0], q[1]);
 }
 
 void barrier(QCOProgramBuilder& b) {
