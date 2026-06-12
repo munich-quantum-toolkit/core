@@ -60,18 +60,18 @@ namespace {
 
 /// Signature: (builder, gate operands, evaluated parameters).
 /// For gates with implicit controls (cx, ccx, ...), all qubits including
-/// the controls are part of the range, matching QASM3 operand order.
+/// the controls are part of the range, matching OpenQASM 3 operand order.
 using GateFn =
     std::function<void(QCProgramBuilder&, ValueRange, ArrayRef<double>)>;
 
 } // namespace
 
 /**
- * @brief Build the table mapping QASM3 gate identifiers to QCProgramBuilder
- * emitters.
+ * @brief Build the table mapping OpenQASM 3 gate identifiers to
+ * QCProgramBuilder emitters.
  *
  * @details
- * Each entry maps a QASM3 gate identifier to a lambda that emits the
+ * Each entry maps an OpenQASM 3 gate identifier to a lambda that emits the
  * corresponding QC operation via the QCProgramBuilder.
  */
 static llvm::StringMap<GateFn> buildGateDispatch() {
@@ -187,14 +187,14 @@ static llvm::StringMap<std::shared_ptr<qasm3::Gate>> convertToStringMap(
 
 namespace {
 
-/// Map from QASM3 gate identifier to QCProgramBuilder emitter.
+/// Map from OpenQASM 3 gate identifier to QCProgramBuilder emitter.
 const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 
 /// Map of qubits in the current scope.
 using QubitScope = llvm::StringMap<SmallVector<Value>>;
 
 /**
- * @brief AST visitor that translates a QASM3 program to a QC program.
+ * @brief AST visitor that translates an OpenQASM 3 program to a QC program.
  *
  * @details
  * Implements qasm3::InstVisitor to walk the AST produced by qasm3::Parser and
@@ -236,7 +236,7 @@ private:
   /// Map from classical-register name to measurement results.
   llvm::StringMap<SmallVector<Value>> bitValues;
 
-  /// Map from gate identifier to QASM3 definition.
+  /// Map from gate identifier to OpenQASM 3 definition.
   llvm::StringMap<std::shared_ptr<qasm3::Gate>> gates;
 
   bool openQASM2CompatMode{false};
@@ -532,7 +532,9 @@ public:
     }
 
     if (it == gates.end()) {
-      throw qasm3::CompilerError("Unknown gate '" + id + "'.", stmt->debugInfo);
+      throw qasm3::CompilerError("No OpenQASM 3 definition found for gate '" +
+                                     id + "'.",
+                                 stmt->debugInfo);
     }
 
     // Evaluate parameters to doubles
@@ -621,7 +623,8 @@ public:
     // Emit standard gate
     const auto dispIt = GATE_DISPATCH.find(resolvedId);
     if (dispIt == GATE_DISPATCH.end()) {
-      throw qasm3::CompilerError("Unknown gate '" + id + "'.", stmt->debugInfo);
+      throw qasm3::CompilerError(
+          "No MLIR definition found for gate '" + id + "'.", stmt->debugInfo);
     }
 
     if (it->second->getNParameters() != params.size()) {
@@ -794,7 +797,7 @@ public:
     }
   }
 
-  /// Translate a QASM3 condition to MLIR.
+  /// Translate an OpenQASM 3 condition to MLIR.
   [[nodiscard]] Value
   translateCondition(const std::shared_ptr<qasm3::Expression>& condition,
                      const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
@@ -807,8 +810,11 @@ public:
     // Unary negation (!c[0] or ~c[0])
     if (const auto unaryExpr =
             std::dynamic_pointer_cast<qasm3::UnaryExpression>(condition)) {
-      assert(unaryExpr->op == qasm3::UnaryExpression::LogicalNot ||
-             unaryExpr->op == qasm3::UnaryExpression::BitwiseNot);
+      if (unaryExpr->op != qasm3::UnaryExpression::LogicalNot &&
+          unaryExpr->op != qasm3::UnaryExpression::BitwiseNot) {
+        throw qasm3::CompilerError(
+            "Only ! and ~ are supported in if statements.", debugInfo);
+      }
       const auto& id = std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(
           unaryExpr->operand);
       if (!id) {
@@ -872,14 +878,28 @@ public:
 
   //===--- Operand resolution helpers ------------------------------------===//
 
-  /// Resolve a qubit operand against the top-level qubitRegisters map.
+  /**
+   * @brief Resolve a qubit operand against the top-level qubitRegisters map.
+   *
+   * @return A variant containing
+   * - a `Value` if the operand is, e.g., `q[0]`,
+   * - a `Value` if the operand `q` is a single-qubit register, or
+   * - a `SmallVector<Value>` if the operand `q` is a multi-qubit register.
+   */
   [[nodiscard]] std::variant<Value, SmallVector<Value>>
   resolveGateOperand(const std::shared_ptr<qasm3::GateOperand>& operand,
                      const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
     return resolveGateOperandInScope(operand, qubitRegisters, debugInfo);
   }
 
-  /// Resolve a qubit operand against @p scope.
+  /**
+   * @brief Resolve a qubit operand against @p scope.
+   *
+   * @return A variant containing
+   * - a `Value` if the operand is, e.g., `q[0]`,
+   * - a `Value` if the operand `q` is a single-qubit register, or
+   * - a `SmallVector<Value>` if the operand `q` is a multi-qubit register.
+   */
   [[nodiscard]] std::variant<Value, SmallVector<Value>>
   resolveGateOperandInScope(
       const std::shared_ptr<qasm3::GateOperand>& operand,
@@ -986,10 +1006,10 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(MLIRContext* context,
     importer.visitProgram(program);
     return importer.finalize();
   } catch (const qasm3::CompilerError& e) {
-    llvm::errs() << "QASM3 import error: " << e.what() << "\n";
+    llvm::errs() << "Import error: " << e.what() << "\n";
     return nullptr;
   } catch (const std::exception& e) {
-    llvm::errs() << "QASM3 import error: " << e.what() << "\n";
+    llvm::errs() << "Import error: " << e.what() << "\n";
     return nullptr;
   }
 }
