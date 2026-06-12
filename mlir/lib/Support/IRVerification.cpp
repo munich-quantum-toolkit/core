@@ -310,85 +310,95 @@ static bool compareOperations(Operation* opA, Operation* opB,
 /// Extract and return "ready" operations.
 /// These are operations that are independent from each other.
 static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
-                                         DenseSet<Operation*>& visited) {
-  const auto isReady = [&](OpOperand& operand) {
-    if (isa<BlockArgument>(operand.get())) {
+                                         DenseSet<Operation*>& closed) {
+  const auto isReady = [&closed](Value v) {
+    if (isa<BlockArgument>(v)) {
       return true;
     }
-    return visited.contains(operand.get().getDefiningOp());
+    return closed.contains(v.getDefiningOp());
   };
 
   SetVector<Operation*> ready;
   for (Operation* op : open) {
-    if (visited.contains(op)) {
+    if (closed.contains(op) || ready.contains(op)) {
       continue;
     }
-
-    if (all_of(op->getOpOperands(), isReady)) {
-      ready.insert(op);
-      continue;
-    }
-
-    // If the destination of a tensor insert, has been produced by an insert
-    // operation as well, these two should be interchangeable. Thus, also add it
-    // to the ready set vector. Any valid IR will ensure that the indices of the
-    // two insertions are not equivalent, hence, we don't check them here.
 
     if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
-      Operation* prev = insert.getDest().getDefiningOp();
-      if (isa<qtensor::InsertOp>(prev) && ready.contains(prev)) {
-        ready.insert(insert.getOperation());
-        continue;
+
+      // If any of the inserts on the chain are ready, we consider the whole
+      // chain ready because the one ready operation could be moved the front
+      // (the top from IR perspective) of the chain.
+      // An insert is considered ready when both the inserted qubit and the
+      // index are ready.
+
+      SmallVector<Operation*> chain;
+      qtensor::TensorIterator it(insert.getResult());
+
+      for (; it != std::default_sentinel &&
+             isa<qtensor::InsertOp>(it.operation());
+           ++it) {
+        auto chainInsert = cast<qtensor::InsertOp>(it.operation());
+        if (isReady(chainInsert.getScalar()) &&
+            isReady(chainInsert.getIndex()) && !closed.contains(chainInsert)) {
+          chain.emplace_back(chainInsert);
+        }
       }
-    }
 
-    // Analogously for the extract operation.
+      if (!chain.empty()) {
+        ready.insert_range(chain);
+      }
 
-    if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-      Operation* prev = extract.getTensor().getDefiningOp();
-      if (isa<qtensor::ExtractOp>(prev) && ready.contains(prev)) {
-        ready.insert(extract.getOperation());
-        continue;
+    } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+
+      // We apply the analogous logic to extracts.
+
+      SmallVector<Operation*> chain;
+      qtensor::TensorIterator it(extract.getOutTensor());
+
+      for (; it != std::default_sentinel &&
+             isa<qtensor::ExtractOp>(it.operation());
+           ++it) {
+        auto chainExtract = cast<qtensor::ExtractOp>(it.operation());
+        if (isReady(chainExtract.getIndex()) &&
+            !closed.contains(chainExtract)) {
+          chain.emplace_back(chainExtract);
+        }
+      }
+
+      if (!chain.empty()) {
+        ready.insert_range(chain);
+      }
+    } else if (auto dealloc = dyn_cast<qtensor::DeallocOp>(op)) {
+
+      // Deallocations are ready whenever we've visited each op on the tensor
+      // chain.
+
+      bool fullChain{true};
+      qtensor::TensorIterator it(dealloc.getTensor());
+
+      for (; std::prev(it) != it; --it) {
+        if (!closed.contains(it.operation())) {
+          fullChain = false;
+          break;
+        }
+      }
+
+      if (fullChain) {
+        ready.insert(dealloc);
+      }
+
+    } else {
+
+      // Otherwise, simply check if all operands are ready.
+
+      if (llvm::all_of(op->getOperands(), isReady)) {
+        ready.insert(op);
       }
     }
   }
 
   return ready;
-}
-
-static void getCartesianMappings(
-    const SetVector<Operation*>::const_iterator readyIt,
-    const SmallVector<SmallVector<Operation*, 2>>::const_iterator partnerIt,
-    const SetVector<Operation*>::const_iterator readyEnd, const IRMapping& m,
-    SmallVectorImpl<IRMapping>& mappings) {
-  if (readyIt == readyEnd) {
-    mappings.emplace_back(m);
-    return;
-  }
-
-  Operation* opA = *readyIt;
-  // if (opA->getNumResults() == 0) {
-  //   return;
-  // }
-
-  for (Operation* opB : *partnerIt) {
-    IRMapping mNew(m);
-    mNew.map(opA, opB);
-    mapResults(opA, opB, mNew);
-    getCartesianMappings(std::next(readyIt), std::next(partnerIt), readyEnd,
-                         mNew, mappings);
-  }
-}
-
-static SmallVector<IRMapping>
-getCartesianMappings(const SetVector<Operation*>& ready,
-                     const SmallVector<SmallVector<Operation*, 2>>& partners,
-                     const IRMapping& m) {
-  assert(ready.size() == partners.size());
-  SmallVector<IRMapping> mappings;
-  getCartesianMappings(ready.begin(), partners.begin(), ready.end(), m,
-                       mappings);
-  return mappings;
 }
 
 static bool compareTopologically(ArrayRef<Operation*> openA,
@@ -397,12 +407,21 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
   const auto readyA = getReadyOps(openA, closed);
   const auto readyB = getReadyOps(openB, closed);
 
+  llvm::dbgs() << "--- readyA ---\n";
+  for (Operation* op : readyA) {
+    llvm::dbgs() << *op << '\n';
+  }
+
+  llvm::dbgs() << "--- readyB ---\n";
+  for (Operation* op : readyB) {
+    llvm::dbgs() << *op << '\n';
+  }
+
   if (readyA.empty() && readyB.empty()) {
     return true;
   }
 
-  if ((readyA.empty() && !readyB.empty()) ||
-      (!readyA.empty() && readyB.empty()) || readyA.size() != readyB.size()) {
+  if (readyA.size() != readyB.size()) {
     return false;
   }
 
@@ -411,83 +430,67 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
   // recursive processing. If there are no partners, no matching operation has
   // been found and the blocks are not equivalent.
 
-  SmallVector<SmallVector<Operation*, 2>> partners;
+  DenseSet<Operation*> matched;
+  matched.reserve(readyB.size());
+
   for (Operation* opA : readyA) {
-    const auto isEmpty =
-        partners
-            .emplace_back(make_filter_range(
-                readyB,
-                [&](Operation* opB) { return compareOperations(opA, opB, m); }))
-            .empty();
-    if (isEmpty) {
+    SetVector<Operation*>::iterator it = readyB.begin();
+    for (; it != readyB.end(); it = std::next(it)) {
+      Operation* opB = *it;
+      if (matched.contains(opB)) {
+        continue;
+      }
+
+      if (compareOperations(opA, opB, m)) {
+        matched.insert(opB);
+        mapResults(opA, opB, m);
+        m.map(opA, opB);
+        break;
+      }
+    }
+
+    if (it == readyB.end()) {
+      llvm::dbgs() << "unmatched op a: " << *opA << '\n';
       return false;
     }
   }
 
-  for (auto& vec : partners) {
-    llvm::dbgs() << "partners:\n";
-    for (Operation* op : vec) {
-      llvm::dbgs() << *op;
-      if (op->getNextNode() != nullptr) {
-        llvm::dbgs() << " | " << *(op->getNextNode());
+  // At this point, we've successfully matched each operation on the lhs with
+  // one on the rhs.
+
+  closed.insert_range(readyA);
+  closed.insert_range(readyB);
+
+  SetVector<Operation*>::iterator it = readyA.begin();
+  for (; it != readyA.end(); it = std::next(it)) {
+    Operation* opA = *it;
+
+    // Otherwise, if opA has one or more regions, try each mapping to find the
+    // equivalent operation. Each mapping uniquely identify opA with one
+    // potential partner thus use the mapping to obtain this partner and
+    // compare their respective regions.
+
+    if (opA->getNumRegions() > 0) {
+      Operation* opB = m.lookup(opA);
+      assert(opA->getNumRegions() == opB->getNumRegions());
+
+      const auto nequiv = range_size(make_filter_range(
+          llvm::zip_equal(opA->getRegions(), opB->getRegions()),
+          [&](const auto& zip) {
+            const auto& [regionA, regionB] = zip;
+            return compareRegions(regionA, regionB, closed, m);
+          }));
+      if (nequiv != opA->getNumRegions()) {
+        break;
       }
-      llvm::dbgs() << "\n";
     }
   }
 
-  assert(partners.size() == readyA.size());
-
-  auto mappings = getCartesianMappings(readyA, partners, m);
-
-  SmallVector<IRMapping>::iterator mapIter = mappings.begin();
-  for (; mapIter != mappings.end(); mapIter = std::next(mapIter)) {
-    IRMapping& localM = *mapIter;
-    DenseSet<Operation*> local(closed);
-    local.insert_range(readyA);
-    local.insert_range(readyB);
-
-    // Try to compare the rest of the current block with the current mapping.
-
-    if (!compareTopologically(openA, openB, local, localM)) {
-      continue;
-    }
-
-    // If that works, compare the nested regions of each ready operation on the
-    // lhs with its partner on the rhs.
-
-    SetVector<Operation*>::iterator readyIter = readyA.begin();
-    for (; readyIter != readyA.end(); readyIter = std::next(readyIter)) {
-      Operation* opA = *readyIter;
-
-      // Otherwise, if opA has one or more regions, try each mapping to find the
-      // equivalent operation. Each mapping uniquely identify opA with one
-      // potential partner thus use the mapping to obtain this partner and
-      // compare their respective regions.
-
-      if (opA->getNumRegions() > 0) {
-        Operation* opB = mapIter->lookup(opA);
-        assert(opA->getNumRegions() == opB->getNumRegions());
-
-        const auto nequiv = range_size(make_filter_range(
-            llvm::zip_equal(opA->getRegions(), opB->getRegions()),
-            [&](const auto& zip) {
-              const auto& [regionA, regionB] = zip;
-              return compareRegions(regionA, regionB, local, localM);
-            }));
-        if (nequiv != opA->getNumRegions()) {
-          break;
-        }
-      }
-    }
-
-    // If we visited each operation on the lhs, the two blocks are equivalent.
-
-    if (readyIter == readyA.end()) {
-      break;
-    }
+  if (it != readyA.end()) {
+    return false;
   }
 
-  return mapIter != mappings.end();
+  return compareTopologically(openA, openB, closed, m);
 }
 
 static bool compareBlocks(Block& blockA, Block& blockB,
@@ -499,6 +502,7 @@ static bool compareBlocks(Block& blockA, Block& blockB,
   for (const auto [lArg, rArg] :
        llvm::zip_equal(blockA.getArguments(), blockB.getArguments())) {
     if (lArg.getType() != rArg.getType()) {
+      llvm::dbgs() << "unequivalent block arguments\n";
       return false;
     }
 
