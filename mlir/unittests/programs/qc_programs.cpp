@@ -1605,6 +1605,16 @@ void negPowH(QCProgramBuilder& b) {
   b.pow(-0.5, [&] { b.h(q[0]); });
 }
 
+void invPowHFrac(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&] { b.pow(0.5, [&] { b.h(q[0]); }); });
+}
+
+void powHFracNeg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(-0.5, [&] { b.h(q[0]); });
+}
+
 void invPowRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv([&] { b.pow(2.0, [&] { b.rx(0.123, q[0]); }); });
@@ -1631,6 +1641,11 @@ void negPowInvIswapRef(QCProgramBuilder& b) {
 }
 
 void ctrlPowSx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], [&] { b.pow(1.0 / 3.0, [&] { b.sx(q[1]); }); });
+}
+
+void ctrlPowSxRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], [&] { b.pow(1.0 / 3.0, [&] { b.sx(q[1]); }); });
 }

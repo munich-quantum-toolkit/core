@@ -1186,6 +1186,13 @@ void powRxNeg(QCOProgramBuilder& b);
 /// eigenvalue -1 cannot safely apply NegPowToInvPow.
 void negPowH(QCOProgramBuilder& b);
 
+/// Creates a circuit with inv wrapping pow(0.5) wrapping H.
+/// MovePowOutside emits pow(-0.5){H} (not wrapping in inv).
+void invPowHFrac(QCOProgramBuilder& b);
+
+/// Creates a circuit with pow(-0.5) wrapping H (reference for invPowHFrac).
+void powHFracNeg(QCOProgramBuilder& b);
+
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
 /// inv).
 void invPowRx(QCOProgramBuilder& b);
@@ -1210,6 +1217,9 @@ void negPowInvIswapRef(QCOProgramBuilder& b);
 /// pow(p){SX} → gphase+rx is suppressed inside ctrl (would emit two ops),
 /// so the pow survives canonicalization and reaches ConvertQCOPowOp.
 void ctrlPowSx(QCOProgramBuilder& b);
+
+/// Reference for ctrlPowSx: identical circuit (pow is blocked inside ctrl).
+void ctrlPowSxRef(QCOProgramBuilder& b);
 
 // --- IfOp ---------------------------------------------------------------- //
 

@@ -11,6 +11,7 @@
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -142,20 +143,68 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(emptyQC)},
                     QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
                                MQT_NAMED_BUILDER(powSingleExponent)},
-                    QCTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
-                               MQT_NAMED_BUILDER(powRxx)},
                     QCTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
                                MQT_NAMED_BUILDER(powRxNeg)},
-                    QCTestCase{"NegPowH", MQT_NAMED_BUILDER(negPowH),
-                               MQT_NAMED_BUILDER(negPowH)},
                     QCTestCase{"InvPowRx", MQT_NAMED_BUILDER(invPowRx),
                                MQT_NAMED_BUILDER(powRxNeg)},
                     QCTestCase{"PowCtrlRx", MQT_NAMED_BUILDER(powCtrlRx),
                                MQT_NAMED_BUILDER(ctrlPowRx)},
                     QCTestCase{"NegPowInvIswap",
                                MQT_NAMED_BUILDER(negPowInvIswap),
-                               MQT_NAMED_BUILDER(negPowInvIswapRef)}));
+                               MQT_NAMED_BUILDER(negPowInvIswapRef)},
+                    QCTestCase{"InvPowHFrac",
+                               MQT_NAMED_BUILDER(invPowHFrac),
+                               MQT_NAMED_BUILDER(powHFracNeg)}));
 /// @}
+
+/// Regression: pow(rxx) cannot fold the exponent into a multi-qubit gate.
+/// Verify that a PowOp survives the cleanup pipeline.
+TEST_F(QCTest, PowRxxNoFold) {
+  auto program =
+      QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(powRxx).fn);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  int powCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 1) << "PowOp around rxx must survive the pipeline";
+}
+
+/// Regression: pow(-0.5) { h } cannot fold a negative fractional exponent
+/// into H (no angle to scale). Verify that PowOp survives.
+TEST_F(QCTest, NegPowHNoFold) {
+  auto program =
+      QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(negPowH).fn);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  int powCount = 0;
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
+}
+
+/// Regression: pow(sx) must not expand inside a ctrl modifier, because sx
+/// lowers to gphase + rx (two ops), which is not allowed in a modifier body.
+/// Verify that both CtrlOp and its nested PowOp survive.
+TEST_F(QCTest, CtrlPowSxNoExpansion) {
+  auto program =
+      QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(ctrlPowSx).fn);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  int ctrlCount = 0;
+  int powCount = 0;
+  program->walk([&](CtrlOp) { ++ctrlCount; });
+  program->walk([&](PowOp) { ++powCount; });
+  EXPECT_EQ(ctrlCount, 1) << "CtrlOp must survive the pipeline";
+  EXPECT_EQ(powCount, 1) << "PowOp inside ctrl must not be expanded";
+}
 
 /// \name QC/Modifiers/InvOp.cpp
 /// @{
