@@ -34,6 +34,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <iterator>
 #include <numeric>
 
