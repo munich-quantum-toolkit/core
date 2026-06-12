@@ -172,10 +172,9 @@ private:
  * @param basis The target Euler basis.
  * @return `1` for `U`, `3` for KAK bases, `5` for `ZSXX`.
  */
-[[nodiscard]] constexpr std::size_t maxSynthesisGateCount(EulerBasis basis) {
+[[nodiscard]] constexpr std::size_t
+maxSynthesisGateCount(const EulerBasis basis) {
   switch (basis) {
-  case EulerBasis::U:
-    return 1;
   case EulerBasis::ZYZ:
   case EulerBasis::ZXZ:
   case EulerBasis::XZX:
@@ -183,6 +182,9 @@ private:
     return 3;
   case EulerBasis::ZSXX:
     return 5;
+  case EulerBasis::U:
+  default:
+    return 1;
   }
 }
 
