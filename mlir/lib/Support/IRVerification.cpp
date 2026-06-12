@@ -35,6 +35,7 @@
 #include <cassert>
 #include <cmath>
 #include <iterator>
+#include <numeric>
 
 using namespace mlir;
 
@@ -58,12 +59,18 @@ static bool hasTypeQubitTensor(Value v) {
 static void mapResults(Operation* lhs, Operation* rhs, IRMapping& m) {
   for (const auto& [fromResult, toResult] :
        llvm::zip_equal(lhs->getResults(), rhs->getResults())) {
-    if (!isa<qtensor::AllocOp>(lhs) && !isa<qtensor::FromElementsOp>(lhs) &&
-        hasTypeQubitTensor(fromResult)) {
-      assert(hasTypeQubitTensor(toResult));
-      continue;
-    }
     m.map(fromResult, toResult);
+  }
+}
+
+/// Map arguments from one block to another using the given permutation.
+/// Assumes that `lhs.getNumArguments() == rhs.getNumArguments()`.
+/// Assumes that `permutation.size() == lhs.getNumArguments()`.
+static void mapArguments(Block& lhs, Block& rhs, ArrayRef<size_t> permutation,
+                         IRMapping& m) {
+  for (const auto& [i, lhsArg] : enumerate(lhs.getArguments())) {
+    BlockArgument rhsArg = rhs.getArgument(permutation[i]);
+    m.map(lhsArg, rhsArg);
   }
 }
 
@@ -371,13 +378,28 @@ static bool compareBlocks(Block& lhs, Block& rhs,
     return false;
   }
 
-  for (const auto [lhsArg, rhsArg] :
-       llvm::zip_equal(lhs.getArguments(), rhs.getArguments())) {
-    if (lhsArg.getType() != rhsArg.getType()) {
-      return false;
-    }
+  // Map block arguments.
+  // The targets of a `CtrlOp` are commutative, thus, find the permutation from
+  // the i-th argument of the lhs to the j-th argument of the rhs, before
+  // mapping the block arguments.
 
-    m.map(lhsArg, rhsArg);
+  if (isa<qc::CtrlOp>(lhs.getParentOp())) {
+    assert(isa<qc::CtrlOp>(rhs.getParentOp()));
+
+    auto lhsCtrl = cast<qc::CtrlOp>(lhs.getParentOp());
+    auto rhsCtrl = cast<qc::CtrlOp>(rhs.getParentOp());
+
+    SmallVector<size_t> permutation(lhs.getNumArguments());
+    for (const auto& [i, trgt] : llvm::enumerate(lhsCtrl.getTargets())) {
+      const auto it = llvm::find(rhsCtrl.getTargets(), m.lookup(trgt));
+      const auto j = std::distance(rhsCtrl.getTargets().begin(), it);
+      permutation[i] = j;
+    }
+    mapArguments(lhs, rhs, permutation, m);
+  } else {
+    SmallVector<size_t> permutation(lhs.getNumArguments());
+    std::iota(permutation.begin(), permutation.end(), 0);
+    mapArguments(lhs, rhs, permutation, m);
   }
 
   SetVector<Operation*> lhsOpen;
@@ -448,7 +470,6 @@ static bool compareBlocks(Block& lhs, Block& rhs,
       if (opLhs->getNumRegions() > 0) {
         Operation* opRhs = m.lookup(opLhs);
         assert(opLhs->getNumRegions() == opRhs->getNumRegions());
-
         const auto nequiv = range_size(make_filter_range(
             llvm::zip_equal(opLhs->getRegions(), opRhs->getRegions()),
             [&](const auto& zip) {
