@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#ifndef MQT_CORE_QUANTUMSTATEORTOP_H
-#define MQT_CORE_QUANTUMSTATEORTOP_H
+#ifndef MQT_CORE_QUANTUMSTATE_H
+#define MQT_CORE_QUANTUMSTATE_H
 #include <mlir/IR/Operation.h>
 
 #include <array>
@@ -346,4 +346,4 @@ public:
 
 } // namespace mlir::qco
 
-#endif // MQT_CORE_QUANTUMSTATEORTOP_H
+#endif // MQT_CORE_QUANTUMSTATE_H
