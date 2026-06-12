@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -54,13 +55,13 @@ static bool hasTypeQubitTensor(Value v) {
   return isa<qco::QubitType>(tensor.getElementType());
 }
 
-/// Map all results from one op to another.
+/// Map all results from one op to another using the given permutation.
 /// Assumes that `lhs->getNumResults() == rhs->getNumResults()`.
 /// Assumes that the two operations are equivalent to each other.
-static void mapResults(Operation* lhs, Operation* rhs, IRMapping& m) {
-  for (const auto& [fromResult, toResult] :
-       llvm::zip_equal(lhs->getResults(), rhs->getResults())) {
-    m.map(fromResult, toResult);
+static void mapResults(Operation* lhs, Operation* rhs,
+                       ArrayRef<size_t> permutation, IRMapping& m) {
+  for (const auto& [i, lhsResult] : llvm::enumerate(lhs->getResults())) {
+    m.map(lhsResult, rhs->getResult(permutation[i]));
   }
 }
 
@@ -70,9 +71,34 @@ static void mapResults(Operation* lhs, Operation* rhs, IRMapping& m) {
 static void mapArguments(Block& lhs, Block& rhs, ArrayRef<size_t> permutation,
                          IRMapping& m) {
   for (const auto& [i, lhsArg] : enumerate(lhs.getArguments())) {
-    BlockArgument rhsArg = rhs.getArgument(permutation[i]);
-    m.map(lhsArg, rhsArg);
+    m.map(lhsArg, rhs.getArgument(permutation[i]));
   }
+}
+
+/// Return a permutation vector, where permutation[i] maps the i-th target of
+/// the lhs to the j-th target of the rhs.
+static SmallVector<size_t> getTargetPermutation(qc::CtrlOp lhs, qc::CtrlOp rhs,
+                                                const IRMapping& m) {
+  SmallVector<size_t> permutation(lhs.getNumTargets());
+  for (const auto& [i, trgt] : llvm::enumerate(lhs.getTargets())) {
+    const auto it = llvm::find(rhs.getTargets(), m.lookup(trgt));
+    const auto j = std::distance(rhs.getTargets().begin(), it);
+    permutation[i] = j;
+  }
+  return permutation;
+}
+
+/// Return a permutation vector, where permutation[i] maps the i-th input target
+/// of the lhs to the j-th input target of the rhs.
+static SmallVector<size_t>
+getTargetPermutation(qco::CtrlOp lhs, qco::CtrlOp rhs, const IRMapping& m) {
+  SmallVector<size_t> permutation(lhs.getNumTargets());
+  for (const auto& [i, trgt] : llvm::enumerate(lhs.getInputTargets())) {
+    const auto it = llvm::find(rhs.getInputTargets(), m.lookup(trgt));
+    const auto j = std::distance(rhs.getInputTargets().begin(), it);
+    permutation[i] = j;
+  }
+  return permutation;
 }
 
 /// Compares two floating point numbers for approximate equivalence.
@@ -147,7 +173,7 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
   return true;
 }
 
-/// Compare two operations for structural equivalence, applying some special
+/// Compare two operations for structural equivalence, applying special
 /// rules for `CtrlOp` s and `qtensor` s.
 static bool compareOperations(Operation* lhs, Operation* rhs,
                               const IRMapping& m) {
@@ -379,24 +405,18 @@ static bool compareBlocks(Block& lhs, Block& rhs,
     return false;
   }
 
-  // Map block arguments.
-  // The targets of a `CtrlOp` are commutative, thus, find the permutation from
-  // the i-th argument of the lhs to the j-th argument of the rhs, before
-  // mapping the block arguments.
+  // Map block arguments while allowing commutation of operands for `CtrlOp`s.
 
   if (isa<qc::CtrlOp>(lhs.getParentOp())) {
     assert(isa<qc::CtrlOp>(rhs.getParentOp()));
-
     auto lhsCtrl = cast<qc::CtrlOp>(lhs.getParentOp());
     auto rhsCtrl = cast<qc::CtrlOp>(rhs.getParentOp());
-
-    SmallVector<size_t> permutation(lhs.getNumArguments());
-    for (const auto& [i, trgt] : llvm::enumerate(lhsCtrl.getTargets())) {
-      const auto it = llvm::find(rhsCtrl.getTargets(), m.lookup(trgt));
-      const auto j = std::distance(rhsCtrl.getTargets().begin(), it);
-      permutation[i] = j;
-    }
-    mapArguments(lhs, rhs, permutation, m);
+    mapArguments(lhs, rhs, getTargetPermutation(lhsCtrl, rhsCtrl, m), m);
+  } else if (isa<qco::CtrlOp>(lhs.getParentOp())) {
+    assert(isa<qco::CtrlOp>(rhs.getParentOp()));
+    auto lhsCtrl = cast<qco::CtrlOp>(lhs.getParentOp());
+    auto rhsCtrl = cast<qco::CtrlOp>(rhs.getParentOp());
+    mapArguments(lhs, rhs, getTargetPermutation(lhsCtrl, rhsCtrl, m), m);
   } else {
     SmallVector<size_t> permutation(lhs.getNumArguments());
     std::iota(permutation.begin(), permutation.end(), 0);
@@ -430,19 +450,37 @@ static bool compareBlocks(Block& lhs, Block& rhs,
     DenseSet<Operation*> matched;
     matched.reserve(rhsReady.size());
 
-    for (Operation* opLhs : lhsReady) {
+    for (Operation* lhsOp : lhsReady) {
       SetVector<Operation*>::iterator it = rhsReady.begin();
       for (; it != rhsReady.end(); it = std::next(it)) {
-        Operation* opRhs = *it;
+        Operation* rhsOp = *it;
 
-        if (matched.contains(opRhs)) {
+        if (matched.contains(rhsOp)) {
           continue;
         }
 
-        if (compareOperations(opLhs, opRhs, m)) {
-          matched.insert(opRhs);
-          mapResults(opLhs, opRhs, m);
-          m.map(opLhs, opRhs);
+        if (compareOperations(lhsOp, rhsOp, m)) {
+          matched.insert(rhsOp);
+
+          if (isa<qc::CtrlOp>(lhsOp)) {
+            assert(isa<qc::CtrlOp>(rhsOp));
+            auto lhsCtrl = cast<qc::CtrlOp>(lhsOp);
+            auto rhsCtrl = cast<qc::CtrlOp>(rhsOp);
+            mapResults(lhsCtrl, rhsCtrl,
+                       getTargetPermutation(lhsCtrl, rhsCtrl, m), m);
+          } else if (isa<qco::CtrlOp>(lhsOp)) {
+            assert(isa<qco::CtrlOp>(rhsOp));
+            auto lhsCtrl = cast<qco::CtrlOp>(lhsOp);
+            auto rhsCtrl = cast<qco::CtrlOp>(rhsOp);
+            mapResults(lhsCtrl, rhsCtrl,
+                       getTargetPermutation(lhsCtrl, rhsCtrl, m), m);
+          } else {
+            SmallVector<size_t> permutation(lhsOp->getNumResults());
+            std::iota(permutation.begin(), permutation.end(), 0);
+            mapResults(lhsOp, rhsOp, permutation, m);
+          }
+
+          m.map(lhsOp, rhsOp);
           break;
         }
       }
@@ -453,16 +491,14 @@ static bool compareBlocks(Block& lhs, Block& rhs,
     }
 
     // At this point, we've successfully matched each operation on the lhs with
-    // one on the rhs.
+    // one on the rhs. Subsequently, update the open and closed sets and
+    // recursively compare the nested regions of each operation pair.
 
     lhsOpen.set_subtract(lhsReady);
     lhsClosed.set_union(lhsReady);
 
     rhsOpen.set_subtract(rhsReady);
     rhsClosed.set_union(rhsReady);
-
-    // Once all ready operations have been matched, recursively compare
-    // the nested regions of each operation pair.
 
     SetVector<Operation*>::iterator it = lhsReady.begin();
     for (; it != lhsReady.end(); it = std::next(it)) {
