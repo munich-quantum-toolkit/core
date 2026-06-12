@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -23,7 +22,6 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Analysis/SliceAnalysis.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
@@ -31,10 +29,8 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/IRMapping.h>
-#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
-#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
@@ -106,64 +102,36 @@ static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
   return absDiff <= absTol + (relTol * scale);
 }
 
-static bool compareAttributes(const Attribute& attrA, const Attribute& attrB) {
-  if (dyn_cast<UnitAttr>(attrA)) {
-    if (!dyn_cast<UnitAttr>(attrB)) {
+/// Compare two attributes for equivality.
+/// Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`, and
+/// `FlatSymbolRefAttr`.
+/// For any other type, the function simply returns true.
+static bool compareAttributes(Attribute attr, Attribute other) {
+  if (dyn_cast<UnitAttr>(attr)) {
+    if (!dyn_cast<UnitAttr>(other)) {
       return false;
     }
-  } else if (auto intAttrA = dyn_cast<IntegerAttr>(attrA)) {
-    auto intAttrB = dyn_cast<IntegerAttr>(attrB);
+  } else if (auto intAttrA = dyn_cast<IntegerAttr>(attr)) {
+    auto intAttrB = dyn_cast<IntegerAttr>(other);
     if (!intAttrB || intAttrA.getValue() != intAttrB.getValue()) {
       return false;
     }
-  } else if (auto floatAttrA = dyn_cast<FloatAttr>(attrA)) {
-    auto floatAttrB = dyn_cast<FloatAttr>(attrB);
+  } else if (auto floatAttrA = dyn_cast<FloatAttr>(attr)) {
+    auto floatAttrB = dyn_cast<FloatAttr>(other);
 
     if (!floatAttrB ||
         !approxCompareFloats(floatAttrA.getValue(), floatAttrB.getValue(),
                              floatAttrA.getType().getIntOrFloatBitWidth())) {
       return false;
     }
-  } else if (auto strAttrA = dyn_cast<StringAttr>(attrA)) {
-    auto strAttrB = dyn_cast<StringAttr>(attrB);
+  } else if (auto strAttrA = dyn_cast<StringAttr>(attr)) {
+    auto strAttrB = dyn_cast<StringAttr>(other);
     if (!strAttrB || strAttrA.getValue() != strAttrB.getValue()) {
       return false;
     }
-  } else if (auto arrayAttrA = dyn_cast<ArrayAttr>(attrA)) {
-    auto arrayAttrB = dyn_cast<ArrayAttr>(attrB);
-    if (!arrayAttrB) {
-      return false;
-    }
-
-    if (arrayAttrA.size() != arrayAttrB.size()) {
-      return false;
-    }
-
-    // Note: This assumes that the array attributes are equivalently ordered.
-    for (const auto [elementAttrA, elementAttrB] :
-         llvm::zip_equal(arrayAttrA, arrayAttrB)) {
-      if (!compareAttributes(elementAttrA, elementAttrB)) {
-        return false;
-      }
-    }
-  } else if (auto denseArrayAttrA =
-                 llvm::dyn_cast<mlir::DenseArrayAttr>(attrA)) {
-    auto denseArrayAttrB = llvm::dyn_cast<mlir::DenseArrayAttr>(attrB);
-    if (!denseArrayAttrB || denseArrayAttrA.size() != denseArrayAttrB.size() ||
-        denseArrayAttrA.getElementType() != denseArrayAttrB.getElementType()) {
-      return false;
-    }
-
-    for (const auto [valA, valB] : llvm::zip_equal(
-             denseArrayAttrA.getRawData(), denseArrayAttrB.getRawData())) {
-      if (valA != valB) {
-        return false;
-      }
-    }
-
   } else if (auto symbolRefAttrA =
-                 llvm::dyn_cast<mlir::FlatSymbolRefAttr>(attrA)) {
-    auto symbolRefAttrB = llvm::dyn_cast<mlir::FlatSymbolRefAttr>(attrB);
+                 llvm::dyn_cast<mlir::FlatSymbolRefAttr>(attr)) {
+    auto symbolRefAttrB = llvm::dyn_cast<mlir::FlatSymbolRefAttr>(other);
     if (!symbolRefAttrB) {
       return false;
     }
@@ -171,12 +139,6 @@ static bool compareAttributes(const Attribute& attrA, const Attribute& attrB) {
     if (symbolRefAttrA.getValue() != symbolRefAttrB.getValue()) {
       return false;
     }
-  } else {
-    // attrA.dump();
-    // llvm::dbgs() << "unhandled attribute type!\n";
-    // attrA.dump();
-    // llvm::reportFatalInternalError("unhandled attribute type!");
-    // llvm::llvm_unreachable_internal();
   }
 
   return true;
@@ -192,25 +154,16 @@ static bool compareOperations(Operation* opA, Operation* opB,
       opA->getOperandTypes() != opB->getOperandTypes() ||
       opA->getNumResults() != opB->getNumResults() ||
       opA->getResultTypes() != opB->getResultTypes() ||
-      // opA->getAttrs().size() != opB->getAttrs().size() ||
       opA->getNumRegions() != opB->getNumRegions()) {
     return false;
   }
 
-  // Compare attributes.
-
-  const DenseSet<StringRef> ignore{"passthrough"};
+  // Compare attributes with specific types.
+  // Silently ignore missing ones.
 
   for (const auto& namedAttrA : opA->getAttrs()) {
     const StringRef keyA = namedAttrA.getName().strref();
-
-    if (ignore.contains(keyA)) {
-      llvm::dbgs() << "ignoring: " << keyA << '\n';
-      continue;
-    }
-
     if (!opB->hasAttr(keyA)) {
-      llvm::dbgs() << "missing attribute: " << keyA << '\n';
       continue;
     }
 
@@ -220,15 +173,8 @@ static bool compareOperations(Operation* opA, Operation* opB,
   }
 
   // Compare operands.
-  // TODO: Equal type check.
-
-  // else if (isa<qco::CtrlOp>(opA)) {
-  //   assert(isa<qco::CtrlOp>(opB));
-  //   llvm::reportFatalInternalError("not implemented");
-  // } else if (opA->hasTrait<mlir::OpTrait::IsCommutative>()) {
-  //   assert(opB->hasTrait<mlir::OpTrait::IsCommutative>());
-  //   llvm::reportFatalInternalError("not implemented");
-  // }
+  // Because the order of target (control) qubits of CtrlOps doesn't matter,
+  // explicitly handle them here.
 
   if (isa<qc::CtrlOp>(opA)) {
     assert(isa<qc::CtrlOp>(opB));
@@ -283,8 +229,8 @@ static bool compareOperations(Operation* opA, Operation* opB,
           --itB;
         }
 
-        if (itA.operation() == nullptr) { // Block-Argument.
-          if (itB.operation() != nullptr) {
+        if (isa<BlockArgument>(itA.tensor())) {
+          if (isa<BlockArgument>(itB.tensor())) {
             return false;
           }
         } else {
