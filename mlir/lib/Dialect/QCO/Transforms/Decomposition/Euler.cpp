@@ -140,8 +140,9 @@ ZSXXMiddleGate classifyZSXXMiddleFromZYZTheta(const double theta) {
  * @param lambda Leading Z-rotation angle.
  * @return The planned ZSXX sequence.
  */
-[[nodiscard]] static ZSXXSequence
-sequenceFromZYZForZSXX(double theta, double phi, double lambda) {
+[[nodiscard]] static ZSXXSequence sequenceFromZYZForZSXX(const double theta,
+                                                         const double phi,
+                                                         const double lambda) {
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
 
@@ -177,7 +178,8 @@ sequenceFromZYZForZSXX(double theta, double phi, double lambda) {
  * @param lambda Leading Z-rotation angle.
  * @return The global-phase offset in radians.
  */
-[[nodiscard]] static double globalPhaseOffsetForU(double phi, double lambda) {
+[[nodiscard]] static double globalPhaseOffsetForU(const double phi,
+                                                  const double lambda) {
   return -0.5 * (phi + lambda);
 }
 
@@ -190,9 +192,8 @@ sequenceFromZYZForZSXX(double theta, double phi, double lambda) {
  * @param angle The unwrapped RZ angle.
  * @return The global-phase contribution in radians.
  */
-[[nodiscard]] static double globalPhaseFromRZWrap(double angle) {
-  constexpr double eps = utils::TOLERANCE;
-  return 0.5 * (mod2pi(angle, eps) - angle);
+[[nodiscard]] static double globalPhaseFromRZWrap(const double angle) {
+  return 0.5 * (mod2pi(angle) - angle);
 }
 
 /**
@@ -273,12 +274,11 @@ static void visitSequenceInTimeOrder(const ZSXXSequence& seq,
 [[nodiscard]] static Value emitFromZSXXSequence(OpBuilder& builder,
                                                 Location loc, Value qubit,
                                                 const ZSXXSequence& seq,
-                                                double phase) {
-  constexpr double eps = utils::TOLERANCE;
+                                                const double phase) {
   visitSequenceInTimeOrder(
       seq,
       [&](const double angle) {
-        const double wrapped = mod2pi(angle, eps);
+        const double wrapped = mod2pi(angle);
         if (isNearZeroRotationAngle(wrapped)) {
           return;
         }
@@ -304,8 +304,8 @@ static void visitSequenceInTimeOrder(const ZSXXSequence& seq,
  * @return The output qubit value.
  */
 static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
-                     double theta, double phi, double lambda, double phase,
-                     EulerBasis basis) {
+                     const double theta, const double phi, const double lambda,
+                     const double phase, const EulerBasis basis) {
   auto emitK = [&](double a) {
     if (isNearZeroRotationAngle(a)) {
       return;
@@ -356,7 +356,7 @@ static Value emitKAK(OpBuilder& builder, Location loc, Value qubit,
 //===----------------------------------------------------------------------===//
 
 EulerAngles EulerDecomposition::anglesFromUnitary(const Matrix2x2& matrix,
-                                                  EulerBasis basis) {
+                                                  const EulerBasis basis) {
   switch (basis) {
   case EulerBasis::ZYZ:
     return paramsZYZ(matrix);
@@ -368,9 +368,10 @@ EulerAngles EulerDecomposition::anglesFromUnitary(const Matrix2x2& matrix,
     return paramsXYX(matrix);
   case EulerBasis::U:
     return paramsU(matrix);
+  default:
+    llvm::reportFatalInternalError(
+        "Unsupported Euler basis for angle computation in decomposition!");
   }
-  llvm::reportFatalInternalError(
-      "Unsupported Euler basis for angle computation in decomposition!");
 }
 
 EulerAngles EulerDecomposition::paramsZYZ(const Matrix2x2& matrix) {
@@ -382,11 +383,10 @@ EulerAngles EulerDecomposition::paramsZYZ(const Matrix2x2& matrix) {
   const auto theta =
       2. * std::atan2(std::abs(matrix(1, 0)), std::abs(matrix(0, 0)));
   const auto ang1 = std::arg(matrix(1, 1));
-  constexpr double eps = utils::TOLERANCE;
   double ang2 = 0.0;
-  if (std::abs(matrix(1, 0)) > eps) {
+  if (std::abs(matrix(1, 0)) > utils::TOLERANCE) {
     ang2 = std::arg(matrix(1, 0));
-  } else if (std::abs(matrix(0, 1)) > eps) {
+  } else if (std::abs(matrix(0, 1)) > utils::TOLERANCE) {
     ang2 = std::arg(matrix(0, 1));
   }
   const auto phi = ang1 + ang2 - detArg;
@@ -396,11 +396,11 @@ EulerAngles EulerDecomposition::paramsZYZ(const Matrix2x2& matrix) {
 
 EulerAngles EulerDecomposition::paramsZXZ(const Matrix2x2& matrix) {
   // ZXZ from ZYZ via RY(theta) = RZ(pi/2)*RX(theta)*RZ(-pi/2).
-  const auto zyz = paramsZYZ(matrix);
-  return {.theta = zyz.theta,
-          .phi = zyz.phi + (std::numbers::pi / 2.0),
-          .lambda = zyz.lambda - (std::numbers::pi / 2.0),
-          .phase = zyz.phase};
+  const auto [theta, phi, lambda, phase] = paramsZYZ(matrix);
+  return {.theta = theta,
+          .phi = phi + (std::numbers::pi / 2.0),
+          .lambda = lambda - (std::numbers::pi / 2.0),
+          .phase = phase};
 }
 
 EulerAngles EulerDecomposition::paramsXZX(const Matrix2x2& matrix) {
@@ -410,24 +410,23 @@ EulerAngles EulerDecomposition::paramsXZX(const Matrix2x2& matrix) {
 
 EulerAngles EulerDecomposition::paramsXYX(const Matrix2x2& matrix) {
   // H*RY(theta)*H = RY(-theta): shift outer angles by pi and fix global phase.
-  const auto zyz = paramsZYZ(hadamardConjugate(matrix));
+  const auto [theta, phi, lambda, phase] = paramsZYZ(hadamardConjugate(matrix));
   // Keep atol=0 so `phase` tracks the unwrapped ZYZ angles; snapping to pi
   // would change the recorded global-phase correction.
-  const auto newPhi = mod2pi(zyz.phi + std::numbers::pi, 0.);
-  const auto newLambda = mod2pi(zyz.lambda + std::numbers::pi, 0.);
-  return {.theta = zyz.theta,
+  const auto newPhi = mod2pi(phi + std::numbers::pi, 0.);
+  const auto newLambda = mod2pi(lambda + std::numbers::pi, 0.);
+  return {.theta = theta,
           .phi = newPhi,
           .lambda = newLambda,
-          .phase =
-              zyz.phase + ((newPhi + newLambda - zyz.phi - zyz.lambda) / 2.)};
+          .phase = phase + ((newPhi + newLambda - phi - lambda) / 2.)};
 }
 
 EulerAngles EulerDecomposition::paramsU(const Matrix2x2& matrix) {
-  const auto zyz = paramsZYZ(matrix);
-  return {.theta = zyz.theta,
-          .phi = zyz.phi,
-          .lambda = zyz.lambda,
-          .phase = zyz.phase + globalPhaseOffsetForU(zyz.phi, zyz.lambda)};
+  const auto [theta, phi, lambda, phase] = paramsZYZ(matrix);
+  return {.theta = theta,
+          .phi = phi,
+          .lambda = lambda,
+          .phase = phase + globalPhaseOffsetForU(phi, lambda)};
 }
 
 //===----------------------------------------------------------------------===//
@@ -458,15 +457,16 @@ std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
 
 Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                                const Matrix2x2& targetMatrix,
-                               EulerBasis basis) {
+                               const EulerBasis basis) {
   if (basis == EulerBasis::ZSXX) {
-    const auto zyz = EulerDecomposition::paramsZYZ(targetMatrix);
-    const auto seq = sequenceFromZYZForZSXX(zyz.theta, zyz.phi, zyz.lambda);
+    const auto [theta, phi, lambda, phase] =
+        EulerDecomposition::paramsZYZ(targetMatrix);
+    const auto seq = sequenceFromZYZForZSXX(theta, phi, lambda);
     return emitFromZSXXSequence(builder, loc, qubit, seq,
-                                zyz.phase + globalPhaseOffsetForZSXX(seq));
+                                phase + globalPhaseOffsetForZSXX(seq));
   }
 
-  const auto angles =
+  const auto [theta, phi, lambda, phase] =
       EulerDecomposition::anglesFromUnitary(targetMatrix, basis);
 
   switch (basis) {
@@ -474,14 +474,11 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
   case EulerBasis::ZXZ:
   case EulerBasis::XZX:
   case EulerBasis::XYX:
-    qubit = emitKAK(builder, loc, qubit, angles.theta, angles.phi,
-                    angles.lambda, angles.phase, basis);
+    qubit = emitKAK(builder, loc, qubit, theta, phi, lambda, phase, basis);
     break;
   case EulerBasis::U:
-    qubit = UOp::create(builder, loc, qubit, angles.theta, angles.phi,
-                        angles.lambda)
-                .getQubitOut();
-    emitGPhaseIfNeeded(builder, loc, angles.phase);
+    qubit = UOp::create(builder, loc, qubit, theta, phi, lambda).getQubitOut();
+    emitGPhaseIfNeeded(builder, loc, phase);
     break;
   case EulerBasis::ZSXX:
     llvm_unreachable("ZSXX handled above");
@@ -493,8 +490,8 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
 /**
  * @brief Counts non-identity K-A-K rotations `emitKAK` would emit.
  */
-[[nodiscard]] static std::size_t countKAKGates(double theta, double phi,
-                                               double lambda) {
+[[nodiscard]] static std::size_t
+countKAKGates(const double theta, const double phi, const double lambda) {
   std::size_t count = 0;
   if (!isNearZeroRotationAngle(lambda)) {
     ++count;
@@ -538,7 +535,7 @@ countZSXXSequenceGates(const ZSXXSequence& seq) {
 }
 
 std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
-                               EulerBasis basis) {
+                               const EulerBasis basis) {
   if (basis == EulerBasis::U) {
     return 1;
   }
@@ -562,12 +559,14 @@ std::size_t synthesisGateCount(const Matrix2x2& targetMatrix,
     const auto seq = sequenceFromZYZForZSXX(zyz.theta, zyz.phi, zyz.lambda);
     return countZSXXSequenceGates(seq);
   }
+  default:
+    llvm::reportFatalInternalError(
+        "Unhandled Euler basis in synthesisGateCount");
   }
-  llvm::reportFatalInternalError("Unhandled Euler basis in synthesisGateCount");
 }
 
 bool wouldShortenInBasisRun(const std::size_t runSize,
-                            const Matrix2x2& composed, EulerBasis basis) {
+                            const Matrix2x2& composed, const EulerBasis basis) {
   if (runSize > maxSynthesisGateCount(basis)) {
     return true;
   }

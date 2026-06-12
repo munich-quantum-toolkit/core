@@ -237,9 +237,9 @@ protected:
   void runOnOperation() override {
     auto module = getOperation();
 
-    const auto parsed = decomposition::parseEulerBasis(this->basis);
+    const auto parsed = decomposition::parseEulerBasis(basis);
     if (!parsed) {
-      module.emitError() << "Invalid Euler basis '" << this->basis
+      module.emitError() << "Invalid Euler basis '" << basis
                          << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx.";
       signalPassFailure();
       return;
