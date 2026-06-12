@@ -278,25 +278,24 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
 
   SetVector<Operation*> ready;
   for (Operation* op : open) {
-    if (closed.contains(op) || ready.contains(op)) {
+    if (ready.contains(op)) {
       continue;
     }
 
     if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
 
-      // If any of the inserts on the chain are ready, we consider the whole
-      // chain ready because the one ready operation could be moved the front
-      // (the top from IR perspective) of the chain.
-      // An insert is considered ready when both the inserted qubit and the
-      // index are ready.
+      // If any of the inserts on the chain are ready, we consider the entire
+      // chain ready because the ready operations could be moved to the front
+      // of the chain.
 
       SmallVector<Operation*> chain;
       qtensor::TensorIterator it(insert.getResult());
 
-      for (; it != std::default_sentinel &&
-             isa<qtensor::InsertOp>(it.operation());
-           ++it) {
-        auto chainInsert = cast<qtensor::InsertOp>(it.operation());
+      for (; it != std::default_sentinel; ++it) {
+        auto chainInsert = dyn_cast<qtensor::InsertOp>(it.operation());
+        if (!chainInsert) {
+          break;
+        }
         if (isReady(chainInsert.getScalar()) &&
             isReady(chainInsert.getIndex()) && !closed.contains(chainInsert)) {
           chain.emplace_back(chainInsert);
@@ -314,10 +313,12 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
       SmallVector<Operation*> chain;
       qtensor::TensorIterator it(extract.getOutTensor());
 
-      for (; it != std::default_sentinel &&
-             isa<qtensor::ExtractOp>(it.operation());
-           ++it) {
-        auto chainExtract = cast<qtensor::ExtractOp>(it.operation());
+      for (; it != std::default_sentinel; ++it) {
+        auto chainExtract = dyn_cast<qtensor::ExtractOp>(it.operation());
+        if (!chainExtract) {
+          break;
+        }
+
         if (isReady(chainExtract.getIndex()) &&
             !closed.contains(chainExtract)) {
           chain.emplace_back(chainExtract);
