@@ -381,7 +381,8 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
 
     // Because there may be multiple structural equivalent operations (think
     // arith.constant, for example), we apply the assumption that the first
-    // occurence on the lhs corresponds to the first occurence on the rhs, etc.
+    // occurrence on the lhs corresponds to the first occurrence on the rhs,
+    // etc.
 
     DenseSet<Operation*> matched;
     matched.reserve(readyB.size());
