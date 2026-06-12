@@ -27,6 +27,9 @@ void allocQubitRegister(QIRProgramBuilder& b);
 /// Allocates two qubit registers of size `2` and `3`.
 void allocMultipleQubitRegisters(QIRProgramBuilder& b);
 
+/// Allocates two qubit registers of size `2` and `3` and applies operations.
+void allocMultipleQubitRegistersWithOps(QIRProgramBuilder& b);
+
 /// Allocates a large qubit register.
 void allocLargeRegister(QIRProgramBuilder& b);
 
@@ -422,6 +425,50 @@ void singleControlledXxMinusYY(QIRProgramBuilder& b);
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
 void multipleControlledXxMinusYY(QIRProgramBuilder& b);
 
+// --- IfOp ----------------------------------------------------------------- //
+
+/// Creates a circuit with a simple if operation with one qubit.
+void simpleIf(QIRProgramBuilder& b);
+
+/// Creates a circuit with an if operation with an else branch.
+void ifElse(QIRProgramBuilder& b);
+
+/// Creates a circuit with an if operation with two qubits.
+void ifTwoQubits(QIRProgramBuilder& b);
+
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+void nestedIfOpForLoop(QIRProgramBuilder& b);
+
+// --- WhileOp -------------------------------------------------------------- //
+
+/// Creates a circuit with a while operation using a while loop.
+void simpleWhileReset(QIRProgramBuilder& b);
+
+/// Creates a circuit with a while operation using a do-while loop.
+void simpleDoWhileReset(QIRProgramBuilder& b);
+
+// --- ForOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with a simple for operation with a register.
+void simpleForLoop(QIRProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested if operation.
+void nestedForLoopIfOp(QIRProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a nested while
+/// operation.
+void nestedForLoopWhileOp(QIRProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is separately allocated from the
+/// register.
+void nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is extracted from the register.
+void nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b);
 // --- CtrlOp --------------------------------------------------------------- //
 
 /// Creates a circuit with a control modifier applied to two gates.

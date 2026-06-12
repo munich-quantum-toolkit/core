@@ -27,6 +27,16 @@ void allocMultipleQubitRegisters(QIRProgramBuilder& b) {
   b.allocQubitRegister(3);
 }
 
+void allocMultipleQubitRegistersWithOps(QIRProgramBuilder& b) {
+  auto q0 = b.allocQubitRegister(2);
+  auto q1 = b.allocQubitRegister(3);
+  b.h(q0[0]);
+  b.h(q0[1]);
+  b.h(q1[0]);
+  b.h(q1[1]);
+  b.h(q1[2]);
+}
+
 void allocLargeRegister(QIRProgramBuilder& b) { b.allocQubitRegister(100); }
 
 void staticQubits(QIRProgramBuilder& b) {
@@ -603,6 +613,124 @@ void singleControlledXxMinusYY(QIRProgramBuilder& b) {
 void multipleControlledXxMinusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcxx_minus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
+}
+
+void simpleIf(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0], 0);
+  b.scfIf(cond, [&] { b.x(q[0]); });
+}
+
+void ifElse(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0], 0);
+  b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
+}
+
+void ifTwoQubits(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  auto cond = b.measure(q[0], 0);
+  b.scfIf(cond, [&] {
+    b.x(q[0]);
+    b.x(q[1]);
+  });
+}
+
+void nestedIfOpForLoop(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  b.h(q0);
+  auto cond = b.measure(q0, 0);
+  b.scfIf(
+      cond, [&] { b.h(q0); },
+      [&] {
+        b.scfFor(0, 3, 1, [&](Value iv) {
+          auto q1 = b.load(reg.value, iv);
+          b.h(q1);
+        });
+      });
+}
+
+void simpleWhileReset(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+  b.scfWhile(
+      [&] {
+        auto measureResult = b.measure(q, 0);
+        return measureResult;
+      },
+      [&] { b.h(q); });
+}
+
+void simpleDoWhileReset(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.scfWhile([&] {
+    b.h(q);
+    auto measureResult = b.measure(q, 0);
+    return measureResult;
+  });
+}
+
+void simpleForLoop(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.load(reg.value, iv);
+    b.h(q);
+  });
+};
+
+void nestedForLoopIfOp(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto qCond = b.allocQubit();
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    b.h(qCond);
+    auto cond = b.measure(qCond, 0);
+    b.scfIf(cond, [&] {
+      auto q = b.load(reg.value, iv);
+      b.h(q);
+    });
+  });
+}
+
+void nestedForLoopWhileOp(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.load(reg.value, iv);
+    b.h(q);
+  });
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.load(reg.value, iv);
+    b.scfWhile(
+        [&] {
+          auto measureResult = b.measure(q, 0);
+          return measureResult;
+        },
+        [&] { b.h(q); });
+  });
+}
+
+void nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto control = b.allocQubit();
+  b.h(control);
+  b.scfFor(0, 3, 1, [&](Value iv) {
+    auto q0 = b.load(reg.value, iv);
+    b.h(q0);
+    b.cx(control, q0);
+  });
+}
+
+void nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(4);
+  b.h(reg[0]);
+  b.scfFor(1, 4, 1, [&](Value iv) {
+    auto q0 = b.load(reg.value, iv);
+    b.h(q0);
+    b.cx(reg[0], q0);
+  });
 }
 
 void ctrlTwo(QIRProgramBuilder& b) {
