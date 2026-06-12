@@ -122,7 +122,7 @@ QuantumState QuantumState::unify(const QuantumState& that) {
         newGlobalToLocalMapping.at(keyThis);
   }
   for (const auto& keyThat : that.globalToLocalQubitNumber | std::views::keys) {
-    oldToNewIndicesThis[that.globalToLocalQubitNumber.at(keyThat)] =
+    oldToNewIndicesThat[that.globalToLocalQubitNumber.at(keyThat)] =
         newGlobalToLocalMapping.at(keyThat);
   }
 
@@ -141,7 +141,7 @@ QuantumState QuantumState::unify(const QuantumState& that) {
       for (const auto& indicesOfThat : oldToNewIndicesThat | std::views::keys) {
         unsigned int bitOfQubitState = pow(2, indicesOfThat);
         if ((keyThat & bitOfQubitState) == bitOfQubitState) {
-          currentQubitState += pow(2, oldToNewIndicesThis.at(indicesOfThat));
+          currentQubitState += pow(2, oldToNewIndicesThat.at(indicesOfThat));
         }
       }
       newAmplitudes[currentQubitState] = valThis * valThat;
@@ -162,11 +162,16 @@ void QuantumState::propagateGate(Operation* gate,
 
   unsigned int ctrlMask = 0;
   for (unsigned int const posCtrl : ctrls) {
-    ctrlMask += static_cast<unsigned int>(pow(2, posCtrl) + 0.1);
+    ctrlMask += static_cast<unsigned int>(
+        pow(2, globalToLocalQubitNumber.at(posCtrl)) + 0.1);
+  }
+  std::vector<unsigned int> localTargets;
+  for (unsigned int q : targets) {
+    localTargets.push_back(globalToLocalQubitNumber.at(q));
   }
 
-  std::unordered_map<unsigned int, std::complex<double>> newValues;
-  newValues = getNewMappingFromQubitGate(gateMapping, targets, ctrlMask);
+  std::unordered_map<unsigned int, std::complex<double>> newValues =
+      getNewMappingFromQubitGate(gateMapping, localTargets, ctrlMask);
 
   amplitudeMap.clear();
   for (const auto& [key, value] : newValues) {
