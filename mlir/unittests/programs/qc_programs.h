@@ -988,6 +988,9 @@ void powBarrier(QCProgramBuilder& b);
 /// Creates a circuit with a trivial ctrl modifier.
 void trivialCtrl(QCProgramBuilder& b);
 
+/// Creates a circuit with an empty ctrl modifier.
+void emptyCtrl(QCProgramBuilder& b);
+
 /// Creates a circuit with nested ctrl modifiers.
 void nestedCtrl(QCProgramBuilder& b);
 
@@ -1000,7 +1003,24 @@ void doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
 void ctrlInvSandwich(QCProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to two gates.
+void ctrlTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to a controlled and a
+/// non-controlled gate.
+void ctrlTwoMixed(QCProgramBuilder& b);
+
+/// Creates a circuit with nested control modifiers applied to two gates.
+void nestedCtrlTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to a inverse modifier
+/// applied to two gates.
+void ctrlInvTwo(QCProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with an empty inverse modifier.
+void emptyInv(QCProgramBuilder& b);
 
 /// Creates a circuit with nested inverse modifiers.
 void nestedInv(QCProgramBuilder& b);
@@ -1010,6 +1030,13 @@ void tripleNestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two gates.
+void invTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a control modifier
+/// applied to two gates.
+void invCtrlTwo(QCProgramBuilder& b);
 
 // --- PowOp ---------------------------------------------------------------- //
 
@@ -1080,11 +1107,11 @@ void ctrlPowSxRef(QCProgramBuilder& b);
 /// Creates a circuit with a simple if operation with one qubit.
 void simpleIf(QCProgramBuilder& b);
 
-/// Creates a circuit with an if operation with an else branch.
-void ifElse(QCProgramBuilder& b);
-
 /// Creates a circuit with an if operation with two qubits.
 void ifTwoQubits(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with an else branch.
+void ifElse(QCProgramBuilder& b);
 
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.

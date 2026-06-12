@@ -151,6 +151,20 @@ INSTANTIATE_TEST_SUITE_P(QCPowOpTest, QCToQCOTest,
                              MQT_NAMED_BUILDER(qco::ctrlPowSx)}));
 /// @}
 
+/// \name QCToQCO/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCCtrlOpTest, QCToQCOTest,
+    testing::Values(QCToQCOTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                                    MQT_NAMED_BUILDER(qco::ctrlTwo)},
+                    QCToQCOTestCase{"CtrlTwoMixed",
+                                    MQT_NAMED_BUILDER(qc::ctrlTwoMixed),
+                                    MQT_NAMED_BUILDER(qco::ctrlTwoMixed)},
+                    QCToQCOTestCase{"CtrlInvTwo",
+                                    MQT_NAMED_BUILDER(qc::ctrlInvTwo),
+                                    MQT_NAMED_BUILDER(qco::ctrlInvTwo)}));
+/// @}
+
 /// \name QCToQCO/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -159,10 +173,11 @@ INSTANTIATE_TEST_SUITE_P(
         // iSWAP cannot be inverted with current canonicalization
         QCToQCOTestCase{"InverseiSWAP", MQT_NAMED_BUILDER(qc::inverseIswap),
                         MQT_NAMED_BUILDER(qco::inverseIswap)},
-        QCToQCOTestCase{
-            "InverseMultipleControllediSWAP",
-            MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap),
-            MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)}));
+        QCToQCOTestCase{"InverseMultipleControllediSWAP",
+                        MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap),
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)},
+        QCToQCOTestCase{"InvTwo", MQT_NAMED_BUILDER(qc::invTwo),
+                        MQT_NAMED_BUILDER(qco::invTwo)}));
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/BarrierOp.cpp

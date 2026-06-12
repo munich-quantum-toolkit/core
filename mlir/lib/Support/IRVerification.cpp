@@ -10,6 +10,7 @@
 
 #include "mlir/Support/IRVerification.h"
 
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
 #include <llvm/ADT/ArrayRef.h>
@@ -33,11 +34,13 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cmath>
 #include <cstddef>
+#include <iterator>
 #include <utility>
 
 using namespace mlir;
@@ -469,7 +472,6 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
     if (!rhsConst) {
       return false;
     }
-
     if (!areConstantAttributesEquivalent(lhsConst.getValue(),
                                          rhsConst.getValue())) {
       return false;
@@ -513,17 +515,37 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
     return false;
   }
 
-  // Check operands according to value mapping
-  for (auto [lhsOperand, rhsOperand] :
-       llvm::zip(lhs->getOperands(), rhs->getOperands())) {
-    if (auto it = valueMap.find(lhsOperand); it != valueMap.end()) {
-      // Value already mapped, must match
-      if (it->second != rhsOperand) {
+  ValueRange lhsOperands;
+  ValueRange rhsOperands;
+  if (auto lhsCtrl = dyn_cast<qc::CtrlOp>(lhs)) {
+    auto rhsCtrl = dyn_cast<qc::CtrlOp>(rhs);
+    if (!rhsCtrl) {
+      return false;
+    }
+    if (lhsCtrl.getTargets().size() != rhsCtrl.getTargets().size()) {
+      return false;
+    }
+    for (auto [lhsTarget, lhsArg] :
+         llvm::zip(lhsCtrl.getTargets(), lhsCtrl.getBody()->getArguments())) {
+      auto rhsTarget = valueMap[lhsTarget];
+      if (!llvm::is_contained(rhsCtrl.getTargets(), rhsTarget)) {
         return false;
       }
-    } else {
-      // Establish new mapping
-      valueMap[lhsOperand] = rhsOperand;
+      auto it = llvm::find(rhsCtrl.getTargets(), rhsTarget);
+      auto index = std::distance(rhsCtrl.getTargets().begin(), it);
+      valueMap[lhsArg] = rhsCtrl.getBody()->getArgument(index);
+    }
+    lhsOperands = lhsCtrl.getControls();
+    rhsOperands = rhsCtrl.getControls();
+  } else {
+    lhsOperands = lhs->getOperands();
+    rhsOperands = rhs->getOperands();
+  }
+
+  // Check operands according to value mapping
+  for (auto [lhsOperand, rhsOperand] : llvm::zip(lhsOperands, rhsOperands)) {
+    if (!areValuesEquivalent(lhsOperand, rhsOperand, valueMap)) {
+      return false;
     }
   }
 
@@ -725,7 +747,9 @@ static bool areBlocksEquivalent(Block& lhs, Block& rhs,
     if (lhsArg.getType() != rhsArg.getType()) {
       return false;
     }
-    valueMap[lhsArg] = rhsArg;
+    if (!valueMap.contains(lhsArg)) {
+      valueMap[lhsArg] = rhsArg;
+    }
   }
 
   // Collect all operations

@@ -73,6 +73,11 @@ Value QCOProgramBuilder::intConstant(const int64_t value) {
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
+Value QCOProgramBuilder::floatConstant(const double value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
+}
+
 Value& QCOProgramBuilder::QubitRegister::operator[](const size_t index) {
   if (index >= qubits.size()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");

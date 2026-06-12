@@ -12,7 +12,7 @@ ci:
   autoupdate_commit_msg: "⬆️🪝 update pre-commit hooks"
   autoupdate_schedule: quarterly
   autofix_commit_msg: "🎨 pre-commit fixes"
-  skip: [ty-check]
+  skip: [ty]
 
 repos:
   ## Standard hooks
@@ -47,14 +47,14 @@ repos:
 
   ## Check pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2026.05.15
+    rev: 2026.05.28
     hooks:
       - id: validate-pyproject
         priority: 0
 
   ## Ensure uv.lock is up to date
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.14
+    rev: 0.11.18
     hooks:
       - id: uv-lock
         priority: 0
@@ -71,7 +71,7 @@ repos:
 
   ## Check for typos
   - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.46.2
+    rev: v1.47.0
     hooks:
       - id: typos
         priority: 3
@@ -135,7 +135,7 @@ repos:
 
   ## Format and lint Python files with ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.13
+    rev: v0.15.15
     hooks:
       - id: ruff-format
         types_or: [python, pyi, jupyter, markdown]
@@ -145,14 +145,9 @@ repos:
         priority: 7
 
   ## Check Python types with ty
-  - repo: local
+  - repo: https://github.com/astral-sh/ty-pre-commit
+    rev: v0.0.47
     hooks:
-      - id: ty-check
-        name: ty check
-        entry: uvx python -c "import subprocess; import sys; r = subprocess.run(['uv', 'sync', '--no-install-project', '--inexact']); sys.exit(r.returncode or subprocess.run(['uv', 'run', '--no-sync', 'ty', 'check']).returncode)"
-        language: unsupported
-        require_serial: true
-        types_or: [python, pyi, jupyter]
-        exclude: ^(docs/|mlir/|eval/)
-        pass_filenames: false
+      - id: ty
+        args: [--only-dev]
         priority: 8

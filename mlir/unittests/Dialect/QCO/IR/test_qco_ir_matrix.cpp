@@ -9,6 +9,7 @@
  */
 
 #include "TestCaseUtils.h"
+#include "dd/DDDefinitions.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
@@ -17,9 +18,9 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "qco_programs.h"
 
-#include <Eigen/Core>
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -32,6 +33,20 @@
 
 using namespace mlir;
 using namespace qco;
+
+[[nodiscard]] static Matrix2x2 matrix2FromFlat(const dd::GateMatrix& def) {
+  return Matrix2x2::fromElements(def[0], def[1], def[2], def[3]);
+}
+
+template <typename Definition>
+[[nodiscard]] static Matrix4x4
+matrix4FromDefinition(const Definition& definition) {
+  return Matrix4x4::fromElements(
+      definition[0][0], definition[0][1], definition[0][2], definition[0][3],
+      definition[1][0], definition[1][1], definition[1][2], definition[1][3],
+      definition[2][0], definition[2][1], definition[2][2], definition[2][3],
+      definition[3][0], definition[3][1], definition[3][2], definition[3][3]);
+}
 
 namespace {
 
@@ -73,16 +88,9 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
   const auto cxDD = dd::getDD(cx, *dd);
   const auto definition = cxDD.getMatrix(2);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix->isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix->isApprox(expected));
 }
 /// @}
 
@@ -159,16 +167,9 @@ TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {
   const auto iswapdgDD = dd::getDD(iswapdg, *dd);
   const auto definition = iswapdgDD.getMatrix(2);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix->isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix->isApprox(expected));
 }
 /// @}
 
@@ -181,16 +182,9 @@ TEST_F(QCOMatrixTest, DCXOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::DCX);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -203,16 +197,9 @@ TEST_F(QCOMatrixTest, ECROpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::ECR);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -230,12 +217,9 @@ TEST_F(QCOMatrixTest, GPhaseOpMatrix) {
   // Get the definition
   const auto definition = std::polar(1.0, 0.123); // e^(i*0.123)
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix<std::complex<double>, 1, 1> eigenDefinition;
-  eigenDefinition << definition;
+  const Matrix1x1 expected = Matrix1x1::fromElements(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -248,12 +232,9 @@ TEST_F(QCOMatrixTest, HOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::H);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -266,12 +247,9 @@ TEST_F(QCOMatrixTest, IdOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::I);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -284,16 +262,9 @@ TEST_F(QCOMatrixTest, iSWAPOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::iSWAP);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -311,12 +282,9 @@ TEST_F(QCOMatrixTest, POpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::P, {0.123});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -334,12 +302,9 @@ TEST_F(QCOMatrixTest, ROpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::R, {0.123, 0.456});
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -358,12 +323,9 @@ TEST_F(QCOMatrixTest, RXOpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::RX, {0.123});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -381,16 +343,9 @@ TEST_F(QCOMatrixTest, RXXOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RXX, {0.123});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -409,12 +364,9 @@ TEST_F(QCOMatrixTest, RYOpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::RY, {0.456});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -432,16 +384,9 @@ TEST_F(QCOMatrixTest, RYYOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RYY, {0.123});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -460,12 +405,9 @@ TEST_F(QCOMatrixTest, RZOpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::RZ, {0.789});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -483,16 +425,9 @@ TEST_F(QCOMatrixTest, RZXOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RZX, {0.123});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -510,16 +445,9 @@ TEST_F(QCOMatrixTest, RZZOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::RZZ, {0.123});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -532,12 +460,9 @@ TEST_F(QCOMatrixTest, SOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::S);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -550,12 +475,9 @@ TEST_F(QCOMatrixTest, SdgOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::Sdg);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -568,16 +490,9 @@ TEST_F(QCOMatrixTest, SWAPOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToTwoQubitGateMatrix(qc::OpType::SWAP);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -590,12 +505,9 @@ TEST_F(QCOMatrixTest, SXOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::SX);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -608,12 +520,9 @@ TEST_F(QCOMatrixTest, SXdgOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::SXdg);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -626,12 +535,9 @@ TEST_F(QCOMatrixTest, TOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::T);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -644,12 +550,9 @@ TEST_F(QCOMatrixTest, TdgOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::Tdg);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -668,12 +571,9 @@ TEST_F(QCOMatrixTest, U2OpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::U2, {0.234, 0.567});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -692,12 +592,9 @@ TEST_F(QCOMatrixTest, UOpMatrix) {
   const auto definition =
       dd::opToSingleQubitGateMatrix(qc::OpType::U, {0.1, 0.2, 0.3});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -710,12 +607,9 @@ TEST_F(QCOMatrixTest, XOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::X);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -734,16 +628,9 @@ TEST_F(QCOMatrixTest, XXMinusYYOpMatrix) {
   const auto definition =
       dd::opToTwoQubitGateMatrix(qc::OpType::XXminusYY, {0.123, 0.456});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -762,16 +649,9 @@ TEST_F(QCOMatrixTest, XXPlusYYOp) {
   const auto definition =
       dd::opToTwoQubitGateMatrix(qc::OpType::XXplusYY, {0.123, 0.456});
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix4cd eigenDefinition;
-  eigenDefinition << definition[0][0], definition[0][1], definition[0][2],
-      definition[0][3], definition[1][0], definition[1][1], definition[1][2],
-      definition[1][3], definition[2][0], definition[2][1], definition[2][2],
-      definition[2][3], definition[3][0], definition[3][1], definition[3][2],
-      definition[3][3];
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -784,12 +664,9 @@ TEST_F(QCOMatrixTest, YOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::Y);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
 
@@ -802,11 +679,8 @@ TEST_F(QCOMatrixTest, ZOpMatrix) {
   // Get the definition of the matrix from the DD library
   const auto definition = dd::opToSingleQubitGateMatrix(qc::OpType::Z);
 
-  // Convert it to an Eigen matrix
-  Eigen::Matrix2cd eigenDefinition;
-  eigenDefinition << definition[0], definition[1], definition[2], definition[3];
+  const Matrix2x2 expected = matrix2FromFlat(definition);
 
-  // Check if the matrices are equal
-  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+  ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}

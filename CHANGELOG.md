@@ -15,10 +15,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
 - ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**], [**@denialhaag**], [**@MatthiasReumann**])
-- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676], [#1706]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637], [#1676], [#1706], [#1776]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716], [#1748]) ([**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
-  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1603], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717], [#1728], [#1730], [#1749])
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1603], [#1620], [#1623], [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1774])
   ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 
 ### Changed
@@ -402,6 +402,11 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
+[#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
+[#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
+[#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
+[#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
 [#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
 [#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
@@ -541,7 +546,6 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
 [#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
 [#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180
-[#1165]: https://github.com/munich-quantum-toolkit/core/pull/1165
 [#1164]: https://github.com/munich-quantum-toolkit/core/pull/1164
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151
@@ -642,7 +646,6 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@li-mingbao**]: https://github.com/li-mingbao
 [**@lavanya-m-k**]: https://github.com/lavanya-m-k
 [**@taminob**]: https://github.com/taminob
-[**@jannikpflieger**]: https://github.com/jannikpflieger
 [**@lsschmid**]: https://github.com/lsschmid
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
@@ -656,7 +659,6 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[GitHub Release Notes]: https://github.com/munich-quantum-toolkit/core/releases
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
 [PEP 639]: https://peps.python.org/pep-0639/
 [PEP 735]: https://peps.python.org/pep-0735/

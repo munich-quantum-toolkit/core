@@ -8,10 +8,16 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -19,6 +25,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <numbers>
 
 using namespace mlir;
@@ -33,20 +40,38 @@ namespace {
 struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(InvOp invOp,
+  LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto bodyUnitary = invOp.getBodyUnitary();
-    auto innerCtrlOp = dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerCtrlOp = dyn_cast<CtrlOp>(inner.getOperation());
     if (!innerCtrlOp) {
       return failure();
     }
 
-    auto controls = innerCtrlOp.getControls();
-    rewriter.replaceOpWithNewOp<CtrlOp>(invOp, controls, [&] {
-      InvOp::create(rewriter, invOp.getLoc(), [&] {
-        rewriter.clone(*innerCtrlOp.getBodyUnitary().getOperation());
-      });
-    });
+    // The inner control's controls and targets are block arguments aliasing the
+    // inverse modifier's qubits. Pull the controls out to a new control
+    // modifier and wrap the inner body in an inverse modifier whose block
+    // arguments match the inner targets, so the inner body is reused verbatim.
+    auto outerQubits = op.getQubits();
+    const auto controls =
+        llvm::map_to_vector(innerCtrlOp.getControls(), [&](Value c) {
+          return utils::getValueFromBlockArgument(c, outerQubits);
+        });
+    const auto targets =
+        llvm::map_to_vector(innerCtrlOp.getTargets(), [&](Value t) {
+          return utils::getValueFromBlockArgument(t, outerQubits);
+        });
+
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        op, controls, targets, [&](ValueRange targetArgs) {
+          auto innerInv = InvOp::create(rewriter, op.getLoc(), targetArgs);
+          rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
+                                      innerInv.getRegion(),
+                                      innerInv.getRegion().end());
+        });
 
     return success();
   }
@@ -88,14 +113,19 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto* innerOp = op.getBodyUnitary().getOperation();
-
-    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(innerOp)) {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
       return failure();
     }
 
-    rewriter.moveOpBefore(innerOp, op);
-    rewriter.replaceOp(op, innerOp->getResults());
+    if (!isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(
+            inner.getOperation())) {
+      return failure();
+    }
+
+    // A self-adjoint gate is its own inverse, so the modifier can be dropped
+    // and its body applied directly to the involved qubits.
+    utils::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
     return success();
   }
 };
@@ -111,146 +141,138 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto* innerOp = op.getBodyUnitary().getOperation();
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto* innerOp = inner.getOperation();
 
-    return TypeSwitch<Operation*, LogicalResult>(innerOp)
-        .Case<GPhaseOp>([&](auto g) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), g.getTheta());
-          rewriter.replaceOpWithNewOp<GPhaseOp>(op, negTheta);
-          return success();
-        })
-        .Case<TOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<TdgOp>(op, op.getTarget(0));
-          return success();
-        })
-        .Case<TdgOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<TOp>(op, op.getTarget(0));
-          return success();
-        })
-        .Case<SOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<SdgOp>(op, op.getTarget(0));
-          return success();
-        })
-        .Case<SdgOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<SOp>(op, op.getTarget(0));
-          return success();
-        })
-        .Case<SXOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<SXdgOp>(op, op.getTarget(0));
-          return success();
-        })
-        .Case<SXdgOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<SXOp>(op, op.getTarget(0));
-          return success();
-        })
-        .Case<POp>([&](auto p) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), p.getTheta());
-          rewriter.replaceOpWithNewOp<POp>(op, op.getTarget(0), negTheta);
-          return success();
-        })
-        .Case<ROp>([&](auto r) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), r.getTheta());
-          rewriter.replaceOpWithNewOp<ROp>(op, op.getTarget(0), negTheta,
-                                           r.getPhi());
-          return success();
-        })
-        .Case<RXOp>([&](auto rx) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), rx.getTheta());
-          rewriter.replaceOpWithNewOp<RXOp>(op, op.getTarget(0), negTheta);
-          return success();
-        })
-        .Case<UOp>([&](auto u) {
-          Value newPhi =
-              arith::NegFOp::create(rewriter, op.getLoc(), u.getLambda());
-          Value newLambda =
-              arith::NegFOp::create(rewriter, op.getLoc(), u.getPhi());
-          Value newTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), u.getTheta());
-          rewriter.replaceOpWithNewOp<UOp>(op, op.getTarget(0), newTheta,
-                                           newPhi, newLambda);
-          return success();
-        })
-        .Case<U2Op>([&](auto u) {
-          auto pi = arith::ConstantOp::create(
-              rewriter, op.getLoc(),
-              rewriter.getF64FloatAttr(std::numbers::pi));
-          Value newPhi =
-              arith::NegFOp::create(rewriter, op.getLoc(), u.getLambda());
-          newPhi = arith::SubFOp::create(rewriter, op.getLoc(), newPhi, pi);
-          Value newLambda =
-              arith::NegFOp::create(rewriter, op.getLoc(), u.getPhi());
-          newLambda =
-              arith::AddFOp::create(rewriter, op.getLoc(), newLambda, pi);
-          rewriter.replaceOpWithNewOp<U2Op>(op, op.getTarget(0), newPhi,
-                                            newLambda);
-          return success();
-        })
-        .Case<DCXOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<DCXOp>(op, op.getTarget(1),
-                                             op.getTarget(0));
-          return success();
-        })
-        .Case<RXXOp>([&](auto rxx) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), rxx.getTheta());
-          rewriter.replaceOpWithNewOp<RXXOp>(op, op.getTarget(0),
-                                             op.getTarget(1), negTheta);
-          return success();
-        })
-        .Case<RYOp>([&](auto ry) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), ry.getTheta());
-          rewriter.replaceOpWithNewOp<RYOp>(op, op.getTarget(0), negTheta);
-          return success();
-        })
-        .Case<RYYOp>([&](auto ryy) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), ryy.getTheta());
-          rewriter.replaceOpWithNewOp<RYYOp>(op, op.getTarget(0),
-                                             op.getTarget(1), negTheta);
-          return success();
-        })
-        .Case<RZOp>([&](auto rz) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), rz.getTheta());
-          rewriter.replaceOpWithNewOp<RZOp>(op, op.getTarget(0), negTheta);
-          return success();
-        })
-        .Case<RZXOp>([&](auto rzx) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), rzx.getTheta());
-          rewriter.replaceOpWithNewOp<RZXOp>(op, op.getTarget(0),
-                                             op.getTarget(1), negTheta);
-          return success();
-        })
-        .Case<RZZOp>([&](auto rzz) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), rzz.getTheta());
-          rewriter.replaceOpWithNewOp<RZZOp>(op, op.getTarget(0),
-                                             op.getTarget(1), negTheta);
-          return success();
-        })
-        .Case<XXMinusYYOp>([&](auto xxminusyy) {
-          Value negTheta = arith::NegFOp::create(rewriter, op.getLoc(),
-                                                 xxminusyy.getTheta());
-          rewriter.replaceOpWithNewOp<XXMinusYYOp>(op, op.getTarget(0),
-                                                   op.getTarget(1), negTheta,
-                                                   xxminusyy.getBeta());
-          return success();
-        })
-        .Case<XXPlusYYOp>([&](auto xxplusyy) {
-          Value negTheta =
-              arith::NegFOp::create(rewriter, op.getLoc(), xxplusyy.getTheta());
-          rewriter.replaceOpWithNewOp<XXPlusYYOp>(op, op.getTarget(0),
-                                                  op.getTarget(1), negTheta,
-                                                  xxplusyy.getBeta());
-          return success();
-        })
-        .Default([&](auto) { return failure(); });
+    // Replace the body gate in place with its inverse, operating on the same
+    // (block-argument) operands; inlining the body afterwards substitutes those
+    // block arguments with the modifier's qubits.
+    const auto loc = innerOp->getLoc();
+    rewriter.setInsertionPoint(innerOp);
+    const auto negTheta = [&](auto g) {
+      return arith::NegFOp::create(rewriter, loc, g.getTheta()).getResult();
+    };
+    const auto replaced =
+        TypeSwitch<Operation*, LogicalResult>(innerOp)
+            .Case<GPhaseOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<GPhaseOp>(g, negTheta(g));
+              return success();
+            })
+            .Case<TOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<TdgOp>(g, g.getTarget(0));
+              return success();
+            })
+            .Case<TdgOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<TOp>(g, g.getTarget(0));
+              return success();
+            })
+            .Case<SOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<SdgOp>(g, g.getTarget(0));
+              return success();
+            })
+            .Case<SdgOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<SOp>(g, g.getTarget(0));
+              return success();
+            })
+            .Case<SXOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<SXdgOp>(g, g.getTarget(0));
+              return success();
+            })
+            .Case<SXdgOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<SXOp>(g, g.getTarget(0));
+              return success();
+            })
+            .Case<POp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<POp>(g, g.getTarget(0), negTheta(g));
+              return success();
+            })
+            .Case<ROp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<ROp>(g, g.getTarget(0), negTheta(g),
+                                               g.getPhi());
+              return success();
+            })
+            .Case<RXOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<RXOp>(g, g.getTarget(0), negTheta(g));
+              return success();
+            })
+            .Case<RYOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<RYOp>(g, g.getTarget(0), negTheta(g));
+              return success();
+            })
+            .Case<RZOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<RZOp>(g, g.getTarget(0), negTheta(g));
+              return success();
+            })
+            .Case<UOp>([&](auto g) {
+              Value newPhi =
+                  arith::NegFOp::create(rewriter, loc, g.getLambda());
+              Value newLambda =
+                  arith::NegFOp::create(rewriter, loc, g.getPhi());
+              Value newTheta =
+                  arith::NegFOp::create(rewriter, loc, g.getTheta());
+              rewriter.replaceOpWithNewOp<UOp>(g, g.getTarget(0), newTheta,
+                                               newPhi, newLambda);
+              return success();
+            })
+            .Case<U2Op>([&](auto g) {
+              Value pi = arith::ConstantOp::create(
+                  rewriter, loc, rewriter.getF64FloatAttr(std::numbers::pi));
+              Value newPhi =
+                  arith::NegFOp::create(rewriter, loc, g.getLambda());
+              newPhi = arith::SubFOp::create(rewriter, loc, newPhi, pi);
+              Value newLambda =
+                  arith::NegFOp::create(rewriter, loc, g.getPhi());
+              newLambda = arith::AddFOp::create(rewriter, loc, newLambda, pi);
+              rewriter.replaceOpWithNewOp<U2Op>(g, g.getTarget(0), newPhi,
+                                                newLambda);
+              return success();
+            })
+            .Case<DCXOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<DCXOp>(g, g.getTarget(1),
+                                                 g.getTarget(0));
+              return success();
+            })
+            .Case<RXXOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<RXXOp>(g, g.getTarget(0),
+                                                 g.getTarget(1), negTheta(g));
+              return success();
+            })
+            .Case<RYYOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<RYYOp>(g, g.getTarget(0),
+                                                 g.getTarget(1), negTheta(g));
+              return success();
+            })
+            .Case<RZXOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<RZXOp>(g, g.getTarget(0),
+                                                 g.getTarget(1), negTheta(g));
+              return success();
+            })
+            .Case<RZZOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<RZZOp>(g, g.getTarget(0),
+                                                 g.getTarget(1), negTheta(g));
+              return success();
+            })
+            .Case<XXMinusYYOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<XXMinusYYOp>(
+                  g, g.getTarget(0), g.getTarget(1), negTheta(g), g.getBeta());
+              return success();
+            })
+            .Case<XXPlusYYOp>([&](auto g) {
+              rewriter.replaceOpWithNewOp<XXPlusYYOp>(
+                  g, g.getTarget(0), g.getTarget(1), negTheta(g), g.getBeta());
+              return success();
+            })
+            .Default([&](auto) { return failure(); });
+
+    if (failed(replaced)) {
+      return failure();
+    }
+
+    utils::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
+    return success();
   }
 };
 
@@ -259,62 +281,83 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
  */
 struct CancelNestedInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(InvOp invOp,
+  LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto innerUnitary = invOp.getBodyUnitary();
-    auto innerInvOp = dyn_cast<InvOp>(innerUnitary.getOperation());
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerInvOp = dyn_cast<InvOp>(inner.getOperation());
     if (!innerInvOp) {
       return failure();
     }
+    if (!utils::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody())) {
+      return failure();
+    }
 
-    auto* innerInnerUnitary = innerInvOp.getBodyUnitary().getOperation();
-    rewriter.moveOpBefore(innerInnerUnitary, invOp);
-    rewriter.replaceOp(invOp, innerInnerUnitary->getResults());
+    // inv(inv(x)) == x: inline the doubly-nested body directly onto the outer
+    // qubits. The inner body's block arguments alias the inner modifier's
+    // inputs, which in turn alias the outer qubits.
+    const auto replacements =
+        llvm::map_to_vector(innerInvOp.getQubits(), [&](Value q) {
+          return utils::getValueFromBlockArgument(q, op.getQubits());
+        });
+    utils::inlineModifierBody(op, *innerInvOp.getBody(), replacements,
+                              rewriter);
+    return success();
+  }
+};
 
+/**
+ * @brief Erase inverse modifiers that do not have any body unitaries.
+ */
+struct EraseEmptyInv final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(InvOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 0) {
+      return failure();
+    }
+
+    rewriter.eraseOp(op);
     return success();
   }
 };
 
 } // namespace
 
-UnitaryOpInterface InvOp::getBodyUnitary() {
-  // In principle, the body region should only contain exactly two operations,
-  // the actual unitary operation and a yield operation. However, the region may
-  // also contain constants and arithmetic operations, e.g., created as part of
-  // canonicalization. Thus, the only safe way to access the unitary operation
-  // is to get the second operation from the back of the region.
-  return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+size_t InvOp::getNumBodyUnitaries() {
+  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
+}
+
+UnitaryOpInterface InvOp::getBodyUnitary(const size_t i) {
+  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  const function_ref<void()>& bodyBuilder) {
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  auto* region = odsState.addRegion();
-  auto& block = region->emplaceBlock();
+                  ValueRange qubits,
+                  const function_ref<void(ValueRange)>& body) {
+  build(odsBuilder, odsState, qubits);
+  auto& block = odsState.regions.front()->emplaceBlock();
 
+  auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < qubits.size(); ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  bodyBuilder();
+  body(block.getArguments());
   YieldOp::create(odsBuilder, odsState.location);
 }
 
 LogicalResult InvOp::verify() {
-  auto& block = *getBody();
-  if (block.getOperations().size() < 2) {
-    return emitOpError("body region must have at least two operations");
-  }
-  if (!isa<YieldOp>(block.back())) {
-    return emitOpError(
-        "last operation in body region must be a yield operation");
-  }
-  auto iter = ++block.rbegin();
-  if (!isa<UnitaryOpInterface>(*iter)) {
-    return emitOpError(
-        "second to last operation in body region must be a unitary operation");
-  }
-  for (auto it = ++iter; it != block.rend(); ++it) {
-    if (isa<UnitaryOpInterface>(*it)) {
-      return emitOpError("body region may only contain a single unitary op");
-    }
+  if (llvm::any_of(*getBody(), [](Operation& op) {
+        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
+                   memref::StoreOp>(op);
+      })) {
+    return emitOpError("body must not contain non-unitary quantum operations "
+                       "or modify a quantum register");
   }
   return success();
 }
@@ -322,5 +365,5 @@ LogicalResult InvOp::verify() {
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<CancelNestedInv, MoveCtrlOutside, InvPowToNegPow,
-              InlineSelfAdjoint, ReplaceWithKnownGates>(context);
+              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv>(context);
 }

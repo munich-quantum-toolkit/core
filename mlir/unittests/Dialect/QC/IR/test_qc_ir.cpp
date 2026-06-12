@@ -118,19 +118,22 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCCtrlOpTest, QCTest,
-    testing::Values(QCTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
-                               MQT_NAMED_BUILDER(rxx)},
-                    QCTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
-                               MQT_NAMED_BUILDER(multipleControlledRxx)},
-                    QCTestCase{"TripleNestedCtrl",
-                               MQT_NAMED_BUILDER(tripleNestedCtrl),
-                               MQT_NAMED_BUILDER(tripleControlledRxx)},
-                    QCTestCase{"CtrlInvSandwich",
-                               MQT_NAMED_BUILDER(ctrlInvSandwich),
-                               MQT_NAMED_BUILDER(multipleControlledRxx)},
-                    QCTestCase{"DoubleNestedCtrlTwoQubits",
-                               MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
-                               MQT_NAMED_BUILDER(fourControlledRxx)}));
+    testing::Values(
+        QCTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
+                   MQT_NAMED_BUILDER(rxx)},
+        QCTestCase{"EmptyCtrl", MQT_NAMED_BUILDER(emptyCtrl),
+                   MQT_NAMED_BUILDER(rxx)},
+        QCTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
+                   MQT_NAMED_BUILDER(multipleControlledRxx)},
+        QCTestCase{"TripleNestedCtrl", MQT_NAMED_BUILDER(tripleNestedCtrl),
+                   MQT_NAMED_BUILDER(tripleControlledRxx)},
+        QCTestCase{"CtrlInvSandwich", MQT_NAMED_BUILDER(ctrlInvSandwich),
+                   MQT_NAMED_BUILDER(multipleControlledRxx)},
+        QCTestCase{"DoubleNestedCtrlTwoQubits",
+                   MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
+                   MQT_NAMED_BUILDER(fourControlledRxx)},
+        QCTestCase{"NestedCtrlTwo", MQT_NAMED_BUILDER(nestedCtrlTwo),
+                   MQT_NAMED_BUILDER(ctrlTwo)}));
 /// @}
 
 /// \name QC/Modifiers/PowOp.cpp
@@ -210,7 +213,9 @@ TEST_F(QCTest, CtrlPowSxNoExpansion) {
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCInvOpTest, QCTest,
-    testing::Values(QCTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
+    testing::Values(QCTestCase{"EmptyInv", MQT_NAMED_BUILDER(emptyInv),
+                               MQT_NAMED_BUILDER(rxx)},
+                    QCTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
                                MQT_NAMED_BUILDER(rxx)},
                     QCTestCase{"TripleNestedInv",
                                MQT_NAMED_BUILDER(tripleNestedInv),

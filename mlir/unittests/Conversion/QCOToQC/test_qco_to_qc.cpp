@@ -150,6 +150,21 @@ INSTANTIATE_TEST_SUITE_P(QCOPowOpTest, QCOToQCTest,
                          testing::Values(QCOToQCTestCase{
                              "CtrlPowSx", MQT_NAMED_BUILDER(qco::ctrlPowSx),
                              MQT_NAMED_BUILDER(qc::ctrlPowSx)}));
+
+/// @}
+
+/// \name QCOToQC/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOCtrlOpTest, QCOToQCTest,
+    testing::Values(QCOToQCTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qco::ctrlTwo),
+                                    MQT_NAMED_BUILDER(qc::ctrlTwo)},
+                    QCOToQCTestCase{"CtrlTwoMixed",
+                                    MQT_NAMED_BUILDER(qco::ctrlTwoMixed),
+                                    MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
+                    QCOToQCTestCase{"CtrlInvTwo",
+                                    MQT_NAMED_BUILDER(qco::ctrlInvTwo),
+                                    MQT_NAMED_BUILDER(qc::ctrlInvTwo)}));
 /// @}
 
 /// \name QCOToQC/Modifiers/InvOp.cpp
@@ -168,7 +183,9 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::dcx)},
         QCOToQCTestCase{"InverseMultipleControlledDCX",
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledDcx)}));
+                        MQT_NAMED_BUILDER(qc::multipleControlledDcx)},
+        QCOToQCTestCase{"InvTwo", MQT_NAMED_BUILDER(qco::invTwo),
+                        MQT_NAMED_BUILDER(qc::invTwo)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/BarrierOp.cpp
