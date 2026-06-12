@@ -100,99 +100,6 @@ static FailureOr<OpType> findPartnerThroughCtrlControlChain(OpType op) {
 }
 
 /**
- * @brief Shared implementation for merging two-target, one-parameter
- * operations.
- *
- * @details
- * When @p swappedTargets is false, the successor must consume the same target
- * wires in the same order. When true, the successor may consume swapped
- * targets. The parameter at operand index 2 is summed.
- *
- * @tparam OpType The type of the operation to be merged.
- * @param op The first operation instance.
- * @param rewriter The pattern rewriter.
- * @param swappedTargets Whether the successor consumes swapped target wires.
- * @return LogicalResult Success or failure of the merge.
- */
-template <typename OpType>
-static LogicalResult mergeTwoTargetOneParameterImpl(OpType op,
-                                                    PatternRewriter& rewriter,
-                                                    bool swappedTargets) {
-  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
-  if (!nextOp) {
-    return failure();
-  }
-
-  if (swappedTargets) {
-    if (op.getOutputQubit(0) != nextOp.getInputQubit(1) ||
-        op.getOutputQubit(1) != nextOp.getInputQubit(0)) {
-      return failure();
-    }
-  } else if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
-    return failure();
-  }
-
-  auto newParameter = addFloatParameters(
-      rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
-  op->setOperand(2, newParameter);
-  if (swappedTargets) {
-    rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
-  } else {
-    rewriter.replaceOp(nextOp, op.getResults());
-  }
-  return success();
-}
-
-/**
- * @brief Shared implementation for merging two-target, two-parameter
- * operations.
- *
- * @details
- * Requires matching secondary parameters (e.g., `beta` for `XXPlusYYOp` and
- * `XXMinusYYOp`). The primary parameter (`theta`) at operand index 2 is summed.
- * Wire-order requirements are the same as
- * @ref mergeTwoTargetOneParameterImpl.
- *
- * @tparam OpType The type of the operation to be merged.
- * @param op The first operation instance.
- * @param rewriter The pattern rewriter.
- * @param swappedTargets Whether the successor consumes swapped target wires.
- * @return LogicalResult Success or failure of the merge.
- */
-template <typename OpType>
-static LogicalResult mergeTwoTargetTwoParameterImpl(OpType op,
-                                                    PatternRewriter& rewriter,
-                                                    bool swappedTargets) {
-  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
-  if (!nextOp) {
-    return failure();
-  }
-
-  if (swappedTargets) {
-    if (op.getOutputQubit(0) != nextOp.getInputQubit(1) ||
-        op.getOutputQubit(1) != nextOp.getInputQubit(0)) {
-      return failure();
-    }
-  } else if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
-    return failure();
-  }
-
-  if (!valuesMatchWithinTolerance(op.getBeta(), nextOp.getBeta())) {
-    return failure();
-  }
-
-  auto newTheta = addFloatParameters(rewriter, op.getLoc(), op.getOperand(2),
-                                     nextOp.getOperand(2));
-  op->setOperand(2, newTheta);
-  if (swappedTargets) {
-    rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
-  } else {
-    rewriter.replaceOp(nextOp, op.getResults());
-  }
-  return success();
-}
-
-/**
  * @brief Remove a pair of inverse one-target, zero-parameter operations
  *
  * @tparam InverseOpType The type of the inverse operation.
@@ -329,6 +236,7 @@ LogicalResult mergeOneTargetZeroParameter(OpType op,
  */
 template <typename OpType>
 LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
+  // Check if the successor is the same operation
   auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
@@ -375,6 +283,34 @@ LogicalResult mergeOneTargetTwoParameter(OpType op, PatternRewriter& rewriter) {
 }
 
 /**
+ * @brief Merge Z-diagonal one-target, zero-parameter gates through a chain of
+ * `ctrl` hops on control wires.
+ *
+ * @details
+ * Replaces `op; …; op` on a control wire with `square; …` (e.g. `s; ctrl; s` →
+ * `z; ctrl`).
+ *
+ * @tparam SquareOpType Result of squaring the gate (e.g. `ZOp` for `SOp`).
+ * @tparam OpType The Z-diagonal operation to be merged.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the merge.
+ */
+template <typename SquareOpType, typename OpType>
+LogicalResult
+mergeOneTargetZeroParameterThroughCtrlControlChain(OpType op,
+                                                   PatternRewriter& rewriter) {
+  auto partner = findPartnerThroughCtrlControlChain(op);
+  if (failed(partner)) {
+    return failure();
+  }
+
+  rewriter.replaceOpWithNewOp<SquareOpType>(op, op.getInputQubit(0));
+  rewriter.replaceOp(*partner, partner->getInputQubit(0));
+  return success();
+}
+
+/**
  * @brief Merge Z-diagonal one-target, one-parameter gate angles through `ctrl`
  * control wires.
  *
@@ -402,30 +338,46 @@ mergeOneTargetOneParameterThroughCtrlControlChain(OpType op,
 }
 
 /**
- * @brief Merge Z-diagonal one-target, zero-parameter gates through a chain of
- * `ctrl` hops on control wires.
+ * @brief Shared implementation for merging two-target, one-parameter
+ * operations.
  *
  * @details
- * Replaces `op; …; op` on a control wire with `square; …` (e.g. `s; ctrl; s` →
- * `z; ctrl`).
+ * When @p swappedTargets is false, the successor must consume the same target
+ * wires in the same order. When true, the successor may consume swapped
+ * targets. The parameter at operand index 2 is summed.
  *
- * @tparam SquareOpType Result of squaring the gate (e.g. `ZOp` for `SOp`).
- * @tparam OpType The Z-diagonal operation to be merged.
- * @param op The operation instance.
+ * @tparam OpType The type of the operation to be merged.
+ * @param op The first operation instance.
  * @param rewriter The pattern rewriter.
+ * @param swappedTargets Whether the successor consumes swapped target wires.
  * @return LogicalResult Success or failure of the merge.
  */
-template <typename SquareOpType, typename OpType>
-LogicalResult
-mergeOneTargetZeroParameterThroughCtrlControlChain(OpType op,
-                                                   PatternRewriter& rewriter) {
-  auto partner = findPartnerThroughCtrlControlChain(op);
-  if (failed(partner)) {
+template <typename OpType>
+static LogicalResult mergeTwoTargetOneParameterImpl(OpType op,
+                                                    PatternRewriter& rewriter,
+                                                    bool swappedTargets) {
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  if (!nextOp) {
     return failure();
   }
 
-  rewriter.replaceOpWithNewOp<SquareOpType>(op, op.getInputQubit(0));
-  rewriter.replaceOp(*partner, partner->getInputQubit(0));
+  if (swappedTargets) {
+    if (op.getOutputQubit(0) != nextOp.getInputQubit(1) ||
+        op.getOutputQubit(1) != nextOp.getInputQubit(0)) {
+      return failure();
+    }
+  } else if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
+    return failure();
+  }
+
+  auto newParameter = addFloatParameters(
+      rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
+  op->setOperand(2, newParameter);
+  if (swappedTargets) {
+    rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
+  } else {
+    rewriter.replaceOp(nextOp, op.getResults());
+  }
   return success();
 }
 
@@ -464,6 +416,55 @@ LogicalResult
 mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
                                              PatternRewriter& rewriter) {
   return mergeTwoTargetOneParameterImpl(op, rewriter, true);
+}
+
+/**
+ * @brief Shared implementation for merging two-target, two-parameter
+ * operations.
+ *
+ * @details
+ * Requires matching secondary parameters (e.g., `beta` for `XXPlusYYOp` and
+ * `XXMinusYYOp`). The primary parameter (`theta`) at operand index 2 is summed.
+ * Wire-order requirements are the same as
+ * @ref mergeTwoTargetOneParameterImpl.
+ *
+ * @tparam OpType The type of the operation to be merged.
+ * @param op The first operation instance.
+ * @param rewriter The pattern rewriter.
+ * @param swappedTargets Whether the successor consumes swapped target wires.
+ * @return LogicalResult Success or failure of the merge.
+ */
+template <typename OpType>
+static LogicalResult mergeTwoTargetTwoParameterImpl(OpType op,
+                                                    PatternRewriter& rewriter,
+                                                    bool swappedTargets) {
+  auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  if (!nextOp) {
+    return failure();
+  }
+
+  if (swappedTargets) {
+    if (op.getOutputQubit(0) != nextOp.getInputQubit(1) ||
+        op.getOutputQubit(1) != nextOp.getInputQubit(0)) {
+      return failure();
+    }
+  } else if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
+    return failure();
+  }
+
+  if (!valuesMatchWithinTolerance(op.getBeta(), nextOp.getBeta())) {
+    return failure();
+  }
+
+  auto newTheta = addFloatParameters(rewriter, op.getLoc(), op.getOperand(2),
+                                     nextOp.getOperand(2));
+  op->setOperand(2, newTheta);
+  if (swappedTargets) {
+    rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
+  } else {
+    rewriter.replaceOp(nextOp, op.getResults());
+  }
+  return success();
 }
 
 /**
