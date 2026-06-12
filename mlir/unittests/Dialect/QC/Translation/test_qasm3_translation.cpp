@@ -93,6 +93,15 @@ static void mixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q[1]);
 }
 
+static void ifNot(qc::QCProgramBuilder& b) {
+  auto trueValue = b.boolConstant(true);
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto c = b.measure(q[0]);
+  auto cond = arith::XOrIOp::create(b, c, trueValue).getResult();
+  b.scfIf(cond, [&] { b.x(q[0]); });
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -387,6 +396,8 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
         QASM3TranslationTestCase{"SimpleIf", qasm::simpleIf,
                                  MQT_NAMED_BUILDER(qc::simpleIf)},
+        QASM3TranslationTestCase{"IfNot", qasm::ifNot,
+                                 MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
                                  MQT_NAMED_BUILDER(qc::ifTwoQubits)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,

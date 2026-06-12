@@ -777,7 +777,8 @@ public:
 
   //===--- IfStatement helpers ------------------------------------------===//
 
-  /// Emit quantum statements inside an if/else block.
+  /// Helper function to emit quantum statements within an IfOp's then/else
+  /// regions.
   void emitBlockStatements(
       const std::vector<std::shared_ptr<qasm3::Statement>>& statements,
       const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
@@ -793,102 +794,92 @@ public:
     }
   }
 
-  /// Translate a QASM3 condition expression to an i1 MLIR Value.
-  /// Supports:
-  ///   - Single bit: `c[0]` or `!c[0]` / `~c[0]`
+  /// Translate a QASM3 condition to MLIR.
   [[nodiscard]] Value
   translateCondition(const std::shared_ptr<qasm3::Expression>& condition,
                      const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
-    // Case 1: Register comparison (creg == N, creg != N, etc.)
-    if (const auto binaryExpr =
-            std::dynamic_pointer_cast<qasm3::BinaryExpression>(condition)) {
-      throw qasm3::CompilerError(
-          "Register comparisons cannot be translated to QC at the moment.",
-          debugInfo);
+    // Single bit (c[0])
+    if (const auto& id =
+            std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(condition)) {
+      return lookupBitValue(id, debugInfo);
     }
 
-    // Case 2: Unary negation (!c[0] or ~c[0])
+    // Unary negation (!c[0] or ~c[0])
     if (const auto unaryExpr =
             std::dynamic_pointer_cast<qasm3::UnaryExpression>(condition)) {
       assert(unaryExpr->op == qasm3::UnaryExpression::LogicalNot ||
              unaryExpr->op == qasm3::UnaryExpression::BitwiseNot);
-      const auto idExpr = std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(
+      const auto& id = std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(
           unaryExpr->operand);
-      if (!idExpr) {
+      if (!id) {
         throw qasm3::CompilerError("Unary expression has unsupported operand.",
                                    debugInfo);
       }
-      auto bitVal = lookupBitValue(idExpr, debugInfo);
-      // Negate: XOR with true
-      auto trueVal =
+      auto value = lookupBitValue(id, debugInfo);
+      auto trueValue =
           arith::ConstantOp::create(
               builder, builder.getIntegerAttr(builder.getI1Type(), 1))
               .getResult();
-      return arith::XOrIOp::create(builder, bitVal, trueVal).getResult();
+      return arith::XOrIOp::create(builder, value, trueValue).getResult();
     }
 
-    // Case 3: Single bit (c[0] — truthy)
-    if (const auto idExpr =
-            std::dynamic_pointer_cast<qasm3::IndexedIdentifier>(condition)) {
-      return lookupBitValue(idExpr, debugInfo);
+    // Register comparison (creg == N, creg != N, etc.)
+    if (const auto binaryExpr =
+            std::dynamic_pointer_cast<qasm3::BinaryExpression>(condition)) {
+      throw qasm3::CompilerError("Register comparisons are not supported.",
+                                 debugInfo);
     }
 
     throw qasm3::CompilerError(
         "Unsupported condition expression in if statement.", debugInfo);
   }
 
-  /// Look up the most recent measurement result for a single classical bit.
+  /// Look up the most recent measurement result for a classical bit.
   [[nodiscard]] Value
-  lookupBitValue(const std::shared_ptr<qasm3::IndexedIdentifier>& idExpr,
+  lookupBitValue(const std::shared_ptr<qasm3::IndexedIdentifier>& id,
                  const std::shared_ptr<qasm3::DebugInfo>& debugInfo) const {
-    const auto& regName = idExpr->identifier;
+    const auto& regName = id->identifier;
     auto it = bitValues.find(regName);
     if (it == bitValues.end()) {
-      throw qasm3::CompilerError(
-          "Classical register '" + regName +
-              "' has no measurement results to use in condition.",
-          debugInfo);
+      throw qasm3::CompilerError("No classical bit of register '" + regName +
+                                     "' has been measured yet.",
+                                 debugInfo);
     }
     const auto& regBits = it->second;
 
-    // Single bit — must be indexed
-    if (idExpr->indices.empty()) {
-      if (regBits.size() != 1) {
-        throw qasm3::CompilerError(
-            "Condition on full register '" + regName +
-                "' requires a comparison operator (e.g. creg == 0).",
-            debugInfo);
+    if (id->indices.empty()) {
+      if (regBits.size() == 1) {
+        return regBits[0];
       }
-      if (!regBits[0]) {
-        throw qasm3::CompilerError(
-            "Bit 0 of register '" + regName +
-                "' was not measured before use in condition.",
-            debugInfo);
-      }
-      return regBits[0];
+      throw qasm3::CompilerError("Cannot look up value of entire register.",
+                                 debugInfo);
     }
 
-    const auto idx = evaluatePositiveConstant(
-        idExpr->indices[0]->indexExpressions[0], debugInfo);
-    if (idx >= regBits.size() || !regBits[idx]) {
-      throw qasm3::CompilerError(
-          "Bit " + std::to_string(idx) + " of register '" + regName +
-              "' was not measured before use in condition.",
-          debugInfo);
+    if (id->indices.size() > 1) {
+      throw qasm3::CompilerError("Only single-index expressions are supported.",
+                                 debugInfo);
     }
-    return regBits[idx];
+    const auto& indexExpression = id->indices[0]->indexExpressions[0];
+    const auto index = evaluatePositiveConstant(indexExpression, debugInfo);
+    if (index >= regBits.size() || !regBits[index]) {
+      throw qasm3::CompilerError("Bit " + std::to_string(index) +
+                                     " of register '" + regName +
+                                     "' has been not measured yet.",
+                                 debugInfo);
+    }
+    return regBits[index];
   }
 
   //===--- Operand resolution helpers ------------------------------------===//
 
-  /// Resolve a gate operand against the top-level qubitRegisters map.
+  /// Resolve a qubit operand against the top-level qubitRegisters map.
   [[nodiscard]] std::variant<Value, SmallVector<Value>>
   resolveGateOperand(const std::shared_ptr<qasm3::GateOperand>& operand,
                      const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
     return resolveGateOperandInScope(operand, qubitRegisters, debugInfo);
   }
 
-  /// Resolve a gate operand against @p scope.
+  /// Resolve a qubit operand against @p scope.
   [[nodiscard]] std::variant<Value, SmallVector<Value>>
   resolveGateOperandInScope(
       const std::shared_ptr<qasm3::GateOperand>& operand,
@@ -898,7 +889,7 @@ public:
       return builder.staticQubit(operand->getHardwareQubit());
     }
 
-    const auto id = operand->getIdentifier();
+    const auto& id = operand->getIdentifier();
     const auto& name = id->identifier;
     auto it = scope.find(name);
     if (it == scope.end()) {
@@ -928,12 +919,11 @@ public:
     return qubits[index];
   }
 
-  /// Resolve a classical bit operand to the corresponding measurement
-  /// result(s).
+  /// Resolve a classical bit operand.
   [[nodiscard]] SmallVector<QCProgramBuilder::Bit> resolveClassicalBits(
-      const std::shared_ptr<qasm3::IndexedIdentifier>& target,
+      const std::shared_ptr<qasm3::IndexedIdentifier>& operand,
       const std::shared_ptr<qasm3::DebugInfo>& debugInfo) const {
-    const auto& name = target->identifier;
+    const auto& name = operand->identifier;
     auto it = classicalRegisters.find(name);
     if (it == classicalRegisters.end()) {
       throw qasm3::CompilerError("Unknown classical register '" + name + "'.",
@@ -943,18 +933,18 @@ public:
     const auto& creg = it->second;
     SmallVector<QCProgramBuilder::Bit> bits;
 
-    if (target->indices.empty()) {
+    if (operand->indices.empty()) {
       for (int64_t i = 0; i < creg.size; ++i) {
         bits.push_back(creg[i]);
       }
       return bits;
     }
 
-    if (target->indices.size() > 1) {
+    if (operand->indices.size() > 1) {
       throw qasm3::CompilerError("Only single-index expressions are supported.",
                                  debugInfo);
     }
-    const auto& indexExpression = target->indices[0]->indexExpressions[0];
+    const auto& indexExpression = operand->indices[0]->indexExpressions[0];
     const auto index = evaluatePositiveConstant(indexExpression, debugInfo);
     if (std::cmp_greater_equal(index, creg.size)) {
       throw qasm3::CompilerError("Classical bit index out of bounds.",

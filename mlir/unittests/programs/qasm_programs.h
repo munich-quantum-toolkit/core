@@ -354,6 +354,9 @@ extern const std::string ctrlTwoMixed;
 /// Creates a circuit with a simple if operation with one qubit.
 extern const std::string simpleIf;
 
+/// Created a circuit with an if operation with a negated condition.
+extern const std::string ifNot;
+
 /// Creates a circuit with an if operation with two qubits.
 extern const std::string ifTwoQubits;
 
