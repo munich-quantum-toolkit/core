@@ -167,8 +167,15 @@ void inverseX(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
 void inverseMultipleControlledX(QCOProgramBuilder& b);
 
-/// Creates a circuit with two X gates in a row.
+/// Creates a circuit with two subsequent X gates.
 void twoX(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to two subsequent X gates.
+void controlledTwoX(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two subsequent X
+/// gates.
+void inverseTwoX(QCOProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
@@ -960,6 +967,9 @@ void twoBarrier(QCOProgramBuilder& b);
 /// Creates a circuit with a trivial ctrl modifier.
 void trivialCtrl(QCOProgramBuilder& b);
 
+/// Creates a circuit with an empty ctrl modifier.
+void emptyCtrl(QCOProgramBuilder& b);
+
 /// Creates a circuit with nested ctrl modifiers.
 void nestedCtrl(QCOProgramBuilder& b);
 
@@ -972,7 +982,24 @@ void doubleNestedCtrlTwoQubits(QCOProgramBuilder& b);
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
 void ctrlInvSandwich(QCOProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to two gates.
+void ctrlTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to a controlled and a
+/// non-controlled gate.
+void ctrlTwoMixed(QCOProgramBuilder& b);
+
+/// Creates a circuit with nested control modifiers applied to two gates.
+void nestedCtrlTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to an inverse modifier
+/// applied to two gates.
+void ctrlInvTwo(QCOProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with an empty inverse modifier.
+void emptyInv(QCOProgramBuilder& b);
 
 /// Creates a circuit with nested inverse modifiers.
 void nestedInv(QCOProgramBuilder& b);
@@ -983,10 +1010,20 @@ void tripleNestedInv(QCOProgramBuilder& b);
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCOProgramBuilder& b);
 
+/// Creates a circuit with an inverse modifier applied to two gates.
+void invTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a control modifier
+/// applied to two gates.
+void invCtrlTwo(QCOProgramBuilder& b);
+
 // --- IfOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
 void simpleIf(QCOProgramBuilder& b);
+
+/// Creates a circuit with an if operation with a parameterized gate.
+void ifWithAngle(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with two qubits.
 void ifTwoQubits(QCOProgramBuilder& b);
@@ -1017,6 +1054,10 @@ void nestedFalseIf(QCOProgramBuilder& b);
 /// a register.
 void nestedIfOpForLoop(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with a nested for operation and
+/// parameterized gates.
+void nestedIfOpForLoopWithAngle(QCOProgramBuilder& b);
+
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
@@ -1029,6 +1070,9 @@ void simpleDoWhileReset(QCOProgramBuilder& b);
 
 /// Creates a circuit with a simple for operation with a register.
 void simpleForLoop(QCOProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a parameterized gate.
+void forLoopWithAngle(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.

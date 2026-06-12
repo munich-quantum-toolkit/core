@@ -33,10 +33,12 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/RegionUtils.h>
 
 #include <cassert>
 #include <cstddef>
@@ -155,19 +157,30 @@ static void handleResult(Operation* op, ConversionPatternRewriter& rewriter,
  * @brief Target operands: `adaptor.getOperands()` at the matched op, or
  * `state.targetsIn` while lowering inside `qco.ctrl` / `qco.inv`.
  *
- * @param state Lowering state.
- * @param adaptor Operand adaptor for the matched op.
+ * @param op The operation being converted.
+ * @param adaptor The operation adaptor of the operation.
+ * @param state The lowering state.
  * @tparam NumParams Number of parameters to drop from the end of the operand
  * list.
- * @tparam OpAdaptor Adaptor with `getOperands()`.
- * @return ValueRange The target operands.
+ * @tparam OpType The type of the operation.
+ * @tparam OpAdaptorType The type of the operation adaptor.
+ * @return The target operands.
  */
-template <size_t NumParams, typename OpAdaptor>
-[[nodiscard]] static ValueRange getEffectiveTargetOperands(LoweringState& state,
-                                                           OpAdaptor adaptor) {
-  return state.inModifier()
-             ? ValueRange(state.targetsIn)
-             : ValueRange(adaptor.getOperands().drop_back(NumParams));
+template <size_t NumParams, typename OpType, typename OpAdaptorType>
+[[nodiscard]] static SmallVector<Value>
+getEffectiveTargetOperands(OpType op, OpAdaptorType adaptor,
+                           LoweringState& state) {
+  if (!state.inModifier()) {
+    return adaptor.getOperands().drop_back(NumParams);
+  }
+
+  SmallVector<Value> targets;
+  for (auto targetArg : op->getOperands().drop_back(NumParams)) {
+    auto target =
+        state.targetsIn[cast<BlockArgument>(targetArg).getArgNumber()];
+    targets.push_back(target);
+  }
+  return targets;
 }
 
 /**
@@ -190,10 +203,10 @@ convertJeffGate(QCOOpType op, typename QCOOpType::Adaptor adaptor,
                 std::index_sequence<TargetIndices...> /*targetIndices*/,
                 std::index_sequence<ParamIndices...> /*paramIndices*/) {
   constexpr std::size_t numParams = sizeof...(ParamIndices);
-  ValueRange targets = getEffectiveTargetOperands<numParams>(state, adaptor);
+  auto targets = getEffectiveTargetOperands<numParams>(op, adaptor, state);
   assert(targets.size() >= sizeof...(TargetIndices) &&
          "Not enough operands available for conversion");
-  ValueRange params = op.getParameters();
+  auto params = op.getParameters();
 
   auto jeffOp = JeffOpType::create(
       rewriter, op.getLoc(), targets[TargetIndices]..., params[ParamIndices]...,
@@ -334,15 +347,37 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
  */
 static LogicalResult moveRegion(Region& source, Region& dest,
                                 ConversionPatternRewriter& rewriter,
-                                const TypeConverter* typeConverter) {
-  rewriter.inlineRegionBefore(source, dest, dest.end());
-  Block* block = &dest.front();
-  TypeConverter::SignatureConversion sc(block->getNumArguments());
-  if (failed(
-          typeConverter->convertSignatureArgs(block->getArgumentTypes(), sc))) {
-    return failure();
+                                const TypeConverter* typeConverter,
+                                const SetVector<Value>& aboveValues) {
+  auto* oldBlock = &source.back();
+  auto* newBlock = &dest.emplaceBlock();
+  rewriter.setInsertionPointToEnd(newBlock);
+
+  IRMapping mapping;
+  for (auto oldArg : oldBlock->getArguments()) {
+    auto newArg = newBlock->addArgument(
+        typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
+    mapping.map(oldArg, newArg);
   }
-  rewriter.applySignatureConversion(block, sc);
+  for (auto value : aboveValues) {
+    auto newArg = newBlock->addArgument(
+        typeConverter->convertType(value.getType()), value.getLoc());
+    mapping.map(value, newArg);
+  }
+
+  for (auto& op : oldBlock->without_terminator()) {
+    rewriter.clone(op, mapping);
+  }
+
+  auto* oldTerminator = oldBlock->getTerminator();
+  SmallVector<Value> yields;
+  for (auto value : oldTerminator->getOperands()) {
+    yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
+  }
+  llvm::append_range(yields,
+                     newBlock->getArguments().take_back(aboveValues.size()));
+  rewriter.replaceOpWithNewOp<jeff::YieldOp>(oldTerminator, yields);
+
   return success();
 }
 
@@ -728,7 +763,7 @@ struct ConvertQCOCustomGateToJeff final
       }
     }
 
-    ValueRange targets = getEffectiveTargetOperands<NumParams>(state, adaptor);
+    auto targets = getEffectiveTargetOperands<NumParams>(op, adaptor, state);
     assert(targets.size() >= NumTargets &&
            "Not enough operands available for conversion");
 
@@ -764,7 +799,7 @@ struct ConvertQCOPPRGateToJeff final : StatefulOpConversionPattern<QCOOpType> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
-    ValueRange targets = getEffectiveTargetOperands<1>(state, adaptor);
+    auto targets = getEffectiveTargetOperands<1>(op, adaptor, state);
     assert(targets.size() >= 2 &&
            "Not enough operands available for conversion");
     createPPROp(op, rewriter, state, targets, {p0_, p1_});
@@ -798,7 +833,7 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<U2Op> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    ValueRange targets = getEffectiveTargetOperands<2>(state, adaptor);
+    auto targets = getEffectiveTargetOperands<2>(op, adaptor, state);
     assert(!targets.empty() && "Not enough operands available for conversion");
     auto target = targets.front();
 
@@ -840,11 +875,8 @@ struct ConvertQCOBarrierOpToJeff final
   matchAndRewrite(BarrierOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-
-    ValueRange targets = getEffectiveTargetOperands<0>(state, adaptor);
-
+    auto targets = getEffectiveTargetOperands<0>(op, adaptor, state);
     createCustomOp(op, rewriter, state, targets, {}, false, "barrier");
-
     return success();
   }
 };
@@ -871,18 +903,24 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
   LogicalResult
   matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 1) {
+      return rewriter.notifyMatchFailure(
+          op,
+          "Control modifiers with multiple body unitaries are not supported.");
+    }
+
     auto& state = getState();
 
     if (state.inCtrlOp) {
       return rewriter.notifyMatchFailure(
-          op, "Nested control operations are not supported. Run the "
+          op, "Nested control modifiers are not supported. Run the "
               "canonicalization pass before the conversion");
     }
 
     if (state.inInvOp) {
       return rewriter.notifyMatchFailure(
-          op, "Control operations inside inversion operations are not "
-              "supported. Run the canonicalization pass before the conversion");
+          op, "Control modifiers inside inversion modifiers are not supported. "
+              "Run the canonicalization pass before the conversion");
     }
 
     // Set modifier information
@@ -921,11 +959,17 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
   LogicalResult
   matchAndRewrite(InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (op.getNumBodyUnitaries() != 1) {
+      return rewriter.notifyMatchFailure(op,
+                                         "Inversion modifiers with multiple "
+                                         "body unitaries are not supported.");
+    }
+
     auto& state = getState();
 
     if (state.inInvOp) {
       return rewriter.notifyMatchFailure(
-          op, "Nested inversion operations are not supported. Run the "
+          op, "Nested inversion modifiers are not supported. Run the "
               "canonicalization pass before the conversion");
     }
 
@@ -934,6 +978,13 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
     state.invOp = op;
     if (state.targetsIn.empty()) {
       state.targetsIn = llvm::to_vector(adaptor.getQubitsIn());
+    } else {
+      auto outerQubits = state.targetsIn;
+      SmallVector<Value> innerQubits;
+      for (auto arg : op.getBody()->getArguments()) {
+        innerQubits.push_back(outerQubits[arg.getArgNumber()]);
+      }
+      state.targetsIn = std::move(innerQubits);
     }
 
     // Inline region
@@ -951,13 +1002,8 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(YieldOp op, OpAdaptor adaptor,
+  matchAndRewrite(YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (isa<jeff::SwitchOp>(op->getParentOp())) {
-      rewriter.replaceOpWithNewOp<jeff::YieldOp>(op, adaptor.getOperands());
-      return success();
-    }
-
     auto& state = getState();
 
     if (state.inInvOp) {
@@ -1024,37 +1070,55 @@ struct ConvertQCOIfOpToJeff final : StatefulOpConversionPattern<IfOp> {
   matchAndRewrite(IfOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto loc = op.getLoc();
+
+    SetVector<Value> aboveValues;
+    getUsedValuesDefinedAbove(op.getElseRegion(), aboveValues);
+    getUsedValuesDefinedAbove(op.getThenRegion(), aboveValues);
+
+    SmallVector<Value> initArgs;
+    llvm::append_range(initArgs, adaptor.getQubits());
+
     SmallVector<Type> outTypes;
     if (failed(
             getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
       return failure();
     }
 
-    auto jeffIf =
-        jeff::SwitchOp::create(rewriter, loc, outTypes, adaptor.getCondition(),
-                               adaptor.getQubits(), 2);
+    for (auto value : aboveValues) {
+      auto remappedValue = rewriter.getRemappedValue(value);
+      initArgs.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
+    }
 
-    if (failed(moveRegion(op.getElseRegion(), jeffIf.getBranches()[0], rewriter,
-                          getTypeConverter()))) {
+    auto jeffSwitch = jeff::SwitchOp::create(
+        rewriter, loc, outTypes, adaptor.getCondition(), initArgs, 2);
+
+    if (failed(moveRegion(op.getElseRegion(), jeffSwitch.getBranches()[0],
+                          rewriter, getTypeConverter(), aboveValues))) {
       return failure();
     }
-    if (failed(moveRegion(op.getThenRegion(), jeffIf.getBranches()[1], rewriter,
-                          getTypeConverter()))) {
+    if (failed(moveRegion(op.getThenRegion(), jeffSwitch.getBranches()[1],
+                          rewriter, getTypeConverter(), aboveValues))) {
       return failure();
     }
 
     // Add trivial default case
     {
-      auto* block = &jeffIf.getDefault().emplaceBlock();
+      auto* block = &jeffSwitch.getDefault().emplaceBlock();
       for (auto value : adaptor.getQubits()) {
         block->addArgument(value.getType(), loc);
+      }
+      for (auto value : aboveValues) {
+        block->addArgument(typeConverter->convertType(value.getType()), loc);
       }
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(block);
       jeff::YieldOp::create(rewriter, loc, block->getArguments());
     }
 
-    rewriter.replaceOp(op, jeffIf.getResults());
+    rewriter.replaceOp(op,
+                       jeffSwitch.getResults().take_front(op.getNumResults()));
+
     return success();
   }
 };
@@ -1092,34 +1156,35 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
   LogicalResult
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    SetVector<Value> aboveValues;
+    getUsedValuesDefinedAbove(op.getRegion(), aboveValues);
+
+    SmallVector<Value> initArgs;
+    llvm::append_range(initArgs, adaptor.getInitArgs());
+
     SmallVector<Type> outTypes;
     if (failed(
             getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
       return failure();
     }
 
+    for (auto value : aboveValues) {
+      auto remappedValue = rewriter.getRemappedValue(value);
+      initArgs.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
+    }
+
     auto jeffFor = jeff::ForOp::create(
         rewriter, op.getLoc(), outTypes, adaptor.getLowerBound(),
-        adaptor.getUpperBound(), adaptor.getStep(), adaptor.getInitArgs());
+        adaptor.getUpperBound(), adaptor.getStep(), initArgs);
 
     if (failed(moveRegion(op.getRegion(), jeffFor.getRegion(), rewriter,
-                          getTypeConverter()))) {
+                          getTypeConverter(), aboveValues))) {
       return failure();
     }
 
-    rewriter.replaceOp(op, jeffFor.getResults());
-    return success();
-  }
-};
+    rewriter.replaceOp(op, jeffFor.getResults().take_front(op.getNumResults()));
 
-struct ConvertSCFYieldOpToJeff final
-    : StatefulOpConversionPattern<scf::YieldOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(scf::YieldOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<jeff::YieldOp>(op, adaptor.getResults());
     return success();
   }
 };
@@ -1402,11 +1467,11 @@ protected:
     addQCOToJeffGatePattern<JK::Custom, 2, 2, XXMinusYYOp, void, false>(
         patterns, typeConverter, context, state, "xx_minus_yy");
 
-    patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
-                 ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
-                 ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff,
-                 ConvertSCFYieldOpToJeff, ConvertQCOMainToJeff>(
-        typeConverter, context, &state);
+    patterns
+        .add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
+             ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
+             ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff, ConvertQCOMainToJeff>(
+            typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
