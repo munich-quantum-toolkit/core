@@ -66,7 +66,8 @@ TEST_P(QIRTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program = QIRProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = QIRProgramBuilder::build(context.get(), programBuilder.fn,
+                                          QIRProgramBuilder::Profile::Adaptive);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -75,7 +76,8 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference = QIRProgramBuilder::build(context.get(), referenceBuilder.fn);
+  auto reference = QIRProgramBuilder::build(
+      context.get(), referenceBuilder.fn, QIRProgramBuilder::Profile::Adaptive);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());

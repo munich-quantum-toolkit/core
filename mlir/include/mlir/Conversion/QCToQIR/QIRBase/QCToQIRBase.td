@@ -8,12 +8,12 @@
 
 include "mlir/Pass/PassBase.td"
 
-def QCToQIR : Pass<"qc-to-qir"> {
-  let summary =
-      "Lower the QC dialect to the LLVM dialect compliant with QIR 2.0";
+def QCToQIRBase : Pass<"qc-to-qir-base"> {
+  let summary = "Lower the QC dialect to the LLVM dialect compliant with the "
+                "QIR Base Profile 2.1";
 
   let description = [{
-    This pass lowers all operations from the QC dialect to their equivalent operations in the LLVM dialect, ensuring compliance with the QIR 2.0 standard.
+    This pass lowers all operations from the QC dialect to their equivalent operations in the LLVM dialect, ensuring compliance with the QIR Base Profile 2.1 standard.
     It translates quantum operations and types from QC to their corresponding representations in QIR, facilitating interoperability with quantum computing frameworks that utilize the QIR standard.
 
     Requirements:
