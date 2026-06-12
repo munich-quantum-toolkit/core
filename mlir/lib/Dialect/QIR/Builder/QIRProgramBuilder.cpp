@@ -107,7 +107,7 @@ void QIRProgramBuilder::initialize() {
 Value QIRProgramBuilder::resolveIntVariant(
     const std::variant<int64_t, Value>& variant) {
   if (std::holds_alternative<int64_t>(variant)) {
-    return LLVM::ConstantOp::create(*this, IntegerType::get(context, 64),
+    return LLVM::ConstantOp::create(*this, getI64Type(),
                                     getIndexAttr(std::get<int64_t>(variant)))
         .getResult();
   }
@@ -367,11 +367,11 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   // Get or create result pointer
   auto result = staticResult(resultIndex);
 
-  restoreInsertionPoint(insertionPoint);
-
   // Only set the insertionpoint if the Base Profile is used
   if (profile == Profile::Base) {
     setInsertionPoint(measurementsBlock->getTerminator());
+  } else {
+    restoreInsertionPoint(insertionPoint);
   }
 
   // Create measure call
@@ -820,14 +820,12 @@ QIRProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 
   Value branchCondition;
   if (std::holds_alternative<bool>(cond)) {
-    branchCondition =
-        LLVM::ConstantOp::create(
-            *this, getI1Type(),
-            getIntegerAttr(getI1Type(), std::get<bool>(cond) ? 1 : 0))
-            .getResult();
+    branchCondition = LLVM::ConstantOp::create(*this, getI1Type(),
+                                               std::get<bool>(cond) ? 1 : 0)
+                          .getResult();
   } else {
-    auto conditionValue = std::get<Value>(cond);
-    if (conditionValue.getType() != ptrType) {
+    if (auto conditionValue = std::get<Value>(cond);
+        conditionValue.getType() != ptrType) {
       llvm::reportFatalUsageError("Condition value must be llvm.ptr type");
     }
 
