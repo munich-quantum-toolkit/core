@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -40,36 +41,20 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
 
   LogicalResult matchAndRewrite(XXPlusYYOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the successor is the same operation
-    auto nextOp = dyn_cast<XXPlusYYOp>(*op.getOutputQubit(0).user_begin());
-    if (!nextOp) {
-      return failure();
-    }
+    return mergeTwoTargetTwoParameter(op, rewriter);
+  }
+};
 
-    // Confirm operations act on the same qubits
-    if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
-      return failure();
-    }
+/**
+ * @brief Merge XXPlusYY operations with swapped target wires by adding their
+ * thetas.
+ */
+struct MergeSwappedTargetsXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-    // Confirm betas are equal
-    const auto beta = valueToDouble(op.getBeta());
-    const auto nextBeta = valueToDouble(nextOp.getBeta());
-    if (beta && nextBeta) {
-      if (std::abs(*beta - *nextBeta) > TOLERANCE) {
-        return failure();
-      }
-    } else if (op.getBeta() != nextOp.getBeta()) {
-      return failure();
-    }
-
-    // Compute and set new theta, which has index 2
-    auto newParameter = arith::AddFOp::create(
-        rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
-    op->setOperand(2, newParameter.getResult());
-
-    // Replace the second operation with the result of the first operation
-    rewriter.replaceOp(nextOp, op.getResults());
-    return success();
+  LogicalResult matchAndRewrite(XXPlusYYOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeTwoTargetTwoParameterWithSwappedTargets(op, rewriter);
   }
 };
 
@@ -98,7 +83,7 @@ LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
 
 void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                              MLIRContext* context) {
-  results.add<MergeSubsequentXXPlusYY>(context);
+  results.add<MergeSubsequentXXPlusYY, MergeSwappedTargetsXXPlusYY>(context);
 }
 
 std::optional<Matrix4x4> XXPlusYYOp::getUnitaryMatrix() {

@@ -49,11 +49,26 @@ struct MergeSubsequentT final : OpRewritePattern<TOp> {
   }
 };
 
+/**
+ * @brief Merge T operations separated only by `ctrl` hops on a control wire
+ * into an S operation.
+ */
+struct MergeTThroughCtrlControlChain final : OpRewritePattern<TOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeOneTargetZeroParameterThroughCtrlControlChain<SOp>(op,
+                                                                   rewriter);
+  }
+};
+
 } // namespace
 
 void TOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<RemoveTAfterTdg, MergeSubsequentT>(context);
+  results.add<RemoveTAfterTdg, MergeSubsequentT, MergeTThroughCtrlControlChain>(
+      context);
 }
 
 Matrix2x2 TOp::getUnitaryMatrix() {

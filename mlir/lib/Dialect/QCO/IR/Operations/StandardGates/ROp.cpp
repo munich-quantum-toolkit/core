@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -64,6 +65,18 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
   }
 };
 
+/**
+ * @brief Merge subsequent R operations on the same qubit with matching `phi`.
+ */
+struct MergeSubsequentR final : OpRewritePattern<ROp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ROp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeOneTargetTwoParameter(op, rewriter);
+  }
+};
+
 } // namespace
 
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -77,7 +90,7 @@ void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 
 void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<ReplaceRWithRX, ReplaceRWithRY>(context);
+  results.add<ReplaceRWithRX, ReplaceRWithRY, MergeSubsequentR>(context);
 }
 
 std::optional<Matrix2x2> ROp::getUnitaryMatrix() {

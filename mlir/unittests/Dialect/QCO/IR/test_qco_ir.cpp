@@ -453,7 +453,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseMultipleControlledP),
                     MQT_NAMED_BUILDER(multipleControlledP)},
         QCOTestCase{"TwoPOppositePhase", MQT_NAMED_BUILDER(twoPOppositePhase),
-                    MQT_NAMED_BUILDER(emptyQCO)}));
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoPThroughCtrlControlChain",
+                    MQT_NAMED_BUILDER(twoPThroughCtrlControlChain),
+                    MQT_NAMED_BUILDER(twoPThroughCtrlControlChainMerged)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/ROp.cpp
@@ -479,7 +482,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"CanonicalizeRToRx", MQT_NAMED_BUILDER(canonicalizeRToRx),
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeRToRy", MQT_NAMED_BUILDER(canonicalizeRToRy),
-                    MQT_NAMED_BUILDER(ry)}));
+                    MQT_NAMED_BUILDER(ry)},
+        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RxOp.cpp
@@ -626,7 +630,17 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseMultipleControlledRz),
                     MQT_NAMED_BUILDER(multipleControlledRz)},
         QCOTestCase{"TwoRZOppositePhase", MQT_NAMED_BUILDER(twoRzOppositePhase),
-                    MQT_NAMED_BUILDER(emptyQCO)}));
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoRZThroughCtrlControlChain",
+                    MQT_NAMED_BUILDER(twoRzThroughCtrlControlChain),
+                    MQT_NAMED_BUILDER(twoRzThroughCtrlControlChainMerged)},
+        QCOTestCase{
+            "TwoRZThroughNestedCtrlControlChain",
+            MQT_NAMED_BUILDER(twoRzThroughNestedCtrlControlChain),
+            MQT_NAMED_BUILDER(twoRzThroughNestedCtrlControlChainMerged)},
+        QCOTestCase{"TwoRZSplitAcrossCtrlTargetWires",
+                    MQT_NAMED_BUILDER(twoRzSplitAcrossCtrlTargetWires),
+                    MQT_NAMED_BUILDER(twoRzSplitAcrossCtrlTargetWires)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RzxOp.cpp
@@ -715,36 +729,41 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledSdg)},
         QCOTestCase{"SThenSdg", MQT_NAMED_BUILDER(sThenSdg),
                     MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"TwoS", MQT_NAMED_BUILDER(twoS), MQT_NAMED_BUILDER(z)}));
+        QCOTestCase{"TwoS", MQT_NAMED_BUILDER(twoS), MQT_NAMED_BUILDER(z)},
+        QCOTestCase{"TwoSThroughCtrlControlChain",
+                    MQT_NAMED_BUILDER(twoSThroughCtrlControlChain),
+                    MQT_NAMED_BUILDER(twoSThroughCtrlControlChainMerged)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/SdgOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOSdgOpTest, QCOTest,
-    testing::Values(QCOTestCase{"Sdg", MQT_NAMED_BUILDER(sdg),
-                                MQT_NAMED_BUILDER(sdg)},
-                    QCOTestCase{"SingleControlledSdg",
-                                MQT_NAMED_BUILDER(singleControlledSdg),
-                                MQT_NAMED_BUILDER(singleControlledSdg)},
-                    QCOTestCase{"MultipleControlledSdg",
-                                MQT_NAMED_BUILDER(multipleControlledSdg),
-                                MQT_NAMED_BUILDER(multipleControlledSdg)},
-                    QCOTestCase{"NestedControlledSdg",
-                                MQT_NAMED_BUILDER(nestedControlledSdg),
-                                MQT_NAMED_BUILDER(multipleControlledSdg)},
-                    QCOTestCase{"TrivialControlledSdg",
-                                MQT_NAMED_BUILDER(trivialControlledSdg),
-                                MQT_NAMED_BUILDER(sdg)},
-                    QCOTestCase{"InverseSdg", MQT_NAMED_BUILDER(inverseSdg),
-                                MQT_NAMED_BUILDER(s)},
-                    QCOTestCase{"InverseMultipleControlledSdg",
-                                MQT_NAMED_BUILDER(inverseMultipleControlledSdg),
-                                MQT_NAMED_BUILDER(multipleControlledS)},
-                    QCOTestCase{"SdgThenS", MQT_NAMED_BUILDER(sdgThenS),
-                                MQT_NAMED_BUILDER(emptyQCO)},
-                    QCOTestCase{"TwoSdg", MQT_NAMED_BUILDER(twoSdg),
-                                MQT_NAMED_BUILDER(z)}));
+    testing::Values(
+        QCOTestCase{"Sdg", MQT_NAMED_BUILDER(sdg), MQT_NAMED_BUILDER(sdg)},
+        QCOTestCase{"SingleControlledSdg",
+                    MQT_NAMED_BUILDER(singleControlledSdg),
+                    MQT_NAMED_BUILDER(singleControlledSdg)},
+        QCOTestCase{"MultipleControlledSdg",
+                    MQT_NAMED_BUILDER(multipleControlledSdg),
+                    MQT_NAMED_BUILDER(multipleControlledSdg)},
+        QCOTestCase{"NestedControlledSdg",
+                    MQT_NAMED_BUILDER(nestedControlledSdg),
+                    MQT_NAMED_BUILDER(multipleControlledSdg)},
+        QCOTestCase{"TrivialControlledSdg",
+                    MQT_NAMED_BUILDER(trivialControlledSdg),
+                    MQT_NAMED_BUILDER(sdg)},
+        QCOTestCase{"InverseSdg", MQT_NAMED_BUILDER(inverseSdg),
+                    MQT_NAMED_BUILDER(s)},
+        QCOTestCase{"InverseMultipleControlledSdg",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledSdg),
+                    MQT_NAMED_BUILDER(multipleControlledS)},
+        QCOTestCase{"SdgThenS", MQT_NAMED_BUILDER(sdgThenS),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoSdg", MQT_NAMED_BUILDER(twoSdg), MQT_NAMED_BUILDER(z)},
+        QCOTestCase{"TwoSdgThroughCtrlControlChain",
+                    MQT_NAMED_BUILDER(twoSdgThroughCtrlControlChain),
+                    MQT_NAMED_BUILDER(twoSdgThroughCtrlControlChainMerged)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/SwapOp.cpp
@@ -854,36 +873,42 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledTdg)},
         QCOTestCase{"TThenTdg", MQT_NAMED_BUILDER(tThenTdg),
                     MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"TwoT", MQT_NAMED_BUILDER(twoT), MQT_NAMED_BUILDER(s)}));
+        QCOTestCase{"TwoT", MQT_NAMED_BUILDER(twoT), MQT_NAMED_BUILDER(s)},
+        QCOTestCase{"TwoTThroughCtrlControlChain",
+                    MQT_NAMED_BUILDER(twoTThroughCtrlControlChain),
+                    MQT_NAMED_BUILDER(twoTThroughCtrlControlChainMerged)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/TdgOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOTdgOpTest, QCOTest,
-    testing::Values(QCOTestCase{"Tdg", MQT_NAMED_BUILDER(tdg),
-                                MQT_NAMED_BUILDER(tdg)},
-                    QCOTestCase{"SingleControlledTdg",
-                                MQT_NAMED_BUILDER(singleControlledTdg),
-                                MQT_NAMED_BUILDER(singleControlledTdg)},
-                    QCOTestCase{"MultipleControlledTdg",
-                                MQT_NAMED_BUILDER(multipleControlledTdg),
-                                MQT_NAMED_BUILDER(multipleControlledTdg)},
-                    QCOTestCase{"NestedControlledTdg",
-                                MQT_NAMED_BUILDER(nestedControlledTdg),
-                                MQT_NAMED_BUILDER(multipleControlledTdg)},
-                    QCOTestCase{"TrivialControlledTdg",
-                                MQT_NAMED_BUILDER(trivialControlledTdg),
-                                MQT_NAMED_BUILDER(tdg)},
-                    QCOTestCase{"InverseTdg", MQT_NAMED_BUILDER(inverseTdg),
-                                MQT_NAMED_BUILDER(t_)},
-                    QCOTestCase{"InverseMultipleControlledTdg",
-                                MQT_NAMED_BUILDER(inverseMultipleControlledTdg),
-                                MQT_NAMED_BUILDER(multipleControlledT)},
-                    QCOTestCase{"TdgThenS", MQT_NAMED_BUILDER(tdgThenT),
-                                MQT_NAMED_BUILDER(emptyQCO)},
-                    QCOTestCase{"TwoTdg", MQT_NAMED_BUILDER(twoTdg),
-                                MQT_NAMED_BUILDER(sdg)}));
+    testing::Values(
+        QCOTestCase{"Tdg", MQT_NAMED_BUILDER(tdg), MQT_NAMED_BUILDER(tdg)},
+        QCOTestCase{"SingleControlledTdg",
+                    MQT_NAMED_BUILDER(singleControlledTdg),
+                    MQT_NAMED_BUILDER(singleControlledTdg)},
+        QCOTestCase{"MultipleControlledTdg",
+                    MQT_NAMED_BUILDER(multipleControlledTdg),
+                    MQT_NAMED_BUILDER(multipleControlledTdg)},
+        QCOTestCase{"NestedControlledTdg",
+                    MQT_NAMED_BUILDER(nestedControlledTdg),
+                    MQT_NAMED_BUILDER(multipleControlledTdg)},
+        QCOTestCase{"TrivialControlledTdg",
+                    MQT_NAMED_BUILDER(trivialControlledTdg),
+                    MQT_NAMED_BUILDER(tdg)},
+        QCOTestCase{"InverseTdg", MQT_NAMED_BUILDER(inverseTdg),
+                    MQT_NAMED_BUILDER(t_)},
+        QCOTestCase{"InverseMultipleControlledTdg",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledTdg),
+                    MQT_NAMED_BUILDER(multipleControlledT)},
+        QCOTestCase{"TdgThenS", MQT_NAMED_BUILDER(tdgThenT),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoTdg", MQT_NAMED_BUILDER(twoTdg),
+                    MQT_NAMED_BUILDER(sdg)},
+        QCOTestCase{"TwoTdgThroughCtrlControlChain",
+                    MQT_NAMED_BUILDER(twoTdgThroughCtrlControlChain),
+                    MQT_NAMED_BUILDER(twoTdgThroughCtrlControlChainMerged)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/U2Op.cpp
@@ -999,7 +1024,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledXxMinusYY)},
         QCOTestCase{"TwoXXMinusYYOppositePhase",
                     MQT_NAMED_BUILDER(twoXxMinusYYOppositePhase),
-                    MQT_NAMED_BUILDER(emptyQCO)}));
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoXXMinusYYSwappedTargets",
+                    MQT_NAMED_BUILDER(twoXxMinusYYSwappedTargets),
+                    MQT_NAMED_BUILDER(xxMinusYY)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/XxPlusYyOp.cpp
@@ -1028,7 +1056,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledXxPlusYY)},
         QCOTestCase{"TwoXXPlusYYOppositePhase",
                     MQT_NAMED_BUILDER(twoXxPlusYYOppositePhase),
-                    MQT_NAMED_BUILDER(emptyQCO)}));
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoXXPlusYYSwappedTargets",
+                    MQT_NAMED_BUILDER(twoXxPlusYYSwappedTargets),
+                    MQT_NAMED_BUILDER(xxPlusYY)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/YOp.cpp
