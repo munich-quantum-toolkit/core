@@ -37,8 +37,8 @@ namespace mlir::qco::decomposition {
  * @param atol Tolerance for snapping `+pi` to `-pi`.
  * @return The wrapped angle in `[-pi, pi)`.
  */
-[[nodiscard]] static double mod2pi(double angle,
-                                   double atol = mlir::utils::TOLERANCE) {
+[[nodiscard]] static double mod2pi(const double angle,
+                                   const double atol = utils::TOLERANCE) {
   if (!std::isfinite(angle)) {
     return angle;
   }
@@ -84,7 +84,7 @@ namespace mlir::qco::decomposition {
  * @param phase Global phase in radians.
  */
 static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
-  if (std::abs(phase) <= mlir::utils::TOLERANCE) {
+  if (std::abs(phase) <= utils::TOLERANCE) {
     return;
   }
   GPhaseOp::create(builder, loc, phase);
@@ -97,7 +97,7 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
  * @return `true` when no rotation gate should be emitted.
  */
 [[nodiscard]] static bool isNearZeroRotationAngle(double angle) {
-  return std::abs(angle) <= mlir::utils::TOLERANCE;
+  return std::abs(angle) <= utils::TOLERANCE;
 }
 
 namespace {
@@ -115,7 +115,7 @@ struct ZSXXSequence {
 } // namespace
 
 ZSXXMiddleGate classifyZSXXMiddleFromZYZTheta(double theta) {
-  constexpr double eps = mlir::utils::TOLERANCE;
+  constexpr double eps = utils::TOLERANCE;
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
 
@@ -192,7 +192,7 @@ sequenceFromZYZForZSXX(double theta, double phi, double lambda) {
  * @return The global-phase contribution in radians.
  */
 [[nodiscard]] static double globalPhaseFromRZWrap(double angle) {
-  constexpr double eps = mlir::utils::TOLERANCE;
+  constexpr double eps = utils::TOLERANCE;
   return 0.5 * (mod2pi(angle, eps) - angle);
 }
 
@@ -275,7 +275,7 @@ static void visitSequenceInTimeOrder(const ZSXXSequence& seq,
                                                 Location loc, Value qubit,
                                                 const ZSXXSequence& seq,
                                                 double phase) {
-  constexpr double eps = mlir::utils::TOLERANCE;
+  constexpr double eps = utils::TOLERANCE;
   visitSequenceInTimeOrder(
       seq,
       [&](const double angle) {
@@ -383,7 +383,7 @@ EulerAngles EulerDecomposition::paramsZYZ(const Matrix2x2& matrix) {
   const auto theta =
       2. * std::atan2(std::abs(matrix(1, 0)), std::abs(matrix(0, 0)));
   const auto ang1 = std::arg(matrix(1, 1));
-  constexpr double eps = mlir::utils::TOLERANCE;
+  constexpr double eps = utils::TOLERANCE;
   double ang2 = 0.0;
   if (std::abs(matrix(1, 0)) > eps) {
     ang2 = std::arg(matrix(1, 0));
@@ -513,7 +513,7 @@ Value synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
  * @brief Counts non-zero `RZ` slots in a ZSXX sequence angle.
  */
 [[nodiscard]] static std::size_t countNonZeroZSXXAngle(double angle) {
-  constexpr double eps = mlir::utils::TOLERANCE;
+  constexpr double eps = utils::TOLERANCE;
   return isNearZeroRotationAngle(mod2pi(angle, eps)) ? 0 : 1;
 }
 
