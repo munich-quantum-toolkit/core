@@ -300,6 +300,10 @@ public:
     }
     declarations.emplace(id, stmt);
 
+    if (stmt->isConst) {
+      return; // nothing to emit
+    }
+
     const auto ty = std::get<1>(stmt->type);
     const auto sizedTy =
         std::dynamic_pointer_cast<qasm3::DesignatedType<uint64_t>>(ty);
@@ -339,9 +343,6 @@ public:
         auto lhsId = std::make_shared<qasm3::IndexedIdentifier>(id);
         visitMeasureAssignment(lhsId, measureExpr, stmt->debugInfo);
         return;
-      }
-      if (stmt->isConst) {
-        return; // nothing to emit
       }
       throw qasm3::CompilerError(
           "Only measure statements are supported as initializers.",
@@ -734,11 +735,14 @@ public:
     for (size_t i = 0; i < gate.targetNames.size(); ++i) {
       for (auto target : gateOperands[i]) {
         auto* it = llvm::find(targets, target);
+        size_t index = 0;
         if (it == targets.end()) {
+          index = targets.size();
           targets.push_back(target);
+        } else {
+          index = static_cast<size_t>(std::distance(targets.begin(), it));
         }
-        targetsMap[gate.targetNames[i]].push_back(
-            std::distance(targets.begin(), it));
+        targetsMap[gate.targetNames[i]].push_back(index);
       }
     }
 

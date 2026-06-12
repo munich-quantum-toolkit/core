@@ -66,8 +66,15 @@ extern const std::string x;
 /// Creates a circuit with a single controlled X gate.
 extern const std::string singleControlledX;
 
+/// Creates a circuit with a single negatively controlled X gate.
+extern const std::string singleNegControlledX;
+
 /// Creates a circuit with a multi-controlled X gate.
 extern const std::string multipleControlledX;
+
+/// Creates a circuit with an X gate that is positively and negatively
+/// controlled.
+extern const std::string mixedControlledX;
 
 /// Creates a circuit with just a Y gate.
 extern const std::string y;

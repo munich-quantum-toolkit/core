@@ -68,6 +68,20 @@ protected:
 
 } // namespace
 
+static void singleNegControlledX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.x(q[0]);
+  b.cx(q[0], q[1]);
+  b.x(q[0]);
+}
+
+static void mixedControlledX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.x(q[1]);
+  b.mcx({q[0], q[1]}, q[2]);
+  b.x(q[1]);
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -148,6 +162,11 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"X", qasm::x, MQT_NAMED_BUILDER(qc::x)},
         QASM3TranslationTestCase{"SingleControlledX", qasm::singleControlledX,
                                  MQT_NAMED_BUILDER(qc::singleControlledX)},
+        QASM3TranslationTestCase{"SingleNegControlledX",
+                                 qasm::singleNegControlledX,
+                                 MQT_NAMED_BUILDER(singleNegControlledX)},
+        QASM3TranslationTestCase{"MixedControlledX", qasm::mixedControlledX,
+                                 MQT_NAMED_BUILDER(mixedControlledX)},
         QASM3TranslationTestCase{"MultipleControlledX",
                                  qasm::multipleControlledX,
                                  MQT_NAMED_BUILDER(qc::multipleControlledX)},
@@ -341,12 +360,12 @@ INSTANTIATE_TEST_SUITE_P(
                                  qasm::barrierMultipleQubits,
                                  MQT_NAMED_BUILDER(qc::barrierMultipleQubits)},
         QASM3TranslationTestCase{"CtrlTwo", qasm::ctrlTwo,
-                                 MQT_NAMED_BUILDER(mlir::qc::ctrlTwo)},
+                                 MQT_NAMED_BUILDER(qc::ctrlTwo)},
         QASM3TranslationTestCase{"CtrlTwoMixed", qasm::ctrlTwoMixed,
-                                 MQT_NAMED_BUILDER(mlir::qc::ctrlTwoMixed)},
+                                 MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
         QASM3TranslationTestCase{"SimpleIf", qasm::simpleIf,
-                                 MQT_NAMED_BUILDER(mlir::qc::simpleIf)},
+                                 MQT_NAMED_BUILDER(qc::simpleIf)},
         QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
-                                 MQT_NAMED_BUILDER(mlir::qc::ifTwoQubits)},
+                                 MQT_NAMED_BUILDER(qc::ifTwoQubits)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
-                                 MQT_NAMED_BUILDER(mlir::qc::ifElse)}));
+                                 MQT_NAMED_BUILDER(qc::ifElse)}));

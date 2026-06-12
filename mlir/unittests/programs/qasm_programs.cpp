@@ -132,10 +132,22 @@ qubit[2] q;
 ctrl @ x q[0], q[1];
 )qasm";
 
+const std::string singleNegControlledX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+negctrl @ x q[0], q[1];
+)qasm";
+
 const std::string multipleControlledX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
 ctrl(2) @ x q[0], q[1], q[2];
+)qasm";
+
+const std::string mixedControlledX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+ctrl @ negctrl @ x q[0], q[1], q[2];
 )qasm";
 
 const std::string y = R"qasm(OPENQASM 3.0;
