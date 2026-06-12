@@ -77,20 +77,6 @@ namespace mlir::qco::decomposition {
 }
 
 /**
- * @brief Emits `qco.gphase` when `phase` is outside tolerance.
- *
- * @param builder Builder for the operation.
- * @param loc Location of the operation.
- * @param phase Global phase in radians.
- */
-static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
-  if (std::abs(phase) <= utils::TOLERANCE) {
-    return;
-  }
-  GPhaseOp::create(builder, loc, phase);
-}
-
-/**
  * @brief Whether `angle` is numerically zero for gate-emission purposes.
  *
  * @param angle Rotation angle in radians.
@@ -98,6 +84,20 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
  */
 [[nodiscard]] static bool isNearZeroRotationAngle(double angle) {
   return std::abs(angle) <= utils::TOLERANCE;
+}
+
+/**
+ * @brief Emits `qco.gphase` when `phase` is outside tolerance.
+ *
+ * @param builder Builder for the operation.
+ * @param loc Location of the operation.
+ * @param phase Global phase in radians.
+ */
+static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
+  if (isNearZeroRotationAngle(phase)) {
+    return;
+  }
+  GPhaseOp::create(builder, loc, phase);
 }
 
 namespace {
@@ -114,18 +114,17 @@ struct ZSXXSequence {
 
 } // namespace
 
-ZSXXMiddleGate classifyZSXXMiddleFromZYZTheta(double theta) {
-  constexpr double eps = utils::TOLERANCE;
+ZSXXMiddleGate classifyZSXXMiddleFromZYZTheta(const double theta) {
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double pi = std::numbers::pi;
 
-  if (std::abs(theta) <= eps) {
+  if (isNearZeroRotationAngle(theta)) {
     return ZSXXMiddleGate::OnlyRZ;
   }
-  if (std::abs(theta - halfPi) <= eps) {
+  if (isNearZeroRotationAngle(theta - halfPi)) {
     return ZSXXMiddleGate::OneSX;
   }
-  if (std::abs(theta - pi) <= eps) {
+  if (isNearZeroRotationAngle(theta - pi)) {
     return ZSXXMiddleGate::X;
   }
   return ZSXXMiddleGate::SXRZSX;
