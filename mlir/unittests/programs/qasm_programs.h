@@ -357,5 +357,8 @@ extern const std::string ifTwoQubits;
 /// Creates a circuit with an if operation with an else branch.
 extern const std::string ifElse;
 
+/// Creates a Bell state circuit in OpenQASM 2.
+extern const std::string bellOpenQASM2;
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

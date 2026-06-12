@@ -88,6 +88,15 @@ static void mixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q[1]);
 }
 
+static void bell(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto c = b.allocClassicalBitRegister(2);
+  b.h(q[0]);
+  b.cx(q[0], q[1]);
+  b.measure(q[0], c[0]);
+  b.measure(q[1], c[1]);
+};
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -380,4 +389,6 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
                                  MQT_NAMED_BUILDER(qc::ifTwoQubits)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
-                                 MQT_NAMED_BUILDER(qc::ifElse)}));
+                                 MQT_NAMED_BUILDER(qc::ifElse)},
+        QASM3TranslationTestCase{"BellOpenQASM2", qasm::bellOpenQASM2,
+                                 MQT_NAMED_BUILDER(bell)}));
