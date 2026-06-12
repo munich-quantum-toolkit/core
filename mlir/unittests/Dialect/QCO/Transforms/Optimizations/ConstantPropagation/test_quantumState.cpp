@@ -8,15 +8,16 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/QuantumState.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
-#include <map>
 #include <memory>
-#include <set>
+#include <mlir/Dialect/Arith/IR/ArithOpsDialect.h.inc>
+#include <mlir/Dialect/Func/IR/FuncOpsDialect.h.inc>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -31,9 +32,25 @@ protected:
 };
 
 TEST_F(QuantumStateTest, ApplyHGate) {
+  mlir::MLIRContext context;
+  QCOProgramBuilder programBuilder(&context);
+  QCOProgramBuilder referenceBuilder(&context);
+
+  mlir::DialectRegistry registry;
+  registry.insert<QCODialect, mlir::arith::ArithDialect, mlir::func::FuncDialect>();
+  context.appendDialectRegistry(registry);
+  context.loadAllAvailableDialects();
+
+  programBuilder.initialize();
+  referenceBuilder.initialize();
+
+  auto q = programBuilder.allocQubitRegister(1);
+
+  auto h = HOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(), q[0]);
+
   std::vector<unsigned int> qubits = {0};
   QuantumState qState = QuantumState(qubits, 4);
-  qState.propagateGate(HOp(), qubits);
+  qState.propagateGate(h.getOperation(), qubits);
 
   EXPECT_THAT(qState.toString(),
               testing::HasSubstr("|0> -> 0.71, |1> -> 0.71"));
@@ -356,5 +373,5 @@ TEST_F(QuantumStateTest, unifyTooLargeQuantumStates) {
   qState2.propagateGate(HOp(), targetThree);
   qState2.propagateGate(XOp(), targetOne, targetThree);
 
-  EXPECT_THROW(qState1.unify(qState2);, std::domain_error);
+  EXPECT_THROW(auto qs = qState1.unify(qState2), std::domain_error);
 }

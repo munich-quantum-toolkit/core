@@ -171,7 +171,7 @@ void QuantumState::propagateGate(Operation* gate,
   amplitudeMap.clear();
   for (const auto& [key, value] : newValues) {
     if (norm(value) > 1e-4) {
-      amplitudeMap.insert({key, value});
+      amplitudeMap[key] = value;
     }
   }
   if (amplitudeMap.size() > maxNonzeroAmplitudes) {

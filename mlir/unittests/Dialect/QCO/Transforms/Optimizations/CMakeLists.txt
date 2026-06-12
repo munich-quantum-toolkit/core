@@ -20,7 +20,8 @@ add_executable(
 
 target_link_libraries(
   ${target_name}
-  PRIVATE GTest::gtest_main
+  PRIVATE GTest::gmock
+          GTest::gtest_main
           MLIRQCOProgramBuilder
           MLIRQCOTransforms
           MLIRQCOUtils
