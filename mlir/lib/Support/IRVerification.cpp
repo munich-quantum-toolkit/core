@@ -18,9 +18,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -34,7 +32,6 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 
 #include <cassert>
 #include <cmath>
