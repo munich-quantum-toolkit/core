@@ -14,6 +14,7 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <mlir/IR/DialectRegistry.h>
 
 #include <memory>
 #include <mlir/Dialect/Arith/IR/ArithOpsDialect.h.inc>

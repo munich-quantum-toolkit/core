@@ -16,9 +16,11 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <memory>
 #include <ostream>
 #include <ranges>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -71,19 +73,20 @@ class QuantumState {
     return result;
   }
 
-  /**
-   * @brief Create a bitstring that has ones exactly at the given positions
+  /** @brief Puts a zero or one at bit position n in a bitstring.
    *
-   * @param positions The positions at which the bits should be one.
-   * @return The finished bitstring.
+   * @param bitstring Bitstring that gets altered
+   * @param position Position of bit that needs to be changed
+   * @param one True if bit should be set to one
+   * @return The altered bitstring
    */
-  static constexpr std::size_t
-  makeTargetMask(std::span<const unsigned int> positions) noexcept {
-    std::size_t mask = 0;
-    for (unsigned int p : positions) {
-      mask |= 1U << p;
+  static unsigned int setBitN(const unsigned int bitstring,
+                              const unsigned int position, const bool one) {
+    const unsigned int mask = 1U << position;
+    if (one) {
+      return bitstring | mask;
     }
-    return mask;
+    return bitstring & ~mask;
   }
 
   /**
@@ -109,8 +112,7 @@ class QuantumState {
       std::span<unsigned int> positionOfTargetQubits,
       const unsigned int bitmaskForCtrls) {
     std::unordered_map<unsigned int, std::complex<double>> newValues;
-    const auto numberOfTargetValues = static_cast<unsigned int>(
-        pow(2, static_cast<double>(positionOfTargetQubits.size())) + 0.1);
+    const auto numberOfTargetValues = 1U << positionOfTargetQubits.size();
 
     for (const auto& [key, value] : amplitudeMap) {
       if ((bitmaskForCtrls & key) != bitmaskForCtrls) {
@@ -124,19 +126,18 @@ class QuantumState {
 
       // Find the target keys from the current keys
       for (unsigned int i = 0; i < numberOfTargetValues; ++i) {
-        keysForNewValue[i] = key;
-        auto maskFirstPos = 1U << positionOfTargetQubits[0];
         if (i % 2 == 1) {
-          keysForNewValue[i] |= maskFirstPos;
+          keysForNewValue[i] = setBitN(key, positionOfTargetQubits[0], true);
         } else {
-          keysForNewValue[i] &= ~maskFirstPos;
+          keysForNewValue[i] = setBitN(key, positionOfTargetQubits[0], false);
         }
         if (numberOfTargetValues > 2) {
-          auto maskSecondPos = 1U << positionOfTargetQubits[1];
           if (i > 1) {
-            keysForNewValue[i] |= maskSecondPos;
+            keysForNewValue[i] =
+                setBitN(keysForNewValue[i], positionOfTargetQubits[1], true);
           } else {
-            keysForNewValue[i] &= ~maskSecondPos;
+            keysForNewValue[i] =
+                setBitN(keysForNewValue[i], positionOfTargetQubits[1], false);
           }
         }
         if (keysForNewValue[i] == key) {
@@ -164,12 +165,13 @@ class QuantumState {
    * measured is set to 0.
    *
    * @param target The global index of the qubit to be measured.
+   * @param reset True if target should be resetted in addition to measured.
    * @return MeasurementResult, containing the probability for the result and
    * the QuantumStates after measurement.
    */
   MeasurementResult measureOrResetQubit(const unsigned int target,
                                         const bool reset) {
-    const auto qubitMask = static_cast<unsigned int>(pow(2, target) + 0.1);
+    const auto qubitMask = 1U << target;
 
     double probabilityZero = 0.0;
     double probabilityOne = 0.0;
@@ -178,14 +180,16 @@ class QuantumState {
 
     for (const auto& [key, value] : amplitudeMap) {
       unsigned int newKey = key;
-      if ((qubitMask & key) == 0) {
-        probabilityZero += norm(value);
-        newValuesZeroRes.insert({key, value});
+      const bool isZero = (qubitMask & key) == 0;
+      const double probability = norm(value);
+      if (isZero) {
+        probabilityZero += probability;
+        newValuesZeroRes[newKey] = value;
       } else {
         if (reset) {
           newKey = key ^ qubitMask;
         }
-        probabilityOne += norm(value);
+        probabilityOne += probability;
         newValuesOneRes[newKey] = value;
       }
     }
@@ -197,23 +201,21 @@ class QuantumState {
     auto globalKeysView = std::views::keys(globalToLocalQubitNumber);
     std::vector<unsigned int> globalKeys{globalKeysView.begin(),
                                          globalKeysView.end()};
-    auto stateZero =
-        std::make_shared<QuantumState>(globalKeys, maxNonzeroAmplitudes);
-    stateZero->amplitudeMap = newValuesZeroRes;
-    stateZero->normalize();
-    auto stateOne =
-        std::make_shared<QuantumState>(globalKeys, maxNonzeroAmplitudes);
-    stateOne->amplitudeMap = newValuesOneRes;
-    stateOne->normalize();
-
     MeasurementResult res = {};
     if (probabilityZero > 1e-4) {
       ++res.size;
+      auto stateZero =
+          std::make_shared<QuantumState>(globalKeys, maxNonzeroAmplitudes);
+      stateZero->amplitudeMap = std::move(newValuesZeroRes);
+      stateZero->normalize();
       res.states[0] = {probabilityZero, stateZero};
     }
-
     if (probabilityOne > 1e-4) {
       ++res.size;
+      auto stateOne =
+          std::make_shared<QuantumState>(globalKeys, maxNonzeroAmplitudes);
+      stateOne->amplitudeMap = std::move(newValuesOneRes);
+      stateOne->normalize();
       res.states[1] = {probabilityOne, stateOne};
     }
 
