@@ -133,7 +133,7 @@ class QuantumState {
         }
         if (numberOfTargetValues > 2) {
           auto maskSecondPos = 1U << positionOfTargetQubits[1];
-          if (i > 2) {
+          if (i > 1) {
             keysForNewValue[i] |= maskSecondPos;
           } else {
             keysForNewValue[i] &= ~maskSecondPos;
@@ -147,7 +147,7 @@ class QuantumState {
       auto mapForThisQubit = gateMapping[mapFrom];
       for (unsigned int i = 0; i < numberOfTargetValues; i++) {
         if (auto valueToI = mapForThisQubit[i]; abs(valueToI) > 1e-4) {
-          newValues[keysForNewValue[i]] += valueToI * value;
+          newValues[keysForNewValue.at(i)] += valueToI * value;
         }
       }
     }
@@ -177,15 +177,16 @@ class QuantumState {
     std::unordered_map<unsigned int, std::complex<double>> newValuesOneRes;
 
     for (const auto& [key, value] : amplitudeMap) {
+      unsigned int newKey = key;
       if ((qubitMask & key) == 0) {
         probabilityZero += norm(value);
         newValuesZeroRes.insert({key, value});
       } else {
         if (reset) {
-          const unsigned int newKey = key ^ qubitMask;
+          newKey = key ^ qubitMask;
         }
         probabilityOne += norm(value);
-        newValuesOneRes.insert({key, value});
+        newValuesOneRes[newKey] = value;
       }
     }
 
