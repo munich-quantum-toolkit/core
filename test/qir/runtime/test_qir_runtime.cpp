@@ -503,6 +503,14 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__rt__array_update_reference_count(rArr, -1);
 }
 
+TEST_F(QIRRuntimeTest, PackageResizeWhenEnlargingState) {
+  // dd::Package starts at 32 qubits.
+  // Acting on qubit 32 forces qState.dd->resize.
+  auto* q32 = reinterpret_cast<Qubit*>(32UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__h__body(q32);
+}
+
 TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
   // Drive a small program through the runtime: H on q0.
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
