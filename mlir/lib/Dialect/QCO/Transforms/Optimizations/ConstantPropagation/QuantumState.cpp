@@ -14,27 +14,29 @@
 
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/GateToMap.h"
 
-#include <mlir/IR/Operation.h>
-
+#include <cmath>
 #include <format>
 #include <iterator>
 #include <ranges>
+#include <span>
+#include <stdexcept>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace mlir::qco {
 
 QuantumState::QuantumState(const std::span<unsigned int> globalQubitNumber,
                            const std::size_t maxNonzeroAmplitudes)
-    : maxNonzeroAmplitudes(maxNonzeroAmplitudes) {
-  nQubits = globalQubitNumber.size();
+    : nQubits(globalQubitNumber.size()),
+      maxNonzeroAmplitudes(maxNonzeroAmplitudes) {
   std::ranges::sort(globalQubitNumber);
   unsigned int localQ = 0;
   for (auto globalQ : globalQubitNumber) {
-    globalToLocalQubitNumber.insert({globalQ, localQ});
+    globalToLocalQubitNumber[globalQ] = localQ;
     ++localQ;
   }
-  amplitudeMap = std::unordered_map<unsigned int, std::complex<double>>();
-  amplitudeMap.insert({0, std::complex<double>(1.0, 0.0)});
+  amplitudeMap[0] = std::complex(1.0, 0.0);
 }
 
 void QuantumState::print(std::ostream& os) const { os << this->toString(); }
@@ -49,13 +51,17 @@ std::string QuantumState::toString() const {
       str += ", ";
     }
     first = false;
-    std::string cn = std::format("{:.2f}", val.real());
-    if (val.imag() > 1e-4) {
-      cn += " + i" + std::format("{:.2f}", val.imag());
-    } else if (val.imag() < -1e-4) {
-      cn += " - i" + std::format("{:.2f}", -val.imag());
+
+    str.push_back('|');
+    str.append(qubitStringToBinary(key));
+    str.append("> -> ");
+
+    str.append(std::format("{:.2f}", val.real()));
+
+    if (std::abs(val.imag()) > 1e-4) {
+      str.append(val.imag() > 0 ? " + i" : " - i");
+      str.append(std::format("{:.2f}", std::abs(val.imag())));
     }
-    str += "|" + qubitStringToBinary(key) + "> -> " + cn;
   }
 
   return str;
@@ -65,6 +71,10 @@ bool QuantumState::operator==(const QuantumState& that) const {
   if (this->nQubits != that.nQubits ||
       this->maxNonzeroAmplitudes != that.maxNonzeroAmplitudes ||
       this->globalToLocalQubitNumber != that.globalToLocalQubitNumber) {
+    return false;
+  }
+
+  if (amplitudeMap.size() != that.amplitudeMap.size()) {
     return false;
   }
 
@@ -82,8 +92,9 @@ void QuantumState::normalize() {
   for (const auto& value : amplitudeMap | std::views::values) {
     denominator += norm(value);
   }
+  const double invDenominator = 1 / std::sqrt(denominator);
   for (const auto& key : amplitudeMap | std::views::keys) {
-    amplitudeMap[key] /= std::sqrt(denominator);
+    amplitudeMap[key] *= invDenominator;
   }
 }
 
@@ -132,16 +143,16 @@ QuantumState QuantumState::unify(const QuantumState& that) {
       unsigned int currentQubitState = 0;
 
       for (const auto& indicesOfThis : oldToNewIndicesThis | std::views::keys) {
-        unsigned int bitOfQubitState = pow(2, indicesOfThis);
+        unsigned int bitOfQubitState = 1U << indicesOfThis;
         if ((keyThis & bitOfQubitState) == bitOfQubitState) {
-          currentQubitState += pow(2, oldToNewIndicesThis.at(indicesOfThis));
+          currentQubitState += 1U << oldToNewIndicesThis.at(indicesOfThis);
         }
       }
 
       for (const auto& indicesOfThat : oldToNewIndicesThat | std::views::keys) {
-        unsigned int bitOfQubitState = pow(2, indicesOfThat);
+        unsigned int bitOfQubitState = 1U << indicesOfThat;
         if ((keyThat & bitOfQubitState) == bitOfQubitState) {
-          currentQubitState += pow(2, oldToNewIndicesThat.at(indicesOfThat));
+          currentQubitState += 1U << oldToNewIndicesThat.at(indicesOfThat);
         }
       }
       newAmplitudes[currentQubitState] = valThis * valThat;
@@ -155,17 +166,17 @@ QuantumState QuantumState::unify(const QuantumState& that) {
 }
 
 void QuantumState::propagateGate(Operation* gate,
-                                 std::span<unsigned int> targets,
-                                 std::span<unsigned int> ctrls,
-                                 std::span<double> params) {
+                                 const std::span<unsigned int> targets,
+                                 const std::span<unsigned int> ctrls,
+                                 const std::span<double> params) {
   const auto gateMapping = getQubitMappingOfGates(gate, params);
 
   unsigned int ctrlMask = 0;
-  for (unsigned int const posCtrl : ctrls) {
-    ctrlMask += static_cast<unsigned int>(
-        pow(2, globalToLocalQubitNumber.at(posCtrl)) + 0.1);
+  for (unsigned int const ctrl : ctrls) {
+    ctrlMask |= 1U << globalToLocalQubitNumber.at(ctrl);
   }
   std::vector<unsigned int> localTargets;
+  localTargets.reserve(targets.size());
   for (unsigned int q : targets) {
     localTargets.push_back(globalToLocalQubitNumber.at(q));
   }
@@ -193,17 +204,15 @@ MeasurementResult QuantumState::resetQubit(const unsigned int target) {
   return measureOrResetQubit(target, true);
 }
 
-bool QuantumState::isQubitAlwaysOne(unsigned int q) const {
-  const auto mask =
-      static_cast<unsigned int>(pow(2, static_cast<double>(q)) + 0.1);
+bool QuantumState::isQubitAlwaysOne(const unsigned int q) const {
+  const auto mask = 1U << q;
   return std::ranges::all_of(
       amplitudeMap | std::views::keys,
       [mask](auto qubits) { return (qubits & mask) == mask; });
 }
 
-bool QuantumState::isQubitAlwaysZero(unsigned int q) const {
-  const auto mask =
-      static_cast<unsigned int>(pow(2, static_cast<double>(q)) + 0.1);
+bool QuantumState::isQubitAlwaysZero(const unsigned int q) const {
+  const auto mask = 1U << q;
   return std::ranges::all_of(
       amplitudeMap | std::views::keys,
       [mask](auto qubits) { return (qubits & mask) == 0; });
@@ -213,13 +222,11 @@ bool QuantumState::hasAlwaysZeroAmplitude(const std::span<unsigned int> qubits,
   unsigned int localValue = 0;
   unsigned int mask = 0;
   for (unsigned int i = 0; i < qubits.size(); ++i) {
-    const unsigned int currentPower =
-        static_cast<unsigned int>(pow(2, i) + 0.1);
-    const unsigned int qubitPower =
-        static_cast<unsigned int>(pow(2, qubits[i]) + 0.1);
-    mask += qubitPower;
-    if ((value & currentPower) != 0) {
-      localValue += qubitPower;
+    const unsigned int bitMask = 1U << i;
+    const unsigned int qubitMask = 1U << qubits[i];
+    mask += qubitMask;
+    if ((value & bitMask) != 0) {
+      localValue += qubitMask;
     }
   }
   return std::ranges::all_of(
