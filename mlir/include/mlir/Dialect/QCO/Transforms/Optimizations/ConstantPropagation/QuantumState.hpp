@@ -66,7 +66,7 @@ class QuantumState {
     result.reserve(nQubits);
 
     for (std::size_t i = nQubits; i > 0; --i) {
-      result.push_back((q >> i & 1U) != 0 ? '1' : '0');
+      result.push_back((q >> (i - 1) & 1U) != 0 ? '1' : '0');
     }
     return result;
   }
@@ -145,7 +145,7 @@ class QuantumState {
       }
 
       auto mapForThisQubit = gateMapping[mapFrom];
-      for (int i = 0; i < 4; i++) {
+      for (unsigned int i = 0; i < numberOfTargetValues; i++) {
         if (auto valueToI = mapForThisQubit[i]; abs(valueToI) > 1e-4) {
           newValues[keysForNewValue[i]] += valueToI * value;
         }
