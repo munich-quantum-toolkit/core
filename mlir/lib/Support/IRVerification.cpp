@@ -492,7 +492,7 @@ static bool compareBlocks(Block& blockA, Block& blockB,
   for (const auto [lArg, rArg] :
        llvm::zip_equal(blockA.getArguments(), blockB.getArguments())) {
     if (lArg.getType() != rArg.getType()) {
-      llvm::dbgs() << "unequivalent block arguments\n";
+      llvm::dbgs() << "nonequivalent block arguments\n";
       return false;
     }
 
