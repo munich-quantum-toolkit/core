@@ -63,7 +63,7 @@ class QuantumState {
   std::unordered_map<unsigned int, unsigned int> globalToLocalQubitNumber;
   std::unordered_map<unsigned int, std::complex<double>> amplitudeMap;
 
-  std::string qubitStringToBinary(unsigned int q) const {
+  std::string qubitStringToBinary(const unsigned int q) const {
     std::string result;
     result.reserve(nQubits);
 
@@ -109,7 +109,7 @@ class QuantumState {
       std::unordered_map<unsigned int,
                          std::unordered_map<unsigned int, std::complex<double>>>
           gateMapping,
-      std::span<unsigned int> positionOfTargetQubits,
+      const std::span<unsigned int> positionOfTargetQubits,
       const unsigned int bitmaskForCtrls) {
     std::unordered_map<unsigned int, std::complex<double>> newValues;
     const auto numberOfTargetValues = 1U << positionOfTargetQubits.size();
