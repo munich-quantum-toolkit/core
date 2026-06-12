@@ -1022,6 +1022,9 @@ void invCtrlTwo(QCOProgramBuilder& b);
 /// Creates a circuit with a simple if operation with one qubit.
 void simpleIf(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with a parameterized gate.
+void ifWithAngle(QCOProgramBuilder& b);
+
 /// Creates a circuit with an if operation with two qubits.
 void ifTwoQubits(QCOProgramBuilder& b);
 
@@ -1051,6 +1054,10 @@ void nestedFalseIf(QCOProgramBuilder& b);
 /// a register.
 void nestedIfOpForLoop(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with a nested for operation and
+/// parameterized gates.
+void nestedIfOpForLoopWithAngle(QCOProgramBuilder& b);
+
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
@@ -1063,6 +1070,9 @@ void simpleDoWhileReset(QCOProgramBuilder& b);
 
 /// Creates a circuit with a simple for operation with a register.
 void simpleForLoop(QCOProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a parameterized gate.
+void forLoopWithAngle(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.
