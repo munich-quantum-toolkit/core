@@ -100,10 +100,8 @@ struct ConvertMemRefAllocOp final
     if (shape[0] == ShapedType::kDynamic) {
       size = adaptor.getDynamicSizes()[0];
     } else {
-      size = LLVM::ConstantOp::create(
-                 rewriter, op.getLoc(),
-                 rewriter.getI64IntegerAttr(static_cast<int64_t>(shape[0])))
-                 .getResult();
+      size = LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                      rewriter.getI64Type(), shape[0]);
     }
     state.memrefSizes.try_emplace(op.getMemref(), size);
 
@@ -138,8 +136,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto shape = op.getMemref().getType().getShape();
-    if (shape.size() != 1) {
+    if (auto shape = op.getMemref().getType().getShape(); shape.size() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
@@ -180,8 +177,7 @@ struct ConvertMemRefDeallocOp final
   LogicalResult
   matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto shape = op.getMemref().getType().getShape();
-    if (shape.size() != 1) {
+    if (auto shape = op.getMemref().getType().getShape(); shape.size() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
@@ -540,8 +536,7 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
         continue;
       }
       for (auto it = block.begin(); it != block.end();) {
-        auto& op = *it++;
-        if (op.hasTrait<OpTrait::ConstantLike>()) {
+        if (auto& op = *it++; op.hasTrait<OpTrait::ConstantLike>()) {
           entryOps.splice(entryBlock->getTerminator()->getIterator(),
                           block.getOperations(), op.getIterator());
         }
