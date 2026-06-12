@@ -39,7 +39,8 @@
 using namespace mlir;
 
 static bool compareRegions(Region& lhs, Region& rhs,
-                           DenseSet<Operation*>& closed, IRMapping& m);
+                           SetVector<Operation*>& lhsClosed,
+                           SetVector<Operation*>& rhsClosed, IRMapping& m);
 
 /// Return true, if the given value has the type `tensor<qco.qubit>`.
 static bool hasTypeQubitTensor(Value v) {
@@ -52,7 +53,7 @@ static bool hasTypeQubitTensor(Value v) {
 }
 
 /// Map all results from one op to another.
-/// Assumes `lhs->getNumResults() == rhs->getNumResults()`.
+/// Assumes that `lhs->getNumResults() == rhs->getNumResults()`.
 /// Assumes that the two operations are equivalent to each other.
 static void mapResults(Operation* lhs, Operation* rhs, IRMapping& m) {
   for (const auto& [fromResult, toResult] :
@@ -100,32 +101,32 @@ static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
 /// Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`, and
 /// `FlatSymbolRefAttr`.
 /// For any other type, the function simply returns true.
-static bool compareAttributes(Attribute attr, Attribute other) {
-  if (dyn_cast<UnitAttr>(attr)) {
-    if (!dyn_cast<UnitAttr>(other)) {
+static bool compareAttributes(Attribute lhs, Attribute rhs) {
+  if (dyn_cast<UnitAttr>(lhs)) {
+    if (!dyn_cast<UnitAttr>(rhs)) {
       return false;
     }
-  } else if (auto intAttrA = dyn_cast<IntegerAttr>(attr)) {
-    auto intAttrB = dyn_cast<IntegerAttr>(other);
+  } else if (auto intAttrA = dyn_cast<IntegerAttr>(lhs)) {
+    auto intAttrB = dyn_cast<IntegerAttr>(rhs);
     if (!intAttrB || intAttrA.getValue() != intAttrB.getValue()) {
       return false;
     }
-  } else if (auto floatAttrA = dyn_cast<FloatAttr>(attr)) {
-    auto floatAttrB = dyn_cast<FloatAttr>(other);
+  } else if (auto floatAttrA = dyn_cast<FloatAttr>(lhs)) {
+    auto floatAttrB = dyn_cast<FloatAttr>(rhs);
 
     if (!floatAttrB ||
         !approxCompareFloats(floatAttrA.getValue(), floatAttrB.getValue(),
                              floatAttrA.getType().getIntOrFloatBitWidth())) {
       return false;
     }
-  } else if (auto strAttrA = dyn_cast<StringAttr>(attr)) {
-    auto strAttrB = dyn_cast<StringAttr>(other);
+  } else if (auto strAttrA = dyn_cast<StringAttr>(lhs)) {
+    auto strAttrB = dyn_cast<StringAttr>(rhs);
     if (!strAttrB || strAttrA.getValue() != strAttrB.getValue()) {
       return false;
     }
   } else if (auto symbolRefAttrA =
-                 llvm::dyn_cast<mlir::FlatSymbolRefAttr>(attr)) {
-    auto symbolRefAttrB = llvm::dyn_cast<mlir::FlatSymbolRefAttr>(other);
+                 llvm::dyn_cast<mlir::FlatSymbolRefAttr>(lhs)) {
+    auto symbolRefAttrB = llvm::dyn_cast<mlir::FlatSymbolRefAttr>(rhs);
     if (!symbolRefAttrB) {
       return false;
     }
@@ -138,6 +139,8 @@ static bool compareAttributes(Attribute attr, Attribute other) {
   return true;
 }
 
+/// Compare two operations for structural equivalence, applying some special
+/// rules for `CtrlOp` s and `qtensor` s.
 static bool compareOperations(Operation* lhs, Operation* rhs,
                               const IRMapping& m) {
 
@@ -264,8 +267,8 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
 
 /// Extract and return "ready" operations.
 /// These are operations that are independent from each other.
-static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
-                                         DenseSet<Operation*>& closed) {
+static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
+                                         const SetVector<Operation*>& closed) {
   const auto isReady = [&closed](Value v) {
     if (isa<BlockArgument>(v)) {
       return true;
@@ -360,33 +363,52 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
   return ready;
 }
 
-static bool compareTopologically(ArrayRef<Operation*> lhsOps,
-                                 ArrayRef<Operation*> rhsOps,
-                                 DenseSet<Operation*>& closed, IRMapping& m) {
+static bool compareBlocks(Block& lhs, Block& rhs,
+                          SetVector<Operation*>& lhsClosed,
+                          SetVector<Operation*>& rhsClosed, IRMapping& m) {
+  if (lhs.getNumArguments() != rhs.getNumArguments()) {
+    return false;
+  }
+
+  for (const auto [lhsArg, rhsArg] :
+       llvm::zip_equal(lhs.getArguments(), rhs.getArguments())) {
+    if (lhsArg.getType() != rhsArg.getType()) {
+      return false;
+    }
+
+    m.map(lhsArg, rhsArg);
+  }
+
+  SetVector<Operation*> lhsOpen;
+  SetVector<Operation*> rhsOpen;
+
+  for_each(lhs.getOperations(), [&](auto& op) { lhsOpen.insert(&op); });
+  for_each(rhs.getOperations(), [&](auto& op) { rhsOpen.insert(&op); });
+
+  // Compare block operations topologically.
 
   while (true) {
-    const auto readyLhs = getReadyOps(lhsOps, closed);
-    const auto readyRhs = getReadyOps(rhsOps, closed);
+    const auto lhsReady = getReadyOps(lhsOpen, lhsClosed);
+    const auto rhsReady = getReadyOps(rhsOpen, rhsClosed);
 
-    if (readyLhs.empty() && readyRhs.empty()) {
+    if (lhsReady.empty() && rhsReady.empty()) {
       break;
     }
 
-    if (readyLhs.size() != readyRhs.size()) {
+    if (lhsReady.size() != rhsReady.size()) {
       return false;
     }
 
     // Because there may be multiple structural equivalent operations (think
     // arith.constant, for example), we apply the assumption that the first
-    // occurrence on the lhs corresponds to the first occurrence on the rhs,
-    // etc.
+    // occurrence on the lhs corresponds to the first one on the rhs, etc.
 
     DenseSet<Operation*> matched;
-    matched.reserve(readyRhs.size());
+    matched.reserve(rhsReady.size());
 
-    for (Operation* opLhs : readyLhs) {
-      SetVector<Operation*>::iterator it = readyRhs.begin();
-      for (; it != readyRhs.end(); it = std::next(it)) {
+    for (Operation* opLhs : lhsReady) {
+      SetVector<Operation*>::iterator it = rhsReady.begin();
+      for (; it != rhsReady.end(); it = std::next(it)) {
         Operation* opRhs = *it;
 
         if (matched.contains(opRhs)) {
@@ -401,7 +423,7 @@ static bool compareTopologically(ArrayRef<Operation*> lhsOps,
         }
       }
 
-      if (it == readyRhs.end()) {
+      if (it == rhsReady.end()) {
         return false;
       }
     }
@@ -409,17 +431,18 @@ static bool compareTopologically(ArrayRef<Operation*> lhsOps,
     // At this point, we've successfully matched each operation on the lhs with
     // one on the rhs.
 
-    closed.insert_range(readyLhs);
-    closed.insert_range(readyRhs);
+    lhsOpen.set_subtract(lhsReady);
+    lhsClosed.set_union(lhsReady);
 
-    SetVector<Operation*>::iterator it = readyLhs.begin();
-    for (; it != readyLhs.end(); it = std::next(it)) {
+    rhsOpen.set_subtract(rhsReady);
+    rhsClosed.set_union(rhsReady);
+
+    // Once all ready operations have been matched, recursively compare
+    // the nested regions of each operation pair.
+
+    SetVector<Operation*>::iterator it = lhsReady.begin();
+    for (; it != lhsReady.end(); it = std::next(it)) {
       Operation* opLhs = *it;
-
-      // Otherwise, if opLhs has one or more regions, try each mapping to find
-      // the equivalent operation. Each mapping uniquely identify opLhs with one
-      // potential partner thus use the mapping to obtain this partner and
-      // compare their respective regions.
 
       if (opLhs->getNumRegions() > 0) {
         Operation* opRhs = m.lookup(opLhs);
@@ -428,8 +451,9 @@ static bool compareTopologically(ArrayRef<Operation*> lhsOps,
         const auto nequiv = range_size(make_filter_range(
             llvm::zip_equal(opLhs->getRegions(), opRhs->getRegions()),
             [&](const auto& zip) {
-              const auto& [regionLhs, regionRhs] = zip;
-              return compareRegions(regionLhs, regionRhs, closed, m);
+              const auto& [lhsRegion, rhsRegion] = zip;
+              return compareRegions(lhsRegion, rhsRegion, lhsClosed, rhsClosed,
+                                    m);
             }));
         if (nequiv != opLhs->getNumRegions()) {
           break;
@@ -437,7 +461,7 @@ static bool compareTopologically(ArrayRef<Operation*> lhsOps,
       }
     }
 
-    if (it != readyLhs.end()) {
+    if (it != lhsReady.end()) {
       return false;
     }
   }
@@ -445,42 +469,16 @@ static bool compareTopologically(ArrayRef<Operation*> lhsOps,
   return true;
 }
 
-static bool compareBlocks(Block& lhs, Block& rhs, DenseSet<Operation*>& closed,
-                          IRMapping& m) {
-  if (lhs.getNumArguments() != rhs.getNumArguments()) {
-    return false;
-  }
-
-  for (const auto [lhsArg, rhsArg] :
-       llvm::zip_equal(lhs.getArguments(), rhs.getArguments())) {
-    if (lhsArg.getType() != rhsArg.getType()) {
-      return false;
-    }
-
-    m.map(lhsArg, rhsArg);
-  }
-
-  SmallVector<Operation*> lhsOps;
-  SmallVector<Operation*> rhsOps;
-
-  lhsOps.reserve(range_size(lhs.getOperations()));
-  rhsOps.reserve(range_size(rhs.getOperations()));
-
-  for_each(lhs.getOperations(), [&](auto& op) { lhsOps.emplace_back(&op); });
-  for_each(rhs.getOperations(), [&](auto& op) { rhsOps.emplace_back(&op); });
-
-  return compareTopologically(lhsOps, rhsOps, closed, m);
-}
-
 /// Compare two regions for structural equivalence.
 static bool compareRegions(Region& lhs, Region& rhs,
-                           DenseSet<Operation*>& closed, IRMapping& m) {
+                           SetVector<Operation*>& lhsClosed,
+                           SetVector<Operation*>& rhsClosed, IRMapping& m) {
   if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
     return false;
   }
 
   for (const auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
-    if (!compareBlocks(lhsBlock, rhsBlock, closed, m)) {
+    if (!compareBlocks(lhsBlock, rhsBlock, lhsClosed, rhsClosed, m)) {
       return false;
     }
 
@@ -492,6 +490,8 @@ static bool compareRegions(Region& lhs, Region& rhs,
 
 bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
   IRMapping m;
-  DenseSet<Operation*> closed;
-  return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), closed, m);
+  SetVector<Operation*> lhsClosed;
+  SetVector<Operation*> rhsClosed;
+  return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), lhsClosed,
+                        rhsClosed, m);
 }
