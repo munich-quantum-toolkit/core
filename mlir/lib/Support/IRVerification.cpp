@@ -41,7 +41,6 @@
 #include <cassert>
 #include <cmath>
 #include <iterator>
-#include <utility>
 
 using namespace mlir;
 
@@ -404,83 +403,86 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
 static bool compareTopologically(ArrayRef<Operation*> openA,
                                  ArrayRef<Operation*> openB,
                                  DenseSet<Operation*>& closed, IRMapping& m) {
-  const auto readyA = getReadyOps(openA, closed);
-  const auto readyB = getReadyOps(openB, closed);
 
-  if (readyA.empty() && readyB.empty()) {
-    return true;
-  }
+  while (true) {
+    const auto readyA = getReadyOps(openA, closed);
+    const auto readyB = getReadyOps(openB, closed);
 
-  if (readyA.size() != readyB.size()) {
-    return false;
-  }
+    if (readyA.empty() && readyB.empty()) {
+      break;
+    }
 
-  // Because there may be multiple structural equivalent operations (think
-  // arith.constant, for example), collect them in a vector for further
-  // recursive processing. If there are no partners, no matching operation has
-  // been found and the blocks are not equivalent.
+    if (readyA.size() != readyB.size()) {
+      return false;
+    }
 
-  DenseSet<Operation*> matched;
-  matched.reserve(readyB.size());
+    // Because there may be multiple structural equivalent operations (think
+    // arith.constant, for example), collect them in a vector for further
+    // recursive processing. If there are no partners, no matching operation has
+    // been found and the blocks are not equivalent.
 
-  for (Operation* opA : readyA) {
-    SetVector<Operation*>::iterator it = readyB.begin();
-    for (; it != readyB.end(); it = std::next(it)) {
-      Operation* opB = *it;
-      if (matched.contains(opB)) {
-        continue;
+    DenseSet<Operation*> matched;
+    matched.reserve(readyB.size());
+
+    for (Operation* opA : readyA) {
+      SetVector<Operation*>::iterator it = readyB.begin();
+      for (; it != readyB.end(); it = std::next(it)) {
+        Operation* opB = *it;
+        if (matched.contains(opB)) {
+          continue;
+        }
+
+        if (compareOperations(opA, opB, m)) {
+          matched.insert(opB);
+          mapResults(opA, opB, m);
+          m.map(opA, opB);
+          break;
+        }
       }
 
-      if (compareOperations(opA, opB, m)) {
-        matched.insert(opB);
-        mapResults(opA, opB, m);
-        m.map(opA, opB);
-        break;
+      if (it == readyB.end()) {
+        llvm::dbgs() << "unmatched op a: " << *opA << '\n';
+        return false;
       }
     }
 
-    if (it == readyB.end()) {
-      llvm::dbgs() << "unmatched op a: " << *opA << '\n';
+    // At this point, we've successfully matched each operation on the lhs with
+    // one on the rhs.
+
+    closed.insert_range(readyA);
+    closed.insert_range(readyB);
+
+    SetVector<Operation*>::iterator it = readyA.begin();
+    for (; it != readyA.end(); it = std::next(it)) {
+      Operation* opA = *it;
+
+      // Otherwise, if opA has one or more regions, try each mapping to find the
+      // equivalent operation. Each mapping uniquely identify opA with one
+      // potential partner thus use the mapping to obtain this partner and
+      // compare their respective regions.
+
+      if (opA->getNumRegions() > 0) {
+        Operation* opB = m.lookup(opA);
+        assert(opA->getNumRegions() == opB->getNumRegions());
+
+        const auto nequiv = range_size(make_filter_range(
+            llvm::zip_equal(opA->getRegions(), opB->getRegions()),
+            [&](const auto& zip) {
+              const auto& [regionA, regionB] = zip;
+              return compareRegions(regionA, regionB, closed, m);
+            }));
+        if (nequiv != opA->getNumRegions()) {
+          break;
+        }
+      }
+    }
+
+    if (it != readyA.end()) {
       return false;
     }
   }
 
-  // At this point, we've successfully matched each operation on the lhs with
-  // one on the rhs.
-
-  closed.insert_range(readyA);
-  closed.insert_range(readyB);
-
-  SetVector<Operation*>::iterator it = readyA.begin();
-  for (; it != readyA.end(); it = std::next(it)) {
-    Operation* opA = *it;
-
-    // Otherwise, if opA has one or more regions, try each mapping to find the
-    // equivalent operation. Each mapping uniquely identify opA with one
-    // potential partner thus use the mapping to obtain this partner and
-    // compare their respective regions.
-
-    if (opA->getNumRegions() > 0) {
-      Operation* opB = m.lookup(opA);
-      assert(opA->getNumRegions() == opB->getNumRegions());
-
-      const auto nequiv = range_size(make_filter_range(
-          llvm::zip_equal(opA->getRegions(), opB->getRegions()),
-          [&](const auto& zip) {
-            const auto& [regionA, regionB] = zip;
-            return compareRegions(regionA, regionB, closed, m);
-          }));
-      if (nequiv != opA->getNumRegions()) {
-        break;
-      }
-    }
-  }
-
-  if (it != readyA.end()) {
-    return false;
-  }
-
-  return compareTopologically(openA, openB, closed, m);
+  return true;
 }
 
 static bool compareBlocks(Block& blockA, Block& blockB,
