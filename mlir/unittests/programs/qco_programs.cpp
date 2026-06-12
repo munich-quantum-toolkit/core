@@ -2187,6 +2187,17 @@ void simpleIf(QCOProgramBuilder& b) {
   });
 }
 
+void ifWithAngle(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto theta = b.floatConstant(0.123);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+    auto innerQubit = b.rx(theta, args[0]);
+    return SmallVector{innerQubit};
+  });
+}
+
 void ifTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto q0 = b.h(q[0]);
@@ -2387,6 +2398,17 @@ void simpleForLoop(QCOProgramBuilder& b) {
   });
 };
 
+void forLoopWithAngle(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto theta = b.floatConstant(0.123);
+  b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.rx(theta, q0);
+    auto insert = b.qtensorInsert(q1, t0, iv);
+    return SmallVector{insert};
+  });
+};
+
 void nestedForLoopIfOp(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto q0 = b.allocQubit();
@@ -2477,6 +2499,31 @@ void nestedIfOpForLoop(QCOProgramBuilder& b) {
             b.scfFor(0, 3, 1, args[0], [&](Value iv, ValueRange iterArgs) {
               auto [t0, q4] = b.qtensorExtract(iterArgs[0], iv);
               auto q5 = b.h(q4);
+              auto insert = b.qtensorInsert(q5, t0, iv);
+              return SmallVector{insert};
+            });
+        return SmallVector{scfFor[0], args[1]};
+      });
+}
+
+void nestedIfOpForLoopWithAngle(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  auto theta1 = b.floatConstant(0.123);
+  auto theta2 = b.floatConstant(0.456);
+  auto q1 = b.h(q0);
+  auto [q2, cond] = b.measure(q1);
+  b.qcoIf(
+      cond, {reg.value, q2},
+      [&](ValueRange args) {
+        auto q3 = b.rx(theta1, args[1]);
+        return SmallVector{args[0], q3};
+      },
+      [&](ValueRange args) {
+        auto scfFor =
+            b.scfFor(0, 3, 1, args[0], [&](Value iv, ValueRange iterArgs) {
+              auto [t0, q4] = b.qtensorExtract(iterArgs[0], iv);
+              auto q5 = b.rx(theta2, q4);
               auto insert = b.qtensorInsert(q5, t0, iv);
               return SmallVector{insert};
             });
