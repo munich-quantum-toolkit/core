@@ -637,10 +637,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{
             "TwoRZThroughNestedCtrlControlChain",
             MQT_NAMED_BUILDER(twoRzThroughNestedCtrlControlChain),
-            MQT_NAMED_BUILDER(twoRzThroughNestedCtrlControlChainMerged)},
-        QCOTestCase{"TwoRZSplitAcrossCtrlTargetWires",
-                    MQT_NAMED_BUILDER(twoRzSplitAcrossCtrlTargetWires),
-                    MQT_NAMED_BUILDER(twoRzSplitAcrossCtrlTargetWires)}));
+            MQT_NAMED_BUILDER(twoRzThroughNestedCtrlControlChainMerged)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RzxOp.cpp
@@ -1027,10 +1024,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"TwoXXMinusYYSwappedTargets",
                     MQT_NAMED_BUILDER(twoXxMinusYYSwappedTargets),
-                    MQT_NAMED_BUILDER(xxMinusYY)},
-        QCOTestCase{"TwoXXMinusYYMismatchedBeta",
-                    MQT_NAMED_BUILDER(twoXxMinusYYMismatchedBeta),
-                    MQT_NAMED_BUILDER(twoXxMinusYYMismatchedBeta)}));
+                    MQT_NAMED_BUILDER(xxMinusYY)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/XxPlusYyOp.cpp

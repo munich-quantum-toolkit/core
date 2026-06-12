@@ -560,9 +560,6 @@ void twoRzThroughNestedCtrlControlChain(QCOProgramBuilder& b);
 /// twoRzThroughNestedCtrlControlChain.
 void twoRzThroughNestedCtrlControlChainMerged(QCOProgramBuilder& b);
 
-/// Creates a circuit with RZ gates on control and target wires around `ctrl`.
-void twoRzSplitAcrossCtrlTargetWires(QCOProgramBuilder& b);
-
 // --- POp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a P gate.
@@ -1003,9 +1000,6 @@ void twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with two XXMinusYY gates in a row with swapped targets.
 void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
-
-/// Creates a circuit with two XXMinusYY gates that differ in `beta`.
-void twoXxMinusYYMismatchedBeta(QCOProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 

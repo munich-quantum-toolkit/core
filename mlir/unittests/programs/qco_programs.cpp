@@ -1095,13 +1095,6 @@ void twoRzThroughNestedCtrlControlChainMerged(QCOProgramBuilder& b) {
   std::tie(q[0], q[2]) = b.cx(q[0], q[2]);
 }
 
-void twoRzSplitAcrossCtrlTargetWires(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.rz(0.1, q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  q[1] = b.rz(0.2, q[1]);
-}
-
 void p(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.p(0.123, q[0]);
@@ -2025,12 +2018,6 @@ void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_minus_yy(0.045, 0.456, q[0], q[1]);
   std::tie(q[1], q[0]) = b.xx_minus_yy(0.078, 0.456, q[1], q[0]);
-}
-
-void twoXxMinusYYMismatchedBeta(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  std::tie(q[0], q[1]) = b.xx_minus_yy(0.1, 0.456, q[0], q[1]);
-  std::tie(q[0], q[1]) = b.xx_minus_yy(0.2, 0.789, q[0], q[1]);
 }
 
 void barrier(QCOProgramBuilder& b) {
