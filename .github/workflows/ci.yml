@@ -35,7 +35,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
       preset-name: ${{ matrix.preset }}
 
   cpp-tests-macos:
@@ -57,7 +57,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
       preset-name: ${{ matrix.preset }}
 
   cpp-tests-windows:
@@ -79,7 +79,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
       mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
 
@@ -99,7 +99,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
       preset-name: ${{ matrix.preset }}
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
@@ -118,7 +118,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
       preset-name: ${{ matrix.preset }}
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
@@ -137,7 +137,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
       mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
 
@@ -148,7 +148,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@eeea704310e1f9753ce49ac9a276145121f4713c # v2.1.0
     with:
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
     permissions:
       contents: read
       id-token: write
@@ -166,7 +166,7 @@ jobs:
       install-pkgs: "nanobind==2.12.0"
       cpp-linter-extra-args: "-std=c++20"
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
 
   python-tests:
     name: 🐍 Test
