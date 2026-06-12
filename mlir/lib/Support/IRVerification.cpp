@@ -407,16 +407,6 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
   const auto readyA = getReadyOps(openA, closed);
   const auto readyB = getReadyOps(openB, closed);
 
-  llvm::dbgs() << "--- readyA ---\n";
-  for (Operation* op : readyA) {
-    llvm::dbgs() << *op << '\n';
-  }
-
-  llvm::dbgs() << "--- readyB ---\n";
-  for (Operation* op : readyB) {
-    llvm::dbgs() << *op << '\n';
-  }
-
   if (readyA.empty() && readyB.empty()) {
     return true;
   }
