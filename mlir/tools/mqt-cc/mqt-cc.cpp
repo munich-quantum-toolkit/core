@@ -49,8 +49,14 @@ static llvm::cl::opt<std::string>
                    llvm::cl::value_desc("filename"), llvm::cl::init("-"));
 
 static llvm::cl::opt<bool>
-    convertToQIR("emit-qir", llvm::cl::desc("Convert to QIR at the end"),
-                 llvm::cl::init(false));
+    convertToQIRBase("emit-qir-base",
+                     llvm::cl::desc("Convert to QIR Base Profile at the end"),
+                     llvm::cl::init(false));
+
+static llvm::cl::opt<bool> convertToQIRAdaptive(
+    "emit-qir-adaptive",
+    llvm::cl::desc("Convert to QIR Adaptive Profile at the end"),
+    llvm::cl::init(false));
 
 static llvm::cl::opt<bool> recordIntermediates(
     "record-intermediates",
@@ -156,7 +162,8 @@ int main(int argc, char** argv) {
 
   // Configure the compiler pipeline
   QuantumCompilerConfig config;
-  config.convertToQIR = convertToQIR;
+  config.convertToQIRBase = convertToQIRBase;
+  config.convertToQIRAdaptive = convertToQIRAdaptive;
   config.recordIntermediates = recordIntermediates;
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;

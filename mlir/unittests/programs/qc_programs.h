@@ -27,6 +27,9 @@ void allocQubitRegister(QCProgramBuilder& b);
 /// Allocates two qubit registers of size `2` and `3`.
 void allocMultipleQubitRegisters(QCProgramBuilder& b);
 
+/// Allocates two qubit registers of size `2` and `3` and applies operations.
+void allocMultipleQubitRegistersWithOps(QCProgramBuilder& b);
+
 /// Allocates a large qubit register.
 void allocLargeRegister(QCProgramBuilder& b);
 

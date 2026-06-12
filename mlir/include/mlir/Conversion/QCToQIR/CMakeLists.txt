@@ -6,8 +6,5 @@
 #
 # Licensed under the MIT License
 
-set(LLVM_TARGET_DEFINITIONS QCToQIR.td)
-mlir_tablegen(QCToQIR.h.inc -gen-pass-decls -name QCToQIR)
-add_public_tablegen_target(QCToQIRIncGen)
-
-add_mlir_doc(QCToQIR QCToQIR Conversions/ -gen-pass-doc)
+add_subdirectory(QIRBase)
+add_subdirectory(QIRAdaptive)

@@ -27,6 +27,16 @@ void allocMultipleQubitRegisters(QCProgramBuilder& b) {
   b.allocQubitRegister(3);
 }
 
+void allocMultipleQubitRegistersWithOps(QCProgramBuilder& b) {
+  auto q0 = b.allocQubitRegister(2);
+  auto q1 = b.allocQubitRegister(3);
+  b.h(q0[0]);
+  b.h(q0[1]);
+  b.h(q1[0]);
+  b.h(q1[1]);
+  b.h(q1[2]);
+}
+
 void allocLargeRegister(QCProgramBuilder& b) { b.allocQubitRegister(100); }
 
 void staticQubits(QCProgramBuilder& b) {
