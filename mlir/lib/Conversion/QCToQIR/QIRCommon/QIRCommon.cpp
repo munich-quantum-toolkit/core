@@ -63,10 +63,9 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
 
 QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
-  addConversion(
-      [ctx](qc::QubitType) { return LLVM::LLVMPointerType::get(ctx); });
+  addConversion([ctx](QubitType) { return LLVM::LLVMPointerType::get(ctx); });
   addConversion([ctx](MemRefType type) -> Type {
-    if (isa<qc::QubitType>(type.getElementType())) {
+    if (isa<QubitType>(type.getElementType())) {
       return LLVM::LLVMPointerType::get(ctx);
     }
     return type;
