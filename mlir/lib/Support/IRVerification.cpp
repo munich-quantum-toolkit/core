@@ -18,10 +18,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
-#include <llvm/Support/Debug.h>
-#include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Attributes.h>
