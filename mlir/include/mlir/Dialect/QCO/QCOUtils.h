@@ -41,26 +41,6 @@ static inline bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
 }
 
 /**
- * @brief Sum two floating-point parameter values, folding constants when
- * possible.
- *
- * @param rewriter The pattern rewriter.
- * @param loc The location for newly created operations.
- * @param lhs The first summand.
- * @param rhs The second summand.
- * @return Value The sum, as a constant or `arith.addf` result.
- */
-static inline Value addFloatParameters(PatternRewriter& rewriter, Location loc,
-                                       Value lhs, Value rhs) {
-  const auto lhsVal = utils::valueToDouble(lhs);
-  const auto rhsVal = utils::valueToDouble(rhs);
-  if (lhsVal.has_value() && rhsVal.has_value()) {
-    return utils::constantFromScalar(rewriter, loc, *lhsVal + *rhsVal);
-  }
-  return arith::AddFOp::create(rewriter, loc, lhs, rhs).getResult();
-}
-
-/**
  * @brief Find a same-type partner operation reachable through `ctrl` hops on a
  * control wire.
  *
@@ -243,9 +223,9 @@ LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   }
 
   // Compute and set the new parameter
-  auto newParameter = addFloatParameters(
+  auto newParameter = arith::AddFOp::create(
       rewriter, op.getLoc(), op.getOperand(1), nextOp.getOperand(1));
-  op->setOperand(1, newParameter);
+  op->setOperand(1, newParameter.getResult());
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResult());
@@ -275,9 +255,9 @@ LogicalResult mergeOneTargetTwoParameter(OpType op, PatternRewriter& rewriter) {
     return failure();
   }
 
-  auto newTheta = addFloatParameters(rewriter, op.getLoc(), op.getOperand(1),
-                                     nextOp.getOperand(1));
-  op->setOperand(1, newTheta);
+  auto newTheta = arith::AddFOp::create(rewriter, op.getLoc(), op.getOperand(1),
+                                        nextOp.getOperand(1));
+  op->setOperand(1, newTheta.getResult());
   rewriter.replaceOp(nextOp, op.getResult());
   return success();
 }
@@ -328,11 +308,11 @@ mergeOneTargetOneParameterThroughCtrlControlChain(OpType op,
     return failure();
   }
 
-  const Location loc = op.getLoc();
   rewriter.setInsertionPoint(op);
-  const Value newTheta =
-      addFloatParameters(rewriter, loc, op.getTheta(), partner->getTheta());
-  rewriter.modifyOpInPlace(op, [&] { op.getThetaMutable().assign(newTheta); });
+  auto newTheta = arith::AddFOp::create(rewriter, op.getLoc(), op.getTheta(),
+                                        partner->getTheta());
+  rewriter.modifyOpInPlace(
+      op, [&] { op.getThetaMutable().assign(newTheta.getResult()); });
   rewriter.replaceOp(*partner, partner->getOperand(0));
   return success();
 }
@@ -370,9 +350,9 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op,
     return failure();
   }
 
-  auto newParameter = addFloatParameters(
+  auto newParameter = arith::AddFOp::create(
       rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
-  op->setOperand(2, newParameter);
+  op->setOperand(2, newParameter.getResult());
   if (swappedTargets) {
     rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
   } else {
@@ -456,9 +436,9 @@ static LogicalResult mergeTwoTargetTwoParameterImpl(OpType op,
     return failure();
   }
 
-  auto newTheta = addFloatParameters(rewriter, op.getLoc(), op.getOperand(2),
-                                     nextOp.getOperand(2));
-  op->setOperand(2, newTheta);
+  auto newTheta = arith::AddFOp::create(rewriter, op.getLoc(), op.getOperand(2),
+                                        nextOp.getOperand(2));
+  op->setOperand(2, newTheta.getResult());
   if (swappedTargets) {
     rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
   } else {
