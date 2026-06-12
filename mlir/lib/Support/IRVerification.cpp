@@ -19,6 +19,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
+#include <llvm/Support/Error.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Analysis/SliceAnalysis.h>
@@ -57,17 +58,13 @@ static bool hasTypeQubitTensor(Value v) {
 /// Assumes `op->getNumResults() == other->getNumResults()`.
 /// Assumes that the two operations are equivalent to each other.
 static void mapResults(Operation* opL, Operation* opR, IRMapping& m) {
-  if (opL->getNumResults() == 0) {
-    return;
-  }
-
   for (const auto& [fromResult, toResult] :
        llvm::zip_equal(opL->getResults(), opR->getResults())) {
-    if (!isa<qtensor::AllocOp>(opL) && hasTypeQubitTensor(fromResult)) {
+    if (!isa<qtensor::AllocOp>(opL) && !isa<qtensor::FromElementsOp>(opL) &&
+        hasTypeQubitTensor(fromResult)) {
       assert(hasTypeQubitTensor(toResult));
       continue;
     }
-
     m.map(fromResult, toResult);
   }
 }
@@ -213,9 +210,7 @@ static bool compareOperations(Operation* opA, Operation* opB,
          llvm::zip_equal(opA->getOperands(), opB->getOperands())) {
 
       if (hasTypeQubitTensor(operandA)) {
-        if (!hasTypeQubitTensor(operandB)) { // TODO: Assertion?
-          return false;
-        }
+        assert(hasTypeQubitTensor(operandB));
 
         auto tensorA = cast<TypedValue<RankedTensorType>>(operandA);
         qtensor::TensorIterator itA(tensorA);
@@ -230,15 +225,33 @@ static bool compareOperations(Operation* opA, Operation* opB,
         }
 
         if (isa<BlockArgument>(itA.tensor())) {
-          if (isa<BlockArgument>(itB.tensor())) {
+          if (!isa<BlockArgument>(itB.tensor())) {
             return false;
           }
-        } else {
+        } else if (isa<qtensor::AllocOp>(itA.operation())) {
+          if (!isa<qtensor::AllocOp>(itB.operation())) {
+            return false;
+          }
+
           auto allocA = cast<qtensor::AllocOp>(itA.operation());
           auto allocB = cast<qtensor::AllocOp>(itB.operation());
+
           if (m.lookup(allocA.getResult()) != allocB.getResult()) {
             return false;
           }
+        } else if (isa<qtensor::FromElementsOp>(itA.operation())) {
+          if (!isa<qtensor::FromElementsOp>(itB.operation())) {
+            return false;
+          }
+
+          auto fromA = cast<qtensor::FromElementsOp>(itA.operation());
+          auto fromB = cast<qtensor::FromElementsOp>(itB.operation());
+
+          if (m.lookup(fromA.getResult()) != fromB.getResult()) {
+            return false;
+          }
+        } else {
+          llvm::reportFatalInternalError("unhandled qtensor source");
         }
       } else {
         auto operand = m.lookup(operandA);
@@ -317,17 +330,21 @@ static SetVector<Operation*> getReadyOps(ArrayRef<Operation*> open,
     } else if (auto dealloc = dyn_cast<qtensor::DeallocOp>(op)) {
 
       // Deallocations are ready whenever we've visited each op on the tensor
-      // chain.
+      // chain. Because we initialize the iterator with its input tensor, the
+      // iterator already points at the previous operation. Thus use a do-while
+      // loop instead of a regular while.
 
       bool fullChain{true};
       qtensor::TensorIterator it(dealloc.getTensor());
 
-      for (; std::prev(it) != it; --it) {
+      do {
         if (!closed.contains(it.operation())) {
           fullChain = false;
           break;
         }
-      }
+
+        --it;
+      } while (std::prev(it) != it);
 
       if (fullChain) {
         ready.insert(dealloc);
@@ -363,9 +380,8 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
     }
 
     // Because there may be multiple structural equivalent operations (think
-    // arith.constant, for example), collect them in a vector for further
-    // recursive processing. If there are no partners, no matching operation has
-    // been found and the blocks are not equivalent.
+    // arith.constant, for example), we apply the assumption that the first
+    // occurence on the lhs corresponds to the first occurence on the rhs, etc.
 
     DenseSet<Operation*> matched;
     matched.reserve(readyB.size());
@@ -374,6 +390,7 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
       SetVector<Operation*>::iterator it = readyB.begin();
       for (; it != readyB.end(); it = std::next(it)) {
         Operation* opB = *it;
+
         if (matched.contains(opB)) {
           continue;
         }
@@ -387,7 +404,6 @@ static bool compareTopologically(ArrayRef<Operation*> openA,
       }
 
       if (it == readyB.end()) {
-        llvm::dbgs() << "unmatched op a: " << *opA << '\n';
         return false;
       }
     }
@@ -440,7 +456,6 @@ static bool compareBlocks(Block& blockA, Block& blockB,
   for (const auto [lArg, rArg] :
        llvm::zip_equal(blockA.getArguments(), blockB.getArguments())) {
     if (lArg.getType() != rArg.getType()) {
-      llvm::dbgs() << "nonequivalent block arguments\n";
       return false;
     }
 
@@ -470,6 +485,8 @@ static bool compareRegions(Region& regionA, Region& regionB,
     if (!compareBlocks(blockA, blockB, closed, m)) {
       return false;
     }
+
+    m.map(&blockA, &blockB);
   }
 
   return true;
