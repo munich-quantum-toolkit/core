@@ -131,6 +131,12 @@ qubit[1] q;
 x q[0];
 )qasm";
 
+const std::string twoX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+x q;
+)qasm";
+
 const std::string singleControlledX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;

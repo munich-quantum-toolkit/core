@@ -68,6 +68,12 @@ protected:
 
 } // namespace
 
+static void twoX(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.x(q[0]);
+  b.x(q[1]);
+}
+
 static void singleNegControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
@@ -160,6 +166,7 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledIdentity", qasm::multipleControlledIdentity,
             MQT_NAMED_BUILDER(qc::multipleControlledIdentity)},
         QASM3TranslationTestCase{"X", qasm::x, MQT_NAMED_BUILDER(qc::x)},
+        QASM3TranslationTestCase{"TwoX", qasm::twoX, MQT_NAMED_BUILDER(twoX)},
         QASM3TranslationTestCase{"SingleControlledX", qasm::singleControlledX,
                                  MQT_NAMED_BUILDER(qc::singleControlledX)},
         QASM3TranslationTestCase{"SingleNegControlledX",

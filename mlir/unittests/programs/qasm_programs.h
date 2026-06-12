@@ -66,6 +66,9 @@ extern const std::string multipleControlledIdentity;
 /// Creates a circuit with just an X gate.
 extern const std::string x;
 
+/// Creates a circuit with two X gates.
+extern const std::string twoX;
+
 /// Creates a circuit with a single controlled X gate.
 extern const std::string singleControlledX;
 
