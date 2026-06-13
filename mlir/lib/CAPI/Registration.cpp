@@ -15,7 +15,8 @@
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Transforms/Passes.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
@@ -63,7 +64,8 @@ void mqtRegisterAllPasses() {
   // Conversions between the MQT dialects.
   mlir::registerQCToQCOPasses();
   mlir::registerQCOToQCPasses();
-  mlir::registerQCToQIRPasses();
+  mlir::registerQCToQIRBasePasses();
+  mlir::registerQCToQIRAdaptivePasses();
   mlir::registerJeffToQCOPasses();
   mlir::registerQCOToJeffPasses();
 
