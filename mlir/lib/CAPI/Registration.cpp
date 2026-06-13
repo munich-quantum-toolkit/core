@@ -26,7 +26,6 @@
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
 #include "qasm3/Importer.hpp"
 
-#include <exception>
 #include <jeff/IR/JeffDialect.h>
 #include <mlir/CAPI/IR.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -40,6 +39,8 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Transforms/Passes.h>
+
+#include <exception>
 #include <string>
 
 void mqtRegisterAllDialects(MlirContext ctx) {
