@@ -14,18 +14,25 @@ add_library(MQTCoreCAPI STATIC Registration.cpp)
 # Export the C-API symbols from the object files.
 target_compile_definitions(MQTCoreCAPI PRIVATE MLIR_CAPI_BUILDING_LIBRARY=1)
 
-# The TableGen'd pass/conversion headers must be generated before compiling.
-add_dependencies(
-  MQTCoreCAPI
-  QCToQCOIncGen
-  QCOToQCIncGen
-  QCToQIRIncGen
-  JeffToQCOIncGen
-  QCOToJeffIncGen
-  MLIRQCTransformsIncGen
-  MLIRQCOTransformsIncGen
-  MLIRQIRTransformsIncGen
-  MLIRQTensorTransformsIncGen)
+# The TableGen'd pass/conversion headers must be generated before compiling. Each dependency is
+# added only if the target is already defined, since the order in which targets become visible
+# differs across MLIR toolchains. The PUBLIC link dependencies below additionally enforce the
+# correct build order once all targets are resolved.
+foreach(
+  _mqt_capi_dep IN
+  ITEMS QCToQCOIncGen
+        QCOToQCIncGen
+        QCToQIRIncGen
+        JeffToQCOIncGen
+        QCOToJeffIncGen
+        MLIRQCTransformsIncGen
+        MLIRQCOTransformsIncGen
+        MLIRQIRTransformsIncGen
+        MLIRQTensorTransformsIncGen)
+  if(TARGET ${_mqt_capi_dep})
+    add_dependencies(MQTCoreCAPI ${_mqt_capi_dep})
+  endif()
+endforeach()
 
 target_link_libraries(
   MQTCoreCAPI
