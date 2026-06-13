@@ -51,6 +51,7 @@ inline constexpr auto QIR_RESULT_RELEASE = "__quantum__rt__result_release";
 
 inline constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
 inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
+inline constexpr auto QIR_READ_RESULT = "__quantum__rt__read_result";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__result_array_record_output";

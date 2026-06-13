@@ -27,7 +27,9 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG v0.2.0)
+    # Pinned to an unreleased commit until v0.3.0 is released. jeff-mlir's SCF operations are
+    # already marked as IsolatedFromAbove in the pinned version.
+    GIT_TAG 3f34dc3e2865ceaffb8003b2410404306a49f0ab)
   list(APPEND FETCH_PACKAGES jeff-mlir)
 endif()
 

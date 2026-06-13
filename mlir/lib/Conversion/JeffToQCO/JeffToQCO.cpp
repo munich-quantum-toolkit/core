@@ -861,18 +861,52 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
           op, "qco.if requires exactly two branches");
     }
 
-    auto qcoIf = IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(),
-                              adaptor.getInValues());
+    auto isLinearType = [](Type t) {
+      return isa<jeff::QubitType, jeff::QuregType>(t);
+    };
+
+    auto inValues = adaptor.getInValues();
+
+    SmallVector<Value> qubits;
+    for (auto [value, adapted] : llvm::zip(op.getInValues(), inValues)) {
+      if (isLinearType(value.getType())) {
+        qubits.push_back(adapted);
+      }
+    }
+
+    auto qcoIf =
+        IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(), qubits);
 
     auto moveRegion = [&](Region& source, Region& dest) -> LogicalResult {
-      rewriter.inlineRegionBefore(source, dest, dest.end());
-      Block* block = &dest.front();
-      TypeConverter::SignatureConversion sc(block->getNumArguments());
-      if (failed(getTypeConverter()->convertSignatureArgs(
-              block->getArgumentTypes(), sc))) {
-        return failure();
+      auto* oldBlock = &source.back();
+      auto* newBlock = &dest.emplaceBlock();
+      rewriter.setInsertionPointToEnd(newBlock);
+
+      IRMapping mapping;
+      for (auto [oldArg, adapted] :
+           llvm::zip(oldBlock->getArguments(), inValues)) {
+        if (isLinearType(oldArg.getType())) {
+          auto newArg = newBlock->addArgument(
+              typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
+          mapping.map(oldArg, newArg);
+        } else {
+          mapping.map(oldArg, adapted);
+        }
       }
-      rewriter.applySignatureConversion(block, sc);
+
+      for (auto& op : oldBlock->without_terminator()) {
+        rewriter.clone(op, mapping);
+      }
+
+      auto* oldTerminator = oldBlock->getTerminator();
+      SmallVector<Value> yields;
+      for (auto value : oldTerminator->getOperands()) {
+        if (isLinearType(value.getType())) {
+          yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
+        }
+      }
+      rewriter.replaceOpWithNewOp<YieldOp>(oldTerminator, yields);
+
       return success();
     };
 
@@ -883,7 +917,15 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       return failure();
     }
 
-    rewriter.replaceOp(op, qcoIf.getResults());
+    SmallVector<Value> results;
+    size_t index = 0;
+    for (auto [value, adapted] : llvm::zip(op.getResults(), inValues)) {
+      results.push_back(isLinearType(value.getType())
+                            ? qcoIf.getResults()[index++]
+                            : adapted);
+    }
+    rewriter.replaceOp(op, results);
+
     return success();
   }
 };
@@ -934,8 +976,8 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
     auto scfFor = scf::ForOp::create(rewriter, loc, start, stop, step,
                                      adaptor.getInValues());
 
-    Block* jeffBody = &op.getBody().front();
-    Block* scfBody = scfFor.getBody();
+    auto* jeffBody = &op.getBody().front();
+    auto* scfBody = scfFor.getBody();
 
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPointToStart(scfBody);
@@ -944,7 +986,7 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
                                          jeffBody->getArgument(0).getType(),
                                          scfFor.getInductionVar());
     SmallVector<Value> args = {iv.getResult()};
-    for (Value arg : scfFor.getRegionIterArgs()) {
+    for (auto arg : scfFor.getRegionIterArgs()) {
       args.push_back(arg);
     }
 
@@ -964,11 +1006,6 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
   LogicalResult
   matchAndRewrite(jeff::YieldOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (isa<IfOp>(op->getParentOp())) {
-      rewriter.replaceOpWithNewOp<YieldOp>(op, adaptor.getOperands());
-      return success();
-    }
-
     rewriter.replaceOpWithNewOp<scf::YieldOp>(op, adaptor.getOperands());
     return success();
   }
