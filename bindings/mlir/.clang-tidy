@@ -1,0 +1,13 @@
+# This binding module uses the NB_MODULE macro and the MLIR C-API type-casters
+# from NanobindAdaptors.h. The include-cleaner, internal-linkage,
+# identifier-naming, named-parameter, value-parameter, and unused-alias checks
+# cannot reason about the macro expansion and the templated casters, so they
+# report false positives here. Disable them for this binding glue.
+InheritParentConfig: true
+Checks: |
+  -misc-include-cleaner,
+  -misc-unused-alias-decls,
+  -misc-use-internal-linkage,
+  -performance-unnecessary-value-param,
+  -readability-identifier-naming,
+  -readability-named-parameter

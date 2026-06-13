@@ -8,18 +8,33 @@
 
 add_mlir_public_c_api_library(
   MQTCoreCAPI
-  Dialects.cpp
+  Registration.cpp
   LINK_LIBS
   PUBLIC
+  # Dialects
   MLIRQCDialect
   MLIRQCODialect
   MLIRQTensorDialect
+  MLIRJeff
+  # Conversions
   MLIRQCToQCO
+  MLIRQCOToQC
+  MLIRQCToQIR
+  MLIRJeffToQCO
+  MLIRQCOToJeff
+  # Transformations
+  MLIRQCTransforms
+  MLIRQCOTransforms
+  MLIRQIRTransforms
+  MLIRQTensorTransforms
+  # OpenQASM 3 import
   MLIRQCTranslation
   MQT::CoreQASM
   MQT::CoreIR
+  # Upstream
   MLIRIR
   MLIRPass
+  MLIRTransforms
   MLIRArithDialect
   MLIRControlFlowDialect
   MLIRFuncDialect

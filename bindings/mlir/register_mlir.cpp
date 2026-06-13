@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt-core-c/Dialects.h"
+#include "mqt-core-c/Registration.h"
 
 #include <mlir-c/IR.h>
 #include <mlir-c/Support.h>
@@ -18,16 +18,28 @@
 #include <stdexcept>
 #include <string>
 
+namespace mqt {
+
 namespace nb = nanobind;
 
-NB_MODULE(_mqtCore, m) {
-  m.doc() = "MQT Core MLIR dialects and compilation pipeline bindings";
+NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  m.doc() =
+      R"pb(MQT Core MLIR - Python bindings for the MQT Compiler Collection.
+
+This module exposes the dialects and passes of the MQT Compiler Collection so
+that quantum programs can be compiled from Python using MLIR's Python bindings.)pb";
 
   m.def(
       "register_dialects",
-      [](MlirContext context) { mqtRegisterDialects(context); },
+      [](MlirContext context) { mqtRegisterAllDialects(context); },
       nb::arg("context"),
-      "Register and load all dialects used by the MQT compilation pipeline.");
+      "Register and load all MQT Compiler Collection dialects with the given "
+      "context.");
+
+  m.def(
+      "register_passes", []() { mqtRegisterAllPasses(); },
+      "Register all MQT Compiler Collection passes with MLIR's global pass "
+      "registry.");
 
   m.def(
       "import_qasm3_to_qc",
@@ -42,16 +54,6 @@ NB_MODULE(_mqtCore, m) {
       },
       nb::arg("context"), nb::arg("qasm"),
       "Import an OpenQASM 3 program into a QC-dialect module.");
-
-  m.def(
-      "qc_to_qco",
-      [](MlirModule module) {
-        if (!mqtConvertQCToQCO(module)) {
-          throw std::runtime_error(
-              "Failed to transform the QC-dialect module to the QCO dialect");
-        }
-        return module;
-      },
-      nb::arg("module"),
-      "Transform a QC-dialect module to the QCO dialect in place.");
 }
+
+} // namespace mqt

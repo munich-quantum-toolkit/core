@@ -8,18 +8,27 @@
  * Licensed under the MIT License
  */
 
-#include "mqt-core-c/Dialects.h"
+#include "mqt-core-c/Registration.h"
 
 #include "ir/QuantumComputation.hpp"
+#include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
+#include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
+#include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Conversion/QCToQIR/QCToQIR.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/Transforms/Passes.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/Transforms/Passes.h"
 #include "qasm3/Importer.hpp"
 
+#include <exception>
+#include <jeff/IR/JeffDialect.h>
 #include <mlir/CAPI/IR.h>
-#include <mlir/CAPI/Registration.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -30,25 +39,38 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
-
-#include <exception>
+#include <mlir/Transforms/Passes.h>
 #include <string>
 
-MLIR_DEFINE_CAPI_DIALECT_REGISTRATION(QC, qc, mlir::qc::QCDialect)
-MLIR_DEFINE_CAPI_DIALECT_REGISTRATION(QCO, qco, mlir::qco::QCODialect)
-
-void mqtRegisterDialects(MlirContext ctx) {
+void mqtRegisterAllDialects(MlirContext ctx) {
   mlir::MLIRContext* context = unwrap(ctx);
   mlir::DialectRegistry registry;
   registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
-                  mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
-                  mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
-                  mlir::LLVM::LLVMDialect, mlir::memref::MemRefDialect,
-                  mlir::scf::SCFDialect>();
+                  mlir::qtensor::QTensorDialect, mlir::jeff::JeffDialect,
+                  mlir::arith::ArithDialect, mlir::cf::ControlFlowDialect,
+                  mlir::func::FuncDialect, mlir::LLVM::LLVMDialect,
+                  mlir::memref::MemRefDialect, mlir::scf::SCFDialect>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
+}
+
+void mqtRegisterAllPasses() {
+  // Common upstream transformations (canonicalization, CSE, ...) used by the
+  // MQT cleanup pipelines.
+  mlir::registerTransformsPasses();
+
+  // Conversions between the MQT dialects.
+  mlir::registerQCToQCOPasses();
+  mlir::registerQCOToQCPasses();
+  mlir::registerQCToQIRPasses();
+  mlir::registerJeffToQCOPasses();
+  mlir::registerQCOToJeffPasses();
+
+  // Dialect-specific transformations.
+  mlir::qc::registerQCPasses();
+  mlir::qco::registerQCOPasses();
+  mlir::qir::registerQIRPasses();
+  mlir::qtensor::registerQTensorPasses();
 }
 
 MlirModule mqtImportQASM3ToQC(MlirContext ctx, MlirStringRef qasm) {
@@ -65,11 +87,4 @@ MlirModule mqtImportQASM3ToQC(MlirContext ctx, MlirStringRef qasm) {
   } catch (const std::exception&) {
     return MlirModule{nullptr};
   }
-}
-
-bool mqtConvertQCToQCO(MlirModule module) {
-  mlir::ModuleOp moduleOp = unwrap(module);
-  mlir::PassManager pm(moduleOp.getContext());
-  pm.addPass(mlir::createQCToQCO());
-  return mlir::succeeded(pm.run(moduleOp));
 }

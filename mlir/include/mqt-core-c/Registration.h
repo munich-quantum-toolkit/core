@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
-#ifndef MQT_CORE_C_DIALECTS_H
-#define MQT_CORE_C_DIALECTS_H
+#ifndef MQT_CORE_C_REGISTRATION_H
+#define MQT_CORE_C_REGISTRATION_H
 
 #include "mlir-c/IR.h"
 #include "mlir-c/Support.h"
@@ -18,16 +18,28 @@
 extern "C" {
 #endif
 
-MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(QC, qc);
-MLIR_DECLARE_CAPI_DIALECT_REGISTRATION(QCO, qco);
-
 /**
- * @brief Register and load all dialects required by the MQT compilation
- * pipeline (QC, QCO, QTensor, and the upstream dialects they depend on).
+ * @brief Register and load all dialects of the MQT Compiler Collection with the
+ * given context.
+ *
+ * @details Registers the QC, QCO, QTensor, and Jeff dialects together with the
+ * upstream dialects (arith, func, scf, cf, memref, llvm) that the dialects,
+ * conversions, and transformations depend on, and loads them so that modules
+ * and passes can use them.
  *
  * @param ctx The MLIR context to populate.
  */
-MLIR_CAPI_EXPORTED void mqtRegisterDialects(MlirContext ctx);
+MLIR_CAPI_EXPORTED void mqtRegisterAllDialects(MlirContext ctx);
+
+/**
+ * @brief Register all conversion and transformation passes of the MQT Compiler
+ * Collection with MLIR's global pass registry.
+ *
+ * @details After this call, every MQT pass can be instantiated by name (e.g.
+ * via a textual pass pipeline) from Python through the standard MLIR
+ * PassManager API.
+ */
+MLIR_CAPI_EXPORTED void mqtRegisterAllPasses(void);
 
 /**
  * @brief Import an OpenQASM 3 program into a module of the QC dialect.
@@ -41,16 +53,8 @@ MLIR_CAPI_EXPORTED void mqtRegisterDialects(MlirContext ctx);
 MLIR_CAPI_EXPORTED MlirModule mqtImportQASM3ToQC(MlirContext ctx,
                                                  MlirStringRef qasm);
 
-/**
- * @brief Convert a QC-dialect module to the QCO dialect in place.
- *
- * @param module The module to convert. Modified in place on success.
- * @return @c true if the conversion succeeded, @c false otherwise.
- */
-MLIR_CAPI_EXPORTED bool mqtConvertQCToQCO(MlirModule module);
-
 #ifdef __cplusplus
 }
 #endif
 
-#endif // MQT_CORE_C_DIALECTS_H
+#endif // MQT_CORE_C_REGISTRATION_H
