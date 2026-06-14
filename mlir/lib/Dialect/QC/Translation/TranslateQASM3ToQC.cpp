@@ -518,7 +518,7 @@ public:
     auto it = gates.find(id);
 
     // OpenQASM 2 compatibility:
-    // Strip leading c characters and treat them as implicit controls
+    // Strip leading c characters and treat them as implicit control modifiers
     auto resolvedId = id;
     size_t numCompatControls = 0;
     if (openQASM2CompatMode && it == gates.end()) {
@@ -550,17 +550,51 @@ public:
     }
 
     // Expand operands to MLIR values
-    SmallVector<std::variant<Value, SmallVector<Value>>> operands;
-    operands.reserve(stmt->operands.size());
+    SmallVector<Value> operands;
+    SmallVector<SmallVector<Value>> operandsBroadcasting;
+    auto broadcasting = false;
     for (const auto& operand : stmt->operands) {
-      operands.push_back(
-          resolveGateOperandInScope(operand, scope, stmt->debugInfo));
+      const auto& resolvedOperand =
+          resolveGateOperandInScope(operand, scope, stmt->debugInfo);
+      if (const auto* operand = std::get_if<Value>(&resolvedOperand)) {
+        operands.push_back(*operand);
+      } else if (const auto* operand =
+                     std::get_if<SmallVector<Value>>(&resolvedOperand)) {
+        operandsBroadcasting.push_back(*operand);
+        broadcasting = true;
+      }
+    }
+
+    if (broadcasting && !operands.empty()) {
+      throw qasm3::CompilerError("Gate operands must be single qubits or "
+                                 "quantum registers and not a mix of both.",
+                                 stmt->debugInfo);
+    }
+
+    if (broadcasting && numCompatControls != 0) {
+      throw qasm3::CompilerError("OpenQASM 2 gates cannot be broadcasted.",
+                                 stmt->debugInfo);
+    }
+
+    size_t broadcastWidth = 0;
+    if (broadcasting) {
+      for (const auto& operand : operandsBroadcasting) {
+        if (broadcastWidth == 0) {
+          broadcastWidth = operand.size();
+        } else if (broadcastWidth != operand.size()) {
+          throw qasm3::CompilerError(
+              "All broadcasting operands must have the same width.",
+              stmt->debugInfo);
+        }
+      }
     }
 
     auto invert = false;
     size_t numControls = 0;
     SmallVector<Value> posControls;
     SmallVector<Value> negControls;
+    SmallVector<SmallVector<Value>> posControlsBroadcasting;
+    SmallVector<SmallVector<Value>> negControlsBroadcasting;
 
     // Parse modifiers
     for (const auto& mod : stmt->modifiers) {
@@ -571,19 +605,29 @@ public:
         const auto n =
             evaluatePositiveConstant(ctrlMod->expression, stmt->debugInfo, 1);
         for (size_t i = 0; i < n; ++i, ++numControls) {
-          if (numControls >= operands.size()) {
-            throw qasm3::CompilerError("Control index out of bounds.",
-                                       stmt->debugInfo);
-          }
-          const auto& qubit = operands[numControls];
-          if (std::holds_alternative<SmallVector<Value>>(qubit)) {
-            throw qasm3::CompilerError("Control operand must be a qubit.",
-                                       stmt->debugInfo);
-          }
-          if (ctrlMod->ctrlType) {
-            posControls.push_back(std::get<Value>(qubit));
+          const auto positive = ctrlMod->ctrlType;
+          if (!broadcasting) {
+            if (numControls >= operands.size()) {
+              throw qasm3::CompilerError("Control index out of bounds.",
+                                         stmt->debugInfo);
+            }
+            auto operand = operands[numControls];
+            if (positive) {
+              posControls.push_back(operand);
+            } else {
+              negControls.push_back(operand);
+            }
           } else {
-            negControls.push_back(std::get<Value>(qubit));
+            if (numControls >= operandsBroadcasting.size()) {
+              throw qasm3::CompilerError("Control index out of bounds.",
+                                         stmt->debugInfo);
+            }
+            const auto& operand = operandsBroadcasting[numControls];
+            if (positive) {
+              posControlsBroadcasting.push_back(operand);
+            } else {
+              negControlsBroadcasting.push_back(operand);
+            }
           }
         }
       } else {
@@ -594,29 +638,34 @@ public:
     }
 
     // OpenQASM 2 compatibility:
-    // Append implicit controls
+    // Append implicit control qubits
     for (size_t i = 0; i < numCompatControls; ++i, ++numControls) {
       if (numControls >= operands.size()) {
         throw qasm3::CompilerError("Control index out of bounds.",
                                    stmt->debugInfo);
       }
-      const auto& qubit = operands[numControls];
-      if (std::holds_alternative<SmallVector<Value>>(qubit)) {
-        throw qasm3::CompilerError("Control operand must be a qubit.",
-                                   stmt->debugInfo);
-      }
-      posControls.push_back(std::get<Value>(qubit));
+      posControls.push_back(operands[numControls]);
     }
 
-    // Remaining operands belong to the gate itself
-    auto gateOperands =
-        llvm::to_vector(llvm::drop_begin(operands, numControls));
+    // Remaining operands are target qubits
+    SmallVector<Value> targets;
+    SmallVector<SmallVector<Value>> targetsBroadcasting;
+    if (!broadcasting) {
+      targets = llvm::to_vector(llvm::drop_begin(operands, numControls));
+    } else {
+      targetsBroadcasting =
+          llvm::to_vector(llvm::drop_begin(operandsBroadcasting, numControls));
+    }
 
     // Inline compound gate
     if (const auto* compound =
             dynamic_cast<qasm3::CompoundGate*>(it->second.get())) {
-      applyCompoundGate(*compound, params, gateOperands, posControls,
-                        negControls, invert, stmt->debugInfo);
+      if (broadcasting) {
+        throw qasm3::CompilerError(
+            "Broadcasted compound gates are not supported.", stmt->debugInfo);
+      }
+      applyCompoundGate(*compound, params, targets, posControls, negControls,
+                        invert, stmt->debugInfo);
       return;
     }
 
@@ -633,35 +682,29 @@ public:
                                  stmt->debugInfo);
     }
 
-    size_t broadcastWidth = 0;
-    for (const auto& operand : gateOperands) {
-      if (std::holds_alternative<SmallVector<Value>>(operand)) {
-        const auto& qubits = std::get<SmallVector<Value>>(operand);
-        if (broadcastWidth == 0) {
-          broadcastWidth = qubits.size();
-        } else if (broadcastWidth != qubits.size()) {
-          throw qasm3::CompilerError(
-              "Broadcast operands must all have the same width.",
-              stmt->debugInfo);
-        }
-      }
-    }
-    if (broadcastWidth == 0) {
-      broadcastWidth = 1;
-    }
-
-    for (size_t b = 0; b < broadcastWidth; ++b) {
-      SmallVector<Value> targets;
-      targets.reserve(gateOperands.size());
-      for (const auto& operand : gateOperands) {
-        if (std::holds_alternative<SmallVector<Value>>(operand)) {
-          targets.push_back(std::get<SmallVector<Value>>(operand)[b]);
-        } else {
-          targets.push_back(std::get<Value>(operand));
-        }
-      }
+    if (!broadcasting) {
       emitGate(dispIt->second, params, targets, posControls, negControls,
                invert);
+    } else {
+      for (size_t b = 0; b < broadcastWidth; ++b) {
+        SmallVector<Value> bTargets;
+        bTargets.reserve(targetsBroadcasting.size());
+        for (const auto& target : targetsBroadcasting) {
+          bTargets.push_back(target[b]);
+        }
+        SmallVector<Value> bPosControls;
+        bPosControls.reserve(posControlsBroadcasting.size());
+        for (const auto& ctrl : posControlsBroadcasting) {
+          bPosControls.push_back(ctrl[b]);
+        }
+        SmallVector<Value> bNegControls;
+        bNegControls.reserve(negControlsBroadcasting.size());
+        for (const auto& ctrl : negControlsBroadcasting) {
+          bNegControls.push_back(ctrl[b]);
+        }
+        emitGate(dispIt->second, params, bTargets, bPosControls, bNegControls,
+                 invert);
+      }
     }
   }
 
@@ -705,44 +748,29 @@ public:
   }
 
   /// Inline a compound gate.
-  void applyCompoundGate(
-      const qasm3::CompoundGate& gate, const SmallVector<double>& params,
-      const SmallVector<std::variant<Value, SmallVector<Value>>>& gateOperands,
-      ValueRange posControls, ValueRange negControls, bool invert,
-      const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
+  void applyCompoundGate(const qasm3::CompoundGate& gate,
+                         const SmallVector<double>& params, ValueRange targets,
+                         ValueRange posControls, ValueRange negControls,
+                         bool invert,
+                         const std::shared_ptr<qasm3::DebugInfo>& debugInfo) {
     assert(gate.parameterNames.size() == params.size());
-    assert(gate.targetNames.size() == gateOperands.size());
-
-    // Ordered list of unique qubits used by the compound gate
-    llvm::SmallVector<Value> targets;
+    assert(gate.targetNames.size() == targets.size());
 
     // Map from internal target name to index in targets list. This map is
     // needed because the qubits may be aliased if the CompoundGate is inlined
     // within a modifier region.
     llvm::StringMap<SmallVector<size_t>> targetsMap;
 
-    // Helper function to populate targets and targetsMap
-    auto populate = [&](StringRef targetName, Value target) {
-      auto* const it = llvm::find(targets, target);
-      size_t index = 0;
+    for (const auto& [targetName, target] :
+         llvm::zip_equal(gate.targetNames, targets)) {
+      auto it = llvm::find(targets, target);
       if (it == targets.end()) {
-        index = targets.size();
-        targets.push_back(target);
-      } else {
-        index = static_cast<size_t>(std::distance(targets.begin(), it));
+        throw qasm3::CompilerError(
+            "Target '" + targetName + "' not found in operands.", debugInfo);
       }
+      const auto index =
+          static_cast<size_t>(std::distance(targets.begin(), it));
       targetsMap[targetName].push_back(index);
-    };
-
-    for (const auto& [targetName, operand] :
-         llvm::zip_equal(gate.targetNames, gateOperands)) {
-      if (std::holds_alternative<Value>(operand)) {
-        populate(targetName, std::get<Value>(operand));
-      } else {
-        for (auto target : std::get<SmallVector<Value>>(operand)) {
-          populate(targetName, target);
-        }
-      }
     }
 
     // Bind parameters as constants

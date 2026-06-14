@@ -93,6 +93,18 @@ static void mixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q[1]);
 }
 
+static void twoMixedControlledX(qc::QCProgramBuilder& b) {
+  auto q1 = b.allocQubitRegister(2);
+  auto q2 = b.allocQubitRegister(2);
+  auto q3 = b.allocQubitRegister(2);
+  b.x(q2[0]);
+  b.mcx({q1[0], q2[0]}, q3[0]);
+  b.x(q2[0]);
+  b.x(q2[1]);
+  b.mcx({q1[1], q2[1]}, q3[1]);
+  b.x(q2[1]);
+}
+
 static void ifNot(qc::QCProgramBuilder& b) {
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
@@ -196,6 +208,9 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(tripleControlledX)},
         QASM3TranslationTestCase{"MixedControlledX", qasm::mixedControlledX,
                                  MQT_NAMED_BUILDER(mixedControlledX)},
+        QASM3TranslationTestCase{"TwoMixedControlledX",
+                                 qasm::twoMixedControlledX,
+                                 MQT_NAMED_BUILDER(twoMixedControlledX)},
         QASM3TranslationTestCase{"InverseX", qasm::inverseX,
                                  MQT_NAMED_BUILDER(qc::inverseX)},
         QASM3TranslationTestCase{

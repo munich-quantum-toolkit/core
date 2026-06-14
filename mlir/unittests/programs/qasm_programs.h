@@ -85,6 +85,10 @@ extern const std::string tripleControlledXOpenQASM2;
 /// controlled.
 extern const std::string mixedControlledX;
 
+/// Creates a circuit with two X gates that are positively and negatively
+/// controlled.
+extern const std::string twoMixedControlledX;
+
 /// Creates a circuit with an inverse modifier applied to an X gate.
 extern const std::string inverseX;
 

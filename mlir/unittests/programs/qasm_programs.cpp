@@ -167,6 +167,14 @@ qubit[3] q;
 ctrl @ negctrl @ x q[0], q[1], q[2];
 )qasm";
 
+const std::string twoMixedControlledX = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q1;
+qubit[2] q2;
+qubit[2] q3;
+ctrl @ negctrl @ x q1, q2, q3;
+)qasm";
+
 const std::string inverseX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
