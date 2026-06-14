@@ -854,14 +854,12 @@ public:
     const auto& regBits = it->second;
 
     if (id->indices.empty()) {
-      if (regBits.size() == 1) {
-        return regBits[0];
-      }
-      throw qasm3::CompilerError("Cannot look up value of entire register.",
-                                 debugInfo);
+      assert(regBits.size() == 1);
+      return regBits[0];
     }
 
-    if (id->indices.size() > 1) {
+    if (id->indices.size() != 1 ||
+        id->indices[0]->indexExpressions.size() != 1) {
       throw qasm3::CompilerError("Only single-index expressions are supported.",
                                  debugInfo);
     }
@@ -927,7 +925,8 @@ public:
       return qubits;
     }
 
-    if (id->indices.size() > 1) {
+    if (id->indices.size() != 1 ||
+        id->indices[0]->indexExpressions.size() != 1) {
       throw qasm3::CompilerError("Only single-index expressions are supported.",
                                  debugInfo);
     }
@@ -960,7 +959,8 @@ public:
       return bits;
     }
 
-    if (operand->indices.size() > 1) {
+    if (operand->indices.size() != 1 ||
+        operand->indices[0]->indexExpressions.size() != 1) {
       throw qasm3::CompilerError("Only single-index expressions are supported.",
                                  debugInfo);
     }
