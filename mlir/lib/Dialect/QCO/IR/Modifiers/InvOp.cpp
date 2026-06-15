@@ -29,6 +29,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <numbers>
