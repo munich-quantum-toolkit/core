@@ -434,7 +434,7 @@ composeInvertedSingleQubitBodyMatrix(Block& block) {
              })
              .Default([](Operation* operation) {
                const auto usesQubit = [](Value value) {
-                 return llvm::isa<QubitType>(value.getType());
+                 return isa<QubitType>(value.getType());
                };
                return !llvm::any_of(operation->getOperands(), usesQubit) &&
                       !llvm::any_of(operation->getResults(), usesQubit);

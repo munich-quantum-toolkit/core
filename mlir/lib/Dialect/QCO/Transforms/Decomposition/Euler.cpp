@@ -120,12 +120,16 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
  * @brief Euler angles `(theta, phi, lambda)` and global phase for a 2x2
  * unitary.
  */
+namespace {
+
 struct EulerAngles {
   double theta = 0.0;  ///< Middle rotation angle.
   double phi = 0.0;    ///< First outer rotation angle.
   double lambda = 0.0; ///< Second outer rotation angle.
   double phase = 0.0;  ///< Global phase in radians.
 };
+
+} // namespace
 
 /**
  * @brief Z-Y-Z Euler angles and global phase for a 2x2 unitary.
@@ -263,6 +267,8 @@ struct Unitary1QEulerPlan {
   [[nodiscard]] std::size_t gateCount() const { return steps.size(); }
 };
 
+} // namespace
+
 /**
  * @brief Appends a rotation step when @p angle is outside tolerance.
  *
@@ -270,8 +276,9 @@ struct Unitary1QEulerPlan {
  * @param kind Rotation axis (`RZ`, `RY`, or `RX`).
  * @param angle Rotation angle in radians.
  */
-void appendRotationIf(llvm::SmallVectorImpl<SynthesisStep>& steps,
-                      const SynthesisStep::Kind kind, const double angle) {
+static void appendRotationIf(llvm::SmallVectorImpl<SynthesisStep>& steps,
+                             const SynthesisStep::Kind kind,
+                             const double angle) {
   if (!isNearZeroRotationAngle(angle)) {
     steps.push_back({.kind = kind, .theta = angle});
   }
@@ -287,8 +294,8 @@ void appendRotationIf(llvm::SmallVectorImpl<SynthesisStep>& steps,
  * @param angles Decomposed Euler angles and global phase.
  * @param basis Target KAK basis (`ZYZ`, `ZXZ`, `XZX`, or `XYX`).
  */
-void appendKAKSteps(llvm::SmallVectorImpl<SynthesisStep>& steps,
-                    const EulerAngles& angles, const EulerBasis basis) {
+static void appendKAKSteps(llvm::SmallVectorImpl<SynthesisStep>& steps,
+                           const EulerAngles& angles, const EulerBasis basis) {
   using Kind = SynthesisStep::Kind;
   // Outer (K) and middle (A) rotation axes per KAK basis.
   struct KAKAxes {
@@ -326,7 +333,7 @@ void appendKAKSteps(llvm::SmallVectorImpl<SynthesisStep>& steps,
  * @param plan Synthesis plan to populate.
  * @param zyz Z-Y-Z Euler angles of the target unitary.
  */
-void planZSXX(Unitary1QEulerPlan& plan, const EulerAngles& zyz) {
+static void planZSXX(Unitary1QEulerPlan& plan, const EulerAngles& zyz) {
   constexpr double pi = std::numbers::pi;
   constexpr double halfPi = std::numbers::pi / 2.0;
   constexpr double quarterPi = std::numbers::pi / 4.0;
@@ -389,7 +396,7 @@ void planZSXX(Unitary1QEulerPlan& plan, const EulerAngles& zyz) {
  * @param basis Native gate basis.
  * @return Planned gate sequence and optional global phase.
  */
-[[nodiscard]] Unitary1QEulerPlan
+[[nodiscard]] static Unitary1QEulerPlan
 planUnitary1QEuler(const Matrix2x2& targetMatrix, const EulerBasis basis) {
   Unitary1QEulerPlan plan;
   if (targetMatrix.isApprox(Matrix2x2::identity())) {
@@ -425,9 +432,9 @@ planUnitary1QEuler(const Matrix2x2& targetMatrix, const EulerBasis basis) {
  * @param plan Precomputed synthesis plan.
  * @return Qubit value after all planned gates (and `gphase` when needed).
  */
-[[nodiscard]] Value emitUnitary1QEulerPlan(OpBuilder& builder, Location loc,
-                                           Value qubit,
-                                           const Unitary1QEulerPlan& plan) {
+[[nodiscard]] static Value
+emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
+                       const Unitary1QEulerPlan& plan) {
   for (const SynthesisStep& step : plan.steps) {
     switch (step.kind) {
     case SynthesisStep::Kind::RZ:
@@ -455,8 +462,6 @@ planUnitary1QEuler(const Matrix2x2& targetMatrix, const EulerBasis basis) {
   emitGPhaseIfNeeded(builder, loc, plan.phase);
   return qubit;
 }
-
-} // namespace
 
 std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
   struct EulerBasisName {

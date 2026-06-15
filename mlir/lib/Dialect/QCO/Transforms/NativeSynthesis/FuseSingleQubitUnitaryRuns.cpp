@@ -27,6 +27,7 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
+#include <cstddef>
 #include <iterator>
 #include <optional>
 #include <utility>
@@ -35,6 +36,20 @@ namespace mlir::qco {
 
 #define GEN_PASS_DEF_FUSESINGLEQUBITUNITARYRUNS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+
+namespace {
+
+/**
+ * @brief Composed unitary and metadata for a fusable run, without storing ops.
+ */
+struct FusableRunScan {
+  Matrix2x2 composed = Matrix2x2::identity();
+  std::size_t gateCount = 0;
+  bool hasNonBasisGate = false;
+  UnitaryOpInterface tail;
+};
+
+} // namespace
 
 /**
  * @brief Whether `op` has a compile-time 2x2 unitary without synthesizing it.
@@ -120,16 +135,6 @@ static bool isTargetBasisGate(Operation* op, decomposition::EulerBasis basis) {
       .Case<SXOp, XOp>([&](auto) { return basis == EulerBasis::ZSXX; })
       .Default([](auto) { return false; });
 }
-
-/**
- * @brief Composed unitary and metadata for a fusable run, without storing ops.
- */
-struct FusableRunScan {
-  Matrix2x2 composed = Matrix2x2::identity();
-  std::size_t gateCount = 0;
-  bool hasNonBasisGate = false;
-  UnitaryOpInterface tail;
-};
 
 /**
  * @brief Walks the wire from @p head, composing matrices and run metadata.
