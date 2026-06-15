@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
@@ -250,7 +249,7 @@ struct SynthesisStep {
 /** @brief Planned single-qubit Euler synthesis (gate list + optional `gphase`).
  */
 struct Unitary1QEulerPlan {
-  llvm::SmallVector<SynthesisStep, 5> steps;
+  SmallVector<SynthesisStep, 5> steps;
   double phase = 0.0;
 
   /// @brief Number of native gates in the planned sequence (excludes `gphase`).
@@ -266,7 +265,7 @@ struct Unitary1QEulerPlan {
  * @param kind Rotation axis (`RZ`, `RY`, or `RX`).
  * @param angle Rotation angle in radians.
  */
-static void appendRotationIf(llvm::SmallVectorImpl<SynthesisStep>& steps,
+static void appendRotationIf(SmallVectorImpl<SynthesisStep>& steps,
                              const SynthesisStep::Kind kind,
                              const double angle) {
   if (!isNearZeroRotationAngle(angle)) {
@@ -283,7 +282,7 @@ static void appendRotationIf(llvm::SmallVectorImpl<SynthesisStep>& steps,
  * @param angles Decomposed Euler angles and global phase.
  * @param basis Target KAK basis (`ZYZ`, `ZXZ`, `XZX`, or `XYX`).
  */
-static void appendKAKSteps(llvm::SmallVectorImpl<SynthesisStep>& steps,
+static void appendKAKSteps(SmallVectorImpl<SynthesisStep>& steps,
                            const EulerAngles& angles, const EulerBasis basis) {
   using Kind = SynthesisStep::Kind;
   struct KAKAxes {
