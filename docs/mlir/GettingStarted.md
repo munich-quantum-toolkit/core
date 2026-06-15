@@ -919,7 +919,6 @@ This folder contains unit-tests for the MQT Compiler Collection.
 
 With that in place, let’s move on to the pass implementation.
 
-
 ### Consecutive Hadamard Cancellation Pass
 
 Because the Hadamard gate corresponds to a Hermitian matrix, two consecutive Hadamards cancel each other.
