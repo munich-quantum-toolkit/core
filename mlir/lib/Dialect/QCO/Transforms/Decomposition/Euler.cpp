@@ -126,7 +126,7 @@ struct EulerAngles {
  * @return Z-Y-Z angles and global phase.
  */
 [[nodiscard]] static EulerAngles paramsZYZ(const Matrix2x2& matrix) {
-  // det(U) = exp(2i*phase); invert the Z-Y-Z parameterization of U's entries.
+  // det(U) = exp(2i*phase)
   const Complex det = matrix.determinant();
   const auto detArg = std::arg(det);
   const auto phase = 0.5 * detArg;
@@ -159,7 +159,7 @@ struct EulerAngles {
 }
 
 /**
- * @brief X-Z-X Euler angles (Z-X-Z under H conjugation, no Y sign flip).
+ * @brief X-Z-X Euler angles (Z-X-Z under H conjugation).
  *
  * @param matrix Single-qubit unitary to decompose.
  * @return X-Z-X angles and global phase.
@@ -277,8 +277,7 @@ static void appendRotationIf(llvm::SmallVectorImpl<SynthesisStep>& steps,
 /**
  * @brief Appends the three KAK rotations for @p basis to @p steps.
  *
- * Uses @p angles as outer–middle–outer rotations
- * (`K(phi) * A(theta) * K(lambda)` with axes from @p basis).
+ * `K(phi) * A(theta) * K(lambda)` with axes from @p basis.
  *
  * @param steps Planned gate sequence to extend.
  * @param angles Decomposed Euler angles and global phase.
@@ -287,7 +286,6 @@ static void appendRotationIf(llvm::SmallVectorImpl<SynthesisStep>& steps,
 static void appendKAKSteps(llvm::SmallVectorImpl<SynthesisStep>& steps,
                            const EulerAngles& angles, const EulerBasis basis) {
   using Kind = SynthesisStep::Kind;
-  // Outer (K) and middle (A) rotation axes per KAK basis.
   struct KAKAxes {
     Kind outer;
     Kind middle;
@@ -316,9 +314,8 @@ static void appendKAKSteps(llvm::SmallVectorImpl<SynthesisStep>& steps,
  * @brief Fills @p plan with an `RZ` / `SX` / `X` gate sequence from Z-Y-Z
  * angles.
  *
- * Implements the canonical ZSXX synthesis cases (identity, `theta = 0`,
- * `theta = pi/2`, `theta = pi`, and general) and sets @p plan.phase for any
- * global-phase correction.
+ * Canonical ZSXX cases: identity, `theta = 0`, `theta = pi/2`, `theta = pi`,
+ * and general.
  *
  * @param plan Synthesis plan to populate.
  * @param zyz Z-Y-Z Euler angles of the target unitary.

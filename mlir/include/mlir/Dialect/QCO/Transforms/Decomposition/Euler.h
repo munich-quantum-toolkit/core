@@ -45,16 +45,15 @@ enum class EulerBasis : std::uint8_t {
 /**
  * @brief Synthesizes a composed single-qubit unitary as gates in @p basis.
  *
- * Decomposes @p composed once. Returns `std::nullopt` when @p hasNonBasisGate
- * is false and resynthesis would not shorten a run of @p runSize gates;
- * otherwise emits gates (including `qco.gphase` when needed) and returns the
- * output qubit.
+ * Returns `std::nullopt` when @p hasNonBasisGate is false and resynthesis
+ * would not shorten a run of @p runSize gates; otherwise emits gates
+ * (including `qco.gphase` when needed).
  *
  * @param builder Builder for the emitted operations.
  * @param loc Location for the emitted operations.
  * @param qubit Input qubit value.
  * @param composed Composed unitary to synthesize.
- * @param runSize Number of gates in the run (for fusion profitability).
+ * @param runSize Number of gates in the run.
  * @param hasNonBasisGate Whether the run contains a gate outside @p basis.
  * @param basis The target Euler basis.
  * @return The synthesized qubit, or `std::nullopt` if synthesis is skipped.
