@@ -43,13 +43,17 @@
 #include <mutex>
 #include <numeric>
 #include <ranges>
+#include <span>
 #include <string>
 #include <utility>
+#include <variant>
+#include <vector>
 
 #ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
 #include "qir/jit/Session.hpp"
 #include "qir/runtime/Runtime.hpp"
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/FormatVariadic.h>
 
 #include <stdexcept>
@@ -372,14 +376,16 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAM:
     if (value != nullptr) {
-      // Text payloads include the trailing '\0' in `size`.
-      // Strip it so it is not counted in `program_.size()`.
-      // `std::string` re-synthesizes its own '\0' at `data()[size()]` for
-      // c_str() consumers.
-      // Binary payloads are stored exactly as received.
-      const auto bytes =
-          qdmi::dd::isTextProgramFormat(format_) ? size - 1 : size;
-      program_ = std::string(static_cast<const char*>(value), bytes);
+      if (qdmi::dd::isTextProgramFormat(format_)) {
+        // Text payloads include the trailing '\0' in `size`.
+        // Strip it so it is not counted in the stored string's size.
+        const auto* text = static_cast<const char*>(value);
+        program_ = std::string(text, size - 1);
+      } else {
+        // Binary payloads are stored exactly as received.
+        const std::span bytes(static_cast<const std::byte*>(value), size);
+        program_ = std::vector<std::byte>(bytes.begin(), bytes.end());
+      }
     }
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM:
@@ -405,8 +411,10 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT,
                             QDMI_Program_Format, format_, prop, size, value,
                             sizeRet)
-  ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, program_.c_str(), prop,
-                      size, value, sizeRet)
+  if (const auto* text = std::get_if<std::string>(&program_)) {
+    ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, text->c_str(), prop,
+                        size, value, sizeRet)
+  }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM, size_t,
                             numShots_, prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
@@ -434,14 +442,16 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgram() -> QDMI_STATUS {
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
-    const auto qc = qasm3::Importer::imports(program_);
+    const auto& text = std::get<std::string>(program_);
+    const auto qc = qasm3::Importer::imports(text);
     counts_ = dd::sample(qc, numShots_);
   });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
-    auto qc = qasm3::Importer::imports(program_);
+    const auto& text = std::get<std::string>(program_);
+    auto qc = qasm3::Importer::imports(text);
     qc::CircuitOptimizer::removeFinalMeasurements(qc);
     const auto nQubits = qc.getNqubits();
     dd_ = std::make_unique<dd::Package>(nQubits);
@@ -457,7 +467,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
     auto& runtime = qir::Runtime::getInstance();
-    auto irBytes = llvm::StringRef(program_.data(), program_.size());
+    auto irBytes = std::visit(
+        [](const auto& p) {
+          return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
+                                 p.size());
+        },
+        program_);
     auto jitSession = qir::JitSession(irBytes, "QDMI job");
     for (size_t i = 0; i < numShots_; ++i) {
       runtime.reset();
@@ -483,7 +498,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
   return submitProgramAsync([this]() {
     auto& runtime = qir::Runtime::getInstance();
     runtime.reset();
-    auto irBytes = llvm::StringRef(program_.data(), program_.size());
+    auto irBytes = std::visit(
+        [](const auto& p) {
+          return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
+                                 p.size());
+        },
+        program_);
     auto jitSession =
         qir::JitSession(irBytes, "QDMI job", qir::Execution::StateExtraction);
     if (const auto rc = jitSession.run(); rc != 0) {

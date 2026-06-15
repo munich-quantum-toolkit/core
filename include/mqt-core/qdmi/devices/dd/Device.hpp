@@ -31,6 +31,8 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <variant>
+#include <vector>
 
 namespace qdmi::dd {
 class Device final : public Singleton<Device> {
@@ -190,8 +192,11 @@ private:
   /// The program format
   QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_QASM3;
 
-  /// The quantum program associated with the job
-  std::string program_;
+  /// The quantum program associated with the job.
+  /// Text formats (QASM2/3, QIR Base/Adaptive String) are stored as
+  /// @c std::string; binary formats (QIR Base/Adaptive Module) are stored as
+  /// @c std::vector<std::byte>.
+  std::variant<std::string, std::vector<std::byte>> program_;
 
   /// The number of shots for the job
   size_t numShots_ = 1024U;

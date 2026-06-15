@@ -37,7 +37,7 @@ enum class Execution { Sampling, StateExtraction };
  * @brief In-process JIT executor for QIR programs.
  * @details The session does the following, in order:
  * - Loads an LLVM module from either an IR file (text or bitcode) or
- * an in-memory buffer,
+ *   an in-memory buffer,
  * - JIT-compiles it via LLVM's OrcJIT with lazy compilation.
  * - wires up the QIR runtime symbols, and
  * - runs the module's @c main function.
