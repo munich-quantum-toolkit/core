@@ -272,14 +272,21 @@ void trivialControlledX(QCOProgramBuilder& b) {
 }
 
 void repeatedControlledX(QCOProgramBuilder& b) {
+  auto tensor = b.qtensorAlloc(64);
+
   Value q0;
-  Value q1;
-  auto tensor = b.qtensorAlloc(2);
   std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
-  std::tie(tensor, q1) = b.qtensorExtract(tensor, 1);
+
+  SmallVector<Value> values(63);
+  for (auto i = 1; i < 64; i++) {
+    Value qi;
+    std::tie(tensor, qi) = b.qtensorExtract(tensor, i);
+    values[i - 1] = qi;
+  }
+
   q0 = b.h(q0);
-  for (auto i = 0; i < 2; i++) {
-    std::tie(q0, q1) = b.cx(q0, q1);
+  for (auto i = 1; i < 64; i++) {
+    std::tie(q0, values[i - 1]) = b.cx(q0, values[i - 1]);
   }
 }
 
