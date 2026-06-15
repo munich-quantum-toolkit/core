@@ -248,15 +248,15 @@ compute1QMatrixFromCtrlBody(func::FuncOp funcOp) {
 
 static void expectMatrixPreserved(func::FuncOp funcOp,
                                   const Matrix2x2& original, StringRef label) {
-  EXPECT_TRUE(compute1QMatrixFromFunction(funcOp).isApprox(
-      original, mlir::utils::TOLERANCE))
+  EXPECT_TRUE(
+      compute1QMatrixFromFunction(funcOp).isApprox(original, MATRIX_TOLERANCE))
       << label.str();
 }
 
 static void expectCtrlBodyMatrixPreserved(func::FuncOp funcOp,
                                           const Matrix2x2& original) {
-  EXPECT_TRUE(compute1QMatrixFromCtrlBody(funcOp).isApprox(
-      original, mlir::utils::TOLERANCE));
+  EXPECT_TRUE(
+      compute1QMatrixFromCtrlBody(funcOp).isApprox(original, MATRIX_TOLERANCE));
 }
 
 static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
@@ -637,8 +637,8 @@ TEST(EulerDecompositionTest, ZYZAnglesFromUnitaryReconstructHadamard) {
   builder.create<func::ReturnOp>(loc, q);
 
   ASSERT_TRUE(succeeded(verify(module)));
-  EXPECT_TRUE(compute1QMatrixFromFunction(func).isApprox(
-      hadamard, mlir::utils::TOLERANCE));
+  EXPECT_TRUE(
+      compute1QMatrixFromFunction(func).isApprox(hadamard, MATRIX_TOLERANCE));
 }
 
 TEST(EulerSynthesisTest, ProfitabilityAndIdentityGateCount) {

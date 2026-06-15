@@ -19,15 +19,16 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 
+#include <cassert>
 #include <cstddef>
 #include <iterator>
 #include <variant>
 
 namespace mlir::utils {
 
-/// Default absolute tolerance for MLIR dialect numerics (matrix checks,
-/// angles).
-constexpr auto TOLERANCE = 1e-14;
+/// Default absolute tolerance for MLIR dialect numerics (angle wrapping,
+/// phase-zero checks).
+constexpr auto TOLERANCE = 1e-15;
 
 inline Value constantFromScalar(OpBuilder& builder, Location loc, double v) {
   return arith::ConstantOp::create(builder, loc, builder.getF64FloatAttr(v));
@@ -199,10 +200,8 @@ inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
  */
 inline Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
   if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
-    if (blockArg.getArgNumber() >= qubits.size()) {
-      llvm::reportFatalUsageError(
-          "block argument index must be within qubits range");
-    }
+    assert(blockArg.getArgNumber() < qubits.size() &&
+           "block argument index must be within qubits range");
     return qubits[blockArg.getArgNumber()];
   }
   return qubit;
