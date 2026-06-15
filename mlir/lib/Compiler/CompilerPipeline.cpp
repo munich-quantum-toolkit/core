@@ -101,7 +101,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     totalStages += 2;
   }
   auto currentStage = 0;
-  
+
   // Stage 1: QC import
   if (record != nullptr && config_.recordIntermediates) {
     record->afterQCImport = captureIR(module);
