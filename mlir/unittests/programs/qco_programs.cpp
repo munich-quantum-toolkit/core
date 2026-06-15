@@ -301,6 +301,24 @@ void twoX(QCOProgramBuilder& b) {
   q[0] = b.x(q[0]);
 }
 
+void controlledTwoX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](ValueRange targets) {
+    auto q = b.x(targets[0]);
+    q = b.x(q);
+    return SmallVector{q};
+  });
+}
+
+void inverseTwoX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange qubits) {
+    auto q = b.x(qubits[0]);
+    q = b.x(q);
+    return SmallVector{q};
+  });
+}
+
 void y(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.y(q[0]);
@@ -1936,6 +1954,12 @@ void trivialCtrl(QCOProgramBuilder& b) {
   });
 }
 
+void emptyCtrl(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
+  b.ctrl(q[0], q[1], [&](ValueRange targets) { return targets; });
+}
+
 void nestedCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange targets) {
@@ -2003,6 +2027,63 @@ void ctrlInvSandwich(QCOProgramBuilder& b) {
   });
 }
 
+void ctrlTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+    auto i0 = targets[0];
+    auto i1 = targets[1];
+    i0 = b.x(i0);
+    std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+    return SmallVector{i0, i1};
+  });
+}
+
+void ctrlTwoMixed(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
+    auto i0 = targets[0];
+    auto i1 = targets[1];
+    std::tie(i0, i1) = b.cx(i0, i1);
+    std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+    return SmallVector{i0, i1};
+  });
+}
+
+void nestedCtrlTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
+    const auto& [controlsOut, targetsOut] = b.ctrl(
+        targets[0], {targets[1], targets[2]}, [&](ValueRange innerTargets) {
+          auto i0 = innerTargets[0];
+          auto i1 = innerTargets[1];
+          i0 = b.x(i0);
+          std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+          return SmallVector{i0, i1};
+        });
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targetsOut));
+  });
+}
+
+void ctrlInvTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    auto inner = b.inv(targets, [&](ValueRange qubits) {
+      auto i0 = qubits[0];
+      auto i1 = qubits[1];
+      i0 = b.x(i0);
+      std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+      return SmallVector{i0, i1};
+    });
+    return llvm::to_vector(inner);
+  });
+}
+
+void emptyInv(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) { return qubits; });
+}
+
 void nestedInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) {
@@ -2046,12 +2127,49 @@ void invCtrlSandwich(QCOProgramBuilder& b) {
   });
 }
 
+void invTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange qubits) {
+    auto i0 = qubits[0];
+    auto i1 = qubits[1];
+    i0 = b.x(i0);
+    std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+    return SmallVector{i0, i1};
+  });
+}
+
+void invCtrlTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
+    const auto& [controlsOut, targetsOut] =
+        b.ctrl({qubits[0]}, {qubits[1], qubits[2]}, [&](ValueRange targets) {
+          auto i0 = targets[0];
+          auto i1 = targets[1];
+          i0 = b.x(i0);
+          std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+          return SmallVector{i0, i1};
+        });
+    return llvm::to_vector(llvm::concat<Value>(controlsOut, targetsOut));
+  });
+}
+
 void simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
     auto innerQubit = b.x(args[0]);
+    return SmallVector{innerQubit};
+  });
+}
+
+void ifWithAngle(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto theta = b.floatConstant(0.123);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+    auto innerQubit = b.rx(theta, args[0]);
     return SmallVector{innerQubit};
   });
 }
@@ -2256,6 +2374,17 @@ void simpleForLoop(QCOProgramBuilder& b) {
   });
 };
 
+void forLoopWithAngle(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto theta = b.floatConstant(0.123);
+  b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.rx(theta, q0);
+    auto insert = b.qtensorInsert(q1, t0, iv);
+    return SmallVector{insert};
+  });
+};
+
 void nestedForLoopIfOp(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto q0 = b.allocQubit();
@@ -2346,6 +2475,31 @@ void nestedIfOpForLoop(QCOProgramBuilder& b) {
             b.scfFor(0, 3, 1, args[0], [&](Value iv, ValueRange iterArgs) {
               auto [t0, q4] = b.qtensorExtract(iterArgs[0], iv);
               auto q5 = b.h(q4);
+              auto insert = b.qtensorInsert(q5, t0, iv);
+              return SmallVector{insert};
+            });
+        return SmallVector{scfFor[0], args[1]};
+      });
+}
+
+void nestedIfOpForLoopWithAngle(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  auto theta1 = b.floatConstant(0.123);
+  auto theta2 = b.floatConstant(0.456);
+  auto q1 = b.h(q0);
+  auto [q2, cond] = b.measure(q1);
+  b.qcoIf(
+      cond, {reg.value, q2},
+      [&](ValueRange args) {
+        auto q3 = b.rx(theta1, args[1]);
+        return SmallVector{args[0], q3};
+      },
+      [&](ValueRange args) {
+        auto scfFor =
+            b.scfFor(0, 3, 1, args[0], [&](Value iv, ValueRange iterArgs) {
+              auto [t0, q4] = b.qtensorExtract(iterArgs[0], iv);
+              auto q5 = b.rx(theta2, q4);
               auto insert = b.qtensorInsert(q5, t0, iv);
               return SmallVector{insert};
             });

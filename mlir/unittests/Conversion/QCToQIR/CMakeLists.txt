@@ -6,20 +6,5 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-qc-to-qir)
-add_executable(${target_name} test_qc_to_qir.cpp)
-
-target_link_libraries(
-  ${target_name}
-  PRIVATE MLIRParser
-          MLIRSupportMQT
-          GTest::gtest_main
-          MLIRQCProgramBuilder
-          MLIRQIRProgramBuilder
-          MLIRQCPrograms
-          MLIRQIRPrograms
-          MLIRQCToQIR)
-
-mqt_mlir_configure_unittest_target(${target_name})
-
-gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
+add_subdirectory(QCToQIRAdaptive)
+add_subdirectory(QCToQIRBase)

@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -82,17 +82,17 @@ void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRXX, MergeSwappedTargetsRXX>(context);
 }
 
-std::optional<Eigen::Matrix4cd> RXXOp::getUnitaryMatrix() {
+std::optional<Matrix4x4> RXXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   if (const auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
-    const auto mc = std::cos(*theta / 2.0) + 0i;
-    const auto ms = -1i * std::sin(*theta / 2.0);
-    return Eigen::Matrix4cd{{mc, m0, m0, ms},  // row 0
-                            {m0, mc, ms, m0},  // row 1
-                            {m0, ms, mc, m0},  // row 2
-                            {ms, m0, m0, mc}}; // row 3
+    const auto mc = std::cos(*theta / 2);
+    const auto ms = -1i * std::sin(*theta / 2);
+    return Matrix4x4::fromElements(mc, m0, m0, ms,  // row 0
+                                   m0, mc, ms, m0,  // row 1
+                                   m0, ms, mc, m0,  // row 2
+                                   ms, m0, m0, mc); // row 3
   }
   return std::nullopt;
 }
