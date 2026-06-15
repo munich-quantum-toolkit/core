@@ -104,7 +104,7 @@ static Matrix2x2 composeRun(ArrayRef<UnitaryOpInterface> run) {
 /**
  * @brief Whether `op` is a gate the target `basis` emits.
  *
- * Gate sets match `emitKAK` and `emitFromZSXXSequence` in `Euler.cpp`. Used to
+ * Gate sets match the synthesis step kinds in `Euler.cpp`. Used to
  * skip runs that are already in the target basis at canonical length.
  *
  * @param op The operation to classify.
@@ -186,7 +186,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
    * @brief Fuses the run anchored at `op` when beneficial.
    *
    * Fuses if the run contains a non-basis gate or Euler resynthesis would
-   * shorten it (`wouldShortenInBasisRun`).
+   * shorten it (@ref synthesizeUnitary1QEuler).
    *
    * @param op The matched unitary operation.
    * @param rewriter The pattern rewriter.
@@ -204,17 +204,17 @@ struct FuseSingleQubitUnitaryRunsPattern final
         llvm::any_of(run, [&](UnitaryOpInterface member) {
           return !isTargetBasisGate(member.getOperation(), basis);
         });
-    if (!hasNonBasisGate &&
-        !decomposition::wouldShortenInBasisRun(run.size(), composed, basis)) {
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(op.getOperation());
+    const std::optional<Value> qubitOut =
+        decomposition::synthesizeUnitary1QEuler(
+            rewriter, op.getLoc(), op.getInputTarget(0), composed, run.size(),
+            hasNonBasisGate, basis);
+    if (!qubitOut) {
       return failure();
     }
 
-    OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(op.getOperation());
-    const Value qubit = decomposition::synthesizeUnitary1QEuler(
-        rewriter, op.getLoc(), op.getInputTarget(0), composed, basis);
-
-    rewriter.replaceAllUsesWith(run.back().getOutputTarget(0), qubit);
+    rewriter.replaceAllUsesWith(run.back().getOutputTarget(0), *qubitOut);
     for (UnitaryOpInterface member : std::ranges::reverse_view(run)) {
       rewriter.eraseOp(member.getOperation());
     }
