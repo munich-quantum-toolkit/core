@@ -1128,7 +1128,7 @@ void qtensorChain(QCOProgramBuilder& b);
 
 /// Performs the same computation as the `qtensorChain` function, but uses
 /// qubits immediately after the extract and inserts the qubits in descending
-/// order (0, 1, 2).
+/// order (2, 1, 0).
 void qtensorAlternativeChain(QCOProgramBuilder& b);
 
 } // namespace mlir::qco
