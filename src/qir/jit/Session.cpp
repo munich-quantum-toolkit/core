@@ -82,10 +82,10 @@ static llvm::Error tryEnableDebugSupport(llvm::orc::LLJIT& jit) {
 }
 
 static llvm::Expected<llvm::orc::ThreadSafeModule>
-getThreadSafeModuleOrError(std::unique_ptr<llvm::Module> module,
+getThreadSafeModuleOrError(std::unique_ptr<llvm::Module> llvmModule,
                            const llvm::SMDiagnostic& err,
                            llvm::orc::ThreadSafeContext tsCtx) {
-  if (!module) {
+  if (!llvmModule) {
     std::string errMsg;
     {
       llvm::raw_string_ostream errMsgStream(errMsg);
@@ -94,7 +94,7 @@ getThreadSafeModuleOrError(std::unique_ptr<llvm::Module> module,
     return llvm::make_error<llvm::StringError>(std::move(errMsg),
                                                llvm::inconvertibleErrorCode());
   }
-  return llvm::orc::ThreadSafeModule(std::move(module), std::move(tsCtx));
+  return llvm::orc::ThreadSafeModule(std::move(llvmModule), std::move(tsCtx));
 }
 
 llvm::Expected<llvm::orc::ThreadSafeModule>

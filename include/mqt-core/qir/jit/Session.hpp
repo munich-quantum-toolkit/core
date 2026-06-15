@@ -111,7 +111,7 @@ private:
   /// Prepares the session to run the program:
   /// - Validates the loaded module.
   /// - Optionally strips measurement and result management calls
-  ///   (for @c Execution::StateExtraction).
+  ///   (for @ref Execution::StateExtraction).
   /// - Builds the @c LLJIT instance
   /// - Registers QIR runtime symbols
   /// - Resolves @c main.

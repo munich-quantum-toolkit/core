@@ -16,7 +16,8 @@ See {cite:p}`stadeTowardsSupportingQIR2025` for more details.
 
 ### Building the Runner
 
-To build this tool, the CMake option `BUILD_MQT_CORE_QIR_RUNNER` has to be enabled (which depends on `BUILD_MQT_CORE_MLIR` being set).
+To build this tool, the CMake option `BUILD_MQT_CORE_QIR_RUNNER` has to be enabled.
+It is enabled by default, but depends on `BUILD_MQT_CORE_MLIR` being set.
 From the root of the repository, you can build the runner as follows:
 
 ```bash
@@ -41,4 +42,4 @@ The runner supports the QIR Base Profile.
 
 The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR Base Profile Module (LLVM bitcode), and QIR Base Profile String (LLVM assembly).
 The QIR base formats are only supported when the `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` CMake option is enabled.
-It is disabled by default to avoid the cost of linking against the MQT Core QIR JIT (built on LLVM OrcJIT) and Runtime libraries.
+It is enabled by default, but depends on `BUILD_MQT_CORE_MLIR` being set.

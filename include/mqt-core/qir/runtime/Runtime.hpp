@@ -395,7 +395,7 @@ public:
   /// string in record order.
   auto recordOutput(Result* result) -> void;
 
-  /// Return the outputs declared by the program as a bit string in record
+  /// @returns the outputs declared by the program as a bit string in record
   /// order.
   auto getRecordedOutputs() const -> const std::string&;
 
@@ -403,6 +403,7 @@ public:
   /// Then reset the runtime to a clean state ready for the next job.
   /// Intended for use after a @c JitSession constructed with
   /// @c Execution::StateExtraction has finished running.
+  /// @returns the moved @c QState from the runtime.
   auto takeState() -> QState;
 
   auto getOstream() -> std::ostream&;

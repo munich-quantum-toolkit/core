@@ -241,11 +241,11 @@ private:
   /// - run @p body,
   /// - set status to DONE or FAILED, and
   /// - decrease the running-job count.
-  /// @p body is the format-specific work:
+  /// Typically, @p body will:
   /// - parse the program,
   /// - run or simulate it, and
   /// - store the results in the job's output fields.
-  /// Returns @c QDMI_SUCCESS once the worker has been spawned.
+  /// @returns @c QDMI_SUCCESS once the worker has been spawned.
   /// Failures inside @p body are reported through the job status (FAILED),
   /// not through the return value.
   auto submitProgramAsync(std::function<void()> body) -> QDMI_STATUS;
