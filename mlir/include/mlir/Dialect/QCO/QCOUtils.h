@@ -55,21 +55,20 @@ static inline bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
 template <typename OpType>
 static FailureOr<OpType> findPartnerThroughCtrlControlChain(OpType op) {
   Value v = op->getResult(0);
-  if (!llvm::isa<QubitType>(v.getType())) {
+  if (!isa<QubitType>(v.getType())) {
     return failure();
   }
 
   unsigned hops = 0;
   while (v.hasOneUse()) {
-    Operation* user = *v.getUsers().begin();
-    if (auto next = llvm::dyn_cast<OpType>(user);
-        next && next->getOperand(0) == v) {
+    auto* user = *v.getUsers().begin();
+    if (auto next = dyn_cast<OpType>(user); next && next->getOperand(0) == v) {
       if (hops == 0) {
         return failure();
       }
       return next;
     }
-    auto ctrl = llvm::dyn_cast<CtrlOp>(user);
+    auto ctrl = dyn_cast<CtrlOp>(user);
     if (!ctrl || !llvm::is_contained(ctrl.getControlsIn(), v)) {
       return failure();
     }
@@ -267,8 +266,8 @@ LogicalResult mergeOneTargetTwoParameter(OpType op, PatternRewriter& rewriter) {
  * `ctrl` hops on control wires.
  *
  * @details
- * Replaces `op; …; op` on a control wire with `square; …` (e.g. `s; ctrl; s` →
- * `z; ctrl`).
+ * Replaces `op; ...; op` on a control wire with `square; ...` (e.g., `s; ctrl;
+ * s` → `z; ctrl`).
  *
  * @tparam SquareOpType Result of squaring the gate (e.g. `ZOp` for `SOp`).
  * @tparam OpType The Z-diagonal operation to be merged.
