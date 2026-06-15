@@ -293,7 +293,8 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
     }
   } else if (auto intAttrA = dyn_cast<IntegerAttr>(lhs)) {
     if (auto intAttrB = dyn_cast<IntegerAttr>(rhs);
-        !intAttrB || intAttrA.getValue() != intAttrB.getValue()) {
+        !intAttrB || intAttrA.getValue() != intAttrB.getValue() ||
+        (intAttrA.getType().isInteger() && !intAttrB.getType().isInteger())) {
       return false;
     }
   } else if (auto floatAttrA = dyn_cast<FloatAttr>(lhs)) {
@@ -642,6 +643,9 @@ static bool compareRegions(Region& lhs, Region& rhs,
     if (!compareBlocks(lhsBlock, rhsBlock, lhsClosed, rhsClosed, m, tm)) {
       return false;
     }
+
+    lhsBlock.dump();
+    rhsBlock.dump();
     m.map(&lhsBlock, &rhsBlock);
   }
 
