@@ -23,6 +23,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
@@ -52,66 +53,44 @@ struct FusableRunScan {
 } // namespace
 
 /**
- * @brief Whether `op` has a compile-time 2x2 unitary without synthesizing it.
+ * @brief Whether `op` can take part in a fusable single-qubit run.
  *
- * For parameterized gates, only checks that operands are `arith.constant`
- * scalars. Other static single-qubit gates need no matrix query. `inv` is the
- * only parameter-free fuse candidate that may still lack a compile-time matrix.
+ * A run member is a non-barrier, single-qubit unitary whose 2x2 matrix is known
+ * at compile time. Parameterized gates only need constant parameters (no matrix
+ * is built); `inv` is the only parameter-free op that may still lack a constant
+ * matrix, so it is queried directly. An `inv` that hides a barrier in its body
+ * is rejected: its 2x2 matrix ignores the barrier, so absorbing the modifier
+ * would silently drop it. Such bodies instead fuse around the barrier in place.
  *
- * @param op The unitary operation to test.
- * @return `true` when `getUnitaryMatrix<Matrix2x2>()` would succeed.
+ * @param op The operation to test. May be null (e.g. a missing predecessor).
+ * @return `true` for a non-barrier single-qubit unitary with a compile-time 2x2
+ *         matrix that does not hide a barrier inside an `inv` body.
  */
-static bool hasCompileTimeUnitaryMatrix2x2(UnitaryOpInterface op) {
-  for (size_t i = 0; i < op.getNumParams(); ++i) {
-    if (!mlir::utils::valueToDouble(op.getParameter(i))) {
+static bool isRunMember(Operation* op) {
+  auto gate = dyn_cast_or_null<UnitaryOpInterface>(op);
+  if (!gate || !gate.isSingleQubit() || isa<BarrierOp>(op)) {
+    return false;
+  }
+  for (size_t i = 0; i < gate.getNumParams(); ++i) {
+    if (!mlir::utils::valueToDouble(gate.getParameter(i))) {
       return false;
     }
   }
-  if (op.getNumParams() > 0 || !isa<InvOp>(op.getOperation())) {
+  if (gate.getNumParams() > 0 || !isa<InvOp>(op)) {
     return true;
   }
+  const bool hidesBarrier = op->walk([](BarrierOp) {
+                                return WalkResult::interrupt();
+                              }).wasInterrupted();
   Matrix2x2 unused;
-  return op.getUnitaryMatrix2x2(unused);
+  return !hidesBarrier && gate.getUnitaryMatrix2x2(unused);
 }
 
 /**
- * @brief Whether `op` is a fusable single-qubit run member on the wire.
+ * @brief Whether `op` is a gate that Euler synthesis emits for `basis`.
  *
- * @param op The unitary operation to test.
- * @return `true` for a single-qubit unitary with a compile-time 2x2 matrix,
- *         excluding barriers.
- */
-static bool isRunMember(UnitaryOpInterface op) {
-  return op && op.isSingleQubit() && !isa<BarrierOp>(op.getOperation()) &&
-         hasCompileTimeUnitaryMatrix2x2(op);
-}
-
-/**
- * @brief Whether `op` is a fusable single-qubit run member on the wire.
- *
- * @param op The operation to test.
- * @return `true` for a single-qubit unitary with a compile-time 2x2 matrix,
- *         excluding barriers.
- */
-static bool isRunMember(Operation* op) {
-  return isRunMember(dyn_cast<UnitaryOpInterface>(op));
-}
-
-/**
- * @brief Whether @p op sits in the body region of an `inv`.
- *
- * Run heads are not started inside `inv` bodies; the enclosing `InvOp` already
- * exposes the composed body unitary on the parent wire.
- */
-static bool isInsideInvBody(Operation* op) {
-  return op != nullptr && op->getParentOfType<InvOp>() != nullptr;
-}
-
-/**
- * @brief Whether `op` is a gate the target `basis` emits.
- *
- * Gate sets match the synthesis step kinds in `Euler.cpp`. Used to
- * skip runs that are already in the target basis at canonical length.
+ * Mirrors the synthesis step kinds in `Euler.cpp`; used to detect runs that are
+ * already in the target basis at canonical length.
  *
  * @param op The operation to classify.
  * @param basis The target Euler basis.
@@ -137,10 +116,10 @@ static bool isTargetBasisGate(Operation* op, decomposition::EulerBasis basis) {
 }
 
 /**
- * @brief Walks the wire from @p head, composing matrices and run metadata.
+ * @brief Walks the wire from @p head, composing the run's matrix and metadata.
  *
- * `WireIterator` stops at region boundaries, so members are consecutive on the
- * wire. Only @p tail is retained for replacement and erasure.
+ * `WireIterator` stops at region boundaries, so run members are consecutive on
+ * the wire. Only the run tail is retained, for replacement and erasure.
  *
  * @param head First gate of the run.
  * @param basis Target Euler basis (for non-basis detection).
@@ -203,21 +182,32 @@ struct FuseSingleQubitUnitaryRunsPattern final
   decomposition::EulerBasis basis;
 
   /**
-   * @brief Whether `op` is the head of a run.
+   * @brief Whether `op` starts a run.
+   *
+   * A run does not start inside the body of a single-qubit `inv`: that modifier
+   * is itself a run member, so the run on the parent wire absorbs the whole
+   * `inv` as one unitary and fusing its body in place would be redundant. A
+   * multi-qubit `inv` cannot be absorbed that way (it has no compile-time 2x2
+   * matrix), so single-qubit chains inside its body are fused locally and may
+   * start runs.
    *
    * @param op The candidate run head.
-   * @return `true` if `op` is a run member outside any `inv` body whose wire
-   *         predecessor is not a run member.
+   * @return `true` if `op` is a run member whose wire predecessor is not itself
+   * a run member, and which is not inside the body of a fusable single-qubit
+   * `inv`.
    */
   static bool isRunStart(UnitaryOpInterface op) {
-    if (!isRunMember(op)) {
+    if (!isRunMember(op.getOperation())) {
       return false;
     }
-    if (isInsideInvBody(op.getOperation())) {
+    // A single-qubit `inv` is itself a run member, so the parent wire's run
+    // already absorbs the whole modifier; only the bodies of multi-qubit `inv`
+    // modifiers (which cannot be absorbed) host their own runs.
+    if (auto inv = op->getParentOfType<InvOp>();
+        inv && isRunMember(inv.getOperation())) {
       return false;
     }
-    Operation* pred = op.getInputTarget(0).getDefiningOp();
-    return pred == nullptr || !isRunMember(pred);
+    return !isRunMember(op.getInputTarget(0).getDefiningOp());
   }
 
   /**

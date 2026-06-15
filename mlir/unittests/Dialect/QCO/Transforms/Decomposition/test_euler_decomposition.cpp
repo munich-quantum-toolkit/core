@@ -246,6 +246,14 @@ compute1QMatrixFromCtrlBody(func::FuncOp funcOp) {
   return Matrix2x2::fromElements(0, 0, 0, 0);
 }
 
+[[nodiscard]] static Matrix2x2 compute1QMatrixFromInvBody(func::FuncOp funcOp) {
+  for (InvOp inv : funcOp.getOps<InvOp>()) {
+    return compute1QUnitaryMatrix(inv.getRegion());
+  }
+  ADD_FAILURE() << "Expected InvOp in function";
+  return Matrix2x2::fromElements(0, 0, 0, 0);
+}
+
 static void expectMatrixPreserved(func::FuncOp funcOp,
                                   const Matrix2x2& original, StringRef label) {
   EXPECT_TRUE(
@@ -257,6 +265,12 @@ static void expectCtrlBodyMatrixPreserved(func::FuncOp funcOp,
                                           const Matrix2x2& original) {
   EXPECT_TRUE(
       compute1QMatrixFromCtrlBody(funcOp).isApprox(original, MATRIX_TOLERANCE));
+}
+
+static void expectInvBodyMatrixPreserved(func::FuncOp funcOp,
+                                         const Matrix2x2& original) {
+  EXPECT_TRUE(
+      compute1QMatrixFromInvBody(funcOp).isApprox(original, MATRIX_TOLERANCE));
 }
 
 static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
@@ -527,6 +541,21 @@ static void xInverseTwoX(QCOProgramBuilder& b) {
     return SmallVector{wire};
   })[0];
   q[0] = b.x(q[0]);
+}
+
+// A two-qubit inverse modifier whose body holds a single-qubit `h; t` chain on
+// one target (the other target passes through). The modifier is not a fusable
+// single-qubit run member, so the inner chain must fuse on its own.
+static void inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto outs =
+      b.inv({q[0], q[1]}, [&](ValueRange targets) -> SmallVector<Value> {
+        Value wire = b.h(targets[0]);
+        wire = b.t(wire);
+        return {wire, targets[1]};
+      });
+  q[0] = outs[0];
+  q[1] = outs[1];
 }
 
 static void controlledInverseHT(QCOProgramBuilder& b) {
@@ -988,6 +1017,30 @@ TEST(FuseSingleQubitUnitaryRunsTest, EliminatesIdentityInvMultiOpBody) {
             countOps<UOp>(funcOp),
             expectedFusedGateCount(fx.context.get(), original, EulerBasis::U));
         expectMatrixPreserved(funcOp, original, "x-inv-xx-x");
+      });
+}
+
+TEST(FuseSingleQubitUnitaryRunsTest, FusesRunInMultiQubitInvBody) {
+  SynthesisFixture fx;
+  fx.setUp();
+
+  Matrix2x2 invBodyBefore;
+  runFuseOnProgram(
+      fx.context.get(), inverseMultiQubitBodySingleQubitRun, "u",
+      [&](func::FuncOp funcOp, const Matrix2x2&) {
+        EXPECT_EQ(countOps<InvOp>(funcOp), 1U);
+        EXPECT_EQ(countOpsInRegion<HOp>(funcOp, isInsideInv), 1U);
+        EXPECT_EQ(countOpsInRegion<TOp>(funcOp, isInsideInv), 1U);
+        EXPECT_EQ(countOpsInRegion<UOp>(funcOp, isInsideInv), 0U);
+        invBodyBefore = compute1QMatrixFromInvBody(funcOp);
+      },
+      [&](func::FuncOp funcOp, const Matrix2x2&) {
+        // The modifier survives; its single-qubit body chain fuses to one `u`.
+        EXPECT_EQ(countOps<InvOp>(funcOp), 1U);
+        EXPECT_EQ(countOpsInRegion<HOp>(funcOp, isInsideInv), 0U);
+        EXPECT_EQ(countOpsInRegion<TOp>(funcOp, isInsideInv), 0U);
+        EXPECT_EQ(countOpsInRegion<UOp>(funcOp, isInsideInv), 1U);
+        expectInvBodyMatrixPreserved(funcOp, invBodyBefore);
       });
 }
 

@@ -100,18 +100,6 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
   GPhaseOp::create(builder, loc, phase);
 }
 
-/**
- * @brief Global phase offset of `UOp` vs `RZ(phi)*RY(theta)*RZ(lambda)`.
- *
- * @param phi Middle-axis angle from Z-Y-Z decomposition.
- * @param lambda Outer-axis angle from Z-Y-Z decomposition.
- * @return Phase correction to add to the Z-Y-Z global phase.
- */
-[[nodiscard]] static double globalPhaseOffsetForU(const double phi,
-                                                  const double lambda) {
-  return -0.5 * (phi + lambda);
-}
-
 //===----------------------------------------------------------------------===//
 // Euler decomposition (angles)
 //===----------------------------------------------------------------------===//
@@ -204,11 +192,13 @@ struct EulerAngles {
  * @return `U`-gate angles and global phase.
  */
 [[nodiscard]] static EulerAngles paramsU(const Matrix2x2& matrix) {
+  // `U` differs from RZ(phi)*RY(theta)*RZ(lambda) by a global phase of
+  // -(phi + lambda)/2.
   const auto [theta, phi, lambda, phase] = paramsZYZ(matrix);
   return {.theta = theta,
           .phi = phi,
           .lambda = lambda,
-          .phase = phase + globalPhaseOffsetForU(phi, lambda)};
+          .phase = phase - (0.5 * (phi + lambda))};
 }
 
 /**
