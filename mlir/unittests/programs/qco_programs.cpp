@@ -2345,6 +2345,42 @@ void qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   b.qtensorInsert(q2, extractOutTensor1, 0);
 }
 
+void qtensorChain(QCOProgramBuilder& b) {
+  Value q0;
+  Value q1;
+  Value q2;
+  auto qtensor = b.qtensorAlloc(3);
+  std::tie(qtensor, q0) = b.qtensorExtract(qtensor, 0);
+  std::tie(qtensor, q1) = b.qtensorExtract(qtensor, 1);
+  std::tie(qtensor, q2) = b.qtensorExtract(qtensor, 2);
+  q0 = b.h(q0);
+  q1 = b.h(q1);
+  std::tie(q1, q2) = b.cx(q1, q2);
+
+  qtensor = b.qtensorInsert(q2, qtensor, 2);
+  qtensor = b.qtensorInsert(q1, qtensor, 1);
+  qtensor = b.qtensorInsert(q0, qtensor, 0);
+  b.qtensorDealloc(qtensor);
+}
+
+void qtensorAlternativeChain(QCOProgramBuilder& b) {
+  Value q0;
+  Value q1;
+  Value q2;
+  auto qtensor = b.qtensorAlloc(3);
+  std::tie(qtensor, q0) = b.qtensorExtract(qtensor, 0);
+  q0 = b.h(q0);
+  std::tie(qtensor, q1) = b.qtensorExtract(qtensor, 1);
+  q1 = b.h(q1);
+  std::tie(qtensor, q2) = b.qtensorExtract(qtensor, 2);
+  std::tie(q1, q2) = b.cx(q1, q2);
+
+  qtensor = b.qtensorInsert(q0, qtensor, 0);
+  qtensor = b.qtensorInsert(q1, qtensor, 1);
+  qtensor = b.qtensorInsert(q2, qtensor, 2);
+  b.qtensorDealloc(qtensor);
+}
+
 void simpleWhileReset(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto q1 = b.h(q0);

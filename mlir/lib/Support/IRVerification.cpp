@@ -148,7 +148,6 @@ static void mapResults(Operation* lhs, Operation* rhs,
 /// Assumes that `permutation.size() == lhs.getNumArguments()`.
 static void mapArguments(Block& lhs, Block& rhs, ArrayRef<size_t> permutation,
                          IRMapping& m) {
-
   for (const auto& [i, lhsArg] : enumerate(lhs.getArguments())) {
     m.map(lhsArg, rhs.getArgument(permutation[i]));
   }
@@ -410,7 +409,8 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
 
       // If any of the inserts on the chain are ready, we consider the entire
       // chain ready because the ready operations could be moved to the front
-      // of the chain.
+      // of the chain. The analogous logic is applied to extracts.
+
       SmallVector<Operation*> chain;
       for (qtensor::TensorIterator it(insert.getResult());
            it != std::default_sentinel; ++it) {
@@ -429,8 +429,6 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
       }
 
     } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-
-      // We apply the analogous logic to extracts.
       SmallVector<Operation*> chain;
       for (qtensor::TensorIterator it(extract.getOutTensor());
            it != std::default_sentinel; ++it) {
@@ -644,8 +642,6 @@ static bool compareRegions(Region& lhs, Region& rhs,
       return false;
     }
 
-    lhsBlock.dump();
-    rhsBlock.dump();
     m.map(&lhsBlock, &rhsBlock);
   }
 

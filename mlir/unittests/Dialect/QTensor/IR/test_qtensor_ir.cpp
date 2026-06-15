@@ -506,7 +506,11 @@ INSTANTIATE_TEST_SUITE_P(
         QTensorIntegrationTestCase{
             "QTensorInsertExtractIndexMismatch",
             MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch),
-            MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch)}));
+            MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch)},
+          QTensorIntegrationTestCase{
+            "QTensorAlternativeInsertChain",
+            MQT_NAMED_BUILDER(qtensorAlternativeChain),
+            MQT_NAMED_BUILDER(qtensorChain)}));
 /// @}
 
 } // namespace
