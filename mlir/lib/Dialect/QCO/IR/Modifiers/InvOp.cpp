@@ -442,7 +442,7 @@ composeInvertedSingleQubitBodyMatrix(Block& block) {
       return std::nullopt;
     }
   }
-  if (!found && global == Complex{1.0, 0.0}) {
+  if (!found && std::abs(global - Complex{1.0, 0.0}) <= utils::TOLERANCE) {
     return std::nullopt;
   }
   acc *= global;
