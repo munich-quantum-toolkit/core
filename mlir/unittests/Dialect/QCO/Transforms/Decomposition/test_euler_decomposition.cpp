@@ -55,6 +55,11 @@ using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 using enum EulerBasis;
 
+// File layout:
+//   1. Fixtures and parametric test types
+//   2. Euler synthesis support + tests
+//   3. FuseSingleQubitUnitaryRuns support + tests
+
 namespace {
 
 struct TestFixture {
@@ -92,6 +97,10 @@ class EulerSynthesisExactTest
           std::tuple<EulerBasis, Matrix2x2 (*)(MLIRContext*)>> {};
 
 } // namespace
+
+//===----------------------------------------------------------------------===//
+// Euler synthesis support
+//===----------------------------------------------------------------------===//
 
 [[nodiscard]] static Matrix2x2 rzMatrix(const double theta) {
   const auto m00 = std::polar(1.0, -theta / 2.0);
@@ -139,30 +148,6 @@ template <typename Fn> static void forEachBasis(Fn fn) {
     fn(StringRef{basis});
   }
 }
-
-[[nodiscard]] static bool isAllowedBasisGate(const Operation& op,
-                                             EulerBasis basis) {
-  switch (basis) {
-  case ZYZ:
-    return isa<RZOp, RYOp>(op);
-  case ZXZ:
-    return isa<RZOp, RXOp>(op);
-  case XZX:
-    return isa<RXOp, RZOp>(op);
-  case XYX:
-    return isa<RXOp, RYOp>(op);
-  case U:
-    return isa<UOp>(op);
-  case ZSXX:
-    return isa<RZOp, SXOp, XOp>(op);
-  }
-  return false;
-}
-
-template <typename ParentOp> [[nodiscard]] static bool inParent(Operation* op) {
-  return op != nullptr && op->getParentOfType<ParentOp>() != nullptr;
-}
-
 [[nodiscard]] static WalkResult failMissingUnitaryMatrix(Operation* op,
                                                          bool& failed) {
   ADD_FAILURE() << "Expected constant unitary matrix for op: "
@@ -211,34 +196,6 @@ static WalkResult visit1QUnitaryOp(Operation* op, Matrix2x2& acc,
       accumulateConstantSingleQubit(unitary, op, acc, failed);
   return failed ? result : WalkResult::advance();
 }
-
-static WalkResult visitBasisGateOp(Operation* op, StringRef basis,
-                                   EulerBasis parsedBasis) {
-  if (isa<arith::ConstantOp, GPhaseOp, BarrierOp>(*op)) {
-    return WalkResult::advance();
-  }
-  if (auto unitary = dyn_cast<UnitaryOpInterface>(*op)) {
-    if (unitary.isTwoQubit() || isa<InvOp, CtrlOp>(*op)) {
-      return unitary.isTwoQubit() ? WalkResult::advance() : WalkResult::skip();
-    }
-    if (Matrix2x2 matrix; unitary.getUnitaryMatrix2x2(matrix)) {
-      EXPECT_TRUE(isAllowedBasisGate(*op, parsedBasis) || isa<GPhaseOp>(*op))
-          << "basis=" << basis.str()
-          << " unexpected gate: " << op->getName().getStringRef().str();
-      return WalkResult::advance();
-    }
-    ADD_FAILURE() << "basis=" << basis.str() << " missing constant matrix for: "
-                  << op->getName().getStringRef().str();
-    return WalkResult::interrupt();
-  }
-  return WalkResult::advance();
-}
-
-static void skipBeforeFuse(func::FuncOp /*funcOp*/,
-                           const Matrix2x2& /*original*/) {
-  // Pre-fuse checks are not required for this scenario.
-}
-
 template <typename WalkRange>
 static Matrix2x2 compute1QUnitaryMatrix(WalkRange& range) {
   Matrix2x2 acc = Matrix2x2::identity();
@@ -255,17 +212,6 @@ static Matrix2x2 compute1QUnitaryMatrix(WalkRange& range) {
   }
   return acc * global;
 }
-
-template <typename ParentOp>
-[[nodiscard]] static Matrix2x2 matrixInParent(func::FuncOp funcOp) {
-  auto parents = funcOp.getOps<ParentOp>();
-  if (parents.begin() == parents.end()) {
-    ADD_FAILURE() << "Expected parent op in function";
-    return Matrix2x2::fromElements(0, 0, 0, 0);
-  }
-  return compute1QUnitaryMatrix((*parents.begin()).getRegion());
-}
-
 static void expectMatrixPreserved(func::FuncOp funcOp,
                                   const Matrix2x2& original,
                                   StringRef label = {}) {
@@ -273,36 +219,6 @@ static void expectMatrixPreserved(func::FuncOp funcOp,
       compute1QUnitaryMatrix(funcOp).isApprox(original, MATRIX_TOLERANCE))
       << label.str();
 }
-
-static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
-  const auto parsed = parseEulerBasis(basis);
-  ASSERT_TRUE(parsed) << basis.str();
-
-  funcOp.walk<WalkOrder::PreOrder>(
-      [basis, parsedBasis = *parsed](Operation* op) {
-        return visitBasisGateOp(op, basis, parsedBasis);
-      });
-}
-
-static void expectFusePreserved(func::FuncOp funcOp, const Matrix2x2& original,
-                                StringRef basis) {
-  expectMatrixPreserved(funcOp, original, basis);
-  expectBasisGatesOnly(funcOp, basis);
-}
-
-[[nodiscard]] static Matrix2x2 splitFixtureHTSegmentMatrix() {
-  return TOp::getUnitaryMatrix() * HOp::getUnitaryMatrix();
-}
-
-[[nodiscard]] static Matrix2x2 splitFixtureRZSXSegmentMatrix() {
-  return SXOp::getUnitaryMatrix() * rzMatrix(0.321);
-}
-
-[[nodiscard]] static Matrix2x2 overlongZSXXPureZRunMatrix() {
-  return SXOp::getUnitaryMatrix() * rzMatrix(std::numbers::pi) *
-         SXOp::getUnitaryMatrix();
-}
-
 template <typename OpTy>
 [[nodiscard]] static std::size_t countOps(func::FuncOp funcOp) {
   std::size_t count = 0;
@@ -336,17 +252,6 @@ template <typename OpTy>
     return countZSXXGates(funcOp);
   }
   return 0;
-}
-
-template <typename OpTy, typename ParentOp>
-[[nodiscard]] static std::size_t countInParent(func::FuncOp funcOp) {
-  std::size_t count = 0;
-  funcOp.walk([&count](OpTy op) {
-    if (inParent<ParentOp>(op.getOperation())) {
-      ++count;
-    }
-  });
-  return count;
 }
 
 [[nodiscard]] static SynthesizedCircuit
@@ -407,6 +312,234 @@ static void expectSynthesizedMatrix(MLIRContext* ctx, const Matrix2x2& matrix,
   expectMatrixPreserved(circuit.func, matrix, "synthesis");
 }
 
+//===----------------------------------------------------------------------===//
+// Euler synthesis tests
+//===----------------------------------------------------------------------===//
+
+TEST_P(ZSXXShortcutTest, SynthesisMatchesGateCount) {
+  TestFixture fx;
+  fx.setUp();
+  const auto& testCase = GetParam();
+  const Matrix2x2 matrix = testCase.makeMatrix(fx.ctx());
+
+  expectSynthesizedMatrix(
+      fx.ctx(), matrix, ZSXX,
+      [&testCase, &fx](func::FuncOp funcOp, const Matrix2x2& original) {
+        EXPECT_EQ(countOps<RZOp>(funcOp), testCase.expectedRZ);
+        EXPECT_EQ(countOps<SXOp>(funcOp), testCase.expectedSX);
+        EXPECT_EQ(countOps<XOp>(funcOp), testCase.expectedX);
+        EXPECT_EQ(countZSXXGates(funcOp),
+                  expectedGateCount(fx.ctx(), original, ZSXX));
+      });
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ZSXXShortcuts, ZSXXShortcutTest,
+    testing::Values(
+        ZSXXShortcutCase{
+            "Identity",
+            [](MLIRContext*) -> Matrix2x2 { return Matrix2x2::identity(); }, 0,
+            0, 0},
+        ZSXXShortcutCase{
+            "PauliX",
+            [](MLIRContext*) -> Matrix2x2 { return XOp::getUnitaryMatrix(); },
+            0, 0, 1},
+        ZSXXShortcutCase{"PureZ",
+                         [](MLIRContext*) -> Matrix2x2 {
+                           return rzMatrix(0.3) * rzMatrix(0.7);
+                         },
+                         2, 0, 0},
+        ZSXXShortcutCase{"ZYZNearZeroTheta",
+                         [](MLIRContext*) -> Matrix2x2 {
+                           constexpr double tol = 0.5 * mlir::utils::TOLERANCE;
+                           return rzMatrix(0.4) * ryMatrix(tol) * rzMatrix(0.3);
+                         },
+                         2, 0, 0},
+        ZSXXShortcutCase{"RYHalfPi",
+                         [](MLIRContext* ctx) -> Matrix2x2 {
+                           return rotationMatrix<RYOp>(ctx,
+                                                       std::numbers::pi / 2.0);
+                         },
+                         2, 1, 0},
+        ZSXXShortcutCase{"RYNearHalfPi",
+                         [](MLIRContext* ctx) -> Matrix2x2 {
+                           return rotationMatrix<RYOp>(
+                               ctx, (std::numbers::pi / 2.0) +
+                                        (0.5 * mlir::utils::TOLERANCE));
+                         },
+                         2, 1, 0},
+        ZSXXShortcutCase{"RYNearZero",
+                         [](MLIRContext* ctx) -> Matrix2x2 {
+                           return rotationMatrix<RYOp>(
+                               ctx, 0.5 * mlir::utils::TOLERANCE);
+                         },
+                         0, 0, 0},
+        ZSXXShortcutCase{"RYNearPi",
+                         [](MLIRContext* ctx) -> Matrix2x2 {
+                           return rotationMatrix<RYOp>(
+                               ctx, std::numbers::pi -
+                                        (0.5 * mlir::utils::TOLERANCE));
+                         },
+                         1, 0, 1}),
+    [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
+      return std::string(info.param.label);
+    });
+
+TEST_P(EulerSynthesisExactTest, ReconstructsReferenceMatrices) {
+  TestFixture fx;
+  fx.setUp();
+  const auto [basis, matrixFn] = GetParam();
+  const Matrix2x2 original = matrixFn(fx.ctx());
+  expectSynthesizedMatrix(
+      fx.ctx(), original, basis,
+      [&fx, basis](func::FuncOp funcOp, const Matrix2x2& matrix) {
+        checkSynthesizedReferenceExtras(fx.ctx(), funcOp, basis, matrix);
+      });
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    SingleQubitMatrices, EulerSynthesisExactTest,
+    testing::Combine(testing::Values(ZYZ, ZXZ, XZX, XYX, U, ZSXX),
+                     testing::Values(
+                         [](MLIRContext* /*ctx*/) -> Matrix2x2 {
+                           return Matrix2x2::identity();
+                         },
+                         [](MLIRContext* ctx) -> Matrix2x2 {
+                           return rotationMatrix<RYOp>(ctx, 2.0);
+                         },
+                         [](MLIRContext* ctx) -> Matrix2x2 {
+                           return rotationMatrix<RYOp>(ctx,
+                                                       std::numbers::pi / 2.0);
+                         },
+                         [](MLIRContext* ctx) -> Matrix2x2 {
+                           return rotationMatrix<RXOp>(ctx, 0.5);
+                         },
+                         [](MLIRContext* ctx) -> Matrix2x2 {
+                           return rotationMatrix<RZOp>(ctx, 3.14);
+                         },
+                         [](MLIRContext* /*ctx*/) -> Matrix2x2 {
+                           return HOp::getUnitaryMatrix();
+                         })));
+
+TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
+  TestFixture fx;
+  fx.setUp();
+  std::mt19937 rng{12345678UL};
+
+  for (int i = 0; i < 200; ++i) {
+    const auto original = randomUnitaryMatrix(rng);
+    forEachBasis([&fx, &original](StringRef basisStr) {
+      const auto parsed = parseEulerBasis(basisStr);
+      ASSERT_TRUE(parsed) << "basis=" << basisStr.str();
+      const auto circuit = synthesizeMatrix(fx.ctx(), original, *parsed);
+      ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)))
+          << "basis=" << basisStr.str();
+      expectMatrixPreserved(circuit.func, original, basisStr);
+    });
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// FuseSingleQubitUnitaryRuns support
+//===----------------------------------------------------------------------===//
+
+[[nodiscard]] static bool isAllowedBasisGate(const Operation& op,
+                                             EulerBasis basis) {
+  switch (basis) {
+  case ZYZ:
+    return isa<RZOp, RYOp>(op);
+  case ZXZ:
+    return isa<RZOp, RXOp>(op);
+  case XZX:
+    return isa<RXOp, RZOp>(op);
+  case XYX:
+    return isa<RXOp, RYOp>(op);
+  case U:
+    return isa<UOp>(op);
+  case ZSXX:
+    return isa<RZOp, SXOp, XOp>(op);
+  }
+  return false;
+}
+
+template <typename ParentOp> [[nodiscard]] static bool inParent(Operation* op) {
+  return op != nullptr && op->getParentOfType<ParentOp>() != nullptr;
+}
+
+static WalkResult visitBasisGateOp(Operation* op, StringRef basis,
+                                   EulerBasis parsedBasis) {
+  if (isa<arith::ConstantOp, GPhaseOp, BarrierOp>(*op)) {
+    return WalkResult::advance();
+  }
+  if (auto unitary = dyn_cast<UnitaryOpInterface>(*op)) {
+    if (unitary.isTwoQubit() || isa<InvOp, CtrlOp>(*op)) {
+      return unitary.isTwoQubit() ? WalkResult::advance() : WalkResult::skip();
+    }
+    if (Matrix2x2 matrix; unitary.getUnitaryMatrix2x2(matrix)) {
+      EXPECT_TRUE(isAllowedBasisGate(*op, parsedBasis) || isa<GPhaseOp>(*op))
+          << "basis=" << basis.str()
+          << " unexpected gate: " << op->getName().getStringRef().str();
+      return WalkResult::advance();
+    }
+    ADD_FAILURE() << "basis=" << basis.str() << " missing constant matrix for: "
+                  << op->getName().getStringRef().str();
+    return WalkResult::interrupt();
+  }
+  return WalkResult::advance();
+}
+
+static void skipBeforeFuse(func::FuncOp /*funcOp*/,
+                           const Matrix2x2& /*original*/) {
+  // Pre-fuse checks are not required for this scenario.
+}
+
+template <typename ParentOp>
+[[nodiscard]] static Matrix2x2 matrixInParent(func::FuncOp funcOp) {
+  auto parents = funcOp.getOps<ParentOp>();
+  if (parents.begin() == parents.end()) {
+    ADD_FAILURE() << "Expected parent op in function";
+    return Matrix2x2::fromElements(0, 0, 0, 0);
+  }
+  return compute1QUnitaryMatrix((*parents.begin()).getRegion());
+}
+
+static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
+  const auto parsed = parseEulerBasis(basis);
+  ASSERT_TRUE(parsed) << basis.str();
+
+  funcOp.walk<WalkOrder::PreOrder>(
+      [basis, parsedBasis = *parsed](Operation* op) {
+        return visitBasisGateOp(op, basis, parsedBasis);
+      });
+}
+
+static void expectFusePreserved(func::FuncOp funcOp, const Matrix2x2& original,
+                                StringRef basis) {
+  expectMatrixPreserved(funcOp, original, basis);
+  expectBasisGatesOnly(funcOp, basis);
+}
+[[nodiscard]] static Matrix2x2 splitFixtureHTSegmentMatrix() {
+  return TOp::getUnitaryMatrix() * HOp::getUnitaryMatrix();
+}
+
+[[nodiscard]] static Matrix2x2 splitFixtureRZSXSegmentMatrix() {
+  return SXOp::getUnitaryMatrix() * rzMatrix(0.321);
+}
+
+[[nodiscard]] static Matrix2x2 overlongZSXXPureZRunMatrix() {
+  return SXOp::getUnitaryMatrix() * rzMatrix(std::numbers::pi) *
+         SXOp::getUnitaryMatrix();
+}
+template <typename OpTy, typename ParentOp>
+[[nodiscard]] static std::size_t countInParent(func::FuncOp funcOp) {
+  std::size_t count = 0;
+  funcOp.walk([&count](OpTy op) {
+    if (inParent<ParentOp>(op.getOperation())) {
+      ++count;
+    }
+  });
+  return count;
+}
 static void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
                                        MLIRContext* ctx) {
   const auto parsed = parseEulerBasis(basis);
@@ -532,7 +665,7 @@ static void runFuseInParent(MLIRContext* ctx, ProgramT program,
       });
 }
 
-// --- program builders ---------------------------------------------------- //
+// --- Fuse program fixtures --- //
 
 static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
@@ -661,128 +794,9 @@ static void singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
   });
 }
 
-TEST_P(ZSXXShortcutTest, SynthesisMatchesGateCount) {
-  TestFixture fx;
-  fx.setUp();
-  const auto& testCase = GetParam();
-  const Matrix2x2 matrix = testCase.makeMatrix(fx.ctx());
-
-  expectSynthesizedMatrix(
-      fx.ctx(), matrix, ZSXX,
-      [&testCase, &fx](func::FuncOp funcOp, const Matrix2x2& original) {
-        EXPECT_EQ(countOps<RZOp>(funcOp), testCase.expectedRZ);
-        EXPECT_EQ(countOps<SXOp>(funcOp), testCase.expectedSX);
-        EXPECT_EQ(countOps<XOp>(funcOp), testCase.expectedX);
-        EXPECT_EQ(countZSXXGates(funcOp),
-                  expectedGateCount(fx.ctx(), original, ZSXX));
-      });
-}
-
-INSTANTIATE_TEST_SUITE_P(
-    ZSXXShortcuts, ZSXXShortcutTest,
-    testing::Values(
-        ZSXXShortcutCase{
-            "Identity",
-            [](MLIRContext*) -> Matrix2x2 { return Matrix2x2::identity(); }, 0,
-            0, 0},
-        ZSXXShortcutCase{
-            "PauliX",
-            [](MLIRContext*) -> Matrix2x2 { return XOp::getUnitaryMatrix(); },
-            0, 0, 1},
-        ZSXXShortcutCase{"PureZ",
-                         [](MLIRContext*) -> Matrix2x2 {
-                           return rzMatrix(0.3) * rzMatrix(0.7);
-                         },
-                         2, 0, 0},
-        ZSXXShortcutCase{"ZYZNearZeroTheta",
-                         [](MLIRContext*) -> Matrix2x2 {
-                           constexpr double tol = 0.5 * mlir::utils::TOLERANCE;
-                           return rzMatrix(0.4) * ryMatrix(tol) * rzMatrix(0.3);
-                         },
-                         2, 0, 0},
-        ZSXXShortcutCase{"RYHalfPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(ctx,
-                                                       std::numbers::pi / 2.0);
-                         },
-                         2, 1, 0},
-        ZSXXShortcutCase{"RYNearHalfPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, (std::numbers::pi / 2.0) +
-                                        (0.5 * mlir::utils::TOLERANCE));
-                         },
-                         2, 1, 0},
-        ZSXXShortcutCase{"RYNearZero",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, 0.5 * mlir::utils::TOLERANCE);
-                         },
-                         0, 0, 0},
-        ZSXXShortcutCase{"RYNearPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, std::numbers::pi -
-                                        (0.5 * mlir::utils::TOLERANCE));
-                         },
-                         1, 0, 1}),
-    [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
-      return std::string(info.param.label);
-    });
-
-TEST_P(EulerSynthesisExactTest, ReconstructsReferenceMatrices) {
-  TestFixture fx;
-  fx.setUp();
-  const auto [basis, matrixFn] = GetParam();
-  const Matrix2x2 original = matrixFn(fx.ctx());
-  expectSynthesizedMatrix(
-      fx.ctx(), original, basis,
-      [&fx, basis](func::FuncOp funcOp, const Matrix2x2& matrix) {
-        checkSynthesizedReferenceExtras(fx.ctx(), funcOp, basis, matrix);
-      });
-}
-
-INSTANTIATE_TEST_SUITE_P(
-    SingleQubitMatrices, EulerSynthesisExactTest,
-    testing::Combine(testing::Values(ZYZ, ZXZ, XZX, XYX, U, ZSXX),
-                     testing::Values(
-                         [](MLIRContext* /*ctx*/) -> Matrix2x2 {
-                           return Matrix2x2::identity();
-                         },
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(ctx, 2.0);
-                         },
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(ctx,
-                                                       std::numbers::pi / 2.0);
-                         },
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RXOp>(ctx, 0.5);
-                         },
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RZOp>(ctx, 3.14);
-                         },
-                         [](MLIRContext* /*ctx*/) -> Matrix2x2 {
-                           return HOp::getUnitaryMatrix();
-                         })));
-
-TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
-  TestFixture fx;
-  fx.setUp();
-  std::mt19937 rng{12345678UL};
-
-  for (int i = 0; i < 200; ++i) {
-    const auto original = randomUnitaryMatrix(rng);
-    forEachBasis([&fx, &original](StringRef basisStr) {
-      const auto parsed = parseEulerBasis(basisStr);
-      ASSERT_TRUE(parsed) << "basis=" << basisStr.str();
-      const auto circuit = synthesizeMatrix(fx.ctx(), original, *parsed);
-      ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)))
-          << "basis=" << basisStr.str();
-      expectMatrixPreserved(circuit.func, original, basisStr);
-    });
-  }
-}
+//===----------------------------------------------------------------------===//
+// FuseSingleQubitUnitaryRuns tests
+//===----------------------------------------------------------------------===//
 
 TEST(FuseSingleQubitUnitaryRunsTest, InvalidBasisFailsPass) {
   TestFixture fx;
