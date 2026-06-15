@@ -81,8 +81,7 @@ static bool hasTypeQubitTensor(Value v) {
 /// Recursively initialize the equivalence group for a tensor value.
 static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
                            DenseMap<Value, size_t>& group) {
-  qtensor::TensorIterator it(v);
-  for (; it != std::default_sentinel; ++it) {
+  for (qtensor::TensorIterator it(v); it != std::default_sentinel; ++it) {
     if (it.tensor() == nullptr) {
       continue;
     }
@@ -107,9 +106,9 @@ static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
 
       initEquivGroup(cast<TypedValue<RankedTensorType>>(thenArg), id, group);
       initEquivGroup(cast<TypedValue<RankedTensorType>>(elseArg), id, group);
-    } else if (auto op = dyn_cast<scf::ForOp>(it.operation())) {
+    } else if (auto forOp = dyn_cast<scf::ForOp>(it.operation())) {
       const auto& arg =
-          op.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
+          forOp.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
       initEquivGroup(cast<TypedValue<RankedTensorType>>(arg), id, group);
     }
   }
@@ -293,21 +292,20 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
       return false;
     }
   } else if (auto intAttrA = dyn_cast<IntegerAttr>(lhs)) {
-    auto intAttrB = dyn_cast<IntegerAttr>(rhs);
-    if (!intAttrB || intAttrA.getValue() != intAttrB.getValue()) {
+    if (auto intAttrB = dyn_cast<IntegerAttr>(rhs);
+        !intAttrB || intAttrA.getValue() != intAttrB.getValue()) {
       return false;
     }
   } else if (auto floatAttrA = dyn_cast<FloatAttr>(lhs)) {
-    auto floatAttrB = dyn_cast<FloatAttr>(rhs);
-
-    if (!floatAttrB ||
+    if (auto floatAttrB = dyn_cast<FloatAttr>(rhs);
+        !floatAttrB ||
         !approxCompareFloats(floatAttrA.getValue(), floatAttrB.getValue(),
                              floatAttrA.getType().getIntOrFloatBitWidth())) {
       return false;
     }
   } else if (auto strAttrA = dyn_cast<StringAttr>(lhs)) {
-    auto strAttrB = dyn_cast<StringAttr>(rhs);
-    if (!strAttrB || strAttrA.getValue() != strAttrB.getValue()) {
+    if (auto strAttrB = dyn_cast<StringAttr>(rhs);
+        !strAttrB || strAttrA.getValue() != strAttrB.getValue()) {
       return false;
     }
   } else if (auto symbolRefAttrA =
@@ -412,11 +410,9 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
       // If any of the inserts on the chain are ready, we consider the entire
       // chain ready because the ready operations could be moved to the front
       // of the chain.
-
       SmallVector<Operation*> chain;
-      qtensor::TensorIterator it(insert.getResult());
-
-      for (; it != std::default_sentinel; ++it) {
+      for (qtensor::TensorIterator it(insert.getResult());
+           it != std::default_sentinel; ++it) {
         auto chainInsert = dyn_cast<qtensor::InsertOp>(it.operation());
         if (!chainInsert) {
           break;
@@ -434,11 +430,9 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
     } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
 
       // We apply the analogous logic to extracts.
-
       SmallVector<Operation*> chain;
-      qtensor::TensorIterator it(extract.getOutTensor());
-
-      for (; it != std::default_sentinel; ++it) {
+      for (qtensor::TensorIterator it(extract.getOutTensor());
+           it != std::default_sentinel; ++it) {
         auto chainExtract = dyn_cast<qtensor::ExtractOp>(it.operation());
         if (!chainExtract) {
           break;
