@@ -12,9 +12,10 @@
 
 namespace mlir {
 class ModuleOp;
-}
+} // namespace mlir
 
-/// Compare two MLIR modules for structural equivalence, allowing permutations
-/// of speculatable operations.
-[[nodiscard]] bool areModulesEquivalentWithPermutations(mlir::ModuleOp lhs,
-                                                        mlir::ModuleOp rhs);
+/// Compare two (quantum) module operations for structural equivalence, allowing
+/// some permutations. This function is especially tailored to compare quantum
+/// computations.
+[[nodiscard]] bool areModulesEquivalentWithPermutations(mlir::ModuleOp,
+                                                        mlir::ModuleOp);
