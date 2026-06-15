@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -28,8 +29,11 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <array>
@@ -44,6 +48,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -77,19 +82,30 @@ struct ZSXXShortcutCase {
 
 class ZSXXShortcutTest : public testing::TestWithParam<ZSXXShortcutCase> {};
 
-[[nodiscard]] Matrix2x2 rzMatrix(const double theta) {
+struct SynthesizedCircuit {
+  OwningOpRef<ModuleOp> mlirModule;
+  func::FuncOp func;
+};
+
+class EulerSynthesisExactTest
+    : public testing::TestWithParam<
+          std::tuple<EulerBasis, Matrix2x2 (*)(MLIRContext*)>> {};
+
+} // namespace
+
+[[nodiscard]] static Matrix2x2 rzMatrix(const double theta) {
   const auto m00 = std::polar(1.0, -theta / 2.0);
   const auto m11 = std::polar(1.0, theta / 2.0);
   return Matrix2x2::fromElements(m00, 0, 0, m11);
 }
 
-[[nodiscard]] Matrix2x2 ryMatrix(const double theta) {
+[[nodiscard]] static Matrix2x2 ryMatrix(const double theta) {
   const auto m00 = std::cos(theta / 2.0);
   const auto m01 = -std::sin(theta / 2.0);
   return Matrix2x2::fromElements(m00, m01, -m01, m00);
 }
 
-[[nodiscard]] Matrix2x2 randomUnitaryMatrix(std::mt19937& rng) {
+[[nodiscard]] static Matrix2x2 randomUnitaryMatrix(std::mt19937& rng) {
   std::uniform_real_distribution dist(-std::numbers::pi, std::numbers::pi);
   const Matrix2x2 su2 =
       rzMatrix(dist(rng)) * ryMatrix(dist(rng)) * rzMatrix(dist(rng));
@@ -100,7 +116,8 @@ class ZSXXShortcutTest : public testing::TestWithParam<ZSXXShortcutCase> {};
 }
 
 template <typename RotationOp>
-[[nodiscard]] Matrix2x2 rotationMatrix(MLIRContext* ctx, const double theta) {
+[[nodiscard]] static Matrix2x2 rotationMatrix(MLIRContext* ctx,
+                                              const double theta) {
   OpBuilder builder(ctx);
   auto mlirModule = ModuleOp::create(UnknownLoc::get(ctx));
   builder.setInsertionPointToStart(mlirModule.getBody());
@@ -115,7 +132,7 @@ template <typename RotationOp>
   return *matrix;
 }
 
-template <typename Fn> void forEachBasis(Fn fn) {
+template <typename Fn> static void forEachBasis(Fn fn) {
   const std::array<const char*, 6> bases = {"zyz", "zxz", "xzx",
                                             "xyx", "u",   "zsxx"};
   for (const char* basis : bases) {
@@ -123,7 +140,8 @@ template <typename Fn> void forEachBasis(Fn fn) {
   }
 }
 
-[[nodiscard]] bool isAllowedBasisGate(const Operation& op, EulerBasis basis) {
+[[nodiscard]] static bool isAllowedBasisGate(const Operation& op,
+                                             EulerBasis basis) {
   switch (basis) {
   case ZYZ:
     return isa<RZOp, RYOp>(op);
@@ -141,18 +159,19 @@ template <typename Fn> void forEachBasis(Fn fn) {
   return false;
 }
 
-template <typename ParentOp> [[nodiscard]] bool inParent(Operation* op) {
+template <typename ParentOp> [[nodiscard]] static bool inParent(Operation* op) {
   return op != nullptr && op->getParentOfType<ParentOp>() != nullptr;
 }
 
-[[nodiscard]] WalkResult failMissingUnitaryMatrix(Operation* op, bool& failed) {
+[[nodiscard]] static WalkResult failMissingUnitaryMatrix(Operation* op,
+                                                         bool& failed) {
   ADD_FAILURE() << "Expected constant unitary matrix for op: "
                 << op->getName().getStringRef().str();
   failed = true;
   return WalkResult::interrupt();
 }
 
-[[nodiscard]] WalkResult
+[[nodiscard]] static WalkResult
 accumulateConstantSingleQubit(UnitaryOpInterface unitary, Operation* op,
                               Matrix2x2& acc, bool& failed) {
   if (Matrix2x2 matrix; unitary.getUnitaryMatrix2x2(matrix)) {
@@ -162,8 +181,8 @@ accumulateConstantSingleQubit(UnitaryOpInterface unitary, Operation* op,
   return failMissingUnitaryMatrix(op, failed);
 }
 
-WalkResult visit1QUnitaryOp(Operation* op, Matrix2x2& acc,
-                            std::complex<double>& global, bool& failed) {
+static WalkResult visit1QUnitaryOp(Operation* op, Matrix2x2& acc,
+                                   std::complex<double>& global, bool& failed) {
   if (isa<arith::ConstantOp, BarrierOp>(*op)) {
     return WalkResult::advance();
   }
@@ -193,8 +212,8 @@ WalkResult visit1QUnitaryOp(Operation* op, Matrix2x2& acc,
   return failed ? result : WalkResult::advance();
 }
 
-WalkResult visitBasisGateOp(Operation* op, StringRef basis,
-                            EulerBasis parsedBasis) {
+static WalkResult visitBasisGateOp(Operation* op, StringRef basis,
+                                   EulerBasis parsedBasis) {
   if (isa<arith::ConstantOp, GPhaseOp, BarrierOp>(*op)) {
     return WalkResult::advance();
   }
@@ -215,12 +234,13 @@ WalkResult visitBasisGateOp(Operation* op, StringRef basis,
   return WalkResult::advance();
 }
 
-void skipBeforeFuse(func::FuncOp /*funcOp*/, const Matrix2x2& /*original*/) {
+static void skipBeforeFuse(func::FuncOp /*funcOp*/,
+                           const Matrix2x2& /*original*/) {
   // Pre-fuse checks are not required for this scenario.
 }
 
 template <typename WalkRange>
-Matrix2x2 compute1QUnitaryMatrix(WalkRange& range) {
+static Matrix2x2 compute1QUnitaryMatrix(WalkRange& range) {
   Matrix2x2 acc = Matrix2x2::identity();
   std::complex<double> global{1.0, 0.0};
   bool failed = false;
@@ -237,7 +257,7 @@ Matrix2x2 compute1QUnitaryMatrix(WalkRange& range) {
 }
 
 template <typename ParentOp>
-[[nodiscard]] Matrix2x2 matrixInParent(func::FuncOp funcOp) {
+[[nodiscard]] static Matrix2x2 matrixInParent(func::FuncOp funcOp) {
   auto parents = funcOp.getOps<ParentOp>();
   if (parents.begin() == parents.end()) {
     ADD_FAILURE() << "Expected parent op in function";
@@ -246,14 +266,15 @@ template <typename ParentOp>
   return compute1QUnitaryMatrix((*parents.begin()).getRegion());
 }
 
-void expectMatrixPreserved(func::FuncOp funcOp, const Matrix2x2& original,
-                           StringRef label = {}) {
+static void expectMatrixPreserved(func::FuncOp funcOp,
+                                  const Matrix2x2& original,
+                                  StringRef label = {}) {
   EXPECT_TRUE(
       compute1QUnitaryMatrix(funcOp).isApprox(original, MATRIX_TOLERANCE))
       << label.str();
 }
 
-void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
+static void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
   const auto parsed = parseEulerBasis(basis);
   ASSERT_TRUE(parsed) << basis.str();
 
@@ -263,43 +284,43 @@ void expectBasisGatesOnly(func::FuncOp funcOp, StringRef basis) {
       });
 }
 
-void expectFusePreserved(func::FuncOp funcOp, const Matrix2x2& original,
-                         StringRef basis) {
+static void expectFusePreserved(func::FuncOp funcOp, const Matrix2x2& original,
+                                StringRef basis) {
   expectMatrixPreserved(funcOp, original, basis);
   expectBasisGatesOnly(funcOp, basis);
 }
 
-[[nodiscard]] Matrix2x2 splitFixtureHTSegmentMatrix() {
+[[nodiscard]] static Matrix2x2 splitFixtureHTSegmentMatrix() {
   return TOp::getUnitaryMatrix() * HOp::getUnitaryMatrix();
 }
 
-[[nodiscard]] Matrix2x2 splitFixtureRZSXSegmentMatrix() {
+[[nodiscard]] static Matrix2x2 splitFixtureRZSXSegmentMatrix() {
   return SXOp::getUnitaryMatrix() * rzMatrix(0.321);
 }
 
-[[nodiscard]] Matrix2x2 overlongZSXXPureZRunMatrix() {
+[[nodiscard]] static Matrix2x2 overlongZSXXPureZRunMatrix() {
   return SXOp::getUnitaryMatrix() * rzMatrix(std::numbers::pi) *
          SXOp::getUnitaryMatrix();
 }
 
 template <typename OpTy>
-[[nodiscard]] std::size_t countOps(func::FuncOp funcOp) {
+[[nodiscard]] static std::size_t countOps(func::FuncOp funcOp) {
   std::size_t count = 0;
   funcOp.walk([&count](OpTy) { ++count; });
   return count;
 }
 
-[[nodiscard]] std::size_t countZYZGates(func::FuncOp funcOp) {
+[[nodiscard]] static std::size_t countZYZGates(func::FuncOp funcOp) {
   return countOps<RZOp>(funcOp) + countOps<RYOp>(funcOp);
 }
 
-[[nodiscard]] std::size_t countZSXXGates(func::FuncOp funcOp) {
+[[nodiscard]] static std::size_t countZSXXGates(func::FuncOp funcOp) {
   return countOps<RZOp>(funcOp) + countOps<SXOp>(funcOp) +
          countOps<XOp>(funcOp);
 }
 
-[[nodiscard]] std::size_t countBasisGates(func::FuncOp funcOp,
-                                          EulerBasis basis) {
+[[nodiscard]] static std::size_t countBasisGates(func::FuncOp funcOp,
+                                                 EulerBasis basis) {
   switch (basis) {
   case ZYZ:
     return countZYZGates(funcOp);
@@ -318,7 +339,7 @@ template <typename OpTy>
 }
 
 template <typename OpTy, typename ParentOp>
-[[nodiscard]] std::size_t countInParent(func::FuncOp funcOp) {
+[[nodiscard]] static std::size_t countInParent(func::FuncOp funcOp) {
   std::size_t count = 0;
   funcOp.walk([&count](OpTy op) {
     if (inParent<ParentOp>(op.getOperation())) {
@@ -328,12 +349,7 @@ template <typename OpTy, typename ParentOp>
   return count;
 }
 
-struct SynthesizedCircuit {
-  OwningOpRef<ModuleOp> mlirModule;
-  func::FuncOp func;
-};
-
-[[nodiscard]] SynthesizedCircuit
+[[nodiscard]] static SynthesizedCircuit
 synthesizeMatrix(MLIRContext* ctx, const Matrix2x2& matrix, EulerBasis basis) {
   OwningOpRef mlirModule = ModuleOp::create(UnknownLoc::get(ctx));
   OpBuilder builder(ctx);
@@ -357,15 +373,16 @@ synthesizeMatrix(MLIRContext* ctx, const Matrix2x2& matrix, EulerBasis basis) {
   return SynthesizedCircuit{.mlirModule = std::move(mlirModule), .func = func};
 }
 
-[[nodiscard]] std::size_t expectedGateCount(MLIRContext* ctx,
-                                            const Matrix2x2& segment,
-                                            EulerBasis basis) {
+[[nodiscard]] static std::size_t expectedGateCount(MLIRContext* ctx,
+                                                   const Matrix2x2& segment,
+                                                   EulerBasis basis) {
   return countBasisGates(synthesizeMatrix(ctx, segment, basis).func, basis);
 }
 
-void checkSynthesizedReferenceExtras(MLIRContext* ctx, func::FuncOp funcOp,
-                                     EulerBasis basis,
-                                     const Matrix2x2& matrix) {
+static void checkSynthesizedReferenceExtras(MLIRContext* ctx,
+                                            func::FuncOp funcOp,
+                                            EulerBasis basis,
+                                            const Matrix2x2& matrix) {
   if (basis == U) {
     EXPECT_EQ(countOps<UOp>(funcOp), expectedGateCount(ctx, matrix, basis));
   }
@@ -381,16 +398,17 @@ void checkSynthesizedReferenceExtras(MLIRContext* ctx, func::FuncOp funcOp,
 }
 
 template <typename ExtraChecksT>
-void expectSynthesizedMatrix(MLIRContext* ctx, const Matrix2x2& matrix,
-                             EulerBasis basis, ExtraChecksT extraChecks) {
+static void expectSynthesizedMatrix(MLIRContext* ctx, const Matrix2x2& matrix,
+                                    EulerBasis basis,
+                                    ExtraChecksT extraChecks) {
   const auto circuit = synthesizeMatrix(ctx, matrix, basis);
   ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
   extraChecks(circuit.func, matrix);
   expectMatrixPreserved(circuit.func, matrix, "synthesis");
 }
 
-void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
-                                MLIRContext* ctx) {
+static void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
+                                       MLIRContext* ctx) {
   const auto parsed = parseEulerBasis(basis);
   ASSERT_TRUE(parsed) << basis.str();
   const std::size_t ht =
@@ -419,8 +437,9 @@ void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
 }
 
 template <typename BoundaryPred>
-void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
-                                MLIRContext* ctx, BoundaryPred isBoundary) {
+static void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
+                                       MLIRContext* ctx,
+                                       BoundaryPred isBoundary) {
   const auto parsed = parseEulerBasis(basis);
   ASSERT_TRUE(parsed) << basis.str();
   const std::size_t ht =
@@ -453,7 +472,7 @@ void expectSplitFixtureSegments(func::FuncOp funcOp, StringRef basis,
   EXPECT_EQ(after, rzsx) << "basis=" << basis.str();
 }
 
-LogicalResult runFuse(ModuleOp mlirModule, StringRef basis) {
+static LogicalResult runFuse(ModuleOp mlirModule, StringRef basis) {
   PassManager pm(mlirModule.getContext());
   qco::FuseSingleQubitUnitaryRunsOptions opts;
   opts.basis = basis.str();
@@ -462,8 +481,9 @@ LogicalResult runFuse(ModuleOp mlirModule, StringRef basis) {
 }
 
 template <typename ProgramT, typename BeforeT, typename AfterT>
-void runFuseOnProgram(MLIRContext* ctx, ProgramT program, StringRef basis,
-                      BeforeT beforeFuse, AfterT afterFuse) {
+static void runFuseOnProgram(MLIRContext* ctx, ProgramT program,
+                             StringRef basis, BeforeT beforeFuse,
+                             AfterT afterFuse) {
   auto owned = QCOProgramBuilder::build(ctx, program);
   ASSERT_TRUE(owned);
   ModuleOp mlirModule = *owned;
@@ -483,8 +503,8 @@ void runFuseOnProgram(MLIRContext* ctx, ProgramT program, StringRef basis,
 }
 
 template <typename ProgramT, typename ChecksT>
-void runFuseForAllBases(MLIRContext* ctx, ProgramT program,
-                        ChecksT checksAfter) {
+static void runFuseForAllBases(MLIRContext* ctx, ProgramT program,
+                               ChecksT checksAfter) {
   forEachBasis([&ctx, program, &checksAfter](StringRef basis) {
     runFuseOnProgram(
         ctx, program, basis, skipBeforeFuse,
@@ -496,8 +516,8 @@ void runFuseForAllBases(MLIRContext* ctx, ProgramT program,
 
 template <typename ParentOp, typename ProgramT, typename BeforeT,
           typename AfterT>
-void runFuseInParent(MLIRContext* ctx, ProgramT program, BeforeT checkBefore,
-                     AfterT checkAfter) {
+static void runFuseInParent(MLIRContext* ctx, ProgramT program,
+                            BeforeT checkBefore, AfterT checkAfter) {
   Matrix2x2 bodyBefore;
   runFuseOnProgram(
       ctx, program, "u",
@@ -514,7 +534,7 @@ void runFuseInParent(MLIRContext* ctx, ProgramT program, BeforeT checkBefore,
 
 // --- program builders ---------------------------------------------------- //
 
-void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
+static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
@@ -525,7 +545,7 @@ void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   q[0] = b.ry(-0.456, q[0]);
 }
 
-void singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
+static void singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
@@ -534,7 +554,7 @@ void singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
   q[0] = b.sx(q[0]);
 }
 
-void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
+static void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
@@ -543,24 +563,24 @@ void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
   q[0] = b.sx(q[0]);
 }
 
-void singleNonBasisGate(QCOProgramBuilder& b) {
+static void singleNonBasisGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
 }
 
-void singlePauliX(QCOProgramBuilder& b) {
+static void singlePauliX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
 }
 
-void canonicalZYZRun(QCOProgramBuilder& b) {
+static void canonicalZYZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.rz(0.3, q[0]);
   q[0] = b.ry(0.5, q[0]);
   q[0] = b.rz(0.7, q[0]);
 }
 
-void overlongZYZRun(QCOProgramBuilder& b) {
+static void overlongZYZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.rz(0.3, q[0]);
   q[0] = b.ry(0.5, q[0]);
@@ -570,14 +590,14 @@ void overlongZYZRun(QCOProgramBuilder& b) {
   q[0] = b.ry(1.3, q[0]);
 }
 
-void overlongZSXXMixedPureZRun(QCOProgramBuilder& b) {
+static void overlongZSXXMixedPureZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.sx(q[0]);
   q[0] = b.rz(std::numbers::pi, q[0]);
   q[0] = b.sx(q[0]);
 }
 
-void singleQubitRunInScfFor(QCOProgramBuilder& b) {
+static void singleQubitRunInScfFor(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.scfFor(0, 1, 1, ValueRange{q[0]}, [&b](Value, ValueRange iterArgs) {
     Value wire = iterArgs[0];
@@ -588,7 +608,7 @@ void singleQubitRunInScfFor(QCOProgramBuilder& b) {
   });
 }
 
-void xInverseTwoX(QCOProgramBuilder& b) {
+static void xInverseTwoX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
   q[0] = b.inv({q[0]}, [&b](ValueRange targets) {
@@ -599,7 +619,7 @@ void xInverseTwoX(QCOProgramBuilder& b) {
   q[0] = b.x(q[0]);
 }
 
-void inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
+static void inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto outs =
       b.inv({q[0], q[1]}, [&b](ValueRange targets) -> SmallVector<Value> {
@@ -611,7 +631,7 @@ void inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
   q[1] = outs[1];
 }
 
-void controlledInverseHT(QCOProgramBuilder& b) {
+static void controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1], [&b](ValueRange targets) {
     auto wire = b.inv({targets[0]}, [&b](ValueRange innerTargets) {
@@ -623,13 +643,13 @@ void controlledInverseHT(QCOProgramBuilder& b) {
   });
 }
 
-void controlledH(QCOProgramBuilder& b) {
+static void controlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1],
          [&b](ValueRange targets) { return SmallVector{b.h(targets[0])}; });
 }
 
-void singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
+static void singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
@@ -640,8 +660,6 @@ void singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
     return SmallVector<Value>{wire};
   });
 }
-
-} // namespace
 
 TEST_P(ZSXXShortcutTest, SynthesisMatchesGateCount) {
   TestFixture fx;
@@ -711,10 +729,6 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
       return std::string(info.param.label);
     });
-
-class EulerSynthesisExactTest
-    : public testing::TestWithParam<
-          std::tuple<EulerBasis, Matrix2x2 (*)(MLIRContext*)>> {};
 
 TEST_P(EulerSynthesisExactTest, ReconstructsReferenceMatrices) {
   TestFixture fx;
