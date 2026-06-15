@@ -23,16 +23,12 @@
 #include <vector>
 
 #ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+#include "qir/helpers/test_utils.hpp"
 #include "qir/runtime/Runtime.hpp"
 
 #include <cmath>
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <numbers>
 #include <sstream>
-#include <string>
-#include <string_view>
 #endif
 
 TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
@@ -125,20 +121,12 @@ protected:
   std::ostringstream sink;
   void SetUp() override { qir::Runtime::getInstance().setOstream(sink); }
   void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
-
-  static std::string getProgram(const std::string_view file) {
-    const std::filesystem::path path =
-        std::filesystem::path(QIR_FILES_DIR) / file;
-    std::ifstream ifs(path);
-    EXPECT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
-    return {std::istreambuf_iterator<char>{ifs}, {}};
-  }
 };
 
 TEST_F(QIRStateExtractionTest, BellPairStaticBaseStringYieldsBellState) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  const auto program = getProgram("BellPairStatic.ll");
+  const auto program = qir_test::getProgram("BellPairStatic.ll");
   ASSERT_EQ(
       qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QIRBASESTRING, program),
       QDMI_SUCCESS);

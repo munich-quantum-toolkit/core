@@ -8,17 +8,15 @@
  * Licensed under the MIT License
  */
 
+#include "qir/helpers/test_utils.hpp"
 #include "qir/jit/Session.hpp"
 #include "qir/runtime/Runtime.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <sstream>
 #include <stdexcept>
-#include <string>
 #include <string_view>
 
 namespace {
@@ -33,18 +31,10 @@ protected:
     runtime.setOstream(sink);
   }
   void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
-
-  static std::string getProgram(const std::string_view file) {
-    const std::filesystem::path path =
-        std::filesystem::path(QIR_FILES_DIR) / file;
-    std::ifstream ifs(path);
-    EXPECT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
-    return {std::istreambuf_iterator<char>{ifs}, {}};
-  }
 };
 
 TEST_F(JitSessionTest, LoadModuleFromMemory) {
-  const auto program = getProgram("BellPairStatic.ll");
+  const auto program = qir_test::getProgram("BellPairStatic.ll");
   const qir::JitSession session(program, "BellPairStatic.ll");
   ASSERT_EQ(session.run(), 0);
   EXPECT_FALSE(qir::Runtime::getInstance().getRecordedOutputs().empty());

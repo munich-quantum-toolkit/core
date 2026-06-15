@@ -28,6 +28,7 @@
 #include <vector>
 
 #ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+#include "qir/helpers/test_utils.hpp"
 #include "qir/runtime/Runtime.hpp"
 
 #include <llvm/AsmParser/Parser.h>
@@ -36,9 +37,6 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <sstream>
 #endif
@@ -86,11 +84,7 @@ protected:
 class QIRHistogramTestModule : public HistogramTest {
 protected:
   static std::string getProgram(const std::string_view file) {
-    const std::filesystem::path path =
-        std::filesystem::path(QIR_FILES_DIR) / file;
-    std::ifstream ifs(path);
-    EXPECT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
-    const std::string text(std::istreambuf_iterator<char>{ifs}, {});
+    const std::string text = qir_test::getProgram(file);
     llvm::LLVMContext context;
     llvm::SMDiagnostic err;
     auto llvmModule = llvm::parseAssemblyString(text, err, context);
@@ -107,16 +101,7 @@ protected:
   }
 };
 
-class QIRHistogramTestString : public HistogramTest {
-protected:
-  static std::string getProgram(const std::string_view file) {
-    const std::filesystem::path path =
-        std::filesystem::path(QIR_FILES_DIR) / file;
-    std::ifstream ifs(path);
-    EXPECT_TRUE(ifs.is_open()) << "Failed to open " << path.string();
-    return {std::istreambuf_iterator<char>{ifs}, {}};
-  }
-};
+class QIRHistogramTestString : public HistogramTest {};
 #endif
 
 } // namespace
@@ -135,7 +120,7 @@ TEST_F(QIRHistogramTestModule, BaseStatic) {
 
 TEST_F(QIRHistogramTestString, BaseStatic) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-  checkHistogram(runProgram(format, getProgram("BellPairStatic.ll")));
+  checkHistogram(runProgram(format, qir_test::getProgram("BellPairStatic.ll")));
 }
 
 TEST_F(QIRHistogramTestModule, BaseDynamic) {
@@ -145,7 +130,8 @@ TEST_F(QIRHistogramTestModule, BaseDynamic) {
 
 TEST_F(QIRHistogramTestString, BaseDynamic) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-  checkHistogram(runProgram(format, getProgram("BellPairDynamic.ll")));
+  checkHistogram(
+      runProgram(format, qir_test::getProgram("BellPairDynamic.ll")));
 }
 
 TEST_F(QIRHistogramTestModule, Adaptive) {
@@ -155,7 +141,8 @@ TEST_F(QIRHistogramTestModule, Adaptive) {
 
 TEST_F(QIRHistogramTestString, Adaptive) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
-  checkHistogram(runProgram(format, getProgram("BellPairAdaptive.ll")));
+  checkHistogram(
+      runProgram(format, qir_test::getProgram("BellPairAdaptive.ll")));
 }
 #endif
 
