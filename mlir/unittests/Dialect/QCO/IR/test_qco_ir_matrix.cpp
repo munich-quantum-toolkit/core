@@ -169,15 +169,9 @@ TEST_F(QCOMatrixTest, InverseGphaseXOpMatrix) {
   ASSERT_TRUE(matrix);
 
   const auto composeGlobal = std::polar(1.0, -0.123);
-  Matrix2x2 body = XOp::getUnitaryMatrix();
-  body(0, 0) *= composeGlobal;
-  body(0, 1) *= composeGlobal;
-  body(1, 0) *= composeGlobal;
-  body(1, 1) *= composeGlobal;
+  const Matrix2x2 body = XOp::getUnitaryMatrix() * composeGlobal;
 
-  DynamicMatrix expected;
-  expected.assignFrom(body.adjoint());
-  ASSERT_TRUE(matrix->isApprox(expected));
+  ASSERT_TRUE(matrix->isApprox(DynamicMatrix::fromAdjoint(body)));
 }
 
 TEST_F(QCOMatrixTest, InverseGphaseBarrierOpMatrix) {

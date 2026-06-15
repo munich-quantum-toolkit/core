@@ -61,6 +61,26 @@ struct Matrix1x1 {
   [[nodiscard]] Complex operator()(std::size_t row, std::size_t col) const;
 
   /**
+   * @brief Element-wise scaling by a complex scalar.
+   * @param scalar Factor applied to the matrix entry.
+   * @return Scaled copy of this matrix.
+   */
+  [[nodiscard]] Matrix1x1 operator*(const Complex& scalar) const;
+
+  /**
+   * @brief Element-wise in-place scaling by a complex scalar.
+   * @param scalar Factor applied to the matrix entry.
+   * @return Reference to this matrix.
+   */
+  Matrix1x1& operator*=(const Complex& scalar);
+
+  /**
+   * @brief Returns the conjugate transpose (adjoint) of this matrix.
+   * @return Adjoint matrix `A^\dagger`.
+   */
+  [[nodiscard]] Matrix1x1 adjoint() const;
+
+  /**
    * @brief Checks approximate equality using an absolute tolerance.
    * @param other Matrix to compare against.
    * @param tol Maximum allowed complex modulus of the entry difference.
@@ -136,6 +156,26 @@ struct Matrix2x2 {
    * @return Product of the two matrices.
    */
   [[nodiscard]] Matrix2x2 operator*(const Matrix2x2& rhs) const;
+
+  /**
+   * @brief Premultiplies by a matrix: `*this = lhs * *this`.
+   * @param lhs Left-hand factor.
+   */
+  void premultiplyBy(const Matrix2x2& lhs);
+
+  /**
+   * @brief Element-wise scaling by a complex scalar.
+   * @param scalar Factor applied to every matrix entry.
+   * @return Scaled copy of this matrix.
+   */
+  [[nodiscard]] Matrix2x2 operator*(const Complex& scalar) const;
+
+  /**
+   * @brief Element-wise in-place scaling by a complex scalar.
+   * @param scalar Factor applied to every matrix entry.
+   * @return Reference to this matrix.
+   */
+  Matrix2x2& operator*=(const Complex& scalar);
 
   /**
    * @brief Returns the conjugate transpose (adjoint) of this matrix.
@@ -257,6 +297,26 @@ struct Matrix4x4 {
   [[nodiscard]] Matrix4x4 operator*(const Matrix4x4& rhs) const;
 
   /**
+   * @brief Premultiplies by a matrix: `*this = lhs * *this`.
+   * @param lhs Left-hand factor.
+   */
+  void premultiplyBy(const Matrix4x4& lhs);
+
+  /**
+   * @brief Element-wise scaling by a complex scalar.
+   * @param scalar Factor applied to every matrix entry.
+   * @return Scaled copy of this matrix.
+   */
+  [[nodiscard]] Matrix4x4 operator*(const Complex& scalar) const;
+
+  /**
+   * @brief Element-wise in-place scaling by a complex scalar.
+   * @param scalar Factor applied to every matrix entry.
+   * @return Reference to this matrix.
+   */
+  Matrix4x4& operator*=(const Complex& scalar);
+
+  /**
    * @brief Returns the conjugate transpose (adjoint) of this matrix.
    * @return Adjoint matrix `A^\dagger`.
    */
@@ -314,6 +374,18 @@ public:
    */
   explicit DynamicMatrix(std::int64_t dim);
 
+  /**
+   * @brief Creates a dynamic matrix from a fixed 2x2 matrix.
+   * @param src Source matrix.
+   */
+  explicit DynamicMatrix(const Matrix2x2& src);
+
+  /**
+   * @brief Creates a dynamic matrix from a fixed 4x4 matrix.
+   * @param src Source matrix.
+   */
+  explicit DynamicMatrix(const Matrix4x4& src);
+
   /// Copy constructor.
   DynamicMatrix(const DynamicMatrix& other);
   /// Move constructor.
@@ -331,6 +403,13 @@ public:
    * @return Identity matrix with ones on the diagonal.
    */
   [[nodiscard]] static DynamicMatrix identity(std::int64_t dim);
+
+  /**
+   * @brief Creates a dynamic matrix holding the adjoint of a 2x2 matrix.
+   * @param src Source matrix.
+   * @return Adjoint matrix `src^\dagger`.
+   */
+  [[nodiscard]] static DynamicMatrix fromAdjoint(const Matrix2x2& src);
 
   /**
    * @brief Returns the number of rows.
@@ -411,6 +490,18 @@ public:
    * @param src Source matrix.
    */
   void assignFrom(const DynamicMatrix& src);
+
+  /**
+   * @brief Checks approximate equality against a fixed 1x1 matrix.
+   *
+   * Returns false if this matrix is not 1x1.
+   *
+   * @param other Fixed-size matrix to compare against.
+   * @param tol Maximum allowed complex modulus of the entry difference.
+   * @return True if dimensions match and the entry differs by at most @p tol.
+   */
+  [[nodiscard]] bool isApprox(const Matrix1x1& other,
+                              double tol = MATRIX_TOLERANCE) const;
 
   /**
    * @brief Checks approximate equality against a fixed 2x2 matrix.

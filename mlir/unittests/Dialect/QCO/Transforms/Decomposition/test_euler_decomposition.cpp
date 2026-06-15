@@ -230,8 +230,7 @@ static Matrix2x2 compute1QUnitaryMatrix(WalkRange& range) {
   if (failed) {
     return Matrix2x2::fromElements(0, 0, 0, 0);
   }
-  return Matrix2x2::fromElements(global * acc(0, 0), global * acc(0, 1),
-                                 global * acc(1, 0), global * acc(1, 1));
+  return acc * global;
 }
 
 static Matrix2x2 compute1QMatrixFromFunction(func::FuncOp funcOp) {
