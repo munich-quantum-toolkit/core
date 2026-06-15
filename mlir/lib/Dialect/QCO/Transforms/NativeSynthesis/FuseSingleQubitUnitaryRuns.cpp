@@ -90,7 +90,8 @@ static bool isRunMember(Operation* op) {
  * @param basis The target Euler basis.
  * @return Whether `op` is in the gate set for `basis`.
  */
-static bool isTargetBasisGate(Operation* op, decomposition::EulerBasis basis) {
+static bool isTargetBasisGate(Operation* op,
+                              const decomposition::EulerBasis basis) {
   using decomposition::EulerBasis;
   return TypeSwitch<Operation*, bool>(op)
       .Case<RZOp>([&](auto) {
@@ -120,7 +121,7 @@ static bool isTargetBasisGate(Operation* op, decomposition::EulerBasis basis) {
  * @return Composed matrix, gate count, and run tail.
  */
 static FusableRunScan scanFusableRun(UnitaryOpInterface head,
-                                     decomposition::EulerBasis basis) {
+                                     const decomposition::EulerBasis basis) {
   FusableRunScan scan;
   const auto accumulate = [&](UnitaryOpInterface member) {
     const auto matrix = member.getUnitaryMatrix<Matrix2x2>();
@@ -171,7 +172,7 @@ namespace {
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
-                                    decomposition::EulerBasis basis)
+                                    const decomposition::EulerBasis basis)
       : OpInterfaceRewritePattern(context), basis(basis) {}
 
   decomposition::EulerBasis basis;
