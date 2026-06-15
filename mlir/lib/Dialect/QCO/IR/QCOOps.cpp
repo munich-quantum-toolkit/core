@@ -11,13 +11,13 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
+#include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -38,143 +38,135 @@ using namespace mlir::qco;
 static ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
-  // 1. Parse the opening parenthesis
-  if (parser.parseLParen()) {
-    return failure();
-  }
-
-  // Temporary storage for block arguments we are about to create
-  SmallVector<OpAsmParser::Argument> blockArgs;
-
-  // 2. Prepare to parse the list
-  if (failed(parser.parseOptionalRParen())) {
-    do {
-      OpAsmParser::Argument newArg;              // The "new" variable name
-      OpAsmParser::UnresolvedOperand oldOperand; // The "old" input variable
-
-      // Parse "%new"
-      if (parser.parseArgument(newArg)) {
-        return failure();
-      }
-
-      // Parse "="
-      if (parser.parseEqual()) {
-        return failure();
-      }
-
-      // Parse "%old"
-      if (parser.parseOperand(oldOperand)) {
-        return failure();
-      }
-      operands.push_back(oldOperand);
-
-      // Hard-code QubitType since targets in qco.ctrl are always qubits.
-      // This avoids double-binding type($targets_in) in the assembly format
-      // while keeping the parser simple and the assembly format clean.
-      newArg.type = QubitType::get(parser.getBuilder().getContext());
-      blockArgs.push_back(newArg);
-
-    } while (succeeded(parser.parseOptionalComma()));
-
-    if (parser.parseRParen()) {
-      return failure();
-    }
-  }
-
-  // 4. Parse the Region
-  // We explicitly pass the blockArgs we just parsed so they become the entry
-  // block!
-  if (parser.parseRegion(region, blockArgs)) {
-    return failure();
-  }
-
-  return success();
+  return utils::parseTargetAliasing<QubitType>(parser, region, operands);
 }
 
 static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
                                 Region& region, OperandRange targetsIn) {
-  printer << "(";
-  if (region.empty()) {
-    printer << ") ";
-    printer.printRegion(region, false);
-    return;
-  }
-  Block& entryBlock = region.front();
-
-  const auto numTargets = targetsIn.size();
-  for (unsigned i = 0; i < numTargets; ++i) {
-    if (i > 0) {
-      printer << ", ";
-    }
-    printer.printOperand(entryBlock.getArgument(i));
-    printer << " = ";
-    printer.printOperand(targetsIn[i]);
-  }
-  printer << ") ";
-
-  printer.printRegion(region, false);
+  utils::printTargetAliasing(printer, region, targetsIn);
 }
 
-static ParseResult
-parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
-                  SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
-  // Parse the qubits keyword
-  if (parser.parseKeyword("qubits")) {
+ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
+                        ::mlir::OperationState& result) {
+  auto& builder = parser.getBuilder();
+  OpAsmParser::UnresolvedOperand cond;
+  auto i1Type = builder.getIntegerType(1);
+  // Resolve the condition operand
+  if (parser.parseOperand(cond) ||
+      parser.resolveOperand(cond, i1Type, result.operands)) {
     return failure();
   }
 
+  SmallVector<OpAsmParser::Argument> thenArgs;
+  SmallVector<OpAsmParser::Argument> elseRegionArgs;
+  SmallVector<OpAsmParser::UnresolvedOperand> thenOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> elseOperands;
+
+  if (parser.parseKeyword("args")) {
+    return failure();
+  }
+  // Parse the then block assignment list
+  if (parser.parseAssignmentList(thenArgs, thenOperands)) {
+    return failure();
+  }
+  // Parse result type list
+  if (parser.parseArrowTypeList(result.types)) {
+    return failure();
+  }
+  // Resolve the operands
+  if (failed(parser.resolveOperands(thenOperands, result.types,
+                                    parser.getCurrentLocation(),
+                                    result.operands))) {
+    return failure();
+  }
+  // Set the argument types
+  for (auto [iterArg, type] : llvm::zip_equal(thenArgs, result.types)) {
+    iterArg.type = type;
+  }
   // Parse the then region
-  if (parseTargetAliasing(parser, thenRegion, operands)) {
+  Region* body = result.addRegion();
+  if (parser.parseRegion(*body, thenArgs)) {
     return failure();
   }
-  const auto thenCount = operands.size();
-
-  // Parse the else keyword
   if (parser.parseKeyword("else")) {
     return failure();
   }
-
-  // Parse the qubits keyword
-  if (parser.parseKeyword("qubits")) {
+  if (parser.parseKeyword("args")) {
+    return failure();
+  }
+  // Parse the else block assignment list
+  if (parser.parseAssignmentList(elseRegionArgs, elseOperands)) {
     return failure();
   }
 
-  // Parse the else region
-  if (parseTargetAliasing(parser, elseRegion, operands)) {
+  SmallVector<Value> resolvedElseOperands;
+  // Also resolve the else operands to check if they are the same as the
+  // previous operands
+  if (failed(parser.resolveOperands(elseOperands, result.types,
+                                    parser.getCurrentLocation(),
+                                    resolvedElseOperands))) {
     return failure();
   }
-
-  const auto elseCount = operands.size() - thenCount;
-
-  if (thenCount != elseCount) {
-    return parser.emitError(
-        parser.getCurrentLocation(),
-        "then/else qubit aliasing lists must be the same length");
-  }
-  for (unsigned i = 0; i < thenCount; ++i) {
-    if (operands[i].name != operands[thenCount + i].name) {
+  for (auto [elseVal, thenVal] : llvm::zip_equal(
+           resolvedElseOperands, llvm::drop_begin(result.operands,
+                                                  1))) { // skip condition
+    if (elseVal != thenVal) {
       return parser.emitError(
           parser.getCurrentLocation(),
-          "then/else qubit aliasing lists must match in order");
+          "else qubits must reference the same SSA values as then qubits");
     }
   }
 
-  // Remove duplicate operands
-  DenseSet<StringRef> seen;
-  llvm::erase_if(operands,
-                 [&](const auto& op) { return !seen.insert(op.name).second; });
+  // Set the argument types
+  for (auto [iterArg, type] : llvm::zip_equal(elseRegionArgs, result.types)) {
+    iterArg.type = type;
+  }
+  // Parse the else region
+  Region* elseBody = result.addRegion();
+  if (parser.parseRegion(*elseBody, elseRegionArgs)) {
+    return failure();
+  };
+
+  // Parse optional attr
+  if (parser.parseOptionalAttrDict(result.attributes)) {
+    return failure();
+  }
 
   return success();
 }
 
-static void printIfOpAliasing(OpAsmPrinter& printer, Operation* op,
-                              Region& thenRegion, Region& elseRegion,
-                              OperandRange qubits) {
-  printer << "qubits";
-  printTargetAliasing(printer, op, thenRegion, qubits);
-  printer << " else ";
-  printer << "qubits";
-  printTargetAliasing(printer, op, elseRegion, qubits);
+void IfOp::print(OpAsmPrinter& p) {
+  p << " ";
+  p.printOperand(getCondition());
+  // Print assignment list
+  auto printQubitsBlock = [&](Region& region, OperandRange operands) {
+    p << " args(";
+    if (!region.empty()) {
+      Block& entry = region.front();
+      llvm::interleaveComma(
+          llvm::zip(entry.getArguments(), operands), p, [&](auto pair) {
+            p.printRegionArgument(std::get<0>(pair), /*attrs=*/{},
+                                  /*omitType=*/true);
+            p << " = ";
+            p.printOperand(std::get<1>(pair));
+          });
+    }
+    p << ") ";
+  };
+  // Print then region
+  printQubitsBlock(getThenRegion(), getQubits());
+  // Print result types
+  p << "-> (";
+  llvm::interleaveComma(getResultTypes(), p, [&](Type t) { p.printType(t); });
+  p << ") ";
+  p.printRegion(getThenRegion(), /*printEntryBlockArgs=*/false);
+
+  // Print else region
+  p << " else";
+  printQubitsBlock(getElseRegion(), getQubits());
+  p.printRegion(getElseRegion(), /*printEntryBlockArgs=*/false);
+
+  p.printOptionalAttrDict((*this)->getAttrs());
 }
 
 //===----------------------------------------------------------------------===//

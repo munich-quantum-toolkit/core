@@ -56,6 +56,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
 }
 
 void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
+  auto module = main->getParentOfType<ModuleOp>();
   if (metadata.useDynamicQubit && metadata.numQubits != 0) {
     llvm::reportFatalUsageError(
         "Cannot use dynamic qubit allocation if static qubits are allocated");
@@ -68,8 +69,9 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   attributes.emplace_back(builder.getStringAttr("entry_point"));
   attributes.emplace_back(
       builder.getStrArrayAttr({"output_labeling_schema", "labeled"}));
-  attributes.emplace_back(
-      builder.getStrArrayAttr({"qir_profiles", "base_profile"}));
+  attributes.emplace_back(builder.getStrArrayAttr(
+      {"qir_profiles",
+       metadata.useAdaptive ? "adaptive_profile" : "base_profile"}));
 
   // Resource requirements
   attributes.emplace_back(builder.getStrArrayAttr(
@@ -77,28 +79,39 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
   attributes.emplace_back(builder.getStrArrayAttr(
       {"required_num_results", std::to_string(metadata.numResults)}));
 
-  // Management model or resource requirements
-  if (metadata.useDynamicQubit) {
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"dynamic_qubit_management", "true"}));
-  } else {
-    attributes.emplace_back(builder.getStrArrayAttr(
-        {"required_num_qubits", std::to_string(metadata.numQubits)}));
-  }
-
-  if (metadata.useDynamicResult) {
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"dynamic_result_management", "true"}));
-  } else {
-    attributes.emplace_back(builder.getStrArrayAttr(
-        {"required_num_results", std::to_string(metadata.numResults)}));
-  }
-
-  // QIR version (Base Profile spec requires version 2.1)
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_major_version", "2"}));
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_minor_version", "1"}));
-
   main->setAttr("passthrough", builder.getArrayAttr(attributes));
+
+  builder.setInsertionPointToEnd(module.getBody());
+
+  auto createFlag = [&](LLVM::ModFlagBehavior behavior, StringRef name,
+                        int32_t val) {
+    return LLVM::ModuleFlagAttr::get(module->getContext(), behavior,
+                                     builder.getStringAttr(name),
+                                     builder.getI32IntegerAttr(val));
+  };
+
+  SmallVector<Attribute> flags;
+
+  flags.push_back(
+      createFlag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2));
+  flags.push_back(
+      createFlag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1));
+  flags.push_back(createFlag(LLVM::ModFlagBehavior::Error,
+                             "dynamic_qubit_management",
+                             static_cast<int32_t>(metadata.useDynamicQubit)));
+  flags.push_back(createFlag(LLVM::ModFlagBehavior::Error,
+                             "dynamic_result_management",
+                             static_cast<int32_t>(metadata.useDynamicResult)));
+  if (metadata.useAdaptive) {
+    flags.push_back(createFlag(LLVM::ModFlagBehavior::Error,
+                               "backwards_branching",
+                               metadata.backwardsBranching));
+    flags.push_back(createFlag(LLVM::ModFlagBehavior::Error, "arrays",
+                               static_cast<int32_t>(metadata.useArrays)));
+  }
+
+  LLVM::ModuleFlagsOp::create(builder, module.getLoc(),
+                              builder.getArrayAttr(flags));
 }
 
 LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,

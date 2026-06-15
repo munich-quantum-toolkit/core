@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
+#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -19,108 +20,148 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <iterator>
+
 using namespace mlir;
 using namespace mlir::qtensor;
 
 /**
  * @brief Checks whether removing an extract-insert pair is linearity-safe.
  */
-static bool isRemovableExtractInsertPair(InsertOp insertOp,
-                                         ExtractOp extractOp) {
-  return insertOp.getScalar() == extractOp.getResult() &&
-         areEquivalentIndices(insertOp.getIndex(), extractOp.getIndex());
+static bool isRemovableExtractInsertPair(InsertOp insert, ExtractOp extract) {
+  return insert.getScalar() == extract.getResult() &&
+         areEquivalentIndices(insert.getIndex(), extract.getIndex());
 }
 
 /**
  * @brief Folds an insert operation after a matching extract operation into the
  * original tensor.
  */
-static Value foldInsertAfterExtract(InsertOp insertOp) {
-  auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
-  if (!extractOp) {
+static Value foldInsertAfterExtract(InsertOp insert) {
+  auto extract = insert.getScalar().getDefiningOp<ExtractOp>();
+  if (!extract) {
     return nullptr;
   }
 
-  if (insertOp.getDest() != extractOp.getOutTensor()) {
+  if (insert.getDest() != extract.getOutTensor()) {
     return nullptr;
   }
 
-  if (!isRemovableExtractInsertPair(insertOp, extractOp)) {
+  if (!isRemovableExtractInsertPair(insert, extract)) {
     return nullptr;
   }
 
-  return extractOp.getTensor();
-}
-
-/**
- * @brief Finds the extract operation corresponding to a given insert operation.
- *
- * @details The function traverses the tensor chain of the insert operation
- * until it finds the matching extract operation.
- */
-static ExtractOp findMatchingExtractInTensorChain(InsertOp insertOp) {
-  auto current = insertOp.getDest();
-  auto insertIndex = insertOp.getIndex();
-
-  if (!getConstantIntValue(insertIndex)) {
-    return nullptr;
-  }
-
-  while (auto* definingOp = current.getDefiningOp()) {
-    if (auto nestedInsertOp = dyn_cast<InsertOp>(definingOp)) {
-      auto nestedInsertIndex = nestedInsertOp.getIndex();
-      if (!getConstantIntValue(nestedInsertIndex)) {
-        return nullptr;
-      }
-      // A more recent write to the same index shadows all older extracts
-      if (areEquivalentIndices(nestedInsertIndex, insertIndex)) {
-        return nullptr;
-      }
-      current = nestedInsertOp.getDest();
-      continue;
-    }
-    if (auto extractOp = dyn_cast<ExtractOp>(definingOp)) {
-      auto extractIndex = extractOp.getIndex();
-      if (!getConstantIntValue(extractIndex)) {
-        return nullptr;
-      }
-      if (areEquivalentIndices(extractIndex, insertIndex)) {
-        return extractOp;
-      }
-      current = extractOp.getTensor();
-      continue;
-    }
-    break;
-  }
-  return nullptr;
+  return extract.getTensor();
 }
 
 namespace {
-
 /**
- * @brief Remove matching extract-insert pairs.
+ * @brief Remove an (insert, extract) pair when the inserted qubit has been
+ * extracted previously with the same constant index.
+ * @pre Assumes each qubit is extracted and inserted with the same index.
  */
-struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
+struct RemoveInsertExtractPairPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(InsertOp op,
+  LogicalResult matchAndRewrite(InsertOp insert,
                                 PatternRewriter& rewriter) const override {
-    auto extractOp = findMatchingExtractInTensorChain(op);
-    if (!extractOp) {
+    // Check: Insert has constant index.
+    if (!getConstantIntValue(insert.getIndex())) {
       return failure();
     }
 
-    if (!isRemovableExtractInsertPair(op, extractOp)) {
+    // Search for an extract operation on the tensor-chain with the same
+    // constant index as the matched insert operation.
+    TensorIterator it(insert.getResult());
+    for (; it != std::default_sentinel; ++it) {
+      if (!isa<ExtractOp>(it.operation())) {
+        continue;
+      }
+
+      auto extract = cast<ExtractOp>(it.operation());
+
+      // Check: Extract has constant index.
+      if (!getConstantIntValue(extract.getIndex())) {
+        return failure();
+      }
+
+      // Check: Same constant index.
+      if (!areEquivalentIndices(extract.getIndex(), insert.getIndex())) {
+        continue;
+      }
+
+      //                 ┌─────────┐                 ┌──────────┐
+      // ... ─t = dest──▶│insert(i)│─▶ ... ─▶tensor─▶│extract(i)│─outTensor─▶...
+      //                 └────▲────┘                 └────┬─────┘
+      //          ... ─scalar─┘                           └result─▶ ...
+      // ------------------------- ⬇ (transformed) ⬇ -------------------------
+      // ... ─t = outTensor─▶ ...
+      // ... ─scalar = result─▶ ... (Assumption applied.)
+
+      rewriter.replaceOp(extract, {extract.getTensor(), insert.getScalar()});
+      rewriter.replaceOp(insert, insert.getDest());
+
+      return success();
+    }
+
+    return failure();
+  }
+};
+
+/**
+ * @brief If possible, move insert after extract in tensor chain.
+ * @pre Assumes that the extract and insertion index of any qubit is equivalent.
+ */
+struct BubbleDownInsertPattern final : OpRewritePattern<InsertOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertOp insert,
+                                PatternRewriter& rewriter) const override {
+    if (!getConstantIntValue(insert.getIndex())) {
       return failure();
     }
 
-    rewriter.replaceOp(op, op.getDest());
-    rewriter.replaceOp(extractOp, {extractOp.getTensor(), nullptr});
+    auto next = std::next(TensorIterator(insert.getResult()));
+    if (next == std::default_sentinel) {
+      return failure();
+    }
+
+    if (!isa<ExtractOp>(next.operation())) {
+      return failure();
+    }
+
+    auto extract = cast<ExtractOp>(next.operation());
+    if (!getConstantIntValue(extract.getIndex())) {
+      return failure();
+    }
+
+    if (areEquivalentIndices(extract.getIndex(), insert.getIndex())) {
+      return failure();
+    }
+
+    // i != j
+    //                ┌─────────┐                  ┌──────────┐
+    // ... ─t = dest─▶│insert(i)│─result = tensor─▶│extract(j)│─outTensor─▶ ...
+    //                └─────────┘                  └──────────┘
+    // -------------------------- ⬇ (transformed) ⬇ --------------------------
+    //                  ┌──────────┐                   ┌─────────┐
+    // ... ─t = tensor─▶│extract(j)│─outTensor = dest─▶│insert(i)│─result─▶ ...
+    //                  └──────────┘                   └─────────┘
+
+    const Value t = insert.getDest();
+    const Value outTensor = extract.getOutTensor();
+    const Value result = insert.getResult();
+
+    rewriter.moveOpAfter(insert, extract);
+    rewriter.modifyOpInPlace(extract,
+                             [&] { extract.getTensorMutable().assign(t); });
+    rewriter.modifyOpInPlace(
+        insert, [&] { insert.getDestMutable().assign(outTensor); });
+    rewriter.replaceAllUsesExcept(outTensor, result, insert);
 
     return success();
   }
 };
-
 } // namespace
 
 LogicalResult InsertOp::verify() {
@@ -148,5 +189,5 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<RemoveExtractInsertPair>(context);
+  results.add<RemoveInsertExtractPairPattern, BubbleDownInsertPattern>(context);
 }

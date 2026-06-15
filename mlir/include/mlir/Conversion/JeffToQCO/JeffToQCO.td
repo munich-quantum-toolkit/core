@@ -22,14 +22,14 @@ def JeffToQCO : Pass<"jeff-to-qco"> {
     - Gates with a non-trivial power are currently not supported
     - Only specific `CustomOp`s are currently supported
     - Only specific `PPROp`s are currently supported
-    - `Qureg_Op`s are currently not supported
-    - `SCF_Op`s are currently not supported
+    - `WhileOp` and `DoWhileOp` are currently not supported
     - Support for multiple functions is currently limited
   }];
 
   let dependentDialects = ["mlir::arith::ArithDialect",
-                           "mlir::math::MathDialect",
+                           "mlir::math::MathDialect", "mlir::scf::SCFDialect",
                            "mlir::tensor::TensorDialect",
                            "mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
   ];
 }

@@ -10,15 +10,13 @@
 
 #include "qdmi/driver/Driver.hpp"
 
-#include "mqt_ddsim_qdmi/device.h"
-#include "mqt_na_qdmi/device.h"
-#include "mqt_sc_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
 
 #include <qdmi/client.h>
 #include <qdmi/device.h>
 #include <spdlog/spdlog.h>
 
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -34,60 +32,63 @@
 
 #ifdef _WIN32
 #include <windows.h>
+
+#include <filesystem>
 #else
 #include <dlfcn.h>
 #endif // _WIN32
 
 namespace qdmi {
-// Macro to load a static symbol from a statically linked library.
-// @param prefix is the prefix used for the function names in the library.
-// @param symbol is the name of the symbol to load.
-#define LOAD_STATIC_SYMBOL(prefix, symbol)                                     \
-  {                                                                            \
-    (symbol) = reinterpret_cast<decltype(symbol)>(prefix##_QDMI_##symbol);     \
-  }
-#define DEFINE_STATIC_LIBRARY(prefix)                                          \
-  prefix##DeviceLibrary::prefix##DeviceLibrary() {                             \
-    /* NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast) */             \
-    /* load the function symbols from the static library */                    \
-    LOAD_STATIC_SYMBOL(prefix, device_initialize)                              \
-    LOAD_STATIC_SYMBOL(prefix, device_finalize)                                \
-    /* device session interface */                                             \
-    LOAD_STATIC_SYMBOL(prefix, device_session_alloc)                           \
-    LOAD_STATIC_SYMBOL(prefix, device_session_init)                            \
-    LOAD_STATIC_SYMBOL(prefix, device_session_free)                            \
-    LOAD_STATIC_SYMBOL(prefix, device_session_set_parameter)                   \
-    /* device job interface */                                                 \
-    LOAD_STATIC_SYMBOL(prefix, device_session_create_device_job)               \
-    LOAD_STATIC_SYMBOL(prefix, device_job_free)                                \
-    LOAD_STATIC_SYMBOL(prefix, device_job_set_parameter)                       \
-    LOAD_STATIC_SYMBOL(prefix, device_job_query_property)                      \
-    LOAD_STATIC_SYMBOL(prefix, device_job_submit)                              \
-    LOAD_STATIC_SYMBOL(prefix, device_job_cancel)                              \
-    LOAD_STATIC_SYMBOL(prefix, device_job_check)                               \
-    LOAD_STATIC_SYMBOL(prefix, device_job_wait)                                \
-    LOAD_STATIC_SYMBOL(prefix, device_job_get_results)                         \
-    /* device query interface */                                               \
-    LOAD_STATIC_SYMBOL(prefix, device_session_query_device_property)           \
-    LOAD_STATIC_SYMBOL(prefix, device_session_query_site_property)             \
-    LOAD_STATIC_SYMBOL(prefix, device_session_query_operation_property)        \
-    /* NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast) */               \
-    /* initialize the device */                                                \
-    device_initialize();                                                       \
-  }                                                                            \
-                                                                               \
-  prefix##DeviceLibrary::~prefix##DeviceLibrary() {                            \
-    /* Check if QDMI_device_finalize is not NULL before calling it. */         \
-    if (device_finalize != nullptr) {                                          \
-      device_finalize();                                                       \
-    }                                                                          \
-  }
-DEFINE_STATIC_LIBRARY(MQT_NA)
-DEFINE_STATIC_LIBRARY(MQT_DDSIM)
-DEFINE_STATIC_LIBRARY(MQT_SC)
-
 #ifdef _WIN32
-#define DL_OPEN(lib) LoadLibraryA((lib))
+namespace {
+/// Returns the directory of the currently loaded driver library.
+[[nodiscard]] auto getDriverDirectory() -> std::filesystem::path {
+  HMODULE module = nullptr;
+  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         reinterpret_cast<LPCWSTR>(&getDriverDirectory),
+                         &module) == 0) {
+    return {};
+  }
+
+  std::wstring buffer(MAX_PATH, L'\0');
+  DWORD size = 0;
+  while (true) {
+    size = GetModuleFileNameW(module, buffer.data(),
+                              static_cast<DWORD>(buffer.size()));
+    if (size == 0) {
+      return {};
+    }
+    if (size < buffer.size()) {
+      buffer.resize(size);
+      break;
+    }
+    buffer.resize(buffer.size() * 2);
+  }
+
+  return std::filesystem::path(buffer).parent_path();
+}
+
+/// Loads the device library with the given name, searching in the driver
+/// directory if no path is specified.
+[[nodiscard]] auto loadDeviceLibrary(const std::string& libName) -> HMODULE {
+  const auto requested = std::filesystem::path(libName);
+
+  if (requested.has_parent_path()) {
+    // A directory component was supplied: Directly load the library.
+    return LoadLibraryW(requested.wstring().c_str());
+  }
+
+  // Bare filename: resolve relative to the driver's own directory so that
+  // builtin device DLLs installed next to the driver are found reliably.
+  const auto path = getDriverDirectory() / requested;
+  return LoadLibraryExW(path.wstring().c_str(), nullptr,
+                        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+                            LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+}
+} // namespace
+
+#define DL_OPEN(lib) loadDeviceLibrary((lib))
 #define DL_SYM(lib, sym)                                                       \
   reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>((lib)), (sym)))
 #define DL_CLOSE(lib) FreeLibrary(static_cast<HMODULE>((lib)))
@@ -387,12 +388,14 @@ auto QDMI_Session_impl_d::querySessionProperty(QDMI_Session_Property prop,
 
 namespace qdmi {
 Driver::Driver() {
-  devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
-      std::make_unique<MQT_NADeviceLibrary>()));
-  devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
-      std::make_unique<MQT_DDSIMDeviceLibrary>()));
-  devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
-      std::make_unique<MQT_SCDeviceLibrary>()));
+  for (const auto& [lib, prefix] : std::array{DYN_DEV_LIBS}) {
+    try {
+      addDynamicDeviceLibrary(lib, prefix);
+    } catch (const std::exception& ex) {
+      SPDLOG_WARN("Skipping builtin QDMI device library '{}': {}", lib,
+                  ex.what());
+    }
+  }
 }
 
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,

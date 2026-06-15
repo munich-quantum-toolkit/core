@@ -11,7 +11,3 @@ Checks: |
   -misc-use-anonymous-namespace,
   -modernize-type-traits,
   -*-const-correctness,
-
-CheckOptions:
-  - key: misc-include-cleaner.IgnoreHeaders
-    value: "Eigen/.*;unsupported/Eigen/.*"

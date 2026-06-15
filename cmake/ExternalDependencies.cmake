@@ -23,25 +23,13 @@ if(BUILD_MQT_CORE_BINDINGS)
 endif()
 
 if(BUILD_MQT_CORE_MLIR)
-  set(Eigen_VERSION
-      5.0.1
-      CACHE STRING "Eigen version")
-  set(Eigen_URL
-      https://gitlab.com/libeigen/eigen/-/archive/${Eigen_VERSION}/eigen-${Eigen_VERSION}.tar.gz)
-  set(EIGEN_BUILD_TESTING
-      OFF
-      CACHE INTERNAL "Disable building Eigen tests")
-  FetchContent_Declare(Eigen URL ${Eigen_URL} FIND_PACKAGE_ARGS ${Eigen_VERSION})
-  list(APPEND FETCH_PACKAGES Eigen)
-
   # Fetch jeff-mlir
-  set(BUILD_JEFF_MLIR_TRANSLATION
-      OFF
-      CACHE BOOL "Disable building the translation submodule of jeff-mlir")
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG v0.1.0)
+    # Pinned to an unreleased commit until v0.3.0 is released. jeff-mlir's SCF operations are
+    # already marked as IsolatedFromAbove in the pinned version.
+    GIT_TAG 3f34dc3e2865ceaffb8003b2410404306a49f0ab)
   list(APPEND FETCH_PACKAGES jeff-mlir)
 endif()
 
@@ -135,25 +123,6 @@ list(APPEND FETCH_PACKAGES spdlog)
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
 
-# Treat Eigen headers as system headers to avoid surfacing third-party warnings.
-set(_eigen_target "")
-if(TARGET Eigen3::Eigen)
-  set(_eigen_target Eigen3::Eigen)
-elseif(TARGET Eigen::Eigen)
-  set(_eigen_target Eigen::Eigen)
-endif()
-if(_eigen_target)
-  get_target_property(_eigen_alias_target ${_eigen_target} ALIASED_TARGET)
-  if(_eigen_alias_target)
-    set(_eigen_target ${_eigen_alias_target})
-  endif()
-  get_target_property(_eigen_includes ${_eigen_target} INTERFACE_INCLUDE_DIRECTORIES)
-  if(_eigen_includes)
-    set_target_properties(${_eigen_target} PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
-                                                      "${_eigen_includes}")
-  endif()
-endif()
-
 # Install nlohmann_json with explicit MQT components.
 if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
   set(MQT_CORE_JSON_CONFIG_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/cmake/nlohmann_json")
@@ -190,6 +159,13 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
     DIRECTORY ${nlohmann_json_SOURCE_DIR}/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+
+  if(MSVC)
+    install(
+      FILES ${nlohmann_json_SOURCE_DIR}/nlohmann_json.natvis
+      DESTINATION .
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  endif()
 
   install(TARGETS nlohmann_json EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME})
 

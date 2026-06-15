@@ -12,7 +12,8 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
@@ -60,6 +61,15 @@ void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
 LogicalResult
 QuantumCompilerPipeline::runPipeline(ModuleOp module,
                                      CompilationRecord* record) const {
+  if (config_.convertToQIRBase && config_.convertToQIRAdaptive) {
+    llvm::errs()
+        << "convertToQIRBase and convertToQIRAdaptive are mutually "
+           "exclusive; only one QIR profile can be targeted at a time.\n";
+    return failure();
+  }
+  const auto convertToQIR =
+      config_.convertToQIRAdaptive || config_.convertToQIRBase;
+
   // Ensure printIRAfterAllStages implies recordIntermediates
   if (config_.printIRAfterAllStages &&
       (!config_.recordIntermediates || record == nullptr)) {
@@ -86,12 +96,12 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // 8. QC cleanup
   // 9. QC-to-QIR conversion (optional)
   // 10. QIR cleanup (optional)
-  auto totalStages = 10;
-  if (config_.convertToQIR) {
+  auto totalStages = 8;
+  if (convertToQIR) {
     totalStages += 2;
   }
   auto currentStage = 0;
-
+  
   // Stage 1: QC import
   if (record != nullptr && config_.recordIntermediates) {
     record->afterQCImport = captureIR(module);
@@ -140,6 +150,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
         if (!config_.disableMergeSingleQubitRotationGates) {
           pm.addPass(qco::createMergeSingleQubitRotationGates());
         }
+        if (config_.enableHadamardLifting) {
+          pm.addPass(qco::createHadamardLifting());
+        }
       }))) {
     return failure();
   }
@@ -167,9 +180,10 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     if (failed(runStage([&](PassManager& pm) {
           /// TODO:
           // Individual passes use the device handle to query properties.
-          // pm.addPass(createNativeGateDecompositionPass(config_.device))
           // if (device.hasCouplingMap())
           //     pm.addPass(createMappingPass(config_.device))
+          // }
+          // pm.addPass(createNativeGateDecompositionPass(config_.device))
         }))) {
       return failure();
     }
@@ -216,12 +230,20 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
       prettyPrintStage(module, "Final QC Cleanup", ++currentStage, totalStages);
     }
   }
-  // Stage 11: QC-to-QIR conversion (optional)
-  if (config_.convertToQIR) {
-    if (failed(
-            runStage([&](PassManager& pm) { pm.addPass(createQCToQIR()); }))) {
+  // Stage 9: QC-to-QIR conversion (optional)
+  if (convertToQIR) {
+    auto addConversionPass = [&](PassManager& pm) {
+      if (config_.convertToQIRBase) {
+        pm.addPass(createQCToQIRBase());
+      } else {
+        pm.addPass(createQCToQIRAdaptive());
+      }
+    };
+
+    if (failed(runStage(addConversionPass))) {
       return failure();
     }
+
     if (record != nullptr && config_.recordIntermediates) {
       record->afterQIRConversion = captureIR(module);
       if (config_.printIRAfterAllStages) {

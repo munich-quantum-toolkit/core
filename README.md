@@ -37,7 +37,7 @@ If you have any questions, feel free to create a [discussion](https://github.com
 
 ## Contributors and Supporters
 
-The _[Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io)_ is developed by the [Chair for Design Automation](https://www.cda.cit.tum.de/) at the [Technical University of Munich](https://www.tum.de/) and supported by the [Munich Quantum Software Company (MQSC)](https://munichquantum.software).
+MQT Core is developed by the [Chair for Design Automation](https://www.cda.cit.tum.de/) at the [Technical University of Munich](https://www.tum.de/) and [MQSC](https://mq.sc).
 Among others, it is part of the [Munich Quantum Software Stack (MQSS)](https://www.munich-quantum-valley.de/research/research-areas/mqss) ecosystem, which is being developed as part of the [Munich Quantum Valley (MQV)](https://www.munich-quantum-valley.de) initiative.
 
 <p align="center">
@@ -148,6 +148,7 @@ When citing the compilation framework built on MLIR, cite the MQT Compiler Colle
   author       = {Burgholzer, Lukas and Haag, Daniel and Stade, Yannick and Rovara, Damian and Hopf, Patrick and Wille, Robert},
   year         = {2026},
   booktitle    = {Design, Automation and Test in Europe},
+  doi          = {10.23919/DATE69613.2026.11539504},
   eprint       = {2604.08674},
   eprinttype   = {arxiv},
 }

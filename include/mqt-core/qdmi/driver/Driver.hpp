@@ -146,22 +146,6 @@ public:
   ~DynamicDeviceLibrary() override;
 };
 
-// Macro to define a static library class that inherits from DeviceLibrary.
-// It binds all device library functions to the functions of the static library.
-// @param prefix is the prefix used for the function names in the library.
-#define DECLARE_STATIC_LIBRARY(prefix)                                         \
-  class prefix##DeviceLibrary final : public DeviceLibrary {                   \
-  public:                                                                      \
-    prefix##DeviceLibrary();                                                   \
-                                                                               \
-    ~prefix##DeviceLibrary() override;                                         \
-  };
-
-// Call the above macro for all static libraries that we want to support.
-DECLARE_STATIC_LIBRARY(MQT_NA)
-DECLARE_STATIC_LIBRARY(MQT_DDSIM)
-DECLARE_STATIC_LIBRARY(MQT_SC)
-
 /**
  * @brief The status of a session.
  * @details This enum defines the possible states of a session in the QDMI
@@ -178,9 +162,6 @@ enum class SessionStatus : uint8_t {
  */
 struct QDMI_Device_impl_d {
 private:
-  // Since we treat this struct as a class, we apply also the naming scheme for
-  // classes, i.e., an underscore at the end of member names.
-
   /**
    * @brief The device library that provides the device interface functions.
    * @note This must be a pointer type as we need access to dynamic and static
@@ -265,9 +246,6 @@ public:
  */
 struct QDMI_Job_impl_d {
 private:
-  // Since we treat this struct as a class, we apply also the naming scheme for
-  // classes, i.e., an underscore at the end of member names.
-
   /// @brief The device job handle.
   QDMI_Device_Job deviceJob_ = nullptr;
   /// @brief The device associated with the job.
@@ -350,8 +328,6 @@ public:
 /**
  * @brief Definition of the QDMI Session.
  */
-// Since we treat this struct as a class, we apply also the naming scheme for
-// classes, i.e., an underscore at the end of member names.
 struct QDMI_Session_impl_d {
 private:
   /// @brief The status of the session.

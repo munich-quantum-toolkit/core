@@ -11,6 +11,14 @@
 #include "quantum_computation_programs.h"
 
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/CompoundOperation.hpp"
+#include "ir/operations/IfElseOperation.hpp"
+#include "ir/operations/OpType.hpp"
+#include "ir/operations/StandardOperation.hpp"
+
+#include <memory>
+#include <utility>
+#include <vector>
 
 namespace qc {
 
@@ -532,6 +540,58 @@ void barrierTwoQubits(QuantumComputation& comp) {
 void barrierMultipleQubits(QuantumComputation& comp) {
   comp.addQubitRegister(3, "q");
   comp.barrier({0, 1, 2});
+}
+
+void ctrlTwo(QuantumComputation& comp) {
+  const auto& q = comp.addQubitRegister(4, "q");
+  CompoundOperation compound;
+  compound.emplace_back<StandardOperation>(2, X);
+  compound.emplace_back<StandardOperation>(Targets{2, 3}, RXX,
+                                           std::vector{0.123});
+  compound.addControl(0);
+  compound.addControl(1);
+  comp.emplace_back<CompoundOperation>(std::move(compound));
+}
+
+void ctrlTwoMixed(QuantumComputation& comp) {
+  const auto& q = comp.addQubitRegister(4, "q");
+  CompoundOperation compound;
+  compound.emplace_back<StandardOperation>(2, 3, X);
+  compound.emplace_back<StandardOperation>(Targets{2, 3}, RXX,
+                                           std::vector{0.123});
+  compound.addControl(0);
+  compound.addControl(1);
+  comp.emplace_back<CompoundOperation>(std::move(compound));
+}
+
+void simpleIf(QuantumComputation& comp) {
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(1, "c");
+  comp.h(q[0]);
+  comp.measure(q[0], c[0]);
+  comp.if_(X, q[0], c[0]);
+}
+
+void ifTwoQubits(QuantumComputation& comp) {
+  const auto& q = comp.addQubitRegister(2, "q");
+  const auto& c = comp.addClassicalRegister(1, "c");
+  comp.h(q[0]);
+  comp.measure(q[0], c[0]);
+  CompoundOperation compound;
+  compound.emplace_back<StandardOperation>(0, X);
+  compound.emplace_back<StandardOperation>(1, X);
+  IfElseOperation ifElse(
+      std::make_unique<CompoundOperation>(std::move(compound)), nullptr, c[0]);
+  comp.emplace_back<IfElseOperation>(std::move(ifElse));
+}
+
+void ifElse(QuantumComputation& comp) {
+  const auto& q = comp.addQubitRegister(1, "q");
+  const auto& c = comp.addClassicalRegister(1, "c");
+  comp.h(q[0]);
+  comp.measure(q[0], c[0]);
+  comp.ifElse(std::make_unique<StandardOperation>(q[0], X),
+              std::make_unique<StandardOperation>(q[0], Z), c[0]);
 }
 
 } // namespace qc
