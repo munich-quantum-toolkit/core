@@ -10,6 +10,8 @@
 
 #include "mlir/Support/Passes.h"
 
+#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QC/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/Transforms/Passes.h"
@@ -57,6 +59,16 @@ void populateQIRCleanupPipeline(PassManager& pm) {
   addSimplificationPasses(pm);
   pm.addPass(qir::createQIRCleanupPass());
   pm.addPass(createRemoveDeadValuesPass());
+}
+
+void populateQIRConversionPipeline(mlir::PassManager& pm, bool useAdaptive) {
+  if (useAdaptive) {
+    pm.addPass(createQCToQIRAdaptive());
+  } else {
+    pm.addPass(createQCToQIRBase());
+  }
+  pm.addPass(createAttachEntryPointAttributes(
+      qir::AttachEntryPointAttributesOptions{useAdaptive}));
 }
 
 [[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp module) {

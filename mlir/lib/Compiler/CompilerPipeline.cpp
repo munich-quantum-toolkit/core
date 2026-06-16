@@ -12,8 +12,6 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
@@ -199,15 +197,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   // Stage 9: QC-to-QIR conversion (optional)
   if (convertToQIR) {
-    auto addConversionPass = [&](PassManager& pm) {
-      if (config_.convertToQIRBase) {
-        pm.addPass(createQCToQIRBase());
-      } else {
-        pm.addPass(createQCToQIRAdaptive());
-      }
-    };
-
-    if (failed(runStage(addConversionPass))) {
+    if (failed(runStage(
+            [&](PassManager& pm) { populateQIRConversionPipeline(pm, config_.convertToQIRAdaptive); }))) {
       return failure();
     }
 

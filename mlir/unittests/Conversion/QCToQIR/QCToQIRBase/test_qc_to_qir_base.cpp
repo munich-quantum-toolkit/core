@@ -9,7 +9,6 @@
  */
 
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
@@ -76,7 +75,7 @@ protected:
 
 static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
   PassManager pm(module.getContext());
-  pm.addPass(createQCToQIRBase());
+  populateQIRConversionPipeline(pm, false);
   return pm.run(module);
 }
 

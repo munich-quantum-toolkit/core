@@ -38,7 +38,7 @@ enum class AllocationMode : std::uint8_t {
 /**
  * @brief State object for tracking lowering information during QIR conversion
  */
-struct LoweringState : QIRMetadata {
+struct LoweringState {
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
@@ -69,6 +69,9 @@ struct LoweringState : QIRMetadata {
   Block* entryBlock{};
   Block* measurementsBlock{};
   Block* outputBlock{};
+
+  /// The number of recorded results in the computation.
+  size_t numResults = 0;
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;

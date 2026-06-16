@@ -102,10 +102,10 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     // Switch to entry block
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
+    auto nqubits = state.staticQubits.size();
     auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
-                                        static_cast<int64_t>(state.numQubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(state.numQubits++),
-                                   qubit);
+                                        static_cast<int64_t>(nqubits));
+    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
     rewriter.replaceOp(op, qubit);
 
     return success();
@@ -157,10 +157,10 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
 
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
+    const auto nqubits = state.staticQubits.size();
     auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
-                                        static_cast<int64_t>(state.numQubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(state.numQubits++),
-                                   qubit);
+                                        static_cast<int64_t>(nqubits));
+    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits + 1), qubit);
     rewriter.replaceOp(op, qubit);
 
     return success();
@@ -380,7 +380,7 @@ protected:
    * @brief Executes the QC to QIR conversion pass
    *
    * @details
-   * Performs the conversion in seven stages:
+   * Performs the conversion in six stages:
    *
    * **Stage 1: Func to LLVM**
    * Convert func dialect operations (main function) to LLVM dialect
@@ -397,15 +397,11 @@ protected:
    * Convert QC dialect operations to QIR calls and add output recording to the
    * output block.
    *
-   * **Stage 5: QIR attributes**
-   * Add QIR base profile metadata to the main function, including qubit/result
-   * counts and version information.
-   *
-   * **Stage 6: Standard dialects to LLVM**
+   * **Stage 5: Standard dialects to LLVM**
    * Convert arith and control flow dialects to LLVM (for index arithmetic and
    * function control flow).
    *
-   * **Stage 7: Reconcile casts**
+   * **Stage 6: Reconcile casts**
    * Clean up any unrealized cast operations introduced during type conversion.
    */
   void runOnOperation() override {
@@ -460,10 +456,7 @@ protected:
       addOutputRecording(main, ctx, state);
     }
 
-    // Stage 5: Set QIR metadata attributes
-    setQIRAttributes(main, state);
-
-    // Stage 6: Convert standard dialects to LLVM
+    // Stage 5: Convert standard dialects to LLVM
     {
       RewritePatternSet stdPatterns(ctx);
       target.addIllegalDialect<arith::ArithDialect>();
@@ -480,7 +473,7 @@ protected:
       }
     }
 
-    // Stage 7: Reconcile unrealized casts
+    // Stage 6: Reconcile unrealized casts
     PassManager passManager(ctx);
     passManager.addPass(createReconcileUnrealizedCastsPass());
     if (passManager.run(moduleOp).failed()) {

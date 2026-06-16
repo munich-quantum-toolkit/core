@@ -41,7 +41,7 @@ private:
     static constexpr StringRef PREFIX_LABEL = "@__quantum__qis";
 
     DenseSet<APInt> seen;
-    main->walk([&](LLVM::ConstantOp& constOp) {
+    main->walk([&](LLVM::ConstantOp constOp) {
       if (constOp.use_empty()) {
         return;
       }
@@ -91,7 +91,7 @@ private:
     static constexpr StringRef REC_FN = "@__quantum__rt__result_record_output";
 
     DenseSet<APInt> seen;
-    main->walk([&](LLVM::CallOp& callOp) {
+    main->walk([&](LLVM::CallOp callOp) {
       if (callOp->getName().getStringRef() != REC_FN) {
         return;
       }
@@ -123,7 +123,7 @@ private:
   /// Return true, if the entry point contains an `LLVM::CondBrOp`.
   static bool hasConditionalBranching(LLVM::LLVMFuncOp& main) {
     bool hasConditional{false};
-    main->walk([&](LLVM::CondBrOp&) {
+    main->walk([&](LLVM::CondBrOp) {
       hasConditional = true;
       return WalkResult::interrupt();
     });
@@ -135,16 +135,18 @@ private:
   bool hasBackwardBranching(LLVM::LLVMFuncOp& main) {
     bool hasBackward{false};
     const auto& domInfo = getAnalysis<DominanceInfo>();
-    main->walk([&](LLVM::BrOp& brOp) {
+    std::ignore = main->walk([&](LLVM::BrOp brOp) {
       if (domInfo.dominates(brOp.getDest(), brOp->getBlock())) {
         hasBackward = true;
         return WalkResult::interrupt();
       }
+      return WalkResult::advance();
     });
     return hasBackward;
   }
 
-  ///
+  /// Return triple of booleans, indicating whether the entry point uses
+  /// dynamic qubits = [0], dynamic results = [1], or dynamic arrays = [2].
   static std::tuple<bool, bool, bool>
   hasDynamicQubitAllocation(LLVM::LLVMFuncOp& main) {
     static constexpr StringRef QUBIT_ALLOC = "@__quantum__rt__qubit_allocate";
@@ -158,7 +160,7 @@ private:
     bool useDynamicResult{false};
     bool useArrays{false};
 
-    main->walk([&](LLVM::CallOp& callOp) {
+    main->walk([&](LLVM::CallOp callOp) {
       const auto name = callOp->getName().getStringRef();
       if (name == QUBIT_ALLOC) {
         useDynamicQubit = true;
