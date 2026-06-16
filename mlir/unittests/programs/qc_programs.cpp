@@ -27,6 +27,16 @@ void allocMultipleQubitRegisters(QCProgramBuilder& b) {
   b.allocQubitRegister(3);
 }
 
+void allocMultipleQubitRegistersWithOps(QCProgramBuilder& b) {
+  auto q0 = b.allocQubitRegister(2);
+  auto q1 = b.allocQubitRegister(3);
+  b.h(q0[0]);
+  b.h(q0[1]);
+  b.h(q1[0]);
+  b.h(q1[1]);
+  b.h(q1[2]);
+}
+
 void allocLargeRegister(QCProgramBuilder& b) { b.allocQubitRegister(100); }
 
 void staticQubits(QCProgramBuilder& b) {
@@ -277,11 +287,10 @@ void trivialControlledX(QCProgramBuilder& b) {
 }
 
 void repeatedControlledX(QCProgramBuilder& b) {
-  auto control = b.allocQubit();
-  b.h(control);
-  for (auto i = 0; i < 50; i++) {
-    auto qubit = b.allocQubit();
-    b.cx(control, qubit);
+  auto q = b.allocQubitRegister(64);
+  b.h(q[0]);
+  for (auto i = 1; i < 64; i++) {
+    b.cx(q[0], q[i]);
   }
 }
 

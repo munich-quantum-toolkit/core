@@ -1181,4 +1181,13 @@ void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
 void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
 
+/// Extracts three qubits with ascending index (0, 1, 2), performs a
+/// computation, and finally inserts the qubits in ascending order (0, 1, 2).
+void qtensorChain(QCOProgramBuilder& b);
+
+/// Performs the same computation as the `qtensorChain` function, but uses
+/// qubits immediately after the extract and inserts the qubits in descending
+/// order (2, 1, 0).
+void qtensorAlternativeChain(QCOProgramBuilder& b);
+
 } // namespace mlir::qco
