@@ -135,11 +135,17 @@ generate_plot(counts, name, light=True)
 generate_plot(counts, name, light=False)
 ```
 
-```{figure} fig-qpe-light.svg
-:align: center :width: 75% :figclass: only-light ```
+```{image} fig-qpe-light.svg
+:align: center
+:width: 75%
+:class: only-light
+```
 
-```{figure} fig-qpe-dark.svg
-:align: center :width: 75% :figclass: only-dark ```
+```{image} fig-qpe-dark.svg
+:align: center
+:width: 75%
+:class: only-dark
+```
 
 The {py:func}`~mqt.core.dd.sample` function is a high-level interface to the
 decision diagram package that does not require any knowledge of the underlying
