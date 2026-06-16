@@ -6,9 +6,8 @@
 Thank you for your interest in contributing to MQT Core!
 This document outlines the development guidelines and how to contribute.
 
-We use GitHub to
-[host code](https://github.com/munich-quantum-toolkit/core), to
-[track issues and feature requests][issues], as well as accept
+We use GitHub to [host code](https://github.com/munich-quantum-toolkit/core),
+to [track issues and feature requests][issues], as well as accept
 [pull requests](https://github.com/munich-quantum-toolkit/core/pulls).
 See <https://docs.github.com/en/get-started/quickstart>
 for a general introduction to working with GitHub and contributing to projects.
@@ -332,13 +331,11 @@ ctest --preset release
 
 :::{tip}
 If you want to disable configuring and building the C++ tests,
-you can pass {code}`-DBUILD_MQT_CORE_TESTS=OFF` to the CMake
-configure step.
+you can pass {code}`-DBUILD_MQT_CORE_TESTS=OFF` to the CMake configure step.
 :::
 
 Our CI pipeline on GitHub also collects code coverage information
-and uploads it to
-[Codecov](https://codecov.io/gh/munich-quantum-toolkit/core).
+and uploads it to [Codecov](https://codecov.io/gh/munich-quantum-toolkit/core).
 Our goal is to have new contributions at least maintain the current code
 coverage level, while striving for covering as much of the code as possible.
 Try to write meaningful tests that actually test the correctness of the code
@@ -449,8 +446,7 @@ directory.
 :::{tip}
 
 To build only the Python bindings,
-pass {code}`-DBUILD_MQT_CORE_BINDINGS=ON` to the CMake configure
-step.
+pass {code}`-DBUILD_MQT_CORE_BINDINGS=ON` to the CMake configure step.
 CMake will then try to find Python
 and the necessary dependencies ({code}`nanobind`) on your system
 and configure the respective targets.
@@ -464,8 +460,7 @@ configure step to point CMake to a specific Python installation.
 
 :::
 
-The Python package itself lives in the {code}`python/mqt/core`
-directory.
+The Python package itself lives in the {code}`python/mqt/core` directory.
 
 The package lives in the {code}`src/mqt/core` directory.
 
@@ -584,8 +579,8 @@ and will explicitly warn you if you forget to add one.
 We heavily rely on [type hints](https://docs.python.org/3/library/typing.html)
 to document the expected types of function arguments and return values.
 For the compiled parts of the code base,
-we provide type hints in the form of stub files in the
-{code}`python/mqt/core` directory.
+we provide type hints in the form of stub files in the {code}`python/mqt/core`
+directory.
 These stub files are auto-generated.
 Do not edit them directly.
 Instead, you can use the {code}`nox` session {code}`stubs` to regenerate them
@@ -772,8 +767,8 @@ minor or major release.
 This does not mean that the dependency update itself is a breaking change
 for MQT Core.
 If you are sure that the dependency update does not introduce any breaking
-changes for MQT Core, you can remove the {code}`minor` or {code}`major`
-label from the PR.
+changes for MQT Core, you can remove the {code}`minor` or {code}`major` label
+from the PR.
 This will ensure that the respective PR does not influence the type of an
 upcoming release.
 
