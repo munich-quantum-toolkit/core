@@ -25,7 +25,7 @@
 #include <tuple>
 
 namespace mlir::qir {
-#define GEN_PASS_DEF_ATTACHENTRYPOINTATTRIBUTES
+#define GEN_PASS_DEF_ATTACHQIRATTRIBUTES
 #include "mlir/Dialect/QIR/Transforms/Passes.h.inc"
 
 namespace {
@@ -33,9 +33,8 @@ namespace {
  * @brief Attaches the required attributes to the function marked as
  * entry_point.
  */
-struct AttachEntryPointAttributes final
-    : impl::AttachEntryPointAttributesBase<AttachEntryPointAttributes> {
-  using AttachEntryPointAttributesBase::AttachEntryPointAttributesBase;
+struct AttachQIRAttributes final : impl::AttachQIRAttributesBase<AttachQIRAttributes> {
+  using AttachQIRAttributesBase::AttachQIRAttributesBase;
 
 protected:
   void runOnOperation() override {

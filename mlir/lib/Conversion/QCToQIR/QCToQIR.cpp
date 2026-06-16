@@ -23,6 +23,6 @@ void mlir::populateQIRConversionPipeline(mlir::PassManager& pm,
   } else {
     pm.addPass(createQCToQIRBase());
   }
-  pm.addPass(createAttachEntryPointAttributes(
-      qir::AttachEntryPointAttributesOptions{useAdaptive}));
+  pm.addPass(
+      qir::createAttachQIRAttributes(qir::AttachQIRAttributesOptions{useAdaptive}));
 }
