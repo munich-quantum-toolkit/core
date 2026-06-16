@@ -190,13 +190,15 @@ private:
 
   /// Return the metadata for a QIR base profile compliant program.
   static QIRMetadata getBase(LLVM::LLVMFuncOp& main) {
-    return {.useAdaptive = false,
-            .useDynamicQubit = false,
-            .useDynamicResult = false,
-            .backwardsBranching = 0,
-            .useArrays = false,
-            .numQubits = getNumQubits(main),
-            .numResults = getNumResults(main)};
+      return {
+      .numQubits = getNumQubits(main),
+      .numResults = getNumResults(main),
+      .useDynamicQubit = false,
+      .useDynamicResult = false,
+      .useArrays = false,
+      .backwardsBranching = 0,
+      .useAdaptive = false,
+    };
   }
 
   /// Return the metadata for a QIR base profile compliant program.
