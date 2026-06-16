@@ -706,3 +706,50 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
 /// @}
+
+TEST(QSW, QCToQCO) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect,
+                  qtensor::QTensorDialect>();
+  auto context = std::make_unique<MLIRContext>();
+  context->appendDialectRegistry(registry);
+  context->loadAllAvailableDialects();
+
+  llvm::errs() << "Defining QC program...\n";
+
+  qc::QCProgramBuilder qcBuilder(context.get());
+  qcBuilder.initialize();
+  auto qcReg = qcBuilder.allocQubitRegister(1);
+  qcBuilder.triple(qcReg[0]);
+  auto program = qcBuilder.finalize();
+  ASSERT_TRUE(program);
+
+  llvm::errs() << "QC program defined:\n";
+  llvm::errs() << program.get() << "\n\n";
+
+  llvm::errs() << "Defining reference QCO program...\n";
+
+  qco::QCOProgramBuilder qcoBuilder(context.get());
+  qcoBuilder.initialize();
+  auto qcoReg = qcoBuilder.allocQubitRegister(1);
+  qcoBuilder.triple(qcoReg[0]);
+  auto reference = qcoBuilder.finalize();
+  ASSERT_TRUE(reference);
+
+  llvm::errs() << "Reference QCO program defined:\n";
+  llvm::errs() << reference.get() << "\n\n";
+
+  llvm::errs() << "Running QC-to-QCO conversion...\n";
+
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(program.get())));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(program.get())));
+
+  llvm::errs() << "QC-to-QCO conversion succeeded:\n";
+  llvm::errs() << program.get() << "\n\n";
+
+  llvm::errs() << "Comparing converted program to reference program...\n";
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}

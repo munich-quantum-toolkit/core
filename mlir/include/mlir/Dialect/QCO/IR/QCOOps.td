@@ -475,6 +475,17 @@ def SXdgOp
   let hasCanonicalizer = 1;
 }
 
+def TripleOp
+    : QCOOp<"triple", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  // TODO: Task 1.2a
+
+  let extraClassDeclaration = [{
+        [[nodiscard]] static StringRef getBaseSymbol() { return "triple"; }
+    }];
+
+  let hasCanonicalizer = 1;
+}
+
 def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let summary = "Apply an RX gate to a qubit";
   let description = [{

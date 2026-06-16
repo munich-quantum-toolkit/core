@@ -509,6 +509,23 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
 
 #undef DEFINE_ONE_TARGET_ZERO_PARAMETER
 
+Value QCOProgramBuilder::triple(Value qubit) {
+  // TODO: Task 1.2b
+  llvm::reportFatalInternalError("Not implemented yet");
+}
+
+std::pair<Value, Value> QCOProgramBuilder::ctriple(Value control,
+                                                   Value target) {
+  // TODO: Task 1.2b
+  llvm::reportFatalInternalError("Not implemented yet");
+}
+
+std::pair<ValueRange, Value> QCOProgramBuilder::mctriple(ValueRange controls,
+                                                         Value target) {
+  // TODO: Task 1.2b
+  llvm::reportFatalInternalError("Not implemented yet");
+}
+
 // OneTargetOneParameter
 
 #define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \

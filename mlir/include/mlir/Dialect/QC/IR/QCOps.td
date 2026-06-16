@@ -419,6 +419,15 @@ def SXdgOp
     }];
 }
 
+def TripleOp
+    : QCOp<"triple", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  // TODO: Task 1.1a
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "triple"; }
+    }];
+}
+
 def RXOp : QCOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
   let summary = "Apply an RX gate to a qubit";
   let description = [{

@@ -8,8 +8,15 @@
 
 set(qco_ir_target mqt-core-mlir-unittest-qco-ir)
 add_executable(${qco_ir_target} test_qco_ir.cpp test_qco_ir_matrix.cpp)
-target_link_libraries(${qco_ir_target} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main
-                                               MLIRQCOProgramBuilder MLIRQCOPrograms MQT::CoreDD)
+target_link_libraries(
+  ${qco_ir_target}
+  PRIVATE MLIRParser
+          MLIRSupportMQT
+          GTest::gtest_main
+          MLIRQCOProgramBuilder
+          MLIRQCOTransforms
+          MLIRQCOPrograms
+          MQT::CoreDD)
 mqt_mlir_configure_unittest_target(${qco_ir_target})
 
 gtest_discover_tests(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

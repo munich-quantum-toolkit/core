@@ -445,6 +445,10 @@ public:
 
 #undef DECLARE_ONE_TARGET_ZERO_PARAMETER
 
+  QCProgramBuilder& triple(Value qubit);
+  QCProgramBuilder& ctriple(Value control, Value target);
+  QCProgramBuilder& mctriple(ValueRange controls, Value target);
+
   // OneTargetOneParameter
 
 #define DECLARE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \

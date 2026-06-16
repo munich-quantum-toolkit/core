@@ -22,6 +22,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 
 #include <iosfwd>
 #include <memory>
@@ -945,3 +946,49 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                    MQT_NAMED_BUILDER(emptyQC)}));
 /// @}
+
+TEST(QSW, QC) {
+  DialectRegistry registry;
+  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
+                  memref::MemRefDialect>();
+  auto context = std::make_unique<MLIRContext>();
+  context->appendDialectRegistry(registry);
+  context->loadAllAvailableDialects();
+
+  llvm::errs() << "Defining program...\n";
+
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto reg = builder.allocQubitRegister(1);
+  builder.triple(reg[0]);
+  auto program = builder.finalize();
+  ASSERT_TRUE(program);
+
+  llvm::errs() << "Program defined:\n";
+  llvm::errs() << program.get() << "\n\n";
+
+  llvm::errs() << "Parsing reference...\n";
+
+  const std::string referenceString = R"MLIR(
+module {
+  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+    %alloc = memref.alloc() : memref<1x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %0 = memref.load %alloc[%c0] : memref<1x!qc.qubit>
+    qc.triple %0 : !qc.qubit
+    memref.dealloc %alloc : memref<1x!qc.qubit>
+    %c0_i64 = arith.constant 0 : i64
+    return %c0_i64 : i64
+  }
+}
+    )MLIR";
+  auto reference = parseSourceString<ModuleOp>(referenceString, context.get());
+
+  llvm::errs() << "Reference parsed:\n";
+  llvm::errs() << reference.get() << "\n\n";
+
+  llvm::errs() << "Comparing program and reference...\n";
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}

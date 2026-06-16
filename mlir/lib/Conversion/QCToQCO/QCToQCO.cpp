@@ -1072,6 +1072,17 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
   }
 };
 
+struct ConvertQCTripleOp final : StatefulOpConversionPattern<qc::TripleOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::TripleOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // TODO: Task 2.1
+    llvm::reportFatalInternalError("Not implemented yet");
+  }
+};
+
 /**
  * @brief Converts qc.ctrl to qco.ctrl
  *
@@ -1607,9 +1618,9 @@ protected:
                  ConvertSCFIfOp, ConvertSCFConditionOp, ConvertMemRefAllocOp,
                  ConvertMemRefLoadOp, ConvertMemRefDeallocOp, ConvertQCAllocOp,
                  ConvertQCDeallocOp, ConvertQCStaticOp, ConvertQCMeasureOp,
-                 ConvertQCResetOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-                 ConvertQCInvOp, ConvertQCYieldOp>(typeConverter, context,
-                                                   &state);
+                 ConvertQCResetOp, ConvertQCBarrierOp, ConvertQCTripleOp,
+                 ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
+        typeConverter, context, &state);
 
     // Not part of the central gate table.
     patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(

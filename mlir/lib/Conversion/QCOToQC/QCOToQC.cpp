@@ -619,6 +619,17 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
   }
 };
 
+struct ConvertQCOTripleOp final : OpConversionPattern<qco::TripleOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::TripleOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // TODO: Task 2.2
+    llvm::reportFatalInternalError("Not implemented yet");
+  }
+};
+
 /**
  * @brief Converts qco.ctrl to qc.ctrl
  *
@@ -995,10 +1006,11 @@ protected:
     MQT_GATE_TABLE(MQT_ADD_QCO_TO_QC_GATE)
 #undef MQT_ADD_QCO_TO_QC_GATE
 
-    patterns.add<ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
-                 ConvertQCOYieldOp, ConvertQCOIfOp, ConvertQCOSCFWhileOp,
-                 ConvertQCOSCFConditionOp, ConvertQCOSCFYieldOp,
-                 ConvertQCOSCFForOp>(typeConverter, context);
+    patterns.add<ConvertQCOBarrierOp, ConvertQCOTripleOp, ConvertQCOCtrlOp,
+                 ConvertQCOInvOp, ConvertQCOYieldOp, ConvertQCOIfOp,
+                 ConvertQCOSCFWhileOp, ConvertQCOSCFConditionOp,
+                 ConvertQCOSCFYieldOp, ConvertQCOSCFForOp>(typeConverter,
+                                                           context);
 
     // Register operation conversion patterns that need state tracking
     patterns.add<ConvertQTensorExtractOp, ConvertQTensorAllocOp,

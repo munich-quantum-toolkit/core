@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/IRVerification.h"
@@ -21,10 +22,12 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include <iosfwd>
@@ -1165,3 +1168,143 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
+
+TEST(QSW, QCO) {
+  DialectRegistry registry;
+  registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                  qtensor::QTensorDialect>();
+  auto context = std::make_unique<MLIRContext>();
+  context->appendDialectRegistry(registry);
+  context->loadAllAvailableDialects();
+
+  llvm::errs() << "Defining program...\n";
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto reg = builder.allocQubitRegister(1);
+  builder.triple(reg[0]);
+  auto program = builder.finalize();
+  ASSERT_TRUE(program);
+
+  llvm::errs() << "Program defined:\n";
+  llvm::errs() << program.get() << "\n\n";
+
+  llvm::errs() << "Parsing reference...\n";
+
+  const std::string referenceString = R"MLIR(
+module {
+  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+    %c1 = arith.constant 1 : index
+    %0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+    %c0 = arith.constant 0 : index
+    %out_tensor, %result = qtensor.extract %0[%c0] : tensor<1x!qco.qubit>
+    %1 = qco.triple %result : !qco.qubit -> !qco.qubit
+    %2 = qtensor.insert %1 into %out_tensor[%c0] : tensor<1x!qco.qubit>
+    qtensor.dealloc %2 : tensor<1x!qco.qubit>
+    %c0_i64 = arith.constant 0 : i64
+    return %c0_i64 : i64
+  }
+}
+    )MLIR";
+  auto reference = parseSourceString<ModuleOp>(referenceString, context.get());
+
+  llvm::errs() << "Reference parsed:\n";
+  llvm::errs() << reference.get() << "\n\n";
+
+  llvm::errs() << "Comparing program and reference...\n";
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST(QSW, Canonicalization) {
+  DialectRegistry registry;
+  registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                  qtensor::QTensorDialect>();
+  auto context = std::make_unique<MLIRContext>();
+  context->appendDialectRegistry(registry);
+  context->loadAllAvailableDialects();
+
+  llvm::errs() << "Defining program...\n";
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto reg = builder.allocQubitRegister(1);
+  auto q = reg[0];
+  q = builder.triple(q);
+  q = builder.triple(q);
+  q = builder.triple(q);
+  auto program = builder.finalize();
+  ASSERT_TRUE(program);
+
+  llvm::errs() << "Program defined:\n";
+  llvm::errs() << program.get() << "\n\n";
+
+  llvm::errs() << "Defining reference...\n";
+
+  auto reference = QCOProgramBuilder::build(context.get(), emptyQCO);
+
+  llvm::errs() << "Reference defined:\n";
+  llvm::errs() << reference.get() << "\n\n";
+
+  llvm::errs() << "Running canonicalization...\n";
+
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(program.get())));
+
+  llvm::errs() << "Canonicalization complete:\n";
+  llvm::errs() << program.get() << "\n\n";
+
+  llvm::errs() << "Comparing canonicalized program and reference...\n";
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}
+
+TEST(QSW, BonusPass) {
+  DialectRegistry registry;
+  registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                  qtensor::QTensorDialect, scf::SCFDialect>();
+  auto context = std::make_unique<MLIRContext>();
+  context->appendDialectRegistry(registry);
+  context->loadAllAvailableDialects();
+
+  llvm::errs() << "Defining program...\n";
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto reg = builder.allocQubitRegister(1);
+  auto zero = arith::ConstantOp::create(builder, builder.getIndexAttr(0));
+  builder.scfFor(0, 3, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = builder.qtensorExtract(iterArgs[0], zero);
+    auto q1 = builder.triple(q0);
+    auto t1 = builder.qtensorInsert(q1, t0, zero);
+    return SmallVector{t1};
+  });
+  auto program = builder.finalize();
+  ASSERT_TRUE(program);
+
+  llvm::errs() << "Program defined:\n";
+  llvm::errs() << program.get() << "\n\n";
+
+  llvm::errs() << "Defining reference...\n";
+
+  auto reference = QCOProgramBuilder::build(context.get(), emptyQCO);
+
+  llvm::errs() << "Reference defined:\n";
+  llvm::errs() << reference.get() << "\n\n";
+
+  llvm::errs() << "Running pass...\n";
+
+  PassManager pm(context.get());
+  pm.addPass(qco::createEraseForTriple());
+  ASSERT_TRUE(succeeded(pm.run(program.get())));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(program.get())));
+
+  llvm::errs() << "Pass complete:\n";
+  llvm::errs() << program.get() << "\n\n";
+
+  llvm::errs() << "Comparing transformed program and reference...\n";
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+}

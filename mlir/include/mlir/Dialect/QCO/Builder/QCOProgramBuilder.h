@@ -568,6 +568,10 @@ public:
 
 #undef DECLARE_ONE_TARGET_ZERO_PARAMETER
 
+  Value triple(Value qubit);
+  std::pair<Value, Value> ctriple(Value control, Value target);
+  std::pair<ValueRange, Value> mctriple(ValueRange controls, Value target);
+
   // OneTargetOneParameter
 
 #define DECLARE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \

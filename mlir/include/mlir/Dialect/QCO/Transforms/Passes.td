@@ -200,4 +200,8 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   }];
 }
 
+def EraseForTriple : Pass<"erase-for-triple", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
