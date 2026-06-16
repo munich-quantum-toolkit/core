@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766]) ([**@rturrado**])
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to configure builds ([#1660]) ([**@denialhaag**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates ([#1605]) ([**@lirem101**], [**@burgholzer**])
@@ -405,6 +406,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
 [#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
 [#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
+[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
 [#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
 [#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
 [#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
@@ -656,6 +658,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@simon1hofmann**]: https://github.com/simon1hofmann
 [**@keefehuang**]: https://github.com/keefehuang
 [**@J4MMlE**]: https://github.com/J4MMlE
+[**@rturrado**]: https://github.com/rturrado
 
 <!-- General links -->
 
