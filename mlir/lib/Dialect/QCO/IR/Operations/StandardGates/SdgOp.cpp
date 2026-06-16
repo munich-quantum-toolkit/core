@@ -52,13 +52,12 @@ struct MergeSubsequentSdg final : OpRewritePattern<SdgOp> {
  * @brief Merge Sdg operations separated only by `ctrl` hops on a control wire
  * into a Z operation.
  */
-struct MergeSdgThroughCtrlControlChain final : OpRewritePattern<SdgOp> {
+struct MergeSdgOnControlWire final : OpRewritePattern<SdgOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(SdgOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeOneTargetZeroParameterThroughCtrlControlChain<ZOp>(op,
-                                                                   rewriter);
+    return mergeOneTargetZeroParameterOnControlWire<ZOp>(op, rewriter);
   }
 };
 
@@ -66,8 +65,8 @@ struct MergeSdgThroughCtrlControlChain final : OpRewritePattern<SdgOp> {
 
 void SdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<RemoveSdgAfterS, MergeSubsequentSdg,
-              MergeSdgThroughCtrlControlChain>(context);
+  results.add<RemoveSdgAfterS, MergeSubsequentSdg, MergeSdgOnControlWire>(
+      context);
 }
 
 Matrix2x2 SdgOp::getUnitaryMatrix() {

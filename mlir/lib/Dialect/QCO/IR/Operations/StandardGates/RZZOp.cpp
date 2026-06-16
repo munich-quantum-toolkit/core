@@ -52,7 +52,7 @@ struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
 
   LogicalResult matchAndRewrite(RZZOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+    return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
 

@@ -52,7 +52,7 @@ struct MergeSwappedTargetsRXX final : OpRewritePattern<RXXOp> {
 
   LogicalResult matchAndRewrite(RXXOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+    return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
 

@@ -47,12 +47,12 @@ struct MergeSubsequentP final : OpRewritePattern<POp> {
  * @brief Merge P operations separated only by `ctrl` hops on a control wire
  * by adding their angles.
  */
-struct MergePThroughCtrlControlChain final : OpRewritePattern<POp> {
+struct MergePOnControlWire final : OpRewritePattern<POp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(POp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeOneTargetOneParameterThroughCtrlControlChain(op, rewriter);
+    return mergeOneTargetOneParameterOnControlWire(op, rewriter);
   }
 };
 
@@ -75,7 +75,7 @@ OpFoldResult POp::fold(FoldAdaptor /*adaptor*/) {
 
 void POp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<MergeSubsequentP, MergePThroughCtrlControlChain>(context);
+  results.add<MergeSubsequentP, MergePOnControlWire>(context);
 }
 
 std::optional<Matrix2x2> POp::getUnitaryMatrix() {

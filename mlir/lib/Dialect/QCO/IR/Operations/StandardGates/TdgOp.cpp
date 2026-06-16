@@ -54,13 +54,12 @@ struct MergeSubsequentTdg final : OpRewritePattern<TdgOp> {
  * @brief Merge Tdg operations separated only by `ctrl` hops on a control wire
  * into an Sdg operation.
  */
-struct MergeTdgThroughCtrlControlChain final : OpRewritePattern<TdgOp> {
+struct MergeTdgOnControlWire final : OpRewritePattern<TdgOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(TdgOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeOneTargetZeroParameterThroughCtrlControlChain<SdgOp>(op,
-                                                                     rewriter);
+    return mergeOneTargetZeroParameterOnControlWire<SdgOp>(op, rewriter);
   }
 };
 
@@ -68,8 +67,8 @@ struct MergeTdgThroughCtrlControlChain final : OpRewritePattern<TdgOp> {
 
 void TdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<RemoveTdgAfterT, MergeSubsequentTdg,
-              MergeTdgThroughCtrlControlChain>(context);
+  results.add<RemoveTdgAfterT, MergeSubsequentTdg, MergeTdgOnControlWire>(
+      context);
 }
 
 Matrix2x2 TdgOp::getUnitaryMatrix() {

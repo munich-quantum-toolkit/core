@@ -52,13 +52,12 @@ struct MergeSubsequentS final : OpRewritePattern<SOp> {
  * @brief Merge S operations separated only by `ctrl` hops on a control wire
  * into a Z operation.
  */
-struct MergeSThroughCtrlControlChain final : OpRewritePattern<SOp> {
+struct MergeSOnControlWire final : OpRewritePattern<SOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(SOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeOneTargetZeroParameterThroughCtrlControlChain<ZOp>(op,
-                                                                   rewriter);
+    return mergeOneTargetZeroParameterOnControlWire<ZOp>(op, rewriter);
   }
 };
 
@@ -66,8 +65,7 @@ struct MergeSThroughCtrlControlChain final : OpRewritePattern<SOp> {
 
 void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<RemoveSAfterSdg, MergeSubsequentS, MergeSThroughCtrlControlChain>(
-      context);
+  results.add<RemoveSAfterSdg, MergeSubsequentS, MergeSOnControlWire>(context);
 }
 
 Matrix2x2 SOp::getUnitaryMatrix() {

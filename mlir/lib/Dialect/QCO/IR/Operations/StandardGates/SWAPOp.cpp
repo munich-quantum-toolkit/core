@@ -43,8 +43,7 @@ struct RemoveSwappedTargetsSWAP final : OpRewritePattern<SWAPOp> {
 
   LogicalResult matchAndRewrite(SWAPOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeTwoTargetZeroParameterPairWithSwappedTargets<SWAPOp>(op,
-                                                                      rewriter);
+    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
   }
 };
 

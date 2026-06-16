@@ -47,12 +47,12 @@ struct MergeSubsequentRZ final : OpRewritePattern<RZOp> {
  * @brief Merge RZ operations separated only by `ctrl` hops on a control wire
  * by adding their angles.
  */
-struct MergeRZThroughCtrlControlChain final : OpRewritePattern<RZOp> {
+struct MergeRZOnControlWire final : OpRewritePattern<RZOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(RZOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeOneTargetOneParameterThroughCtrlControlChain(op, rewriter);
+    return mergeOneTargetOneParameterOnControlWire(op, rewriter);
   }
 };
 
@@ -75,7 +75,7 @@ OpFoldResult RZOp::fold(FoldAdaptor /*adaptor*/) {
 
 void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<MergeSubsequentRZ, MergeRZThroughCtrlControlChain>(context);
+  results.add<MergeSubsequentRZ, MergeRZOnControlWire>(context);
 }
 
 std::optional<Matrix2x2> RZOp::getUnitaryMatrix() {

@@ -40,7 +40,7 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
 
   LogicalResult matchAndRewrite(XXPlusYYOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetTwoParameter(op, rewriter);
+    return mergeXXPlusMinusYY(op, rewriter);
   }
 };
 
@@ -53,7 +53,7 @@ struct MergeSwappedTargetsXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
 
   LogicalResult matchAndRewrite(XXPlusYYOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetTwoParameterWithSwappedTargets(op, rewriter);
+    return mergeXXPlusMinusYY(op, rewriter, true);
   }
 };
 

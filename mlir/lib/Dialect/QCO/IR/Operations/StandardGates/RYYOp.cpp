@@ -52,7 +52,7 @@ struct MergeSwappedTargetsRYY final : OpRewritePattern<RYYOp> {
 
   LogicalResult matchAndRewrite(RYYOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+    return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
 

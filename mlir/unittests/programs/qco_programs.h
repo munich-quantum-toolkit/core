@@ -289,10 +289,10 @@ void twoS(QCOProgramBuilder& b);
 
 /// Creates a circuit with two S gates on a control wire separated by a `ctrl`
 /// hop.
-void twoSThroughCtrlControlChain(QCOProgramBuilder& b);
+void twoSOnControlWire(QCOProgramBuilder& b);
 
-/// Creates the merged Z form of @ref twoSThroughCtrlControlChain.
-void twoSThroughCtrlControlChainMerged(QCOProgramBuilder& b);
+/// Creates the merged Z form of @ref twoSOnControlWire.
+void twoSOnControlWireMerged(QCOProgramBuilder& b);
 
 // --- SdgOp ---------------------------------------------------------------- //
 
@@ -325,10 +325,10 @@ void twoSdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with two Sdg gates on a control wire separated by a `ctrl`
 /// hop.
-void twoSdgThroughCtrlControlChain(QCOProgramBuilder& b);
+void twoSdgOnControlWire(QCOProgramBuilder& b);
 
-/// Creates the merged Z form of @ref twoSdgThroughCtrlControlChain.
-void twoSdgThroughCtrlControlChainMerged(QCOProgramBuilder& b);
+/// Creates the merged Z form of @ref twoSdgOnControlWire.
+void twoSdgOnControlWireMerged(QCOProgramBuilder& b);
 
 // --- TOp ------------------------------------------------------------------ //
 
@@ -361,10 +361,10 @@ void twoT(QCOProgramBuilder& b);
 
 /// Creates a circuit with two T gates on a control wire separated by a `ctrl`
 /// hop.
-void twoTThroughCtrlControlChain(QCOProgramBuilder& b);
+void twoTOnControlWire(QCOProgramBuilder& b);
 
-/// Creates the merged S form of @ref twoTThroughCtrlControlChain.
-void twoTThroughCtrlControlChainMerged(QCOProgramBuilder& b);
+/// Creates the merged S form of @ref twoTOnControlWire.
+void twoTOnControlWireMerged(QCOProgramBuilder& b);
 
 // --- TdgOp ---------------------------------------------------------------- //
 
@@ -397,10 +397,10 @@ void twoTdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with two Tdg gates on a control wire separated by a `ctrl`
 /// hop.
-void twoTdgThroughCtrlControlChain(QCOProgramBuilder& b);
+void twoTdgOnControlWire(QCOProgramBuilder& b);
 
-/// Creates the merged Sdg form of @ref twoTdgThroughCtrlControlChain.
-void twoTdgThroughCtrlControlChainMerged(QCOProgramBuilder& b);
+/// Creates the merged Sdg form of @ref twoTdgOnControlWire.
+void twoTdgOnControlWireMerged(QCOProgramBuilder& b);
 
 // --- SXOp ----------------------------------------------------------------- //
 
@@ -547,18 +547,18 @@ void twoRzOppositePhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with two RZ gates on a control wire separated by a `ctrl`
 /// hop.
-void twoRzThroughCtrlControlChain(QCOProgramBuilder& b);
+void twoRzOnControlWire(QCOProgramBuilder& b);
 
-/// Creates the merged single-RZ form of @ref twoRzThroughCtrlControlChain.
-void twoRzThroughCtrlControlChainMerged(QCOProgramBuilder& b);
+/// Creates the merged single-RZ form of @ref twoRzOnControlWire.
+void twoRzOnControlWireMerged(QCOProgramBuilder& b);
 
 /// Creates a circuit with two RZ gates on a control wire separated by nested
 /// `ctrl` hops.
-void twoRzThroughNestedCtrlControlChain(QCOProgramBuilder& b);
+void twoRzOnNestedControlWire(QCOProgramBuilder& b);
 
 /// Creates the merged single-RZ form of @ref
-/// twoRzThroughNestedCtrlControlChain.
-void twoRzThroughNestedCtrlControlChainMerged(QCOProgramBuilder& b);
+/// twoRzOnNestedControlWire.
+void twoRzOnNestedControlWireMerged(QCOProgramBuilder& b);
 
 // --- POp ------------------------------------------------------------------ //
 
@@ -588,10 +588,10 @@ void twoPOppositePhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with two P gates on a control wire separated by a `ctrl`
 /// hop.
-void twoPThroughCtrlControlChain(QCOProgramBuilder& b);
+void twoPOnControlWire(QCOProgramBuilder& b);
 
-/// Creates the merged single-P form of @ref twoPThroughCtrlControlChain.
-void twoPThroughCtrlControlChainMerged(QCOProgramBuilder& b);
+/// Creates the merged single-P form of @ref twoPOnControlWire.
+void twoPOnControlWireMerged(QCOProgramBuilder& b);
 
 // --- ROp ------------------------------------------------------------------ //
 
