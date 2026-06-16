@@ -17,7 +17,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
@@ -25,10 +25,10 @@
 #include <tuple>
 
 namespace mlir::qir {
-
 #define GEN_PASS_DEF_ATTACHENTRYPOINTATTRIBUTES
 #include "mlir/Dialect/QIR/Transforms/Passes.h.inc"
 
+namespace {
 /**
  * @brief Attaches the required attributes to the function marked as
  * entry_point.
@@ -231,5 +231,5 @@ private:
     return md;
   }
 };
-
+} // namespace
 } // namespace mlir::qir

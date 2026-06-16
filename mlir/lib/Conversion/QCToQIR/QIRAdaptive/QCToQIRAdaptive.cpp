@@ -35,7 +35,6 @@
 #include <mlir/IR/Region.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
