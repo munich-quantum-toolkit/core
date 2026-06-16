@@ -33,7 +33,8 @@ namespace {
  * @brief Attaches the required attributes to the function marked as
  * entry_point.
  */
-struct AttachQIRAttributes final : impl::AttachQIRAttributesBase<AttachQIRAttributes> {
+struct AttachQIRAttributes final
+    : impl::AttachQIRAttributesBase<AttachQIRAttributes> {
   using AttachQIRAttributesBase::AttachQIRAttributesBase;
 
 protected:
