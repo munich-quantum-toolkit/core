@@ -15,7 +15,6 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Dominance.h>
@@ -49,7 +48,7 @@ private:
   /// Assumes that qubits are constant integers that are converted to
   /// an integer pointer and then used in (at least) one quantum instruction.
   static size_t getNumQubits(LLVM::LLVMFuncOp& main) {
-    static constexpr StringRef PREFIX_LABEL = "@__quantum__qis";
+    static constexpr StringRef PREFIX_LABEL = "__quantum__qis";
 
     DenseSet<APInt> seen;
     main->walk([&](LLVM::ConstantOp constOp) {
@@ -82,8 +81,11 @@ private:
               return false;
             }
 
-            const auto funcName = callOp->getName().getStringRef();
-            return funcName.starts_with(PREFIX_LABEL);
+            if (!callOp.getCallee()) {
+              false;
+            }
+
+            return callOp.getCallee()->starts_with(PREFIX_LABEL);
           });
 
       if (callIt == toPtrOp->user_end()) {
