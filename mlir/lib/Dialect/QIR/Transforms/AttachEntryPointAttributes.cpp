@@ -15,6 +15,7 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Dominance.h>
@@ -40,7 +41,7 @@ struct AttachEntryPointAttributes final
 protected:
   void runOnOperation() override {
     auto main = getMainFunction(getOperation());
-    setQIRAttributes(main, useAdaptive ? getBase(main) : getAdaptive(main));
+    setQIRAttributes(main, useAdaptive ? getAdaptive(main) : getBase(main));
   }
 
 private:
@@ -102,7 +103,11 @@ private:
 
     DenseSet<APInt> seen;
     main->walk([&](LLVM::CallOp callOp) {
-      if (callOp->getName().getStringRef() != REC_FN) {
+      if (!callOp.getCallee()) {
+        return;
+      }
+
+      if (*callOp.getCallee() != REC_FN) {
         return;
       }
 
@@ -171,7 +176,11 @@ private:
     bool useArrays{false};
 
     main->walk([&](LLVM::CallOp callOp) {
-      const auto name = callOp->getName().getStringRef();
+      if (!callOp.getCallee()) {
+        return;
+      }
+
+      const auto name = *callOp.getCallee();
       if (name == QUBIT_ALLOC) {
         useDynamicQubit = true;
       } else if (name == RESULT_ALLOC) {
