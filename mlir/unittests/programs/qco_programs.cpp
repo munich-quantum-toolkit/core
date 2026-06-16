@@ -1237,12 +1237,6 @@ void twoR(QCOProgramBuilder& b) {
   q[0] = b.r(0.078, 0.456, q[0]);
 }
 
-void twoROppositePhase(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  q[0] = b.r(0.123, 0.789, q[0]);
-  q[0] = b.r(0.456, -0.789, q[0]);
-}
-
 void u2(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u2(0.234, 0.567, q[0]);

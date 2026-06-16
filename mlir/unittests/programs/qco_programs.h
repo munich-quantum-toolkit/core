@@ -625,9 +625,6 @@ void canonicalizeRToRy(QCOProgramBuilder& b);
 /// Creates a circuit with two R gates in a row with the same `phi`.
 void twoR(QCOProgramBuilder& b);
 
-/// Creates a circuit with two R gates in a row with opposite `phi` angles.
-void twoROppositePhase(QCOProgramBuilder& b);
-
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.

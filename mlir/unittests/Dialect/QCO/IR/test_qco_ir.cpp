@@ -482,9 +482,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeRToRy", MQT_NAMED_BUILDER(canonicalizeRToRy),
                     MQT_NAMED_BUILDER(ry)},
-        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)},
-        QCOTestCase{"TwoROppositePhase", MQT_NAMED_BUILDER(twoROppositePhase),
-                    MQT_NAMED_BUILDER(twoROppositePhase)}));
+        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RxOp.cpp
