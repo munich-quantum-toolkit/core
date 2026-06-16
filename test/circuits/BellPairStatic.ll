@@ -1,5 +1,5 @@
-; ModuleID = 'bell'
-source_filename = "bell"
+; ModuleID = 'Static module implementing Bell pair'
+source_filename = "BellPairStatic.ll"
 
 %Qubit = type opaque
 %Result = type opaque

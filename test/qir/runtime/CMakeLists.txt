@@ -53,7 +53,7 @@ if(TARGET MQT::CoreQIRRuntime)
 
   # add tests for QIR files
   set(QIR_EXECUTABLES "")
-  set(QIR_FILES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
+  set(QIR_FILES_DIR ${PROJECT_SOURCE_DIR}/test/circuits)
 
   file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
   foreach(QIR_EXAMPLE ${QIR_FILES})

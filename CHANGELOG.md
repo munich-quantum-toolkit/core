@@ -21,6 +21,8 @@ releases may include breaking changes.
   libraries ([#1895]) ([**@burgholzer**])
 - ✨ Add support for custom job parameters to C++ and Python FoMaC library
   ([#1887]) ([**@flowerthrower**], [**@burgholzer**])
+- ✨ Add QIR program format support to the DDSIM QDMI device ([#1766])
+  ([**@rturrado**])
 
 ### Changed
 
@@ -596,6 +598,7 @@ changelogs._
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
+[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
@@ -771,6 +774,7 @@ changelogs._
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
 [**@keefehuang**]: https://github.com/keefehuang
+[**@rturrado**]: https://github.com/rturrado
 
 <!-- General links -->
 

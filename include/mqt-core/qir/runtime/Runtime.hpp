@@ -29,6 +29,7 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -49,6 +50,7 @@ struct ArrayImpl {
 };
 
 namespace qir {
+
 // Primary template
 template <typename T> static constexpr bool IS_STD_ARRAY_V = false;
 // Specialization for std::array
@@ -183,6 +185,7 @@ public:
     return array;
   }
 };
+
 /**
  * @note This class is implemented following the design pattern Singleton in
  * order to access an instance of this class from the C function without having
@@ -192,6 +195,37 @@ class Runtime {
 public:
   static constexpr uintptr_t RESULT_ZERO_ADDRESS = 0x10000;
   static constexpr uintptr_t RESULT_ONE_ADDRESS = 0x10001;
+
+  /// The quantum state held by the runtime:
+  /// - a DD package,
+  /// - the root edge into that package, and
+  /// - the number of qubits the state spans.
+  struct QState {
+    std::unique_ptr<dd::Package> dd;
+    dd::vEdge edge;
+    dd::Qubit numQubits;
+
+    QState()
+        : dd(std::make_unique<dd::Package>()), edge(dd::vEdge::one()),
+          numQubits(0) {}
+
+    /// Reset to a fresh empty state.
+    /// If @c dd is currently populated, the existing package's `decRef` plus
+    /// `garbageCollect` path is used so the package (and its internal caches)
+    /// is kept warm.
+    /// If @c dd was moved out (e.g. by @ref Runtime::takeState), a new package
+    /// is allocated.
+    auto reset() -> void {
+      if (dd) {
+        dd->decRef(edge);
+        dd->garbageCollect();
+      } else {
+        dd = std::make_unique<dd::Package>();
+      }
+      edge = dd::vEdge::one();
+      numQubits = 0;
+    }
+  };
 
 private:
   static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS = 0x10000;
@@ -203,13 +237,13 @@ private:
   std::vector<qc::Qubit> qubitPermutation;
   static constexpr uintptr_t MIN_DYN_RESULT_ADDRESS = 0x10000;
   std::unordered_map<Result*, ResultStruct> rRegister;
+  std::string recordedOutputs;
   uintptr_t currentMaxQubitAddress;
   qc::Qubit currentMaxQubitId;
   uintptr_t currentMaxResultAddress;
-  dd::Qubit numQubitsInQState;
-  std::unique_ptr<dd::Package> dd;
-  dd::vEdge qState;
+  QState qState;
   std::mt19937_64 mt;
+  std::ostream* os = &std::cout;
 
   Runtime();
   explicit Runtime(uint64_t randomSeed);
@@ -269,7 +303,7 @@ public:
   auto apply(Args&&... args) -> void {
     const qc::StandardOperation& operation =
         createOperation<Op>(std::forward<Args>(args)...);
-    qState = applyUnitaryOperation(operation, qState, *dd);
+    qState.edge = applyUnitaryOperation(operation, qState.edge, *qState.dd);
   }
   template <typename... Args> auto measure(Args... args) -> void {
     const auto& qubits = Utils::packOfType<Qubit*>(args...);
@@ -293,8 +327,8 @@ public:
     // measure qubits
     Utils::apply2(
         [&](const auto q, auto& r) {
-          const auto& result =
-              dd->measureOneCollapsing(qState, static_cast<dd::Qubit>(q), mt);
+          const auto& result = qState.dd->measureOneCollapsing(
+              qState.edge, static_cast<dd::Qubit>(q), mt);
           deref(r).r = result == '1';
         },
         targets, results);
@@ -306,7 +340,7 @@ public:
     }
     const qc::NonUnitaryOperation resetOp(
         {targets.data(), targets.data() + SIZE}, qc::Reset);
-    qState = applyReset(resetOp, qState, *dd, mt);
+    qState.edge = applyReset(resetOp, qState.edge, *qState.dd, mt);
   }
   auto swap(Qubit* qubit1, Qubit* qubit2) -> void;
   auto qAlloc() -> Qubit*;
@@ -356,5 +390,25 @@ public:
   auto deref(Result* result) -> ResultStruct&;
   auto rFree(Result* result) -> void;
   auto equal(Result* result1, Result* result2) -> bool;
+
+  /// Append the value referenced by `result` to the recorded outputs bit
+  /// string in record order.
+  auto recordOutput(Result* result) -> void;
+
+  /// @returns the outputs declared by the program as a bit string in record
+  /// order.
+  auto getRecordedOutputs() const -> const std::string&;
+
+  /// Move the quantum state out of the runtime.
+  /// Then reset the runtime to a clean state ready for the next job.
+  /// Intended for use after a @c JitSession constructed with
+  /// @c Execution::StateExtraction has finished running.
+  /// @returns the moved @c QState from the runtime.
+  auto takeState() -> QState;
+
+  auto getOstream() -> std::ostream&;
+  auto setOstream(std::ostream& other) -> void;
+  auto resetOstream() -> void;
 };
+
 } // namespace qir
