@@ -35,7 +35,6 @@ if(NOT TARGET ${TARGET_NAME})
            ${CMAKE_CURRENT_BINARY_DIR}/include
            FILES
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/Device.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/ProgramFormat.hpp
            ${QDMI_HDRS})
 
   # Add link libraries

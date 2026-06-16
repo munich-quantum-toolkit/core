@@ -38,8 +38,8 @@ The `mqt-core-qir-runner` can be used to execute a QIR file (typically with a `.
 This will simulate the circuit and print the measurement results to the console.
 The runner supports the QIR Base Profile.
 
-### QIR Support in the QDMI Device
+### QIR Support in the DDSIM QDMI Device
 
-The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR Base Profile Module (LLVM bitcode), and QIR Base Profile String (LLVM assembly).
-The QIR base formats are only supported when the `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` CMake option is enabled.
+The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile String (LLVM assembly).
+These QIR formats are only supported when the `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` CMake option is enabled.
 It is enabled by default, but depends on `BUILD_MQT_CORE_MLIR` being set.

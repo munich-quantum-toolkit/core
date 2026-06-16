@@ -23,7 +23,6 @@
 #include "mqt_ddsim_qdmi/device.h"
 #include "qasm3/Importer.hpp"
 #include "qdmi/common/Common.hpp"
-#include "qdmi/devices/dd/ProgramFormat.hpp"
 
 #include <algorithm>
 #include <array>
@@ -376,7 +375,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAM:
     if (value != nullptr) {
-      if (qdmi::dd::isTextProgramFormat(format_)) {
+      const bool isTextProgramFormat =
+          format_ == QDMI_PROGRAM_FORMAT_QASM2 ||
+          format_ == QDMI_PROGRAM_FORMAT_QASM3 ||
+          format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
+          format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+      if (isTextProgramFormat) {
         // Text payloads include the trailing '\0' in `size`.
         // Strip it so it is not counted in the stored string's size.
         const auto* text = static_cast<const char*>(value);
@@ -411,9 +415,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT,
                             QDMI_Program_Format, format_, prop, size, value,
                             sizeRet)
-  if (const auto* text = std::get_if<std::string>(&program_)) {
-    ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, text->c_str(), prop,
+  if (std::holds_alternative<std::string>(program_)) {
+    const auto& text = std::get<std::string>(program_);
+    ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, text.c_str(), prop,
                         size, value, sizeRet)
+  } else {
+    const auto& bytes = std::get<std::vector<std::byte>>(program_);
+    ADD_LIST_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, std::byte, bytes, prop,
+                      size, value, sizeRet)
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM, size_t,
                             numShots_, prop, size, value, sizeRet)
