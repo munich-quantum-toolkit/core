@@ -622,12 +622,11 @@ void canonicalizeRToRx(QCOProgramBuilder& b);
 /// Creates a circuit with an R gate that can be canonicalized to an RY gate.
 void canonicalizeRToRy(QCOProgramBuilder& b);
 
-/// Creates a circuit with two R gates in a row with the same `phi` on one
-/// qubit and opposite `phi` on another.
+/// Creates a circuit with two R gates in a row with the same `phi`.
 void twoR(QCOProgramBuilder& b);
 
-/// Creates the canonicalized form of @ref twoR.
-void twoRMerged(QCOProgramBuilder& b);
+/// Creates a circuit with two R gates in a row with opposite `phi` angles.
+void twoROppositePhase(QCOProgramBuilder& b);
 
 // --- U2Op ----------------------------------------------------------------- //
 
