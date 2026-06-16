@@ -160,7 +160,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
     const auto nqubits = state.staticQubits.size();
     auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
                                         static_cast<int64_t>(nqubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits + 1), qubit);
+    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
     rewriter.replaceOp(op, qubit);
 
     return success();
