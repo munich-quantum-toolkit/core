@@ -9,6 +9,7 @@
  */
 
 #include "TestCaseUtils.h"
+#include "mlir/Conversion/QCToQIR/QCToQIR.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"

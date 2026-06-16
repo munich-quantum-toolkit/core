@@ -18,8 +18,7 @@ target_link_libraries(
           MLIRQIRProgramBuilder
           MLIRQCPrograms
           MLIRQIRPrograms
-          MLIRQCToQIRBase
-          MLIRQCToQIRAdaptive)
+          MLIRQCToQIR)
 
 mqt_mlir_configure_unittest_target(${target_name})
 
