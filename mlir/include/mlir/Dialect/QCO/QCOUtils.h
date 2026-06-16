@@ -38,7 +38,8 @@ static bool twoTargetWiresMatch(OpType op, OpType nextOp, bool swappedTargets) {
     return op.getOutputQubit(0) == nextOp.getInputQubit(1) &&
            op.getOutputQubit(1) == nextOp.getInputQubit(0);
   }
-  return op.getOutputQubit(1) == nextOp.getInputQubit(1);
+  return op.getOutputQubit(0) == nextOp.getInputQubit(0) &&
+         op.getOutputQubit(1) == nextOp.getInputQubit(1);
 }
 
 /**
