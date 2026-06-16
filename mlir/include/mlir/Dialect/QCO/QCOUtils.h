@@ -287,10 +287,6 @@ mergeOneTargetOneParameterOnControlWire(OpType op, PatternRewriter& rewriter) {
  * @brief Shared implementation for merging two-target, one-parameter
  * operations.
  *
- * @details
- * Wire-order requirements are enforced via @ref twoTargetWiresMatch. The
- * parameter at operand index 2 is summed.
- *
  * @tparam OpType The type of the operation to be merged.
  * @param op The first operation instance.
  * @param nextOp The successor operation instance.
@@ -323,11 +319,6 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
 /**
  * @brief Merge two compatible two-target, one-parameter operations.
  *
- * @details
- * When @p swappedTargets is false, the successor must consume the same target
- * wires in the same order. When true, the successor may consume swapped
- * targets. The parameter at operand index 2 is summed.
- *
  * @tparam OpType The type of the operation to be merged.
  * @param op The operation instance.
  * @param rewriter The pattern rewriter.
@@ -349,8 +340,7 @@ LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
  * @brief Merge consecutive XXPlusYY or XXMinusYY operations.
  *
  * @details
- * Sums `theta` when `beta` matches within tolerance. Wire-order requirements
- * are the same as @ref mergeTwoTargetOneParameter.
+ * Sums `theta` when `beta` matches within tolerance.
  *
  * @tparam OpType The type of the operation to be merged.
  * @param op The operation instance.
