@@ -98,7 +98,7 @@ private:
 
   /// Count the number of uniquely indexed result_record_output statements.
   static size_t getNumResults(LLVM::LLVMFuncOp& main) {
-    static constexpr StringRef REC_FN = "@__quantum__rt__result_record_output";
+    static constexpr StringRef REC_FN = "__quantum__rt__result_record_output";
 
     DenseSet<APInt> seen;
     main->walk([&](LLVM::CallOp callOp) {
@@ -159,12 +159,12 @@ private:
   /// dynamic qubits = [0], dynamic results = [1], or dynamic arrays = [2].
   static std::tuple<bool, bool, bool>
   hasDynamicQubitAllocation(LLVM::LLVMFuncOp& main) {
-    static constexpr StringRef QUBIT_ALLOC = "@__quantum__rt__qubit_allocate";
-    static constexpr StringRef RESULT_ALLOC = "@__quantum__rt__result_allocate";
+    static constexpr StringRef QUBIT_ALLOC = "__quantum__rt__qubit_allocate";
+    static constexpr StringRef RESULT_ALLOC = "__quantum__rt__result_allocate";
     static constexpr StringRef QUBIT_ARR_ALLOC =
-        "@__quantum__rt__qubit_array_allocate";
+        "__quantum__rt__qubit_array_allocate";
     static constexpr StringRef RESULT_ARR_ALLOC =
-        "@__quantum__rt__result_array_allocate";
+        "__quantum__rt__result_array_allocate";
 
     bool useDynamicQubit{false};
     bool useDynamicResult{false};
