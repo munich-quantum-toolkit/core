@@ -13,12 +13,11 @@
 
 #include "QuantumState.hpp"
 
-#include <cstddef>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <string>
-#include <variant>
 #include <vector>
 
 namespace mlir::qco {
@@ -49,6 +48,22 @@ public:
   bool isHybridStateTop() const { return top; }
 
   /**
+   * @brief This method adds a classical integer value to the hybrid state.
+   *
+   * @param value The value object of the new value.
+   * @param number The number of the new value.
+   */
+  void addIntegerValue(Value value, int64_t number);
+
+  /**
+   * @brief This method adds a classical double value to the hybrid state.
+   *
+   * @param value The value object of the new value.
+   * @param number The number of the new value.
+   */
+  void addDoubleValue(Value value, double number);
+
+  /**
    * @brief This method applies a gate to the state.
    *
    * This method changes the hybrid state according to a gate.
@@ -65,22 +80,6 @@ public:
                      std::span<unsigned int> ctrlsQuantum = {},
                      std::span<unsigned int> ctrlsClassical = {},
                      std::span<double> params = {});
-
-  /**
-   * @brief This method adds a classical integer value to the hybrid state.
-   *
-   * @param value The value object of the new value.
-   * @param number The number of the new value.
-   */
-  void addIntegerValue(Value value, int64_t number);
-
-  /**
-   * @brief This method adds a classical double value to the hybrid state.
-   *
-   * @param value The value object of the new value.
-   * @param number The number of the new value.
-   */
-  void addDoubleValue(Value value, double number);
 
   /**
    * @brief This method applies a measurement.
@@ -114,6 +113,24 @@ public:
    */
   std::vector<HybridState> propagateReset(unsigned int target,
                                           std::span<Value> ctrlsClassical = {});
+
+  /**
+   * @brief This method applies a classical operation.
+   *
+   * This method changes the hybrid state according to a classical operation.
+   * The operation might be controlled by classical values.
+   *
+   * @param op The operation to be applied.
+   * @param dest The value the result of the operation is written to.
+   * @param operand1 The first value used by the operation.
+   * @param operand2 The second value used by the operation, might be null.
+   * @param operand3 The third value used by the operation, might be null.
+   * @param ctrls An array of the ctrl values.
+   */
+  void propagateClassicalOperation(Operation* op, Value dest, Value operand1,
+                                   Value operand2 = nullptr,
+                                   Value operand3 = nullptr,
+                                   std::span<Value> ctrls = {});
 
   /**
    * @brief This method unifies two HybridStates.
@@ -162,28 +179,26 @@ public:
    * @returns True if the amplitude is always zero, false otherwise.
    */
   [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
-  hasAlwaysZeroAmplitude(std::span<unsigned int> qubits,
-                         unsigned int qubitValue,
-                         std::span<unsigned int> values = {},
-                         std::span<bool> classicalValuesToCheck = {}) const;
+  hasAlwaysZeroProbability(std::span<unsigned int> qubits,
+                           unsigned int qubitValue,
+                           std::span<unsigned int> values = {},
+                           std::span<Value> classicalValuesToCheck = {}) const;
 
   /**
-   * @brief Returns whether the given qubit and the given classical value always
-   * have the same value or always a different value.
+   * @brief Returns a classical value that is equivalent to qubit.
    *
-   * Returns whether the given qubit and the given classical value always
-   * have the same value or always a different value. For the comparison, a
-   * qubit = 0 is equal to a classical value = 0 and a qubit = 1 to a classical
-   * value =/= 0.
+   * Returns a classical value that is always true (=/= 0) when the given qubit
+   * is 1, and the boolean value true. Alternatively, it can return a value that
+   * is always false (== 0) if the qubit is 1. In that case, the returned bool
+   * is false.
    *
-   * @param value Classical value.
    * @param qubit Index of qubit.
-   * @returns Non-empty optional if the bit and qubit have always the same or
-   * different values. Optional contains true if they have the same value, false
-   * if they have always different values.
+   * @returns Classical value that is equivalent or inverse to qubit if it
+   * exists and true, if the qubit is equivalent to the value. False, if the
+   * qubit is the inverse of the value.
    */
-  std::optional<bool> getIsValueEquivalentToQubit(Value value,
-                                                  unsigned int qubit);
+  std::pair<std::optional<Value>, bool>
+  getValueThatIsEquivalentToQubit(unsigned int qubit);
 };
 } // namespace mlir::qco
 
