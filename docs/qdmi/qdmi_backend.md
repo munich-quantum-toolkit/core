@@ -8,8 +8,8 @@ mystnb:
 
 # Qiskit Backend Integration
 
-The {py:mod}`mqt.core.plugins.qiskit` module provides a Qiskit {py:
-class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via
+The {py:mod}`mqt.core.plugins.qiskit` module provides a Qiskit
+{py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via
 FoMaC.
 This integration allows you to execute Qiskit circuits on QDMI-compliant quantum
 devices using a familiar Qiskit workflow.
@@ -220,8 +220,8 @@ except RuntimeError as e:
 ## Device Capabilities and Target
 
 The backend automatically introspects the FoMaC (QDMI) device
-and constructs a Qiskit {py:
-class}`~qiskit.transpiler.Target` object describing device capabilities.
+and constructs a Qiskit {py:class}`~qiskit.transpiler.Target` object describing
+device capabilities.
 
 ```{code-cell} ipython3
 # Access device properties via the Target
@@ -272,11 +272,12 @@ print(f"Total shots: {sum(counts.values())}")
 
 Circuits must meet the following requirements before execution:
 
-1. **All parameters must be bound**: Circuits with unbound parameters raise {py:
-   class}`~mqt.core.plugins.qiskit.CircuitValidationError`
+1. **All parameters must be bound**:
+   Circuits with unbound parameters raise
+   {py:class}`~mqt.core.plugins.qiskit.CircuitValidationError`
 2. **Only supported operations**:
-   Operations not supported by the device raise {py:
-   class}`~mqt.core.plugins.qiskit.UnsupportedOperationError`
+   Operations not supported by the device raise
+   {py:class}`~mqt.core.plugins.qiskit.UnsupportedOperationError`
 3. **Valid shots value**: Must be a non-negative integer
 
 ### Parameter Binding

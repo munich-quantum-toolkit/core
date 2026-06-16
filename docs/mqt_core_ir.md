@@ -18,8 +18,8 @@ Munich Quantum Toolkit is the {py:class}`~mqt.core.ir.QuantumComputation` class.
 It effectively represents quantum computations as sequential lists of operation,
 similar to Qiskit's {py:class}`~qiskit.circuit.QuantumCircuit` class.
 
-The following will demonstrate how to work with the {py:
-class}`~mqt.core.ir.QuantumComputation` class in Python.
+The following will demonstrate how to work with the
+{py:class}`~mqt.core.ir.QuantumComputation` class in Python.
 
 :::{note}
 MQT Core is primarily designed in C++ with a thin Python wrapper.
@@ -88,8 +88,8 @@ for i in range(precision):
 
 The circuit class provides lots of flexibility
 when it comes to the kind of gates that can be applied.
-Check out the full API documentation of the {py:
-class}`~mqt.core.ir.QuantumComputation` class for more details.
+Check out the full API documentation of the
+{py:class}`~mqt.core.ir.QuantumComputation` class for more details.
 
 ## Visualizing Circuits
 
@@ -109,8 +109,8 @@ This is explained in more detail in the
 print(qc)
 ```
 
-Circuits can also easily be exported to OpenQASM 3 using the {py:
-meth}`~mqt.core.ir.QuantumComputation.qasm3_str` method.
+Circuits can also easily be exported to OpenQASM 3 using the
+{py:meth}`~mqt.core.ir.QuantumComputation.qasm3_str` method.
 
 ```{code-cell} ipython3
 ---
@@ -210,9 +210,8 @@ and output permutation accordingly.
 
 ## Operations
 
-The operations in a {py:
-class}`~mqt.core.ir.QuantumComputation` object are of type {py:
-class}`~mqt.core.ir.operations.Operation`.
+The operations in a {py:class}`~mqt.core.ir.QuantumComputation` object are of
+type {py:class}`~mqt.core.ir.operations.Operation`.
 Every type of operation in `mqt-core` is derived from this class.
 Operations can also be explicitly constructed.
 Each {py:class}`~mqt.core.ir.operations.Operation` has a type in the form of an
@@ -274,11 +273,10 @@ print(qc)
 A {py:class}`~mqt.core.ir.operations.SymbolicOperation` can represent all gates
 of a {py:class}`~mqt.core.ir.operations.StandardOperation` but the gate
 parameters can be symbolic.
-Symbolic expressions are represented in MQT using the {py:
-class}`~mqt.core.ir.symbolic.Expression` type,
-which represent linear combinations of symbolic {py:
-class}`~mqt.core.ir.symbolic.Term` objects over some set of {py:
-class}`~mqt.core.ir.symbolic.Variable` objects.
+Symbolic expressions are represented in MQT using the
+{py:class}`~mqt.core.ir.symbolic.Expression` type, which represent linear
+combinations of symbolic {py:class}`~mqt.core.ir.symbolic.Term` objects over
+some set of {py:class}`~mqt.core.ir.symbolic.Variable` objects.
 
 ```{code-cell} ipython3
 from mqt.core.ir.operations import SymbolicOperation
@@ -301,8 +299,8 @@ u2_symb = SymbolicOperation(target=0, params=[sym, 2.0], op_type=OpType.u2)
 
 ### `CompoundOperation`
 
-A {py:class}`~mqt.core.ir.operations.CompoundOperation` bundles multiple {py:
-class}`~mqt.core.ir.operations.Operation` objects together.
+A {py:class}`~mqt.core.ir.operations.CompoundOperation` bundles multiple
+{py:class}`~mqt.core.ir.operations.Operation` objects together.
 
 ```{code-cell} ipython3
 from mqt.core.ir.operations import CompoundOperation
@@ -338,10 +336,12 @@ print(qc)
 
 A {py:class}`~mqt.core.ir.operations.IfElseOperation` is an operation controlled
 by a classical bit or a classical register.
-If a given condition is met, the {py:
-attr}`~mqt.core.ir.operations.IfElseOperation.then_operation` is applied.
-If the condition is not met, the {py:
-attr}`~mqt.core.ir.operations.IfElseOperation.else_operation` is applied.
+If a given condition is met,
+the {py:attr}`~mqt.core.ir.operations.IfElseOperation.then_operation` is
+applied.
+If the condition is not met,
+the {py:attr}`~mqt.core.ir.operations.IfElseOperation.else_operation` is
+applied.
 
 ```{code-cell} ipython3
 qc = QuantumComputation(1, 1)
@@ -357,8 +357,8 @@ qc.if_else(
 print(qc)
 ```
 
-If you do not need an `else_operation`, the {py:
-class}`~mqt.core.ir.QuantumComputation` class provides a shortcut
+If you do not need an `else_operation`,
+the {py:class}`~mqt.core.ir.QuantumComputation` class provides a shortcut
 for creating an {py:meth}`~mqt.core.ir.QuantumComputation.if_` operation.
 
 ```{code-cell} ipython3
@@ -402,8 +402,8 @@ print(qc)
 ### Qiskit
 
 In addition to OpenQASM,
-`mqt-core` can natively import [Qiskit](https://qiskit.org/) {py:
-class}`~qiskit.circuit.QuantumCircuit` objects.
+`mqt-core` can natively import [Qiskit](https://qiskit.org/)
+{py:class}`~qiskit.circuit.QuantumCircuit` objects.
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit

@@ -34,8 +34,8 @@ in MQT Core from Python.
 
 In its simplest use case,
 the MQT Core DD package can be used
-as a classical circuit simulator using the {py:
-func}`~mqt.core.dd.sample` function.
+as a classical circuit simulator using the {py:func}`~mqt.core.dd.sample`
+function.
 The underlying simulation approach supports mid-circuit measurements,
 reset operations, as well as classically-controlled operations.
 For example, the following code snippet demonstrates how to simulate the
@@ -150,10 +150,10 @@ generate_plot(counts, name, light=False)
 The {py:func}`~mqt.core.dd.sample` function is a high-level interface to the
 decision diagram package that does not require any knowledge of the underlying
 data structure.
-In a similar fashion, the {py:func}`~mqt.core.dd.simulate_statevector` and {py:
-func}`~mqt.core.dd.build_unitary` functions can be used to perform statevector
-simulation or to construct the unitary matrix representation of a quantum
-circuit, respectively.
+In a similar fashion, the {py:func}`~mqt.core.dd.simulate_statevector`
+and {py:func}`~mqt.core.dd.build_unitary` functions can be used to perform
+statevector simulation or to construct the unitary matrix representation of a
+quantum circuit, respectively.
 
 ```{code-cell} ipython3
 from mqt.core.dd import simulate_statevector
@@ -200,8 +200,8 @@ out_state_dd = simulate(qc, zero_state_dd, dd)
 If the [Graphviz](https://www.graphviz.org/) library is installed,
 the `graphviz` Python package can be used to visualize resulting decision
 diagram via the {py:meth}`~mqt.core.dd.VectorDD.to_dot` method.
-To directly, generate SVG files, the {py:
-meth}`~mqt.core.dd.VectorDD.to_svg` method can be used.
+To directly, generate SVG files,
+the {py:meth}`~mqt.core.dd.VectorDD.to_svg` method can be used.
 
 ```{code-cell} ipython3
 ---
@@ -217,26 +217,26 @@ graphviz.Source(out_state_dd.to_dot())
 
 The DD package provides list of additional functionality
 when it comes to working with decision diagrams.
-Check out the full API documentation of the {py:
-class}`~mqt.core.dd.DDPackage` class for more details.
+Check out the full API documentation of the {py:class}`~mqt.core.dd.DDPackage`
+class for more details.
 
 ## How do Quantum Decision Diagrams Work?
 
 Decision diagrams were introduced in the 1980s as a data structure
-for the efficient representation and manipulation of Boolean functions {cite:
-p}`bryantGraphbasedAlgorithmsBoolean1986`.
+for the efficient representation
+and manipulation of Boolean functions
+{cite:p}`bryantGraphbasedAlgorithmsBoolean1986`.
 This led to the emergence of a wide variety of decision diagrams,
-including BDDs, FBDDs, KFDDs, MTBDDs, and ZDDs
-(see, for example, {cite:
-p}`bryantSymbolicBooleanManipulation1992,wegenerBranchingProgramsBinary2000,gergovEfficientBooleanManipulation1994,drechslerEfficientRepresentationManipulation1994,baharAlgebraicDecisionDiagrams1993,minatoZerosuppressedBDDsSet1993`),
+including BDDs, FBDDs, KFDDs, MTBDDs, and ZDDs (see, for example,
+{cite:p}`bryantSymbolicBooleanManipulation1992,wegenerBranchingProgramsBinary2000,gergovEfficientBooleanManipulation1994,drechslerEfficientRepresentationManipulation1994,baharAlgebraicDecisionDiagrams1993,minatoZerosuppressedBDDsSet1993`),
 which made them a crucial tool in the development of modern circuits and
 systems.
 Because of their previous success,
 decision diagrams have been proposed
-for application in the realm of quantum computing {cite:
-p}`willeDecisionDiagramsQuantum2023,willeToolsQuantumComputing2022,millerQMDDDecisionDiagram2006,niemannQMDDsEfficientQuantum2016,zulehnerHowEfficientlyHandle2019,hongTensorNetworkBased2020,vinkhuijzenLIMDDDecisionDiagram2021`.
-Particularly for design tasks like _simulation_ {cite:
-p}`viamontesImprovingGatelevelSimulation2003,zulehnerAdvancedSimulationQuantum2019,hillmichJustRealThing2020,burgholzerHybridSchrodingerFeynmanSimulation2021,vinkhuijzenLIMDDDecisionDiagram2021,hillmichApproximatingDecisionDiagrams2022,burgholzerSimulationPathsQuantum2022,grurlNoiseawareQuantumCircuit2023,matoMixeddimensionalQuantumCircuit2023,sanderHamiltonianSimulationDecision2023`,
+for application in the realm of quantum computing
+{cite:p}`willeDecisionDiagramsQuantum2023,willeToolsQuantumComputing2022,millerQMDDDecisionDiagram2006,niemannQMDDsEfficientQuantum2016,zulehnerHowEfficientlyHandle2019,hongTensorNetworkBased2020,vinkhuijzenLIMDDDecisionDiagram2021`.
+Particularly for design tasks like _simulation_
+{cite:p}`viamontesImprovingGatelevelSimulation2003,zulehnerAdvancedSimulationQuantum2019,hillmichJustRealThing2020,burgholzerHybridSchrodingerFeynmanSimulation2021,vinkhuijzenLIMDDDecisionDiagram2021,hillmichApproximatingDecisionDiagrams2022,burgholzerSimulationPathsQuantum2022,grurlNoiseawareQuantumCircuit2023,matoMixeddimensionalQuantumCircuit2023,sanderHamiltonianSimulationDecision2023`,
 _synthesis_
 {cite:p}`niemannEfficientSynthesisQuantum2014,abdollahiAnalysisSynthesisQuantum2006,soekenSynthesisReversibleCircuits2012,zulehnerOnepassDesignReversible2018,adarshSyReCSynthesizerMQT2022,matoMixeddimensionalQuditState2024`,
 and _verification_

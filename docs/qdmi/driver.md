@@ -32,10 +32,10 @@ classes ({cpp:class}`~fomac::Session`, {cpp:class}`~fomac::Session::Device`,
 {cpp:class}`~fomac::Session::Device::Site`,
 {cpp:class}`~fomac::Session::Device::Operation`,
 {cpp:class}`~fomac::Session::Job`) for the QDMI entities.
-These classes together with their methods are then exposed to Python, see {py:
-class}`~mqt.core.fomac.Session`, {py:class}`~mqt.core.fomac.Device`, {py:
-class}`~mqt.core.fomac.Device.Site`, {py:
-class}`~mqt.core.fomac.Device.Operation`, {py:class}`~mqt.core.fomac.Job`.
+These classes together with their methods are then exposed to Python,
+see {py:class}`~mqt.core.fomac.Session`, {py:class}`~mqt.core.fomac.Device`,
+{py:class}`~mqt.core.fomac.Device.Site`,
+{py:class}`~mqt.core.fomac.Device.Operation`, {py:class}`~mqt.core.fomac.Job`.
 
 ## Usage
 
