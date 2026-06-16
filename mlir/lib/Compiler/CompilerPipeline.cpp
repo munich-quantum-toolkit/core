@@ -197,8 +197,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   // Stage 9: QC-to-QIR conversion (optional)
   if (convertToQIR) {
-    if (failed(runStage(
-            [&](PassManager& pm) { populateQIRConversionPipeline(pm, config_.convertToQIRAdaptive); }))) {
+    if (failed(runStage([&](PassManager& pm) {
+          populateQIRConversionPipeline(pm, config_.convertToQIRAdaptive);
+        }))) {
       return failure();
     }
 

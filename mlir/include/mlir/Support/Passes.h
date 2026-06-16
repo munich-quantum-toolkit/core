@@ -38,7 +38,8 @@ void populateQIRCleanupPipeline(mlir::PassManager& pm);
 /**
  * @brief Populate the QIR conversion pipeline on the given pass manager.
  */
-void populateQIRConversionPipeline(mlir::PassManager& pm, bool useAdaptive = false);
+void populateQIRConversionPipeline(mlir::PassManager& pm,
+                                   bool useAdaptive = false);
 
 /**
  * @brief Run the QC-oriented cleanup pipeline on a module.
