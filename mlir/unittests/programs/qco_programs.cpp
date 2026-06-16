@@ -1232,9 +1232,18 @@ void canonicalizeRToRy(QCOProgramBuilder& b) {
 }
 
 void twoR(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
+  auto q = b.allocQubitRegister(2);
   q[0] = b.r(0.045, 0.456, q[0]);
   q[0] = b.r(0.078, 0.456, q[0]);
+  q[1] = b.r(0.123, 0.789, q[1]);
+  q[1] = b.r(0.456, -0.789, q[1]);
+}
+
+void twoRMerged(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  q[0] = b.r(0.123, 0.456, q[0]);
+  q[1] = b.r(0.123, 0.789, q[1]);
+  q[1] = b.r(0.456, -0.789, q[1]);
 }
 
 void u2(QCOProgramBuilder& b) {
