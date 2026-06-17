@@ -24,12 +24,12 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <tuple>
 #include <utility>
-#include <cassert>
 
 namespace mlir::qir {
 #define GEN_PASS_DEF_QIRSETATTRIBUTESANDMETADATA
