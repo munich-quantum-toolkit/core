@@ -380,16 +380,15 @@ public:
     }
   }
 
-  void
-  visitInitialLayout(std::shared_ptr<qasm3::InitialLayout> layout) override {
-    throw qasm3::CompilerError("InitialLayout pragmas are not supported.",
-                               layout->debugInfo);
+  void visitInitialLayout(
+      std::shared_ptr<qasm3::InitialLayout> /*initialLayout*/) override {
+    return;
   }
 
   void visitOutputPermutation(
-      std::shared_ptr<qasm3::OutputPermutation> perm) override {
-    throw qasm3::CompilerError("OutputPermutation pragmas are not supported.",
-                               perm->debugInfo);
+      std::shared_ptr<qasm3::OutputPermutation> /*outputPermutation*/)
+      override {
+    return;
   }
 
   void visitGateCallStatement(
