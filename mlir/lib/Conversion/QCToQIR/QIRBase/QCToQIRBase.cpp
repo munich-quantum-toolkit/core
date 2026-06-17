@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
@@ -225,7 +224,6 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     const auto nresults = resultPtrs.size();
     if (op.getRegisterIndex() && op.getRegisterName() && op.getRegisterSize()) {
       const auto registerName = op.getRegisterName().value();
-      const auto registerSize = op.getRegisterSize().value();
       const auto registerIndex = op.getRegisterIndex().value();
 
       // Assign a base offset to this register if not yet seen
