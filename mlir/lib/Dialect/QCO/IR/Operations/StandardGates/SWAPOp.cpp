@@ -30,19 +30,6 @@ struct RemoveSubsequentSWAP final : OpRewritePattern<SWAPOp> {
 
   LogicalResult matchAndRewrite(SWAPOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter);
-  }
-};
-
-/**
- * @brief Remove a SWAP operation followed by a SWAP operation with swapped
- *        targets.
- */
-struct RemoveSwappedTargetsSWAP final : OpRewritePattern<SWAPOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(SWAPOp op,
-                                PatternRewriter& rewriter) const override {
     return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
   }
 };
@@ -51,7 +38,7 @@ struct RemoveSwappedTargetsSWAP final : OpRewritePattern<SWAPOp> {
 
 void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<RemoveSubsequentSWAP, RemoveSwappedTargetsSWAP>(context);
+  results.add<RemoveSubsequentSWAP>(context);
 }
 
 Matrix4x4 SWAPOp::getUnitaryMatrix() {

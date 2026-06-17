@@ -31,7 +31,8 @@ struct RemoveInversePairDCX final : OpRewritePattern<DCXOp> {
 
   LogicalResult matchAndRewrite(DCXOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePairTwoTargetZeroParameter<DCXOp>(op, rewriter, true);
+    return removeInversePairTwoTargetZeroParameter<DCXOp>(op, rewriter, false,
+                                                          true);
   }
 };
 

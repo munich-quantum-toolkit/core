@@ -44,19 +44,6 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
   }
 };
 
-/**
- * @brief Merge XXMinusYY operations with swapped target wires by adding their
- * thetas.
- */
-struct MergeSwappedTargetsXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(XXMinusYYOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeXXPlusMinusYY(op, rewriter, true);
-  }
-};
-
 } // namespace
 
 void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -82,7 +69,7 @@ LogicalResult XXMinusYYOp::fold(FoldAdaptor /*adaptor*/,
 
 void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                               MLIRContext* context) {
-  results.add<MergeSubsequentXXMinusYY, MergeSwappedTargetsXXMinusYY>(context);
+  results.add<MergeSubsequentXXMinusYY>(context);
 }
 
 std::optional<Matrix4x4> XXMinusYYOp::getUnitaryMatrix() {

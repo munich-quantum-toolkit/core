@@ -39,19 +39,6 @@ struct MergeSubsequentRZZ final : OpRewritePattern<RZZOp> {
 
   LogicalResult matchAndRewrite(RZZOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameter(op, rewriter);
-  }
-};
-
-/**
- * @brief Merge subsequent RZZ operations with swapped targets by adding their
- * angles.
- */
-struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RZZOp op,
-                                PatternRewriter& rewriter) const override {
     return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
@@ -79,7 +66,7 @@ LogicalResult RZZOp::fold(FoldAdaptor /*adaptor*/,
 
 void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ>(context);
+  results.add<MergeSubsequentRZZ>(context);
 }
 
 std::optional<Matrix4x4> RZZOp::getUnitaryMatrix() {

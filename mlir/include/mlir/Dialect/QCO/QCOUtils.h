@@ -24,25 +24,6 @@
 namespace mlir::qco {
 
 /**
- * @brief Check whether two two-target operations consume the same target wires.
- *
- * @tparam OpType The type of the operation to be checked.
- * @param op The first operation instance.
- * @param nextOp The successor operation instance.
- * @param swappedTargets Whether @p nextOp consumes swapped target wires.
- * @return true if the wire order matches.
- */
-template <typename OpType>
-static bool twoTargetWiresMatch(OpType op, OpType nextOp, bool swappedTargets) {
-  if (swappedTargets) {
-    return op.getOutputQubit(0) == nextOp.getInputQubit(1) &&
-           op.getOutputQubit(1) == nextOp.getInputQubit(0);
-  }
-  return op.getOutputQubit(0) == nextOp.getInputQubit(0) &&
-         op.getOutputQubit(1) == nextOp.getInputQubit(1);
-}
-
-/**
  * @brief Check whether two parameter values match.
  *
  * @details
@@ -53,7 +34,7 @@ static bool twoTargetWiresMatch(OpType op, OpType nextOp, bool swappedTargets) {
  * @param rhs The second parameter value.
  * @return true if the values match.
  */
-static inline bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
+static bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
   if (lhs == rhs) {
     return true;
   }
@@ -119,55 +100,49 @@ removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   }
 
   // Erase both operations
-  rewriter.replaceAllUsesWith(nextOp->getResult(0), op.getInputQubit(0));
-  rewriter.eraseOp(nextOp);
-  rewriter.eraseOp(op);
-
+  rewriter.replaceOp(op, op.getInputQubits());
+  rewriter.replaceOp(nextOp, nextOp.getInputQubits());
   return success();
 }
 
 /**
  * @brief Remove a pair of inverse two-target, zero-parameter operations.
  *
- * @details
- * When @p swappedTargets is false, the successor must consume the same target
- * wires in the same order. When true, the successor may consume swapped
- * targets.
- *
  * @tparam InverseOpType The type of the inverse operation.
  * @tparam OpType The type of the operation to be checked.
  * @param op The operation instance.
  * @param rewriter The pattern rewriter.
+ * @param symmetric Whether the two-target gate is symmetric (order of the
+ * qubits does not matter)
  * @param swappedTargets Whether the successor consumes swapped target wires.
  * @return LogicalResult Success or failure of the removal.
  */
 template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
+                                        bool symmetric = false,
                                         bool swappedTargets = false) {
+  auto output0 = op.getOutputQubit(0);
+
   // Check if the successor is the inverse operation
-  auto nextOp = dyn_cast<InverseOpType>(*op.getOutputQubit(0).user_begin());
+  auto nextOp = dyn_cast<InverseOpType>(*output0.user_begin());
   if (!nextOp) {
     return failure();
   }
 
-  if (!twoTargetWiresMatch(op, nextOp, swappedTargets)) {
+  // Both qubits have to point to the same successor
+  auto nextOp2 = *op.getOutputQubit(1).user_begin();
+  if (nextOp2 != nextOp) {
     return failure();
   }
 
-  if (swappedTargets) {
-    rewriter.replaceAllUsesWith(nextOp->getResults(),
-                                {op.getInputQubit(1), op.getInputQubit(0)});
-  } else {
-    rewriter.replaceAllUsesWith(nextOp->getResults(),
-                                {op.getInputQubit(0), op.getInputQubit(1)});
+  if (symmetric || (swappedTargets && output0 == nextOp.getInputQubit(1)) ||
+      (!swappedTargets && output0 == nextOp.getInputQubit(0))) {
+    rewriter.replaceOp(op, op.getInputQubits());
+    rewriter.replaceOp(nextOp, nextOp.getInputQubits());
+    return success();
   }
-
-  // Erase both operations
-  rewriter.eraseOp(nextOp);
-  rewriter.eraseOp(op);
-
-  return success();
+  return failure();
 }
 
 /**
@@ -292,29 +267,31 @@ mergeOneTargetOneParameterOnControlWire(OpType op, PatternRewriter& rewriter) {
  * @param op The first operation instance.
  * @param nextOp The successor operation instance.
  * @param rewriter The pattern rewriter.
- * @param swappedTargets Whether the successor consumes swapped target wires.
+ * @param symmetric Whether the two-target gate is symmetric (order of the
+ * qubits does not matter)
  * @return LogicalResult Success or failure of the merge.
  */
 template <typename OpType>
 static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
                                                     PatternRewriter& rewriter,
-                                                    bool swappedTargets) {
-  if (!twoTargetWiresMatch(op, nextOp, swappedTargets)) {
+                                                    bool symmetric = false) {
+
+  // Both qubits have to point to the same successor
+  auto nextOp2 = *op.getOutputQubit(1).user_begin();
+  if (nextOp2 != nextOp) {
     return failure();
   }
 
-  // Compute and set the new parameter
-  auto newParameter = arith::AddFOp::create(
-      rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
-  op->setOperand(2, newParameter.getResult());
-  if (swappedTargets) {
-    // nextOp results correspond to swapped operands, so swap replacements too
-    rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
-  } else {
-    // Replace the second operation with the result of the first operation
-    rewriter.replaceOp(nextOp, op.getResults());
+  auto output0 = op.getOutputQubit(0);
+  if (symmetric || output0 == nextOp.getInputQubit(0)) {
+    // Compute and set the new parameter
+    auto newParameter = arith::AddFOp::create(
+        rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
+    op->setOperand(2, newParameter.getResult());
+    rewriter.replaceOp(nextOp, nextOp.getInputQubits());
+    return success();
   }
-  return success();
+  return failure();
 }
 
 /**
@@ -323,18 +300,19 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
  * @tparam OpType The type of the operation to be merged.
  * @param op The operation instance.
  * @param rewriter The pattern rewriter.
- * @param swappedTargets Whether the successor consumes swapped target wires.
+ * @param symmetric Whether the two-target gate is symmetric (order of the
+ * qubits does not matter)
  * @return LogicalResult Success or failure of the merge.
  */
 template <typename OpType>
 LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
-                                         bool swappedTargets = false) {
+                                         bool symmetric = false) {
   // Check if the successor is the same operation
   auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
     return failure();
   }
-  return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, swappedTargets);
+  return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, symmetric);
 }
 
 /**
@@ -346,12 +324,10 @@ LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
  * @tparam OpType The type of the operation to be merged.
  * @param op The operation instance.
  * @param rewriter The pattern rewriter.
- * @param swappedTargets Whether the successor consumes swapped target wires.
  * @return LogicalResult Success or failure of the merge.
  */
 template <typename OpType>
-LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter,
-                                 bool swappedTargets = false) {
+LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation
   auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
   if (!nextOp) {
@@ -362,7 +338,7 @@ LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter,
   if (!valuesMatchWithinTolerance(op.getBeta(), nextOp.getBeta())) {
     return failure();
   }
-  return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, swappedTargets);
+  return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, true);
 }
 
 } // namespace mlir::qco
