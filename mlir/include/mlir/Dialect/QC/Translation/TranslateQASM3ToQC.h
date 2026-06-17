@@ -10,30 +10,19 @@
 
 #pragma once
 
+#include <llvm/Support/SourceMgr.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
-
-#include <iosfwd>
-#include <string>
 
 namespace mlir::qc {
 
 /**
- * @brief Translate an OpenQASM3 program to the QC dialect.
+ * @brief Translate an OpenQASM 3 program to a QC program.
  *
  * @param context MLIRContext to create the module in.
- * @param filename Path to the input OpenQASM3 file.
+ * @param sourceMgr Source manager containing the OpenQASM3 program.
  */
 [[nodiscard]] OwningOpRef<ModuleOp>
-translateQASM3ToQC(MLIRContext* context, const std::string& filename);
-
-/**
- * @brief Translate an OpenQASM3 program to the QC dialect.
- *
- * @param context MLIRContext to create the module in.
- * @param input Stream containing the OpenQASM3 program.
- */
-[[nodiscard]] OwningOpRef<ModuleOp> translateQASM3ToQC(MLIRContext* context,
-                                                       std::istream& input);
+translateQASM3ToQC(MLIRContext* context, llvm::SourceMgr& sourceMgr);
 
 } // namespace mlir::qc

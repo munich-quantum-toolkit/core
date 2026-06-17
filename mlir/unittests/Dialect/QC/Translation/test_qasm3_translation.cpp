@@ -18,6 +18,8 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SourceMgr.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -120,8 +122,11 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto referenceBuilder = GetParam().referenceBuilder;
   mqt::test::DeferredPrinter printer;
 
-  std::istringstream input(source);
-  auto translated = qc::translateQASM3ToQC(context.get(), input);
+  llvm::SourceMgr sourceMgr;
+  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(source);
+  sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
+
+  auto translated = qc::translateQASM3ToQC(context.get(), sourceMgr);
   ASSERT_TRUE(translated);
   printer.record(translated.get(), "Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());

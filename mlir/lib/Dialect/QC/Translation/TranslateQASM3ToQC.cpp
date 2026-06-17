@@ -28,6 +28,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -1025,10 +1026,16 @@ public:
 //===----------------------------------------------------------------------===//
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(MLIRContext* context,
-                                         std::istream& input) {
+                                         llvm::SourceMgr& sourceMgr) {
   try {
+    auto buffer =
+        sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer();
+    std::string_view view(buffer.data(), buffer.size());
+    std::istringstream input((std::string(view)));
+
     qasm3::Parser parser(input);
     const auto program = parser.parseProgram();
+
     MLIRQasmImporter importer(context);
     importer.visitProgram(program);
     return importer.finalize();
@@ -1039,16 +1046,6 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(MLIRContext* context,
     llvm::errs() << "Import error: " << e.what() << "\n";
     return nullptr;
   }
-}
-
-OwningOpRef<ModuleOp> translateQASM3ToQC(MLIRContext* context,
-                                         const std::string& filename) {
-  std::ifstream file(filename);
-  if (!file.good()) {
-    llvm::errs() << "Could not open file '" << filename << "'\n";
-    return nullptr;
-  }
-  return translateQASM3ToQC(context, file);
 }
 
 } // namespace mlir::qc
