@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
@@ -221,20 +222,18 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     Value result;
     int64_t resultIndex = 0;
 
+    const auto nresults = resultPtrs.size();
     if (op.getRegisterIndex() && op.getRegisterName() && op.getRegisterSize()) {
       const auto registerName = op.getRegisterName().value();
       const auto registerSize = op.getRegisterSize().value();
       const auto registerIndex = op.getRegisterIndex().value();
 
       // Assign a base offset to this register if not yet seen
-      if (!state.registerOffsets.contains(registerName)) {
-        state.registerOffsets.try_emplace(registerName, state.numResults);
-        state.numResults += registerSize;
-      }
-      resultIndex = state.registerOffsets[registerName] +
-                    static_cast<int64_t>(registerIndex);
+      const auto [it, _] =
+          state.registerOffsets.try_emplace(registerName, nresults);
+      resultIndex = it->second + static_cast<int64_t>(registerIndex);
     } else {
-      resultIndex = static_cast<int64_t>(state.numResults);
+      resultIndex = static_cast<int64_t>(nresults);
     }
 
     if (resultPtrs.contains(resultIndex)) {
@@ -244,9 +243,6 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       rewriter.setInsertionPoint(state.entryBlock->getTerminator());
       result = createPointerFromIndex(rewriter, op.getLoc(), resultIndex);
       resultPtrs.try_emplace(resultIndex, result);
-      if (std::cmp_greater_equal(resultIndex, state.numResults)) {
-        state.numResults = resultIndex + 1;
-      }
     }
 
     // Switch to measurements block

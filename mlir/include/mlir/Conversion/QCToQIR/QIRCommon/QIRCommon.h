@@ -67,9 +67,6 @@ struct LoweringState {
   Block* measurementsBlock{};
   Block* outputBlock{};
 
-  /// The number of recorded results in the computation.
-  size_t numResults = 0;
-
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
 
