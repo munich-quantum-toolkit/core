@@ -9,7 +9,7 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runtime)
 
 if(NOT TARGET ${TARGET_NAME})
-  # Add QIRBackend library
+  # Add QIRRuntime library
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QIRRuntime)
 
   # Add sources to target

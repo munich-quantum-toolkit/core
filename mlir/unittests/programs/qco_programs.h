@@ -177,6 +177,18 @@ void controlledTwoX(QCOProgramBuilder& b);
 /// gates.
 void inverseTwoX(QCOProgramBuilder& b);
 
+/// Creates a circuit with an inverse modifier applied to a global phase and an
+/// X gate.
+void inverseGphaseX(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a global phase and a
+/// barrier.
+void inverseGphaseBarrier(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two consecutive
+/// barriers.
+void inverseTwoBarriersInInv(QCOProgramBuilder& b);
+
 // --- YOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Y gate.

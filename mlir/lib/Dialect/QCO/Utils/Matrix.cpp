@@ -55,12 +55,58 @@ static void assignFixedImpl(std::int64_t& dim, SmallVector<Complex>& data,
 
 template <std::size_t Dim, std::size_t Size>
 [[nodiscard]] static bool
-isApproxFixedImpl(const std::int64_t dim, ArrayRef<Complex> data,
+isApproxFixedImpl(const std::int64_t dim, const SmallVector<Complex>& data,
                   const std::array<Complex, Size>& other, const double tol) {
   if (std::cmp_not_equal(dim, Dim)) {
     return false;
   }
   return entriesAreApprox(data, other, tol);
+}
+
+template <std::size_t Dim, std::size_t Size>
+[[nodiscard]] static bool
+assignFromDynamicImpl(const DynamicMatrix& src,
+                      std::array<Complex, Size>& dst) {
+  if (src.rows() != static_cast<std::int64_t>(Dim) ||
+      src.cols() != static_cast<std::int64_t>(Dim)) {
+    return false;
+  }
+  for (std::size_t row = 0; row < Dim; ++row) {
+    for (std::size_t col = 0; col < Dim; ++col) {
+      dst[(row * Dim) + col] =
+          src(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col));
+    }
+  }
+  return true;
+}
+
+/// Writes the row-major product `lhs * rhs` into @p out (2x2, fully unrolled).
+static void
+multiply2x2(const std::array<Complex, Matrix2x2::K_SIZE_AT_COMPILE_TIME>& lhs,
+            const std::array<Complex, Matrix2x2::K_SIZE_AT_COMPILE_TIME>& rhs,
+            std::array<Complex, Matrix2x2::K_SIZE_AT_COMPILE_TIME>& out) {
+  out[0] = lhs[0] * rhs[0] + lhs[1] * rhs[2];
+  out[1] = lhs[0] * rhs[1] + lhs[1] * rhs[3];
+  out[2] = lhs[2] * rhs[0] + lhs[3] * rhs[2];
+  out[3] = lhs[2] * rhs[1] + lhs[3] * rhs[3];
+}
+
+/// Writes the row-major product `lhs * rhs` into @p out (4x4, unrolled rows).
+static void
+multiply4x4(const std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME>& lhs,
+            const std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME>& rhs,
+            std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME>& out) {
+  for (std::size_t row = 0; row < Matrix4x4::K_ROWS; ++row) {
+    const std::size_t rowBase = row * Matrix4x4::K_COLS;
+    const Complex& a0 = lhs[rowBase + 0];
+    const Complex& a1 = lhs[rowBase + 1];
+    const Complex& a2 = lhs[rowBase + 2];
+    const Complex& a3 = lhs[rowBase + 3];
+    out[rowBase + 0] = a0 * rhs[0] + a1 * rhs[4] + a2 * rhs[8] + a3 * rhs[12];
+    out[rowBase + 1] = a0 * rhs[1] + a1 * rhs[5] + a2 * rhs[9] + a3 * rhs[13];
+    out[rowBase + 2] = a0 * rhs[2] + a1 * rhs[6] + a2 * rhs[10] + a3 * rhs[14];
+    out[rowBase + 3] = a0 * rhs[3] + a1 * rhs[7] + a2 * rhs[11] + a3 * rhs[15];
+  }
 }
 
 /// Returns @p dim as `size_t` after asserting it is non-negative and squarable.
@@ -123,6 +169,25 @@ bool Matrix1x1::isApprox(const Matrix1x1& other, const double tol) const {
   return std::abs(value - other.value) <= tol;
 }
 
+bool Matrix1x1::assignFrom(const DynamicMatrix& src) {
+  if (src.rows() != 1 || src.cols() != 1) {
+    return false;
+  }
+  value = src(0, 0);
+  return true;
+}
+
+Matrix1x1 Matrix1x1::operator*(const Complex& scalar) const {
+  return fromElements(value * scalar);
+}
+
+Matrix1x1& Matrix1x1::operator*=(const Complex& scalar) {
+  value *= scalar;
+  return *this;
+}
+
+Matrix1x1 Matrix1x1::adjoint() const { return fromElements(std::conj(value)); }
+
 Matrix2x2 Matrix2x2::fromElements(const Complex& m00, const Complex& m01,
                                   const Complex& m10, const Complex& m11) {
   return {{m00, m01, m10, m11}};
@@ -138,10 +203,27 @@ Complex Matrix2x2::operator()(const std::size_t row,
 }
 
 Matrix2x2 Matrix2x2::operator*(const Matrix2x2& rhs) const {
-  return fromElements(data[0] * rhs.data[0] + data[1] * rhs.data[2],
-                      data[0] * rhs.data[1] + data[1] * rhs.data[3],
-                      data[2] * rhs.data[0] + data[3] * rhs.data[2],
-                      data[2] * rhs.data[1] + data[3] * rhs.data[3]);
+  Matrix2x2 out{};
+  multiply2x2(data, rhs.data, out.data);
+  return out;
+}
+
+void Matrix2x2::premultiplyBy(const Matrix2x2& lhs) {
+  const std::array<Complex, K_SIZE_AT_COMPILE_TIME> rhs = data;
+  multiply2x2(lhs.data, rhs, data);
+}
+
+Matrix2x2 Matrix2x2::operator*(const Complex& scalar) const {
+  Matrix2x2 out = *this;
+  out *= scalar;
+  return out;
+}
+
+Matrix2x2& Matrix2x2::operator*=(const Complex& scalar) {
+  for (Complex& entry : data) {
+    entry *= scalar;
+  }
+  return *this;
 }
 
 Matrix2x2 Matrix2x2::adjoint() const {
@@ -157,6 +239,10 @@ Complex Matrix2x2::determinant() const {
 
 bool Matrix2x2::isApprox(const Matrix2x2& other, const double tol) const {
   return entriesAreApprox(data, other.data, tol);
+}
+
+bool Matrix2x2::assignFrom(const DynamicMatrix& src) {
+  return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
 }
 
 Matrix4x4 Matrix4x4::fromElements(const Complex& m00, const Complex& m01,
@@ -182,22 +268,26 @@ Complex Matrix4x4::operator()(const std::size_t row,
 
 Matrix4x4 Matrix4x4::operator*(const Matrix4x4& rhs) const {
   Matrix4x4 out{};
-  for (std::size_t row = 0; row < K_ROWS; ++row) {
-    const std::size_t rowBase = row * K_COLS;
-    const Complex& a0 = data[rowBase + 0];
-    const Complex& a1 = data[rowBase + 1];
-    const Complex& a2 = data[rowBase + 2];
-    const Complex& a3 = data[rowBase + 3];
-    out.data[rowBase + 0] = a0 * rhs.data[0] + a1 * rhs.data[4] +
-                            a2 * rhs.data[8] + a3 * rhs.data[12];
-    out.data[rowBase + 1] = a0 * rhs.data[1] + a1 * rhs.data[5] +
-                            a2 * rhs.data[9] + a3 * rhs.data[13];
-    out.data[rowBase + 2] = a0 * rhs.data[2] + a1 * rhs.data[6] +
-                            a2 * rhs.data[10] + a3 * rhs.data[14];
-    out.data[rowBase + 3] = a0 * rhs.data[3] + a1 * rhs.data[7] +
-                            a2 * rhs.data[11] + a3 * rhs.data[15];
-  }
+  multiply4x4(data, rhs.data, out.data);
   return out;
+}
+
+void Matrix4x4::premultiplyBy(const Matrix4x4& lhs) {
+  const std::array<Complex, K_SIZE_AT_COMPILE_TIME> rhs = data;
+  multiply4x4(lhs.data, rhs, data);
+}
+
+Matrix4x4 Matrix4x4::operator*(const Complex& scalar) const {
+  Matrix4x4 out = *this;
+  out *= scalar;
+  return out;
+}
+
+Matrix4x4& Matrix4x4::operator*=(const Complex& scalar) {
+  for (Complex& entry : data) {
+    entry *= scalar;
+  }
+  return *this;
 }
 
 Matrix4x4 Matrix4x4::adjoint() const {
@@ -231,12 +321,26 @@ bool Matrix4x4::isApprox(const Matrix4x4& other, const double tol) const {
   return entriesAreApprox(data, other.data, tol);
 }
 
+bool Matrix4x4::assignFrom(const DynamicMatrix& src) {
+  return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
+}
+
 DynamicMatrix::DynamicMatrix() : impl_(std::make_unique<Impl>()) {}
 
 DynamicMatrix::DynamicMatrix(const std::int64_t dim)
     : impl_(std::make_unique<Impl>()) {
   impl_->dim = dim;
   impl_->data.assign(checkedStorageSize(dim), Complex{});
+}
+
+DynamicMatrix::DynamicMatrix(const Matrix2x2& src)
+    : impl_(std::make_unique<Impl>()) {
+  assignFrom(src);
+}
+
+DynamicMatrix::DynamicMatrix(const Matrix4x4& src)
+    : impl_(std::make_unique<Impl>()) {
+  assignFrom(src);
 }
 
 DynamicMatrix::DynamicMatrix(const DynamicMatrix& other)
@@ -267,6 +371,10 @@ DynamicMatrix DynamicMatrix::identity(const std::int64_t dim) {
     matrix.impl_->data[(i * udim) + i] = 1.0;
   }
   return matrix;
+}
+
+DynamicMatrix DynamicMatrix::fromAdjoint(const Matrix2x2& src) {
+  return DynamicMatrix(src.adjoint());
 }
 
 Complex& DynamicMatrix::operator()(const std::int64_t row,
@@ -319,6 +427,13 @@ void DynamicMatrix::assignFrom(const Matrix4x4& src) {
 
 void DynamicMatrix::assignFrom(const DynamicMatrix& src) {
   *impl_ = *src.impl_;
+}
+
+bool DynamicMatrix::isApprox(const Matrix1x1& other, const double tol) const {
+  if (impl_->dim != 1) {
+    return false;
+  }
+  return std::abs(impl_->data[0] - other.value) <= tol;
 }
 
 bool DynamicMatrix::isApprox(const Matrix2x2& other, const double tol) const {
