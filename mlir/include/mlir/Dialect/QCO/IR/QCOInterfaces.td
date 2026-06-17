@@ -203,6 +203,9 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                       "StringRef", "getBaseSymbol", (ins)>,
 
       // Unitary matrix helpers
+      InterfaceMethod<"Returns true if the operation has a compile-time known "
+                      "unitary matrix representation, false otherwise.",
+                      "bool", "hasCompileTimeKnownUnitaryMatrix", (ins)>,
       InterfaceMethod<"Populates the given 1x1 unitary matrix if possible.",
                       "bool", "getUnitaryMatrix1x1", (ins "Matrix1x1&":$out),
                       unitaryMatrix1x1MethodBody>,

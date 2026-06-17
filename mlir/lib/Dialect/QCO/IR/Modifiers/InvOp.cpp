@@ -405,6 +405,13 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
               CancelNestedInv, EraseEmptyInv>(context);
 }
 
+bool InvOp::hasCompileTimeKnownUnitaryMatrix() {
+  return all_of(getBody()->getOps<UnitaryOpInterface>(),
+                [](UnitaryOpInterface op) {
+                  return op.hasCompileTimeKnownUnitaryMatrix();
+                });
+}
+
 /**
  * @brief Composes compile-time single-qubit unitaries and returns the inverse.
  */
@@ -451,6 +458,10 @@ composeInvertedSingleQubitBodyMatrix(Block& block) {
 }
 
 std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
+  if (getNumBodyUnitaries() == 0) {
+    return DynamicMatrix::identity(1LL << getNumTargets());
+  }
+
   if (auto bodyUnitary =
           utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
     if (const auto targetMatrix =
