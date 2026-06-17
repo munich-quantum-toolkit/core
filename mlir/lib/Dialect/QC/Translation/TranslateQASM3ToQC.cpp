@@ -473,14 +473,25 @@ public:
   }
 
   void visitIfStatement(std::shared_ptr<qasm3::IfStatement> stmt) override {
-    if (stmt->thenStatements.empty()) {
+    if (stmt->thenStatements.empty() && stmt->elseStatements.empty()) {
       throw qasm3::CompilerError(
-          "If statements with empty then blocks are not supported.",
+          "If statements with empty then and else blocks are not supported.",
           stmt->debugInfo);
     }
 
     auto condition = translateCondition(stmt->condition, stmt->debugInfo);
-    const auto hasElse = !stmt->elseStatements.empty();
+    auto hasElse = !stmt->elseStatements.empty();
+
+    std::vector<std::shared_ptr<qasm3::Statement>> thenStatements;
+    if (stmt->thenStatements.empty()) {
+      thenStatements = stmt->elseStatements;
+      hasElse = false;
+      auto trueValue = builder.boolConstant(true);
+      condition =
+          arith::XOrIOp::create(builder, condition, trueValue).getResult();
+    } else {
+      thenStatements = stmt->thenStatements;
+    }
 
     auto ifOp =
         scf::IfOp::create(builder, condition, /*withElseRegion=*/hasElse);
@@ -490,7 +501,7 @@ public:
 
     // Then block
     builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-    emitBlockStatements(stmt->thenStatements, stmt->debugInfo);
+    emitBlockStatements(thenStatements, stmt->debugInfo);
 
     // Else block
     if (hasElse) {
@@ -850,10 +861,7 @@ public:
                                    debugInfo);
       }
       auto value = lookupBitValue(id, debugInfo);
-      auto trueValue =
-          arith::ConstantOp::create(
-              builder, builder.getIntegerAttr(builder.getI1Type(), 1))
-              .getResult();
+      auto trueValue = builder.boolConstant(true);
       return arith::XOrIOp::create(builder, value, trueValue).getResult();
     }
 

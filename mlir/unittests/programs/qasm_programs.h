@@ -364,6 +364,9 @@ extern const std::string ifNot;
 /// Creates a circuit with an if operation with two qubits.
 extern const std::string ifTwoQubits;
 
+/// Creates a circuit with an if operation with an empty then branch.
+extern const std::string ifEmptyThen;
+
 /// Creates a circuit with an if operation with an else branch.
 extern const std::string ifElse;
 

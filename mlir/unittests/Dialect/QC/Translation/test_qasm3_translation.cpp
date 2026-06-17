@@ -420,5 +420,7 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
                                  MQT_NAMED_BUILDER(qc::ifTwoQubits)},
+        QASM3TranslationTestCase{"IfEmptyThen", qasm::ifEmptyThen,
+                                 MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
                                  MQT_NAMED_BUILDER(qc::ifElse)}));
