@@ -99,7 +99,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // 10. QIR cleanup (optional)
   auto totalStages = 8;
   if (convertToQIR) {
-    totalStages += 3;
+    totalStages += 2;
   }
   auto currentStage = 0;
 
