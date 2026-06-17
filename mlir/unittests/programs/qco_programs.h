@@ -177,6 +177,18 @@ void controlledTwoX(QCOProgramBuilder& b);
 /// gates.
 void inverseTwoX(QCOProgramBuilder& b);
 
+/// Creates a circuit with an inverse modifier applied to a global phase and an
+/// X gate.
+void inverseGphaseX(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a global phase and a
+/// barrier.
+void inverseGphaseBarrier(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two consecutive
+/// barriers.
+void inverseTwoBarriersInInv(QCOProgramBuilder& b);
+
 // --- YOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Y gate.
@@ -572,6 +584,9 @@ void canonicalizeRToRx(QCOProgramBuilder& b);
 /// Creates a circuit with an R gate that can be canonicalized to an RY gate.
 void canonicalizeRToRy(QCOProgramBuilder& b);
 
+/// Creates a circuit with two R gates in a row with the same `phi`.
+void twoR(QCOProgramBuilder& b);
+
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.
@@ -915,6 +930,9 @@ void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b);
 /// Creates a circuit with two XXPlusYY gates in a row with opposite phases.
 void twoXxPlusYYOppositePhase(QCOProgramBuilder& b);
 
+/// Creates a circuit with two XXPlusYY gates in a row with swapped targets.
+void twoXxPlusYYSwappedTargets(QCOProgramBuilder& b);
+
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
@@ -941,6 +959,9 @@ void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with two XXMinusYY gates in a row with opposite phases.
 void twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
+
+/// Creates a circuit with two XXMinusYY gates in a row with swapped targets.
+void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 

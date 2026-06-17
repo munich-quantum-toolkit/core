@@ -293,6 +293,13 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeNestedCtrl, ReduceCtrl, EraseEmptyCtrl>(context);
 }
 
+bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {
+  return all_of(getBody()->getOps<UnitaryOpInterface>(),
+                [](UnitaryOpInterface op) {
+                  return op.hasCompileTimeKnownUnitaryMatrix();
+                });
+}
+
 std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
   if (!bodyUnitary) {
