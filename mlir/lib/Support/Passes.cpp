@@ -28,7 +28,7 @@ static void addSimplificationPasses(PassManager& pm) {
   pm.addPass(createCSEPass());
 }
 
-static LogicalResult
+LogicalResult
 runWithPassManager(ModuleOp module,
                    const function_ref<void(PassManager&)> populatePasses,
                    const StringRef errorMessage) {
@@ -53,10 +53,11 @@ void populateQCOCleanupPipeline(PassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQIRCleanupPipeline(PassManager& pm) {
+void populateQIRCleanupPipeline(PassManager& pm, bool useAdaptive) {
   addSimplificationPasses(pm);
   pm.addPass(qir::createQIRCleanupPass());
   pm.addPass(createRemoveDeadValuesPass());
+  pm.addPass(qir::createAttachQIRAttributes({useAdaptive}));
 }
 
 [[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp module) {
@@ -69,7 +70,10 @@ void populateQIRCleanupPipeline(PassManager& pm) {
                             "Failed to run QCO cleanup pipeline.");
 }
 
-[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateQIRCleanupPipeline,
-                            "Failed to run QIR cleanup pipeline.");
+[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp module,
+                                                  bool useAdaptive) {
+  return runWithPassManager(
+      module,
+      [&](PassManager& pm) { populateQIRCleanupPipeline(pm, useAdaptive); },
+      "Failed to run QIR cleanup pipeline.");
 }

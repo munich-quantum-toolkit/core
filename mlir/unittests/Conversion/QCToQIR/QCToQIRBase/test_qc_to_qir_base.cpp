@@ -9,7 +9,7 @@
  */
 
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
@@ -76,7 +76,7 @@ protected:
 
 static LogicalResult runQCToQIRBaseConversion(ModuleOp module) {
   PassManager pm(module.getContext());
-  populateQIRConversionPipeline(pm, false);
+  pm.addPass(createQCToQIRBase());
   return pm.run(module);
 }
 
@@ -98,7 +98,7 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  EXPECT_TRUE(runQIRCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(runQIRCleanupPipeline(program.get(), false).succeeded());
   printer.record(program.get(), "Canonicalized Converted QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -109,7 +109,7 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  EXPECT_TRUE(runQIRCleanupPipeline(reference.get()).succeeded());
+  EXPECT_TRUE(runQIRCleanupPipeline(reference.get(), false).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 

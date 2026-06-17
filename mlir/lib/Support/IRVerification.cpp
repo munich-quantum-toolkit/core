@@ -20,6 +20,8 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Analysis/SliceAnalysis.h>
+#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Attributes.h>
@@ -308,14 +310,67 @@ static bool compareAttributes(Attribute lhs, Attribute rhs) {
         !strAttrB || strAttrA.getValue() != strAttrB.getValue()) {
       return false;
     }
-  } else if (auto symbolRefAttrA =
-                 llvm::dyn_cast<mlir::FlatSymbolRefAttr>(lhs)) {
-    auto symbolRefAttrB = llvm::dyn_cast<mlir::FlatSymbolRefAttr>(rhs);
+  } else if (auto arrayAttrA = llvm::dyn_cast<ArrayAttr>(lhs)) {
+    auto arrayAttrB = llvm::dyn_cast<ArrayAttr>(rhs);
+    if (!arrayAttrB) {
+      return false;
+    }
+    if (arrayAttrA.size() != arrayAttrB.size()) {
+      return false;
+    }
+
+    for (const auto& [subAttrA, subAttrB] :
+         llvm::zip_equal(arrayAttrA, arrayAttrB)) {
+      if (!compareAttributes(subAttrA, subAttrB)) {
+        return false;
+      }
+    }
+
+  } else if (auto symbolRefAttrA = dyn_cast<FlatSymbolRefAttr>(lhs)) {
+    auto symbolRefAttrB = dyn_cast<FlatSymbolRefAttr>(rhs);
     if (!symbolRefAttrB) {
       return false;
     }
 
     if (symbolRefAttrA.getValue() != symbolRefAttrB.getValue()) {
+      return false;
+    }
+  } else if (auto tailCallAttrA = dyn_cast<LLVM::TailCallKindAttr>(lhs)) {
+    auto tailCallAttrB = dyn_cast<LLVM::TailCallKindAttr>(rhs);
+    if (!tailCallAttrB) {
+      return false;
+    }
+
+    if (tailCallAttrA.getTailCallKind() != tailCallAttrB.getTailCallKind()) {
+      return false;
+    }
+  } else if (auto fastMathAttrA = dyn_cast<LLVM::FastmathFlagsAttr>(lhs)) {
+    auto fastMathAttrB = dyn_cast<LLVM::FastmathFlagsAttr>(rhs);
+    if (!fastMathAttrB) {
+      return false;
+    }
+
+    if (fastMathAttrA.getValue() != fastMathAttrB.getValue()) {
+      return false;
+    }
+  } else if (auto cconvAttrA = dyn_cast<LLVM::CConvAttr>(lhs)) {
+    auto cconvAttrB = dyn_cast<LLVM::CConvAttr>(rhs);
+    if (!cconvAttrB) {
+      return false;
+    }
+
+    if (cconvAttrA.getCallingConv() != cconvAttrB.getCallingConv()) {
+      return false;
+    }
+  } else if (auto modFlagAttrA = dyn_cast<LLVM::ModuleFlagAttr>(lhs)) {
+    auto modFlagAttrB = dyn_cast<LLVM::ModuleFlagAttr>(rhs);
+    if (!modFlagAttrB) {
+      return false;
+    }
+
+    if (modFlagAttrA.getBehavior() != modFlagAttrB.getBehavior() ||
+        modFlagAttrA.getKey() != modFlagAttrB.getKey() ||
+        modFlagAttrA.getValue() != modFlagAttrB.getValue()) {
       return false;
     }
   }

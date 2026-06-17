@@ -12,8 +12,10 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
@@ -97,7 +99,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // 10. QIR cleanup (optional)
   auto totalStages = 8;
   if (convertToQIR) {
-    totalStages += 2;
+    totalStages += 3;
   }
   auto currentStage = 0;
 
@@ -199,11 +201,14 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // Stage 9: QC-to-QIR conversion (optional)
   if (convertToQIR) {
     if (failed(runStage([&](PassManager& pm) {
-          populateQIRConversionPipeline(pm, config_.convertToQIRAdaptive);
+          if (config_.convertToQIRAdaptive) {
+            pm.addPass(createQCToQIRAdaptive());
+          } else {
+            pm.addPass(createQCToQIRBase());
+          }
         }))) {
       return failure();
     }
-
     if (record != nullptr && config_.recordIntermediates) {
       record->afterQIRConversion = captureIR(module);
       if (config_.printIRAfterAllStages) {
@@ -212,8 +217,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
       }
     }
     // Stage 10: QIR cleanup (optional)
-    if (failed(runStage(
-            [&](PassManager& pm) { populateQIRCleanupPipeline(pm); }))) {
+    if (failed(runStage([&](PassManager& pm) {
+          populateQIRCleanupPipeline(pm, config_.convertToQIRAdaptive);
+        }))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {
