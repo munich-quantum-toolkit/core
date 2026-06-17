@@ -29,6 +29,7 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <cassert>
 
 namespace mlir::qir {
 #define GEN_PASS_DEF_QIRSETATTRIBUTESANDMETADATA
