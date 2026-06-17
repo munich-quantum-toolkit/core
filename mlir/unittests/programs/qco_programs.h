@@ -299,13 +299,6 @@ void sThenSdg(QCOProgramBuilder& b);
 /// Creates a circuit with two S gates in a row.
 void twoS(QCOProgramBuilder& b);
 
-/// Creates a circuit with two S gates on a control wire separated by a `ctrl`
-/// hop.
-void twoSOnControlWire(QCOProgramBuilder& b);
-
-/// Creates the merged Z form of @ref twoSOnControlWire.
-void twoSOnControlWireMerged(QCOProgramBuilder& b);
-
 // --- SdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an Sdg gate.
@@ -334,13 +327,6 @@ void sdgThenS(QCOProgramBuilder& b);
 
 /// Creates a circuit with two Sdg gates in a row.
 void twoSdg(QCOProgramBuilder& b);
-
-/// Creates a circuit with two Sdg gates on a control wire separated by a `ctrl`
-/// hop.
-void twoSdgOnControlWire(QCOProgramBuilder& b);
-
-/// Creates the merged Z form of @ref twoSdgOnControlWire.
-void twoSdgOnControlWireMerged(QCOProgramBuilder& b);
 
 // --- TOp ------------------------------------------------------------------ //
 
@@ -371,13 +357,6 @@ void tThenTdg(QCOProgramBuilder& b);
 /// Creates a circuit with two T gates in a row.
 void twoT(QCOProgramBuilder& b);
 
-/// Creates a circuit with two T gates on a control wire separated by a `ctrl`
-/// hop.
-void twoTOnControlWire(QCOProgramBuilder& b);
-
-/// Creates the merged S form of @ref twoTOnControlWire.
-void twoTOnControlWireMerged(QCOProgramBuilder& b);
-
 // --- TdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a Tdg gate.
@@ -406,13 +385,6 @@ void tdgThenT(QCOProgramBuilder& b);
 
 /// Creates a circuit with two Tdg gates in a row.
 void twoTdg(QCOProgramBuilder& b);
-
-/// Creates a circuit with two Tdg gates on a control wire separated by a `ctrl`
-/// hop.
-void twoTdgOnControlWire(QCOProgramBuilder& b);
-
-/// Creates the merged Sdg form of @ref twoTdgOnControlWire.
-void twoTdgOnControlWireMerged(QCOProgramBuilder& b);
 
 // --- SXOp ----------------------------------------------------------------- //
 
@@ -557,21 +529,6 @@ void inverseMultipleControlledRz(QCOProgramBuilder& b);
 /// Creates a circuit with two RZ gates in a row with opposite phases.
 void twoRzOppositePhase(QCOProgramBuilder& b);
 
-/// Creates a circuit with two RZ gates on a control wire separated by a `ctrl`
-/// hop.
-void twoRzOnControlWire(QCOProgramBuilder& b);
-
-/// Creates the merged single-RZ form of @ref twoRzOnControlWire.
-void twoRzOnControlWireMerged(QCOProgramBuilder& b);
-
-/// Creates a circuit with two RZ gates on a control wire separated by nested
-/// `ctrl` hops.
-void twoRzOnNestedControlWire(QCOProgramBuilder& b);
-
-/// Creates the merged single-RZ form of @ref
-/// twoRzOnNestedControlWire.
-void twoRzOnNestedControlWireMerged(QCOProgramBuilder& b);
-
 // --- POp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a P gate.
@@ -597,13 +554,6 @@ void inverseMultipleControlledP(QCOProgramBuilder& b);
 
 /// Creates a circuit with two P gates in a row with opposite phases.
 void twoPOppositePhase(QCOProgramBuilder& b);
-
-/// Creates a circuit with two P gates on a control wire separated by a `ctrl`
-/// hop.
-void twoPOnControlWire(QCOProgramBuilder& b);
-
-/// Creates the merged single-P form of @ref twoPOnControlWire.
-void twoPOnControlWireMerged(QCOProgramBuilder& b);
 
 // --- ROp ------------------------------------------------------------------ //
 

@@ -576,19 +576,6 @@ void twoS(QCOProgramBuilder& b) {
   q[0] = b.s(q[0]);
 }
 
-void twoSOnControlWire(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.s(q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  q[0] = b.s(q[0]);
-}
-
-void twoSOnControlWireMerged(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.z(q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-}
-
 void sdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sdg(q[0]);
@@ -647,19 +634,6 @@ void twoSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.sdg(q[0]);
   q[0] = b.sdg(q[0]);
-}
-
-void twoSdgOnControlWire(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.sdg(q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  q[0] = b.sdg(q[0]);
-}
-
-void twoSdgOnControlWireMerged(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.z(q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
 }
 
 void t_(QCOProgramBuilder& b) {
@@ -721,19 +695,6 @@ void twoT(QCOProgramBuilder& b) {
   q[0] = b.t(q[0]);
 }
 
-void twoTOnControlWire(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.t(q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  q[0] = b.t(q[0]);
-}
-
-void twoTOnControlWireMerged(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.s(q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-}
-
 void tdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.tdg(q[0]);
@@ -792,19 +753,6 @@ void twoTdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.tdg(q[0]);
   q[0] = b.tdg(q[0]);
-}
-
-void twoTdgOnControlWire(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.tdg(q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  q[0] = b.tdg(q[0]);
-}
-
-void twoTdgOnControlWireMerged(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.sdg(q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
 }
 
 void sx(QCOProgramBuilder& b) {
@@ -1101,34 +1049,6 @@ void twoRzOppositePhase(QCOProgramBuilder& b) {
   q[0] = b.rz(-0.789, q[0]);
 }
 
-void twoRzOnControlWire(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.rz(0.1, q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  q[0] = b.rz(0.2, q[0]);
-}
-
-void twoRzOnControlWireMerged(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.rz(0.3, q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-}
-
-void twoRzOnNestedControlWire(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  q[0] = b.rz(0.1, q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  std::tie(q[0], q[2]) = b.cx(q[0], q[2]);
-  q[0] = b.rz(0.2, q[0]);
-}
-
-void twoRzOnNestedControlWireMerged(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  q[0] = b.rz(0.3, q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  std::tie(q[0], q[2]) = b.cx(q[0], q[2]);
-}
-
 void p(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.p(0.123, q[0]);
@@ -1181,19 +1101,6 @@ void twoPOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.p(0.123, q[0]);
   q[0] = b.p(-0.123, q[0]);
-}
-
-void twoPOnControlWire(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.p(0.1, q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
-  q[0] = b.p(0.2, q[0]);
-}
-
-void twoPOnControlWireMerged(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.p(0.3, q[0]);
-  std::tie(q[0], q[1]) = b.cx(q[0], q[1]);
 }
 
 void r(QCOProgramBuilder& b) {

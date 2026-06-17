@@ -12,14 +12,11 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-
-#include <cmath>
 
 namespace mlir::qco {
 
@@ -41,44 +38,6 @@ static bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
   const auto lhsVal = utils::valueToDouble(lhs);
   const auto rhsVal = utils::valueToDouble(rhs);
   return lhsVal && rhsVal && std::abs(*lhsVal - *rhsVal) <= utils::TOLERANCE;
-}
-
-/**
- * @brief Find a same-type partner operation on a control wire.
- *
- * @details
- * Walks `ctrl` hops on the control wire to find a matching operation.
- * Returns failure when no partner exists or when the partner is directly
- * adjacent on the same wire (zero `ctrl` hops).
- *
- * @tparam OpType The type of the operation to be merged.
- * @param op The first operation instance.
- * @return FailureOr<OpType> The partner operation, or failure.
- */
-template <typename OpType>
-static FailureOr<OpType> findPartnerOnControlWire(OpType op) {
-  Value v = op->getResult(0);
-  if (!isa<QubitType>(v.getType())) {
-    return failure();
-  }
-
-  unsigned hops = 0;
-  while (v.hasOneUse()) {
-    auto* user = *v.getUsers().begin();
-    if (auto next = dyn_cast<OpType>(user); next && next->getOperand(0) == v) {
-      if (hops == 0) {
-        return failure();
-      }
-      return next;
-    }
-    auto ctrl = dyn_cast<CtrlOp>(user);
-    if (!ctrl || !llvm::is_contained(ctrl.getControlsIn(), v)) {
-      return failure();
-    }
-    v = ctrl.getOutputForInput(v);
-    ++hops;
-  }
-  return failure();
 }
 
 /**
@@ -203,59 +162,6 @@ LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResult());
-  return success();
-}
-
-/**
- * @brief Merge Z-diagonal one-target, zero-parameter gates on a control wire.
- *
- * @details
- * Replaces `op; ...; op` on a control wire with `square; ...` (e.g., `s; ctrl;
- * s` → `z; ctrl`).
- *
- * @tparam SquareOpType Result of squaring the gate (e.g. `ZOp` for `SOp`).
- * @tparam OpType The Z-diagonal operation to be merged.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the merge.
- */
-template <typename SquareOpType, typename OpType>
-LogicalResult
-mergeOneTargetZeroParameterOnControlWire(OpType op, PatternRewriter& rewriter) {
-  auto partner = findPartnerOnControlWire(op);
-  if (failed(partner)) {
-    return failure();
-  }
-
-  rewriter.replaceOpWithNewOp<SquareOpType>(op, op.getInputQubit(0));
-  rewriter.replaceOp(*partner, partner->getInputQubit(0));
-  return success();
-}
-
-/**
- * @brief Merge Z-diagonal one-target, one-parameter gate angles on a control
- * wire.
- *
- * @tparam OpType The type of the Z-diagonal operation to be merged.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the merge.
- */
-template <typename OpType>
-LogicalResult
-mergeOneTargetOneParameterOnControlWire(OpType op, PatternRewriter& rewriter) {
-  auto partner = findPartnerOnControlWire(op);
-  if (failed(partner)) {
-    return failure();
-  }
-
-  // Compute and set the new parameter
-  auto newParameter = arith::AddFOp::create(
-      rewriter, op.getLoc(), op.getOperand(1), partner->getOperand(1));
-  op->setOperand(1, newParameter.getResult());
-
-  // Replace the partner operation with the input of the first operation
-  rewriter.replaceOp(*partner, partner->getOperand(0));
   return success();
 }
 

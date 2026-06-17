@@ -453,9 +453,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseMultipleControlledP),
                     MQT_NAMED_BUILDER(multipleControlledP)},
         QCOTestCase{"TwoPOppositePhase", MQT_NAMED_BUILDER(twoPOppositePhase),
-                    MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"TwoPOnControlWire", MQT_NAMED_BUILDER(twoPOnControlWire),
-                    MQT_NAMED_BUILDER(twoPOnControlWireMerged)}));
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/ROp.cpp
@@ -629,12 +627,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseMultipleControlledRz),
                     MQT_NAMED_BUILDER(multipleControlledRz)},
         QCOTestCase{"TwoRZOppositePhase", MQT_NAMED_BUILDER(twoRzOppositePhase),
-                    MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"TwoRZOnControlWire", MQT_NAMED_BUILDER(twoRzOnControlWire),
-                    MQT_NAMED_BUILDER(twoRzOnControlWireMerged)},
-        QCOTestCase{"TwoRZOnNestedControlWire",
-                    MQT_NAMED_BUILDER(twoRzOnNestedControlWire),
-                    MQT_NAMED_BUILDER(twoRzOnNestedControlWireMerged)}));
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RzxOp.cpp
@@ -723,40 +716,36 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledSdg)},
         QCOTestCase{"SThenSdg", MQT_NAMED_BUILDER(sThenSdg),
                     MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"TwoS", MQT_NAMED_BUILDER(twoS), MQT_NAMED_BUILDER(z)},
-        QCOTestCase{"TwoSOnControlWire", MQT_NAMED_BUILDER(twoSOnControlWire),
-                    MQT_NAMED_BUILDER(twoSOnControlWireMerged)}));
+        QCOTestCase{"TwoS", MQT_NAMED_BUILDER(twoS), MQT_NAMED_BUILDER(z)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/SdgOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOSdgOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"Sdg", MQT_NAMED_BUILDER(sdg), MQT_NAMED_BUILDER(sdg)},
-        QCOTestCase{"SingleControlledSdg",
-                    MQT_NAMED_BUILDER(singleControlledSdg),
-                    MQT_NAMED_BUILDER(singleControlledSdg)},
-        QCOTestCase{"MultipleControlledSdg",
-                    MQT_NAMED_BUILDER(multipleControlledSdg),
-                    MQT_NAMED_BUILDER(multipleControlledSdg)},
-        QCOTestCase{"NestedControlledSdg",
-                    MQT_NAMED_BUILDER(nestedControlledSdg),
-                    MQT_NAMED_BUILDER(multipleControlledSdg)},
-        QCOTestCase{"TrivialControlledSdg",
-                    MQT_NAMED_BUILDER(trivialControlledSdg),
-                    MQT_NAMED_BUILDER(sdg)},
-        QCOTestCase{"InverseSdg", MQT_NAMED_BUILDER(inverseSdg),
-                    MQT_NAMED_BUILDER(s)},
-        QCOTestCase{"InverseMultipleControlledSdg",
-                    MQT_NAMED_BUILDER(inverseMultipleControlledSdg),
-                    MQT_NAMED_BUILDER(multipleControlledS)},
-        QCOTestCase{"SdgThenS", MQT_NAMED_BUILDER(sdgThenS),
-                    MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"TwoSdg", MQT_NAMED_BUILDER(twoSdg), MQT_NAMED_BUILDER(z)},
-        QCOTestCase{"TwoSdgOnControlWire",
-                    MQT_NAMED_BUILDER(twoSdgOnControlWire),
-                    MQT_NAMED_BUILDER(twoSdgOnControlWireMerged)}));
+    testing::Values(QCOTestCase{"Sdg", MQT_NAMED_BUILDER(sdg),
+                                MQT_NAMED_BUILDER(sdg)},
+                    QCOTestCase{"SingleControlledSdg",
+                                MQT_NAMED_BUILDER(singleControlledSdg),
+                                MQT_NAMED_BUILDER(singleControlledSdg)},
+                    QCOTestCase{"MultipleControlledSdg",
+                                MQT_NAMED_BUILDER(multipleControlledSdg),
+                                MQT_NAMED_BUILDER(multipleControlledSdg)},
+                    QCOTestCase{"NestedControlledSdg",
+                                MQT_NAMED_BUILDER(nestedControlledSdg),
+                                MQT_NAMED_BUILDER(multipleControlledSdg)},
+                    QCOTestCase{"TrivialControlledSdg",
+                                MQT_NAMED_BUILDER(trivialControlledSdg),
+                                MQT_NAMED_BUILDER(sdg)},
+                    QCOTestCase{"InverseSdg", MQT_NAMED_BUILDER(inverseSdg),
+                                MQT_NAMED_BUILDER(s)},
+                    QCOTestCase{"InverseMultipleControlledSdg",
+                                MQT_NAMED_BUILDER(inverseMultipleControlledSdg),
+                                MQT_NAMED_BUILDER(multipleControlledS)},
+                    QCOTestCase{"SdgThenS", MQT_NAMED_BUILDER(sdgThenS),
+                                MQT_NAMED_BUILDER(emptyQCO)},
+                    QCOTestCase{"TwoSdg", MQT_NAMED_BUILDER(twoSdg),
+                                MQT_NAMED_BUILDER(z)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/SwapOp.cpp
@@ -866,9 +855,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledTdg)},
         QCOTestCase{"TThenTdg", MQT_NAMED_BUILDER(tThenTdg),
                     MQT_NAMED_BUILDER(emptyQCO)},
-        QCOTestCase{"TwoT", MQT_NAMED_BUILDER(twoT), MQT_NAMED_BUILDER(s)},
-        QCOTestCase{"TwoTOnControlWire", MQT_NAMED_BUILDER(twoTOnControlWire),
-                    MQT_NAMED_BUILDER(twoTOnControlWireMerged)}));
+        QCOTestCase{"TwoT", MQT_NAMED_BUILDER(twoT), MQT_NAMED_BUILDER(s)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/TdgOp.cpp
@@ -897,10 +884,7 @@ INSTANTIATE_TEST_SUITE_P(
                     QCOTestCase{"TdgThenS", MQT_NAMED_BUILDER(tdgThenT),
                                 MQT_NAMED_BUILDER(emptyQCO)},
                     QCOTestCase{"TwoTdg", MQT_NAMED_BUILDER(twoTdg),
-                                MQT_NAMED_BUILDER(sdg)},
-                    QCOTestCase{"TwoTdgOnControlWire",
-                                MQT_NAMED_BUILDER(twoTdgOnControlWire),
-                                MQT_NAMED_BUILDER(twoTdgOnControlWireMerged)}));
+                                MQT_NAMED_BUILDER(sdg)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/U2Op.cpp
