@@ -9,10 +9,10 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -40,36 +40,7 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
 
   LogicalResult matchAndRewrite(XXPlusYYOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the successor is the same operation
-    auto nextOp = dyn_cast<XXPlusYYOp>(*op.getOutputQubit(0).user_begin());
-    if (!nextOp) {
-      return failure();
-    }
-
-    // Confirm operations act on the same qubits
-    if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
-      return failure();
-    }
-
-    // Confirm betas are equal
-    const auto beta = valueToDouble(op.getBeta());
-    const auto nextBeta = valueToDouble(nextOp.getBeta());
-    if (beta && nextBeta) {
-      if (std::abs(*beta - *nextBeta) > TOLERANCE) {
-        return failure();
-      }
-    } else if (op.getBeta() != nextOp.getBeta()) {
-      return failure();
-    }
-
-    // Compute and set new theta, which has index 2
-    auto newParameter = arith::AddFOp::create(
-        rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
-    op->setOperand(2, newParameter.getResult());
-
-    // Replace the second operation with the result of the first operation
-    rewriter.replaceOp(nextOp, op.getResults());
-    return success();
+    return mergeXXPlusMinusYY(op, rewriter);
   }
 };
 

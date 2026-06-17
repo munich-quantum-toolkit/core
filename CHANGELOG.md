@@ -42,8 +42,9 @@ with the exception that minor releases may include breaking changes.
   [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623],
   [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700],
   [#1710], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765],
-  [#1774], [#1781]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
-  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
+  [#1774], [#1781], [#1782])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
+  [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**])
 
 ### Changed
@@ -597,6 +598,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
 [#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
 [#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
 [#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
