@@ -72,8 +72,8 @@ for the quantum computing community.
 
 To support this endeavor, please consider:
 
-- Starring and sharing our repositories: https:
-  //github.com/munich-quantum-toolkit
+- Starring and sharing our repositories:
+  <https://github.com/munich-quantum-toolkit>
 - Contributing code, documentation, tests,
   or examples via issues and pull requests
 - Citing the MQT in your publications (see [Cite This](#cite-this))

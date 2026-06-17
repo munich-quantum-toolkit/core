@@ -18,8 +18,8 @@ It is responsible for loading the device,
 forwarding requests from the client to the device, and sending back the results.
 MQT Core's QDMI Driver, {cpp:class}`qdmi::Driver`,
 comes with several preloaded devices that can be used directly.
-Other devices can be loaded dynamically at runtime via {cpp:
-func}`qdmi::Driver::addDynamicDeviceLibrary`.
+Other devices can be loaded dynamically at runtime via
+{cpp:func}`qdmi::Driver::addDynamicDeviceLibrary`.
 
 ## Python Bindings
 

@@ -299,7 +299,9 @@ The state's amplitudes are annotated at the respective edges.
 Edges without annotations correspond to an edge weight of 1.
 
 ````{admonition} Example _(Single-Qubit States)_
-:class: tip Consider the computational basis states $\ket{0}$ and $\ket{1}$.
+:class: tip
+
+Consider the computational basis states $\ket{0}$ and $\ket{1}$.
 Then, the corresponding decision diagrams have the structures
 
 ```{image} _static/dd-figure-02.svg
@@ -397,7 +399,9 @@ that their graph structure allows redundant parts to be merged in the
 representation instead of being represented repeatedly.
 
 ````{admonition} Example _(Redundancy in Decision Diagrams)_
-:class: tip Observe how, as in the previous example,
+:class: tip
+
+Observe how, as in the previous example,
 the left and right successors of the top-level node
 (labeled $q_2$)
 lead to exactly the same structure
@@ -515,7 +519,9 @@ Note that $U_{ij}$ can be interpreted
 as the transformation of $\ket{j}$ to $\ket{i}$.
 
 ````{admonition} Example _(Single-Qubit Operations)_
-:class: tip The following shows decision diagram representations
+:class: tip
+
+The following shows decision diagram representations
 for selected \mbox{single-qubit} operations:
 
 ```{image} _static/dd-figure-08.svg
@@ -542,17 +548,22 @@ that all complex numbers within the decision diagram have a magnitude of at most
 $1$, which is used for optimization purposes.
 
 ````{admonition} Example _(Matrix Decision Diagrams)_
-:class: tip Consider the maximally-entangling two-qubit $R_{xx}$ rotation
-represented by the matrix
+:class: tip
+
+Consider the maximally-entangling two-qubit $R_{xx}$ rotation represented by the
+matrix
+
 ```{math}
 R_{xx} \Bigl(\theta = \frac{\pi}{2} \Bigl) = \frac{1}{\sqrt{2}}\begin{bmatrix}
 1 & 0 & 0 & -i \\
 0 & 1 & -i & 0 \\
 0 & -i & 1 & 0 \\
 -i & 0 & 0 & 1
-\end{bmatrix} .
+\end{bmatrix}.
 ```
+
 This matrix is equivalent to blocks of $2 \times 2$ matrices corresponding to the identity $I$ and the Pauli-$X$ matrix, i.e.,
+
 ```{math}
 :label: rxxmat
 R_{xx} \Bigl(\theta = \frac{\pi}{2} \Bigl) = \frac{1}{\sqrt{2}}\begin{bmatrix}
@@ -560,6 +571,7 @@ I & -iX \\
 -iX & I
 \end{bmatrix}.
 ```
+
 The corresponding (already reduced) decision diagram has the following structure:
 
 ```{image} _static/dd-figure-09.svg
@@ -677,14 +689,13 @@ Matrix-vector multiplication can be handled in a very similar fashion
 as addition.
 Standard matrix-vector multiplication can be expressed as
 
-<!-- prettier-ignore -->
 ```{math}
 :label: multiplication
 U\ket{\Psi} = \begin{bmatrix} U_{00} & U_{01} \\
 U_{10} & U_{11} \end{bmatrix} \begin{bmatrix} \Psi_0 \\ \Psi_1 \end{bmatrix}
  = w \begin{bmatrix} u_{00} & u_{01} \\
 u_{10} & u_{11} \end{bmatrix} w' \begin{bmatrix} \alpha_0 \\ \alpha_1 \end{bmatrix} = ww' \begin{bmatrix} u_{00} \cdot \alpha_0 + u_{10} \cdot \alpha_1 \\
-u_{01} \cdot \alpha_0 + u_{11} \cdot \alpha_1 \end{bmatrix} .
+u_{01} \cdot \alpha_0 + u_{11} \cdot \alpha_1 \end{bmatrix}.
 ```
 
 This implies that a multiplication boils down to four smaller multiplications
