@@ -12,7 +12,6 @@
 #define MQT_CORE_QUANTUMSTATE_H
 #include <mlir/IR/Operation.h>
 
-#include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -36,18 +35,12 @@ namespace mlir::qco {
  */
 struct MeasurementResult {
   // The pair is (probability, resulting state).
-  std::array<std::pair<double, std::shared_ptr<class QuantumState>>, 2>
-      states{};
-  // How many entries in `states` are actually filled (0, 1 or 2).
-  std::size_t size = 0;
+  std::unordered_map<int64_t,
+                     std::pair<double, std::shared_ptr<class QuantumState>>>
+      states;
 
-  [[nodiscard]] constexpr std::size_t count() const noexcept { return size; }
-
-  // Range‑for friendliness
-  [[nodiscard]] constexpr auto begin() const noexcept { return states.begin(); }
-  [[nodiscard]] constexpr auto end() const noexcept {
-    return states.begin() + size;
-  }
+  // Which entries are available
+  std::unordered_map<int64_t, bool> availableStates;
 };
 
 /**
@@ -203,20 +196,20 @@ class QuantumState {
                                          globalKeysView.end()};
     MeasurementResult res = {};
     if (probabilityZero > 1e-4) {
-      ++res.size;
       auto stateZero =
           std::make_shared<QuantumState>(globalKeys, maxNonzeroAmplitudes);
       stateZero->amplitudeMap = std::move(newValuesZeroRes);
       stateZero->normalize();
       res.states[0] = {probabilityZero, stateZero};
+      res.availableStates[0] = true;
     }
     if (probabilityOne > 1e-4) {
-      ++res.size;
       auto stateOne =
           std::make_shared<QuantumState>(globalKeys, maxNonzeroAmplitudes);
       stateOne->amplitudeMap = std::move(newValuesOneRes);
       stateOne->normalize();
       res.states[1] = {probabilityOne, stateOne};
+      res.availableStates[1] = true;
     }
 
     return res;

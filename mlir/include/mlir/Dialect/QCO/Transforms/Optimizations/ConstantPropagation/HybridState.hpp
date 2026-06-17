@@ -34,8 +34,105 @@ class HybridState {
   llvm::DenseMap<Value, int64_t> integerValues;
   llvm::DenseMap<Value, double> doubleValues;
 
+  HybridState() : probability(0.0) {}
+
+  /**
+   * @brief Checks if all positive classical controls hold and all negative
+   * classical controls do not hold.
+   *
+   * @param posCtrlsClassical An array of the classical positive control values.
+   * @param negCtrlsClassical An array of the classical negative control values.
+   * @return True if the controls together evaluate to true.
+   * @throws domain_error If a classical control value cannot be found.
+   */
+  bool isOperationExecutable(const std::span<Value> posCtrlsClassical,
+                             const std::span<Value> negCtrlsClassical) {
+    for (const Value posCtrl : posCtrlsClassical) {
+      if (integerValues.contains(posCtrl) && integerValues.at(posCtrl) == 0) {
+        return false;
+      }
+      if (doubleValues.contains(posCtrl) &&
+          std::norm(doubleValues.at(posCtrl)) < 1e-4) {
+        return false;
+      }
+      if (!doubleValues.contains(posCtrl) && !integerValues.contains(posCtrl)) {
+        throw std::domain_error(
+            "HybridState needs a classical value for operation control that is "
+            "not existent in current HybridState.");
+      }
+    }
+    for (const Value negCtrl : negCtrlsClassical) {
+      if (integerValues.contains(negCtrl) && integerValues.at(negCtrl) != 0) {
+        return false;
+      }
+      if (doubleValues.contains(negCtrl) &&
+          std::norm(doubleValues.at(negCtrl)) > 1e-4) {
+        return false;
+      }
+      if (!doubleValues.contains(negCtrl) && !integerValues.contains(negCtrl)) {
+        throw std::domain_error(
+            "HybridState needs a classical value for operation control that is "
+            "not existent in current HybridState.");
+      }
+    }
+    return true;
+  }
+
+  /**
+   * @brief This method applies a measurement or reset.
+   *
+   * This method applies a measurement or reset, changing the qubits and the
+   * classical values (if a measurement is applied) corresponding to the
+   * measurement.
+   *
+   * @param quantumTarget The index of the qubit to be measured.
+   * @param reset True if a reset is applied.
+   * @param classicalTarget The value to save the measurement result to.
+   * @param posCtrlsClassical An array of the classical positive control values.
+   * @param negCtrlsClassical An array of the classical negative control values.
+   * @throws domain_error If a classical control value cannot be found.
+   * @return One or two hybrid states corresponding to the measurement or reset
+   * outcomes.
+   */
+  std::vector<HybridState>
+  propagateMeasurementOrReset(const unsigned int quantumTarget, bool reset,
+                              const Value classicalTarget = nullptr,
+                              const std::span<Value> posCtrlsClassical = {},
+                              const std::span<Value> negCtrlsClassical = {}) {
+    if (top || !isOperationExecutable(posCtrlsClassical, negCtrlsClassical)) {
+      return {*this};
+    }
+
+    std::vector<HybridState> results;
+
+    const auto [newQuantumStates, availableStates] =
+        reset ? qState->resetQubit(quantumTarget)
+              : qState->measureQubit(quantumTarget);
+
+    for (int64_t i = 0; i < 2; ++i) {
+      if (!availableStates.at(i)) {
+        continue;
+      }
+
+      const auto& [measProbability, measQS] = newQuantumStates.at(i);
+      auto newHybrid = HybridState();
+      newHybrid.probability = measProbability * probability;
+      newHybrid.integerValues = integerValues;
+      newHybrid.doubleValues = doubleValues;
+      if (!reset) {
+        newHybrid.integerValues[classicalTarget] = i;
+      }
+      newHybrid.qState = measQS;
+
+      results.push_back(newHybrid);
+    }
+
+    return results;
+  }
+
 public:
-  explicit HybridState(std::size_t nQubits, std::size_t maxNonzeroAmplitudes,
+  explicit HybridState(std::span<unsigned int> globalQubitNumber,
+                       std::size_t maxNonzeroAmplitudes,
                        double probability = 1.0);
 
   ~HybridState();
@@ -70,16 +167,17 @@ public:
    *
    * @param gate The name of the gate to be applied.
    * @param targets An array of the indices of the target qubits.
-   * @param ctrlsQuantum An array of the indices of the ctrl qubits.
-   * @param ctrlsClassical An array of the indices of the ctrl bits.
-   * @param params The parameter applied to the gate.
-   * @throw std::domain_error If the number of nonzero amplitudes would exceed
-   * maxNonzeroAmplitudes or if the hybridState does not hold a quantumState.
+   * @param ctrlsQuantum An array of the global indices of the ctrl qubits.
+   * @param posCtrlsClassical An array of the classical positive control values.
+   * @param negCtrlsClassical An array of the classical negative control values.
+   * @param params The values of parameters applied to the gate.
+   * @throws domain_error If a classical control value cannot be found.
    */
   void propagateGate(Operation* gate, std::span<unsigned int> targets,
                      std::span<unsigned int> ctrlsQuantum = {},
-                     std::span<unsigned int> ctrlsClassical = {},
-                     std::span<double> params = {});
+                     std::span<Value> posCtrlsClassical = {},
+                     std::span<Value> negCtrlsClassical = {},
+                     std::span<Value> params = {});
 
   /**
    * @brief This method applies a measurement.
@@ -89,14 +187,16 @@ public:
    *
    * @param quantumTarget The index of the qubit to be measured.
    * @param classicalTarget The value to save the measurement result to.
-   * @param ctrlsClassical An array of ctrl values.
-   * @throws domain_error If the quantum state of the hybrid state is TOP.
+   * @param posCtrlsClassical An array of the classical positive control values.
+   * @param negCtrlsClassical An array of the classical negative control values.
+   * @throws domain_error If a classical control value cannot be found.
    * @return One or two hybrid states corresponding to the measurement
    * outcomes.
    */
   std::vector<HybridState>
   propagateMeasurement(unsigned int quantumTarget, Value classicalTarget,
-                       std::span<Value> ctrlsClassical = {});
+                       std::span<Value> posCtrlsClassical = {},
+                       std::span<Value> negCtrlsClassical = {});
 
   /**
    * @brief This method applies a reset.
@@ -106,13 +206,15 @@ public:
    * the measurement was one, and the result discarded.
    *
    * @param target The index of the qubit to be measured.
-   * @param ctrlsClassical An array of the ctrl values.
-   * @throws domain_error If the quantum state of the hybrid state is TOP.
+   * @param posCtrlsClassical An array of the classical positive control values.
+   * @param negCtrlsClassical An array of the classical negative control values.
+   * @throws domain_error If a classical control value cannot be found.
    * @return One or two hybrid states corresponding to the measurement outcomes
    * during the reset, but with the qubit always in the zero state.
    */
-  std::vector<HybridState> propagateReset(unsigned int target,
-                                          std::span<Value> ctrlsClassical = {});
+  std::vector<HybridState>
+  propagateReset(unsigned int target, std::span<Value> posCtrlsClassical = {},
+                 std::span<Value> negCtrlsClassical = {});
 
   /**
    * @brief This method applies a classical operation.
@@ -125,12 +227,16 @@ public:
    * @param operand1 The first value used by the operation.
    * @param operand2 The second value used by the operation, might be null.
    * @param operand3 The third value used by the operation, might be null.
-   * @param ctrls An array of the ctrl values.
+   * @param posCtrlsClassical An array of the classical positive control values.
+   * @param negCtrlsClassical An array of the classical negative control values.
+   * @throws domain_error If a classical value cannot be found.
+   * @throws runtime_error If classical operation is not supported.
    */
   void propagateClassicalOperation(Operation* op, Value dest, Value operand1,
                                    Value operand2 = nullptr,
                                    Value operand3 = nullptr,
-                                   std::span<Value> ctrls = {});
+                                   std::span<Value> posCtrlsClassical = {},
+                                   std::span<Value> negCtrlsClassical = {});
 
   /**
    * @brief This method unifies two HybridStates.
@@ -156,9 +262,6 @@ public:
   [[nodiscard("HybridState::isValueTrue called but ignored")]] bool
   isValueTrue(Value v) const;
 
-  [[nodiscard("HybridState::isValueFalse called but ignored")]] bool
-  isValueFalse(Value v) const;
-
   /**
    * @brief Checks if a given combination of values-qubit values has a nonzero
    * probability.
@@ -173,16 +276,16 @@ public:
    * @param qubits The qubits which are being checked.
    * @param qubitValue The value for which is tested whether there is a nonzero
    * amplitude.
-   * @param values The values to check.
-   * @param classicalValuesToCheck Whether to check if the values are zero
-   * (false) or non-zero (true).
+   * @param classicalIntegerValues The integer values to check.
+   * @param classicalDoubleValues The double values to check.
+   * @throws domain_error If a classical value cannot be found.
    * @returns True if the amplitude is always zero, false otherwise.
    */
   [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
-  hasAlwaysZeroProbability(std::span<unsigned int> qubits,
-                           unsigned int qubitValue,
-                           std::span<unsigned int> values = {},
-                           std::span<Value> classicalValuesToCheck = {}) const;
+  hasAlwaysZeroProbability(
+      std::span<unsigned int> qubits, unsigned int qubitValue,
+      std::span<std::pair<Value, int64_t>> classicalIntegerValues = {},
+      std::span<std::pair<Value, double>> classicalDoubleValues = {}) const;
 
   /**
    * @brief Returns a classical value that is equivalent to qubit.
@@ -198,7 +301,7 @@ public:
    * qubit is the inverse of the value.
    */
   std::pair<std::optional<Value>, bool>
-  getValueThatIsEquivalentToQubit(unsigned int qubit);
+  getValueThatIsEquivalentToQubit(unsigned int qubit) const;
 };
 } // namespace mlir::qco
 
