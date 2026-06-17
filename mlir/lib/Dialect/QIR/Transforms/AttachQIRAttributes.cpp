@@ -65,6 +65,9 @@ protected:
   void runOnOperation() override {
     IRRewriter rewriter(&getContext());
     auto main = getMainFunction(getOperation());
+    if (!main) {
+      return;
+    }
     setMetadata(main, useAdaptive ? getAdaptive(main) : getBase(main),
                 rewriter);
   }
@@ -251,6 +254,11 @@ private:
 
       if (auto condBrOp = dyn_cast<LLVM::CondBrOp>(terminator)) {
         auto condition = condBrOp.getCondition();
+
+        if (isa<BlockArgument>(condition)) { // Ensure that there is a def-op.
+          return true;
+        }
+
         auto callOp = dyn_cast<LLVM::CallOp>(condition.getDefiningOp());
 
         // If the condition is not produced by a measurement call, we
@@ -305,12 +313,11 @@ private:
             }
           }
 
-          if(classifyLoop(loop)) {
+          if (classifyLoop(loop)) {
             useIteration |= true;
           } else {
             useCondTerm |= true;
           }
-
 
           loop.clear();
         }
@@ -359,7 +366,7 @@ private:
             .backwardsBranching = 0};
   }
 
-  /// Return the metadata for a QIR base profile compliant program.
+  /// Return the metadata for a QIR adaptive profile compliant program.
   Metadata getAdaptive(LLVM::LLVMFuncOp& main) {
     const auto& domInfo = getAnalysis<DominanceInfo>();
     const auto [useIteration, useCondTerm] =
