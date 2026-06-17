@@ -16,7 +16,8 @@ add_executable(
   test_qco_replace_classical_controls.cpp
   test_qco_reuse_qubits.cpp
   test_quantum_loop_unroll.cpp
-  ConstantPropagation/test_quantumState.cpp)
+  ConstantPropagation/test_quantumState.cpp
+  ConstantPropagation/test_hybridState.cpp)
 
 target_link_libraries(
   ${target_name}

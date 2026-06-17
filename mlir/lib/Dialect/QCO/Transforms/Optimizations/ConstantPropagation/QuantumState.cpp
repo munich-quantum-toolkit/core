@@ -42,6 +42,9 @@ QuantumState::QuantumState(const std::span<unsigned int> globalQubitNumber,
 void QuantumState::print(std::ostream& os) const { os << this->toString(); }
 
 std::string QuantumState::toString() const {
+  if (nQubits == 0) {
+    return "";
+  }
   std::string str;
   bool first = true;
   for (auto ordered =
