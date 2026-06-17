@@ -305,12 +305,11 @@ private:
             }
           }
 
-          if(classifyLoop(loop)) {
+          if (classifyLoop(loop)) {
             useIteration |= true;
           } else {
             useCondTerm |= true;
           }
-
 
           loop.clear();
         }
