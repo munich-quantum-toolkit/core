@@ -15,7 +15,6 @@
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 

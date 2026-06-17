@@ -21,7 +21,6 @@
 #include <llvm/Support/Casting.h>
 #include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Attributes.h>

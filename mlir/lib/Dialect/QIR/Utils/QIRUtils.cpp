@@ -24,7 +24,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
-#include <string>
 
 namespace mlir::qir {
 

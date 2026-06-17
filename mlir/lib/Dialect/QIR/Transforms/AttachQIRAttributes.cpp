@@ -14,6 +14,7 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
+#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -22,9 +23,10 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <string>
 #include <tuple>
 #include <utility>
 
