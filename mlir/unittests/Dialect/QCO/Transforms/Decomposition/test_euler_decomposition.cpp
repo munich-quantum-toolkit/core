@@ -215,9 +215,21 @@ static Matrix2x2 compute1QUnitaryMatrix(WalkRange& range) {
 static void expectMatrixPreserved(func::FuncOp funcOp,
                                   const Matrix2x2& original,
                                   StringRef label = {}) {
-  EXPECT_TRUE(
-      compute1QUnitaryMatrix(funcOp).isApprox(original, MATRIX_TOLERANCE))
-      << label.str();
+  // Logging of the matrices
+  auto printMatrix = [](const Matrix2x2& matrix) {
+    std::ostringstream oss;
+    oss.precision(4);
+    oss << std::fixed << "[[" << matrix(0, 0) << ", " << matrix(0, 1) << "],\n"
+        << " [" << matrix(1, 0) << ", " << matrix(1, 1) << "]]";
+    return oss.str();
+  };
+  const auto printOriginal = printMatrix(original);
+  const auto actual = compute1QUnitaryMatrix(funcOp.getBody());
+  const auto printActual = printMatrix(actual);
+  EXPECT_TRUE(actual.isApprox(original))
+      << "Matrix not preserved for " << label.str() << ":\nOriginal:\n"
+      << printOriginal << "\nActual:\n"
+      << printActual;
 }
 template <typename OpTy>
 [[nodiscard]] static std::size_t countOps(func::FuncOp funcOp) {
