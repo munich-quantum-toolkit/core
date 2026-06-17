@@ -34,17 +34,30 @@ HybridState::~HybridState() {
 
 void HybridState::print(std::ostream& os) const { os << this->toString(); }
 std::string HybridState::toString() const {
+  if (top) {
+    return "TOP";
+  }
+
   std::string str = "{" + this->qState->toString() + "}: ";
   unsigned int i = 0;
+  bool first = true;
   for (const auto& key : integerValues.keys()) {
+    if (!first) {
+      str += ", ";
+    }
+    first = false;
     str += "integerValue" + std::to_string(i) + " = " +
-           std::to_string(integerValues.at(key)) + ", ";
+           std::to_string(integerValues.at(key));
     ++i;
   }
   unsigned int j = 0;
-  for (const auto& key : integerValues.keys()) {
+  for (const auto& key : doubleValues.keys()) {
+    if (!first) {
+      str += ", ";
+    }
+    first = false;
     str += "doubleValue" + std::to_string(j) + " = " +
-           std::format("{:.2f}", doubleValues.at(key)) + ", ";
+           std::format("{:.2f}", doubleValues.at(key));
     ++j;
   }
   if (i > 0 || j > 0) {
@@ -124,12 +137,12 @@ void HybridState::propagateGate(Operation* gate,
     } catch (std::domain_error const&) {
       top = true;
     }
-  }
-
-  try {
-    qState->propagateGate(gate, targets, ctrlsQuantum);
-  } catch (std::domain_error const&) {
-    top = true;
+  } else {
+    try {
+      qState->propagateGate(gate, targets, ctrlsQuantum);
+    } catch (std::domain_error const&) {
+      top = true;
+    }
   }
 }
 
@@ -199,7 +212,7 @@ HybridState HybridState::unify(HybridState that) {
     newHybridState.top = true;
     return newHybridState;
   }
-  newHybridState.probability *= this->probability;
+  newHybridState.probability = this->probability * that.probability;
 
   auto newIntegerValues = llvm::DenseMap<Value, int64_t>(
       integerValues.size() + that.integerValues.size());

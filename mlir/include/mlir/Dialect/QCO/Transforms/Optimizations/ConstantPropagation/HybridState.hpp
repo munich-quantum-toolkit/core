@@ -110,7 +110,7 @@ class HybridState {
               : qState->measureQubit(quantumTarget);
 
     for (int64_t i = 0; i < 2; ++i) {
-      if (!availableStates.at(i)) {
+      if (!availableStates.contains(i) || !availableStates.at(i)) {
         continue;
       }
 

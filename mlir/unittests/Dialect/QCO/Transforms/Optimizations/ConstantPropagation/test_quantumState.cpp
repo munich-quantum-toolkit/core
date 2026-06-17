@@ -185,7 +185,7 @@ TEST_F(QuantumStateTest, ApplySwapGate) {
               testing::HasSubstr("|0000> -> 0.71, |1000> -> 0.71"));
 }
 
-TEST_F(QuantumStateTest, ApplyControlledGate) {
+TEST_F(QuantumStateTest, ApplyControlledGate1) {
   auto qState = QuantumState(fourQubits, 4);
   qState.propagateGate(hOp.getOperation(), vectorOne);
   qState.propagateGate(xOp.getOperation(), vectorThree);
@@ -195,7 +195,7 @@ TEST_F(QuantumStateTest, ApplyControlledGate) {
               testing::HasSubstr("|0010> -> 0.71, |1000> -> 0.71"));
 }
 
-TEST_F(QuantumStateTest, ApplyPosNegControlledGate) {
+TEST_F(QuantumStateTest, ApplyControlledGate2) {
   auto qState = QuantumState(fourQubits, 8);
   qState.propagateGate(hOp.getOperation(), vectorZero);
   qState.propagateGate(hOp.getOperation(), vectorOne);
@@ -232,9 +232,9 @@ TEST_F(QuantumStateTest, propagateGateCheckErrorIfTwoManyAmplitudesAreNonzero) {
 
 TEST_F(QuantumStateTest, doMeasurementWithZeroResult) {
   auto qState = QuantumState(vectorZero, 2);
-  const auto [states, numberOfStates] = qState.measureQubit(0);
+  const auto [states, availableStates] = qState.measureQubit(0);
 
-  EXPECT_TRUE(numberOfStates == 1);
+  EXPECT_TRUE(availableStates.size() == 1);
   auto [probability, qs] = states.at(0);
   EXPECT_TRUE(qState == *qs.get());
   EXPECT_DOUBLE_EQ(probability, 1);
@@ -243,9 +243,9 @@ TEST_F(QuantumStateTest, doMeasurementWithZeroResult) {
 TEST_F(QuantumStateTest, doMeasurementWithOneResult) {
   auto qState = QuantumState(vectorZero, 2);
   qState.propagateGate(xOp.getOperation(), vectorZero);
-  const auto [states, numberOfStates] = qState.measureQubit(0);
+  const auto [states, availableStates] = qState.measureQubit(0);
 
-  EXPECT_TRUE(numberOfStates == 1);
+  EXPECT_TRUE(availableStates.size() == 1);
   auto [probability, qs] = states.at(1);
   EXPECT_TRUE(qState == *qs.get());
   EXPECT_DOUBLE_EQ(probability, 1);
@@ -255,14 +255,14 @@ TEST_F(QuantumStateTest, doMeasurementWithTwoResults) {
   auto qState = QuantumState(vectorZeroOne, 2);
   qState.propagateGate(hOp.getOperation(), vectorZero);
   qState.propagateGate(xOp.getOperation(), vectorOne, vectorZero);
-  const auto [states, numberOfStates] = qState.measureQubit(0);
+  const auto [states, availableStates] = qState.measureQubit(0);
 
   auto const zeroReference = QuantumState(vectorZeroOne, 2);
   auto oneReference = QuantumState(vectorZeroOne, 2);
   oneReference.propagateGate(xOp.getOperation(), vectorZero);
   oneReference.propagateGate(xOp.getOperation(), vectorOne);
 
-  EXPECT_TRUE(numberOfStates == 2);
+  EXPECT_TRUE(availableStates.size() == 2);
   auto [probabilityZero, qsZero] = states.at(0);
   EXPECT_TRUE(zeroReference == *qsZero.get());
   EXPECT_DOUBLE_EQ(probabilityZero, 0.5);
@@ -273,9 +273,9 @@ TEST_F(QuantumStateTest, doMeasurementWithTwoResults) {
 
 TEST_F(QuantumStateTest, doResetWithOnlyZeros) {
   auto qState = QuantumState(vectorZero, 2);
-  const auto [states, numberOfStates] = qState.resetQubit(0);
+  const auto [states, availableStates] = qState.resetQubit(0);
 
-  EXPECT_TRUE(numberOfStates == 1);
+  EXPECT_TRUE(availableStates.size() == 1);
   auto [probability, qs] = states.at(0);
   EXPECT_TRUE(qState == *qs.get());
   EXPECT_DOUBLE_EQ(probability, 1);
@@ -284,11 +284,11 @@ TEST_F(QuantumStateTest, doResetWithOnlyZeros) {
 TEST_F(QuantumStateTest, doResetWithOnlyOnes) {
   auto qState = QuantumState(vectorZero, 2);
   qState.propagateGate(xOp.getOperation(), vectorZero);
-  const auto [states, numberOfStates] = qState.resetQubit(0);
+  const auto [states, availableStates] = qState.resetQubit(0);
 
   auto const refState = QuantumState(vectorZero, 2);
 
-  EXPECT_TRUE(numberOfStates == 1);
+  EXPECT_TRUE(availableStates.size() == 1);
   auto [probability, qs] = states.at(1);
   EXPECT_TRUE(refState == *qs.get());
   EXPECT_DOUBLE_EQ(probability, 1);
@@ -298,13 +298,13 @@ TEST_F(QuantumStateTest, doResetWithZerosAndOnes) {
   auto qState = QuantumState(vectorZeroOne, 2);
   qState.propagateGate(hOp.getOperation(), vectorZero);
   qState.propagateGate(xOp.getOperation(), vectorOne, vectorZero);
-  const auto [states, numberOfStates] = qState.resetQubit(0);
+  const auto [states, availableStates] = qState.resetQubit(0);
 
   auto const zeroReference = QuantumState(vectorZeroOne, 2);
   auto oneReference = QuantumState(vectorZeroOne, 2);
   oneReference.propagateGate(xOp.getOperation(), vectorOne);
 
-  EXPECT_TRUE(numberOfStates == 2);
+  EXPECT_TRUE(availableStates.size() == 2);
   auto [probabilityZero, qsZero] = states.at(0);
   EXPECT_DOUBLE_EQ(probabilityZero, 0.5);
   auto [probabilityOne, qsOne] = states.at(1);
