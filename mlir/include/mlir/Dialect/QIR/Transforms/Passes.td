@@ -11,10 +11,9 @@
 
 include "mlir/Pass/PassBase.td"
 
-def AttachQIRAttributes : Pass<"attach-qir-attributes", "mlir::ModuleOp"> {
+def QIRSetAttributesAndMetadata : Pass<"set-qir-attributes-and-metadata", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];
-  let summary = "Attaches the required attributes to the function marked as "
-                "entry_point, compliant with QIR 2.1";
+  let summary = "Sets the required attributes to the entry point function and adds the required module flags, compliant with QIR 2.1";
   let options = [Option<"useAdaptive", "use-adaptive", "bool",
                         /*default= */ "true", "Specifies the profile.">];
 }

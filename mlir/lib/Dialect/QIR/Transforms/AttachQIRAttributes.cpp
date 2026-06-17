@@ -31,13 +31,13 @@
 #include <utility>
 
 namespace mlir::qir {
-#define GEN_PASS_DEF_ATTACHQIRATTRIBUTES
+#define GEN_PASS_DEF_QIRSETATTRIBUTESANDMETADATA
 #include "mlir/Dialect/QIR/Transforms/Passes.h.inc"
 
 namespace {
 
 /// State object for tracking QIR metadata during conversion
-struct QIRMetadata {
+struct Metadata {
   /// Number of qubits used in the module
   size_t numQubits{0};
   /// Number of measurement results stored in the module
@@ -57,16 +57,16 @@ struct QIRMetadata {
  * @brief Attaches the required attributes to the function marked as
  * entry_point.
  */
-struct AttachQIRAttributes final
-    : impl::AttachQIRAttributesBase<AttachQIRAttributes> {
-  using AttachQIRAttributesBase::AttachQIRAttributesBase;
+struct QIRSetAttributesAndMetadata final
+    : impl::QIRSetAttributesAndMetadataBase<QIRSetAttributesAndMetadata> {
+  using QIRSetAttributesAndMetadataBase::QIRSetAttributesAndMetadataBase;
 
 protected:
   void runOnOperation() override {
     IRRewriter rewriter(&getContext());
     auto main = getMainFunction(getOperation());
-    setQIRAttributes(main, useAdaptive ? getAdaptive(main) : getBase(main),
-                     rewriter);
+    setMetadata(main, useAdaptive ? getAdaptive(main) : getBase(main),
+                rewriter);
   }
 
 private:
@@ -85,8 +85,8 @@ private:
   ///
   /// These attributes are required by the QIR specification and inform QIR
   /// consumers about the module's resource requirements and capabilities.
-  void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata,
-                        IRRewriter& rewriter) {
+  void setMetadata(LLVM::LLVMFuncOp& main, const Metadata& metadata,
+                   IRRewriter& rewriter) {
     auto m = getOperation();
     const auto createFlag = [&](LLVM::ModFlagBehavior behavior, StringRef name,
                                 int32_t val) {
@@ -362,7 +362,7 @@ private:
   }
 
   /// Return the metadata for a QIR base profile compliant program.
-  static QIRMetadata getBase(LLVM::LLVMFuncOp& main) {
+  static Metadata getBase(LLVM::LLVMFuncOp& main) {
     return {.numQubits = getNumQubits(main),
             .numResults = getNumResults(main),
             .useDynamicQubit = false,
@@ -372,14 +372,14 @@ private:
   }
 
   /// Return the metadata for a QIR base profile compliant program.
-  QIRMetadata getAdaptive(LLVM::LLVMFuncOp& main) {
+  Metadata getAdaptive(LLVM::LLVMFuncOp& main) {
     const auto& domInfo = getAnalysis<DominanceInfo>();
     const auto [useIteration, useCondTerm] =
         usesBackwardsBranching(main, domInfo);
     const auto [useDynamicQubit, useDynamicResult, useArrays] =
         usesDynamic(main);
 
-    QIRMetadata md;
+    Metadata md;
     md.useDynamicQubit = useDynamicQubit;
     md.useDynamicResult = useDynamicResult;
     md.useArrays = useArrays;

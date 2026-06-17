@@ -1018,7 +1018,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   std::ignore = runWithPassManager(
       m,
       [&](PassManager& pm) {
-        pm.addPass(qir::createAttachQIRAttributes({isAdaptive}));
+        pm.addPass(qir::createQIRSetAttributesAndMetadata({isAdaptive}));
       },
       "Failed to attach attributes");
   isFinalized = true;

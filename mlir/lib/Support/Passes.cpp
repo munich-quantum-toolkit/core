@@ -57,7 +57,7 @@ void populateQIRCleanupPipeline(PassManager& pm, bool useAdaptive) {
   addSimplificationPasses(pm);
   pm.addPass(qir::createQIRCleanupPass());
   pm.addPass(createRemoveDeadValuesPass());
-  pm.addPass(qir::createAttachQIRAttributes({useAdaptive}));
+  pm.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
 }
 
 [[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp module) {
