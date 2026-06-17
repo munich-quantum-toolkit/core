@@ -12,6 +12,9 @@ with the exception that minor releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `fuse-single-qubit-unitary-runs` pass
+  for fusing compile-time single-qubit unitary runs via Euler resynthesis
+  ([#1672]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766])
   ([**@rturrado**])
 - 🚸 Add [CMake presets] to provide a standardized
@@ -621,6 +624,7 @@ changelogs._
 [#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
 [#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674
 [#1673]: https://github.com/munich-quantum-toolkit/core/pull/1673
+[#1672]: https://github.com/munich-quantum-toolkit/core/pull/1672
 [#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1660]: https://github.com/munich-quantum-toolkit/core/pull/1660
