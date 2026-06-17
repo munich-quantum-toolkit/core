@@ -14,7 +14,7 @@ with the exception that minor releases may include breaking changes.
 
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
   for fusing compile-time single-qubit unitary runs via Euler resynthesis
-  ([#1672]) ([**@simon1hofmann**])
+  ([#1672]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766])
   ([**@rturrado**])
 - 🚸 Add [CMake presets] to provide a standardized
