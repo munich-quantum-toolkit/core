@@ -41,10 +41,12 @@
 #include <complex>
 #include <cstddef>
 #include <functional>
+#include <ios>
 #include <memory>
 #include <numbers>
 #include <optional>
 #include <random>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <tuple>
