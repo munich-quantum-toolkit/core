@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <limits>
@@ -41,8 +42,21 @@
 #include <mutex>
 #include <numeric>
 #include <ranges>
+#include <span>
 #include <string>
 #include <utility>
+#include <variant>
+#include <vector>
+
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+#include "qir/jit/Session.hpp"
+#include "qir/runtime/Runtime.hpp"
+
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/FormatVariadic.h>
+
+#include <stdexcept>
+#endif
 
 namespace {
 constexpr uintptr_t OFFSET = 0x10000U;
@@ -346,7 +360,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
         return QDMI_ERROR_INVALIDARGUMENT;
       }
       if (format != QDMI_PROGRAM_FORMAT_QASM2 &&
-          format != QDMI_PROGRAM_FORMAT_QASM3) {
+          format != QDMI_PROGRAM_FORMAT_QASM3
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+          && format != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
+          format != QDMI_PROGRAM_FORMAT_QIRBASESTRING &&
+          format != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE &&
+          format != QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING
+#endif
+      ) {
         return QDMI_ERROR_NOTSUPPORTED;
       }
       format_ = format;
@@ -354,7 +375,21 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAM:
     if (value != nullptr) {
-      program_ = std::string(static_cast<const char*>(value), size - 1);
+      const bool isTextProgramFormat =
+          format_ == QDMI_PROGRAM_FORMAT_QASM2 ||
+          format_ == QDMI_PROGRAM_FORMAT_QASM3 ||
+          format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
+          format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+      if (isTextProgramFormat) {
+        // Text payloads include the trailing '\0' in `size`.
+        // Strip it so it is not counted in the stored string's size.
+        const auto* text = static_cast<const char*>(value);
+        program_ = std::string(text, size - 1);
+      } else {
+        // Binary payloads are stored exactly as received.
+        const std::span bytes(static_cast<const std::byte*>(value), size);
+        program_ = std::vector<std::byte>(bytes.begin(), bytes.end());
+      }
     }
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM:
@@ -380,50 +415,135 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT,
                             QDMI_Program_Format, format_, prop, size, value,
                             sizeRet)
-  ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, program_.c_str(), prop,
+  if (std::holds_alternative<std::string>(program_)) {
+    const auto& text = std::get<std::string>(program_);
+    ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, text.c_str(), prop,
+                        size, value, sizeRet)
+  } else {
+    const auto& bytes = std::get<std::vector<std::byte>>(program_);
+    ADD_LIST_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, std::byte, bytes, prop,
                       size, value, sizeRet)
+  }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM, size_t,
                             numShots_, prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitProgramAsync(
+    std::function<void()> body) -> QDMI_STATUS {
+  jobHandle_ = std::async(std::launch::async, [this, body = std::move(body)]() {
+    qdmi::dd::Device::get().increaseRunningJobs();
+    status_.store(QDMI_JOB_STATUS_RUNNING);
+    try {
+      body();
+      status_.store(QDMI_JOB_STATUS_DONE);
+    } catch (const std::exception& e) {
+      status_.store(QDMI_JOB_STATUS_FAILED);
+      std::cerr << "Error: " << e.what() << '\n';
+    }
+    qdmi::dd::Device::get().decreaseRunningJobs();
+  });
+  return QDMI_SUCCESS;
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgram() -> QDMI_STATUS {
+  return numShots_ > 0 ? submitQASMProgramSampling()
+                       : submitQASMProgramStateExtraction();
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
+    -> QDMI_STATUS {
+  return submitProgramAsync([this]() {
+    const auto& text = std::get<std::string>(program_);
+    const auto qc = qasm3::Importer::imports(text);
+    counts_ = dd::sample(qc, numShots_);
+  });
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
+    -> QDMI_STATUS {
+  return submitProgramAsync([this]() {
+    const auto& text = std::get<std::string>(program_);
+    auto qc = qasm3::Importer::imports(text);
+    qc::CircuitOptimizer::removeFinalMeasurements(qc);
+    const auto nQubits = qc.getNqubits();
+    dd_ = std::make_unique<dd::Package>(nQubits);
+    stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nQubits, *dd_), *dd_);
+  });
+}
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
+  return numShots_ > 0 ? submitQIRProgramSampling()
+                       : submitQIRProgramStateExtraction();
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
+    -> QDMI_STATUS {
+  return submitProgramAsync([this]() {
+    auto& runtime = qir::Runtime::getInstance();
+    auto irBytes = std::visit(
+        [](const auto& p) {
+          return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
+                                 p.size());
+        },
+        program_);
+    auto jitSession = qir::JitSession(irBytes, "QDMI job");
+    for (size_t i = 0; i < numShots_; ++i) {
+      runtime.reset();
+      if (const auto rc = jitSession.run(); rc != 0) {
+        throw std::runtime_error(
+            llvm::formatv("QIR program failed with error: {}", rc));
+      }
+      // Update the measurement counts.
+      ++counts_[runtime.getRecordedOutputs()];
+    }
+  });
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
+    -> QDMI_STATUS {
+  // State extraction strips measurement calls from the IR, which only
+  // preserves semantics for QIR Base Profile (measurements are terminal there).
+  // Adaptive Profile has measurement-dependent control flow, so stripping would
+  // silently change the program's meaning.
+  if (format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
+      format_ != QDMI_PROGRAM_FORMAT_QIRBASESTRING) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
+  return submitProgramAsync([this]() {
+    auto& runtime = qir::Runtime::getInstance();
+    runtime.reset();
+    auto irBytes = std::visit(
+        [](const auto& p) {
+          return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
+                                 p.size());
+        },
+        program_);
+    auto jitSession =
+        qir::JitSession(irBytes, "QDMI job", qir::Execution::StateExtraction);
+    if (const auto rc = jitSession.run(); rc != 0) {
+      throw std::runtime_error(
+          llvm::formatv("QIR program failed with error: {}", rc));
+    }
+    auto state = runtime.takeState();
+    dd_ = std::move(state.dd);
+    stateVecDD_ = state.edge;
+  });
+}
+#endif
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
     return QDMI_ERROR_BADSTATE;
   }
   status_.store(QDMI_JOB_STATUS_SUBMITTED);
-  if (numShots_ > 0) {
-    jobHandle_ = std::async(std::launch::async, [this]() {
-      qdmi::dd::Device::get().increaseRunningJobs();
-      status_.store(QDMI_JOB_STATUS_RUNNING);
-      try {
-        const auto qc = qasm3::Importer::imports(program_);
-        counts_ = dd::sample(qc, numShots_);
-        status_.store(QDMI_JOB_STATUS_DONE);
-      } catch (const std::exception& e) {
-        status_.store(QDMI_JOB_STATUS_FAILED);
-        std::cerr << "Error: " << e.what() << '\n';
-      }
-      qdmi::dd::Device::get().decreaseRunningJobs();
-    });
-  } else {
-    jobHandle_ = std::async(std::launch::async, [this]() {
-      try {
-        qdmi::dd::Device::get().increaseRunningJobs();
-        status_.store(QDMI_JOB_STATUS_RUNNING);
-        auto qc = qasm3::Importer::imports(program_);
-        qc::CircuitOptimizer::removeFinalMeasurements(qc);
-        const auto nqubits = qc.getNqubits();
-        dd_ = std::make_unique<dd::Package>(nqubits);
-        stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nqubits, *dd_), *dd_);
-        status_.store(QDMI_JOB_STATUS_DONE);
-      } catch (const std::exception& e) {
-        status_.store(QDMI_JOB_STATUS_FAILED);
-        std::cerr << "Error: " << e.what() << '\n';
-      }
-      qdmi::dd::Device::get().decreaseRunningJobs();
-    });
+  if (format_ == QDMI_PROGRAM_FORMAT_QASM2 ||
+      format_ == QDMI_PROGRAM_FORMAT_QASM3) {
+    return submitQASMProgram();
   }
-  return QDMI_SUCCESS;
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+  if (format_ == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
+      format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
+      format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
+      format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING) {
+    return submitQIRProgram();
+  }
+#endif
+  // Format is validated against the allowed set at setParameter time.
+  qdmi::unreachable();
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
   const auto s = status_.load();
