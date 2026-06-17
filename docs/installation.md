@@ -4,8 +4,9 @@
 # Installation
 
 MQT Core is primarily developed as a C++20 library with Python bindings.
-The Python package is available on [PyPI](https://pypi.org/project/mqt.core/)
-and can be installed on all major operating systems with all
+The Python package is available on
+[PyPI](https://pypi.org/project/mqt.core/) and can be installed on all
+major operating systems with all
 [officially supported Python versions](https://devguide.python.org/versions/).
 
 :::::{tip}
@@ -67,7 +68,6 @@ python -m pip install mqt.core
 :::
 
 ::::
-
 In most cases, no compilation is required;
 a platform-specific prebuilt wheel is downloaded and installed.
 
@@ -388,7 +388,8 @@ For detailed guidelines and workflows, see {doc}`contributing`.
    prek install
    ```
 
-6. If you plan to contribute to MQT Core, you will also need to install MLIR.
+6. If you plan to contribute to MQT Core,
+   you will also need to install MLIR.
    The section below describes how to do this.
 
 (setting-up-mlir)=
@@ -517,8 +518,8 @@ $env:MLIR_DIR = "C:\path\to\installation\lib\cmake\mlir"
 ### Disabling MLIR
 
 If you do not need MLIR-based functionality,
-you can disable it by setting the {code}`BUILD_MQT_CORE_MLIR` option to
-{code}`OFF`.
+you can disable it by setting the {code}`BUILD_MQT_CORE_MLIR` option
+to {code}`OFF`.
 This disables all MLIR-related features in MQT Core
 and removes the dependency on MLIR.
 
