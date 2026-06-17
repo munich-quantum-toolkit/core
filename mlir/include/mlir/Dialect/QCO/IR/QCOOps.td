@@ -1031,6 +1031,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         static OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
         [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix() const { return true; }
+        [[nodiscard]] DynamicMatrix getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits)>];

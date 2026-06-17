@@ -109,3 +109,8 @@ void BarrierOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                             MLIRContext* context) {
   results.add<MergeSubsequentBarrier>(context);
 }
+
+DynamicMatrix BarrierOp::getUnitaryMatrix() {
+  const auto numQubits = getQubitsIn().size();
+  return DynamicMatrix::identity(1LL << numQubits);
+}
