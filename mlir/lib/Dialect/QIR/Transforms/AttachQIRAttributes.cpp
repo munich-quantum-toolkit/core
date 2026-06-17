@@ -242,34 +242,38 @@ private:
     return seen.size();
   }
 
-  /// Determine whether an `LLVM::CondBrOp` belongs to an iterative loop (true)
+  /// Determine whether an loop (as a set of blocks) is an iterative loop (true)
   /// or a conditionally terminated loop (false).
-  static bool classifyCondBrOp(LLVM::CondBrOp& condBrOp) {
-    auto condition = condBrOp.getCondition();
-    auto callOp = dyn_cast<LLVM::CallOp>(condition.getDefiningOp());
-    if (!callOp) {
+  static bool classifyLoop(const SmallPtrSet<Block*, 8>& loop) {
+    for (Block* block : loop) {
+      Operation* terminator = block->getTerminator();
+      assert(terminator != nullptr);
 
-      // If the condition is not produced by a measurement call, we
-      // consider it a basic loop.
-      return true;
+      if (auto condBrOp = dyn_cast<LLVM::CondBrOp>(terminator)) {
+        auto condition = condBrOp.getCondition();
+        auto callOp = dyn_cast<LLVM::CallOp>(condition.getDefiningOp());
+
+        // If the condition is not produced by a measurement call, we
+        // consider it a basic loop.
+        if (!callOp || !callOp.getCallee()) {
+          return true;
+        }
+
+        // If the condition has been produced by a measurement call
+        // (e.g. a until-zero-measurement loop), and breaks outside the loop,
+        // we found a "conditionally terminating loop".
+        if (*callOp.getCallee() == QIR_READ_RESULT &&
+            (!loop.contains(condBrOp.getTrueDest()) ||
+             !loop.contains(condBrOp.getFalseDest()))) {
+          return false;
+        }
+
+        // Unseen edge case (so far): The condition of the terminator
+        // operation is produced by a function call, which isn't a
+        // measurement.
+        return true;
+      }
     }
-
-    if (!callOp.getCallee()) {
-      return true;
-    }
-
-    if (*callOp.getCallee() == QIR_READ_RESULT) {
-
-      // If the condition has been produced by a measurement call
-      // (e.g. a until-zero-measurement loop), we found a
-      // "conditionally terminating loop".
-      return false;
-    }
-
-    // Unseen edge case (so far): The condition of the terminator
-    // operation is produced by a function call, which isn't a
-    // measurement.
-    return true;
   }
 
   /// Return pair of booleans, indicating whether the entry point uses
@@ -279,52 +283,36 @@ private:
     bool useIteration{false};
     bool useCondTerm{false};
 
-    DenseSet<Block*> visited;
-    SmallVector<Block*> worklist;
+    SmallVector<Block*, 8> worklist;
 
     for (Block& block : main.getBlocks()) {
       for (Block* successor : block.getSuccessors()) {
-        if (domInfo.dominates(successor, &block)) { // Find back edge.
+        if (domInfo.dominates(successor, &block)) { // Back edge.
           Block* header = successor;
           Block* tail = &block;
 
-          visited.insert(header);
-
-          if (header == tail) {
-            Operation* terminator = header->getTerminator();
-            if (auto condBrOp = dyn_cast<LLVM::CondBrOp>(terminator)) {
-              const auto res = classifyCondBrOp(condBrOp);
-              if (res) {
-                useIteration |= true;
-              } else {
-                useCondTerm |= true;
-              }
-            }
-            continue;
+          SmallPtrSet<Block*, 8> loop{header};
+          if (header != tail) {
+            worklist.push_back(tail);
           }
 
-          worklist.push_back(tail);
           while (!worklist.empty()) {
             Block* curr = worklist.pop_back_val();
-            Operation* terminator = curr->getTerminator();
-
-            if (auto condBrOp = dyn_cast<LLVM::CondBrOp>(terminator)) {
-              const auto res = classifyCondBrOp(condBrOp);
-              if (res) {
-                useIteration |= true;
-              } else {
-                useCondTerm |= true;
-              }
-            }
-
             for (Block* pred : curr->getPredecessors()) {
-              if (visited.insert(pred).second) {
+              if (loop.insert(pred).second) {
                 worklist.push_back(pred);
               }
             }
           }
 
-          visited.clear();
+          if(classifyLoop(loop)) {
+            useIteration |= true;
+          } else {
+            useCondTerm |= true;
+          }
+
+
+          loop.clear();
         }
       }
     }
