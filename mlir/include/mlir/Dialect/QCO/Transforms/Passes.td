@@ -200,4 +200,42 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// Decomposition Passes
+//===----------------------------------------------------------------------===//
+
+def DecomposeMultiControlled
+    : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary =
+      "Decompose multi-controlled gates into one- and two-qubit gates";
+  let description = [{
+    Decomposes multi-controlled gates (`qco.ctrl`) into a sequence of one- and
+    two-qubit gates that can subsequently be handled by one- and two-qubit gate
+    synthesis methods.
+
+    The pass matches `qco.ctrl` operations with at least `min-controls` control
+    qubits whose body is a single `qco.x` on one target (multi-controlled Pauli-X).
+    Other multi-controlled gates are left unchanged. Support for further base
+    gates will be added gradually.
+
+    Multi-controlled X gates are decomposed using the Huang-Palsberg (PLDI 2024)
+    no-ancilla synthesis algorithm with a linear number of CX gates in the
+    number of controls, composing Iten et al. (Phys. Rev. A 93, 032318, 2016)
+    dirty-ancilla subcircuits for large control counts. The pass emits `h`, `t`,
+    `tdg`, `p`, and `cx` gates.
+
+    By default (`min-controls=2`), Toffoli (`CCX`) gates are decomposed as well,
+    so that the output contains only genuine one- and two-qubit gates. Increase
+    `min-controls` to keep smaller controlled gates intact (e.g., when `CCX` is a
+    native gate of the target).
+  }];
+  let options = [Option<
+      "minControls", "min-controls", "uint64_t", "2",
+      "Minimum number of controls for which a controlled gate is "
+      "decomposed. Controlled gates with fewer controls are left "
+      "unchanged. Must be at least 1.">];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

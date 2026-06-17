@@ -88,6 +88,12 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::desc("Apply Hadamard lifting during optimization"),
     llvm::cl::init(false));
 
+static llvm::cl::opt<bool> enableDecomposeMultiControlled(
+    "decompose-multi-controlled",
+    llvm::cl::desc("Decompose multi-controlled gates into one- and two-qubit "
+                   "gates during optimization"),
+    llvm::cl::init(false));
+
 /**
  * @brief Load and parse a .qasm file
  */
@@ -179,6 +185,7 @@ int main(int argc, char** argv) {
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
+  config.enableDecomposeMultiControlled = enableDecomposeMultiControlled;
 
   // Run the compilation pipeline
   CompilationRecord record;

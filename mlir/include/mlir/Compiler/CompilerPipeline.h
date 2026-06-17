@@ -49,6 +49,9 @@ struct QuantumCompilerConfig {
 
   /// Enable Hadamard lifting
   bool enableHadamardLifting = false;
+
+  /// Decompose multi-controlled gates into one- and two-qubit gates
+  bool enableDecomposeMultiControlled = false;
 };
 
 /**
