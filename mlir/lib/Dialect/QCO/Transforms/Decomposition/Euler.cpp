@@ -15,7 +15,6 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -81,7 +80,7 @@ namespace mlir::qco::decomposition {
  * @param angle Rotation angle in radians.
  * @return `true` when no rotation gate should be emitted.
  */
-[[nodiscard]] static bool isNearZeroRotationAngle(double angle) {
+[[nodiscard]] static bool isNearZeroRotationAngle(const double angle) {
   return std::abs(angle) <= utils::TOLERANCE;
 }
 
@@ -93,7 +92,7 @@ namespace mlir::qco::decomposition {
  * @param phase Global phase in radians.
  */
 static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
-  if (isNearZeroRotationAngle(phase)) {
+  if (isNearZeroRotationAngle(mod2pi(phase))) {
     return;
   }
   GPhaseOp::create(builder, loc, phase);
@@ -176,12 +175,10 @@ struct EulerAngles {
 [[nodiscard]] static EulerAngles paramsXYX(const Matrix2x2& matrix) {
   // Shift outer angles by pi and fix global phase.
   const auto [theta, phi, lambda, phase] = paramsZYZ(hadamardConjugate(matrix));
-  const auto newPhi = mod2pi(phi + std::numbers::pi);
-  const auto newLambda = mod2pi(lambda + std::numbers::pi);
   return {.theta = theta,
-          .phi = newPhi,
-          .lambda = newLambda,
-          .phase = phase + ((newPhi + newLambda - phi - lambda) / 2.)};
+          .phi = phi + std::numbers::pi,
+          .lambda = lambda + std::numbers::pi,
+          .phase = phase + std::numbers::pi};
 }
 
 /**
@@ -201,7 +198,7 @@ struct EulerAngles {
 }
 
 /**
- * @brief Extracts `(theta, phi, lambda, phase)` for KAK and `U` bases.
+ * @brief Extracts `(theta, phi, lambda, phase)` for all Euler bases.
  *
  * @param matrix The single-qubit unitary to decompose.
  * @param basis The target Euler basis.
@@ -211,6 +208,7 @@ struct EulerAngles {
                                                    const EulerBasis basis) {
   switch (basis) {
   case EulerBasis::ZYZ:
+  case EulerBasis::ZSXX:
     return paramsZYZ(matrix);
   case EulerBasis::ZXZ:
     return paramsZXZ(matrix);
@@ -221,8 +219,7 @@ struct EulerAngles {
   case EulerBasis::U:
     return paramsU(matrix);
   default:
-    llvm::reportFatalInternalError(
-        "Unsupported Euler basis for angle computation in decomposition!");
+    llvm_unreachable("invalid Euler basis");
   }
 }
 
@@ -254,125 +251,114 @@ struct Unitary1QEulerPlan {
 
   /// @brief Number of native gates in the planned sequence (excludes `gphase`).
   [[nodiscard]] std::size_t gateCount() const { return steps.size(); }
-};
 
-} // namespace
-
-/**
- * @brief Appends a rotation step when @p angle is outside tolerance.
- *
- * @param steps Planned gate sequence to extend.
- * @param kind Rotation axis (`RZ`, `RY`, or `RX`).
- * @param angle Rotation angle in radians.
- */
-static void appendRotationIf(SmallVectorImpl<SynthesisStep>& steps,
-                             const SynthesisStep::Kind kind,
-                             const double angle) {
-  if (!isNearZeroRotationAngle(angle)) {
-    steps.push_back({.kind = kind, .theta = angle});
+  /**
+   * @brief Appends a rotation step for non-negligible angles.
+   *
+   * @param kind The rotation axis (RZ/RY/RX)
+   * @param angle The rotation angle in radians.
+   */
+  void appendRotation(const SynthesisStep::Kind kind, const double angle) {
+    if (!isNearZeroRotationAngle(angle)) {
+      steps.emplace_back(kind, angle);
+    }
   }
-}
 
-/**
- * @brief Appends the three KAK rotations for @p basis to @p steps.
- *
- * `K(phi) * A(theta) * K(lambda)` with axes from @p basis.
- *
- * @param steps Planned gate sequence to extend.
- * @param angles Decomposed Euler angles and global phase.
- * @param basis Target KAK basis (`ZYZ`, `ZXZ`, `XZX`, or `XYX`).
- */
-static void appendKAKSteps(SmallVectorImpl<SynthesisStep>& steps,
-                           const EulerAngles& angles, const EulerBasis basis) {
-  using Kind = SynthesisStep::Kind;
-  struct KAKAxes {
-    Kind outer;
-    Kind middle;
-  };
-  const auto axes = [&]() -> KAKAxes {
+  /**
+   * @brief Appends the decomposition for @p basis based on @p angles.
+   *
+   * @param angles The angles to use for the decomposition.
+   * @param basis The basis to use for the decomposition.
+   */
+  void appendDecomposition(const EulerAngles& angles, const EulerBasis basis) {
+    if (isNearZeroRotationAngle(angles.theta) &&
+        isNearZeroRotationAngle(angles.phi) &&
+        isNearZeroRotationAngle(angles.lambda)) {
+      phase = angles.phase;
+      return;
+    }
+
+    if (isNearZeroRotationAngle(angles.theta)) {
+      switch (basis) {
+      case EulerBasis::ZYZ:
+      case EulerBasis::ZXZ:
+      case EulerBasis::ZSXX:
+        appendRotation(SynthesisStep::Kind::RZ, angles.phi + angles.lambda);
+        break;
+
+      case EulerBasis::XZX:
+      case EulerBasis::XYX:
+        appendRotation(SynthesisStep::Kind::RX, angles.phi + angles.lambda);
+        break;
+      case EulerBasis::U:
+        steps.emplace_back(SynthesisStep::Kind::U, 0.0, angles.phi,
+                           angles.lambda);
+        break;
+      }
+      phase = angles.phase;
+      return;
+    }
+
     switch (basis) {
     case EulerBasis::ZYZ:
-      return {.outer = Kind::RZ, .middle = Kind::RY};
+      appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
+      steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
+      appendRotation(SynthesisStep::Kind::RZ, angles.phi);
+      phase = angles.phase;
+      break;
     case EulerBasis::ZXZ:
-      return {.outer = Kind::RZ, .middle = Kind::RX};
+      appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
+      steps.emplace_back(SynthesisStep::Kind::RX, angles.theta);
+      appendRotation(SynthesisStep::Kind::RZ, angles.phi);
+      phase = angles.phase;
+      break;
     case EulerBasis::XZX:
-      return {.outer = Kind::RX, .middle = Kind::RZ};
+      appendRotation(SynthesisStep::Kind::RX, angles.lambda);
+      steps.emplace_back(SynthesisStep::Kind::RZ, angles.theta);
+      appendRotation(SynthesisStep::Kind::RX, angles.phi);
+      phase = angles.phase;
+      break;
     case EulerBasis::XYX:
-      return {.outer = Kind::RX, .middle = Kind::RY};
-    default:
-      llvm::reportFatalInternalError("Invalid Euler basis for KAK planning");
+      appendRotation(SynthesisStep::Kind::RX, angles.lambda);
+      steps.emplace_back(SynthesisStep::Kind::RY, angles.theta);
+      appendRotation(SynthesisStep::Kind::RX, angles.phi);
+      phase = angles.phase;
+      break;
+    case EulerBasis::U:
+      steps.emplace_back(SynthesisStep::Kind::U, angles.theta, angles.phi,
+                         angles.lambda);
+      phase = angles.phase;
+      break;
+    case EulerBasis::ZSXX: {
+      constexpr double pi = std::numbers::pi;
+      constexpr double halfPi = std::numbers::pi / 2.0;
+      constexpr double quarterPi = std::numbers::pi / 4.0;
+
+      if (isNearZeroRotationAngle(angles.theta - halfPi)) {
+        appendRotation(SynthesisStep::Kind::RZ, angles.lambda - halfPi);
+        steps.emplace_back(SynthesisStep::Kind::SX);
+        appendRotation(SynthesisStep::Kind::RZ, angles.phi + halfPi);
+        phase = angles.phase - quarterPi;
+        return;
+      }
+
+      appendRotation(SynthesisStep::Kind::RZ, angles.lambda);
+      if (isNearZeroRotationAngle(angles.theta - pi)) {
+        steps.emplace_back(SynthesisStep::Kind::X);
+        phase = angles.phase - halfPi;
+      } else {
+        steps.emplace_back(SynthesisStep::Kind::SX);
+        appendRotation(SynthesisStep::Kind::RZ, angles.theta + pi);
+        steps.emplace_back(SynthesisStep::Kind::SX);
+        phase = angles.phase + halfPi;
+      }
+      appendRotation(SynthesisStep::Kind::RZ, angles.phi + pi);
+      break;
     }
-  }();
-
-  appendRotationIf(steps, axes.outer, angles.lambda);
-  appendRotationIf(steps, axes.middle, angles.theta);
-  appendRotationIf(steps, axes.outer, angles.phi);
-}
-
-/**
- * @brief Fills @p plan with an `RZ` / `SX` / `X` gate sequence from Z-Y-Z
- * angles.
- *
- * Canonical ZSXX cases: identity, `theta = 0`, `theta = pi/2`, `theta = pi`,
- * and general.
- *
- * @param plan Synthesis plan to populate.
- * @param zyz Z-Y-Z Euler angles of the target unitary.
- */
-static void planZSXX(Unitary1QEulerPlan& plan, const EulerAngles& zyz) {
-  constexpr double pi = std::numbers::pi;
-  constexpr double halfPi = std::numbers::pi / 2.0;
-  constexpr double quarterPi = std::numbers::pi / 4.0;
-
-  const auto theta = zyz.theta;
-  const auto phi = zyz.phi;
-  const auto lambda = zyz.lambda;
-  const auto pushRZ = [&](const double angle) {
-    appendRotationIf(plan.steps, SynthesisStep::Kind::RZ, angle);
-  };
-  const auto pushSX = [&] {
-    plan.steps.push_back({.kind = SynthesisStep::Kind::SX});
-  };
-  const auto pushX = [&] {
-    plan.steps.push_back({.kind = SynthesisStep::Kind::X});
-  };
-
-  if (isNearZeroRotationAngle(theta) && isNearZeroRotationAngle(phi) &&
-      isNearZeroRotationAngle(lambda)) {
-    plan.phase = zyz.phase;
-    return;
+    }
   }
-
-  if (isNearZeroRotationAngle(theta)) {
-    pushRZ(lambda);
-    pushRZ(phi);
-    plan.phase = zyz.phase;
-    return;
-  }
-
-  if (isNearZeroRotationAngle(theta - halfPi)) {
-    pushRZ(lambda - halfPi);
-    pushSX();
-    pushRZ(phi + halfPi);
-    plan.phase = zyz.phase - quarterPi;
-    return;
-  }
-
-  if (isNearZeroRotationAngle(theta - pi)) {
-    pushRZ(lambda);
-    pushX();
-    pushRZ(phi + pi);
-    plan.phase = zyz.phase - halfPi;
-    return;
-  }
-
-  pushRZ(lambda);
-  pushSX();
-  pushRZ(theta + pi);
-  pushSX();
-  pushRZ(phi + pi);
-  plan.phase = zyz.phase + halfPi;
-}
+};
+} // namespace
 
 /**
  * @brief Builds a gate plan for @p targetMatrix in @p basis without emitting
@@ -389,23 +375,8 @@ planUnitary1QEuler(const Matrix2x2& targetMatrix, const EulerBasis basis) {
     return plan;
   }
 
-  if (basis == EulerBasis::ZSXX) {
-    planZSXX(plan, anglesFromUnitary(targetMatrix, EulerBasis::ZYZ));
-    return plan;
-  }
-
   const EulerAngles angles = anglesFromUnitary(targetMatrix, basis);
-  plan.phase = angles.phase;
-
-  if (basis == EulerBasis::U) {
-    plan.steps.push_back({.kind = SynthesisStep::Kind::U,
-                          .theta = angles.theta,
-                          .phi = angles.phi,
-                          .lambda = angles.lambda});
-    return plan;
-  }
-
-  appendKAKSteps(plan.steps, angles, basis);
+  plan.appendDecomposition(angles, basis);
   return plan;
 }
 
@@ -421,16 +392,16 @@ planUnitary1QEuler(const Matrix2x2& targetMatrix, const EulerBasis basis) {
 [[nodiscard]] static Value
 emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
                        const Unitary1QEulerPlan& plan) {
-  for (const SynthesisStep& step : plan.steps) {
-    switch (step.kind) {
+  for (const auto& [kind, theta, phi, lambda] : plan.steps) {
+    switch (kind) {
     case SynthesisStep::Kind::RZ:
-      qubit = RZOp::create(builder, loc, qubit, step.theta).getQubitOut();
+      qubit = RZOp::create(builder, loc, qubit, theta).getQubitOut();
       break;
     case SynthesisStep::Kind::RY:
-      qubit = RYOp::create(builder, loc, qubit, step.theta).getQubitOut();
+      qubit = RYOp::create(builder, loc, qubit, theta).getQubitOut();
       break;
     case SynthesisStep::Kind::RX:
-      qubit = RXOp::create(builder, loc, qubit, step.theta).getQubitOut();
+      qubit = RXOp::create(builder, loc, qubit, theta).getQubitOut();
       break;
     case SynthesisStep::Kind::SX:
       qubit = SXOp::create(builder, loc, qubit).getQubitOut();
@@ -440,8 +411,7 @@ emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
       break;
     case SynthesisStep::Kind::U:
       qubit =
-          UOp::create(builder, loc, qubit, step.theta, step.phi, step.lambda)
-              .getQubitOut();
+          UOp::create(builder, loc, qubit, theta, phi, lambda).getQubitOut();
       break;
     }
   }
@@ -450,24 +420,14 @@ emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
 }
 
 std::optional<EulerBasis> parseEulerBasis(StringRef basis) {
-  struct EulerBasisName {
-    const char* name;
-    EulerBasis value;
-  };
-  constexpr std::array<EulerBasisName, 6> eulerBasisTable{{
-      {.name = "zyz", .value = EulerBasis::ZYZ},
-      {.name = "zxz", .value = EulerBasis::ZXZ},
-      {.name = "xzx", .value = EulerBasis::XZX},
-      {.name = "xyx", .value = EulerBasis::XYX},
-      {.name = "u", .value = EulerBasis::U},
-      {.name = "zsxx", .value = EulerBasis::ZSXX},
-  }};
-  for (const EulerBasisName& entry : eulerBasisTable) {
-    if (basis.equals_insensitive(entry.name)) {
-      return entry.value;
-    }
-  }
-  return std::nullopt;
+  return StringSwitch<std::optional<EulerBasis>>(basis.lower())
+      .Case("zyz", EulerBasis::ZYZ)
+      .Case("zxz", EulerBasis::ZXZ)
+      .Case("xzx", EulerBasis::XZX)
+      .Case("xyx", EulerBasis::XYX)
+      .Case("u", EulerBasis::U)
+      .Case("zsxx", EulerBasis::ZSXX)
+      .Default(std::nullopt);
 }
 
 std::optional<Value>

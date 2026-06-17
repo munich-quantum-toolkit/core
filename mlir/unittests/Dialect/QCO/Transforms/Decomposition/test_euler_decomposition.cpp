@@ -348,13 +348,13 @@ INSTANTIATE_TEST_SUITE_P(
                          [](MLIRContext*) -> Matrix2x2 {
                            return rzMatrix(0.3) * rzMatrix(0.7);
                          },
-                         2, 0, 0},
+                         1, 0, 0},
         ZSXXShortcutCase{"ZYZNearZeroTheta",
                          [](MLIRContext*) -> Matrix2x2 {
                            constexpr double tol = 0.5 * mlir::utils::TOLERANCE;
                            return rzMatrix(0.4) * ryMatrix(tol) * rzMatrix(0.3);
                          },
-                         2, 0, 0},
+                         1, 0, 0},
         ZSXXShortcutCase{"RYHalfPi",
                          [](MLIRContext* ctx) -> Matrix2x2 {
                            return rotationMatrix<RYOp>(ctx,
