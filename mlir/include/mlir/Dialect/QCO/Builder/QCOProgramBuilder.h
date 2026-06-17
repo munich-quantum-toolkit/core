@@ -1165,6 +1165,24 @@ public:
   ValueRange ppr(ValueRange qubits, std::int8_t piFraction,
                  ArrayRef<StringRef> pauliProduct);
 
+  // PPMeasureOp
+
+  /**
+   * @brief Apply a PPMeasureOp.
+   *
+   * @param qubits Input qubits (must be valid/unconsumed)
+   * @param pauliProduct Denotes the Pauli product for the measurement. Valid
+   * values are "I", "X", "Y", "Z".
+   * @return Pair of (output qubits, classical bit)
+   *
+   * @par Example:
+   * ```c++
+   * builder.ppm({q0, q1}, {"X", "Y"});
+   * ```
+   */
+  std::pair<ValueRange, Value> ppm(ValueRange qubits,
+                                   ArrayRef<StringRef> pauliProduct);
+
   //===--------------------------------------------------------------------===//
   // Modifiers
   //===--------------------------------------------------------------------===//

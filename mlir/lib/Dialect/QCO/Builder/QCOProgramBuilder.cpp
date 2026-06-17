@@ -816,6 +816,20 @@ ValueRange QCOProgramBuilder::ppr(ValueRange qubits, std::int8_t piFraction,
   return qubitsOut;
 }
 
+// PPRMeasureOp
+std::pair<ValueRange, Value>
+QCOProgramBuilder::ppm(ValueRange qubits, ArrayRef<StringRef> pauliProduct) {
+  checkFinalized();
+
+  auto op = PPMeasureOp::create(*this, qubits, pauliProduct);
+  auto qubitsOut = op.getQubitsOut();
+  auto result = op.getResult();
+  for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
+    updateQubitTracking(inputQubit, outputQubit);
+  }
+  return {qubitsOut, result};
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

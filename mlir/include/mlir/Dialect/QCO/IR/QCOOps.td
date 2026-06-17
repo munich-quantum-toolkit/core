@@ -1037,6 +1037,9 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
   let hasCanonicalizer = 1;
 }
 
+// A pauli string, e.g. ["X", "Y", "Y"].
+def PauliWord : TypedArrayAttrBase<StrAttr, "A product of Pauli operators.">;
+
 // Constraint for Pauli rotation angles: must be one of ±1, ±2, ±4.
 def PauliRotationConstraint
     : AttrConstraint<
@@ -1069,8 +1072,7 @@ def PPRotationOp : QCOOp<"ppr", traits = [UnitaryOpInterface]> {
   let arguments =
       (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$qubits_in,
           ConfinedAttr<SI8Attr, [PauliRotationConstraint]>:$rotation,
-          TypedArrayAttrBase<StrAttr,
-                             "A product of Pauli operators.">:$pauli_product);
+          PauliWord:$pauli_product);
   let results = (outs Variadic<QubitType>:$qubits_out);
   let assemblyFormat = "`(` $rotation `)` $pauli_product $qubits_in attr-dict "
                        "`:` type($qubits_in) `->` type($qubits_out)";
@@ -1104,6 +1106,47 @@ def PPRotationOp : QCOOp<"ppr", traits = [UnitaryOpInterface]> {
   let builders = [OpBuilder<(ins "ValueRange":$qubits, "int8_t":$rotation,
                       "ArrayRef<StringRef>":$pauli_product)>,
   ];
+
+  let hasVerifier = 1;
+}
+
+def PPMeasureOp : QCOOp<"ppm"> {
+  let summary = "Pauli Product Measurement (PPM) of a set of qubits";
+  let description = [{
+        Measures a set of qubits in the basis of a specified Pauli product and
+        returns the measurement result as a boolean value. The measurement collapses
+        the input qubits to the ±1 eigenstate of the Pauli product operator.
+
+        Optionally, the measurement can be recorded to an output register by
+        specifying:
+        - `register_name`: Name of the classical register (e.g., "c")
+        - `register_size`: Total size of the register
+        - `register_index`: Index within the register for this measurement
+
+        Example (simple measurement):
+        ```mlir
+        %q0_out, %q1_out, %result = qco.ppm ["X", "Y"] %q0, %q1 : !qco.qubit, !qco.qubit, i1
+        ```
+
+        Example (measurement with output recording):
+        ```mlir
+        %q0_out, %q1_out, %result = qco.ppm("c", 2, 0) ["X", "Y"] %q0, %q1 : !qco.qubit, !qco.qubit, i1
+        ```
+    }];
+
+  let arguments = (ins Arg<Variadic<QubitType>,
+                           "the target qubits", [MemRead]>:$qubits_in,
+      PauliWord:$pauli_product, OptionalAttr<StrAttr>:$register_name,
+      OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
+      OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
+  let results = (outs Variadic<QubitType>:$qubits_out, I1:$result);
+  let assemblyFormat = [{
+        (`(` $register_name^ `,` $register_size `,` $register_index `)`)? $pauli_product
+        $qubits_in attr-dict `:` type($qubits_in) `->` type($qubits_out) `,` type($result)
+    }];
+
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+      "ArrayRef<StringRef>":$pauli_product)>];
 
   let hasVerifier = 1;
 }
