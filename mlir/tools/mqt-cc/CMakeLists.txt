@@ -17,7 +17,6 @@ target_link_libraries(
           MLIRSupport
           # Required for OpenQASM parsing
           MQT::CoreQASM
-          MQT::CoreIR
           MLIRQCTranslation)
 
 mqt_mlir_target_use_project_options(mqt-cc)
