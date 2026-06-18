@@ -52,40 +52,6 @@ void emitGPhaseIfNonTrivial(IRRewriter& rewriter, Location loc, double phase) {
   }
 }
 
-bool isEquivalentUpToGlobalPhase(const Matrix4x4& lhs, const Matrix4x4& rhs,
-                                 double atol) {
-  const Complex overlap = (rhs.adjoint() * lhs).trace();
-  if (std::abs(overlap) <= atol) {
-    return false;
-  }
-  const Complex factor = overlap / std::abs(overlap);
-  return lhs.isApprox(rhs * factor, atol);
-}
-
-void normalizeToSU4(Matrix4x4& matrix) {
-  using namespace std::complex_literals;
-  const Complex det = matrix.determinant();
-  // Project `matrix` into SU(4) by dividing out the fourth root of its
-  // determinant (det(SU(N)) == 1). `|det|^{-1/4}` fixes the magnitude and
-  // `exp(-i * arg(det) / 4)` removes the global phase so the Weyl
-  // decomposition downstream operates on a special-unitary input.
-  if (std::abs(det) > 1e-16) {
-    matrix *=
-        std::pow(std::abs(det), -0.25) * std::exp(1i * (-std::arg(det) / 4.0));
-  }
-}
-
-bool getNormalizedTwoQubitMatrix(UnitaryOpInterface unitary,
-                                 Matrix4x4& matrix) {
-  Matrix4x4 raw;
-  if (!unitary.getUnitaryMatrix4x4(raw)) {
-    return false;
-  }
-  matrix = raw;
-  normalizeToSU4(matrix);
-  return true;
-}
-
 bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix) {
   if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
     return false;

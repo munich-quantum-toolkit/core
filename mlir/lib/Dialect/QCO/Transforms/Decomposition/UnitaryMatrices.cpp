@@ -32,15 +32,6 @@ Matrix2x2 uMatrix(double theta, double phi, double lambda) {
               std::sin(lambda + phi) * cosHalf});
 }
 
-Matrix2x2 u2Matrix(double phi, double lambda) {
-  return Matrix2x2::fromElements(
-      Complex{FRAC1_SQRT2, 0.},
-      Complex{-std::cos(lambda) * FRAC1_SQRT2, -std::sin(lambda) * FRAC1_SQRT2},
-      Complex{std::cos(phi) * FRAC1_SQRT2, std::sin(phi) * FRAC1_SQRT2},
-      Complex{std::cos(lambda + phi) * FRAC1_SQRT2,
-              std::sin(lambda + phi) * FRAC1_SQRT2});
-}
-
 Matrix2x2 rxMatrix(double theta) {
   const auto halfTheta = theta / 2.;
   const Complex cos{std::cos(halfTheta), 0.};

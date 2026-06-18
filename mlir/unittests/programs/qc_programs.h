@@ -1069,14 +1069,8 @@ void nativeSynthCustomMenusIbmFractionalTwoQStress(QCProgramBuilder& b);
 /// ``H``, ``SX``, ``XX+YY``, ``RZ``; custom-menu ``XX+YY`` chain behaviour.
 void nativeSynthCustomMenusXxPlusYyChain(QCProgramBuilder& b);
 
-/// Single ``XX-YY`` on a pair; custom menu / scoring delegate shape.
+/// Single ``XX-YY`` on a pair; custom-menu delegate shape.
 void nativeSynthCustomMenusXxMinusYyOnly(QCProgramBuilder& b);
-
-/// Single ``XX+YY`` on a pair; scoring metrics on emitted counts.
-void nativeSynthScoringXxPlusYyOnly(QCProgramBuilder& b);
-
-/// Forwards to ``nativeSynthCustomMenusXxMinusYyOnly``; scoring-only alias.
-void nativeSynthScoringXxMinusYyOnly(QCProgramBuilder& b);
 
 /// Two-qubit ``swap`` with explicit ``allocQubit`` / ``dealloc`` ordering.
 void nativeSynthDeterminismTwoQubitSwap(QCProgramBuilder& b);

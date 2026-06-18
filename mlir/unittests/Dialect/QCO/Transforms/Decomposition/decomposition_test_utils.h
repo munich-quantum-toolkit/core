@@ -77,15 +77,6 @@ randomUnitaryData(std::size_t dim, std::mt19937& rng) {
 
 } // namespace detail
 
-/// Random `2×2` unitary matrix.
-[[nodiscard]] inline Matrix2x2 randomUnitary2x2(std::mt19937& rng) {
-  const auto data = detail::randomUnitaryData(2, rng);
-  const Matrix2x2 unitary =
-      Matrix2x2::fromElements(data[0], data[1], data[2], data[3]);
-  assert(helpers::isUnitaryMatrix(unitary));
-  return unitary;
-}
-
 /// Random `4×4` unitary matrix.
 [[nodiscard]] inline Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
   const auto data = detail::randomUnitaryData(4, rng);
@@ -93,7 +84,7 @@ randomUnitaryData(std::size_t dim, std::mt19937& rng) {
       data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
       data[8], data[9], data[10], data[11], data[12], data[13], data[14],
       data[15]);
-  assert(helpers::isUnitaryMatrix(unitary));
+  assert((unitary.adjoint() * unitary).isIdentity(1e-12));
   return unitary;
 }
 

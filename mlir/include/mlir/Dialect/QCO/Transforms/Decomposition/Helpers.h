@@ -23,22 +23,11 @@ namespace mlir::qco::helpers {
 [[nodiscard]] bool isUnitaryMatrix(const Matrix2x2& matrix,
                                    double tolerance = 1e-12);
 
-/// Check whether `matrix` is unitary within `tolerance` (i.e. `M^H M` is
-/// approximately the identity).
-[[nodiscard]] bool isUnitaryMatrix(const Matrix4x4& matrix,
-                                   double tolerance = 1e-12);
-
 /**
  * Euclidean remainder of a modulo b.
  * The returned value is never negative.
  */
 [[nodiscard]] double remEuclid(double a, double b);
-
-/**
- * Wrap angle into interval [-pi, pi). If within atol of the endpoint, clamp to
- * -pi.
- */
-[[nodiscard]] double mod2pi(double angle, double angleZeroEpsilon = 1e-13);
 
 /**
  * Convert a two-qubit trace overlap into the average gate fidelity metric used

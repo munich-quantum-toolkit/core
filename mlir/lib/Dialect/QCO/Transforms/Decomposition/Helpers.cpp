@@ -16,7 +16,6 @@
 
 #include <cmath>
 #include <complex>
-#include <numbers>
 
 namespace mlir::qco::helpers {
 
@@ -24,32 +23,12 @@ bool isUnitaryMatrix(const Matrix2x2& matrix, double tolerance) {
   return (matrix.adjoint() * matrix).isIdentity(tolerance);
 }
 
-bool isUnitaryMatrix(const Matrix4x4& matrix, double tolerance) {
-  return (matrix.adjoint() * matrix).isIdentity(tolerance);
-}
-
 double remEuclid(double a, double b) {
   if (b == 0.0) {
-    llvm::reportFatalInternalError(
-        "remEuclid expects non-zero divisor; callers like mod2pi pass positive "
-        "constants");
+    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
   }
   auto r = std::fmod(a, b);
   return (r < 0.0) ? r + std::abs(b) : r;
-}
-
-double mod2pi(double angle, double angleZeroEpsilon) {
-  // remEuclid() isn't exactly the same as Python's % operator, but
-  // because the RHS here is a constant and positive it is effectively
-  // equivalent for this case
-  auto wrapped = remEuclid(angle + std::numbers::pi, 2 * std::numbers::pi) -
-                 std::numbers::pi;
-  if (std::abs(wrapped - std::numbers::pi) < angleZeroEpsilon) {
-    // Canonicalize the upper endpoint back to -pi so callers always receive a
-    // half-open interval [-pi, pi).
-    return -std::numbers::pi;
-  }
-  return wrapped;
 }
 
 double traceToFidelity(const std::complex<double>& x) {

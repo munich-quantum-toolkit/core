@@ -2116,16 +2116,6 @@ void nativeSynthCustomMenusXxMinusYyOnly(QCProgramBuilder& b) {
   b.xx_minus_yy(-0.37, 0.26, q0, q1);
 }
 
-void nativeSynthScoringXxPlusYyOnly(QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.xx_plus_yy(0.52, -0.14, q0, q1);
-}
-
-void nativeSynthScoringXxMinusYyOnly(QCProgramBuilder& b) {
-  nativeSynthCustomMenusXxMinusYyOnly(b);
-}
-
 void nativeSynthDeterminismTwoQubitSwap(QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();

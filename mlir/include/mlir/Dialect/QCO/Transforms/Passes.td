@@ -166,8 +166,7 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
     Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`, `cx`,
     `cz`, `rzz`. An empty or whitespace-only menu is a no-op, which is the
     intended pipeline default when synthesis is not needed. An unrecognised
-    token or an invalid score weight (non-finite or negative) causes the pass
-    to fail.
+    token causes the pass to fail.
 
     Example menus (each line is one illustrative menu; pick either `cx` or
     `cz` as the entangler, or list both if both are native):

@@ -235,7 +235,5 @@ private:
   Specialization specialization{Specialization::General};
   /// Optional `traceToFidelity` floor for specialization; unset disables it.
   std::optional<double> requestedFidelity;
-  double calculatedFidelity{};
-  Matrix4x4 unitaryMatrix;
 };
 } // namespace mlir::qco::decomposition

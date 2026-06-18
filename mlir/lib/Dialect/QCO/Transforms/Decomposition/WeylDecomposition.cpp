@@ -231,9 +231,6 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   decomposition.k2r_ = K2r;
   decomposition.specialization = Specialization::General;
   decomposition.requestedFidelity = fidelity;
-  // will be calculated if a specialization is used; set to -1 for now
-  decomposition.calculatedFidelity = -1.0;
-  decomposition.unitaryMatrix = unitaryMatrix;
 
   // make sure decomposition is equal to input
   assert((kron(K1l, K1r) * decomposition.getCanonicalMatrix() * kron(K2l, K2r) *
@@ -256,17 +253,16 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   // use trace to calculate fidelity of applied specialization and
   // adjust global phase
   auto trace = getTrace();
-  decomposition.calculatedFidelity = helpers::traceToFidelity(trace);
+  const double calculatedFidelity = helpers::traceToFidelity(trace);
   // final check if specialization is close enough to the original matrix to
   // satisfy the requested fidelity; since no forced specialization is
   // allowed, this should never fail
   if (decomposition.requestedFidelity &&
-      decomposition.calculatedFidelity + 1.0e-13 <
-          *decomposition.requestedFidelity) {
+      calculatedFidelity + 1.0e-13 < *decomposition.requestedFidelity) {
     llvm::reportFatalInternalError(llvm::formatv(
         "TwoQubitWeylDecomposition: Calculated fidelity of "
         "specialization is worse than requested fidelity ({0:F4} vs {1:F4})!",
-        decomposition.calculatedFidelity, *decomposition.requestedFidelity));
+        calculatedFidelity, *decomposition.requestedFidelity));
   }
   decomposition.globalPhase_ += std::arg(trace);
 

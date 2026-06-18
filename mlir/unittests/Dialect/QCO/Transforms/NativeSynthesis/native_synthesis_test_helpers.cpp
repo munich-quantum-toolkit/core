@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
@@ -156,11 +155,6 @@ std::complex<double> phasedAmplitude(const double magnitude,
 
 Matrix2x2 u3Matrix(double theta, double phi, double lambda) {
   return decomposition::uMatrix(theta, phi, lambda);
-}
-
-bool isUnitary(const Matrix2x2& matrix, const double atol) {
-  return (matrix * matrix.adjoint()).isIdentity(atol) &&
-         (matrix.adjoint() * matrix).isIdentity(atol);
 }
 
 std::optional<double> evaluateConstF64(Value value) {

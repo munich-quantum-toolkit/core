@@ -84,7 +84,6 @@ private:
 [[nodiscard]] std::complex<double> phasedAmplitude(double magnitude,
                                                    double phase);
 [[nodiscard]] Matrix2x2 u3Matrix(double theta, double phi, double lambda);
-[[nodiscard]] bool isUnitary(const Matrix2x2& matrix, double atol = 1e-10);
 [[nodiscard]] std::optional<double> evaluateConstF64(Value value);
 bool extractSingleQubitMatrix(qco::UnitaryOpInterface op, Matrix2x2& out);
 bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Matrix4x4& out);

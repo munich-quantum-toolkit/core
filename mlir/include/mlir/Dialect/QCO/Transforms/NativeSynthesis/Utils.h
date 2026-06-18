@@ -17,7 +17,7 @@
 
 #include <optional>
 
-/// F64 helpers, global phase, and SU(4) normalization for two-qubit synthesis.
+/// F64 helpers and block unitary extraction for native gate synthesis.
 
 namespace mlir::qco::native_synth {
 
@@ -29,17 +29,6 @@ std::optional<double> getConstantF64(Value value);
 
 /// Emit a `qco.gphase` if `phase` is non-negligible.
 void emitGPhaseIfNonTrivial(IRRewriter& rewriter, Location loc, double phase);
-
-/// Matrix equality up to a unit-modulus global phase.
-bool isEquivalentUpToGlobalPhase(const Matrix4x4& lhs, const Matrix4x4& rhs,
-                                 double atol = 1e-10);
-
-/// Rescale `matrix` to determinant 1 (SU(4)) for Weyl / basis decomposers.
-/// No-op if det is numerically zero.
-void normalizeToSU4(Matrix4x4& matrix);
-
-/// ``getUnitaryMatrix4x4`` then rescale to SU(4).
-bool getNormalizedTwoQubitMatrix(UnitaryOpInterface unitary, Matrix4x4& matrix);
 
 /// 4x4 for a 2q block member (plain 2q, ``CtrlOp`` CX/CZ, or lifted 1q). Fails
 /// for barriers, ``gphase``, multi-control, or non-constant matrix parameters.

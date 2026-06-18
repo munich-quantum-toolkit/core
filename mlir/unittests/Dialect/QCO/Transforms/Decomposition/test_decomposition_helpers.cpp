@@ -15,7 +15,6 @@
 
 #include <cmath>
 #include <complex>
-#include <numbers>
 
 using namespace mlir::qco;
 using namespace mlir::qco::helpers;
@@ -24,12 +23,6 @@ TEST(DecompositionHelpersTest, RemEuclidNeverNegative) {
   EXPECT_DOUBLE_EQ(remEuclid(-1.0, 3.0), 2.0);
   EXPECT_DOUBLE_EQ(remEuclid(7.0, 3.0), 1.0);
   EXPECT_DOUBLE_EQ(remEuclid(0.0, 2.5), 0.0);
-}
-
-TEST(DecompositionHelpersTest, Mod2piWrapsIntoHalfOpenInterval) {
-  EXPECT_NEAR(mod2pi(0.0), 0.0, 1e-14);
-  EXPECT_NEAR(mod2pi(std::numbers::pi), -std::numbers::pi, 1e-12);
-  EXPECT_NEAR(mod2pi(3.0 * std::numbers::pi), -std::numbers::pi, 1e-12);
 }
 
 TEST(DecompositionHelpersTest, TraceToFidelityMatchesFormula) {

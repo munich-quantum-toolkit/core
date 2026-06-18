@@ -31,8 +31,6 @@ inline constexpr double FRAC1_SQRT2 =
 
 /// Generic 3-parameter single-qubit unitary `U(theta, phi, lambda)`.
 [[nodiscard]] Matrix2x2 uMatrix(double theta, double phi, double lambda);
-/// `U2(phi, lambda) == U(pi/2, phi, lambda)`.
-[[nodiscard]] Matrix2x2 u2Matrix(double phi, double lambda);
 /// Axis rotations `exp(-i theta/2 * sigma_{x,y,z})`.
 [[nodiscard]] Matrix2x2 rxMatrix(double theta);
 [[nodiscard]] Matrix2x2 ryMatrix(double theta);
