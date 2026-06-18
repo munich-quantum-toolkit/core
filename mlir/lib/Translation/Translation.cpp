@@ -10,16 +10,17 @@
 
 #include "mlir/Translation/Translation.h"
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/SourceMgr.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Tools/mlir-translate/Translation.h>
 
@@ -33,8 +34,7 @@ void registerQASM3ToQCTranslation() {
         context->loadDialect<arith::ArithDialect, func::FuncDialect,
                              memref::MemRefDialect, qc::QCDialect,
                              scf::SCFDialect>();
-        return OwningOpRef<Operation*>(
-            qc::translateQASM3ToQC(sourceMgr, context).release());
+        return {qc::translateQASM3ToQC(sourceMgr, context).release()};
       });
 }
 

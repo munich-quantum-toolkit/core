@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 add_mlir_tool(mqt-cc-translate mqt-cc-translate.cpp DEPENDS MQTCCTranslation SUPPORT_PLUGINS)
-target_link_libraries(mqt-cc-translate PRIVATE MQTCCTranslation)
+target_link_libraries(mqt-cc-translate PRIVATE MQTCCTranslation MLIRTranslateLib)
 
 mqt_mlir_target_use_project_options(mqt-cc-translate)
 llvm_update_compile_flags(mqt-cc-translate)

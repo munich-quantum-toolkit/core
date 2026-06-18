@@ -7,7 +7,6 @@
 # Licensed under the MIT License
 
 add_mlir_library(MQTCCTranslation Translation.cpp LINK_LIBS MLIRQCTranslation)
-
 mqt_mlir_target_use_project_options(MQTCCTranslation)
 
 # collect header files

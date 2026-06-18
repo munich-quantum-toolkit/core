@@ -10,11 +10,13 @@
 
 #include "mlir/Translation/Translation.h"
 
+#include <mlir/Support/LLVM.h>
 #include <mlir/Tools/mlir-translate/MlirTranslateMain.h>
 
 using namespace mlir;
 
 int main(int argc, char** argv) {
   registerQASM3ToQCTranslation();
-  return failed(mlirTranslateMain(argc, argv, "mqt-cc translation tool"));
+  return static_cast<int>(
+      failed(mlirTranslateMain(argc, argv, "mqt-cc translation tool")));
 }
