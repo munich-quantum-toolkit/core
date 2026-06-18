@@ -7,4 +7,3 @@
 # Licensed under the MIT License
 
 add_subdirectory(mqt-cc)
-add_subdirectory(mqt-cc-translate)
