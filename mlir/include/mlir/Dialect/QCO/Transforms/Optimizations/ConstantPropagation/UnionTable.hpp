@@ -1,0 +1,292 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#ifndef MQT_CORE_UNIONTABLE_H
+#define MQT_CORE_UNIONTABLE_H
+#include "HybridState.hpp"
+
+#include <llvm/ADT/DenseMap.h>
+
+#include <span>
+
+namespace mlir::qco {
+
+/**
+ * @brief Result of the check for superfluous values.
+ */
+struct SuperfluousResult {
+  bool completelySuperfluous = false;
+  std::vector<Value> superfluousQubits;
+  std::vector<Value> superfluousClassicalValues;
+};
+
+/**
+ * @brief This class represents a union table.
+ *
+ * This class holds multiple hybrid states and can propagate operations on the
+ * values in the states.
+ */
+class UnionTable {
+  bool allTop = false;
+  std::size_t maximumHybridEntries;
+  llvm::DenseMap<Value, int64_t> globalQubitIndices;
+  llvm::DenseMap<Value, std::shared_ptr<HybridState>> valuesToEntries;
+
+public:
+  explicit UnionTable(std::size_t maxNonzeroAmplitudes,
+                      std::size_t maximumHybridEntries);
+
+  ~UnionTable();
+
+  void print(std::ostream& os) const;
+
+  [[nodiscard("UnionTable::toString called but ignored")]]
+  std::string toString() const;
+
+  [[nodiscard("UnionTable::allTop called but ignored")]]
+  bool areStatesAllTop();
+
+  /**
+   * @brief This method applies a gate to the qubits.
+   *
+   * This method changes the amplitudes of a QuantumState according to the
+   * applied gate.
+   *
+   * @param gate The gate to be applied.
+   * @param targets An array of the Values of the target qubits.
+   * @param newQuantumTargets The value of the qubits after the gate.
+   * @param ctrlsQuantum An array of the values of the ctrl qubits.
+   * @param posCtrlsClassical An array of the values of the ctrl bits.
+   * @param negCtrlsClassical An array of the values of the negative ctrl bits.
+   * @param params The parameter applied to the gate.
+   * @throws invalid_argument if a value is given, but is not found in the
+   * existing ones.
+   */
+  void propagateGate(Operation* gate, std::span<Value> targets,
+                     std::span<Value> newQuantumTargets,
+                     std::span<Value> ctrlsQuantum = {},
+                     std::span<Value> posCtrlsClassical = {},
+                     std::span<Value> negCtrlsClassical = {},
+                     std::vector<Value> params = {});
+
+  /**
+   * @brief This method applies a measurement.
+   *
+   * This method applies a measurement, changing the qubits and the classical
+   * bit corresponding to the measurement.
+   *
+   * @param quantumTarget The value of the qubit to be measured.
+   * @param newQuantumValue The value of the qubit after the measurement.
+   * @param classicalTarget The value of the bit to save the measurement result
+   * in.
+   * @param posCtrlsClassical An array of the values of the ctrl bits.
+   * @param negCtrlsClassical An array of the values of the negative ctrl bits.
+   * @throws invalid_argument if a value is given, but is not found in the
+   * existing ones. This does not hold for the classical target, which can be
+   * newly created.
+   */
+  void propagateMeasurement(Value quantumTarget, Value newQuantumValue,
+                            Value classicalTarget,
+                            std::span<Value> posCtrlsClassical = {},
+                            std::span<Value> negCtrlsClassical = {});
+
+  /**
+   * @brief This method propagates a qubit reset.
+   *
+   * This method propagates a qubit reset. This means that the qubit is put into
+   * zero state. It is also put in its own QubitState again if it does not
+   * correspond to already assigned bit values.
+   *
+   * @param quantumTarget The value of the qubit to be reset.
+   * @param newQuantumValue The value of the qubit after the reset.
+   * @param posCtrlsClassical An array of the values of the ctrl bits.
+   * @param negCtrlsClassical An array of the values of the negative ctrl bits.
+   * @throws invalid_argument if a value is given, but is not found in the
+   * existing ones.
+   */
+  void propagateReset(Value quantumTarget, Value newQuantumValue,
+                      std::span<Value> posCtrlsClassical = {},
+                      std::span<Value> negCtrlsClassical = {});
+
+  /**
+   * @brief This method propagates a qubit alloc.
+   *
+   * This method propagates a qubit alloc. This means that the qubit is added to
+   * the UnionTable in zero state.
+   *
+   * @param qubit The value of the qubit to be allocated.
+   */
+  void propagateQubitAlloc(Value qubit);
+
+  /**
+   * @brief This method propagates an int alloc.
+   *
+   * This method propagates an int alloc. This means that the int is added to
+   * the UnionTable as new HybridState.
+   *
+   * @param intValue The value of the int to be allocated.
+   * @param number The number that the int is initialized with.
+   */
+  void propagateIntAlloc(Value intValue, int64_t number);
+
+  /**
+   * @brief This method propagates a double alloc.
+   *
+   * This method propagates a double alloc. This means that the double is added
+   * to the UnionTable as new HybridState.
+   *
+   * @param doubleValue The value of the double to be allocated.
+   * @param number The number that the double is initialized with.
+   */
+  void propagateDoubleAlloc(Value doubleValue, double number);
+
+  [[nodiscard("UnionTable::isQubitAlwaysOne called but ignored")]] bool
+  isQubitAlwaysOne(Value q) const;
+
+  [[nodiscard("UnionTable::isQubitAlwaysZero called but ignored")]] bool
+  isQubitAlwaysZero(Value q) const;
+
+  [[nodiscard(
+      "UnionTable::isClassicalValueAlwaysTrue called but ignored")]] bool
+  isClassicalValueAlwaysTrue(Value c) const;
+
+  [[nodiscard(
+      "UnionTable::isClassicalValueAlwaysFalse called but ignored")]] bool
+  isClassicalValueAlwaysFalse(Value c) const;
+
+  /**
+   * @brief Checks if a given combination of values-qubit values has a nonzero
+   * probability.
+   *
+   * This method receives a number of qubit and values and checks whether
+   * they have for a given value always a zero amplitude.
+   * The values for the classical values are not the numeric ones, but whether
+   * they are zero (false) or non-zero (true).
+   *
+   * @param qubits The qubits which are being checked.
+   * @param qubitValue The value for which is tested whether there is a nonzero
+   * amplitude.
+   * @param classicalIntegerValues The integer values to check.
+   * @param classicalDoubleValues The double values to check.
+   * @throws invalid_argument if a value is given, but is not found in the
+   * existing ones.
+   * @returns True if the amplitude is always zero, false otherwise.
+   */
+  [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
+  hasAlwaysZeroProbability(
+      std::span<Value> qubits, unsigned int qubitValue,
+      std::span<std::pair<Value, int64_t>> classicalIntegerValues = {},
+      std::span<std::pair<Value, double>> classicalDoubleValues = {}) const;
+
+  /**
+   * @brief Returns a classical value that is equivalent to qubit.
+   *
+   * Returns a classical value that is always true (=/= 0) when the given qubit
+   * is 1, and the boolean value true. Alternatively, it can return a value that
+   * is always false (== 0) if the qubit is 1. In that case, the returned bool
+   * is false.
+   *
+   * @param qubit Index of qubit.
+   * @returns Classical value that is equivalent or inverse to qubit if it
+   * exists and true, if the qubit is equivalent to the value. False, if the
+   * qubit is the inverse of the value.
+   */
+  [[nodiscard(
+      "UnionTable::getValueThatIsEquivalentToQubit called but ignored")]] std::
+      pair<std::optional<Value>, bool>
+      getValueThatIsEquivalentToQubit(unsigned int qubit) const;
+
+  /**
+   * @brief This method checks whether a diagonal gate only adds a global phase
+   * and returns it.
+   *
+   * This method receives a diagonal gate and checks, if only a global phase is
+   * added to the circuit by it under the current configuration. If that is the
+   * case, the returned optional contains the global phase.
+   *
+   * @param diagonalOp The gate to be checked.
+   * @param targets An array of the Values of the target qubits.
+   * @param ctrlsQuantum An array of the values of the ctrl qubits.
+   * @param posCtrlsClassical An array of the values of the ctrl bits.
+   * @param negCtrlsClassical An array of the values of the negative ctrl bits.
+   * @throws invalid_argument if a value is given, but is not found in the
+   * existing ones.
+   * @returns An optional containing the globally added value, if applicable.
+   */
+  [[nodiscard("UnionTable::globalPhaseThatIsAdded called but ignored")]]
+  std::optional<double>
+  globalPhaseThatIsAdded(Operation* diagonalOp, std::span<Value> targets,
+                         std::span<Value> ctrlsQuantum = {},
+                         std::span<Value> posCtrlsClassical = {},
+                         std::span<Value> negCtrlsClassical = {});
+
+  /**
+   * @brief This method checks which qubits and classical values are superfluous
+   * given a controlled gate.
+   *
+   * This method checks which qubits and classical values are superfluous given
+   * a controlled gate. If the gate can never be executed, the target qubits are
+   * superfluous. Apart from that, all posCtrl (negCtrl) qubits/values that are
+   * always true (false) are superfluous.
+   *
+   * @param qubitTargets The values of the target qubits.
+   * @param qubitCtrls The valuess of the positively controlling qubits.
+   * @param posCtrlsClassical The values of the positively controlling classical
+   * values.
+   * @param negCtrlsClassical The values of the negatively controlling classical
+   * values.
+   * @returns The superfluous result, i.e. the qubits and classical values that
+   * are superfluous and whether the whole operation is superfluous.
+   */
+  static SuperfluousResult
+  getSuperfluousControls(std::span<Value> qubitTargets,
+                         std::span<Value> qubitCtrls,
+                         std::span<Value> posCtrlsClassical = {},
+                         std::span<Value> negCtrlsClassical = {});
+
+  /**
+   * @brief This method checks whether there are satisfiable combinations of
+   * controls.
+   *
+   * @param qubitCtrls The values of the controlling qubit values.
+   * @param posCtrlsClassical The values of the positively controlling classical
+   * values.
+   * @param negCtrlsClassical The values of the negatively controlling classical
+   * values.
+   * @returns Whether there are satisfiable combinations or not.
+   */
+  static bool
+  areThereSatisfiableCombinations(std::span<Value> qubitCtrls,
+                                  std::span<Value> posCtrlsClassical = {},
+                                  std::span<Value> negCtrlsClassical = {});
+
+  /**
+   * @brief Returns the qubits and classical values that imply the given qubit.
+   *
+   * This method checks whether in the given list are qubits or classical values
+   * that imply (are antecedents of) the given qubit. I.e. all qubits and
+   * classical values are returned for which holds: a -> q.
+   *
+   * @param q The qubit for which is checked whether it is implied.
+   * @param qubits The qubits for which are checked if they imply q.
+   * @param classicalPositive The values for which are checked if they imply q.
+   * @param classicalNegative The values for which their negations are checked
+   * if they imply q.
+   * @returns A pair of 1. qubits and 2. classical values that are antecedents
+   * of q.
+   */
+  static std::pair<std::set<Value>, std::set<Value>>
+  getAntecedentsOfQubit(unsigned int q, std::span<Value> qubits,
+                        std::span<Value> classicalPositive,
+                        std::span<Value> classicalNegative);
+};
+} // namespace mlir::qco
+
+#endif // MQT_CORE_UNIONTABLE_H
