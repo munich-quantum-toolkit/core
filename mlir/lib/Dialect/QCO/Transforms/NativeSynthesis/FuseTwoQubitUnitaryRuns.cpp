@@ -8,20 +8,23 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/PassTwoQubitWindows.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/FuseTwoQubitUnitaryRuns.h"
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -31,14 +34,50 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
+#include <vector>
+
+namespace mlir::qco {
+
+#define GEN_PASS_DEF_FUSETWOQUBITUNITARYRUNS
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+
+} // namespace mlir::qco
 
 namespace mlir::qco::native_synth {
+
+namespace {
+
+/// State for one maximal two-qubit window (plus absorbed one-qubit ops)
+/// during consolidation.
+struct TwoQubitBlock {
+  Value wireA;
+  Value wireB;
+  llvm::SmallVector<Operation*, 8> ops;
+  Matrix4x4 accum = Matrix4x4::identity();
+  unsigned numTwoQ = 0;
+  unsigned numOneQ = 0;
+  bool anyNonNative = false;
+  bool open = true;
+};
+
+/// Tracks overlapping two-qubit windows on a module slice.
+struct TwoQubitWindowConsolidator {
+  std::vector<TwoQubitBlock> blocks;
+  llvm::DenseMap<Value, size_t> wireToBlock;
+
+  void closeBlock(size_t idx);
+  void closeBlockOnWire(Value v);
+  void process(Operation* op, const NativeProfileSpec& spec);
+  LogicalResult materialize(IRRewriter& rewriter,
+                            const NativeProfileSpec& spec);
+};
 
 /// Check whether a two-qubit op `op` is already expressible by the resolved
 /// native menu: a single-control `CX`/`CZ` consistent with the active
 /// entangler, or `Rzz` when `spec.allowRzz` is set. Multi-control and other
 /// two-qubit ops are considered non-native.
-static bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
+bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
   if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
@@ -58,25 +97,18 @@ static bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
 /// Decide whether replacing a consolidated window is worthwhile. Always
 /// replace a window that contains any non-native op (we have to lower them
 /// anyway); otherwise only replace when the deterministic synthesizer uses
-/// strictly fewer entanglers than the window already contains. (Leftover
-/// single-qubit gates are cleaned up by the surrounding fuse passes, so the
-/// 1q count is not part of the decision.)
-static bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
-                                        std::uint8_t numBasisUses) {
+/// strictly fewer entanglers than the window already contains.
+bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
+                                 std::uint8_t numBasisUses) {
   if (block.anyNonNative) {
     return true;
   }
   return numBasisUses < block.numTwoQ;
 }
 
-/// Emit the deterministic native synthesis of `block.accum` at the location of
-/// the window's first op, rewire the block's trailing SSA values (`wireA`,
-/// `wireB`) to the newly emitted outputs, and erase the replaced ops in
-/// reverse order so def-use edges are cleared before their defining ops
-/// disappear.
-static LogicalResult
-materializeSingleTwoQubitBlock(IRRewriter& rewriter, const TwoQubitBlock& block,
-                               const NativeProfileSpec& spec) {
+LogicalResult materializeSingleTwoQubitBlock(IRRewriter& rewriter,
+                                             const TwoQubitBlock& block,
+                                             const NativeProfileSpec& spec) {
   Operation* firstOp = block.ops.front();
   auto firstUnitary = llvm::cast<UnitaryOpInterface>(firstOp);
   const Value inA = firstUnitary.getInputQubit(0);
@@ -100,21 +132,6 @@ materializeSingleTwoQubitBlock(IRRewriter& rewriter, const TwoQubitBlock& block,
   return success();
 }
 
-void collectUnitaryOpsInPreOrder(Operation* root,
-                                 llvm::SmallVectorImpl<Operation*>& ops) {
-  root->walk([&](Operation* op) {
-    if (op->getParentOfType<CtrlOp>()) {
-      return;
-    }
-    if (!llvm::isa<InvOp>(op) && op->getParentOfType<InvOp>()) {
-      return;
-    }
-    if (llvm::isa<UnitaryOpInterface>(op)) {
-      ops.push_back(op);
-    }
-  });
-}
-
 void TwoQubitWindowConsolidator::closeBlock(size_t idx) {
   auto& block = blocks[idx];
   if (!block.open) {
@@ -133,33 +150,8 @@ void TwoQubitWindowConsolidator::closeBlockOnWire(Value v) {
   }
 }
 
-/// State-machine step for one IR op, invoked in walk order over the module.
-///
-/// The consolidator tracks a set of *maximal two-qubit windows* -- contiguous
-/// slices of the dataflow where at most two qubit wires interact -- so a
-/// later pass can re-synthesize each window as a single 4x4 unitary. For
-/// each op we update two pieces of state:
-///
-///   * `blocks`        -- append-only list of `TwoQubitBlock`s. Closed
-///                        blocks are kept so `materialize()` can rewrite
-///                        them later.
-///   * `wireToBlock`   -- maps each *currently-open* SSA qubit Value to the
-///                        index of the block that still owns it.
-///                        Re-keyed whenever an op produces a new output
-///                        Value on a tracked wire.
-///
-/// Because `process` is called in pre-order over the IR, when we see an op
-/// its input Values have already been processed (or were function
-/// arguments). A block stays open for a wire as long as every op consuming
-/// that wire is either (a) a single-qubit op absorbable into the block, or
-/// (b) another two-qubit op on the *same* pair of wires. Any other
-/// consumer -- a barrier, a control, a different pair of wires, a
-/// multi-use fork -- closes the block.
 void TwoQubitWindowConsolidator::process(Operation* op,
                                          const NativeProfileSpec& spec) {
-  // Skip ops nested under `ctrl` / `inv` (e.g. `ctrl { inv { ... } }`,
-  // `inv { ... }`): handled via the shell op, not as independent gates for
-  // window tracking.
   if (op->getParentOfType<CtrlOp>()) {
     return;
   }
@@ -170,9 +162,6 @@ void TwoQubitWindowConsolidator::process(Operation* op,
   if (!unitary) {
     return;
   }
-  // Barriers and stand-alone global-phase ops are not unitaries we can
-  // absorb; they act as synchronization points that force any block
-  // touching their operand wires to close.
   if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
     for (Value v : op->getOperands()) {
       closeBlockOnWire(v);
@@ -181,8 +170,6 @@ void TwoQubitWindowConsolidator::process(Operation* op,
   }
 
   if (unitary.isTwoQubit()) {
-    // A two-qubit op for which we cannot build a 4x4 matrix is opaque to the
-    // window model; close any blocks on its inputs and bail out.
     Matrix4x4 opMatrix;
     if (!getBlockTwoQubitMatrix(op, opMatrix)) {
       closeBlockOnWire(unitary.getInputQubit(0));
@@ -191,9 +178,6 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     }
     const Value v0 = unitary.getInputQubit(0);
     const Value v1 = unitary.getInputQubit(1);
-    // Defensive guard: malformed/degenerated two-qubit ops with identical
-    // input wires cannot be represented by this window model. Treat them as
-    // synchronization points and avoid map-iterator aliasing UB below.
     if (v0 == v1) {
       closeBlockOnWire(v0);
       return;
@@ -206,27 +190,13 @@ void TwoQubitWindowConsolidator::process(Operation* op,
         tracked0 ? std::optional(it0->second) : std::nullopt;
     const std::optional<size_t> idx1 =
         tracked1 ? std::optional(it1->second) : std::nullopt;
-    // "Same block" means the two input wires are currently the (wireA,
-    // wireB) pair of one existing block -- i.e. this op operates on the
-    // same pair as the previous two-qubit op in that block. Otherwise the
-    // op either extends into a *new* pair (merging two blocks, which we
-    // don't support) or starts a fresh block.
     const bool sameBlock =
         idx0.has_value() && idx1.has_value() && *idx0 == *idx1;
     const bool singleUse = v0.hasOneUse() && v1.hasOneUse();
 
-    // ---- Case A: extend the existing block ---------------------------
-    // Both inputs belong to the same open block and nothing else uses
-    // them. Absorb the new gate into the block's accumulated unitary and
-    // advance the tracked wires to this op's outputs.
     if (sameBlock && singleUse) {
       const size_t idx = *idx0;
       auto& block = blocks[idx];
-      // `block.accum` is the composite 4x4 unitary of the gates absorbed so
-      // far, with qubit 0 == `wireA` and qubit 1 == `wireB`. The incoming
-      // op's `opMatrix` is in the (v0, v1) operand order, so we reorder it
-      // to the block's (wireA, wireB) convention before left-multiplying
-      // (newest gate on the left, matching matrix-times-column-state order).
       llvm::SmallVector<decomposition::QubitId, 2> ids;
       if (v0 == block.wireA && v1 == block.wireB) {
         ids = {0, 1};
@@ -265,13 +235,6 @@ void TwoQubitWindowConsolidator::process(Operation* op,
       return;
     }
 
-    // ---- Case B: close overlapping blocks, start a new one ----------
-    // The inputs do not form a clean pair on an existing block (fan-out,
-    // straddling two different blocks, or only one wire tracked). Closing
-    // the affected blocks prevents wire-to-block aliasing from becoming
-    // inconsistent -- note the second `if` guards against double-closing
-    // the same block when both inputs happened to live in it but `sameBlock
-    // && singleUse` was false (e.g. only fan-out violated).
     if (idx0.has_value()) {
       closeBlock(*idx0);
     }
@@ -292,10 +255,6 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     return;
   }
 
-  // ---- Case C: single-qubit op on a tracked wire -------------------
-  // Absorbable into the block's accumulated 4x4 by lifting the 2x2 to the
-  // appropriate tensor slot. If the wire is not tracked, the op simply
-  // does not interact with any open block and is left for other passes.
   if (unitary.isSingleQubit()) {
     const Value v = unitary.getInputQubit(0);
     auto it = wireToBlock.find(v);
@@ -305,10 +264,6 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     const size_t idx = it->second;
     auto& block = blocks[idx];
     Matrix2x2 raw;
-    // `!v.hasOneUse()` is the fan-out guard: if any other op also consumes
-    // this wire, we cannot soundly absorb this single-qubit gate into the
-    // block (the sibling user would see the pre-gate state). Close the
-    // block and let the outer pass rewrite the op individually.
     if (!unitary.getUnitaryMatrix2x2(raw) || !v.hasOneUse()) {
       closeBlock(idx);
       return;
@@ -333,9 +288,6 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     return;
   }
 
-  // ---- Case D: any other unitary (e.g. >2-qubit ops) ---------------
-  // We can neither absorb nor continue a window through an op of unknown
-  // arity, so close every block that touches one of its operand wires.
   for (Value v : op->getOperands()) {
     closeBlockOnWire(v);
   }
@@ -349,15 +301,10 @@ TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
     if (block.ops.size() < 2) {
       continue;
     }
-    // Rewriting earlier windows can erase ops captured in later windows.
-    // Track erased op pointers and skip such windows without dereferencing
-    // potentially dangling `Operation*`.
     if (llvm::any_of(block.ops,
                      [&](Operation* op) { return erasedOps.contains(op); })) {
       continue;
     }
-    // Leave `block.accum` unnormalized: Weyl folds the stripped global phase
-    // into the synthesized `gphase`.
     const auto numBasisUses = twoQubitEntanglerCount(block.accum, spec);
     if (!numBasisUses) {
       continue;
@@ -374,5 +321,49 @@ TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
   }
   return success();
 }
+
+} // namespace
+
+LogicalResult fuseTwoQubitUnitaryRuns(IRRewriter& rewriter, Operation* root,
+                                      const NativeProfileSpec& spec) {
+  llvm::SmallVector<Operation*, 32> ops;
+  collectUnitaryOpsInPreOrder(root, ops);
+  TwoQubitWindowConsolidator consolidator;
+  for (Operation* op : ops) {
+    consolidator.process(op, spec);
+  }
+  return consolidator.materialize(rewriter, spec);
+}
+
+namespace {
+
+struct FuseTwoQubitUnitaryRunsPass final
+    : impl::FuseTwoQubitUnitaryRunsBase<FuseTwoQubitUnitaryRunsPass> {
+  using Base::Base;
+
+  explicit FuseTwoQubitUnitaryRunsPass(FuseTwoQubitUnitaryRunsOptions options)
+      : Base(std::move(options)) {}
+
+protected:
+  void runOnOperation() override {
+    if (llvm::StringRef(nativeGates).trim().empty()) {
+      return;
+    }
+    auto specOpt = resolveNativeGatesSpec(nativeGates);
+    if (!specOpt) {
+      getOperation().emitError()
+          << "unsupported native gate menu (native-gates='" << nativeGates
+          << "')";
+      signalPassFailure();
+      return;
+    }
+    IRRewriter rewriter(&getContext());
+    if (failed(fuseTwoQubitUnitaryRuns(rewriter, getOperation(), *specOpt))) {
+      signalPassFailure();
+    }
+  }
+};
+
+} // namespace
 
 } // namespace mlir::qco::native_synth

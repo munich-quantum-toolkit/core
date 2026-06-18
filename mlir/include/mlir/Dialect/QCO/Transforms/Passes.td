@@ -66,6 +66,34 @@ def FuseSingleQubitUnitaryRuns
                         "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx).">];
 }
 
+def FuseTwoQubitUnitaryRuns
+    : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Fuse two-qubit unitary runs using Weyl/KAK resynthesis";
+  let description = [{
+    Scans the module for maximal two-qubit windows: contiguous sequences of
+    two-qubit unitaries on the same wire pair, with single-qubit gates on those
+    wires absorbed into the window's accumulated `4×4` unitary when they have
+    a single use. Each window with at least two ops is replaced when beneficial:
+    when the window contains any gate outside the `native-gates` menu, or when
+    deterministic Weyl/KAK resynthesis to that menu uses strictly fewer
+    entanglers than the window already contains.
+
+    The `native-gates` option uses the same comma-separated token list as
+    `native-gate-synthesis` (e.g. `u,cx`, `x,sx,rz,cx`). An empty or
+    whitespace-only menu is a no-op. An unrecognised token causes the pass to
+    fail.
+
+    Barriers, global phase, fan-out, and ops on more than two qubits close
+    open windows. Bodies nested under `qco.ctrl` or `qco.inv` are not tracked
+    independently.
+  }];
+  let options = [Option<
+      "nativeGates", "native-gates", "std::string", "\"\"",
+      "Comma-separated native gate menu. Empty or whitespace-only is "
+      "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz, rzz.">];
+}
+
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
   let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];
@@ -178,8 +206,8 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
       Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
 
     Execution order (mirrors the implementation): fuse consecutive
-    single-qubit runs; consolidate two-qubit windows (including absorbed
-    single-qubit padding); run up to four synthesis sweeps over remaining
+    single-qubit runs; fuse two-qubit windows (including absorbed
+    single-qubit padding) via `fuse-two-qubit-unitary-runs`; run up to four synthesis sweeps over remaining
     non-native unitaries until every single-qubit op matches the menu (two-qubit
     lowering may temporarily emit off-menu 1q ops that later sweeps absorb—if
     any remain after that cap, the pass fails); fuse 1q seams between two-qubit

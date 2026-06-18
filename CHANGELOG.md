@@ -12,6 +12,9 @@ with the exception that minor releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `fuse-two-qubit-unitary-runs` pass
+  for fusing compile-time two-qubit unitary windows via Weyl/KAK resynthesis
+  ([#1655]) ([**@simon1hofmann**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
   for fusing compile-time single-qubit unitary runs via Euler resynthesis
   ([#1672]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -631,6 +634,7 @@ changelogs._
 [#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
 [#1660]: https://github.com/munich-quantum-toolkit/core/pull/1660
+[#1655]: https://github.com/munich-quantum-toolkit/core/pull/1655
 [#1652]: https://github.com/munich-quantum-toolkit/core/pull/1652
 [#1638]: https://github.com/munich-quantum-toolkit/core/pull/1638
 [#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637

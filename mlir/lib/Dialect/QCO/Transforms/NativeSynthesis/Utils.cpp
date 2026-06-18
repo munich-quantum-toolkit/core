@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/APFloat.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -22,6 +23,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <cmath>
 #include <complex>
@@ -86,6 +88,21 @@ bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix) {
   }
   matrix = raw;
   return true;
+}
+
+void collectUnitaryOpsInPreOrder(Operation* root,
+                                 llvm::SmallVectorImpl<Operation*>& ops) {
+  root->walk([&](Operation* op) {
+    if (op->getParentOfType<CtrlOp>()) {
+      return;
+    }
+    if (!llvm::isa<InvOp>(op) && op->getParentOfType<InvOp>()) {
+      return;
+    }
+    if (llvm::isa<UnitaryOpInterface>(op)) {
+      ops.push_back(op);
+    }
+  });
 }
 
 } // namespace mlir::qco::native_synth

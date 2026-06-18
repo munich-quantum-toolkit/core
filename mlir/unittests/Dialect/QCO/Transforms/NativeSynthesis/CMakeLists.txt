@@ -10,6 +10,7 @@ set(target_name mqt-core-mlir-unittest-native-synthesis)
 add_executable(
   ${target_name}
   native_synthesis_test_helpers.cpp
+  test_fuse_two_qubit_unitary_runs.cpp
   test_native_policy.cpp
   test_native_spec.cpp
   test_native_synthesis_pass_custom_menus.cpp

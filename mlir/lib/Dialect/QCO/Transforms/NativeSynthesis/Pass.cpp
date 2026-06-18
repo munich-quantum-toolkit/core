@@ -12,12 +12,11 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/FuseTwoQubitUnitaryRuns.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/PassTwoQubitWindows.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/SingleQubit.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -58,6 +57,7 @@ using native_synth::decomposeToZSXX;
 using native_synth::emitSingleQubitMatrix;
 using native_synth::emitterEulerBasis;
 using native_synth::emitTwoQubitNative;
+using native_synth::fuseTwoQubitUnitaryRuns;
 using native_synth::getBlockTwoQubitMatrix;
 using native_synth::NativeGateKind;
 using native_synth::NativeProfileSpec;
@@ -65,7 +65,6 @@ using native_synth::resolveNativeGatesSpec;
 using native_synth::rewriteXXPlusMinusYYViaRzz;
 using native_synth::SingleQubitEmitterSpec;
 using native_synth::SingleQubitMode;
-using native_synth::TwoQubitWindowConsolidator;
 using native_synth::usesCxEntangler;
 using native_synth::usesCzEntangler;
 
@@ -408,13 +407,7 @@ private:
   /// native sequence exists.
   LogicalResult consolidateTwoQubitBlocks(IRRewriter& rewriter,
                                           const NativeProfileSpec& spec) {
-    llvm::SmallVector<Operation*, 32> ops;
-    collectUnitaryOpsInPreOrder(getOperation(), ops);
-    TwoQubitWindowConsolidator consolidator;
-    for (Operation* op : ops) {
-      consolidator.process(op, spec);
-    }
-    return consolidator.materialize(rewriter, spec);
+    return fuseTwoQubitUnitaryRuns(rewriter, getOperation(), spec);
   }
 
   /// One synthesis sweep over the whole function: rewrite every remaining

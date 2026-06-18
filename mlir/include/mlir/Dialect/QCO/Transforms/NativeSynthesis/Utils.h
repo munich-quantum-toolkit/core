@@ -13,6 +13,8 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/ADT/SmallVector.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 
 #include <optional>
@@ -33,5 +35,10 @@ void emitGPhaseIfNonTrivial(IRRewriter& rewriter, Location loc, double phase);
 /// 4x4 for a 2q block member (plain 2q, ``CtrlOp`` CX/CZ, or lifted 1q). Fails
 /// for barriers, ``gphase``, multi-control, or non-constant matrix parameters.
 bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix);
+
+/// Pre-order walk: every op implementing `UnitaryOpInterface` under `root`,
+/// excluding bodies nested under `ctrl` / `inv`.
+void collectUnitaryOpsInPreOrder(Operation* root,
+                                 llvm::SmallVectorImpl<Operation*>& ops);
 
 } // namespace mlir::qco::native_synth
