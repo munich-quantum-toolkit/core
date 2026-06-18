@@ -15,7 +15,18 @@
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/ClassicalArithOperation.h"
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/QuantumState.hpp"
 
+#include <mlir/IR/Operation.h>
+#include <mlir/Support/LLVM.h>
+
+#include <complex>
+#include <cstddef>
 #include <format>
+#include <memory>
+#include <ostream>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace mlir::qco {
 
@@ -71,7 +82,8 @@ bool HybridState::operator==(const HybridState& that) const {
   if (top) {
     return that.top;
   }
-  if (probability != that.probability || *qState.get() != *that.qState.get()) {
+  if (std::fabs(probability - that.probability) > 1e-4 ||
+      *qState.get() != *that.qState.get()) {
     return false;
   }
 
@@ -88,7 +100,7 @@ bool HybridState::operator==(const HybridState& that) const {
 
   for (const auto& [d, v] : doubleValues) {
     if (!that.doubleValues.contains(d) ||
-        std::norm(that.doubleValues.at(d)) > 1e-4) {
+        std::fabs(that.doubleValues.at(d)) > 1e-4) {
       return false;
     }
   }
@@ -201,7 +213,7 @@ void HybridState::propagateClassicalOperation(
   }
 }
 
-HybridState HybridState::unify(HybridState that) {
+HybridState HybridState::unify(const HybridState& that) {
   auto newHybridState = HybridState();
   try {
     newHybridState.qState =
