@@ -122,11 +122,7 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto referenceBuilder = GetParam().referenceBuilder;
   mqt::test::DeferredPrinter printer;
 
-  llvm::SourceMgr sourceMgr;
-  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(source);
-  sourceMgr.AddNewSourceBuffer(std::move(buffer), SMLoc());
-
-  auto translated = qc::translateQASM3ToQC(context.get(), sourceMgr);
+  auto translated = qc::translateQASM3ToQC(source, context.get());
   ASSERT_TRUE(translated);
   printer.record(translated.get(), "Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());

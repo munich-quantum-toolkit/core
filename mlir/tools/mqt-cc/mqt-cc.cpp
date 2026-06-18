@@ -91,7 +91,7 @@ static llvm::cl::opt<bool> enableHadamardLifting(
 /**
  * @brief Load and parse a .qasm file
  */
-static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
+static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
                                           MLIRContext* context) {
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
@@ -103,13 +103,13 @@ static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
 
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
-  return qc::translateQASM3ToQC(context, sourceMgr);
+  return qc::translateQASM3ToQC(sourceMgr, context);
 }
 
 /**
  * @brief Load and parse a .mlir file
  */
-static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
+static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
                                           MLIRContext* context) {
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
@@ -127,8 +127,7 @@ static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
 /**
  * @brief Write the module to the output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module,
-                                       llvm::StringRef filename) {
+static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {

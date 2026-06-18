@@ -28,6 +28,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -1029,8 +1030,8 @@ public:
 // Public API
 //===----------------------------------------------------------------------===//
 
-OwningOpRef<ModuleOp> translateQASM3ToQC(MLIRContext* context,
-                                         llvm::SourceMgr& sourceMgr) {
+OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
+                                         MLIRContext* context) {
   try {
     auto buffer =
         sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer();
@@ -1050,6 +1051,14 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(MLIRContext* context,
     llvm::errs() << "Import error: " << e.what() << "\n";
     return nullptr;
   }
+}
+
+OwningOpRef<ModuleOp> translateQASM3ToQC(StringRef source,
+                                         MLIRContext* context) {
+  llvm::SourceMgr sourceMgr;
+  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(source);
+  sourceMgr.AddNewSourceBuffer(std::move(buffer), SMLoc());
+  return translateQASM3ToQC(sourceMgr, context);
 }
 
 } // namespace mlir::qc
