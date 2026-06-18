@@ -184,8 +184,7 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
     non-native unitaries until every single-qubit op matches the menu (two-qubit
     lowering may temporarily emit off-menu 1q ops that later sweeps absorb—if
     any remain after that cap, the pass fails); fuse 1q seams between two-qubit
-    blocks; merge `rz` through eligible `qco.ctrl` control wires; fuse 1q runs
-    again; then up to four further synthesis + fusion rounds until the full menu
+    blocks; then up to four further synthesis + fusion rounds until the full menu
     holds (including native `qco.ctrl` shells and bare `rzz` when allowed). If
     anything is still off-menu, the pass fails.
 

@@ -21,12 +21,10 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -188,9 +186,8 @@ namespace {
 
 /// Lowers unitary QCO ops to a comma-separated native gate menu using a
 /// deterministic, matrix-driven synthesizer: single-qubit fuse, two-qubit
-/// window consolidation, synthesis sweeps, seam single-qubit fuse, `rz`
-/// through `ctrl` controls, another single-qubit fuse, optional cleanup
-/// sweeps.
+/// window consolidation, synthesis sweeps, seam single-qubit fuse, and
+/// optional cleanup sweeps.
 struct NativeGateSynthesisPass
     : impl::NativeGateSynthesisPassBase<NativeGateSynthesisPass> {
   /// Default-construct the pass with the TableGen-generated option defaults.
@@ -212,8 +209,8 @@ protected:
   /// Top-level pass entry point. Resolves the native-gate menu, then drives
   /// the staged rewrite pipeline: one-qubit run fusion, two-qubit window
   /// consolidation, synthesis sweeps until the single-qubit surface is native,
-  /// seam cleanup, `rz`-through-`ctrl` folding, and a final fusion pass. Fails
-  /// the pass on invalid input or non-convergence.
+  /// seam cleanup, and a final fusion pass. Fails the pass on invalid input or
+  /// non-convergence.
   void runOnOperation() override {
     // Empty native-gates string: no-op.
     if (llvm::StringRef(nativeGates).trim().empty()) {
@@ -241,7 +238,7 @@ protected:
       return;
     }
     // Two-qubit lowering can emit off-menu single-qubit ops (e.g. `rx`/`ry`);
-    // repeat until clean or hit the sweep cap before seam / `rz` cleanup.
+    // repeat until clean or hit the sweep cap before seam cleanup.
     constexpr unsigned kMaxSynthesisSweeps = 4;
     for (unsigned i = 0; i < kMaxSynthesisSweeps; ++i) {
       if (failed(synthesizeRemainingOps(rewriter, spec, oneQubitBasis))) {
@@ -261,9 +258,6 @@ protected:
       return;
     }
     // Fuse single-qubit seams between two-qubit blocks.
-    fuseOneQubitRuns(rewriter, spec, oneQubitBasis);
-    // Fuse `rz` through control wires of `ctrl` (diagonal control phase).
-    fuseRzAcrossCtrlControls(rewriter);
     fuseOneQubitRuns(rewriter, spec, oneQubitBasis);
     // Re-check full menu (single-qubit ops, native `ctrl`, allowed bare `rzz`).
     constexpr unsigned kPostMenuCleanupSweeps = 4;
@@ -407,82 +401,6 @@ private:
         continue;
       }
       (void)maybeFuseRun(rewriter, run, basis, spec);
-    }
-  }
-
-  /// If `rz1` can reach another `rz` through at least one `ctrl` control hop,
-  /// merge angles into `rz1` and erase the partner.
-  ///
-  /// `Rz` commutes with a `ctrl` operation acting on the same wire when the
-  /// wire is a *control* line (controls only diagonalize the computational
-  /// basis and are invariant under Z-rotations). We walk the def-use chain
-  /// forward from `rz1`'s output, hopping through `ctrl`s where the wire is
-  /// used as a control, and fold into the next `rz` we find. The `hops == 0`
-  /// guard intentionally rejects two adjacent `rz`s with nothing in between
-  /// -- that case is handled by `fuseOneQubitRuns` above.
-  static bool tryFuseRzForwardThroughCtrls(IRRewriter& rewriter, RZOp rz1) {
-    Value v = rz1->getResult(0);
-    if (!llvm::isa<qco::QubitType>(v.getType())) {
-      return false;
-    }
-    RZOp partner;
-    unsigned hops = 0;
-    while (v.hasOneUse()) {
-      Operation* user = *v.getUsers().begin();
-      if (auto rz2 = llvm::dyn_cast<RZOp>(user);
-          rz2 && rz2->getOperand(0) == v) {
-        partner = rz2;
-        break;
-      }
-      auto ctrl = llvm::dyn_cast<CtrlOp>(user);
-      if (!ctrl) {
-        return false;
-      }
-      // Only control wires commute through `ctrl` here.
-      if (!llvm::is_contained(ctrl.getControlsIn(), v)) {
-        return false;
-      }
-      v = ctrl.getOutputForInput(v);
-      ++hops;
-    }
-    if (!partner || hops == 0) {
-      return false;
-    }
-
-    // Fold angles; use a scalar constant when both inputs are constant.
-    const Location loc = rz1.getLoc();
-    const Value theta1 = rz1.getTheta();
-    const Value theta2 = partner.getTheta();
-    const auto c1 = mlir::utils::valueToDouble(theta1);
-    const auto c2 = mlir::utils::valueToDouble(theta2);
-    rewriter.setInsertionPoint(rz1);
-    Value newTheta;
-    if (c1.has_value() && c2.has_value()) {
-      newTheta = mlir::utils::constantFromScalar(rewriter, loc, *c1 + *c2);
-    } else {
-      newTheta = arith::AddFOp::create(rewriter, loc, theta1, theta2);
-    }
-    rewriter.modifyOpInPlace(rz1,
-                             [&] { rz1.getThetaMutable().assign(newTheta); });
-    rewriter.replaceOp(partner, partner->getOperand(0));
-    return true;
-  }
-
-  /// Fixpoint: merge `rz` through `ctrl` control chains into the next `rz`.
-  void fuseRzAcrossCtrlControls(IRRewriter& rewriter) {
-    bool changed = true;
-    while (changed) {
-      changed = false;
-      llvm::SmallVector<RZOp, 32> rzOps;
-      getOperation()->walk([&](RZOp rz) { rzOps.push_back(rz); });
-      for (RZOp rz : rzOps) {
-        if (rz->getBlock() == nullptr) {
-          continue;
-        }
-        if (tryFuseRzForwardThroughCtrls(rewriter, rz)) {
-          changed = true;
-        }
-      }
     }
   }
 
