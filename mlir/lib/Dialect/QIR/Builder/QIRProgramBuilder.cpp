@@ -10,7 +10,9 @@
 
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 
+#include "mlir/Dialect/QIR/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Support/Passes.h"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
@@ -28,6 +30,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
@@ -130,7 +133,6 @@ Value QIRProgramBuilder::allocQubit() {
   Value qubit;
   if (profile == Profile::Adaptive) {
     ensureAllocationMode(AllocationMode::Dynamic);
-    metadata_.useDynamicQubit = true;
 
     auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
     auto fnDec =
@@ -139,7 +141,7 @@ Value QIRProgramBuilder::allocQubit() {
     auto zero = LLVM::ZeroOp::create(*this, ptrType);
     qubit = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
   } else {
-    qubit = staticQubit(static_cast<int64_t>(metadata_.numQubits));
+    qubit = staticQubit(static_cast<int64_t>(numQubits));
   }
 
   qubits.insert(qubit);
@@ -169,8 +171,8 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   }
 
   // Update qubit count
-  if (std::cmp_greater_equal(index, metadata_.numQubits)) {
-    metadata_.numQubits = static_cast<size_t>(index) + 1;
+  if (std::cmp_greater_equal(index, numQubits)) {
+    numQubits = static_cast<size_t>(index) + 1;
   }
 
   return qubit;
@@ -198,8 +200,8 @@ Value QIRProgramBuilder::staticResult(const int64_t index) {
   }
 
   // Update result count
-  if (std::cmp_greater_equal(index, metadata_.numResults)) {
-    metadata_.numResults = static_cast<size_t>(index) + 1;
+  if (std::cmp_greater_equal(index, numResults)) {
+    numResults = static_cast<size_t>(index) + 1;
   }
 
   return result;
@@ -228,8 +230,6 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   if (profile == Profile::Adaptive) {
     // Create a dynamic qubit array and load the qubits in the Adaptive Profile
     ensureAllocationMode(AllocationMode::Dynamic);
-    metadata_.useArrays = true;
-    metadata_.useDynamicQubit = true;
 
     auto allocFnSignature =
         LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(getContext()),
@@ -257,7 +257,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   } else {
     // Create static qubits in the Base Profile
     for (int64_t i = 0; i < size; ++i) {
-      auto qubit = staticQubit(static_cast<int64_t>(metadata_.numQubits));
+      auto qubit = staticQubit(static_cast<int64_t>(numQubits));
       qubits.push_back(qubit);
     }
   }
@@ -317,8 +317,6 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
 
   if (profile == Profile::Adaptive) {
     // Create a dynamic result array for the Adaptive Profile
-    metadata_.useDynamicResult = true;
-    metadata_.useArrays = true;
 
     auto fnSig =
         LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
@@ -343,7 +341,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   } else {
     // Use static results in the Base Profile
     for (int64_t i = 0; i < size; ++i) {
-      auto result = staticResult(static_cast<int64_t>(metadata_.numResults));
+      auto result = staticResult(static_cast<int64_t>(numResults));
       loadedResults.try_emplace({stringSaver.save(name), i}, result);
     }
   }
@@ -392,9 +390,7 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
     llvm::reportFatalUsageError("Bit does not belong to a result pointer");
   }
   auto result = it->second;
-  if (profile == Profile::Adaptive) {
-    metadata_.useDynamicResult = true;
-  } else {
+  if (profile != Profile::Adaptive) {
     setInsertionPoint(measurementsBlock->getTerminator());
   }
 
@@ -726,11 +722,6 @@ QIRProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
                                 "Adaptive Profile is selected.");
   }
 
-  int& backwardsBranchingFlag = metadata_.backwardsBranching;
-  if (backwardsBranchingFlag != 1 && backwardsBranchingFlag != 3) {
-    backwardsBranchingFlag += 1;
-  }
-
   auto loc = getLoc();
   auto lb = resolveIntVariant(lowerbound);
   auto ub = resolveIntVariant(upperbound);
@@ -851,11 +842,6 @@ QIRProgramBuilder::scfWhile(const function_ref<Value()>& beforeBody,
   if (profile == Profile::Base) {
     llvm::reportFatalUsageError("While operation can only be used if the "
                                 "Adaptive Profile is selected.");
-  }
-
-  int& backwardsBranchingFlag = metadata_.backwardsBranching;
-  if (backwardsBranchingFlag != 2 && backwardsBranchingFlag != 3) {
-    backwardsBranchingFlag += 2;
   }
 
   auto* currentBlock = getInsertionBlock();
@@ -985,11 +971,12 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
   // Save current insertion point
   const InsertionGuard guard(*this);
+  const bool isAdaptive = (profile == Profile::Adaptive);
 
   // Release resources in output block
   setInsertionPoint(outputBlock->getTerminator());
 
-  if (profile == Profile::Adaptive) {
+  if (isAdaptive) {
     for (auto qubit : qubits) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec =
@@ -1009,7 +996,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   // Generate output recording in output block
   generateOutputRecording();
 
-  if (profile == Profile::Adaptive) {
+  if (isAdaptive) {
     for (auto& [_, ptr] : resultPtrs) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(*this, module,
@@ -1026,13 +1013,17 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
     }
   }
 
-  auto mainFuncOp = cast<LLVM::LLVMFuncOp>(mainFunc);
-  metadata_.useAdaptive = profile == Profile::Adaptive;
-  setQIRAttributes(mainFuncOp, metadata_);
-
+  // Attach attributes
+  auto m = cast<ModuleOp>(module);
+  std::ignore = runWithPassManager(
+      m,
+      [&](PassManager& pm) {
+        pm.addPass(qir::createQIRSetAttributesAndMetadata({isAdaptive}));
+      },
+      "Failed to attach attributes");
   isFinalized = true;
 
-  return cast<ModuleOp>(module);
+  return m;
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(

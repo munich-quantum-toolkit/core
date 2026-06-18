@@ -57,18 +57,18 @@ master_doc = "index"
 templates_path = ["_templates"]
 
 extensions = [
-    "myst_nb",
     "autoapi.extension",
+    "breathe",
+    "myst_nb",
+    "sphinx_copybutton",
+    "sphinx_design",
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
-    "sphinx_copybutton",
-    "sphinx_design",
-    "sphinxext.opengraph",
     "sphinx.ext.viewcode",
-    "sphinxcontrib.inkscapeconverter",
     "sphinxcontrib.bibtex",
-    "breathe",
+    "sphinxcontrib.inkscapeconverter",
+    "sphinxext.opengraph",
 ]
 
 source_suffix = [".rst", ".md"]
@@ -178,6 +178,7 @@ if read_the_docs_build:
     )
 
 # -- Options for HTML output -------------------------------------------------
+
 html_theme = "furo"
 html_static_path = ["_static"]
 html_css_files = [
