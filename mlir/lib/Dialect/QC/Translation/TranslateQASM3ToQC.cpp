@@ -539,7 +539,7 @@ public:
     }
 
     if (it == gates.end()) {
-      throw qasm3::CompilerError("No OpenQASM 3 definition found for gate '" +
+      throw qasm3::CompilerError("No OpenQASM definition found for gate '" +
                                      id + "'.",
                                  stmt->debugInfo);
     }
