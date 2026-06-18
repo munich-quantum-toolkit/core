@@ -10,25 +10,13 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <complex>
 
-/// Numeric + classification helpers used by the decomposition passes.
-/// Lives in `mlir::qco::helpers` (not `decomposition`) because some helpers
-/// map IR ops back to decomposition kinds.
+/// Numeric helpers used by the decomposition passes.
 
 namespace mlir::qco::helpers {
-
-/**
- * Map a QCO unitary operation to the corresponding decomposition `GateKind`.
- *
- * For controlled operations, this returns the wrapped body operation type
- * rather than the outer `ctrl` marker.
- */
-[[nodiscard]] decomposition::GateKind getGateKind(UnitaryOpInterface op);
 
 /// Check whether `matrix` is unitary within `tolerance` (i.e. `M^H M` is
 /// approximately the identity).
@@ -57,12 +45,6 @@ namespace mlir::qco::helpers {
  * by the decomposition cost code.
  */
 [[nodiscard]] double traceToFidelity(const std::complex<double>& x);
-
-/**
- * Return the heuristic cost assigned to a gate acting on `numOfQubits`.
- */
-[[nodiscard]] std::size_t getComplexity(decomposition::GateKind type,
-                                        std::size_t numOfQubits);
 
 /**
  * Return the scalar `e^(i * globalPhase)` factor for a stored global phase.

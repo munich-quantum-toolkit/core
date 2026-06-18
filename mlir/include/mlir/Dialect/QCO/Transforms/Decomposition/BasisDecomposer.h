@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "Gate.h"
+#include "UnitaryMatrices.h"
 #include "WeylDecomposition.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
@@ -68,15 +68,12 @@ class TwoQubitBasisDecomposer {
 public:
   /**
    * Create decomposer that allows two-qubit decompositions based on the
-   * specified basis gate.
-   * This basis gate will appear between 0 and 3 times in each decomposition.
-   * The order of qubits is relevant and will change the results accordingly.
-   * The decomposer cannot handle different basis gates in the same
-   * decomposition (different order of the qubits also counts as a different
-   * basis gate).
+   * specified entangler matrix.
+   * This entangler will appear between 0 and 3 times in each decomposition.
+   * The 4x4 matrix must be in MQT operand order (qubit 0 = MSB).
    */
-  [[nodiscard]] static TwoQubitBasisDecomposer create(const Gate& basisGate,
-                                                      double basisFidelity);
+  [[nodiscard]] static TwoQubitBasisDecomposer
+  create(const Matrix4x4& basisMatrix, double basisFidelity);
 
   /**
    * Perform decomposition using the basis gate of this decomposer.
@@ -100,7 +97,7 @@ protected:
    * Constructs decomposer instance.
    */
   TwoQubitBasisDecomposer(
-      Gate basisGate, double basisFidelity,
+      double basisFidelity,
       const decomposition::TwoQubitWeylDecomposition& basisDecomposer,
       bool isSuperControlled, const Matrix2x2& u0l, const Matrix2x2& u0r,
       const Matrix2x2& u1l, const Matrix2x2& u1ra, const Matrix2x2& u1rb,
@@ -109,12 +106,11 @@ protected:
       const Matrix2x2& q0l, const Matrix2x2& q0r, const Matrix2x2& q1la,
       const Matrix2x2& q1lb, const Matrix2x2& q1ra, const Matrix2x2& q1rb,
       const Matrix2x2& q2l, const Matrix2x2& q2r)
-      : basisGate{std::move(basisGate)}, basisFidelity{basisFidelity},
-        basisDecomposer{basisDecomposer}, isSuperControlled{isSuperControlled},
-        u0l{u0l}, u0r{u0r}, u1l{u1l}, u1ra{u1ra}, u1rb{u1rb}, u2la{u2la},
-        u2lb{u2lb}, u2ra{u2ra}, u2rb{u2rb}, u3l{u3l}, u3r{u3r}, q0l{q0l},
-        q0r{q0r}, q1la{q1la}, q1lb{q1lb}, q1ra{q1ra}, q1rb{q1rb}, q2l{q2l},
-        q2r{q2r} {}
+      : basisFidelity{basisFidelity}, basisDecomposer{basisDecomposer},
+        isSuperControlled{isSuperControlled}, u0l{u0l}, u0r{u0r}, u1l{u1l},
+        u1ra{u1ra}, u1rb{u1rb}, u2la{u2la}, u2lb{u2lb}, u2ra{u2ra}, u2rb{u2rb},
+        u3l{u3l}, u3r{u3r}, q0l{q0l}, q0r{q0r}, q1la{q1la}, q1lb{q1lb},
+        q1ra{q1ra}, q1rb{q1rb}, q2l{q2l}, q2r{q2r} {}
   // NOLINTEND(modernize-pass-by-value)
 
   /**
@@ -201,8 +197,6 @@ protected:
                                        double maxRelative);
 
 private:
-  // basis gate of this decomposer instance
-  Gate basisGate{};
   // fidelity with which the basis gate decomposition has been calculated
   double basisFidelity;
   // cached decomposition for basis gate

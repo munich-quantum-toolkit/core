@@ -12,8 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
@@ -54,23 +53,19 @@ selectEntangler(const NativeProfileSpec& spec) {
   return std::nullopt;
 }
 
-/// Build the decomposition-layer basis gate for `entangler`. The qubit ids
-/// align with `getBlockTwoQubitMatrix` / CX layout (control on qubit 0).
-static decomposition::Gate entanglerGate(EntanglerBasis entangler) {
-  return decomposition::Gate{
-      .type = entangler == EntanglerBasis::Cz ? decomposition::GateKind::Z
-                                              : decomposition::GateKind::X,
-      .qubitId = {0, 1},
-  };
+/// 4x4 entangler matrix for `entangler` in MQT operand order (control on qubit
+/// 0 = MSB), matching `getBlockTwoQubitMatrix` / CX layout.
+static Matrix4x4 entanglerMatrix(EntanglerBasis entangler) {
+  return entangler == EntanglerBasis::Cz ? decomposition::czGate()
+                                         : decomposition::cxGate01();
 }
 
 /// Run the Weyl + basis decomposer for `target` against `entangler`, returning
 /// the raw single-qubit factors and entangler count (or `std::nullopt`).
 static std::optional<decomposition::TwoQubitNativeDecomposition>
 decomposeWithEntangler(const Matrix4x4& target, EntanglerBasis entangler) {
-  const auto basisGate = entanglerGate(entangler);
-  auto decomposer =
-      decomposition::TwoQubitBasisDecomposer::create(basisGate, 1.0);
+  auto decomposer = decomposition::TwoQubitBasisDecomposer::create(
+      entanglerMatrix(entangler), 1.0);
   auto weyl =
       decomposition::TwoQubitWeylDecomposition::create(target, std::nullopt);
   return decomposer.twoQubitDecompose(weyl, std::nullopt);

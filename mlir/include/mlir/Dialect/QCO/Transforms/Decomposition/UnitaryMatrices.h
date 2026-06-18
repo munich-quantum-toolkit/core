@@ -10,16 +10,21 @@
 
 #pragma once
 
-#include "Gate.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/SmallVector.h>
+
+#include <cstddef>
 
 /// Standard-basis matrix factories for the decomposition layer. Two-qubit
 /// matrices use the same computational-basis index bit order as
 /// ``UnitaryOpInterface::getUnitaryMatrix4x4`` (qubit 0 labels the high bit).
 
 namespace mlir::qco::decomposition {
+
+/// Logical qubit index used by ``expandToTwoQubits`` /
+/// ``fixTwoQubitMatrixQubitOrder``.
+using QubitId = std::size_t;
 
 inline constexpr double FRAC1_SQRT2 =
     0.707106781186547524400844362104849039284835937688474036588L;
@@ -50,6 +55,13 @@ inline constexpr double FRAC1_SQRT2 =
 /// `i * sigma_x`.
 [[nodiscard]] const Matrix2x2& ipx();
 
+/// CX entangler with control on qubit 0 (MSB) and target on qubit 1.
+[[nodiscard]] const Matrix4x4& cxGate01();
+/// CX entangler with control on qubit 1 and target on qubit 0 (MSB).
+[[nodiscard]] const Matrix4x4& cxGate10();
+/// CZ entangler (wire-order invariant).
+[[nodiscard]] const Matrix4x4& czGate();
+
 /// Kronecker-embed a 2x2 on wire ``qubitId`` (identity on the other wire).
 [[nodiscard]] Matrix4x4 expandToTwoQubits(const Matrix2x2& singleQubitMatrix,
                                           QubitId qubitId);
@@ -60,11 +72,5 @@ inline constexpr double FRAC1_SQRT2 =
 [[nodiscard]] Matrix4x4
 fixTwoQubitMatrixQubitOrder(const Matrix4x4& twoQubitMatrix,
                             const llvm::SmallVector<QubitId, 2>& qubitIds);
-
-/// Construct the 2x2 / 4x4 matrix described by `gate`. Two-qubit gates are
-/// returned in the convention matching `expandToTwoQubits` + the gate's own
-/// operand order.
-[[nodiscard]] Matrix2x2 getSingleQubitMatrix(const Gate& gate);
-[[nodiscard]] Matrix4x4 getTwoQubitMatrix(const Gate& gate);
 
 } // namespace mlir::qco::decomposition

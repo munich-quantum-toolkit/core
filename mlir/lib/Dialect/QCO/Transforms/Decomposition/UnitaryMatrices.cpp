@@ -10,8 +10,6 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/SmallVector.h>
@@ -129,6 +127,30 @@ const Matrix2x2& ipx() {
   return matrix;
 }
 
+const Matrix4x4& cxGate01() {
+  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+                                                          0, 1, 0, 0, //
+                                                          0, 0, 0, 1, //
+                                                          0, 0, 1, 0);
+  return matrix;
+}
+
+const Matrix4x4& cxGate10() {
+  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+                                                          0, 0, 0, 1, //
+                                                          0, 0, 1, 0, //
+                                                          0, 1, 0, 0);
+  return matrix;
+}
+
+const Matrix4x4& czGate() {
+  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+                                                          0, 1, 0, 0, //
+                                                          0, 0, 1, 0, //
+                                                          0, 0, 0, -1);
+  return matrix;
+}
+
 Matrix4x4 expandToTwoQubits(const Matrix2x2& singleQubitMatrix,
                             QubitId qubitId) {
   if (qubitId == 0) {
@@ -153,113 +175,6 @@ fixTwoQubitMatrixQubitOrder(const Matrix4x4& twoQubitMatrix,
   }
   llvm::reportFatalInternalError(
       "Invalid qubit IDs for fixing two-qubit matrix");
-}
-
-Matrix2x2 getSingleQubitMatrix(const Gate& gate) {
-  if (gate.type == GateKind::SX) {
-    return Matrix2x2::fromElements(Complex{0.5, 0.5}, Complex{0.5, -0.5},
-                                   Complex{0.5, -0.5}, Complex{0.5, 0.5});
-  }
-  if (gate.type == GateKind::RX) {
-    assert(gate.parameter.size() == 1);
-    return rxMatrix(gate.parameter[0]);
-  }
-  if (gate.type == GateKind::RY) {
-    assert(gate.parameter.size() == 1);
-    return ryMatrix(gate.parameter[0]);
-  }
-  if (gate.type == GateKind::RZ) {
-    assert(gate.parameter.size() == 1);
-    return rzMatrix(gate.parameter[0]);
-  }
-  if (gate.type == GateKind::X) {
-    return Matrix2x2::fromElements(0, 1, 1, 0);
-  }
-  if (gate.type == GateKind::I) {
-    return Matrix2x2::identity();
-  }
-  if (gate.type == GateKind::P) {
-    assert(gate.parameter.size() == 1);
-    return pMatrix(gate.parameter[0]);
-  }
-  if (gate.type == GateKind::U) {
-    assert(gate.parameter.size() == 3);
-    return uMatrix(gate.parameter[0], gate.parameter[1], gate.parameter[2]);
-  }
-  if (gate.type == GateKind::U2) {
-    assert(gate.parameter.size() == 2);
-    return u2Matrix(gate.parameter[0], gate.parameter[1]);
-  }
-  if (gate.type == GateKind::H) {
-    return hGate();
-  }
-  llvm::reportFatalInternalError(
-      "unsupported gate type for single qubit matrix");
-}
-
-// Reconstruct a two-qubit workspace matrix for a decomposition `Gate`.
-Matrix4x4 getTwoQubitMatrix(const Gate& gate) {
-  if (gate.qubitId.empty()) {
-    return Matrix4x4::identity();
-  }
-  if (gate.qubitId.size() == 1) {
-    return expandToTwoQubits(getSingleQubitMatrix(gate), gate.qubitId[0]);
-  }
-  if (gate.qubitId.size() == 2) {
-    const bool validPair01 =
-        gate.qubitId == llvm::SmallVector<QubitId, 2>{0, 1};
-    const bool validPair10 =
-        gate.qubitId == llvm::SmallVector<QubitId, 2>{1, 0};
-    if (!validPair01 && !validPair10) {
-      llvm::reportFatalInternalError(
-          "Invalid two-qubit gate qubit IDs: expected {0,1} or {1,0}");
-    }
-    if (gate.type == GateKind::X) {
-      // Controlled-X. The two matrices below are the *same* CX gate written in
-      // the two possible operand orderings used by `Gate::qubitId`: qubit 0 is
-      // the MSB of the 4x4 computational basis (matching
-      // `UnitaryOpInterface::getUnitaryMatrix4x4`), so swapping
-      // control/target wires produces a different basis-layout matrix.
-      if (validPair01) {
-        // control = wire 0 (MSB), target = wire 1.
-        return Matrix4x4::fromElements(1, 0, 0, 0, //
-                                       0, 1, 0, 0, //
-                                       0, 0, 0, 1, //
-                                       0, 0, 1, 0);
-      }
-      // control = wire 1, target = wire 0 (MSB).
-      return Matrix4x4::fromElements(1, 0, 0, 0, //
-                                     0, 0, 0, 1, //
-                                     0, 0, 1, 0, //
-                                     0, 1, 0, 0);
-    }
-    if (gate.type == GateKind::Z) {
-      // controlled Z (CZ)
-      return Matrix4x4::fromElements(1, 0, 0, 0, //
-                                     0, 1, 0, 0, //
-                                     0, 0, 1, 0, //
-                                     0, 0, 0, -1);
-    }
-    if (gate.type == GateKind::RXX) {
-      assert(gate.parameter.size() == 1);
-      return rxxMatrix(gate.parameter[0]);
-    }
-    if (gate.type == GateKind::RYY) {
-      assert(gate.parameter.size() == 1);
-      return ryyMatrix(gate.parameter[0]);
-    }
-    if (gate.type == GateKind::RZZ) {
-      assert(gate.parameter.size() == 1);
-      return rzzMatrix(gate.parameter[0]);
-    }
-    if (gate.type == GateKind::I) {
-      return Matrix4x4::identity();
-    }
-    llvm::reportFatalInternalError(
-        "Unsupported gate type for two qubit matrix");
-  }
-  llvm::reportFatalInternalError(
-      "Invalid number of qubit IDs for two-qubit matrix construction");
 }
 
 } // namespace mlir::qco::decomposition

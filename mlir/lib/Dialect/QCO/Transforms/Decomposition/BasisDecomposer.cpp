@@ -10,12 +10,12 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
 
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/ADT/Twine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
@@ -34,8 +34,9 @@ namespace mlir::qco::decomposition {
 
 using namespace std::complex_literals;
 
-TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
-                                                        double basisFidelity) {
+TwoQubitBasisDecomposer
+TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
+                                double basisFidelity) {
   const Matrix2x2 k12RArr = Matrix2x2::fromElements(
       1i * FRAC1_SQRT2, FRAC1_SQRT2, -FRAC1_SQRT2, -1i * FRAC1_SQRT2);
   const Matrix2x2 k12LArr =
@@ -46,8 +47,8 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
   // below is derived for a basis CX whose 4x4 matrix is the Qiskit/LSB form
   // `[[1,0,0,0],[0,0,0,1],[0,0,1,0],[0,1,0,0]]`, i.e. "control on the LSB
   // factor, target on the MSB factor" of the tensor product. MQT's wider
-  // convention places operand 0 on the MSB factor, so `getTwoQubitMatrix` for
-  // the same logical CX gives the SWAP-conjugate
+  // convention places operand 0 on the MSB factor, so the CX/CZ matrix for
+  // control-on-wire-0 gives the SWAP-conjugate
   // `[[1,0,0,0],[0,1,0,0],[0,0,0,1],[0,0,1,0]]`.
   //
   // Because `SWAP * C(a,b,c) * SWAP = C(a,b,c)` but
@@ -59,8 +60,7 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
   // the emission boundary in `decomp{0,1,2,3}` below. This reproduces the
   // pre-flip gate counts without having to re-derive every SMB constant for
   // the MSB basis -- the two routes are algebraically equivalent.
-  const Matrix4x4 basisMatrixLsb =
-      swapGate() * getTwoQubitMatrix(basisGate) * swapGate();
+  const Matrix4x4 basisMatrixLsb = swapGate() * basisMatrix * swapGate();
   const auto basisDecomposer = decomposition::TwoQubitWeylDecomposition::create(
       basisMatrixLsb, basisFidelity);
   const auto isSuperControlled =
@@ -124,7 +124,6 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
   auto q2r = k2rDagger * k12RArr;
 
   return TwoQubitBasisDecomposer{
-      basisGate,
       basisFidelity,
       basisDecomposer,
       isSuperControlled,

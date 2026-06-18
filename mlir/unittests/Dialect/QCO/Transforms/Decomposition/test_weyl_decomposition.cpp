@@ -9,7 +9,6 @@
  */
 
 #include "decomposition_test_utils.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
@@ -120,44 +119,30 @@ INSTANTIATE_TEST_SUITE_P(
 
 INSTANTIATE_TEST_SUITE_P(
     TwoQubitMatrices, WeylDecompositionTest,
-    ::testing::Values([]() -> Matrix4x4 { return rzzMatrix(2.0); },
-                      []() -> Matrix4x4 {
-                        return ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0);
-                      },
-                      []() -> Matrix4x4 {
-                        return TwoQubitWeylDecomposition::getCanonicalMatrix(
-                                   1.5, -0.2, 0.0) *
-                               kron(rxMatrix(1.0), Matrix2x2::identity());
-                      },
-                      []() -> Matrix4x4 {
-                        return kron(rxMatrix(1.0), ryMatrix(1.0)) *
-                               TwoQubitWeylDecomposition::getCanonicalMatrix(
-                                   1.1, 0.2, 3.0) *
-                               kron(rxMatrix(1.0), Matrix2x2::identity());
-                      },
-                      []() -> Matrix4x4 {
-                        return kron(hGate(), ipz()) *
-                               getTwoQubitMatrix({.type = GateKind::X,
-                                                  .parameter = {},
-                                                  .qubitId = {0, 1}}) *
-                               kron(ipx(), ipy());
-                      }));
+    ::testing::Values(
+        []() -> Matrix4x4 { return rzzMatrix(2.0); },
+        []() -> Matrix4x4 {
+          return ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0);
+        },
+        []() -> Matrix4x4 {
+          return TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
+                 kron(rxMatrix(1.0), Matrix2x2::identity());
+        },
+        []() -> Matrix4x4 {
+          return kron(rxMatrix(1.0), ryMatrix(1.0)) *
+                 TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
+                 kron(rxMatrix(1.0), Matrix2x2::identity());
+        },
+        []() -> Matrix4x4 {
+          return kron(hGate(), ipz()) * cxGate01() * kron(ipx(), ipy());
+        }));
 
 INSTANTIATE_TEST_SUITE_P(
     SpecializedMatrices, WeylDecompositionTest,
     ::testing::Values(
         // id + controlled + general already covered by other parametrizations
         // swap equiv
-        []() -> Matrix4x4 {
-          return getTwoQubitMatrix({.type = GateKind::X,
-                                    .parameter = {},
-                                    .qubitId = {0, 1}}) *
-                 getTwoQubitMatrix({.type = GateKind::X,
-                                    .parameter = {},
-                                    .qubitId = {1, 0}}) *
-                 getTwoQubitMatrix(
-                     {.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}});
-        },
+        []() -> Matrix4x4 { return cxGate01() * cxGate10() * cxGate01(); },
         // partial swap equiv
         []() -> Matrix4x4 {
           return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.5);
@@ -167,13 +152,7 @@ INSTANTIATE_TEST_SUITE_P(
           return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, -0.5);
         },
         // mirror controlled equiv
-        []() -> Matrix4x4 {
-          return getTwoQubitMatrix({.type = GateKind::X,
-                                    .parameter = {},
-                                    .qubitId = {0, 1}}) *
-                 getTwoQubitMatrix(
-                     {.type = GateKind::X, .parameter = {}, .qubitId = {1, 0}});
-        },
+        []() -> Matrix4x4 { return cxGate01() * cxGate10(); },
         // sim aab equiv
         []() -> Matrix4x4 {
           return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.1);
