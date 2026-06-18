@@ -17,7 +17,8 @@ add_executable(
   test_qco_reuse_qubits.cpp
   test_quantum_loop_unroll.cpp
   ConstantPropagation/test_quantumState.cpp
-  ConstantPropagation/test_hybridState.cpp)
+  ConstantPropagation/test_hybridState.cpp
+  ConstantPropagation/test_unionTable.cpp)
 
 target_link_libraries(
   ${target_name}
