@@ -144,7 +144,8 @@ int main(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   // Parse command-line options; exit on error and print to stderr
-  llvm::cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
+  llvm::cl::ParseCommandLineOptions(argc, argv,
+                                    "MQT Compiler Collection Driver\n");
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
