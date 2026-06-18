@@ -77,7 +77,7 @@ TEST_F(ErrorHandling, GetResultsBeforeDone) {
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 1024), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 32768), QDMI_SUCCESS);
   // Before submit → invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
