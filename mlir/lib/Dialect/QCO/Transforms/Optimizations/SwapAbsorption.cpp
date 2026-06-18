@@ -19,15 +19,12 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
-#include <utility>
-
 namespace mlir::qco {
 #define GEN_PASS_DEF_SWAPABSORPTION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 struct SwapAbsorption : impl::SwapAbsorptionBase<SwapAbsorption> {
-public:
   using SwapAbsorptionBase::SwapAbsorptionBase;
 
 protected:
@@ -51,7 +48,8 @@ protected:
         findSwapsReadyForAbsorption(wires, readyToAbsorb);
 
         for (auto swapOp : readyToAbsorb) {
-          absorbSingleSwap(swapOp, rewriter);
+          rewriter.replaceOp(swapOp,
+                             {swapOp.getQubit1In(), swapOp.getQubit0In()});
         }
       } while (!readyToAbsorb.empty());
     }
@@ -70,18 +68,6 @@ private:
           }
           return WalkResult::interrupt();
         });
-  }
-
-  static void absorbSingleSwap(SWAPOp swapOp, IRRewriter& rewriter) {
-    auto in0 = swapOp.getQubit0In();
-    auto in1 = swapOp.getQubit1In();
-
-    auto out0 = swapOp.getQubit0Out();
-    auto out1 = swapOp.getQubit1Out();
-
-    rewriter.replaceAllUsesWith(out0, in1);
-    rewriter.replaceAllUsesWith(out1, in0);
-    rewriter.eraseOp(swapOp);
   }
 };
 } // namespace
