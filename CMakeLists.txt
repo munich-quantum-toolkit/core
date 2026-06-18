@@ -121,6 +121,10 @@ endif()
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
 
+cmake_dependent_option(
+  BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR "Enable QIR program format support for the DDSIM QDMI Device"
+  ON "BUILD_MQT_CORE_MLIR" OFF)
+
 # add main library code
 add_subdirectory(src)
 

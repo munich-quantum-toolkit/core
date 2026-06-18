@@ -108,7 +108,7 @@ struct SingleQubitEmitter {
 
 } // namespace
 
-/// Materialize an `EulerBasis::ZSXX` decomposition (`rz` / `sx` / `x`) into
+/// Materialize an `GateEulerBasis::ZSXX` decomposition (`rz` / `sx` / `x`) into
 /// QCO ops.
 static Value
 emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
@@ -136,7 +136,7 @@ emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
   return q;
 }
 
-/// Materialize an `EulerBasis::XYX` decomposition into `R(theta, phi)` ops
+/// Materialize an `GateEulerBasis::XYX` decomposition into `R(theta, phi)` ops
 /// for the `R` emitter: `Rx(theta)` becomes `R(theta, 0)`, `Ry(theta)`
 /// becomes `R(theta, pi/2)`, Pauli `X`/`Y` become `R(pi, *)`, `I` is a
 /// no-op.
@@ -230,7 +230,7 @@ emitEulerSequenceAxisPair(SingleQubitEmitter e, Value q, AxisPair axis,
 /// Decompose `matrix` numerically into a gate sequence in `basis` with
 /// zero-rotations pruned (`simplify=true`).
 static decomposition::QubitGateSequence
-runEuler(decomposition::EulerBasis basis, const Eigen::Matrix2cd& matrix) {
+runEuler(decomposition::GateEulerBasis basis, const Eigen::Matrix2cd& matrix) {
   return decomposition::EulerDecomposition::generateCircuit(
       basis, matrix, /*simplify=*/true, std::nullopt);
 }
@@ -315,9 +315,9 @@ eulerSequenceForMatrixSynthesis(const Eigen::Matrix2cd& matrix,
   case SingleQubitMode::U3:
     return std::nullopt;
   case SingleQubitMode::ZSXX:
-    return runEuler(decomposition::EulerBasis::ZSXX, matrix);
+    return runEuler(decomposition::GateEulerBasis::ZSXX, matrix);
   case SingleQubitMode::R:
-    return runEuler(decomposition::EulerBasis::XYX, matrix);
+    return runEuler(decomposition::GateEulerBasis::XYX, matrix);
   case SingleQubitMode::AxisPair: {
     const auto bases = getEulerBasesForAxisPair(emitter.axisPair);
     if (bases.empty()) {
@@ -353,7 +353,7 @@ Value emitSynthesizedSingleQubitFromMatrix(
       emitGPhaseIfNonTrivial(rewriter, loc, reuseEulerSeq->globalPhase);
       return emitEulerSequenceZsxx(e, inQubit, *reuseEulerSeq);
     }
-    const auto seq = runEuler(decomposition::EulerBasis::ZSXX, matrix);
+    const auto seq = runEuler(decomposition::GateEulerBasis::ZSXX, matrix);
     emitGPhaseIfNonTrivial(rewriter, loc, seq.globalPhase);
     return emitEulerSequenceZsxx(e, inQubit, seq);
   }
@@ -374,7 +374,7 @@ Value emitSynthesizedSingleQubitFromMatrix(
     const double phase = std::arg(det) / 2.0;
     m *= std::exp(1i * (-phase));
     const auto angles = decomposition::EulerDecomposition::anglesFromUnitary(
-        m, decomposition::EulerBasis::ZYZ);
+        m, decomposition::GateEulerBasis::ZYZ);
     emitGPhaseIfNonTrivial(rewriter, loc, phase);
     return e.u(inQubit, angles[0], angles[1], angles[2]);
   }
@@ -383,7 +383,7 @@ Value emitSynthesizedSingleQubitFromMatrix(
       emitGPhaseIfNonTrivial(rewriter, loc, reuseEulerSeq->globalPhase);
       return emitEulerSequenceR(e, inQubit, *reuseEulerSeq);
     }
-    const auto seq = runEuler(decomposition::EulerBasis::XYX, matrix);
+    const auto seq = runEuler(decomposition::GateEulerBasis::XYX, matrix);
     emitGPhaseIfNonTrivial(rewriter, loc, seq.globalPhase);
     return emitEulerSequenceR(e, inQubit, seq);
   }

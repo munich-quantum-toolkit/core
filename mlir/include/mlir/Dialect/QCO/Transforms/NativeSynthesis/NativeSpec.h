@@ -20,7 +20,7 @@
 namespace mlir::qco::native_synth {
 
 /// Euler bases that can reconstruct a two-axis single-qubit unitary.
-llvm::SmallVector<decomposition::EulerBasis>
+llvm::SmallVector<decomposition::GateEulerBasis>
 getEulerBasesForAxisPair(AxisPair axisPair);
 
 /// Resolve a comma-separated native gate menu (e.g. `"x,sx,rz,cx"`) into a

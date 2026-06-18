@@ -12,16 +12,23 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <Eigen/Core>
 #include <optional>
 
 /// F64 helpers, global phase, SU(4) normalization, and 2q sequence emission.
 
 namespace mlir::qco::native_synth {
+
+/// Convert a compile-time QCO 2x2 matrix into Eigen form.
+[[nodiscard]] Eigen::Matrix2cd toEigen(const Matrix2x2& matrix);
+
+/// Convert a compile-time QCO 4x4 matrix into Eigen form.
+[[nodiscard]] Eigen::Matrix4cd toEigen(const Matrix4x4& matrix);
 
 /// Create an ``arith.constant`` F64.
 Value createF64Const(IRRewriter& rewriter, Location loc, double value);

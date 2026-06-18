@@ -9,13 +9,16 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
@@ -64,6 +67,31 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
   }
 };
 
+/**
+ * @brief Merge subsequent R operations on the same qubit with matching `phi`.
+ */
+struct MergeSubsequentR final : OpRewritePattern<ROp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ROp op,
+                                PatternRewriter& rewriter) const override {
+    auto nextOp = dyn_cast<ROp>(*op.getOutputQubit(0).user_begin());
+    if (!nextOp) {
+      return failure();
+    }
+
+    if (!valuesMatchWithinTolerance(op.getPhi(), nextOp.getPhi())) {
+      return failure();
+    }
+
+    auto newParameter = arith::AddFOp::create(rewriter, op.getLoc(),
+                                              op.getTheta(), nextOp.getTheta());
+    op->setOperand(1, newParameter.getResult());
+    rewriter.replaceOp(nextOp, op.getResult());
+    return success();
+  }
+};
+
 } // namespace
 
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -77,26 +105,20 @@ void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 
 void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<ReplaceRWithRX, ReplaceRWithRY>(context);
+  results.add<ReplaceRWithRX, ReplaceRWithRY, MergeSubsequentR>(context);
 }
 
-std::optional<Eigen::Matrix2cd> ROp::getUnitaryMatrix() {
+std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
   const auto theta = valueToDouble(getTheta());
   const auto phi = valueToDouble(getPhi());
   if (!theta || !phi) {
     return std::nullopt;
   }
 
-  const auto safePolarSigned = [](double radius, double angle) {
-    if (radius < 0.0) {
-      return std::polar(-radius, angle + std::numbers::pi);
-    }
-    return std::polar(radius, angle);
-  };
-
-  const auto thetaSin = std::sin(*theta / 2.0);
-  const auto m01 = safePolarSigned(thetaSin, -*phi - (std::numbers::pi / 2.0));
-  const auto m10 = safePolarSigned(thetaSin, *phi - (std::numbers::pi / 2.0));
-  const std::complex<double> thetaCos = std::cos(*theta / 2.0);
-  return Eigen::Matrix2cd{{thetaCos, m01}, {m10, thetaCos}};
+  const auto thetaSin = std::sin(*theta / 2);
+  const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
+  const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
+  const auto thetaCos = std::cos(*theta / 2);
+  return Matrix2x2::fromElements(thetaCos, m01,  // row 0
+                                 m10, thetaCos); // row 1
 }

@@ -21,9 +21,9 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
@@ -41,6 +41,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 
+#include <Eigen/Core>
 #include <cassert>
 #include <cstddef>
 #include <limits>
@@ -81,6 +82,7 @@ using native_synth::SingleQubitMode;
 using native_synth::SingleQubitRewritePlan;
 using native_synth::SingleQubitRewriteStrategy;
 using native_synth::SynthesisCandidate;
+using native_synth::toEigen;
 using native_synth::TwoQubitRewritePlan;
 using native_synth::TwoQubitWindowConsolidator;
 using native_synth::usesCxEntangler;
@@ -99,14 +101,15 @@ struct OneQubitRun {
 /// If profitable, replace the run with one synthesized single-qubit op.
 static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
                          const NativeProfileSpec& spec) {
-  Eigen::Matrix2cd fused = Eigen::Matrix2cd::Identity();
+  Matrix2x2 fused = Matrix2x2::identity();
   for (UnitaryOpInterface u : run.ops) {
-    Eigen::Matrix2cd m;
+    Matrix2x2 m;
     if (!u.getUnitaryMatrix2x2(m)) {
       return false;
     }
-    fused = m * fused;
+    fused.premultiplyBy(m);
   }
+  const Eigen::Matrix2cd fusedEigen = toEigen(fused);
 
   const bool anyNonNative = llvm::any_of(run.ops, [&](UnitaryOpInterface u) {
     return !allowsSingleQubitOp(u, spec);
@@ -124,7 +127,7 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
     if (emitter.mode == SingleQubitMode::U3) {
       len = 1;
     } else {
-      euler = eulerSequenceForMatrixSynthesis(fused, emitter);
+      euler = eulerSequenceForMatrixSynthesis(fusedEigen, emitter);
       if (!euler) {
         continue;
       }
@@ -153,11 +156,12 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
   Value replacement;
   if (bestEmitter->mode == SingleQubitMode::U3) {
     replacement = emitSynthesizedSingleQubitFromMatrix(
-        rewriter, firstOp->getLoc(), inQubit, fused, *bestEmitter);
+        rewriter, firstOp->getLoc(), inQubit, fusedEigen, *bestEmitter);
   } else {
     assert(bestEuler.has_value());
     replacement = emitSynthesizedSingleQubitFromMatrix(
-        rewriter, firstOp->getLoc(), inQubit, fused, *bestEmitter, &*bestEuler);
+        rewriter, firstOp->getLoc(), inQubit, fusedEigen, *bestEmitter,
+        &*bestEuler);
   }
   if (!replacement) {
     return false;
@@ -194,7 +198,7 @@ static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   if (isHiddenInsideCtrlOrInvBody(op)) {
     return {};
   }
-  Eigen::Matrix2cd matrix;
+  Matrix2x2 matrix;
   if (!unitary.getUnitaryMatrix2x2(matrix)) {
     return {};
   }
@@ -336,7 +340,7 @@ protected:
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
-    Operation* body = ctrl.getBodyUnitary().getOperation();
+    Operation* body = ctrl.getBodyUnitary(0).getOperation();
     const bool hasCX = llvm::isa<XOp>(body);
     const bool hasCZ = llvm::isa<ZOp>(body);
     if (!hasCX && !hasCZ) {
@@ -552,12 +556,12 @@ private:
     if (plan.strategy == SingleQubitRewriteStrategy::Direct) {
       return applyDirectSingleQubitLowering(rewriter, op, in, plan.emitter);
     }
-    Eigen::Matrix2cd matrix;
+    Matrix2x2 matrix;
     if (!unitary.isSingleQubit() || !unitary.getUnitaryMatrix2x2(matrix)) {
       return {};
     }
     return emitSynthesizedSingleQubitFromMatrix(rewriter, op->getLoc(), in,
-                                                matrix, plan.emitter);
+                                                toEigen(matrix), plan.emitter);
   }
 
   /// One synthesis sweep over the whole function: rewrite every remaining
@@ -658,7 +662,7 @@ private:
                      "1-target controlled gates");
       return failure();
     }
-    auto* body = ctrl.getBodyUnitary().getOperation();
+    auto* body = ctrl.getBodyUnitary(0).getOperation();
     const bool hasCX = llvm::isa<XOp>(body);
     const bool hasCZ = llvm::isa<ZOp>(body);
     if ((usesCxEntangler(spec) && hasCX) || (usesCzEntangler(spec) && hasCZ)) {
@@ -673,12 +677,14 @@ private:
       }
     } else {
       auto u = llvm::cast<UnitaryOpInterface>(ctrl.getOperation());
-      if (!u.isTwoQubit() || !u.getUnitaryMatrix4x4(matrix)) {
+      Matrix4x4 raw;
+      if (!u.isTwoQubit() || !u.getUnitaryMatrix4x4(raw)) {
         ctrl.emitError(
             "native synthesis: cannot build a constant 4x4 matrix for this "
             "controlled gate (unsupported body or non-constant parameters)");
         return failure();
       }
+      matrix = toEigen(raw);
     }
     native_synth::normalizeToSU4(matrix); // SU(4) convention for Weyl
 

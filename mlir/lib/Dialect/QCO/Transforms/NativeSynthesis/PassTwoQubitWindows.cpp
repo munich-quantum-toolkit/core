@@ -45,7 +45,7 @@ static bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
-    auto* body = ctrl.getBodyUnitary().getOperation();
+    auto* body = ctrl.getBodyUnitary(0).getOperation();
     if (llvm::isa<XOp>(body)) {
       return usesCxEntangler(spec);
     }
@@ -315,15 +315,16 @@ void TwoQubitWindowConsolidator::process(Operation* op,
     }
     const size_t idx = it->second;
     auto& block = blocks[idx];
-    Eigen::Matrix2cd m;
+    Matrix2x2 raw;
     // `!v.hasOneUse()` is the fan-out guard: if any other op also consumes
     // this wire, we cannot soundly absorb this single-qubit gate into the
     // block (the sibling user would see the pre-gate state). Close the
     // block and let the outer pass rewrite the op individually.
-    if (!unitary.getUnitaryMatrix2x2(m) || !v.hasOneUse()) {
+    if (!unitary.getUnitaryMatrix2x2(raw) || !v.hasOneUse()) {
       closeBlock(idx);
       return;
     }
+    const Eigen::Matrix2cd m = toEigen(raw);
     const auto pad = (v == block.wireA)
                          ? decomposition::expandToTwoQubits(m, 0)
                          : decomposition::expandToTwoQubits(m, 1);

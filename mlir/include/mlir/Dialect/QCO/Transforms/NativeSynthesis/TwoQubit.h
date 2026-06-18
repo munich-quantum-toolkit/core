@@ -13,11 +13,11 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <Eigen/Core>
 #include <cstdint>
 #include <optional>
 
@@ -37,7 +37,7 @@ bool gateSequenceFitsMenu(const decomposition::TwoQubitGateSequence& seq,
 std::optional<decomposition::TwoQubitGateSequence>
 decomposeTwoQubitFromMatrix(const Eigen::Matrix4cd& matrix,
                             EntanglerBasis entangler,
-                            decomposition::EulerBasis eulerBasis,
+                            decomposition::GateEulerBasis eulerBasis,
                             std::optional<std::uint8_t> numBasisUses);
 
 /// Enumerate all direct + matrix-fallback single-qubit rewrite candidates.

@@ -37,7 +37,7 @@ using namespace mlir::qco::decomposition_test;
 // NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class BasisDecomposerTest
     : public testing::TestWithParam<std::tuple<
-          Gate, llvm::SmallVector<EulerBasis>, Eigen::Matrix4cd (*)()>> {
+          Gate, llvm::SmallVector<GateEulerBasis>, Eigen::Matrix4cd (*)()>> {
 public:
   [[nodiscard]] static Eigen::Matrix4cd
   restore(const TwoQubitGateSequence& sequence) {
@@ -61,7 +61,7 @@ protected:
 
   Eigen::Matrix4cd target;
   Gate basisGate;
-  llvm::SmallVector<EulerBasis> eulerBases;
+  llvm::SmallVector<GateEulerBasis> eulerBases;
   std::unique_ptr<TwoQubitWeylDecomposition> targetDecomposition;
 };
 
@@ -102,8 +102,9 @@ TEST(BasisDecomposerTest, Random) {
   const llvm::SmallVector<Gate, 2> basisGates{
       {.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}},
       {.type = GateKind::X, .parameter = {}, .qubitId = {1, 0}}};
-  const llvm::SmallVector<EulerBasis, 4> eulerBases = {
-      EulerBasis::XYX, EulerBasis::ZXZ, EulerBasis::ZYZ, EulerBasis::XZX};
+  const llvm::SmallVector<GateEulerBasis, 4> eulerBases = {
+      GateEulerBasis::XYX, GateEulerBasis::ZXZ, GateEulerBasis::ZYZ,
+      GateEulerBasis::XZX};
   std::uniform_int_distribution<std::size_t> distBasisGate{
       0, basisGates.size() - 1};
   std::uniform_int_distribution<std::size_t> distEulerBases{1,
@@ -145,7 +146,7 @@ TEST(BasisDecomposerNumBasisTest, ForcesZeroBasisUsesForIdentityTarget) {
   const Eigen::Matrix4cd target = Eigen::Matrix4cd::Identity();
   const auto weyl =
       TwoQubitWeylDecomposition::create(target, std::optional<double>{1.0});
-  const llvm::SmallVector<EulerBasis> eulerBases{EulerBasis::ZYZ};
+  const llvm::SmallVector<GateEulerBasis> eulerBases{GateEulerBasis::ZYZ};
   const auto decomposed = decomposer.twoQubitDecompose(weyl, eulerBases, 1.0,
                                                        false, std::uint8_t{0});
   ASSERT_TRUE(decomposed.has_value());
@@ -161,11 +162,11 @@ INSTANTIATE_TEST_SUITE_P(
             Gate{.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}},
             Gate{.type = GateKind::X, .parameter = {}, .qubitId = {1, 0}}),
         // sets of Euler bases
-        testing::Values(llvm::SmallVector<EulerBasis>{EulerBasis::ZYZ},
-                        llvm::SmallVector<EulerBasis>{
-                            EulerBasis::ZYZ, EulerBasis::ZXZ, EulerBasis::XYX,
-                            EulerBasis::XZX},
-                        llvm::SmallVector<EulerBasis>{EulerBasis::XZX}),
+        testing::Values(llvm::SmallVector<GateEulerBasis>{GateEulerBasis::ZYZ},
+                        llvm::SmallVector<GateEulerBasis>{
+                            GateEulerBasis::ZYZ, GateEulerBasis::ZXZ,
+                            GateEulerBasis::XYX, GateEulerBasis::XZX},
+                        llvm::SmallVector<GateEulerBasis>{GateEulerBasis::XZX}),
         // targets to be decomposed
         testing::Values(
             []() -> Eigen::Matrix4cd { return Eigen::Matrix4cd::Identity(); },
@@ -185,11 +186,12 @@ INSTANTIATE_TEST_SUITE_P(
             Gate{.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}},
             Gate{.type = GateKind::X, .parameter = {}, .qubitId = {1, 0}}),
         // sets of Euler bases
-        testing::Values(
-            llvm::SmallVector<EulerBasis>{EulerBasis::ZYZ},
-            llvm::SmallVector<EulerBasis>{EulerBasis::ZYZ, EulerBasis::ZXZ,
-                                          EulerBasis::XYX, EulerBasis::XZX},
-            llvm::SmallVector<EulerBasis>{EulerBasis::XZX, EulerBasis::XYX}),
+        testing::Values(llvm::SmallVector<GateEulerBasis>{GateEulerBasis::ZYZ},
+                        llvm::SmallVector<GateEulerBasis>{
+                            GateEulerBasis::ZYZ, GateEulerBasis::ZXZ,
+                            GateEulerBasis::XYX, GateEulerBasis::XZX},
+                        llvm::SmallVector<GateEulerBasis>{GateEulerBasis::XZX,
+                                                          GateEulerBasis::XYX}),
         // targets to be decomposed
         ::testing::Values(
             []() -> Eigen::Matrix4cd { return rzzMatrix(2.0); },

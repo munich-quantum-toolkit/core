@@ -13,7 +13,6 @@
 #include "EulerBasis.h"
 
 #include <Eigen/Core> // NOLINT(misc-include-cleaner)
-
 #include <complex>
 #include <cstdint>
 #include <optional>
@@ -235,7 +234,7 @@ private:
   Eigen::Matrix2cd k1r_;
   Eigen::Matrix2cd k2r_;
   Specialization specialization{Specialization::General};
-  EulerBasis defaultEulerBasis{EulerBasis::U3};
+  GateEulerBasis defaultEulerBasis{GateEulerBasis::U3};
   /// Optional `traceToFidelity` floor for specialization; unset disables it.
   std::optional<double> requestedFidelity;
   double calculatedFidelity{};

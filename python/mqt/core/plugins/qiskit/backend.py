@@ -13,13 +13,18 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices via FoMaC.
 
 from __future__ import annotations
 
+import inspect
 import itertools
 import warnings
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
 from qiskit.circuit import QuantumCircuit
-from qiskit.circuit.library import get_standard_gate_name_mapping
+from qiskit.circuit.library import (
+    MCPhaseGate,
+    MCXGate,
+    get_standard_gate_name_mapping,
+)
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
@@ -55,7 +60,7 @@ def __dir__() -> list[str]:
 
 def _build_gate_mappings_for_backend(
     gate_aliases: dict[str, set[str]],
-) -> tuple[dict[str, set[str]], dict[str, Instruction]]:
+) -> tuple[dict[str, set[str]], dict[str, Instruction | type[Instruction]]]:
     """Build both forward (Qiskit→QDMI) and inverse (QDMI→Gate) mappings.
 
     Uses Qiskit's standard gate mapping as the canonical source of truth,
@@ -70,11 +75,19 @@ def _build_gate_mappings_for_backend(
     # Get Qiskit's standard gate name mapping as our canonical source
     canonical_gates = get_standard_gate_name_mapping()
 
+    # Augment the canonical mapping with any additional gates that may not be in Qiskit's standard library
+    canonical_gates.update({
+        "mcx": MCXGate,
+        "mcphase": MCPhaseGate,
+        "mcp": MCPhaseGate,
+        "mcx_gray": MCXGate,
+    })
+
     qiskit_to_qdmi: dict[str, set[str]] = {}
-    operation_to_gate: dict[str, Instruction] = {}
+    operation_to_gate: dict[str, Instruction | type[Instruction]] = {}
 
     # Process each canonical gate from Qiskit's standard library
-    for canonical_name, gate_instance in canonical_gates.items():
+    for canonical_name, gate in canonical_gates.items():
         # Get all names for this gate (canonical + aliases)
         all_names = {canonical_name}
         if canonical_name in gate_aliases:
@@ -83,7 +96,7 @@ def _build_gate_mappings_for_backend(
         # For each name, map it to all names (bidirectional aliases)
         for name in all_names:
             qiskit_to_qdmi[name] = all_names.copy()
-            operation_to_gate[name] = gate_instance
+            operation_to_gate[name] = gate
 
     return qiskit_to_qdmi, operation_to_gate
 
@@ -125,13 +138,28 @@ class QDMIBackend(BackendV2):
         "p": {"phase"},  # Phase gate can also be called 'phase'
         "r": {"prx"},  # R gate can also be called 'prx' (IQM naming)
         "u": {"u3"},  # U and U3 are the same gate
+        "cu": {"cu3"},  # CU and CU3 are the same gate
         "cx": {"cnot"},  # CX and CNOT are the same gate
         "global_phase": {"gphase"},  # Qiskit canonical name
         "gphase": {"global_phase"},  # OpenQASM canonical name
+        "mcphase": {"mcp"},  # Qiskit canonical name
+        "mcp": {"mcphase"},  # OpenQASM canonical name
+        "mcx_gray": {"mcx"},  # Alias for MCX with specific encoding
+        "mcx_vchain": {"mcx"},  # Alias for MCX with specific encoding
+        "mcx_recursive": {"mcx"},  # Alias for MCX with specific encoding
+    }
+
+    _QDMI_TO_QISKIT_GATE_MAP: ClassVar[dict[str, str]] = {
+        "i": "id",
+        "prx": "r",
+        "mcp": "mcphase",
+        "u3": "u",
+        "gphase": "global_phase",
+        "cu3": "cu",
     }
 
     _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
-    _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction]]
+    _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction | type[Instruction]]]
 
     # Initialize derived mappings at class definition time
     _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
@@ -203,12 +231,15 @@ class QDMIBackend(BackendV2):
         # Add operations from device
         for op in self._device.operations():
             # Map known operations to Qiskit gates
-            op_name = op.name()
+            op_name = op.name().lower()
 
             # Skip control flow operations that don't belong in the Target
             # (barrier is handled separately by Qiskit, if_else is a circuit construct)
-            if op_name.lower() in {"barrier", "if_else"}:
+            if op_name in {"barrier", "if_else"}:
                 continue
+
+            if op_name in self._QDMI_TO_QISKIT_GATE_MAP:
+                op_name = self._QDMI_TO_QISKIT_GATE_MAP[op_name]
 
             gate = self._map_operation_to_gate(op_name)
             if gate is None:
@@ -219,14 +250,21 @@ class QDMIBackend(BackendV2):
                 )
                 continue
 
+            is_class = inspect.isclass(gate)
+
             # Skip if we've already added this Qiskit gate to the target
-            gate_name = gate.name
+            gate_name = op_name if is_class else gate.name
             if gate_name in seen_gate_names:
                 continue
             seen_gate_names.add(gate_name)
 
             # Determine which qubits this operation applies to
             qargs = self._get_operation_qargs(op)
+
+            # Globally supported gates (such as MCX) must specify a name and no properties
+            if is_class:
+                target.add_instruction(gate, name=op_name)
+                continue
 
             # If qargs is [None], it means the operation is available on all qubits
             if qargs == [None]:
@@ -280,7 +318,7 @@ class QDMIBackend(BackendV2):
         # Check if the measurement operation is defined
         if "measure" not in seen_gate_names:
             warnings.warn(
-                "Device does not define a measurement operation. This may limit practical usage.",
+                f"{self._device.name()} does not define a measurement operation. This may limit practical usage.",
                 UserWarning,
                 stacklevel=2,
             )
@@ -288,7 +326,7 @@ class QDMIBackend(BackendV2):
         return target
 
     @staticmethod
-    def _map_operation_to_gate(op_name: str) -> Instruction | None:
+    def _map_operation_to_gate(op_name: str) -> Instruction | type[Instruction] | None:
         """Map a device operation name to a Qiskit gate.
 
         Args:
@@ -411,8 +449,57 @@ class QDMIBackend(BackendV2):
 
         # Try OpenQASM3
         if fomac.ProgramFormat.QASM3 in supported_program_formats:
+            # Qiskit's OpenQASM3 exporter is fairly limited in terms of which gates it supports natively.
+            # So it needs some help from us.
+            exclusion_list = set()
+
+            # Qiskit treats "measure", "reset", and "barrier" as keywords rather than gates
+            exclusion_list.update({"measure", "reset", "barrier"})
+
+            # We also need to remove all gates that are defined in the OpenQASM `stdlib.inc`.
+            # Qiskit's exporter will otherwise complain about duplicate definitions.
+            exclusion_list.update({
+                "p",
+                "x",
+                "y",
+                "z",
+                "h",
+                "s",
+                "sdg",
+                "t",
+                "tdg",
+                "sx",
+                "rx",
+                "ry",
+                "rz",
+                "cx",
+                "cy",
+                "cz",
+                "cp",
+                "crx",
+                "cry",
+                "crz",
+                "ch",
+                "swap",
+                "ccx",
+                "cswap",
+                "cu",
+                "CX",
+                "phase",
+                "cphase",
+                "id",
+                "u1",
+                "u2",
+                "u3",
+            })
+
+            # By excluding already defined gates, we allow the exporter to emit otherwise unsupported gates without
+            # needing to provide a definition for them. The exporter will then treat them as opaque gates, which is fine
+            # as long as the target device supports them.
+            basis_gates = [gate for gate in self.target.operation_names if gate not in exclusion_list] + ["U"]
+
             try:
-                return str(qasm3.dumps(circuit)), fomac.ProgramFormat.QASM3
+                return qasm3.dumps(circuit, basis_gates=basis_gates), fomac.ProgramFormat.QASM3
             except Exception as exc:
                 msg = f"Failed to convert circuit to QASM3: {exc}"
                 raise TranslationError(msg) from exc
@@ -420,7 +507,7 @@ class QDMIBackend(BackendV2):
         # Try OpenQASM2 (legacy)
         if fomac.ProgramFormat.QASM2 in supported_program_formats:
             try:
-                return str(qasm2.dumps(circuit)), fomac.ProgramFormat.QASM2
+                return qasm2.dumps(circuit), fomac.ProgramFormat.QASM2
             except Exception as exc:
                 msg = f"Failed to convert circuit to QASM2: {exc}"
                 raise TranslationError(msg) from exc

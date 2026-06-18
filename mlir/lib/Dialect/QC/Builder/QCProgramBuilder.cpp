@@ -14,17 +14,18 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -61,6 +62,12 @@ void QCProgramBuilder::initialize() {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+  regionStack.emplace_back(entryBlock.getParent());
+}
+
+Value QCProgramBuilder::boolConstant(const bool value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getBoolAttr(value)).getResult();
 }
 
 Value QCProgramBuilder::intConstant(const int64_t value) {
@@ -112,11 +119,13 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 
   SmallVector<Value> qubits;
   qubits.reserve(size);
+  auto& loadedQubitsForRegion = loadedQubits[memref->getParentRegion()][memref];
   for (int64_t i = 0; i < size; ++i) {
     auto index = arith::ConstantIndexOp::create(*this, i);
     auto load = memref::LoadOp::create(*this, memref, index.getResult());
     const auto& qubit = qubits.emplace_back(load.getResult());
     allocatedQubits.insert(qubit);
+    loadedQubitsForRegion.insert(index);
   }
 
   return {.value = memref, .qubits = std::move(qubits)};
@@ -131,6 +140,27 @@ QCProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
     llvm::reportFatalUsageError(msg.c_str());
   }
   return {.registerName = name, .registerSize = size, .registerIndex = index};
+}
+
+Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
+  checkFinalized();
+
+  auto* region = getInsertionBlock()->getParent();
+
+  if (regionStack.size() == 1) {
+    llvm::reportFatalUsageError(
+        "Qubit cannot be loaded in the main function region");
+  }
+  for (Region* curr : regionStack) {
+    if (loadedQubits[curr][memref].contains(index)) {
+      llvm::reportFatalUsageError("Qubit already loaded in enclosing region");
+    }
+  }
+
+  auto loadOp = memref::LoadOp::create(*this, memref, index);
+  loadedQubits[region][memref].insert(index);
+
+  return loadOp.getResult();
 }
 
 QCProgramBuilder::ClassicalRegister
@@ -155,13 +185,14 @@ Value QCProgramBuilder::measure(Value qubit) {
   return measureOp.getResult();
 }
 
-QCProgramBuilder& QCProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QCProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
   auto nameAttr = getStringAttr(bit.registerName);
   auto sizeAttr = getI64IntegerAttr(bit.registerSize);
   auto indexAttr = getI64IntegerAttr(bit.registerIndex);
-  MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
-  return *this;
+  auto measureOp =
+      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
+  return measureOp.getResult();
 }
 
 QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
@@ -185,14 +216,13 @@ QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
       const std::variant<double, Value>&(PARAM), Value control) {              \
-    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM, {control});                                      \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
-    checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    CtrlOp::create(*this, controls, [&] { OP_CLASS::create(*this, param); });  \
+    ctrl(controls, ValueRange{},                                               \
+         [&](ValueRange /*targets*/) { OP_CLASS::create(*this, param); });     \
     return *this;                                                              \
   }
 
@@ -210,13 +240,12 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(Value control,                \
                                                  Value target) {               \
-    checkFinalized();                                                          \
     return mc##OP_NAME({control}, target);                                     \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(ValueRange controls,         \
                                                   Value target) {              \
-    checkFinalized();                                                          \
-    CtrlOp::create(*this, controls, [&] { OP_CLASS::create(*this, target); }); \
+    ctrl(controls, target,                                                     \
+         [&](ValueRange targets) { OP_CLASS::create(*this, targets[0]); });    \
     return *this;                                                              \
   }
 
@@ -246,16 +275,15 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
       const std::variant<double, Value>&(PARAM), Value control,                \
       Value target) {                                                          \
-    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM, {control}, target);                              \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
-    checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    CtrlOp::create(*this, controls,                                            \
-                   [&] { OP_CLASS::create(*this, target, param); });           \
+    ctrl(controls, target, [&](ValueRange targets) {                           \
+      OP_CLASS::create(*this, targets[0], param);                              \
+    });                                                                        \
     return *this;                                                              \
   }
 
@@ -280,18 +308,17 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value control,               \
       Value target) {                                                          \
-    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM1, PARAM2, {control}, target);                     \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value target) {                                                          \
-    checkFinalized();                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    CtrlOp::create(*this, controls,                                            \
-                   [&] { OP_CLASS::create(*this, target, param1, param2); });  \
+    ctrl(controls, target, [&](ValueRange targets) {                           \
+      OP_CLASS::create(*this, targets[0], param1, param2);                     \
+    });                                                                        \
     return *this;                                                              \
   }
 
@@ -317,7 +344,6 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), Value control,               \
       Value target) {                                                          \
-    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM1, PARAM2, PARAM3, {control}, target);             \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
@@ -325,12 +351,11 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
       Value target) {                                                          \
-    checkFinalized();                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
-    CtrlOp::create(*this, controls, [&] {                                      \
-      OP_CLASS::create(*this, target, param1, param2, param3);                 \
+    ctrl(controls, target, [&](ValueRange targets) {                           \
+      OP_CLASS::create(*this, targets[0], param1, param2, param3);             \
     });                                                                        \
     return *this;                                                              \
   }
@@ -349,14 +374,13 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(Value control, Value qubit0,  \
                                                  Value qubit1) {               \
-    checkFinalized();                                                          \
     return mc##OP_NAME({control}, qubit0, qubit1);                             \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
       ValueRange controls, Value qubit0, Value qubit1) {                       \
-    checkFinalized();                                                          \
-    CtrlOp::create(*this, controls,                                            \
-                   [&] { OP_CLASS::create(*this, qubit0, qubit1); });          \
+    ctrl(controls, ValueRange{qubit0, qubit1}, [&](ValueRange targets) {       \
+      OP_CLASS::create(*this, targets[0], targets[1]);                         \
+    });                                                                        \
     return *this;                                                              \
   }
 
@@ -379,16 +403,15 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
   QCProgramBuilder& QCProgramBuilder::c##OP_NAME(                              \
       const std::variant<double, Value>&(PARAM), Value control, Value qubit0,  \
       Value qubit1) {                                                          \
-    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM, {control}, qubit0, qubit1);                      \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value qubit0, Value qubit1) {                                            \
-    checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    CtrlOp::create(*this, controls,                                            \
-                   [&] { OP_CLASS::create(*this, qubit0, qubit1, param); });   \
+    ctrl(controls, ValueRange{qubit0, qubit1}, [&](ValueRange targets) {       \
+      OP_CLASS::create(*this, targets[0], targets[1], param);                  \
+    });                                                                        \
     return *this;                                                              \
   }
 
@@ -414,18 +437,16 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value control, Value qubit0, \
       Value qubit1) {                                                          \
-    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM1, PARAM2, {control}, qubit0, qubit1);             \
   }                                                                            \
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value qubit0, Value qubit1) {                                            \
-    checkFinalized();                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    CtrlOp::create(*this, controls, [&] {                                      \
-      OP_CLASS::create(*this, qubit0, qubit1, param1, param2);                 \
+    ctrl(controls, ValueRange{qubit0, qubit1}, [&](ValueRange targets) {       \
+      OP_CLASS::create(*this, targets[0], targets[1], param1, param2);         \
     });                                                                        \
     return *this;                                                              \
   }
@@ -447,16 +468,106 @@ QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
-                                         const function_ref<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
+                       const function_ref<void(ValueRange)>& body) {
   checkFinalized();
-  CtrlOp::create(*this, controls, body);
+  CtrlOp::create(*this, controls, targets, body);
   return *this;
 }
 
-QCProgramBuilder& QCProgramBuilder::inv(const function_ref<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::inv(ValueRange qubits,
+                      const function_ref<void(ValueRange)>& body) {
   checkFinalized();
-  InvOp::create(*this, body);
+  InvOp::create(*this, qubits, body);
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder&
+QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
+                         const std::variant<int64_t, Value>& upperbound,
+                         const std::variant<int64_t, Value>& step,
+                         const function_ref<void(Value)>& body) {
+  checkFinalized();
+
+  auto loc = getLoc();
+  auto lb = variantToValue(*this, loc, lowerbound);
+  auto ub = variantToValue(*this, loc, upperbound);
+  auto stepSize = variantToValue(*this, loc, step);
+
+  scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
+                     [&](OpBuilder& b, Location l, Value iv, ValueRange) {
+                       regionStack.emplace_back(
+                           b.getInsertionBlock()->getParent());
+                       body(iv);
+                       scf::YieldOp::create(b, l);
+                       regionStack.pop_back();
+                     });
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfWhile(const function_ref<void()>& beforeBody,
+                           const function_ref<void()>& afterBody) {
+  checkFinalized();
+
+  scf::WhileOp::create(
+      *this, TypeRange{}, ValueRange{},
+      [&](OpBuilder& b, Location, ValueRange) {
+        auto* insertionBlock = b.getInsertionBlock();
+        regionStack.emplace_back(insertionBlock->getParent());
+        beforeBody();
+        if (!isa_and_nonnull<scf::ConditionOp>(
+                insertionBlock->getTerminator())) {
+          llvm::reportFatalUsageError(
+              "scf.while beforeBody must terminate with scf.condition");
+        }
+        regionStack.pop_back();
+      },
+      [&](OpBuilder& b, Location loc, ValueRange) {
+        regionStack.emplace_back(b.getInsertionBlock()->getParent());
+        afterBody();
+        scf::YieldOp::create(b, loc);
+        regionStack.pop_back();
+      });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
+                        const function_ref<void()>& thenBody,
+                        const function_ref<void()>& elseBody) {
+  checkFinalized();
+
+  auto condition = variantToValue(*this, getLoc(), cond);
+
+  auto buildRegion = [&](const function_ref<void()>& body) {
+    return [&, body](OpBuilder& b, Location loc) {
+      regionStack.emplace_back(b.getInsertionBlock()->getParent());
+      body();
+      scf::YieldOp::create(b, loc);
+      regionStack.pop_back();
+    };
+  };
+
+  if (!elseBody) {
+    scf::IfOp::create(*this, condition, buildRegion(thenBody));
+  } else {
+    scf::IfOp::create(*this, condition, buildRegion(thenBody),
+                      buildRegion(elseBody));
+  }
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
+  checkFinalized();
+  scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
 }
 

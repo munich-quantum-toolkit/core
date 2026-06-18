@@ -31,7 +31,7 @@ inline constexpr auto DEFAULT_ATOL = 1e-12;
  * Several entries share the angle-extraction routine and only differ in how
  * the final circuit is emitted (e.g. `U3` vs `U321`, or `ZSX` vs `ZSXX`).
  */
-enum class EulerBasis : std::uint8_t {
+enum class GateEulerBasis : std::uint8_t {
   U3 = 0,   ///< Single `u(theta, phi, lambda)` gate.
   U321 = 1, ///< `u1`/`u2`/`u3` family — picks the smallest form per angles.
   U = 2,    ///< Same ZYZ angle extraction as `U3`, emitted as a single `u`.
@@ -50,6 +50,6 @@ enum class EulerBasis : std::uint8_t {
  * decompositions emit fewer than three gates after simplification.
  */
 [[nodiscard]] llvm::SmallVector<GateKind, 3>
-getGateTypesForEulerBasis(EulerBasis eulerBasis);
+getGateTypesForEulerBasis(GateEulerBasis eulerBasis);
 
 } // namespace mlir::qco::decomposition

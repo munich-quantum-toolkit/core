@@ -30,7 +30,7 @@ decomposition::GateKind getGateKind(UnitaryOpInterface op) {
   Operation* raw = op.getOperation();
   if (auto ctrl = llvm::dyn_cast<CtrlOp>(raw)) {
     // Controlled operations encode the physical gate in the body region.
-    raw = ctrl.getBodyUnitary().getOperation();
+    raw = ctrl.getBodyUnitary(0).getOperation();
   }
   return llvm::TypeSwitch<Operation*, decomposition::GateKind>(raw)
       .Case<IdOp>([](auto) { return decomposition::GateKind::I; })

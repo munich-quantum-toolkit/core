@@ -17,8 +17,10 @@ add_mlir_library(
   PRIVATE
   MLIRQCODialect
   MLIRQCOUtils
+  MLIRQTensorUtils
   MLIRArithDialect
   MLIRMathDialect
+  MLIRSCFUtils
   DEPENDS
   MLIRQCOTransformsIncGen)
 

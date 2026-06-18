@@ -9,15 +9,16 @@
 include "mlir/Pass/PassBase.td"
 
 def QCOToJeff : Pass<"qco-to-jeff"> {
-  let summary = "Convert QCO operations to Jeff operations";
+  let summary = "Convert QCO operations to `jeff` operations";
 
   let description = [{
-    This pass converts all operations from the QCO dialect to their equivalent operations in the Jeff dialect.
-    It ensures that the returned module is a valid Jeff module that can be serialized.
+    This pass converts all operations from the QCO dialect to their equivalent operations in the `jeff` dialect.
+    It ensures that the returned module is a valid `jeff` module that can be serialized.
 
-    Note that this pass is still in development as QCO and Jeff do not have full feature parity yet.
+    Note that this pass is still in development as QCO and `jeff` do not have full feature parity yet.
 
-    `qco.static` is currently converted to `jeff.qubit_alloc` because Jeff does not yet represent static (index-based) qubits; the index is not preserved in Jeff IR. Round-tripping through Jeff therefore maps static qubits to dynamic allocation on the QCO side.
+    `qco.static` is currently converted to `jeff.qubit_alloc` because `jeff` does not yet represent static (index-based) qubits; the index is not preserved in `jeff` IR.
+    Round-tripping through `jeff` therefore maps static qubits to dynamic allocation on the QCO side.
   }];
 
   let dependentDialects = ["mlir::jeff::JeffDialect"];

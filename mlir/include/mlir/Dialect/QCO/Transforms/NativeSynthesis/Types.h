@@ -66,7 +66,7 @@ enum class NativeGateKind : std::uint8_t {
 struct SingleQubitEmitterSpec {
   SingleQubitMode mode = SingleQubitMode::U3;
   AxisPair axisPair = AxisPair::RxRz;
-  llvm::SmallVector<decomposition::EulerBasis> eulerBases;
+  llvm::SmallVector<decomposition::GateEulerBasis> eulerBases;
   /// Only meaningful for `SingleQubitMode::ZSXX`: when set, the emitter may
   /// emit Rx / Ry / R directly (via an `rz * rx * rz` sandwich for the latter
   /// two) instead of falling back to the ZSXX Euler sequence.

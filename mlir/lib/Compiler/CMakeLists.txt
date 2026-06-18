@@ -19,8 +19,9 @@ add_mlir_library(
   MLIRTransformUtils
   MLIRQCToQCO
   MLIRQCOToQC
+  MLIRQCToQIRBase
+  MLIRQCToQIRAdaptive
   MLIRQCOTransforms
-  MLIRQCToQIR
   MQT::MLIRSupport)
 
 mqt_mlir_target_use_project_options(MQTCompilerPipeline)

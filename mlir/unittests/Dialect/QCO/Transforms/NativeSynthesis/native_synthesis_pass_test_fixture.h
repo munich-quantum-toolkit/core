@@ -73,7 +73,7 @@ protected:
           ok = false;
           return mlir::WalkResult::interrupt();
         }
-        mlir::Operation* body = ctrl.getBodyUnitary().getOperation();
+        mlir::Operation* body = ctrl.getBodyUnitary(0).getOperation();
         const bool isCx = llvm::isa<mlir::qco::XOp>(body);
         const bool isCz = llvm::isa<mlir::qco::ZOp>(body);
         if ((isCx && allowCx) || (isCz && allowCz)) {

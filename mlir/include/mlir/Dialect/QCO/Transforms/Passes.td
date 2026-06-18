@@ -40,6 +40,48 @@ def MergeSingleQubitRotationGates
   }];
 }
 
+def FuseSingleQubitUnitaryRuns
+    : Pass<"fuse-single-qubit-unitary-runs", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect"];
+  let summary = "Fuse single-qubit unitary runs using Euler resynthesis";
+  let description = [{
+    Matches maximal runs of consecutive single-qubit unitary operations on the
+    same qubit wire (anchored at each run head), composes their constant unitary
+    matrices, and replaces a run with an equivalent sequence of basis gates when
+    beneficial: when the run contains a gate outside the target `basis`, or when
+    Euler resynthesis would shorten it (`synthesizeUnitary1QEuler`). Runs that are
+    already in the target `basis` and no shorter than the canonical synthesis
+    length are left unchanged.
+
+    The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
+    A `gphase` correction is inserted when needed so the rewritten sequence
+    matches the composed matrix exactly (not only up to global phase).
+
+    Currently, only operations whose unitary matrix can be obtained at compile
+    time are fused.
+  }];
+  let options = [Option<"basis", "basis", "std::string", "\"zyz\"",
+                        "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx).">];
+}
+
+def QuantumLoopUnroll
+    : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];
+  let summary = "Unroll bounded loops containing quantum operations";
+  let description = [{
+    This pass unrolls `scf.for` operations which contain quantum operations. Classical loops are not unrolled.
+
+    Because the pass uses the `mlir::loopUnrollByFactor` utility internally, the same assumptions and restrictions hold for both.
+    See the [MLIR documentation](https://mlir.llvm.org/doxygen/include_2mlir_2Dialect_2SCF_2Utils_2Utils_8h.html) for more information.
+  }];
+  let options = [Option<"unrollFactor", "unroll-factor", "int64_t",
+                        /*default=*/"-1",
+                        "Use this unroll factor for all loops being unrolled, "
+                        "set it to -1, and it will fully unroll.">];
+}
+
 //===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
@@ -89,9 +131,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "The alpha factor in the cost function. Must be > 0.">,
                  Option<"lambda", "lambda", "float", "0.5F",
                         "The lambda factor in the cost function.">,
-                 Option<"niterations", "niterations", "std::size_t", "2",
+                 Option<"niterations", "niterations", "std::size_t", "1",
                         "The number of forwards and backwards traversal to "
-                        "improve the initial layout.">,
+                        "improve the initial layout. Must be > 0.">,
                  Option<"ntrials", "ntrials", "std::size_t", "4",
                         "The number of (possibly parallel) random trials of "
                         "the forwards and backwards mechanism. Must be > 0.">,
@@ -100,6 +142,10 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
 }
+
+//===----------------------------------------------------------------------===//
+// Native gate synthesis
+//===----------------------------------------------------------------------===//
 
 def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
@@ -162,6 +208,63 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
        Option<"scoreWeightDepth", "score-weight-depth", "double", "0.01",
               "Weight for the local candidate depth in candidate scoring. "
               "Must be finite and non-negative.">];
+}
+
+//===----------------------------------------------------------------------===//
+// Optimization Passes
+//===----------------------------------------------------------------------===//
+
+def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "This pass attempts to move Hadamard gates as far away from "
+                "measurements as possible by commuting them "
+                "with Pauli gates. This is done in order to apply measurement "
+                "lifting more efficiently, which is a sub-routine of "
+                "qubit reuse. Additionally, it can change target and control "
+                "qubits from Pauli-Z gates to make Hadamard lifting "
+                "applicable. It also lifts Hadamard gates over CNOT gates if "
+                "that moves a measurement directly after a control.";
+  let description = [{
+    This pass lifts Hadamard gates away from the measurements in order to apply measurement lifting more effectively.
+    Measurement lifting is a subroutine of the qubit reuse routine. The goal is to measure qubits earlier in the
+    circuit to reuse them and to potentially remove some quantum gates.
+
+    Measurement lifting commutes measurements with Pauli and phase gates. However, the routine stops if a Hadamard gate
+    is applied before the measurement takes place. Hadamard lifting attempts to move Hadamards further in front of the
+    circuit, in order to improve the results provided by measurement lifting.
+
+    Hadamard lifting uses the following commutation rules:
+         ┌───┐ ┌───┐      ┌───┐ ┌───┐
+        ─┤ X ├─┤ H ├─ => ─┤ H ├─┤ Z ├─
+         └───┘ └───┘      └───┘ └───┘
+         ┌───┐ ┌───┐      ┌───┐ ┌───┐
+        ─┤ Z ├─┤ H ├─ => ─┤ H ├─┤ X ├─
+         └───┘ └───┘      └───┘ └───┘
+         ┌───┐ ┌───┐      ┌───┐ ┌───┐                                ┌───────┐
+        ─┤ Y ├─┤ H ├─ => ─┤ H ├─┤ Y ├─, while adding a global phase: │ G(pi) │
+         └───┘ └───┘      └───┘ └───┘                                └───────┘
+    Hadamard lifting is only applied to commute Hadamard gates further in front in the circuit, not the other way
+    around. A global phase is added if the Hadamard gate is commuted with a Pauli-Y gate, as YH = -HY.
+
+    The routine is only applied to non-controlled Pauli and Hadamard gates.
+
+    In order to reduce multi-qubit gates, a second transformation routine is applied. Using the commutation rule
+                 ┌───┐┌───┐┌───┐
+        ──■──    ┤ H ├┤ X ├┤ H ├
+        ┌─┴─┐ => │───│└─┬─┘│───│
+        ┤ X ├    ┤ H ├──■──┤ H ├
+        └───┘    └───┘     └───┘
+    the following transformation is applied to circuits where a Hadamard gate follows a target gate of a controlled
+    Pauli-X gate, which is followed by a measurement:
+                              ┌───┐┌───┐┌───┐
+        ──■─────────────      ┤ H ├┤ X ├┤ H ├──
+        ┌─┴─┐┌───┐┌──────┐ => │───│└─┬─┘│───┘──┐
+        ┤ X ├┤ H ├┤ Meas │    ┤ H ├──■──┤ Meas │
+        └───┘└───┘└──────┘    └───┘     └──────┘
+
+     Afterward the measurement lifting routine could transform the CNOT into a classically controlled Pauli-X.
+
+  }];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

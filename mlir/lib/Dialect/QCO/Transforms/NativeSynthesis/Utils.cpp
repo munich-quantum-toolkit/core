@@ -15,8 +15,8 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/LU>
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -29,11 +29,34 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <Eigen/LU>
 #include <cmath>
 #include <complex>
 #include <optional>
 
 namespace mlir::qco::native_synth {
+
+Eigen::Matrix2cd toEigen(const Matrix2x2& matrix) {
+  Eigen::Matrix2cd out;
+  for (std::size_t row = 0; row < 2; ++row) {
+    for (std::size_t col = 0; col < 2; ++col) {
+      out(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col)) =
+          matrix(row, col);
+    }
+  }
+  return out;
+}
+
+Eigen::Matrix4cd toEigen(const Matrix4x4& matrix) {
+  Eigen::Matrix4cd out;
+  for (std::size_t row = 0; row < 4; ++row) {
+    for (std::size_t col = 0; col < 4; ++col) {
+      out(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col)) =
+          matrix(row, col);
+    }
+  }
+  return out;
+}
 
 Value createF64Const(IRRewriter& rewriter, Location loc, double value) {
   return arith::ConstantFloatOp::create(rewriter, loc, rewriter.getF64Type(),
@@ -82,9 +105,11 @@ void normalizeToSU4(Eigen::Matrix4cd& matrix) {
 
 bool getNormalizedTwoQubitMatrix(UnitaryOpInterface unitary,
                                  Eigen::Matrix4cd& matrix) {
-  if (!unitary.getUnitaryMatrix4x4(matrix)) {
+  Matrix4x4 raw;
+  if (!unitary.getUnitaryMatrix4x4(raw)) {
     return false;
   }
+  matrix = toEigen(raw);
   normalizeToSU4(matrix);
   return true;
 }
@@ -97,7 +122,7 @@ bool getBlockTwoQubitMatrix(Operation* op, Eigen::Matrix4cd& matrix) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
-    auto* body = ctrl.getBodyUnitary().getOperation();
+    auto* body = ctrl.getBodyUnitary(0).getOperation();
     if (llvm::isa<XOp>(body)) {
       // CX matrix in the same 4x4 basis layout as ``getUnitaryMatrix4x4``.
       matrix << 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0;
@@ -114,7 +139,12 @@ bool getBlockTwoQubitMatrix(Operation* op, Eigen::Matrix4cd& matrix) {
   if (!unitary || !unitary.isTwoQubit()) {
     return false;
   }
-  return unitary.getUnitaryMatrix4x4(matrix);
+  Matrix4x4 raw;
+  if (!unitary.getUnitaryMatrix4x4(raw)) {
+    return false;
+  }
+  matrix = toEigen(raw);
+  return true;
 }
 
 /// Emit a single-qubit gate from a decomposition gate, threading `target` and

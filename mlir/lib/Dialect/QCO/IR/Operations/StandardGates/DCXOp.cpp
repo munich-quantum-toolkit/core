@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -31,8 +31,8 @@ struct RemoveInversePairDCX final : OpRewritePattern<DCXOp> {
 
   LogicalResult matchAndRewrite(DCXOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeTwoTargetZeroParameterPairWithSwappedTargets<DCXOp>(op,
-                                                                     rewriter);
+    return removeInversePairTwoTargetZeroParameter<DCXOp>(op, rewriter, false,
+                                                          true);
   }
 };
 
@@ -43,9 +43,9 @@ void DCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveInversePairDCX>(context);
 }
 
-Eigen::Matrix4cd DCXOp::getUnitaryMatrix() {
-  return Eigen::Matrix4cd{{1, 0, 0, 0},  // row 0
-                          {0, 0, 1, 0},  // row 1
-                          {0, 0, 0, 1},  // row 2
-                          {0, 1, 0, 0}}; // row 3
+Matrix4x4 DCXOp::getUnitaryMatrix() {
+  return Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
+                                 0, 0, 1, 0,  // row 1
+                                 0, 0, 0, 1,  // row 2
+                                 0, 1, 0, 0); // row 3
 }

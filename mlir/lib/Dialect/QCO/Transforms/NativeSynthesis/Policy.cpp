@@ -18,14 +18,16 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 
+#include <Eigen/Core>
 #include <algorithm>
 #include <cmath>
 #include <optional>
@@ -176,10 +178,11 @@ estimateMatrixSingleQubitMetrics(UnitaryOpInterface unitary,
   if (!unitary.isSingleQubit()) {
     return std::nullopt;
   }
-  Eigen::Matrix2cd matrix;
-  if (!unitary.getUnitaryMatrix2x2(matrix)) {
+  Matrix2x2 raw;
+  if (!unitary.getUnitaryMatrix2x2(raw)) {
     return std::nullopt;
   }
+  const Eigen::Matrix2cd matrix = toEigen(raw);
 
   const auto countNonIdentity =
       [](const decomposition::QubitGateSequence& seq) {
@@ -197,13 +200,13 @@ estimateMatrixSingleQubitMetrics(UnitaryOpInterface unitary,
   case SingleQubitMode::ZSXX:
     return computeGateSequenceMetrics(
         decomposition::EulerDecomposition::generateCircuit(
-            decomposition::EulerBasis::ZSXX, matrix, /*simplify=*/true,
+            decomposition::GateEulerBasis::ZSXX, matrix, /*simplify=*/true,
             std::nullopt));
   case SingleQubitMode::U3:
     return CandidateMetrics{.numOneQ = 1, .numTwoQ = 0, .depth = 1};
   case SingleQubitMode::R:
     return countNonIdentity(decomposition::EulerDecomposition::generateCircuit(
-        decomposition::EulerBasis::XYX, matrix, /*simplify=*/true,
+        decomposition::GateEulerBasis::XYX, matrix, /*simplify=*/true,
         std::nullopt));
   case SingleQubitMode::AxisPair: {
     const auto bases = getEulerBasesForAxisPair(emitter.axisPair);

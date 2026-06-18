@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -39,20 +39,7 @@ struct MergeSubsequentRYY final : OpRewritePattern<RYYOp> {
 
   LogicalResult matchAndRewrite(RYYOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameter(op, rewriter);
-  }
-};
-
-/**
- * @brief Merge subsequent RYY operations with swapped targets by adding their
- * angles.
- */
-struct MergeSwappedTargetsRYY final : OpRewritePattern<RYYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RYYOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+    return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
 
@@ -79,20 +66,19 @@ LogicalResult RYYOp::fold(FoldAdaptor /*adaptor*/,
 
 void RYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRYY, MergeSwappedTargetsRYY>(context);
+  results.add<MergeSubsequentRYY>(context);
 }
 
-std::optional<Eigen::Matrix4cd> RYYOp::getUnitaryMatrix() {
+std::optional<Matrix4x4> RYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m0 = 0i;
-    const auto mc = std::complex<double>{std::cos(*theta / 2.0)};
-    const auto ms = std::complex<double>{0.0, std::sin(*theta / 2.0)};
-    return Eigen::Matrix4cd{{mc, m0, m0, ms},  // row 0
-                            {m0, mc, -ms, m0}, // row 1
-                            {m0, -ms, mc, m0}, // row 2
-                            {ms, m0, m0, mc}}; // row 3
+    const auto mc = std::cos(*theta / 2);
+    const auto ms = 1i * std::sin(*theta / 2);
+    return Matrix4x4::fromElements(mc, 0, 0, ms,  // row 0
+                                   0, mc, -ms, 0, // row 1
+                                   0, -ms, mc, 0, // row 2
+                                   ms, 0, 0, mc); // row 3
   }
   return std::nullopt;
 }

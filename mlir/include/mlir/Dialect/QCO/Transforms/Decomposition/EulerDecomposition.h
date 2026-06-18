@@ -14,7 +14,6 @@
 #include "GateSequence.h"
 
 #include <Eigen/Core>
-
 #include <array>
 #include <optional>
 
@@ -39,8 +38,9 @@ public:
    * the decomposition exactly equal to `unitaryMatrix`.
    */
   [[nodiscard]] static OneQubitGateSequence
-  generateCircuit(EulerBasis targetBasis, const Eigen::Matrix2cd& unitaryMatrix,
-                  bool simplify, std::optional<double> atol);
+  generateCircuit(GateEulerBasis targetBasis,
+                  const Eigen::Matrix2cd& unitaryMatrix, bool simplify,
+                  std::optional<double> atol);
 
   /**
    * Extract canonical Euler parameters for `matrix` in the requested basis.
@@ -50,7 +50,7 @@ public:
    * `(theta, phi, lambda, phase)` in this order.
    */
   [[nodiscard]] static std::array<double, 4>
-  anglesFromUnitary(const Eigen::Matrix2cd& matrix, EulerBasis basis);
+  anglesFromUnitary(const Eigen::Matrix2cd& matrix, GateEulerBasis basis);
 
 private:
   /// Extract parameters for a `RZ(phi) RY(theta) RZ(lambda)` factorization.

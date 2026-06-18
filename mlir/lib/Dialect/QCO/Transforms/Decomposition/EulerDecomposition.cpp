@@ -15,9 +15,9 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 
-#include <Eigen/Core>
 #include <llvm/Support/ErrorHandling.h>
 
+#include <Eigen/Core>
 #include <array>
 #include <cmath>
 #include <complex>
@@ -27,7 +27,7 @@
 namespace mlir::qco::decomposition {
 
 OneQubitGateSequence
-EulerDecomposition::generateCircuit(EulerBasis targetBasis,
+EulerDecomposition::generateCircuit(GateEulerBasis targetBasis,
                                     const Eigen::Matrix2cd& unitaryMatrix,
                                     bool simplify, std::optional<double> atol) {
   // First normalize the input into basis-specific Euler parameters, then map
@@ -36,31 +36,31 @@ EulerDecomposition::generateCircuit(EulerBasis targetBasis,
       anglesFromUnitary(unitaryMatrix, targetBasis);
 
   switch (targetBasis) {
-  case EulerBasis::ZYZ:
+  case GateEulerBasis::ZYZ:
     return decomposeKAK(theta, phi, lambda, phase, GateKind::RZ, GateKind::RY,
                         simplify, atol);
-  case EulerBasis::ZXZ:
+  case GateEulerBasis::ZXZ:
     return decomposeKAK(theta, phi, lambda, phase, GateKind::RZ, GateKind::RX,
                         simplify, atol);
-  case EulerBasis::XZX:
+  case GateEulerBasis::XZX:
     return decomposeKAK(theta, phi, lambda, phase, GateKind::RX, GateKind::RZ,
                         simplify, atol);
-  case EulerBasis::XYX:
+  case GateEulerBasis::XYX:
     return decomposeKAK(theta, phi, lambda, phase, GateKind::RX, GateKind::RY,
                         simplify, atol);
-  case EulerBasis::U:
+  case GateEulerBasis::U:
     [[fallthrough]];
-  case EulerBasis::U3:
+  case GateEulerBasis::U3:
     [[fallthrough]];
-  case EulerBasis::U321:
+  case GateEulerBasis::U321:
     return OneQubitGateSequence{
         .gates = {{.type = GateKind::U, .parameter = {theta, phi, lambda}}},
         .globalPhase = phase - ((phi + lambda) / 2.),
     };
-  case EulerBasis::ZSX:
+  case GateEulerBasis::ZSX:
     return decomposePsxGen(theta, phi, lambda, phase, /*allowXShortcut=*/false,
                            simplify, atol);
-  case EulerBasis::ZSXX:
+  case GateEulerBasis::ZSXX:
     return decomposePsxGen(theta, phi, lambda, phase, /*allowXShortcut=*/true,
                            simplify, atol);
   }
@@ -70,23 +70,23 @@ EulerDecomposition::generateCircuit(EulerBasis targetBasis,
 
 std::array<double, 4>
 EulerDecomposition::anglesFromUnitary(const Eigen::Matrix2cd& matrix,
-                                      EulerBasis basis) {
+                                      GateEulerBasis basis) {
   switch (basis) {
-  case EulerBasis::XYX:
+  case GateEulerBasis::XYX:
     return paramsXyx(matrix);
-  case EulerBasis::XZX:
+  case GateEulerBasis::XZX:
     return paramsXzx(matrix);
-  case EulerBasis::ZYZ:
+  case GateEulerBasis::ZYZ:
     return paramsZyz(matrix);
-  case EulerBasis::ZXZ:
+  case GateEulerBasis::ZXZ:
     return paramsZxz(matrix);
-  case EulerBasis::U:
-  case EulerBasis::U3:
-  case EulerBasis::U321:
+  case GateEulerBasis::U:
+  case GateEulerBasis::U3:
+  case GateEulerBasis::U321:
     // The `u` gate parameterization is derived from the standard Z-Y-Z form.
     return paramsZyz(matrix);
-  case EulerBasis::ZSX:
-  case EulerBasis::ZSXX:
+  case GateEulerBasis::ZSX:
+  case GateEulerBasis::ZSXX:
     // Qiskit's `params_u1x_inner` reuses Z-Y-Z angles but shifts the global
     // phase by `-0.5 * (theta + phi + lambda)` so that the decomposition
     // matches an `rz`/`sx` emission exactly (not only up to global phase).

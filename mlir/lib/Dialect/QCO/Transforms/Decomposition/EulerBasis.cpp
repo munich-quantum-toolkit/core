@@ -18,29 +18,29 @@
 namespace mlir::qco::decomposition {
 
 [[nodiscard]] llvm::SmallVector<GateKind, 3>
-getGateTypesForEulerBasis(EulerBasis eulerBasis) {
+getGateTypesForEulerBasis(GateEulerBasis eulerBasis) {
   switch (eulerBasis) {
-  case EulerBasis::ZYZ:
+  case GateEulerBasis::ZYZ:
     // Z-Y-Z style decompositions only emit `rz` and `ry`.
     return {GateKind::RZ, GateKind::RY};
-  case EulerBasis::ZXZ:
+  case GateEulerBasis::ZXZ:
     // Z-X-Z and X-Z-X share the same two-axis alphabet with swapped roles.
     return {GateKind::RZ, GateKind::RX};
-  case EulerBasis::XZX:
+  case GateEulerBasis::XZX:
     return {GateKind::RX, GateKind::RZ};
-  case EulerBasis::XYX:
+  case GateEulerBasis::XYX:
     return {GateKind::RX, GateKind::RY};
-  case EulerBasis::U3:
+  case GateEulerBasis::U3:
     [[fallthrough]];
-  case EulerBasis::U321:
+  case GateEulerBasis::U321:
     [[fallthrough]];
-  case EulerBasis::U:
+  case GateEulerBasis::U:
     // All U variants collapse to a single `u` operation at emission time.
     return {GateKind::U};
-  case EulerBasis::ZSX:
+  case GateEulerBasis::ZSX:
     // `ZSX` only emits `rz` and `sx`.
     return {GateKind::RZ, GateKind::SX};
-  case EulerBasis::ZSXX:
+  case GateEulerBasis::ZSXX:
     // `ZSXX` additionally allows a bare `X` when the middle rotation is
     // +/- pi, staying within the `{rz, sx, x}` alphabet.
     return {GateKind::RZ, GateKind::SX, GateKind::X};

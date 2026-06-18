@@ -139,7 +139,7 @@ bool gateSequenceFitsMenu(const decomposition::TwoQubitGateSequence& seq,
 std::optional<decomposition::TwoQubitGateSequence>
 decomposeTwoQubitFromMatrix(const Eigen::Matrix4cd& matrix,
                             EntanglerBasis entangler,
-                            decomposition::EulerBasis eulerBasis,
+                            decomposition::GateEulerBasis eulerBasis,
                             std::optional<std::uint8_t> numBasisUses) {
   // Basis-gate qubit ids align with `getBlockTwoQubitMatrix` / CX layout.
   const decomposition::Gate basisGate{
@@ -152,7 +152,7 @@ decomposeTwoQubitFromMatrix(const Eigen::Matrix4cd& matrix,
   auto weyl =
       decomposition::TwoQubitWeylDecomposition::create(matrix, std::nullopt);
   return decomposer.twoQubitDecompose(
-      weyl, llvm::SmallVector<decomposition::EulerBasis>{eulerBasis},
+      weyl, llvm::SmallVector<decomposition::GateEulerBasis>{eulerBasis},
       std::nullopt, /*approximate=*/false, numBasisUses);
 }
 
@@ -196,7 +196,8 @@ static void tryAddTwoQubitBasisCandidatesForEmitterBasis(
     llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>& candidates,
     unsigned& enumerationIndex, const Eigen::Matrix4cd& targetMatrix,
     const NativeProfileSpec& spec, EntanglerBasis entangler,
-    const SingleQubitEmitterSpec& emitter, decomposition::EulerBasis basis) {
+    const SingleQubitEmitterSpec& emitter,
+    decomposition::GateEulerBasis basis) {
   // An arbitrary 2-qubit unitary can always be realized using at most three
   // copies of any fixed (non-diagonal) entangler plus local gates -- this is
   // a consequence of the KAK/Weyl decomposition. Trying all four candidate

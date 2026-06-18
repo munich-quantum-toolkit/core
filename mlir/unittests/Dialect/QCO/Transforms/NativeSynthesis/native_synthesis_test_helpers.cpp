@@ -14,6 +14,8 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/Support/Casting.h>
@@ -32,6 +34,18 @@
 #include <optional>
 
 using namespace mlir;
+
+namespace {
+
+Eigen::Matrix2cd matrixToEigen(const qco::Matrix2x2& matrix) {
+  return qco::native_synth::toEigen(matrix);
+}
+
+Eigen::Matrix4cd matrixToEigen(const qco::Matrix4x4& matrix) {
+  return qco::native_synth::toEigen(matrix);
+}
+
+} // namespace
 
 namespace mlir::qco::native_synth_test {
 
@@ -209,14 +223,21 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
     out = Eigen::Matrix2cd{{thetaCos, m01}, {m10, thetaCos}};
     return true;
   }
-  if (op.getUnitaryMatrix2x2(out)) {
+  if (qco::Matrix2x2 raw; op.getUnitaryMatrix2x2(raw)) {
+    out = matrixToEigen(raw);
     return true;
   }
-  auto dynamic = op.getUnitaryMatrix<Eigen::MatrixXcd>();
-  if (!dynamic || dynamic->rows() != 2 || dynamic->cols() != 2) {
+  qco::DynamicMatrix dynamic;
+  if (!op.getUnitaryMatrixDynamic(dynamic) || dynamic.rows() != 2 ||
+      dynamic.cols() != 2) {
     return false;
   }
-  out = dynamic->template block<2, 2>(0, 0);
+  for (std::size_t row = 0; row < 2; ++row) {
+    for (std::size_t col = 0; col < 2; ++col) {
+      out(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col)) =
+          dynamic(row, col);
+    }
+  }
   return true;
 }
 
@@ -226,7 +247,7 @@ bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Eigen::Matrix4cd& out) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
-    auto* body = ctrl.getBodyUnitary().getOperation();
+    auto* body = ctrl.getBodyUnitary(0).getOperation();
     if (llvm::isa<qco::ZOp>(body)) {
       out = Eigen::Matrix4cd::Identity();
       out(3, 3) = -1.0;
@@ -238,14 +259,21 @@ bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Eigen::Matrix4cd& out) {
     }
     return false;
   }
-  if (op.getUnitaryMatrix4x4(out)) {
+  if (qco::Matrix4x4 raw; op.getUnitaryMatrix4x4(raw)) {
+    out = matrixToEigen(raw);
     return true;
   }
-  auto dynamic = op.getUnitaryMatrix<Eigen::MatrixXcd>();
-  if (!dynamic || dynamic->rows() != 4 || dynamic->cols() != 4) {
+  qco::DynamicMatrix dynamic;
+  if (!op.getUnitaryMatrixDynamic(dynamic) || dynamic.rows() != 4 ||
+      dynamic.cols() != 4) {
     return false;
   }
-  out = *dynamic;
+  for (std::size_t row = 0; row < 4; ++row) {
+    for (std::size_t col = 0; col < 4; ++col) {
+      out(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col)) =
+          dynamic(row, col);
+    }
+  }
   return true;
 }
 

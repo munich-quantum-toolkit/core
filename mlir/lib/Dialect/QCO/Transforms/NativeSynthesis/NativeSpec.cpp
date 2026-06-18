@@ -67,18 +67,18 @@ parseGateSet(llvm::StringRef nativeGates) {
 static SingleQubitEmitterSpec
 makeEmitterSpec(SingleQubitMode mode, AxisPair axisPair = AxisPair::RxRz,
                 bool supportsDirectRx = false) {
-  llvm::SmallVector<decomposition::EulerBasis> bases;
+  llvm::SmallVector<decomposition::GateEulerBasis> bases;
   switch (mode) {
   case SingleQubitMode::ZSXX:
-    bases = {decomposition::EulerBasis::ZSXX};
+    bases = {decomposition::GateEulerBasis::ZSXX};
     break;
   case SingleQubitMode::U3:
-    bases = {decomposition::EulerBasis::U3};
+    bases = {decomposition::GateEulerBasis::U3};
     break;
   case SingleQubitMode::R:
     // XYX decomposes any 1Q unitary into Rx-Ry-Rx chains, all of which the
     // R emitter lowers back into the native R(theta, phi) gate.
-    bases = {decomposition::EulerBasis::XYX};
+    bases = {decomposition::GateEulerBasis::XYX};
     break;
   case SingleQubitMode::AxisPair:
     bases = getEulerBasesForAxisPair(axisPair);
@@ -166,15 +166,15 @@ static void populateAllowedGates(NativeProfileSpec& spec) {
   }
 }
 
-llvm::SmallVector<decomposition::EulerBasis>
+llvm::SmallVector<decomposition::GateEulerBasis>
 getEulerBasesForAxisPair(AxisPair axisPair) {
   switch (axisPair) {
   case AxisPair::RxRz:
-    return {decomposition::EulerBasis::XZX};
+    return {decomposition::GateEulerBasis::XZX};
   case AxisPair::RxRy:
-    return {decomposition::EulerBasis::XYX};
+    return {decomposition::GateEulerBasis::XYX};
   case AxisPair::RyRz:
-    return {decomposition::EulerBasis::ZYZ};
+    return {decomposition::GateEulerBasis::ZYZ};
   }
   llvm_unreachable("unknown axis pair");
 }

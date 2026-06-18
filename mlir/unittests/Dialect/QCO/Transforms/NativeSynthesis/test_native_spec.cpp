@@ -47,15 +47,15 @@ TEST(NativeSpecTest, PhaseAliasPMatchesRzInIbmStyleMenu) {
 TEST(NativeSpecTest, GetEulerBasesForAxisPair) {
   const auto rxRz = getEulerBasesForAxisPair(AxisPair::RxRz);
   ASSERT_EQ(rxRz.size(), 1U);
-  EXPECT_EQ(rxRz[0], EulerBasis::XZX);
+  EXPECT_EQ(rxRz[0], GateEulerBasis::XZX);
 
   const auto rxRy = getEulerBasesForAxisPair(AxisPair::RxRy);
   ASSERT_EQ(rxRy.size(), 1U);
-  EXPECT_EQ(rxRy[0], EulerBasis::XYX);
+  EXPECT_EQ(rxRy[0], GateEulerBasis::XYX);
 
   const auto ryRz = getEulerBasesForAxisPair(AxisPair::RyRz);
   ASSERT_EQ(ryRz.size(), 1U);
-  EXPECT_EQ(ryRz[0], EulerBasis::ZYZ);
+  EXPECT_EQ(ryRz[0], GateEulerBasis::ZYZ);
 }
 
 TEST(NativeSpecTest, RzzSetsAllowRzzFlag) {

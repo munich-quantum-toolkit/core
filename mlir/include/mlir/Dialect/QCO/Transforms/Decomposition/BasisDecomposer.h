@@ -14,9 +14,9 @@
 #include "GateSequence.h"
 #include "WeylDecomposition.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/SmallVector.h>
 
+#include <Eigen/Core>
 #include <array>
 #include <complex>
 #include <cstdint>
@@ -79,7 +79,7 @@ public:
    */
   [[nodiscard]] std::optional<TwoQubitGateSequence> twoQubitDecompose(
       const decomposition::TwoQubitWeylDecomposition& targetDecomposition,
-      const llvm::SmallVector<EulerBasis>& target1qEulerBases,
+      const llvm::SmallVector<GateEulerBasis>& target1qEulerBases,
       std::optional<double> basisFidelity, bool approximate,
       std::optional<std::uint8_t> numBasisGateUses) const;
 
@@ -202,10 +202,10 @@ protected:
    * sequence. Multiple Euler bases may be specified and the one with the
    * least complexity will be chosen.
    */
-  [[nodiscard]] static OneQubitGateSequence
-  unitaryToGateSequence(const Eigen::Matrix2cd& unitaryMat,
-                        const llvm::SmallVector<EulerBasis>& targetBasisList,
-                        bool simplify, std::optional<double> atol);
+  [[nodiscard]] static OneQubitGateSequence unitaryToGateSequence(
+      const Eigen::Matrix2cd& unitaryMat,
+      const llvm::SmallVector<GateEulerBasis>& targetBasisList, bool simplify,
+      std::optional<double> atol);
 
   [[nodiscard]] static bool relativeEq(double lhs, double rhs, double epsilon,
                                        double maxRelative);

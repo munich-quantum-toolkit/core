@@ -12,9 +12,11 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -23,9 +25,11 @@
 #include <iterator>
 
 namespace mlir::qco {
-mlir::Value WireIterator::qubit() const {
-  // A sink/deallocation doesn't have an OpResult.
-  if (op_ != nullptr && isa<SinkOp>(op_)) {
+Value WireIterator::qubit() const {
+  // Boundary ops (sink/deallocation/insert/yield) consume the wire via an
+  // operand and have no OpResult, matching the boundaries in forward/backward.
+  if (op_ != nullptr &&
+      (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_))) {
     return nullptr;
   }
   return qubit_;
@@ -38,26 +42,27 @@ void WireIterator::forward() {
   }
 
   // Find the user-operation of the qubit SSA value.
-  assert(qubit_.getNumUses() == 1 && "expected linear typing");
-  op_ = *(qubit_.getUsers().begin());
+  assert(qubit_.hasOneUse() && "expected linear typing");
+  op_ = *(qubit_.user_begin());
 
-  // A sink op defines the end of the qubit wire (dynamic and static).
-  if (isa<SinkOp>(op_)) {
+  // A sink/insert/yield or region entry defines the end of the qubit wire.
+  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp, scf::ForOp,
+          scf::IfOp, scf::WhileOp>(op_)) {
     isSentinel_ = true;
     return;
   }
 
-  if (!(isa<AllocOp, StaticOp>(op_))) {
+  if (!(isa<AllocOp, StaticOp, qtensor::ExtractOp>(op_))) {
     // Find the output from the input qubit SSA value.
-    mlir::TypeSwitch<mlir::Operation*>(op_)
+    TypeSwitch<Operation*>(op_)
         .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
           qubit_ = op.getOutputForInput(qubit_);
         })
         .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
         .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
-        .Default([&](mlir::Operation* op) {
-          report_fatal_error("unknown op in def-use chain: " +
-                             op->getName().getStringRef());
+        .Default([&](Operation* op) {
+          llvm::reportFatalInternalError("unknown op in def-use chain: " +
+                                         op->getName().getStringRef());
         });
   }
 }
@@ -69,36 +74,35 @@ void WireIterator::backward() {
     return;
   }
 
-  // For sinks/deallocations, qubit_ is an OpOperand. Hence, only get the
-  // def-op.
-  if (isa<SinkOp>(op_)) {
+  // For sinks/deallocations/inserts/yields, qubit_ is an OpOperand. Hence, only
+  // get the def-op.
+  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp, scf::ForOp,
+          scf::IfOp, scf::WhileOp>(op_)) {
     op_ = qubit_.getDefiningOp();
     return;
   }
 
   // Allocations or static definitions define the start of the qubit wire.
   // Consequently, stop and early exit.
-  if (isa<AllocOp, StaticOp>(op_)) {
+  if (isa<AllocOp, StaticOp, qtensor::ExtractOp>(op_)) {
     return;
   }
 
   // Find the input from the output qubit SSA value.
-  mlir::TypeSwitch<mlir::Operation*>(op_)
+  TypeSwitch<Operation*>(op_)
       .Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface op) { qubit_ = op.getInputForOutput(qubit_); })
       .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
       .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
-      .Default([&](mlir::Operation* op) {
-        report_fatal_error("unknown op in def-use chain: " +
-                           op->getName().getStringRef());
+      .Default([&](Operation* op) {
+        llvm::reportFatalInternalError("unknown op in def-use chain: " +
+                                       op->getName().getStringRef());
       });
 
   // Get the operation that produces the qubit value.
-  // If the current qubit SSA value is a BlockArgument (no defining op), stop.
+  // If the current qubit SSA value is a BlockArgument (no defining op), the
+  // operation will be a nullptr.
   op_ = qubit_.getDefiningOp();
-  if (op_ == nullptr) {
-    return;
-  }
 }
 
 static_assert(std::bidirectional_iterator<WireIterator>);

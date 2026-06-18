@@ -18,10 +18,10 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
 
-#include <Eigen/Core>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
+#include <Eigen/Core>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -169,7 +169,7 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
 
 std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
     const decomposition::TwoQubitWeylDecomposition& targetDecomposition,
-    const llvm::SmallVector<EulerBasis>& target1qEulerBases,
+    const llvm::SmallVector<GateEulerBasis>& target1qEulerBases,
     std::optional<double> basisFidelity, bool approximate,
     std::optional<std::uint8_t> numBasisGateUses) const {
   if (target1qEulerBases.empty()) {
@@ -394,7 +394,7 @@ TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
 
 OneQubitGateSequence TwoQubitBasisDecomposer::unitaryToGateSequence(
     const Eigen::Matrix2cd& unitaryMat,
-    const llvm::SmallVector<EulerBasis>& targetBasisList, bool simplify,
+    const llvm::SmallVector<GateEulerBasis>& targetBasisList, bool simplify,
     std::optional<double> atol) {
   assert(!targetBasisList.empty());
 

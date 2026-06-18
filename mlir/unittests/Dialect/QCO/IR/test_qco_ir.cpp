@@ -24,6 +24,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
 #include <iosfwd>
@@ -150,6 +151,51 @@ TEST_F(QCOTest, DirectIfBuilder) {
                                                    refBuilder.get()));
 }
 
+TEST_F(QCOTest, IfOpParser) {
+  // Test IfOp parser
+  const char* mlirCode = R"(
+      module {
+        func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+            %c0 = arith.constant 0 : index
+            %c1 = arith.constant 1 : index
+            %c0_i64 = arith.constant 0 : i64
+            %q0_0 = qco.alloc : !qco.qubit
+            %t0 = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+            %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+            %q0_2, %cond = qco.measure %q0_1 : !qco.qubit
+            %q0_4, %t3 = qco.if %cond args(%arg0 = %q0_2, %arg1 = %t0) -> (!qco.qubit, tensor<1x!qco.qubit>) {
+                %q0_3 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+                %t1, %q1_0 = qtensor.extract %arg1[%c0] : tensor<1x!qco.qubit>
+                %q1_1 = qco.x %q1_0 : !qco.qubit -> !qco.qubit
+                %t2 = qtensor.insert %q1_1 into %t1[%c0] : tensor<1x!qco.qubit>
+                qco.yield %q0_3, %t2 : !qco.qubit, tensor<1x!qco.qubit>
+            } else args(%arg0 = %q0_2, %arg1 = %t0) {
+                qco.yield %arg0, %arg1 : !qco.qubit, tensor<1x!qco.qubit>
+            }
+            qco.sink %q0_4 : !qco.qubit
+            qtensor.dealloc %t3 : tensor<1x!qco.qubit>
+            return %c0_i64 : i64
+        }
+    })";
+
+  auto parsedSourceModule =
+      parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(parsedSourceModule);
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
+  EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
+
+  auto refBuilder = QCOProgramBuilder::build(
+      context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor).fn);
+  ASSERT_TRUE(refBuilder);
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(parsedSourceModule.get(),
+                                                   refBuilder.get()));
+}
+
 /// \name QCO/SCF/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -175,33 +221,40 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOCtrlOpTest, QCOTest,
-    testing::Values(QCOTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
-                                MQT_NAMED_BUILDER(rxx)},
-                    QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
-                                MQT_NAMED_BUILDER(multipleControlledRxx)},
-                    QCOTestCase{"TripleNestedCtrl",
-                                MQT_NAMED_BUILDER(tripleNestedCtrl),
-                                MQT_NAMED_BUILDER(tripleControlledRxx)},
-                    QCOTestCase{"CtrlInvSandwich",
-                                MQT_NAMED_BUILDER(ctrlInvSandwich),
-                                MQT_NAMED_BUILDER(multipleControlledRxx)},
-                    QCOTestCase{"DoubleNestedCtrlTwoQubits",
-                                MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
-                                MQT_NAMED_BUILDER(fourControlledRxx)}));
+    testing::Values(
+        QCOTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
+                    MQT_NAMED_BUILDER(rxx)},
+        QCOTestCase{"EmptyCtrl", MQT_NAMED_BUILDER(emptyCtrl),
+                    MQT_NAMED_BUILDER(rxx)},
+        QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
+                    MQT_NAMED_BUILDER(multipleControlledRxx)},
+        QCOTestCase{"TripleNestedCtrl", MQT_NAMED_BUILDER(tripleNestedCtrl),
+                    MQT_NAMED_BUILDER(tripleControlledRxx)},
+        QCOTestCase{"CtrlInvSandwich", MQT_NAMED_BUILDER(ctrlInvSandwich),
+                    MQT_NAMED_BUILDER(multipleControlledRxx)},
+        QCOTestCase{"DoubleNestedCtrlTwoQubits",
+                    MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
+                    MQT_NAMED_BUILDER(fourControlledRxx)},
+        QCOTestCase{"NestedCtrlTwo", MQT_NAMED_BUILDER(nestedCtrlTwo),
+                    MQT_NAMED_BUILDER(ctrlTwo)}));
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOInvOpTest, QCOTest,
-    testing::Values(QCOTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
+    testing::Values(QCOTestCase{"EmptyInv", MQT_NAMED_BUILDER(emptyInv),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
                                 MQT_NAMED_BUILDER(rxx)},
                     QCOTestCase{"TripleNestedInv",
                                 MQT_NAMED_BUILDER(tripleNestedInv),
                                 MQT_NAMED_BUILDER(rxx)},
                     QCOTestCase{"InvControlSandwich",
                                 MQT_NAMED_BUILDER(invCtrlSandwich),
-                                MQT_NAMED_BUILDER(singleControlledRxx)}));
+                                MQT_NAMED_BUILDER(singleControlledRxx)},
+                    QCOTestCase{"InvCtrlTwo", MQT_NAMED_BUILDER(invCtrlTwo),
+                                MQT_NAMED_BUILDER(ctrlInvTwo)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/BarrierOp.cpp
@@ -426,7 +479,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"CanonicalizeRToRx", MQT_NAMED_BUILDER(canonicalizeRToRx),
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeRToRy", MQT_NAMED_BUILDER(canonicalizeRToRy),
-                    MQT_NAMED_BUILDER(ry)}));
+                    MQT_NAMED_BUILDER(ry)},
+        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RxOp.cpp
@@ -913,6 +967,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseMultipleControlledX),
                     MQT_NAMED_BUILDER(multipleControlledX)},
         QCOTestCase{"TwoX", MQT_NAMED_BUILDER(twoX),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"ControlledTwoX", MQT_NAMED_BUILDER(controlledTwoX),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"InverseTwoX", MQT_NAMED_BUILDER(inverseTwoX),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 
@@ -942,7 +1000,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledXxMinusYY)},
         QCOTestCase{"TwoXXMinusYYOppositePhase",
                     MQT_NAMED_BUILDER(twoXxMinusYYOppositePhase),
-                    MQT_NAMED_BUILDER(emptyQCO)}));
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoXXMinusYYSwappedTargets",
+                    MQT_NAMED_BUILDER(twoXxMinusYYSwappedTargets),
+                    MQT_NAMED_BUILDER(xxMinusYY)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/XxPlusYyOp.cpp
@@ -971,7 +1032,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledXxPlusYY)},
         QCOTestCase{"TwoXXPlusYYOppositePhase",
                     MQT_NAMED_BUILDER(twoXxPlusYYOppositePhase),
-                    MQT_NAMED_BUILDER(emptyQCO)}));
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoXXPlusYYSwappedTargets",
+                    MQT_NAMED_BUILDER(twoXxPlusYYSwappedTargets),
+                    MQT_NAMED_BUILDER(xxPlusYY)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/YOp.cpp

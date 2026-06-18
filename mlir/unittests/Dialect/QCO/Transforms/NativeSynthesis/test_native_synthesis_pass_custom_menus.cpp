@@ -214,7 +214,7 @@ static bool onlyAllowsMenuNativeOps(ModuleOp moduleOp,
         ok = false;
         return;
       }
-      Operation* body = ctrl.getBodyUnitary().getOperation();
+      Operation* body = ctrl.getBodyUnitary(0).getOperation();
       if (llvm::isa<qco::XOp>(body)) {
         ok = spec.allowCx;
         return;

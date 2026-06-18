@@ -19,6 +19,8 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
@@ -27,7 +29,6 @@
 #include "qir_programs.h"
 #include "quantum_computation_programs.h"
 
-#include <Eigen/Core>
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
@@ -47,6 +48,7 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <Eigen/Core>
 #include <cstddef>
 #include <cstdlib>
 #include <iosfwd>
@@ -117,9 +119,10 @@ protected:
 
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildQIRReference(const QIRProgramBuilderFn builder) const {
-    auto module =
-        mlir::qir::QIRProgramBuilder::build(context.get(), builder.fn);
-    EXPECT_TRUE(runQIRCleanupPipeline(module.get()).succeeded());
+    auto module = mlir::qir::QIRProgramBuilder::build(
+        context.get(), builder.fn,
+        mlir::qir::QIRProgramBuilder::Profile::Adaptive);
+    EXPECT_TRUE(runQIRCleanupPipeline(module.get(), true).succeeded());
     return module;
   }
 
@@ -130,11 +133,13 @@ protected:
 
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
                           const bool disableMergeSingleQubitRotationGates,
+                          const bool enableHadamardLifting,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
-    config.convertToQIR = convertToQIR;
+    config.convertToQIRAdaptive = convertToQIR;
     config.disableMergeSingleQubitRotationGates =
         disableMergeSingleQubitRotationGates;
+    config.enableHadamardLifting = enableHadamardLifting;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 
@@ -178,7 +183,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   EXPECT_TRUE(mlir::verify(*module).succeeded());
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), testCase.convertToQIR, false, record);
+  runPipeline(module.get(), testCase.convertToQIR, false, false, record);
 
   ASSERT_TRUE(testCase.qcReferenceBuilder);
   auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
@@ -225,7 +230,30 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
   ASSERT_TRUE(module);
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), false, false, record);
+  runPipeline(module.get(), false, false, false, record);
+
+  // The outputs must differ, proving the pass ran and transformed the IR
+  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
+}
+
+/**
+ * @brief Test: Hadamard lifting pass is invoked during the optimization stage
+ *
+ * We run the pipeline with enabled Hadamard lifting and check whether the
+ * outputs differ, i.e. that the pipeline ran and changed the IR.
+ * Correctness of the pass is tested in a dedicated test.
+ */
+TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), [&](mlir::qc::QCProgramBuilder& b) {
+        auto q = b.allocQubit();
+        b.x(q);
+        b.h(q);
+      });
+  ASSERT_TRUE(module);
+
+  mlir::CompilationRecord record;
+  runPipeline(module.get(), false, true, true, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
@@ -673,7 +701,10 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleControlledXXMinusYY",
             MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxMinusYY),
-            MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxMinusYY)}));
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxMinusYY)},
+        CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
+                                 MQT_NAMED_BUILDER(mlir::qir::ctrlTwo)}));
 
 namespace {
 
@@ -698,7 +729,6 @@ protected:
                                                mlir::qc::staticQubitsWithOps);
     ASSERT_TRUE(module);
 
-    config.convertToQIR = false;
     config.recordIntermediates = true;
   }
 
@@ -770,10 +800,12 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
           if (!qid) {
             return std::nullopt;
           }
-          Eigen::Matrix2cd oneQ;
-          if (!op.getUnitaryMatrix2x2(oneQ)) {
+          mlir::qco::Matrix2x2 rawOneQ;
+          if (!op.getUnitaryMatrix2x2(rawOneQ)) {
             return std::nullopt;
           }
+          const Eigen::Matrix2cd oneQ =
+              mlir::qco::native_synth::toEigen(rawOneQ);
           unitary =
               mlir::qco::decomposition::expandToTwoQubits(oneQ, *qid) * unitary;
           qubitIds[op.getOutputQubit(0)] = *qid;
@@ -791,7 +823,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
             if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
               return std::nullopt;
             }
-            auto* body = ctrl.getBodyUnitary().getOperation();
+            auto* body = ctrl.getBodyUnitary(0).getOperation();
             if (llvm::isa<mlir::qco::XOp>(body)) {
               // CX matrix (same 4×4 layout as QCO unitary interface).
               twoQ << 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0;
@@ -801,8 +833,12 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
             } else {
               return std::nullopt;
             }
-          } else if (!op.getUnitaryMatrix4x4(twoQ)) {
-            return std::nullopt;
+          } else {
+            mlir::qco::Matrix4x4 rawTwoQ;
+            if (!op.getUnitaryMatrix4x4(rawTwoQ)) {
+              return std::nullopt;
+            }
+            twoQ = mlir::qco::native_synth::toEigen(rawTwoQ);
           }
           const llvm::SmallVector<mlir::qco::decomposition::QubitId, 2> ids{
               static_cast<mlir::qco::decomposition::QubitId>(*q0),
@@ -976,7 +1012,6 @@ static mlir::CompilationRecord
 runPipelineWithNativeSynthesisConfig(mlir::ModuleOp module,
                                      const std::string& nativeGates) {
   mlir::QuantumCompilerConfig config;
-  config.convertToQIR = false;
   config.recordIntermediates = true;
   config.nativeGates = nativeGates;
 

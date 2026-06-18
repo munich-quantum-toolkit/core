@@ -30,7 +30,7 @@ h q[0];
 cx q[0], q[1];
 )";
 
-inline constexpr const char* MALFORMED_PROGRAM = "Definitely not OpenQASM";
+inline constexpr const char* QASM3_MALFORMED = "Definitely not OpenQASM";
 
 // A slightly heavier 5-qubit sampling circuit to prolong runtime slightly while
 // remaining fast

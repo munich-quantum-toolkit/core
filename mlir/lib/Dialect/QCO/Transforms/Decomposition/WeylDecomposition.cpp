@@ -16,12 +16,12 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 
-#include <Eigen/Core> // NOLINT(misc-include-cleaner)
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
 #include <mlir/Support/LLVM.h>
 
+#include <Eigen/Core> // NOLINT(misc-include-cleaner)
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -216,7 +216,7 @@ TwoQubitWeylDecomposition::create(const Eigen::Matrix4cd& unitaryMatrix,
   decomposition.k1r_ = K1r;
   decomposition.k2r_ = K2r;
   decomposition.specialization = Specialization::General;
-  decomposition.defaultEulerBasis = EulerBasis::ZYZ;
+  decomposition.defaultEulerBasis = GateEulerBasis::ZYZ;
   decomposition.requestedFidelity = fidelity;
   // will be calculated if a specialization is used; set to -1 for now
   decomposition.calculatedFidelity = -1.0;
@@ -604,7 +604,7 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     //
     // :math:`K2_l = Ry(\theta_l) Rx(\lambda_l)`
     // :math:`K2_r = Ry(\theta_r) Rx(\lambda_r)`
-    auto eulerBasis = EulerBasis::XYX;
+    auto eulerBasis = GateEulerBasis::XYX;
     auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
         EulerDecomposition::anglesFromUnitary(k2l_, eulerBasis);
     auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
@@ -628,9 +628,9 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)`
     // :math:`K2_r = Ry(\theta_r)\cdot Rz(\lambda_r)`
     auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-        EulerDecomposition::anglesFromUnitary(k2l_, EulerBasis::ZYZ);
+        EulerDecomposition::anglesFromUnitary(k2l_, GateEulerBasis::ZYZ);
     auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
-        EulerDecomposition::anglesFromUnitary(k2r_, EulerBasis::ZYZ);
+        EulerDecomposition::anglesFromUnitary(k2r_, GateEulerBasis::ZYZ);
 
     a_ = (std::numbers::pi / 4.0);
     b_ = (std::numbers::pi / 4.0);
@@ -647,7 +647,7 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     //
     // :math:`K2_l = Ry(\theta_l) \cdot Rz(\lambda_l)`.
     auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-        EulerDecomposition::anglesFromUnitary(k2l_, EulerBasis::ZYZ);
+        EulerDecomposition::anglesFromUnitary(k2l_, GateEulerBasis::ZYZ);
     auto ab = (a_ + b_) / 2.;
 
     a_ = ab;
@@ -664,7 +664,7 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     // This gate binds 5 parameters, we make it canonical by setting:
     //
     // :math:`K2_l = Ry(\theta_l) \cdot Rx(\lambda_l)`
-    auto eulerBasis = EulerBasis::XYX;
+    auto eulerBasis = GateEulerBasis::XYX;
     auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
         EulerDecomposition::anglesFromUnitary(k2l_, eulerBasis);
     auto bc = (b_ + c_) / 2.;
@@ -684,7 +684,7 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     // This gate binds 5 parameters, we make it canonical by setting:
     //
     // :math:`K2_l = Ry(\theta_l) \cdot Rx(\lambda_l)`
-    auto eulerBasis = EulerBasis::XYX;
+    auto eulerBasis = GateEulerBasis::XYX;
     auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
         EulerDecomposition::anglesFromUnitary(k2l_, eulerBasis);
     auto bc = (b_ - c_) / 2.;
