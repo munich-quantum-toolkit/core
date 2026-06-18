@@ -48,6 +48,7 @@ protected:
   mlir::Value v1;
   mlir::Value v2;
   mlir::Value v3;
+  mlir::Value v4;
 
   HybridStateTest() : programBuilder(&context), referenceBuilder(&context) {}
 
@@ -75,6 +76,7 @@ protected:
     v1 = q[0];
     v2 = q[1];
     v3 = q[2];
+    v4 = q[3];
   }
 
   void TearDown() override {}
@@ -432,4 +434,144 @@ TEST_F(HybridStateTest, unifyTooLargeHybridStates) {
   const auto hs = hState1.unify(hState2);
 
   EXPECT_TRUE(hs.isHybridStateTop());
+}
+
+TEST_F(HybridStateTest, intOpTwoValueOperation) {
+  auto hState = HybridState(fourQubits, 3);
+  const auto i1 = programBuilder.getI64IntegerAttr(3);
+  const auto i2 = programBuilder.getI64IntegerAttr(9);
+  const auto i3 = programBuilder.getI64IntegerAttr(0);
+
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+  const mlir::Value val3 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i3);
+
+  hState.addIntegerValue(val1, 3);
+  hState.addIntegerValue(val2, 9);
+  hState.addIntegerValue(val3, 0);
+
+  const auto subIOp = mlir::arith::SubIOp::create(
+      programBuilder, programBuilder.getLoc(), val3.getType(), val1, val2);
+
+  hState.propagateClassicalOperation(subIOp, val3, val1, val2);
+
+  const auto resStr = hState.toString();
+
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("integerValue0 = 3"),
+                                     testing::HasSubstr("integerValue1 = 3"),
+                                     testing::HasSubstr("integerValue2 = 3")));
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("integerValue0 = 9"),
+                                     testing::HasSubstr("integerValue1 = 9"),
+                                     testing::HasSubstr("integerValue2 = 9")));
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("integerValue0 = -6"),
+                                     testing::HasSubstr("integerValue1 = -6"),
+                                     testing::HasSubstr("integerValue2 = -6")));
+}
+
+TEST_F(HybridStateTest, intOpThreeValueOperation) {
+  auto hState = HybridState(fourQubits, 3);
+  const auto i0 = programBuilder.getI64IntegerAttr(0);
+  const auto i1 = programBuilder.getI64IntegerAttr(3);
+  const auto i2 = programBuilder.getI64IntegerAttr(9);
+  const auto i3 = programBuilder.getI64IntegerAttr(0);
+
+  const mlir::Value val0 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i0);
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+  const mlir::Value val3 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i3);
+
+  hState.addIntegerValue(val0, 0);
+  hState.addIntegerValue(val1, 3);
+  hState.addIntegerValue(val2, 9);
+  hState.addIntegerValue(val3, 1);
+
+  const auto selectOp =
+      mlir::arith::SelectOp::create(programBuilder, programBuilder.getLoc(),
+                                    val3.getType(), val0, val1, val2);
+  const auto subIOp = mlir::arith::SubIOp::create(
+      programBuilder, programBuilder.getLoc(), val3.getType(), val3, val1);
+
+  hState.propagateClassicalOperation(selectOp, val3, val0, val1, val2);
+  hState.propagateClassicalOperation(subIOp, val3, val3, val1);
+
+  const auto resStr = hState.toString();
+
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("integerValue0 = 0"),
+                                     testing::HasSubstr("integerValue1 = 0"),
+                                     testing::HasSubstr("integerValue2 = 0"),
+                                     testing::HasSubstr("integerValue3 = 0")));
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("integerValue0 = 3"),
+                                     testing::HasSubstr("integerValue1 = 3"),
+                                     testing::HasSubstr("integerValue2 = 3"),
+                                     testing::HasSubstr("integerValue3 = 3")));
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("integerValue0 = 9"),
+                                     testing::HasSubstr("integerValue1 = 9"),
+                                     testing::HasSubstr("integerValue2 = 9"),
+                                     testing::HasSubstr("integerValue3 = 9")));
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("integerValue0 = 6"),
+                                     testing::HasSubstr("integerValue1 = 6"),
+                                     testing::HasSubstr("integerValue2 = 6"),
+                                     testing::HasSubstr("integerValue3 = 6")));
+}
+
+TEST_F(HybridStateTest, doubleOpOneValueOperation) {
+  auto hState = HybridState(fourQubits, 3);
+  const auto i1 = programBuilder.getF64FloatAttr(-2.7);
+  const auto i2 = programBuilder.getF64FloatAttr(0);
+
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+
+  hState.addDoubleValue(val1, -2.7);
+  hState.addDoubleValue(val2, 0);
+
+  const auto negFOp = mlir::arith::NegFOp::create(
+      programBuilder, programBuilder.getLoc(), val2.getType(), val1);
+
+  hState.propagateClassicalOperation(negFOp, val2, val1);
+
+  const auto resStr = hState.toString();
+
+  EXPECT_THAT(resStr,
+              testing::AnyOf(testing::HasSubstr("doubleValue0 = -2.7"),
+                             testing::HasSubstr("doubleValue1 = -2.7")));
+  EXPECT_THAT(resStr, testing::AnyOf(testing::HasSubstr("doubleValue0 = 2.7"),
+                                     testing::HasSubstr("doubleValue1 = 2.7")));
+}
+
+TEST_F(HybridStateTest, doubleOpTwoValueOperation) {
+  auto hState = HybridState(fourQubits, 3);
+  const auto i1 = programBuilder.getF64FloatAttr(-2.5);
+  const auto i2 = programBuilder.getF64FloatAttr(1.3);
+
+  const mlir::Value val1 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i1);
+  const mlir::Value val2 = mlir::arith::ConstantOp::create(
+      programBuilder, programBuilder.getLoc(), i2);
+
+  hState.addDoubleValue(val1, -2.5);
+  hState.addDoubleValue(val2, 1.3);
+
+  const auto mulFOp = mlir::arith::MulFOp::create(
+      programBuilder, programBuilder.getLoc(), val2.getType(), val1);
+
+  hState.propagateClassicalOperation(mulFOp, val2, val1, val2);
+
+  const auto resStr = hState.toString();
+
+  EXPECT_THAT(resStr,
+              testing::AnyOf(testing::HasSubstr("doubleValue0 = -2.50"),
+                             testing::HasSubstr("doubleValue1 = -2.50")));
+  EXPECT_THAT(resStr,
+              testing::AnyOf(testing::HasSubstr("doubleValue0 = -3.25"),
+                             testing::HasSubstr("doubleValue1 = -3.25")));
 }

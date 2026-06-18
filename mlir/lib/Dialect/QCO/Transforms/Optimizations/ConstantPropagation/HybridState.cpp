@@ -181,24 +181,22 @@ void HybridState::propagateClassicalOperation(
           "HybridState needs a classical value for a classical operation that "
           "is not existent in current HybridState.");
     }
-    const int64_t opRes =
-        getArithOpResult(op, integerValues.at(operand1),
-                         operand2 == nullptr ? 0 : integerValues.at(operand2),
-                         operand3 == nullptr ? 0 : integerValues.at(operand3));
+    const int64_t opRes = getArithIntegerOpResult(
+        op, integerValues.at(operand1),
+        operand2 == nullptr ? 0 : integerValues.at(operand2),
+        operand3 == nullptr ? 0 : integerValues.at(operand3));
     integerValues[dest] = opRes;
   } else {
     if (!doubleValues.contains(operand1) ||
         (operand2 != nullptr && !doubleValues.contains(operand2)) ||
-        (operand3 != nullptr && !doubleValues.contains(operand3)) ||
         !doubleValues.contains(dest)) {
       throw std::domain_error(
           "HybridState needs a classical value for a classical operation that "
           "is not existent in current HybridState.");
     }
-    const double opRes =
-        getArithOpResult(op, doubleValues.at(operand1),
-                         operand2 == nullptr ? 0 : doubleValues.at(operand2),
-                         operand3 == nullptr ? 0 : doubleValues.at(operand3));
+    const double opRes = getArithDoubleOpResult(
+        op, doubleValues.at(operand1),
+        operand2 == nullptr ? 0.0 : doubleValues.at(operand2));
     doubleValues[dest] = opRes;
   }
 }
