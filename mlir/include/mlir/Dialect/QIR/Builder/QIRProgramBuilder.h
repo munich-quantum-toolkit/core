@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
-
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
@@ -1086,14 +1084,17 @@ private:
   /// Map from register to their loaded indices
   DenseMap<Value, DenseSet<Value>> loadedQubits;
 
-  /// Track qubit and result counts for QIR metadata
-  QIRMetadata metadata_;
-
   /// Helper variable for storing the LLVM pointer type
   Type ptrType;
 
   /// Helper variable for storing the LLVM void type
   Type voidType;
+
+  /// The number of used qubits.
+  size_t numQubits{0};
+
+  /// The number of result values.
+  size_t numResults{0};
 
   /**
    * @brief Helper to create a LLVM CallOp
