@@ -39,20 +39,7 @@ struct MergeSubsequentRXX final : OpRewritePattern<RXXOp> {
 
   LogicalResult matchAndRewrite(RXXOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameter(op, rewriter);
-  }
-};
-
-/**
- * @brief Merge subsequent RXX operations with swapped targets by adding their
- * angles.
- */
-struct MergeSwappedTargetsRXX final : OpRewritePattern<RXXOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RXXOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+    return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
 
@@ -79,7 +66,7 @@ LogicalResult RXXOp::fold(FoldAdaptor /*adaptor*/,
 
 void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRXX, MergeSwappedTargetsRXX>(context);
+  results.add<MergeSubsequentRXX>(context);
 }
 
 std::optional<Matrix4x4> RXXOp::getUnitaryMatrix() {

@@ -272,11 +272,21 @@ void trivialControlledX(QCOProgramBuilder& b) {
 }
 
 void repeatedControlledX(QCOProgramBuilder& b) {
-  auto q0 = b.allocQubit();
-  auto control = b.h(q0);
-  for (auto i = 0; i < 50; i++) {
-    auto qubit = b.allocQubit();
-    control = b.cx(control, qubit).first;
+  auto tensor = b.qtensorAlloc(64);
+
+  Value q0;
+  std::tie(tensor, q0) = b.qtensorExtract(tensor, 0);
+
+  SmallVector<Value> values(63);
+  for (auto i = 1; i < 64; i++) {
+    Value qi;
+    std::tie(tensor, qi) = b.qtensorExtract(tensor, i);
+    values[i - 1] = qi;
+  }
+
+  q0 = b.h(q0);
+  for (auto i = 1; i < 64; i++) {
+    std::tie(q0, values[i - 1]) = b.cx(q0, values[i - 1]);
   }
 }
 
@@ -316,6 +326,30 @@ void inverseTwoX(QCOProgramBuilder& b) {
     auto q = b.x(qubits[0]);
     q = b.x(q);
     return SmallVector{q};
+  });
+}
+
+void inverseGphaseX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange qubits) {
+    b.gphase(-0.123);
+    return SmallVector{b.x(qubits[0])};
+  });
+}
+
+void inverseGphaseBarrier(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange qubits) -> SmallVector<Value> {
+    b.gphase(0.123);
+    return {b.barrier({qubits[0]})[0]};
+  });
+}
+
+void inverseTwoBarriersInInv(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange qubits) -> SmallVector<Value> {
+    auto q0 = b.barrier({qubits[0]})[0];
+    return {b.barrier({q0})[0]};
   });
 }
 
@@ -1128,6 +1162,12 @@ void canonicalizeRToRy(QCOProgramBuilder& b) {
   q[0] = b.r(0.456, std::numbers::pi / 2, q[0]);
 }
 
+void twoR(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.r(0.045, 0.456, q[0]);
+  q[0] = b.r(0.078, 0.456, q[0]);
+}
+
 void u2(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u2(0.234, 0.567, q[0]);
@@ -1851,6 +1891,12 @@ void twoXxPlusYYOppositePhase(QCOProgramBuilder& b) {
   std::tie(q[0], q[1]) = b.xx_plus_yy(-0.123, 0.456, q[0], q[1]);
 }
 
+void twoXxPlusYYSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_plus_yy(0.045, 0.456, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.xx_plus_yy(0.078, 0.456, q[1], q[0]);
+}
+
 void xxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
@@ -1907,6 +1953,12 @@ void twoXxMinusYYOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
   std::tie(q[0], q[1]) = b.xx_minus_yy(-0.123, 0.456, q[0], q[1]);
+}
+
+void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_minus_yy(0.045, 0.456, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.xx_minus_yy(0.078, 0.456, q[1], q[0]);
 }
 
 void barrier(QCOProgramBuilder& b) {
@@ -2333,6 +2385,42 @@ void qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
   auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 0);
   b.qtensorInsert(q2, extractOutTensor1, 0);
+}
+
+void qtensorChain(QCOProgramBuilder& b) {
+  Value q0;
+  Value q1;
+  Value q2;
+  auto qtensor = b.qtensorAlloc(3);
+  std::tie(qtensor, q0) = b.qtensorExtract(qtensor, 0);
+  std::tie(qtensor, q1) = b.qtensorExtract(qtensor, 1);
+  std::tie(qtensor, q2) = b.qtensorExtract(qtensor, 2);
+  q0 = b.h(q0);
+  q1 = b.h(q1);
+  std::tie(q1, q2) = b.cx(q1, q2);
+
+  qtensor = b.qtensorInsert(q2, qtensor, 2);
+  qtensor = b.qtensorInsert(q1, qtensor, 1);
+  qtensor = b.qtensorInsert(q0, qtensor, 0);
+  b.qtensorDealloc(qtensor);
+}
+
+void qtensorAlternativeChain(QCOProgramBuilder& b) {
+  Value q0;
+  Value q1;
+  Value q2;
+  auto qtensor = b.qtensorAlloc(3);
+  std::tie(qtensor, q0) = b.qtensorExtract(qtensor, 0);
+  q0 = b.h(q0);
+  std::tie(qtensor, q1) = b.qtensorExtract(qtensor, 1);
+  q1 = b.h(q1);
+  std::tie(qtensor, q2) = b.qtensorExtract(qtensor, 2);
+  std::tie(q1, q2) = b.cx(q1, q2);
+
+  qtensor = b.qtensorInsert(q0, qtensor, 0);
+  qtensor = b.qtensorInsert(q1, qtensor, 1);
+  qtensor = b.qtensorInsert(q2, qtensor, 2);
+  b.qtensorDealloc(qtensor);
 }
 
 void simpleWhileReset(QCOProgramBuilder& b) {

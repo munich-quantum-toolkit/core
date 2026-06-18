@@ -18,6 +18,14 @@ class PassManager;
 } // namespace mlir
 
 /**
+ * @brief Populate the pass manager and run it on the module.
+ */
+mlir::LogicalResult
+runWithPassManager(mlir::ModuleOp module,
+                   mlir::function_ref<void(mlir::PassManager&)> populatePasses,
+                   mlir::StringRef errorMessage);
+
+/**
  * @brief Populate a QC-oriented cleanup pipeline on the given pass manager.
  * @details Adds generic cleanup and QC qubit-register shrinking.
  */
@@ -31,9 +39,10 @@ void populateQCOCleanupPipeline(mlir::PassManager& pm);
 
 /**
  * @brief Populate a QIR-oriented cleanup pipeline on the given pass manager.
- * @details Adds generic cleanup and QIR-specific simplifications.
+ * @details Adds generic cleanup and QIR-specific simplifications. Updates the
+ * meta data accordingly.
  */
-void populateQIRCleanupPipeline(mlir::PassManager& pm);
+void populateQIRCleanupPipeline(mlir::PassManager& pm, bool useAdaptive);
 
 /**
  * @brief Run the QC-oriented cleanup pipeline on a module.
@@ -48,4 +57,5 @@ void populateQIRCleanupPipeline(mlir::PassManager& pm);
 /**
  * @brief Run the QIR-oriented cleanup pipeline on a module.
  */
-[[nodiscard]] mlir::LogicalResult runQIRCleanupPipeline(mlir::ModuleOp module);
+[[nodiscard]] mlir::LogicalResult runQIRCleanupPipeline(mlir::ModuleOp module,
+                                                        bool useAdaptive);

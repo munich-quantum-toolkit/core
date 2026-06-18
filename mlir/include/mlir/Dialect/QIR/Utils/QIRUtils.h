@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
-
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>
@@ -168,29 +166,6 @@ DEFINE_GETTER(XXMINUSYY)
  * @return The main LLVM function, or nullptr if not found
  */
 LLVM::LLVMFuncOp getMainFunction(Operation* op);
-
-/**
- * @brief Set QIR base profile metadata attributes on the main function
- *
- * @details
- * Adds the required metadata attributes for QIR base profile compliance:
- * - `entry_point`: Marks the main entry point function
- * - `output_labeling_schema`: labeled
- * - `qir_profiles`: base_profile
- * - `required_num_qubits`: Number of qubits used
- * - `required_num_results`: Number of measurement results
- * - `qir_major_version`: 2
- * - `qir_minor_version`: 1
- * - `dynamic_qubit_management`: true/false
- * - `dynamic_result_management`: true/false
- *
- * These attributes are required by the QIR specification and inform QIR
- * consumers about the module's resource requirements and capabilities.
- *
- * @param main The main LLVM function to annotate
- * @param metadata The QIR metadata containing qubit/result counts
- */
-void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata);
 
 /**
  * @brief Get or create a QIR function declaration
