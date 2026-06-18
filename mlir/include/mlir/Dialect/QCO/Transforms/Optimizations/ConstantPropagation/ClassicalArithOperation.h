@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <mlir/IR/Operation.h>
 #ifndef MQT_CORE_CLASSICALARITHOPERATION_H
 #define MQT_CORE_CLASSICALARITHOPERATION_H
 
@@ -18,6 +17,8 @@
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Operation.h>
 
 #include <cmath>
 #include <stdexcept>
@@ -27,8 +28,9 @@
  * the result of valid arith operations. Operations are only valid with one to
  * two operands, not if they are applied to sequences.
  */
-inline int64_t getArithOpResult(mlir::Operation* operation, int64_t value1,
-                                int64_t value2 = 0, int64_t value3 = 0) {
+inline int64_t getArithIntegerOpResult(mlir::Operation* operation,
+                                       int64_t value1, int64_t value2 = 0,
+                                       int64_t value3 = 0) {
 
   for (mlir::Value operand : operation->getOperands()) {
     if (isa<mlir::VectorType>(operand.getType())) {
@@ -65,15 +67,15 @@ inline int64_t getArithOpResult(mlir::Operation* operation, int64_t value1,
       .Case<mlir::arith::SubIOp>([&](auto) { return value1 - value2; })
       .Case<mlir::arith::XOrIOp>([&](auto) { return value1 ^ value2; })
       .Case<mlir::arith::SelectOp>(
-          [&](auto) { return value3 == 0 ? value3 : value2; })
+          [&](auto) { return value1 == 0 ? value3 : value2; })
       .Default([&](auto) -> int64_t {
         throw std::runtime_error("Unsupported integer operation in "
                                  "mlir::qco::classicalarithoperation");
       });
 }
 
-inline double getArithOpResult(mlir::Operation* operation, double value1,
-                               double value2 = 0.0) {
+inline double getArithDoubleOpResult(mlir::Operation* operation, double value1,
+                                     double value2 = 0.0) {
 
   for (mlir::Value operand : operation->getOperands()) {
     if (isa<mlir::VectorType>(operand.getType())) {
