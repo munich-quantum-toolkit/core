@@ -13,11 +13,18 @@
 
 #include "QuantumState.hpp"
 
+#include <llvm/ADT/DenseMap.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Value.h>
 
+#include <complex>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mlir::qco {
@@ -95,7 +102,8 @@ class HybridState {
    * outcomes.
    */
   std::vector<HybridState>
-  propagateMeasurementOrReset(const unsigned int quantumTarget, bool reset,
+  propagateMeasurementOrReset(const unsigned int quantumTarget,
+                              const bool reset,
                               const Value classicalTarget = nullptr,
                               const std::span<Value> posCtrlsClassical = {},
                               const std::span<Value> negCtrlsClassical = {}) {
@@ -109,7 +117,7 @@ class HybridState {
         reset ? qState->resetQubit(quantumTarget)
               : qState->measureQubit(quantumTarget);
 
-    for (int64_t i = 0; i < 2; ++i) {
+    for (const size_t i : {0, 1}) {
       if (!availableStates.contains(i) || !availableStates.at(i)) {
         continue;
       }
@@ -249,7 +257,7 @@ public:
    * @throw std::domain_error If the unified QuantumState would exceed
    * maxNonzeroAmplitudes of this.
    */
-  HybridState unify(HybridState that);
+  HybridState unify(const HybridState& that);
 
   bool operator==(const HybridState& that) const;
 
@@ -300,8 +308,10 @@ public:
    * exists and true, if the qubit is equivalent to the value. False, if the
    * qubit is the inverse of the value.
    */
-  std::pair<std::optional<Value>, bool>
-  getValueThatIsEquivalentToQubit(unsigned int qubit) const;
+  [[nodiscard(
+      "HybridState::getValueThatIsEquivalentToQubit called but ignored")]] std::
+      pair<std::optional<Value>, bool>
+      getValueThatIsEquivalentToQubit(unsigned int qubit) const;
 };
 } // namespace mlir::qco
 
