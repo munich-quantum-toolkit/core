@@ -26,6 +26,8 @@
 
 namespace mlir::utils {
 
+/// Default absolute tolerance for MLIR dialect numerics (angle wrapping,
+/// phase-zero checks).
 constexpr auto TOLERANCE = 1e-15;
 
 inline Value constantFromScalar(OpBuilder& builder, Location loc, double v) {

@@ -9,13 +9,16 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
@@ -64,6 +67,31 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
   }
 };
 
+/**
+ * @brief Merge subsequent R operations on the same qubit with matching `phi`.
+ */
+struct MergeSubsequentR final : OpRewritePattern<ROp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ROp op,
+                                PatternRewriter& rewriter) const override {
+    auto nextOp = dyn_cast<ROp>(*op.getOutputQubit(0).user_begin());
+    if (!nextOp) {
+      return failure();
+    }
+
+    if (!valuesMatchWithinTolerance(op.getPhi(), nextOp.getPhi())) {
+      return failure();
+    }
+
+    auto newParameter = arith::AddFOp::create(rewriter, op.getLoc(),
+                                              op.getTheta(), nextOp.getTheta());
+    op->setOperand(1, newParameter.getResult());
+    rewriter.replaceOp(nextOp, op.getResult());
+    return success();
+  }
+};
+
 } // namespace
 
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -77,7 +105,7 @@ void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 
 void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<ReplaceRWithRX, ReplaceRWithRY>(context);
+  results.add<ReplaceRWithRX, ReplaceRWithRY, MergeSubsequentR>(context);
 }
 
 std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
