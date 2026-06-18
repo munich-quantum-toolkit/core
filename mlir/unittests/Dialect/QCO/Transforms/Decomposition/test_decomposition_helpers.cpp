@@ -10,14 +10,15 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <complex>
 #include <numbers>
 
+using namespace mlir::qco;
 using namespace mlir::qco::helpers;
 using namespace mlir::qco::decomposition;
 
@@ -54,12 +55,11 @@ TEST(DecompositionHelpersTest, GlobalPhaseFactorUnitMagnitude) {
 }
 
 TEST(DecompositionHelpersTest, IsUnitaryMatrixRejectsNonUnitary) {
-  Eigen::Matrix2cd m;
-  m << 2.0, 0.0, 0.0, 2.0;
+  const Matrix2x2 m = Matrix2x2::fromElements(2.0, 0.0, 0.0, 2.0);
   EXPECT_FALSE(isUnitaryMatrix(m));
 }
 
 TEST(DecompositionHelpersTest, IsUnitaryMatrixAcceptsUnitary) {
-  const Eigen::Matrix2cd m = Eigen::Matrix2cd::Identity();
+  const Matrix2x2 m = Matrix2x2::identity();
   EXPECT_TRUE(isUnitaryMatrix(m));
 }

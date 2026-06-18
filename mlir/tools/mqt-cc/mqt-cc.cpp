@@ -91,28 +91,12 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::desc("Apply Hadamard lifting during optimization"),
     llvm::cl::init(false));
 
-static cl::opt<std::string> nativeGates(
+static llvm::cl::opt<std::string> nativeGates(
     "native-gates",
-    cl::desc("Comma-separated native gate menu for the native-gate-synthesis "
-             "pass (empty or whitespace-only disables synthesis)"),
-    cl::value_desc("csv"), cl::init(""));
-
-static cl::opt<double> nativeGateScoreWeightTwoQ(
-    "score-weight-twoq",
-    cl::desc(
-        "Weight for two-qubit gates in native synthesis candidate scoring"),
-    cl::init(1.0));
-
-static cl::opt<double> nativeGateScoreWeightOneQ(
-    "score-weight-oneq",
-    cl::desc("Weight for single-qubit gates in native synthesis candidate "
-             "scoring"),
-    cl::init(0.1));
-
-static cl::opt<double> nativeGateScoreWeightDepth(
-    "score-weight-depth",
-    cl::desc("Weight for local depth in native synthesis candidate scoring"),
-    cl::init(0.01));
+    llvm::cl::desc(
+        "Comma-separated native gate menu for the native-gate-synthesis "
+        "pass (empty or whitespace-only disables synthesis)"),
+    llvm::cl::value_desc("csv"), llvm::cl::init(""));
 
 /**
  * @brief Load and parse a .qasm file
@@ -211,9 +195,6 @@ int main(int argc, char** argv) {
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
   config.nativeGates = nativeGates.getValue();
-  config.nativeGateScoreWeightTwoQ = nativeGateScoreWeightTwoQ.getValue();
-  config.nativeGateScoreWeightOneQ = nativeGateScoreWeightOneQ.getValue();
-  config.nativeGateScoreWeightDepth = nativeGateScoreWeightDepth.getValue();
 
   // Run the compilation pipeline
   CompilationRecord record;

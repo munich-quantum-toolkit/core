@@ -12,110 +12,141 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 
 #include <cassert>
 #include <cmath>
 #include <complex>
-#include <unsupported/Eigen/KroneckerProduct>
 
 namespace mlir::qco::decomposition {
 
-Eigen::Matrix2cd uMatrix(double theta, double phi, double lambda) {
-  return Eigen::Matrix2cd{{{{std::cos(theta / 2.), 0.},
-                            {-std::cos(lambda) * std::sin(theta / 2.),
-                             -std::sin(lambda) * std::sin(theta / 2.)}},
-                           {{std::cos(phi) * std::sin(theta / 2.),
-                             std::sin(phi) * std::sin(theta / 2.)},
-                            {std::cos(lambda + phi) * std::cos(theta / 2.),
-                             std::sin(lambda + phi) * std::cos(theta / 2.)}}}};
+Matrix2x2 uMatrix(double theta, double phi, double lambda) {
+  const auto cosHalf = std::cos(theta / 2.);
+  const auto sinHalf = std::sin(theta / 2.);
+  return Matrix2x2::fromElements(
+      Complex{cosHalf, 0.},
+      Complex{-std::cos(lambda) * sinHalf, -std::sin(lambda) * sinHalf},
+      Complex{std::cos(phi) * sinHalf, std::sin(phi) * sinHalf},
+      Complex{std::cos(lambda + phi) * cosHalf,
+              std::sin(lambda + phi) * cosHalf});
 }
 
-Eigen::Matrix2cd u2Matrix(double phi, double lambda) {
-  return Eigen::Matrix2cd{
-      {FRAC1_SQRT2,
-       {-std::cos(lambda) * FRAC1_SQRT2, -std::sin(lambda) * FRAC1_SQRT2}},
-      {{std::cos(phi) * FRAC1_SQRT2, std::sin(phi) * FRAC1_SQRT2},
-       {std::cos(lambda + phi) * FRAC1_SQRT2,
-        std::sin(lambda + phi) * FRAC1_SQRT2}}};
+Matrix2x2 u2Matrix(double phi, double lambda) {
+  return Matrix2x2::fromElements(
+      Complex{FRAC1_SQRT2, 0.},
+      Complex{-std::cos(lambda) * FRAC1_SQRT2, -std::sin(lambda) * FRAC1_SQRT2},
+      Complex{std::cos(phi) * FRAC1_SQRT2, std::sin(phi) * FRAC1_SQRT2},
+      Complex{std::cos(lambda + phi) * FRAC1_SQRT2,
+              std::sin(lambda + phi) * FRAC1_SQRT2});
 }
 
-Eigen::Matrix2cd rxMatrix(double theta) {
-  auto halfTheta = theta / 2.;
-  auto cos = std::complex<double>{std::cos(halfTheta), 0.};
-  auto isin = std::complex<double>{0., -std::sin(halfTheta)};
-  return Eigen::Matrix2cd{{cos, isin}, {isin, cos}};
+Matrix2x2 rxMatrix(double theta) {
+  const auto halfTheta = theta / 2.;
+  const Complex cos{std::cos(halfTheta), 0.};
+  const Complex isin{0., -std::sin(halfTheta)};
+  return Matrix2x2::fromElements(cos, isin, isin, cos);
 }
 
-Eigen::Matrix2cd ryMatrix(double theta) {
-  auto halfTheta = theta / 2.;
-  std::complex<double> cos{std::cos(halfTheta), 0.};
-  std::complex<double> sin{std::sin(halfTheta), 0.};
-  return Eigen::Matrix2cd{{cos, -sin}, {sin, cos}};
+Matrix2x2 ryMatrix(double theta) {
+  const auto halfTheta = theta / 2.;
+  const Complex cos{std::cos(halfTheta), 0.};
+  const Complex sin{std::sin(halfTheta), 0.};
+  return Matrix2x2::fromElements(cos, -sin, sin, cos);
 }
 
-Eigen::Matrix2cd rzMatrix(double theta) {
-  return Eigen::Matrix2cd{{{std::cos(theta / 2.), -std::sin(theta / 2.)}, 0},
-                          {0, {std::cos(theta / 2.), std::sin(theta / 2.)}}};
+Matrix2x2 rzMatrix(double theta) {
+  return Matrix2x2::fromElements(
+      Complex{std::cos(theta / 2.), -std::sin(theta / 2.)}, 0., 0.,
+      Complex{std::cos(theta / 2.), std::sin(theta / 2.)});
 }
 
-Eigen::Matrix4cd rxxMatrix(double theta) {
+Matrix4x4 rxxMatrix(double theta) {
+  const auto cosTheta = std::cos(theta / 2.);
+  const Complex misin{0., -std::sin(theta / 2.)};
+  return Matrix4x4::fromElements(cosTheta, 0, 0, misin, //
+                                 0, cosTheta, misin, 0, //
+                                 0, misin, cosTheta, 0, //
+                                 misin, 0, 0, cosTheta);
+}
+
+Matrix4x4 ryyMatrix(double theta) {
+  const auto cosTheta = std::cos(theta / 2.);
+  const Complex isin{0., std::sin(theta / 2.)};
+  const Complex misin{0., -std::sin(theta / 2.)};
+  return Matrix4x4::fromElements(cosTheta, 0, 0, isin,  //
+                                 0, cosTheta, misin, 0, //
+                                 0, misin, cosTheta, 0, //
+                                 isin, 0, 0, cosTheta);
+}
+
+Matrix4x4 rzzMatrix(double theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
-
-  return Eigen::Matrix4cd{{cosTheta, 0, 0, {0., -sinTheta}},
-                          {0, cosTheta, {0., -sinTheta}, 0},
-                          {0, {0., -sinTheta}, cosTheta, 0},
-                          {{0., -sinTheta}, 0, 0, cosTheta}};
+  const Complex em{cosTheta, -sinTheta};
+  const Complex ep{cosTheta, sinTheta};
+  return Matrix4x4::fromElements(em, 0, 0, 0, //
+                                 0, ep, 0, 0, //
+                                 0, 0, ep, 0, //
+                                 0, 0, 0, em);
 }
 
-Eigen::Matrix4cd ryyMatrix(double theta) {
-  const auto cosTheta = std::cos(theta / 2.);
-  const auto sinTheta = std::sin(theta / 2.);
-
-  return Eigen::Matrix4cd{{{cosTheta, 0, 0, {0., sinTheta}},
-                           {0, cosTheta, {0., -sinTheta}, 0},
-                           {0, {0., -sinTheta}, cosTheta, 0},
-                           {{0., sinTheta}, 0, 0, cosTheta}}};
+Matrix2x2 pMatrix(double lambda) {
+  return Matrix2x2::fromElements(1., 0., 0.,
+                                 Complex{std::cos(lambda), std::sin(lambda)});
 }
 
-Eigen::Matrix4cd rzzMatrix(double theta) {
-  const auto cosTheta = std::cos(theta / 2.);
-  const auto sinTheta = std::sin(theta / 2.);
-
-  return Eigen::Matrix4cd{{{cosTheta, -sinTheta}, 0, 0, 0},
-                          {0, {cosTheta, sinTheta}, 0, 0},
-                          {0, 0, {cosTheta, sinTheta}, 0},
-                          {0, 0, 0, {cosTheta, -sinTheta}}};
+const Matrix4x4& swapGate() {
+  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+                                                          0, 0, 1, 0, //
+                                                          0, 1, 0, 0, //
+                                                          0, 0, 0, 1);
+  return matrix;
 }
 
-Eigen::Matrix2cd pMatrix(double lambda) {
-  return Eigen::Matrix2cd{{1, 0}, {0, {std::cos(lambda), std::sin(lambda)}}};
+const Matrix2x2& hGate() {
+  static const Matrix2x2 matrix = Matrix2x2::fromElements(
+      FRAC1_SQRT2, FRAC1_SQRT2, FRAC1_SQRT2, -FRAC1_SQRT2);
+  return matrix;
 }
 
-Eigen::Matrix4cd expandToTwoQubits(const Eigen::Matrix2cd& singleQubitMatrix,
-                                   QubitId qubitId) {
+const Matrix2x2& ipz() {
+  static const Matrix2x2 matrix =
+      Matrix2x2::fromElements(Complex{0, 1}, 0, 0, Complex{0, -1});
+  return matrix;
+}
+
+const Matrix2x2& ipy() {
+  static const Matrix2x2 matrix = Matrix2x2::fromElements(0, 1, -1, 0);
+  return matrix;
+}
+
+const Matrix2x2& ipx() {
+  static const Matrix2x2 matrix =
+      Matrix2x2::fromElements(0, Complex{0, 1}, Complex{0, 1}, 0);
+  return matrix;
+}
+
+Matrix4x4 expandToTwoQubits(const Matrix2x2& singleQubitMatrix,
+                            QubitId qubitId) {
   if (qubitId == 0) {
-    return Eigen::kroneckerProduct(singleQubitMatrix,
-                                   Eigen::Matrix2cd::Identity());
+    return kron(singleQubitMatrix, Matrix2x2::identity());
   }
   if (qubitId == 1) {
-    return Eigen::kroneckerProduct(Eigen::Matrix2cd::Identity(),
-                                   singleQubitMatrix);
+    return kron(Matrix2x2::identity(), singleQubitMatrix);
   }
   llvm::reportFatalInternalError("Invalid qubit id for single-qubit expansion");
 }
 
-Eigen::Matrix4cd
-fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
+Matrix4x4
+fixTwoQubitMatrixQubitOrder(const Matrix4x4& twoQubitMatrix,
                             const llvm::SmallVector<QubitId, 2>& qubitIds) {
   if (qubitIds == llvm::SmallVector<QubitId, 2>{1, 0}) {
     // `UnitaryOpInterface::getUnitaryMatrix4x4` uses a fixed index order;
     // conjugate by SWAP when operand order is (1, 0) instead of (0, 1).
-    return decomposition::SWAP_GATE * twoQubitMatrix * decomposition::SWAP_GATE;
+    return swapGate() * twoQubitMatrix * swapGate();
   }
   if (qubitIds == llvm::SmallVector<QubitId, 2>{0, 1}) {
     return twoQubitMatrix;
@@ -124,11 +155,10 @@ fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
       "Invalid qubit IDs for fixing two-qubit matrix");
 }
 
-Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate) {
+Matrix2x2 getSingleQubitMatrix(const Gate& gate) {
   if (gate.type == GateKind::SX) {
-    return Eigen::Matrix2cd{
-        {std::complex<double>{0.5, 0.5}, std::complex<double>{0.5, -0.5}},
-        {std::complex<double>{0.5, -0.5}, std::complex<double>{0.5, 0.5}}};
+    return Matrix2x2::fromElements(Complex{0.5, 0.5}, Complex{0.5, -0.5},
+                                   Complex{0.5, -0.5}, Complex{0.5, 0.5});
   }
   if (gate.type == GateKind::RX) {
     assert(gate.parameter.size() == 1);
@@ -143,10 +173,10 @@ Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate) {
     return rzMatrix(gate.parameter[0]);
   }
   if (gate.type == GateKind::X) {
-    return Eigen::Matrix2cd{{0, 1}, {1, 0}};
+    return Matrix2x2::fromElements(0, 1, 1, 0);
   }
   if (gate.type == GateKind::I) {
-    return Eigen::Matrix2cd::Identity();
+    return Matrix2x2::identity();
   }
   if (gate.type == GateKind::P) {
     assert(gate.parameter.size() == 1);
@@ -154,29 +184,23 @@ Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate) {
   }
   if (gate.type == GateKind::U) {
     assert(gate.parameter.size() == 3);
-    const double theta = gate.parameter[0];
-    const double phi = gate.parameter[1];
-    const double lambda = gate.parameter[2];
-    return uMatrix(theta, phi, lambda);
+    return uMatrix(gate.parameter[0], gate.parameter[1], gate.parameter[2]);
   }
   if (gate.type == GateKind::U2) {
     assert(gate.parameter.size() == 2);
-    const double phi = gate.parameter[0];
-    const double lambda = gate.parameter[1];
-    return u2Matrix(phi, lambda);
+    return u2Matrix(gate.parameter[0], gate.parameter[1]);
   }
   if (gate.type == GateKind::H) {
-    return H_GATE;
+    return hGate();
   }
   llvm::reportFatalInternalError(
       "unsupported gate type for single qubit matrix");
 }
 
 // Reconstruct a two-qubit workspace matrix for a decomposition `Gate`.
-// Used by sequence verification and `QubitGateSequence::getUnitaryMatrix()`.
-Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
+Matrix4x4 getTwoQubitMatrix(const Gate& gate) {
   if (gate.qubitId.empty()) {
-    return Eigen::Matrix4cd::Identity();
+    return Matrix4x4::identity();
   }
   if (gate.qubitId.size() == 1) {
     return expandToTwoQubits(getSingleQubitMatrix(gate), gate.qubitId[0]);
@@ -198,20 +222,23 @@ Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
       // control/target wires produces a different basis-layout matrix.
       if (validPair01) {
         // control = wire 0 (MSB), target = wire 1.
-        return Eigen::Matrix4cd{
-            {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
+        return Matrix4x4::fromElements(1, 0, 0, 0, //
+                                       0, 1, 0, 0, //
+                                       0, 0, 0, 1, //
+                                       0, 0, 1, 0);
       }
-      if (validPair10) {
-        // control = wire 1, target = wire 0 (MSB).
-        return Eigen::Matrix4cd{
-            {1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 0}};
-      }
-      llvm::reportFatalInternalError("Invalid qubit IDs for CX gate");
+      // control = wire 1, target = wire 0 (MSB).
+      return Matrix4x4::fromElements(1, 0, 0, 0, //
+                                     0, 0, 0, 1, //
+                                     0, 0, 1, 0, //
+                                     0, 1, 0, 0);
     }
     if (gate.type == GateKind::Z) {
       // controlled Z (CZ)
-      return Eigen::Matrix4cd{
-          {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, -1}};
+      return Matrix4x4::fromElements(1, 0, 0, 0, //
+                                     0, 1, 0, 0, //
+                                     0, 0, 1, 0, //
+                                     0, 0, 0, -1);
     }
     if (gate.type == GateKind::RXX) {
       assert(gate.parameter.size() == 1);
@@ -226,7 +253,7 @@ Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate) {
       return rzzMatrix(gate.parameter[0]);
     }
     if (gate.type == GateKind::I) {
-      return Eigen::Matrix4cd::Identity();
+      return Matrix4x4::identity();
     }
     llvm::reportFatalInternalError(
         "Unsupported gate type for two qubit matrix");

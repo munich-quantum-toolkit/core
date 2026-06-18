@@ -156,9 +156,6 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
         pm.addPass(
             qco::createNativeGateSynthesisPass(qco::NativeGateSynthesisOptions{
                 .nativeGates = config_.nativeGates,
-                .scoreWeightTwoQ = config_.nativeGateScoreWeightTwoQ,
-                .scoreWeightOneQ = config_.nativeGateScoreWeightOneQ,
-                .scoreWeightDepth = config_.nativeGateScoreWeightDepth,
             }));
       }))) {
     return failure();

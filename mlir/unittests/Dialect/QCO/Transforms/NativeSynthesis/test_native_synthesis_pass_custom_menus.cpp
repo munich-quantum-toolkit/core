@@ -458,9 +458,6 @@ TEST_F(NativeSynthesisPassTest, RandomizedCustomMenusAndCircuitsAreEquivalent) {
       pm.addPass(
           qco::createNativeGateSynthesisPass(qco::NativeGateSynthesisOptions{
               .nativeGates = menuCsv,
-              .scoreWeightTwoQ = 1.0,
-              .scoreWeightOneQ = 0.1,
-              .scoreWeightDepth = 0.01,
           }));
       if (failed(pm.run(*synthesized))) {
         ADD_FAILURE() << "Native synthesis failed for menu=" << menuCsv

@@ -12,12 +12,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
-
-#include <Eigen/Core>
-#include <Eigen/Eigenvalues>
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <complex>
-#include <type_traits>
 
 /// Numeric + classification helpers used by the decomposition passes.
 /// Lives in `mlir::qco::helpers` (not `decomposition`) because some helpers
@@ -33,26 +30,15 @@ namespace mlir::qco::helpers {
  */
 [[nodiscard]] decomposition::GateKind getGateKind(UnitaryOpInterface op);
 
-// NOLINTBEGIN(misc-include-cleaner)
-/// Eigen-decomposition of a self-adjoint matrix. Returns `(eigenvectors,
-/// eigenvalues)`; eigenvalues are real and sorted ascending.
-template <typename T, int N, int M>
-[[nodiscard]] auto selfAdjointEvd(const Eigen::Matrix<T, N, M>& a) {
-  Eigen::SelfAdjointEigenSolver<std::remove_cvref_t<decltype(a)>> s;
-  s.compute(a);
-  auto vecs = s.eigenvectors().eval();
-  auto vals = s.eigenvalues();
-  return std::make_pair(vecs, vals);
-}
+/// Check whether `matrix` is unitary within `tolerance` (i.e. `M^H M` is
+/// approximately the identity).
+[[nodiscard]] bool isUnitaryMatrix(const Matrix2x2& matrix,
+                                   double tolerance = 1e-12);
 
 /// Check whether `matrix` is unitary within `tolerance` (i.e. `M^H M` is
-/// approximately `I`, using Eigen's `isIdentity`).
-template <typename T, int N, int M>
-[[nodiscard]] bool isUnitaryMatrix(const Eigen::Matrix<T, N, M>& matrix,
-                                   double tolerance = 1e-12) {
-  return (matrix.transpose().conjugate() * matrix).isIdentity(tolerance);
-}
-// NOLINTEND(misc-include-cleaner)
+/// approximately the identity).
+[[nodiscard]] bool isUnitaryMatrix(const Matrix4x4& matrix,
+                                   double tolerance = 1e-12);
 
 /**
  * Euclidean remainder of a modulo b.

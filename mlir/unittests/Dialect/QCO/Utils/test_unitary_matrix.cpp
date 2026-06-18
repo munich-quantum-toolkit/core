@@ -12,8 +12,11 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <complex>
+#include <cstddef>
+#include <random>
 #include <utility>
 
 using namespace mlir::qco;
@@ -301,6 +304,140 @@ TEST(Matrix4x4, AssignFromDynamicMatrix) {
   EXPECT_TRUE(out.assignFrom(dynamic));
   EXPECT_TRUE(out.isApprox(swap));
   EXPECT_FALSE(out.assignFrom(DynamicMatrix::identity(2)));
+}
+
+TEST(UnitaryMatrix2x2, TransposeAndIsIdentity) {
+  const Matrix2x2 m = Matrix2x2::fromElements(1, 2i, 3, 4);
+  EXPECT_TRUE(m.transpose().isApprox(Matrix2x2::fromElements(1, 3, 2i, 4)));
+  EXPECT_TRUE(Matrix2x2::identity().isIdentity());
+  EXPECT_FALSE(pauliX().isIdentity());
+}
+
+TEST(UnitaryMatrix4x4, TransposeAndIsIdentity) {
+  Matrix4x4 m = Matrix4x4::identity();
+  m(0, 3) = 2i;
+  m(3, 0) = 5.0;
+  const Matrix4x4 t = m.transpose();
+  EXPECT_EQ(t(3, 0), 2i);
+  EXPECT_EQ(t(0, 3), 5.0);
+  EXPECT_TRUE(Matrix4x4::identity().isIdentity());
+  EXPECT_FALSE(swapMatrix().isIdentity());
+}
+
+TEST(UnitaryMatrix4x4, DiagonalColumnsAndParts) {
+  Matrix4x4 m =
+      Matrix4x4::fromElements(Complex{1, 1}, 0, 0, 0, 0, Complex{2, 2}, 0, 0, 0,
+                              0, Complex{3, 3}, 0, 0, 0, 0, Complex{4, 4});
+  const auto diag = m.diagonal();
+  EXPECT_EQ(diag[0], (Complex{1, 1}));
+  EXPECT_EQ(diag[3], (Complex{4, 4}));
+  EXPECT_TRUE(Matrix4x4::fromDiagonal(diag).isApprox(m));
+
+  const auto col1 = m.column(1);
+  EXPECT_EQ(col1[1], (Complex{2, 2}));
+  Matrix4x4 n = Matrix4x4::identity();
+  n.setColumn(2, {1i, 2i, 3i, 4i});
+  EXPECT_EQ(n(0, 2), 1i);
+  EXPECT_EQ(n(3, 2), 4i);
+
+  const auto re = m.realPart();
+  const auto im = m.imagPart();
+  EXPECT_EQ(re[0], 1.0);
+  EXPECT_EQ(im[0], 1.0);
+  EXPECT_EQ(re[15], 4.0);
+  EXPECT_EQ(im[15], 4.0);
+}
+
+TEST(UnitaryMatrix4x4, KroneckerProduct) {
+  const Matrix2x2 x = pauliX();
+  // X (x) I should swap the high bit.
+  const Matrix4x4 xi = kron(x, Matrix2x2::identity());
+  EXPECT_TRUE(xi.isApprox(Matrix4x4::fromElements(0, 0, 1, 0, // row 0
+                                                  0, 0, 0, 1, // row 1
+                                                  1, 0, 0, 0, // row 2
+                                                  0, 1, 0, 0)));
+  // I (x) X swaps the low bit.
+  const Matrix4x4 ix = kron(Matrix2x2::identity(), x);
+  EXPECT_TRUE(ix.isApprox(Matrix4x4::fromElements(0, 1, 0, 0, // row 0
+                                                  1, 0, 0, 0, // row 1
+                                                  0, 0, 0, 1, // row 2
+                                                  0, 0, 1, 0)));
+}
+
+TEST(UnitaryMatrix2x2, ScalarLeftMultiply) {
+  const Matrix2x2 x = pauliX();
+  const Complex scalar = std::exp(1i * 0.5);
+  EXPECT_TRUE((scalar * x).isApprox(x * scalar));
+}
+
+TEST(UnitaryMatrix4x4, ScalarLeftMultiply) {
+  const Matrix4x4 swap = swapMatrix();
+  const Complex scalar = std::exp(1i * 0.25);
+  EXPECT_TRUE((scalar * swap).isApprox(swap * scalar));
+}
+
+TEST(JacobiEigensolver, DiagonalMatrix) {
+  std::array<double, 16> a{};
+  a[0] = 3.0;
+  a[5] = 1.0;
+  a[10] = 4.0;
+  a[15] = 2.0;
+  const SymmetricEigen4 result = jacobiSymmetricEigen(a);
+  EXPECT_NEAR(result.eigenvalues[0], 1.0, 1e-12);
+  EXPECT_NEAR(result.eigenvalues[1], 2.0, 1e-12);
+  EXPECT_NEAR(result.eigenvalues[2], 3.0, 1e-12);
+  EXPECT_NEAR(result.eigenvalues[3], 4.0, 1e-12);
+}
+
+TEST(JacobiEigensolver, ReconstructsRandomSymmetric) {
+  std::mt19937 rng(0xC0FFEE);
+  std::uniform_real_distribution<double> dist(-2.0, 2.0);
+  for (int trial = 0; trial < 50; ++trial) {
+    std::array<double, 16> a{};
+    for (std::size_t i = 0; i < 4; ++i) {
+      for (std::size_t j = i; j < 4; ++j) {
+        const double value = dist(rng);
+        a[(i * 4) + j] = value;
+        a[(j * 4) + i] = value;
+      }
+    }
+    const SymmetricEigen4 result = jacobiSymmetricEigen(a);
+
+    // Eigenvalues are ascending.
+    for (std::size_t i = 0; i + 1 < 4; ++i) {
+      EXPECT_LE(result.eigenvalues[i], result.eigenvalues[i + 1] + 1e-12);
+    }
+
+    // Eigenvectors are orthonormal: V^T V == I.
+    const Matrix4x4& v = result.eigenvectors;
+    EXPECT_TRUE((v.transpose() * v).isIdentity(1e-9));
+
+    // Reconstruction: V D V^T == A.
+    const Matrix4x4 d =
+        Matrix4x4::fromDiagonal({result.eigenvalues[0], result.eigenvalues[1],
+                                 result.eigenvalues[2], result.eigenvalues[3]});
+    const Matrix4x4 reconstructed = v * d * v.transpose();
+    Matrix4x4 original{};
+    for (std::size_t k = 0; k < 16; ++k) {
+      original(k / 4, k % 4) = a[k];
+    }
+    EXPECT_TRUE(reconstructed.isApprox(original, 1e-9));
+  }
+}
+
+TEST(JacobiEigensolver, HandlesDegenerateSpectrum) {
+  // A scalar multiple of the identity: every vector is an eigenvector, but the
+  // returned basis must still be orthonormal.
+  std::array<double, 16> a{};
+  for (std::size_t i = 0; i < 4; ++i) {
+    a[(i * 4) + i] = 2.5;
+  }
+  const SymmetricEigen4 result = jacobiSymmetricEigen(a);
+  for (const double value : result.eigenvalues) {
+    EXPECT_NEAR(value, 2.5, 1e-12);
+  }
+  const Matrix4x4& v = result.eigenvectors;
+  EXPECT_TRUE((v.transpose() * v).isIdentity(1e-9));
 }
 
 TEST(DynamicMatrix, IsApproxOverloads) {

@@ -13,11 +13,12 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -35,19 +36,93 @@
 
 using namespace mlir;
 
-namespace {
-
-Eigen::Matrix2cd matrixToEigen(const qco::Matrix2x2& matrix) {
-  return qco::native_synth::toEigen(matrix);
-}
-
-Eigen::Matrix4cd matrixToEigen(const qco::Matrix4x4& matrix) {
-  return qco::native_synth::toEigen(matrix);
-}
-
-} // namespace
-
 namespace mlir::qco::native_synth_test {
+
+TestMatrix TestMatrix::identity(std::size_t dim) {
+  TestMatrix result(dim);
+  for (std::size_t i = 0; i < dim; ++i) {
+    result(i, i) = std::complex<double>{1.0, 0.0};
+  }
+  return result;
+}
+
+TestMatrix TestMatrix::fromMatrix2x2(const Matrix2x2& matrix) {
+  TestMatrix result(2);
+  for (std::size_t row = 0; row < 2; ++row) {
+    for (std::size_t col = 0; col < 2; ++col) {
+      result(row, col) = matrix(row, col);
+    }
+  }
+  return result;
+}
+
+TestMatrix TestMatrix::fromMatrix4x4(const Matrix4x4& matrix) {
+  TestMatrix result(4);
+  for (std::size_t row = 0; row < 4; ++row) {
+    for (std::size_t col = 0; col < 4; ++col) {
+      result(row, col) = matrix(row, col);
+    }
+  }
+  return result;
+}
+
+TestMatrix TestMatrix::operator*(const TestMatrix& rhs) const {
+  TestMatrix result(dim_);
+  for (std::size_t row = 0; row < dim_; ++row) {
+    for (std::size_t k = 0; k < dim_; ++k) {
+      const std::complex<double> a = (*this)(row, k);
+      if (a == std::complex<double>{0.0, 0.0}) {
+        continue;
+      }
+      for (std::size_t col = 0; col < dim_; ++col) {
+        result(row, col) += a * rhs(k, col);
+      }
+    }
+  }
+  return result;
+}
+
+TestMatrix TestMatrix::operator*(std::complex<double> scalar) const {
+  TestMatrix result(dim_);
+  for (std::size_t row = 0; row < dim_; ++row) {
+    for (std::size_t col = 0; col < dim_; ++col) {
+      result(row, col) = (*this)(row, col) * scalar;
+    }
+  }
+  return result;
+}
+
+TestMatrix TestMatrix::adjoint() const {
+  TestMatrix result(dim_);
+  for (std::size_t row = 0; row < dim_; ++row) {
+    for (std::size_t col = 0; col < dim_; ++col) {
+      result(col, row) = std::conj((*this)(row, col));
+    }
+  }
+  return result;
+}
+
+std::complex<double> TestMatrix::trace() const {
+  std::complex<double> sum{0.0, 0.0};
+  for (std::size_t i = 0; i < dim_; ++i) {
+    sum += (*this)(i, i);
+  }
+  return sum;
+}
+
+bool TestMatrix::isApprox(const TestMatrix& other, double tol) const {
+  if (dim_ != other.dim_) {
+    return false;
+  }
+  for (std::size_t row = 0; row < dim_; ++row) {
+    for (std::size_t col = 0; col < dim_; ++col) {
+      if (std::abs((*this)(row, col) - other(row, col)) > tol) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
 
 [[nodiscard]] static std::optional<Value>
 getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
@@ -79,14 +154,13 @@ std::complex<double> phasedAmplitude(const double magnitude,
          std::exp(std::complex<double>(0.0, phase));
 }
 
-Eigen::Matrix2cd u3Matrix(double theta, double phi, double lambda) {
+Matrix2x2 u3Matrix(double theta, double phi, double lambda) {
   return decomposition::uMatrix(theta, phi, lambda);
 }
 
-bool isUnitary(const Eigen::Matrix2cd& m, const double atol) {
-  const auto identity = Eigen::Matrix2cd::Identity();
-  return (m * m.adjoint()).isApprox(identity, atol) &&
-         (m.adjoint() * m).isApprox(identity, atol);
+bool isUnitary(const Matrix2x2& matrix, const double atol) {
+  return (matrix * matrix.adjoint()).isIdentity(atol) &&
+         (matrix.adjoint() * matrix).isIdentity(atol);
 }
 
 std::optional<double> evaluateConstF64(Value value) {
@@ -141,8 +215,7 @@ std::optional<double> evaluateConstF64(Value value) {
 }
 
 /// Extract the 2x2 unitary matrix associated with a single-qubit op.
-bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
-                              Eigen::Matrix2cd& out) {
+bool extractSingleQubitMatrix(qco::UnitaryOpInterface op, Matrix2x2& out) {
   if (llvm::isa<qco::RZOp>(op.getOperation())) {
     auto* raw = op.getOperation();
     if (raw->getNumOperands() < 2) {
@@ -220,11 +293,11 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
         phasedAmplitude(thetaSin, -*phi - (std::numbers::pi / 2.0));
     const auto m10 = phasedAmplitude(thetaSin, *phi - (std::numbers::pi / 2.0));
     const std::complex<double> thetaCos = std::cos(*theta / 2.0);
-    out = Eigen::Matrix2cd{{thetaCos, m01}, {m10, thetaCos}};
+    out = Matrix2x2::fromElements(thetaCos, m01, m10, thetaCos);
     return true;
   }
-  if (qco::Matrix2x2 raw; op.getUnitaryMatrix2x2(raw)) {
-    out = matrixToEigen(raw);
+  if (Matrix2x2 raw; op.getUnitaryMatrix2x2(raw)) {
+    out = raw;
     return true;
   }
   qco::DynamicMatrix dynamic;
@@ -232,35 +305,32 @@ bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
       dynamic.cols() != 2) {
     return false;
   }
-  for (std::size_t row = 0; row < 2; ++row) {
-    for (std::size_t col = 0; col < 2; ++col) {
-      out(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col)) =
-          dynamic(row, col);
-    }
-  }
+  out = Matrix2x2::fromElements(dynamic(0, 0), dynamic(0, 1), dynamic(1, 0),
+                                dynamic(1, 1));
   return true;
 }
 
 /// 4×4 unitary for a two-qubit op (same layout as ``getUnitaryMatrix4x4``).
-bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Eigen::Matrix4cd& out) {
+bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Matrix4x4& out) {
   if (auto ctrl = llvm::dyn_cast<qco::CtrlOp>(op.getOperation())) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
     auto* body = ctrl.getBodyUnitary(0).getOperation();
     if (llvm::isa<qco::ZOp>(body)) {
-      out = Eigen::Matrix4cd::Identity();
+      out = Matrix4x4::identity();
       out(3, 3) = -1.0;
       return true;
     }
     if (llvm::isa<qco::XOp>(body)) {
-      out << 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0;
+      out = Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1,
+                                    0);
       return true;
     }
     return false;
   }
-  if (qco::Matrix4x4 raw; op.getUnitaryMatrix4x4(raw)) {
-    out = matrixToEigen(raw);
+  if (Matrix4x4 raw; op.getUnitaryMatrix4x4(raw)) {
+    out = raw;
     return true;
   }
   qco::DynamicMatrix dynamic;
@@ -270,20 +340,20 @@ bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Eigen::Matrix4cd& out) {
   }
   for (std::size_t row = 0; row < 4; ++row) {
     for (std::size_t col = 0; col < 4; ++col) {
-      out(static_cast<Eigen::Index>(row), static_cast<Eigen::Index>(col)) =
-          dynamic(row, col);
+      out(row, col) = dynamic(static_cast<std::int64_t>(row),
+                              static_cast<std::int64_t>(col));
     }
   }
   return true;
 }
 
-std::optional<Eigen::Matrix4cd>
+std::optional<Matrix4x4>
 computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   ModuleOp module = moduleOp.get();
   if (!module) {
     return std::nullopt;
   }
-  Eigen::Matrix4cd unitary = Eigen::Matrix4cd::Identity();
+  Matrix4x4 unitary = Matrix4x4::identity();
   llvm::DenseMap<Value, std::size_t> qubitIds;
   std::size_t nextQubitId = 0;
 
@@ -328,11 +398,13 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
           if (!qid) {
             return std::nullopt;
           }
-          Eigen::Matrix2cd oneQ;
+          Matrix2x2 oneQ;
           if (!extractSingleQubitMatrix(op, oneQ)) {
             return std::nullopt;
           }
-          unitary = qco::decomposition::expandToTwoQubits(oneQ, *qid) * unitary;
+          unitary = decomposition::expandToTwoQubits(
+                        oneQ, static_cast<decomposition::QubitId>(*qid)) *
+                    unitary;
           const auto qOut = getUnitaryQubitResult(op, 0);
           if (!qOut) {
             return std::nullopt;
@@ -352,12 +424,17 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
           if (!q0id || !q1id) {
             return std::nullopt;
           }
-          Eigen::Matrix4cd twoQ;
+          Matrix4x4 twoQ;
           if (!extractTwoQubitMatrix(op, twoQ)) {
             return std::nullopt;
           }
+          // Reorder the gate's (operand0, operand1) layout into the canonical
+          // (qubit 0, qubit 1) order used by `unitary`.
+          const llvm::SmallVector<decomposition::QubitId, 2> ids{
+              static_cast<decomposition::QubitId>(*q0id),
+              static_cast<decomposition::QubitId>(*q1id)};
           unitary =
-              expandTwoQToN(twoQ, *q0id, *q1id, /*numQubits=*/2) * unitary;
+              decomposition::fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
           const auto q0Out = getUnitaryQubitResult(op, 0);
           const auto q1Out = getUnitaryQubitResult(op, 1);
           if (!q0Out || !q1Out) {
@@ -377,51 +454,46 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   return unitary;
 }
 
-/// Kronecker-embed ``m`` on wire ``q`` into a ``2^N``-dim unitary (same index
-/// bit order as QCO 4×4 matrices: wire 0 is the high bit).
-Eigen::MatrixXcd expandOneQToN(const Eigen::Matrix2cd& m, std::size_t q,
-                               std::size_t numQubits) {
-  const auto dim = static_cast<Eigen::Index>(1ULL << numQubits);
-  Eigen::MatrixXcd full = Eigen::MatrixXcd::Zero(dim, dim);
+/// Kronecker-embed ``matrix`` on wire ``q`` into a ``2^N``-dim unitary (same
+/// index bit order as QCO 4×4 matrices: wire 0 is the high bit).
+TestMatrix expandOneQToN(const Matrix2x2& matrix, std::size_t q,
+                         std::size_t numQubits) {
+  const std::size_t dim = 1ULL << numQubits;
+  TestMatrix full(dim);
   const auto bit = numQubits - 1 - q;
   const std::size_t mask = 1ULL << bit;
-  for (Eigen::Index col = 0; col < dim; ++col) {
-    const auto colIdx = static_cast<std::size_t>(col);
-    const std::size_t sIn = (colIdx >> bit) & 1ULL;
-    const std::size_t rest = colIdx & ~mask;
+  for (std::size_t col = 0; col < dim; ++col) {
+    const std::size_t sIn = (col >> bit) & 1ULL;
+    const std::size_t rest = col & ~mask;
     for (std::size_t sOut = 0; sOut < 2; ++sOut) {
-      const auto row = static_cast<Eigen::Index>(rest | (sOut << bit));
-      full(row, col) =
-          m(static_cast<Eigen::Index>(sOut), static_cast<Eigen::Index>(sIn));
+      const std::size_t row = rest | (sOut << bit);
+      full(row, col) = matrix(sOut, sIn);
     }
   }
   return full;
 }
 
-/// Embed ``m`` on wires ``q0``, ``q1`` into a ``2^N``-dim unitary.
-Eigen::MatrixXcd expandTwoQToN(const Eigen::Matrix4cd& m, std::size_t q0,
-                               std::size_t q1, std::size_t numQubits) {
-  const auto dim = static_cast<Eigen::Index>(1ULL << numQubits);
-  Eigen::MatrixXcd full = Eigen::MatrixXcd::Zero(dim, dim);
+/// Embed ``matrix`` on wires ``q0``, ``q1`` into a ``2^N``-dim unitary.
+TestMatrix expandTwoQToN(const Matrix4x4& matrix, std::size_t q0,
+                         std::size_t q1, std::size_t numQubits) {
+  const std::size_t dim = 1ULL << numQubits;
+  TestMatrix full(dim);
   const auto bit0 = numQubits - 1 - q0;
   const auto bit1 = numQubits - 1 - q1;
   const std::size_t mask0 = 1ULL << bit0;
   const std::size_t mask1 = 1ULL << bit1;
   const std::size_t maskBoth = mask0 | mask1;
-  for (Eigen::Index col = 0; col < dim; ++col) {
-    const auto colIdx = static_cast<std::size_t>(col);
-    const std::size_t s0In = (colIdx >> bit0) & 1ULL;
-    const std::size_t s1In = (colIdx >> bit1) & 1ULL;
+  for (std::size_t col = 0; col < dim; ++col) {
+    const std::size_t s0In = (col >> bit0) & 1ULL;
+    const std::size_t s1In = (col >> bit1) & 1ULL;
     // 2-bit index for the pair matches QCO 4×4 row/column layout.
     const std::size_t smallIn = (s0In << 1) | s1In;
-    const std::size_t rest = colIdx & ~maskBoth;
+    const std::size_t rest = col & ~maskBoth;
     for (std::size_t smallOut = 0; smallOut < 4; ++smallOut) {
       const std::size_t s0Out = (smallOut >> 1) & 1ULL;
       const std::size_t s1Out = smallOut & 1ULL;
-      const auto row =
-          static_cast<Eigen::Index>(rest | (s0Out << bit0) | (s1Out << bit1));
-      full(row, col) = m(static_cast<Eigen::Index>(smallOut),
-                         static_cast<Eigen::Index>(smallIn));
+      const std::size_t row = rest | (s0Out << bit0) | (s1Out << bit1);
+      full(row, col) = matrix(smallOut, smallIn);
     }
   }
   return full;
@@ -430,7 +502,7 @@ Eigen::MatrixXcd expandTwoQToN(const Eigen::Matrix4cd& m, std::size_t q0,
 /// Full ``2^N`` unitary from a QCO module (``alloc`` / ``static``, 1q/2q
 /// unitaries, ``ctrl`` with X/Z body). ``std::nullopt`` on unsupported ops or
 /// if ``N`` exceeds ``maxQubits``.
-std::optional<Eigen::MatrixXcd>
+std::optional<TestMatrix>
 computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
                                std::size_t maxQubits) {
   ModuleOp module = moduleOp.get();
@@ -465,8 +537,7 @@ computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
     return std::nullopt;
   }
 
-  const auto dim = static_cast<Eigen::Index>(1ULL << numQubits);
-  Eigen::MatrixXcd unitary = Eigen::MatrixXcd::Identity(dim, dim);
+  TestMatrix unitary = TestMatrix::identity(1ULL << numQubits);
 
   auto getQubitId = [&](Value qubit) -> std::optional<std::size_t> {
     auto it = qubitIds.find(qubit);
@@ -496,7 +567,7 @@ computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
           if (!qid) {
             return std::nullopt;
           }
-          Eigen::Matrix2cd oneQ;
+          Matrix2x2 oneQ;
           if (!extractSingleQubitMatrix(op, oneQ)) {
             return std::nullopt;
           }
@@ -520,7 +591,7 @@ computeNQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp,
           if (!q0id || !q1id) {
             return std::nullopt;
           }
-          Eigen::Matrix4cd twoQ;
+          Matrix4x4 twoQ;
           if (!extractTwoQubitMatrix(op, twoQ)) {
             return std::nullopt;
           }

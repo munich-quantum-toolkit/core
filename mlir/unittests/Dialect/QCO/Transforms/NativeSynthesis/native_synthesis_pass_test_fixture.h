@@ -205,18 +205,12 @@ protected:
   }
 
   static void runNativeSynthesis(mlir::OwningOpRef<mlir::ModuleOp>& moduleOp,
-                                 const std::string& nativeGates,
-                                 const double scoreWeightTwoQ = 1.0,
-                                 const double scoreWeightOneQ = 0.1,
-                                 const double scoreWeightDepth = 0.01) {
+                                 const std::string& nativeGates) {
     mlir::PassManager pm(moduleOp->getContext());
     pm.addPass(mlir::createQCToQCO());
     pm.addPass(mlir::qco::createNativeGateSynthesisPass(
         mlir::qco::NativeGateSynthesisOptions{
             .nativeGates = nativeGates,
-            .scoreWeightTwoQ = scoreWeightTwoQ,
-            .scoreWeightOneQ = scoreWeightOneQ,
-            .scoreWeightDepth = scoreWeightDepth,
         }));
     ASSERT_TRUE(mlir::succeeded(pm.run(*moduleOp)));
   }
@@ -238,48 +232,36 @@ protected:
   template <typename BuildFn, typename PredicateFn>
   void expectNativeAfterSynthesis(BuildFn buildFn,
                                   const std::string& nativeGates,
-                                  PredicateFn isNative,
-                                  const double scoreWeightTwoQ = 1.0,
-                                  const double scoreWeightOneQ = 0.1,
-                                  const double scoreWeightDepth = 0.01) {
+                                  PredicateFn isNative) {
     auto moduleOp = buildFn();
-    runNativeSynthesis(moduleOp, nativeGates, scoreWeightTwoQ, scoreWeightOneQ,
-                       scoreWeightDepth);
+    runNativeSynthesis(moduleOp, nativeGates);
     EXPECT_TRUE(isNative(moduleOp));
   }
 
   template <typename BuildFn>
-  void expectSynthesisFailure(BuildFn buildFn, const std::string& nativeGates,
-                              const double scoreWeightTwoQ = 1.0,
-                              const double scoreWeightOneQ = 0.1,
-                              const double scoreWeightDepth = 0.01) {
+  void expectSynthesisFailure(BuildFn buildFn, const std::string& nativeGates) {
     auto moduleOp = buildFn();
     mlir::PassManager pm(moduleOp->getContext());
     pm.addPass(mlir::createQCToQCO());
     pm.addPass(mlir::qco::createNativeGateSynthesisPass(
         mlir::qco::NativeGateSynthesisOptions{
             .nativeGates = nativeGates,
-            .scoreWeightTwoQ = scoreWeightTwoQ,
-            .scoreWeightOneQ = scoreWeightOneQ,
-            .scoreWeightDepth = scoreWeightDepth,
         }));
     EXPECT_TRUE(mlir::failed(pm.run(*moduleOp)));
   }
 
   template <typename BuildFn, typename PredicateFn, typename UnitaryFn>
-  void expectEquivalentAndNativeAfterSynthesis(
-      BuildFn buildFn, const std::string& nativeGates, PredicateFn isNative,
-      UnitaryFn computeUnitary, const double scoreWeightTwoQ = 1.0,
-      const double scoreWeightOneQ = 0.1,
-      const double scoreWeightDepth = 0.01) {
+  void expectEquivalentAndNativeAfterSynthesis(BuildFn buildFn,
+                                               const std::string& nativeGates,
+                                               PredicateFn isNative,
+                                               UnitaryFn computeUnitary) {
     auto expectedModule = buildFn();
     runQcToQco(expectedModule);
     const auto expectedUnitary = computeUnitary(expectedModule);
     ASSERT_TRUE(expectedUnitary.has_value());
 
     auto synthesizedModule = buildFn();
-    runNativeSynthesis(synthesizedModule, nativeGates, scoreWeightTwoQ,
-                       scoreWeightOneQ, scoreWeightDepth);
+    runNativeSynthesis(synthesizedModule, nativeGates);
     EXPECT_TRUE(isNative(synthesizedModule));
     const auto synthesizedUnitary = computeUnitary(synthesizedModule);
     ASSERT_TRUE(synthesizedUnitary.has_value());

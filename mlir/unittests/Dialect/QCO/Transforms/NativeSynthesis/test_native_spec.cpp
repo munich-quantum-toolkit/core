@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
@@ -44,18 +44,28 @@ TEST(NativeSpecTest, PhaseAliasPMatchesRzInIbmStyleMenu) {
   EXPECT_EQ(pMenu->allowedGates, rzMenu->allowedGates);
 }
 
-TEST(NativeSpecTest, GetEulerBasesForAxisPair) {
-  const auto rxRz = getEulerBasesForAxisPair(AxisPair::RxRz);
-  ASSERT_EQ(rxRz.size(), 1U);
-  EXPECT_EQ(rxRz[0], GateEulerBasis::XZX);
+TEST(NativeSpecTest, EmitterEulerBasisForAxisPair) {
+  EXPECT_EQ(emitterEulerBasis(SingleQubitEmitterSpec{
+                .mode = SingleQubitMode::AxisPair, .axisPair = AxisPair::RxRz}),
+            EulerBasis::XZX);
+  EXPECT_EQ(emitterEulerBasis(SingleQubitEmitterSpec{
+                .mode = SingleQubitMode::AxisPair, .axisPair = AxisPair::RxRy}),
+            EulerBasis::XYX);
+  EXPECT_EQ(emitterEulerBasis(SingleQubitEmitterSpec{
+                .mode = SingleQubitMode::AxisPair, .axisPair = AxisPair::RyRz}),
+            EulerBasis::ZYZ);
+}
 
-  const auto rxRy = getEulerBasesForAxisPair(AxisPair::RxRy);
-  ASSERT_EQ(rxRy.size(), 1U);
-  EXPECT_EQ(rxRy[0], GateEulerBasis::XYX);
-
-  const auto ryRz = getEulerBasesForAxisPair(AxisPair::RyRz);
-  ASSERT_EQ(ryRz.size(), 1U);
-  EXPECT_EQ(ryRz[0], GateEulerBasis::ZYZ);
+TEST(NativeSpecTest, EmitterEulerBasisForPrimaryModes) {
+  EXPECT_EQ(
+      emitterEulerBasis(SingleQubitEmitterSpec{.mode = SingleQubitMode::U3}),
+      EulerBasis::U);
+  EXPECT_EQ(
+      emitterEulerBasis(SingleQubitEmitterSpec{.mode = SingleQubitMode::ZSXX}),
+      EulerBasis::ZSXX);
+  EXPECT_EQ(
+      emitterEulerBasis(SingleQubitEmitterSpec{.mode = SingleQubitMode::R}),
+      EulerBasis::R);
 }
 
 TEST(NativeSpecTest, RzzSetsAllowRzzFlag) {

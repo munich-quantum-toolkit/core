@@ -61,15 +61,6 @@ struct QuantumCompilerConfig {
   /// - `"rx,rz,cx"`, `"rx,ry,cz"`, `"ry,rz,cx"` — supported RX/RY/RZ pairs plus
   /// entangler
   std::string nativeGates;
-
-  /// Weight for two-qubit gates in local candidate scoring
-  double nativeGateScoreWeightTwoQ = 1.0;
-
-  /// Weight for single-qubit gates in local candidate scoring
-  double nativeGateScoreWeightOneQ = 0.1;
-
-  /// Weight for local candidate depth in local candidate scoring
-  double nativeGateScoreWeightDepth = 0.01;
 };
 
 /**

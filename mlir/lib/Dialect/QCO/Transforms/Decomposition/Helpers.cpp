@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
@@ -55,6 +56,14 @@ decomposition::GateKind getGateKind(UnitaryOpInterface op) {
             "Unsupported QCO unitary operation kind");
         llvm_unreachable("unsupported gate kind");
       });
+}
+
+bool isUnitaryMatrix(const Matrix2x2& matrix, double tolerance) {
+  return (matrix.adjoint() * matrix).isIdentity(tolerance);
+}
+
+bool isUnitaryMatrix(const Matrix4x4& matrix, double tolerance) {
+  return (matrix.adjoint() * matrix).isIdentity(tolerance);
 }
 
 double remEuclid(double a, double b) {

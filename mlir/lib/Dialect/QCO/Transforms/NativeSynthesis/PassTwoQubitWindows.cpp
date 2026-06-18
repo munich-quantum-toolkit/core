@@ -15,12 +15,11 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Scoring.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -31,8 +30,8 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
-#include <utility>
 
 namespace mlir::qco::native_synth {
 
@@ -57,32 +56,28 @@ static bool isNativeTwoQubitOp(Operation* op, const NativeProfileSpec& spec) {
   return spec.allowRzz && llvm::isa<RZZOp>(op);
 }
 
-/// Decide whether replacing a consolidated window with the candidate
-/// described by `best` is worthwhile. Always replace a window that contains
-/// any non-native op (we have to lower them anyway); otherwise only replace
-/// when the candidate has strictly fewer two-qubit gates, or the same number
-/// with strictly fewer one-qubit gates.
+/// Decide whether replacing a consolidated window is worthwhile. Always
+/// replace a window that contains any non-native op (we have to lower them
+/// anyway); otherwise only replace when the deterministic synthesizer uses
+/// strictly fewer entanglers than the window already contains. (Leftover
+/// single-qubit gates are cleaned up by the surrounding fuse passes, so the
+/// 1q count is not part of the decision.)
 static bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
-                                        const CandidateMetrics& best) {
+                                        std::uint8_t numBasisUses) {
   if (block.anyNonNative) {
     return true;
   }
-  const bool shorterTwoQ = best.numTwoQ < block.numTwoQ;
-  const bool sameTwoQ = best.numTwoQ == block.numTwoQ;
-  const bool shorterOneQ = best.numOneQ < block.numOneQ;
-  return shorterTwoQ || (sameTwoQ && shorterOneQ);
+  return numBasisUses < block.numTwoQ;
 }
 
-/// Emit the chosen synthesis sequence `best` at the location of the window's
-/// first op, rewire the block's trailing SSA values (`wireA`, `wireB`) to
-/// the newly emitted outputs, and erase the replaced ops in reverse order
-/// so def-use edges are cleared before their defining ops disappear.
-static LogicalResult materializeSingleTwoQubitBlock(
-    IRRewriter& rewriter, const TwoQubitBlock& block,
-    const SynthesisCandidate<TwoQubitRewritePlan>& best) {
-  if (!best.payload.sequence) {
-    return failure();
-  }
+/// Emit the deterministic native synthesis of `block.accum` at the location of
+/// the window's first op, rewire the block's trailing SSA values (`wireA`,
+/// `wireB`) to the newly emitted outputs, and erase the replaced ops in
+/// reverse order so def-use edges are cleared before their defining ops
+/// disappear.
+static LogicalResult
+materializeSingleTwoQubitBlock(IRRewriter& rewriter, const TwoQubitBlock& block,
+                               const NativeProfileSpec& spec) {
   Operation* firstOp = block.ops.front();
   auto firstUnitary = llvm::cast<UnitaryOpInterface>(firstOp);
   const Value inA = firstUnitary.getInputQubit(0);
@@ -93,15 +88,10 @@ static LogicalResult materializeSingleTwoQubitBlock(
   rewriter.setInsertionPoint(firstOp);
   Value newA;
   Value newB;
-  if (failed(emitTwoQubitGateSequenceAtLoc(rewriter, firstOp->getLoc(), inA,
-                                           inB, *best.payload.sequence, newA,
-                                           newB))) {
+  if (failed(emitTwoQubitNative(rewriter, firstOp->getLoc(), inA, inB,
+                                block.accum, spec, newA, newB))) {
     firstOp->emitError("failed to emit synthesized two-qubit gate sequence");
     return failure();
-  }
-  if (best.payload.sequence->hasGlobalPhase()) {
-    emitGPhaseIfNonTrivial(rewriter, firstOp->getLoc(),
-                           best.payload.sequence->globalPhase);
   }
   rewriter.replaceAllUsesWith(outA, newA);
   rewriter.replaceAllUsesWith(outB, newB);
@@ -194,7 +184,7 @@ void TwoQubitWindowConsolidator::process(Operation* op,
   if (unitary.isTwoQubit()) {
     // A two-qubit op for which we cannot build a 4x4 matrix is opaque to the
     // window model; close any blocks on its inputs and bail out.
-    Eigen::Matrix4cd opMatrix;
+    Matrix4x4 opMatrix;
     if (!getBlockTwoQubitMatrix(op, opMatrix)) {
       closeBlockOnWire(unitary.getInputQubit(0));
       closeBlockOnWire(unitary.getInputQubit(1));
@@ -324,10 +314,9 @@ void TwoQubitWindowConsolidator::process(Operation* op,
       closeBlock(idx);
       return;
     }
-    const Eigen::Matrix2cd m = toEigen(raw);
     const auto pad = (v == block.wireA)
-                         ? decomposition::expandToTwoQubits(m, 0)
-                         : decomposition::expandToTwoQubits(m, 1);
+                         ? decomposition::expandToTwoQubits(raw, 0)
+                         : decomposition::expandToTwoQubits(raw, 1);
     block.accum = pad * block.accum;
     block.ops.push_back(op);
     ++block.numOneQ;
@@ -355,8 +344,7 @@ void TwoQubitWindowConsolidator::process(Operation* op,
 
 LogicalResult
 TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
-                                        const NativeProfileSpec& spec,
-                                        const ScoreWeights& weights) {
+                                        const NativeProfileSpec& spec) {
   llvm::DenseSet<Operation*> erasedOps;
   for (const auto& block : blocks) {
     if (block.ops.size() < 2) {
@@ -369,18 +357,16 @@ TwoQubitWindowConsolidator::materialize(IRRewriter& rewriter,
                      [&](Operation* op) { return erasedOps.contains(op); })) {
       continue;
     }
-    // Leave `block.accum` unnormalized: Weyl keeps stripped SU(4) phase in
-    // the candidate sequence's `globalPhase`.
-    const auto candidates =
-        collectTwoQubitBasisCandidatesFromMatrix(block.accum, spec);
-    const auto* best = selectBestCandidate(llvm::ArrayRef(candidates), weights);
-    if (best == nullptr) {
+    // Leave `block.accum` unnormalized: Weyl folds the stripped global phase
+    // into the synthesized `gphase`.
+    const auto numBasisUses = twoQubitEntanglerCount(block.accum, spec);
+    if (!numBasisUses) {
       continue;
     }
-    if (!shouldApplyBlockReplacement(block, best->metrics)) {
+    if (!shouldApplyBlockReplacement(block, *numBasisUses)) {
       continue;
     }
-    if (failed(materializeSingleTwoQubitBlock(rewriter, block, *best))) {
+    if (failed(materializeSingleTwoQubitBlock(rewriter, block, spec))) {
       return failure();
     }
     for (Operation* op : block.ops) {

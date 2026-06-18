@@ -14,9 +14,8 @@
 #pragma once
 
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
-#include <Eigen/StdVector>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Operation.h>
@@ -24,6 +23,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <vector>
 
 namespace mlir::qco::native_synth {
@@ -34,7 +34,7 @@ struct TwoQubitBlock {
   Value wireA;
   Value wireB;
   llvm::SmallVector<Operation*, 8> ops;
-  Eigen::Matrix4cd accum = Eigen::Matrix4cd::Identity();
+  Matrix4x4 accum = Matrix4x4::identity();
   unsigned numTwoQ = 0;
   unsigned numOneQ = 0;
   bool anyNonNative = false;
@@ -49,7 +49,7 @@ void collectUnitaryOpsInPreOrder(Operation* root,
 struct TwoQubitWindowConsolidator {
   /// Append-only list of windows discovered so far; closed windows are kept
   /// so `materialize()` can still rewrite them.
-  std::vector<TwoQubitBlock, Eigen::aligned_allocator<TwoQubitBlock>> blocks;
+  std::vector<TwoQubitBlock> blocks;
   /// Maps each currently-open SSA qubit value to the index of the block
   /// that owns its trailing wire.
   llvm::DenseMap<Value, size_t> wireToBlock;
@@ -67,13 +67,12 @@ struct TwoQubitWindowConsolidator {
   /// windows depending on the op's kind and operand use pattern.
   void process(Operation* op, const NativeProfileSpec& spec);
 
-  /// Rewrite each collected window whose accumulated unitary can be
-  /// realized more cheaply by the native-gate synthesizer.
-  /// Picks the best candidate per block via `selectBestCandidate`,
-  /// gates the replacement on `shouldApplyBlockReplacement`, and emits the
-  /// new sequence through `rewriter`.
-  LogicalResult materialize(IRRewriter& rewriter, const NativeProfileSpec& spec,
-                            const ScoreWeights& weights);
+  /// Rewrite each collected window whose accumulated unitary can be realized
+  /// with strictly fewer entanglers (or that contains non-native ops). The
+  /// deterministic two-qubit synthesizer emits the replacement through
+  /// `rewriter`.
+  LogicalResult materialize(IRRewriter& rewriter,
+                            const NativeProfileSpec& spec);
 };
 
 } // namespace mlir::qco::native_synth

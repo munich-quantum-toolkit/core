@@ -10,17 +10,17 @@
 
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
+#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/SingleQubit.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
@@ -30,12 +30,10 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <algorithm>
+#include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <numbers>
 #include <optional>
-#include <tuple>
 #include <utility>
 
 namespace mlir::qco::native_synth {
@@ -43,233 +41,106 @@ namespace mlir::qco::native_synth {
 constexpr double PI = std::numbers::pi;
 constexpr double HALF_PI = PI / 2.0;
 
-/// Whether the given single-qubit emitter can lower a decomposition-IR gate
-/// of `kind` (an intermediate from Euler/Weyl, *not* a `NativeGateKind`) to a
-/// native output sequence.
-static bool
-emitterHandlesDecompositionGate(const SingleQubitEmitterSpec& emitter,
-                                decomposition::GateKind kind) {
-  if (kind == decomposition::GateKind::I) {
-    return true;
+/// Deterministic entangler choice: prefer CX over CZ. Returns `std::nullopt`
+/// when the menu has no entangler basis.
+static std::optional<EntanglerBasis>
+selectEntangler(const NativeProfileSpec& spec) {
+  if (usesCxEntangler(spec)) {
+    return EntanglerBasis::Cx;
   }
-  switch (emitter.mode) {
-  case SingleQubitMode::ZSXX:
-    return kind == decomposition::GateKind::RZ ||
-           kind == decomposition::GateKind::SX ||
-           kind == decomposition::GateKind::X;
-  case SingleQubitMode::U3:
-    return kind == decomposition::GateKind::U;
-  case SingleQubitMode::R:
-    return kind == decomposition::GateKind::RX ||
-           kind == decomposition::GateKind::RY ||
-           kind == decomposition::GateKind::X ||
-           kind == decomposition::GateKind::Y;
-  case SingleQubitMode::AxisPair:
-    switch (emitter.axisPair) {
-    case AxisPair::RxRz:
-      return kind == decomposition::GateKind::RX ||
-             kind == decomposition::GateKind::RZ ||
-             kind == decomposition::GateKind::X ||
-             kind == decomposition::GateKind::Z;
-    case AxisPair::RxRy:
-      return kind == decomposition::GateKind::RX ||
-             kind == decomposition::GateKind::RY ||
-             kind == decomposition::GateKind::X ||
-             kind == decomposition::GateKind::Y;
-    case AxisPair::RyRz:
-      return kind == decomposition::GateKind::RY ||
-             kind == decomposition::GateKind::RZ ||
-             kind == decomposition::GateKind::Y ||
-             kind == decomposition::GateKind::Z;
-    }
-    break;
+  if (usesCzEntangler(spec)) {
+    return EntanglerBasis::Cz;
   }
-  return false;
+  return std::nullopt;
 }
 
-/// Check that a single decomposition gate is allowed by the profile menu.
-static bool menuAllows(const decomposition::Gate& gate,
-                       const NativeProfileSpec& spec) {
-  if (gate.qubitId.size() == 1) {
-    return std::ranges::any_of(spec.singleQubitEmitters,
-                               [&gate](const SingleQubitEmitterSpec& emitter) {
-                                 return emitterHandlesDecompositionGate(
-                                     emitter, gate.type);
-                               });
-  }
-  if (gate.qubitId.size() == 2) {
-    switch (gate.type) {
-    case decomposition::GateKind::X:
-      return usesCxEntangler(spec);
-    case decomposition::GateKind::Z:
-      return usesCzEntangler(spec);
-    case decomposition::GateKind::RZZ:
-      return spec.allowRzz;
-    default:
-      return false;
-    }
-  }
-  return false;
-}
-
-/// Whether `emitter` can lower the single-qubit `op` directly.
-static bool emitterHasDirectLowering(Operation* op,
-                                     const SingleQubitEmitterSpec& emitter) {
-  switch (emitter.mode) {
-  case SingleQubitMode::ZSXX:
-    return canDirectlyDecomposeToZSXX(op, emitter.supportsDirectRx);
-  case SingleQubitMode::U3:
-    return canDirectlyDecomposeToU3(op);
-  case SingleQubitMode::R:
-    return canDirectlyDecomposeToR(op);
-  case SingleQubitMode::AxisPair:
-    return canDirectlyDecomposeToAxisPair(op, emitter.axisPair);
-  }
-  return false;
-}
-
-bool gateSequenceFitsMenu(const decomposition::TwoQubitGateSequence& seq,
-                          const NativeProfileSpec& spec) {
-  return std::ranges::all_of(seq.gates,
-                             [&spec](const decomposition::Gate& gate) {
-                               return menuAllows(gate, spec);
-                             });
-}
-
-std::optional<decomposition::TwoQubitGateSequence>
-decomposeTwoQubitFromMatrix(const Eigen::Matrix4cd& matrix,
-                            EntanglerBasis entangler,
-                            decomposition::GateEulerBasis eulerBasis,
-                            std::optional<std::uint8_t> numBasisUses) {
-  // Basis-gate qubit ids align with `getBlockTwoQubitMatrix` / CX layout.
-  const decomposition::Gate basisGate{
+/// Build the decomposition-layer basis gate for `entangler`. The qubit ids
+/// align with `getBlockTwoQubitMatrix` / CX layout (control on qubit 0).
+static decomposition::Gate entanglerGate(EntanglerBasis entangler) {
+  return decomposition::Gate{
       .type = entangler == EntanglerBasis::Cz ? decomposition::GateKind::Z
                                               : decomposition::GateKind::X,
       .qubitId = {0, 1},
   };
+}
+
+/// Run the Weyl + basis decomposer for `target` against `entangler`, returning
+/// the raw single-qubit factors and entangler count (or `std::nullopt`).
+static std::optional<decomposition::TwoQubitNativeDecomposition>
+decomposeWithEntangler(const Matrix4x4& target, EntanglerBasis entangler) {
+  const auto basisGate = entanglerGate(entangler);
   auto decomposer =
       decomposition::TwoQubitBasisDecomposer::create(basisGate, 1.0);
   auto weyl =
-      decomposition::TwoQubitWeylDecomposition::create(matrix, std::nullopt);
-  return decomposer.twoQubitDecompose(
-      weyl, llvm::SmallVector<decomposition::GateEulerBasis>{eulerBasis},
-      std::nullopt, /*approximate=*/false, numBasisUses);
+      decomposition::TwoQubitWeylDecomposition::create(target, std::nullopt);
+  return decomposer.twoQubitDecompose(weyl, std::nullopt);
 }
 
-llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>, 0>
-collectSingleQubitCandidates(UnitaryOpInterface unitary,
-                             const NativeProfileSpec& spec) {
-  llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>, 0> candidates;
-  Operation* op = unitary.getOperation();
-  unsigned enumerationIndex = 0;
-  const auto addCandidate = [&](CandidateClass klass, CandidateMetrics metrics,
-                                SingleQubitRewriteStrategy strategy,
-                                const SingleQubitEmitterSpec& emitter) {
-    candidates.push_back(SynthesisCandidate<SingleQubitRewritePlan>{
-        .candidateClass = klass,
-        .metrics = metrics,
-        .enumerationIndex = enumerationIndex++,
-        .payload =
-            SingleQubitRewritePlan{.strategy = strategy, .emitter = emitter},
-    });
+std::optional<std::uint8_t>
+twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec) {
+  const auto entangler = selectEntangler(spec);
+  if (!entangler) {
+    return std::nullopt;
+  }
+  const auto native = decomposeWithEntangler(target, *entangler);
+  if (!native) {
+    return std::nullopt;
+  }
+  return native->numBasisUses;
+}
+
+LogicalResult emitTwoQubitNative(IRRewriter& rewriter, Location loc,
+                                 Value qubit0, Value qubit1,
+                                 const Matrix4x4& target,
+                                 const NativeProfileSpec& spec,
+                                 Value& outQubit0, Value& outQubit1) {
+  const auto entangler = selectEntangler(spec);
+  if (!entangler) {
+    return failure();
+  }
+  const auto native = decomposeWithEntangler(target, *entangler);
+  if (!native) {
+    return failure();
+  }
+  const auto basis = emitterEulerBasis(spec.singleQubitEmitters.front());
+
+  // Residual global phase not represented by the factors / entanglers.
+  emitGPhaseIfNonTrivial(rewriter, loc, native->globalPhase);
+
+  Value wire0 = qubit0;
+  Value wire1 = qubit1;
+  const auto& factors = native->singleQubitFactors;
+  const std::uint8_t numBasisUses = native->numBasisUses;
+  const auto emitFactor = [&](Value& wire, std::size_t index) {
+    wire = emitSingleQubitMatrix(rewriter, loc, wire, factors[index], basis);
   };
-  for (const auto& emitter : spec.singleQubitEmitters) {
-    if (emitterHasDirectLowering(op, emitter)) {
-      addCandidate(CandidateClass::DirectSingleQ,
-                   estimateDirectSingleQubitMetrics(op, emitter),
-                   SingleQubitRewriteStrategy::Direct, emitter);
-    }
-    if (auto matrixMetrics =
-            estimateMatrixSingleQubitMetrics(unitary, emitter)) {
-      addCandidate(CandidateClass::MatrixSingleQ, *matrixMetrics,
-                   SingleQubitRewriteStrategy::MatrixFallback, emitter);
-    }
-  }
-  return candidates;
-}
+  const auto emitEntangler = [&]() {
+    // The entangler acts with its control on wire 0 and target on wire 1.
+    auto ctrlOp = CtrlOp::create(
+        rewriter, loc, ValueRange{wire0}, ValueRange{wire1},
+        [&](ValueRange targetArgs) -> llvm::SmallVector<Value> {
+          if (*entangler == EntanglerBasis::Cz) {
+            return {
+                ZOp::create(rewriter, loc, targetArgs[0]).getOutputQubit(0)};
+          }
+          return {XOp::create(rewriter, loc, targetArgs[0]).getOutputQubit(0)};
+        });
+    wire0 = ctrlOp.getOutputControl(0);
+    wire1 = ctrlOp.getOutputTarget(0);
+  };
 
-/// Try every `numBasisUses` in `{0, 1, 2, 3}` for the `(entangler, emitter,
-/// basis)` triple, running the Weyl-based basis decomposer for each. Any
-/// resulting gate sequence that both matches `targetMatrix` up to global
-/// phase AND stays inside the native menu is appended to `candidates`.
-static void tryAddTwoQubitBasisCandidatesForEmitterBasis(
-    llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>& candidates,
-    unsigned& enumerationIndex, const Eigen::Matrix4cd& targetMatrix,
-    const NativeProfileSpec& spec, EntanglerBasis entangler,
-    const SingleQubitEmitterSpec& emitter,
-    decomposition::GateEulerBasis basis) {
-  // An arbitrary 2-qubit unitary can always be realized using at most three
-  // copies of any fixed (non-diagonal) entangler plus local gates -- this is
-  // a consequence of the KAK/Weyl decomposition. Trying all four candidate
-  // counts (0..3) and scoring them with the gate-sequence metric lets the
-  // outer pass pick the cheapest realization for the particular target
-  // unitary (e.g. local unitaries collapse to 0 entanglers, SWAP uses 3).
-  for (std::uint8_t numBasisUses = 0; numBasisUses <= 3; ++numBasisUses) {
-    auto seq = decomposeTwoQubitFromMatrix(targetMatrix, entangler, basis,
-                                           numBasisUses);
-    // Two independent checks: `isEquivalentUpToGlobalPhase` verifies the
-    // numerical decomposition actually reproduces the target; `fitsMenu`
-    // verifies every emitted gate kind is in the backend native set. Both
-    // are required because the decomposer can legitimately produce an
-    // accurate sequence that still contains non-native gates (e.g. when the
-    // requested emitter supports fewer axes than the target unitary needs).
-    if (!seq ||
-        !isEquivalentUpToGlobalPhase(seq->getUnitaryMatrix(), targetMatrix) ||
-        !gateSequenceFitsMenu(*seq, spec)) {
-      continue;
-    }
-    candidates.push_back(SynthesisCandidate<TwoQubitRewritePlan>{
-        .candidateClass = CandidateClass::TwoQubitBasisRewrite,
-        .metrics = computeGateSequenceMetrics(*seq),
-        .enumerationIndex = enumerationIndex++,
-        .payload = {.sequence =
-                        std::make_shared<decomposition::TwoQubitGateSequence>(
-                            std::move(*seq)),
-                    .emitter = emitter,
-                    .entanglerBasis = entangler},
-    });
+  // factor[2i] on wire 1, factor[2i + 1] on wire 0, then one entangler.
+  for (std::uint8_t i = 0; i < numBasisUses; ++i) {
+    emitFactor(wire1, static_cast<std::size_t>(2 * i));
+    emitFactor(wire0, static_cast<std::size_t>((2 * i) + 1));
+    emitEntangler();
   }
-}
+  emitFactor(wire1, static_cast<std::size_t>(2 * numBasisUses));
+  emitFactor(wire0, static_cast<std::size_t>((2 * numBasisUses) + 1));
 
-llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>
-collectTwoQubitBasisCandidatesFromMatrix(const Eigen::Matrix4cd& targetMatrix,
-                                         const NativeProfileSpec& spec) {
-  llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0> candidates;
-  if (spec.entanglerBases.empty()) {
-    return candidates;
-  }
-  unsigned enumerationIndex = 0;
-  for (const auto entangler : spec.entanglerBases) {
-    for (const auto& emitter : spec.singleQubitEmitters) {
-      for (const auto basis : emitter.eulerBases) {
-        tryAddTwoQubitBasisCandidatesForEmitterBasis(
-            candidates, enumerationIndex, targetMatrix, spec, entangler,
-            emitter, basis);
-      }
-    }
-  }
-  return candidates;
-}
-
-CandidateMetrics xxPlusMinusYyRzzRewriteScoringMetrics() {
-  // Tallies for `rewriteXXPlusMinusYYViaRzz` (identical for `XXPlusYY` and
-  // `XXMinusYY`): leading/final `rz` on `q0` (2) + `ryy` via `rzz` (four 1q +
-  // one `rzz`) + `rxx` via `rzz` (four `(rz, sx, rz)` per wire around each
-  // `rzz`, i.e. twelve 1q + one `rzz`).
-  constexpr unsigned numOneQ = 18;
-  constexpr unsigned numTwoQ = 2;
-  constexpr unsigned depth = 12;
-  return {.numOneQ = numOneQ, .numTwoQ = numTwoQ, .depth = depth};
-}
-
-llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>
-collectTwoQubitBasisCandidates(UnitaryOpInterface unitary,
-                               const NativeProfileSpec& spec) {
-  Eigen::Matrix4cd target;
-  if (!getNormalizedTwoQubitMatrix(unitary, target)) {
-    return {};
-  }
-  return collectTwoQubitBasisCandidatesFromMatrix(target, spec);
+  outQubit0 = wire0;
+  outQubit1 = wire1;
+  return success();
 }
 
 LogicalResult rewriteXXPlusMinusYYViaRzz(IRRewriter& rewriter, Operation* op) {

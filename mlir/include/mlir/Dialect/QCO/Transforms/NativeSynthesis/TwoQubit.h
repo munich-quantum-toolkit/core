@@ -10,55 +10,41 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <Eigen/Core>
 #include <cstdint>
-#include <optional>
 
-/// Two-qubit lowering: Weyl decomposition + `TwoQubitBasisDecomposer` over
-/// each `(entangler, emitter Euler basis, basis-use count 0..3)` allowed by
-/// the menu; the scorer picks the cheapest exact sequence.
+/// Deterministic two-qubit lowering: Weyl decomposition + the
+/// `TwoQubitBasisDecomposer` with a fixed entangler (CX before CZ) and the
+/// first emitter's Euler basis for the surrounding single-qubit factors.
 
 namespace mlir::qco::native_synth {
 
-/// Whether every gate in `seq` is allowed by `spec`'s menu.
-bool gateSequenceFitsMenu(const decomposition::TwoQubitGateSequence& seq,
-                          const NativeProfileSpec& spec);
+/// Number of entanglers (basis-gate uses) the minimal KAK decomposition of
+/// `target` requires for the entangler selected by `spec` (CX before CZ).
+/// Returns `std::nullopt` when `spec` has no usable entangler basis.
+std::optional<std::uint8_t>
+twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec);
 
-/// Decompose a `4×4` target unitary into a gate sequence targeting the given
-/// entangler basis, using `TwoQubitWeylDecomposition` +
-/// `TwoQubitBasisDecomposer` with the supplied Euler basis.
-std::optional<decomposition::TwoQubitGateSequence>
-decomposeTwoQubitFromMatrix(const Eigen::Matrix4cd& matrix,
-                            EntanglerBasis entangler,
-                            decomposition::GateEulerBasis eulerBasis,
-                            std::optional<std::uint8_t> numBasisUses);
-
-/// Enumerate all direct + matrix-fallback single-qubit rewrite candidates.
-llvm::SmallVector<SynthesisCandidate<SingleQubitRewritePlan>, 0>
-collectSingleQubitCandidates(UnitaryOpInterface unitary,
-                             const NativeProfileSpec& spec);
-
-/// Enumerate full two-qubit basis-decomposer candidates for a given `4×4`
-/// target.
-llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>
-collectTwoQubitBasisCandidatesFromMatrix(const Eigen::Matrix4cd& targetMatrix,
-                                         const NativeProfileSpec& spec);
-
-/// Overload that reads the target matrix from a two-qubit op.
-llvm::SmallVector<SynthesisCandidate<TwoQubitRewritePlan>, 0>
-collectTwoQubitBasisCandidates(UnitaryOpInterface unitary,
-                               const NativeProfileSpec& spec);
-
-/// Scoring metrics for the `rewriteXXPlusMinusYYViaRzz` lowering (both
-/// `XXPlusYY` and `XXMinusYY` branches emit the same gate counts).
-CandidateMetrics xxPlusMinusYyRzzRewriteScoringMetrics();
+/// Synthesize the two-qubit unitary `target` (raw `4×4`, any global phase) at
+/// `(qubit0, qubit1)` into native entanglers and single-qubit gates of `spec`.
+/// The entangler is chosen deterministically (CX before CZ) and the
+/// single-qubit factors use the first emitter's Euler basis. Writes the output
+/// qubit values to `outQubit0` / `outQubit1`.
+///
+/// Returns `failure()` when the profile has no usable entangler basis or the
+/// KAK decomposition is not realizable with that entangler.
+LogicalResult emitTwoQubitNative(IRRewriter& rewriter, Location loc,
+                                 Value qubit0, Value qubit1,
+                                 const Matrix4x4& target,
+                                 const NativeProfileSpec& spec,
+                                 Value& outQubit0, Value& outQubit1);
 
 /// Rewrite `XXPlusYY` / `XXMinusYY` via two `RZZ` blocks (menus with `rzz`).
 LogicalResult rewriteXXPlusMinusYYViaRzz(IRRewriter& rewriter, Operation* op);

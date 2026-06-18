@@ -12,8 +12,6 @@ add_mlir_library(
   MLIRQCOTransforms
   ${PASSES_SOURCES}
   LINK_LIBS
-  PUBLIC
-  Eigen3::Eigen
   PRIVATE
   MLIRQCODialect
   MLIRQCOUtils

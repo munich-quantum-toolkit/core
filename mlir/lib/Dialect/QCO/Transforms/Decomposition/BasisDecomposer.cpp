@@ -10,18 +10,15 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
 
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerDecomposition.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
-#include <Eigen/Core>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -34,18 +31,16 @@
 #include <utility>
 
 namespace mlir::qco::decomposition {
+
+using namespace std::complex_literals;
+
 TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
                                                         double basisFidelity) {
-  using namespace std::complex_literals;
-
-  const Eigen::Matrix2cd k12RArr{
-      {1i * FRAC1_SQRT2, FRAC1_SQRT2},
-      {-FRAC1_SQRT2, -1i * FRAC1_SQRT2},
-  };
-  const Eigen::Matrix2cd k12LArr{
-      {{0.5, 0.5}, {0.5, 0.5}},
-      {{-0.5, 0.5}, {0.5, -0.5}},
-  };
+  const Matrix2x2 k12RArr = Matrix2x2::fromElements(
+      1i * FRAC1_SQRT2, FRAC1_SQRT2, -FRAC1_SQRT2, -1i * FRAC1_SQRT2);
+  const Matrix2x2 k12LArr =
+      Matrix2x2::fromElements(Complex{0.5, 0.5}, Complex{0.5, 0.5},
+                              Complex{-0.5, 0.5}, Complex{0.5, -0.5});
 
   // The Shende-Markov-Bullock 3-CX sandwich (and its 1/2-CX reductions) used
   // below is derived for a basis CX whose 4x4 matrix is the Qiskit/LSB form
@@ -64,10 +59,8 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
   // the emission boundary in `decomp{0,1,2,3}` below. This reproduces the
   // pre-flip gate counts without having to re-derive every SMB constant for
   // the MSB basis -- the two routes are algebraically equivalent.
-  const Eigen::Matrix4cd swap4{
-      {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
-  const Eigen::Matrix4cd basisMatrixLsb =
-      swap4 * getTwoQubitMatrix(basisGate) * swap4;
+  const Matrix4x4 basisMatrixLsb =
+      swapGate() * getTwoQubitMatrix(basisGate) * swapGate();
   const auto basisDecomposer = decomposition::TwoQubitWeylDecomposition::create(
       basisMatrixLsb, basisFidelity);
   const auto isSuperControlled =
@@ -77,47 +70,38 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
   // Create some useful matrices U1, U2, U3 are equivalent to the basis,
   // expand as Ui = Ki1.Ubasis.Ki2
   auto b = basisDecomposer.b();
-  std::complex<double> temp{0.5, -0.5};
-  const Eigen::Matrix2cd k11l{
-      {temp * (-1i * std::exp(-1i * b)), temp * std::exp(-1i * b)},
-      {temp * (-1i * std::exp(1i * b)), temp * -std::exp(1i * b)}};
-  const Eigen::Matrix2cd k11r{
-      {FRAC1_SQRT2 * (1i * std::exp(-1i * b)),
-       FRAC1_SQRT2 * -std::exp(-1i * b)},
-      {FRAC1_SQRT2 * std::exp(1i * b), FRAC1_SQRT2 * (-1i * std::exp(1i * b))}};
-  const Eigen::Matrix2cd k32lK21l{
-      {FRAC1_SQRT2 * std::complex<double>{1., std::cos(2. * b)},
-       FRAC1_SQRT2 * (1i * std::sin(2. * b))},
-      {FRAC1_SQRT2 * (1i * std::sin(2. * b)),
-       FRAC1_SQRT2 * std::complex<double>{1., -std::cos(2. * b)}}};
-  temp = std::complex<double>{0.5, 0.5};
-  const Eigen::Matrix2cd k21r{
-      {temp * (-1i * std::exp(-2i * b)), temp * std::exp(-2i * b)},
-      {temp * (1i * std::exp(2i * b)), temp * std::exp(2i * b)},
-  };
-  const Eigen::Matrix2cd k22l{
-      {FRAC1_SQRT2, -FRAC1_SQRT2},
-      {FRAC1_SQRT2, FRAC1_SQRT2},
-  };
-  const Eigen::Matrix2cd k22r{{0, 1}, {-1, 0}};
-  const Eigen::Matrix2cd k31l{
-      {FRAC1_SQRT2 * std::exp(-1i * b), FRAC1_SQRT2 * std::exp(-1i * b)},
-      {FRAC1_SQRT2 * -std::exp(1i * b), FRAC1_SQRT2 * std::exp(1i * b)},
-  };
-  const Eigen::Matrix2cd k31r{
-      {1i * std::exp(1i * b), 0},
-      {0, -1i * std::exp(-1i * b)},
-  };
-  const Eigen::Matrix2cd k32r{
-      {temp * std::exp(1i * b), temp * -std::exp(-1i * b)},
-      {temp * (-1i * std::exp(1i * b)), temp * (-1i * std::exp(-1i * b))},
-  };
-  auto k1lDagger = basisDecomposer.k1l().transpose().conjugate();
-  auto k1rDagger = basisDecomposer.k1r().transpose().conjugate();
-  auto k2lDagger = basisDecomposer.k2l().transpose().conjugate();
-  auto k2rDagger = basisDecomposer.k2r().transpose().conjugate();
-  // Pre-build the fixed parts of the matrices used in 3-part
-  // decomposition
+  Complex temp{0.5, -0.5};
+  const Matrix2x2 k11l = Matrix2x2::fromElements(
+      temp * (-1i * std::exp(-1i * b)), temp * std::exp(-1i * b),
+      temp * (-1i * std::exp(1i * b)), temp * -std::exp(1i * b));
+  const Matrix2x2 k11r = Matrix2x2::fromElements(
+      FRAC1_SQRT2 * (1i * std::exp(-1i * b)), FRAC1_SQRT2 * -std::exp(-1i * b),
+      FRAC1_SQRT2 * std::exp(1i * b), FRAC1_SQRT2 * (-1i * std::exp(1i * b)));
+  const Matrix2x2 k32lK21l =
+      Matrix2x2::fromElements(FRAC1_SQRT2 * Complex{1., std::cos(2. * b)},
+                              FRAC1_SQRT2 * (1i * std::sin(2. * b)),
+                              FRAC1_SQRT2 * (1i * std::sin(2. * b)),
+                              FRAC1_SQRT2 * Complex{1., -std::cos(2. * b)});
+  temp = Complex{0.5, 0.5};
+  const Matrix2x2 k21r = Matrix2x2::fromElements(
+      temp * (-1i * std::exp(-2i * b)), temp * std::exp(-2i * b),
+      temp * (1i * std::exp(2i * b)), temp * std::exp(2i * b));
+  const Matrix2x2 k22l = Matrix2x2::fromElements(FRAC1_SQRT2, -FRAC1_SQRT2,
+                                                 FRAC1_SQRT2, FRAC1_SQRT2);
+  const Matrix2x2 k22r = Matrix2x2::fromElements(0, 1, -1, 0);
+  const Matrix2x2 k31l = Matrix2x2::fromElements(
+      FRAC1_SQRT2 * std::exp(-1i * b), FRAC1_SQRT2 * std::exp(-1i * b),
+      FRAC1_SQRT2 * -std::exp(1i * b), FRAC1_SQRT2 * std::exp(1i * b));
+  const Matrix2x2 k31r = Matrix2x2::fromElements(1i * std::exp(1i * b), 0, 0,
+                                                 -1i * std::exp(-1i * b));
+  const Matrix2x2 k32r = Matrix2x2::fromElements(
+      temp * std::exp(1i * b), temp * -std::exp(-1i * b),
+      temp * (-1i * std::exp(1i * b)), temp * (-1i * std::exp(-1i * b)));
+  auto k1lDagger = basisDecomposer.k1l().adjoint();
+  auto k1rDagger = basisDecomposer.k1r().adjoint();
+  auto k2lDagger = basisDecomposer.k2l().adjoint();
+  auto k2rDagger = basisDecomposer.k2r().adjoint();
+  // Pre-build the fixed parts of the matrices used in 3-part decomposition
   auto u0l = k31l * k1lDagger;
   auto u0r = k31r * k1rDagger;
   auto u1l = k2lDagger * k32lK21l * k1lDagger;
@@ -129,13 +113,12 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
   auto u2rb = k11r * k1rDagger;
   auto u3l = k2lDagger * k12LArr;
   auto u3r = k2rDagger * k12RArr;
-  // Pre-build the fixed parts of the matrices used in the 2-part
-  // decomposition
-  auto q0l = k12LArr.transpose().conjugate() * k1lDagger;
-  auto q0r = k12RArr.transpose().conjugate() * IPZ * k1rDagger;
-  auto q1la = k2lDagger * k11l.transpose().conjugate();
+  // Pre-build the fixed parts of the matrices used in the 2-part decomposition
+  auto q0l = k12LArr.adjoint() * k1lDagger;
+  auto q0r = k12RArr.adjoint() * ipz() * k1rDagger;
+  auto q1la = k2lDagger * k11l.adjoint();
   auto q1lb = k11l * k1lDagger;
-  auto q1ra = k2rDagger * IPZ * k11r.transpose().conjugate();
+  auto q1ra = k2rDagger * ipz() * k11r.adjoint();
   auto q1rb = k11r * k1rDagger;
   auto q2l = k2lDagger * k12LArr;
   auto q2r = k2rDagger * k12RArr;
@@ -167,42 +150,19 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
   };
 }
 
-std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
+std::optional<TwoQubitNativeDecomposition>
+TwoQubitBasisDecomposer::twoQubitDecompose(
     const decomposition::TwoQubitWeylDecomposition& targetDecomposition,
-    const llvm::SmallVector<GateEulerBasis>& target1qEulerBases,
-    std::optional<double> basisFidelity, bool approximate,
     std::optional<std::uint8_t> numBasisGateUses) const {
-  if (target1qEulerBases.empty()) {
-    llvm::reportFatalUsageError(
-        "Unable to perform two-qubit basis decomposition without at least "
-        "one Euler basis!");
-  }
-
-  auto getBasisFidelity = [&]() {
-    if (approximate) {
-      return basisFidelity.value_or(this->basisFidelity);
-    }
-    return 1.0;
-  };
-  double actualBasisFidelity = getBasisFidelity();
   auto traces = this->traces(targetDecomposition);
   auto getDefaultNbasis = [&]() -> std::uint8_t {
     // Pick the number of basis gate uses `i ∈ {0, 1, 2, 3}` that maximizes
-    //   expected_fidelity(i) = traceToFidelity(traces[i]) * basisFidelity^i
-    // i.e. "how well does using `i` basis gates approximate the target,
-    // assuming each basis gate has fidelity `basisFidelity`". With
-    // `basisFidelity == 1.0` (exact mode) the `pow` factor is constant and
-    // the larger `i` values tend to win because they can represent any
-    // SU(4); when `basisFidelity < 1.0` the `pow(...)^i` penalty lets
-    // shorter (lower-`i`) approximations win when the target is close
-    // enough. This is *not* a "smallest `i` above a threshold" rule.
+    //   expected_fidelity(i) = traceToFidelity(traces[i]) * basisFidelity^i.
     auto bestValue = std::numeric_limits<double>::lowest();
     auto bestIndex = -1;
     for (int i = 0; std::cmp_less(i, traces.size()); ++i) {
-      // lower basis fidelity means it becomes easier to use fewer basis gates
-      // through a rougher approximation
-      auto value = helpers::traceToFidelity(traces[i]) *
-                   std::pow(actualBasisFidelity, i);
+      auto value =
+          helpers::traceToFidelity(traces[i]) * std::pow(basisFidelity, i);
       if (std::isnan(value)) {
         continue;
       }
@@ -242,72 +202,38 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
         llvm::Twine(bestNbasis) + ")!");
     llvm_unreachable("");
   };
-  auto decomposition = chooseDecomposition();
-  llvm::SmallVector<TwoQubitGateSequence, 8> eulerDecompositions;
-  for (auto&& decomp : decomposition) {
-    assert(helpers::isUnitaryMatrix(decomp));
-    eulerDecompositions.push_back(
-        unitaryToGateSequence(decomp, target1qEulerBases, true, std::nullopt));
+  TwoQubitLocalUnitaryList factors = chooseDecomposition();
+#ifndef NDEBUG
+  for (const auto& factor : factors) {
+    assert(helpers::isUnitaryMatrix(factor));
   }
-  TwoQubitGateSequence gates{
-      .gates = {},
-      .globalPhase = targetDecomposition.globalPhase(),
-  };
-  // Worst case length is 5x 1q gates for each 1q decomposition + 1x 2q
-  // gate. We might overallocate a bit if the Euler basis differs, but the
-  // worst case is a modest number of extra `Gate` slots; sequences are
-  // short-lived before lowering.
-  const auto twoQubitSequenceDefaultCapacity =
-      static_cast<std::size_t>((11 * bestNbasis) + 10);
-  gates.gates.reserve(twoQubitSequenceDefaultCapacity);
-  gates.globalPhase -= bestNbasis * basisDecomposer.globalPhase();
+#endif
+
+  double globalPhase = targetDecomposition.globalPhase();
+  globalPhase -= bestNbasis * basisDecomposer.globalPhase();
   if (bestNbasis == 2) {
     // The two-basis (2x CX/CZ) template in `decomp2Supercontrolled` produces
     // a sequence whose global phase is off by `pi` relative to the target;
-    // compensate here so the emitted sequence reproduces the target
-    // unitary exactly, not just up to sign.
-    gates.globalPhase += std::numbers::pi;
+    // compensate here so the emitted sequence reproduces the target unitary
+    // exactly, not just up to sign.
+    globalPhase += std::numbers::pi;
   }
-
-  auto addEulerDecomposition = [&](std::size_t index, QubitId qubitId) {
-    auto&& eulerDecomp = eulerDecompositions[index];
-    for (auto&& gate : eulerDecomp.gates) {
-      gates.gates.push_back({.type = gate.type,
-                             .parameter = gate.parameter,
-                             .qubitId = {qubitId}});
-    }
-    gates.globalPhase += eulerDecomp.globalPhase;
-  };
-
-  for (std::size_t i = 0; i < bestNbasis; ++i) {
-    // add single-qubit decompositions before basis gate
-    // With q0 = MSB, `kron(K1l, K1r)` places the "l" factor on qubit 0 and the
-    // "r" factor on qubit 1; Weyl emits the "r" factor at even indices.
-    addEulerDecomposition(2 * i, 1);
-    addEulerDecomposition((2 * i) + 1, 0);
-
-    // add basis gate
-    gates.gates.push_back(basisGate);
-  }
-
-  // add single-qubit decompositions after basis gate
-  addEulerDecomposition(2UL * bestNbasis, 1);
-  addEulerDecomposition((2UL * bestNbasis) + 1UL, 0);
-
   // large global phases can be generated by the decomposition, thus limit
-  // it to [0, +2*pi); TODO: can be removed, should be done by something
-  // like constant folding
-  gates.globalPhase =
-      helpers::remEuclid(gates.globalPhase, 2.0 * std::numbers::pi);
+  // it to [0, +2*pi)
+  globalPhase = helpers::remEuclid(globalPhase, 2.0 * std::numbers::pi);
 
-  return gates;
+  return TwoQubitNativeDecomposition{
+      .numBasisUses = bestNbasis,
+      .singleQubitFactors = std::move(factors),
+      .globalPhase = globalPhase,
+  };
 }
 
 // Ported SMB helpers assume Qiskit Weyl k-factor layout; QCO 4x4 input order
 // swaps l/r vs that port. Swap k1l<->k1r and k2l<->k2r when reading ``target``,
-// and swap adjacent pairs in each return vector so ``addEulerDecomposition``
-// maps matrices to the same wires as the upstream decomposer. ``decomp0``
-// cancels to the unswapped formula.
+// and swap adjacent pairs in each return vector so the emission boundary maps
+// matrices to the same wires as the upstream decomposer. ``decomp0`` cancels to
+// the unswapped formula.
 TwoQubitLocalUnitaryList
 TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
   return TwoQubitLocalUnitaryList{
@@ -320,10 +246,10 @@ TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp1(
     const TwoQubitWeylDecomposition& target) const {
   // may not work for z != 0 and c != 0 (not always in Weyl chamber)
   return TwoQubitLocalUnitaryList{
-      basisDecomposer.k2l().transpose().conjugate() * target.k2r(),
-      basisDecomposer.k2r().transpose().conjugate() * target.k2l(),
-      target.k1r() * basisDecomposer.k1l().transpose().conjugate(),
-      target.k1l() * basisDecomposer.k1r().transpose().conjugate(),
+      basisDecomposer.k2l().adjoint() * target.k2r(),
+      basisDecomposer.k2r().adjoint() * target.k2l(),
+      target.k1r() * basisDecomposer.k1l().adjoint(),
+      target.k1l() * basisDecomposer.k1r().adjoint(),
   };
 }
 
@@ -390,34 +316,6 @@ TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
       std::complex<double>{4. * std::cos(target.c()), 0.},
       std::complex<double>{4., 0.},
   };
-}
-
-OneQubitGateSequence TwoQubitBasisDecomposer::unitaryToGateSequence(
-    const Eigen::Matrix2cd& unitaryMat,
-    const llvm::SmallVector<GateEulerBasis>& targetBasisList, bool simplify,
-    std::optional<double> atol) {
-  assert(!targetBasisList.empty());
-
-  auto calculateError = [](const OneQubitGateSequence& sequence) -> double {
-    return static_cast<double>(sequence.complexity());
-  };
-
-  auto minError = std::numeric_limits<double>::max();
-  OneQubitGateSequence bestCircuit;
-  for (auto targetBasis : targetBasisList) {
-    auto circuit = EulerDecomposition::generateCircuit(targetBasis, unitaryMat,
-                                                       simplify, atol);
-    // Sequence is on qubit 0; check against ``expandToTwoQubits(unitaryMat,
-    // 0)``.
-    assert((circuit.getUnitaryMatrix().isApprox(
-        expandToTwoQubits(unitaryMat, 0), SANITY_CHECK_PRECISION)));
-    auto error = calculateError(circuit);
-    if (error < minError) {
-      bestCircuit = circuit;
-      minError = error;
-    }
-  }
-  return bestCircuit;
 }
 
 bool TwoQubitBasisDecomposer::relativeEq(double lhs, double rhs, double epsilon,

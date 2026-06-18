@@ -231,6 +231,10 @@ Matrix2x2 Matrix2x2::adjoint() const {
                       std::conj(data[1]), std::conj(data[3]));
 }
 
+Matrix2x2 Matrix2x2::transpose() const {
+  return fromElements(data[0], data[2], data[1], data[3]);
+}
+
 Complex Matrix2x2::trace() const { return data[0] + data[3]; }
 
 Complex Matrix2x2::determinant() const {
@@ -239,6 +243,10 @@ Complex Matrix2x2::determinant() const {
 
 bool Matrix2x2::isApprox(const Matrix2x2& other, const double tol) const {
   return entriesAreApprox(data, other.data, tol);
+}
+
+bool Matrix2x2::isIdentity(const double tol) const {
+  return isApprox(fromElements(1.0, 0.0, 0.0, 1.0), tol);
 }
 
 bool Matrix2x2::assignFrom(const DynamicMatrix& src) {
@@ -296,6 +304,16 @@ Matrix4x4 Matrix4x4::adjoint() const {
   return out;
 }
 
+Matrix4x4 Matrix4x4::transpose() const {
+  Matrix4x4 out{};
+  for (std::size_t row = 0; row < K_ROWS; ++row) {
+    for (std::size_t col = 0; col < K_COLS; ++col) {
+      out.data[(col * K_COLS) + row] = data[(row * K_COLS) + col];
+    }
+  }
+  return out;
+}
+
 Complex Matrix4x4::trace() const {
   return data[0] + data[5] + data[10] + data[15];
 }
@@ -319,6 +337,58 @@ Complex Matrix4x4::determinant() const {
 
 bool Matrix4x4::isApprox(const Matrix4x4& other, const double tol) const {
   return entriesAreApprox(data, other.data, tol);
+}
+
+bool Matrix4x4::isIdentity(const double tol) const {
+  Matrix4x4 id{};
+  for (std::size_t i = 0; i < K_ROWS; ++i) {
+    id.data[(i * K_COLS) + i] = 1.0;
+  }
+  return isApprox(id, tol);
+}
+
+std::array<Complex, Matrix4x4::K_ROWS> Matrix4x4::diagonal() const {
+  return {data[0], data[5], data[10], data[15]};
+}
+
+Matrix4x4
+Matrix4x4::fromDiagonal(const std::array<Complex, K_ROWS>& diagonalEntries) {
+  Matrix4x4 out{};
+  for (std::size_t i = 0; i < K_ROWS; ++i) {
+    out.data[(i * K_COLS) + i] = diagonalEntries[i];
+  }
+  return out;
+}
+
+std::array<Complex, Matrix4x4::K_ROWS>
+Matrix4x4::column(const std::size_t col) const {
+  return {data[col], data[K_COLS + col], data[(2 * K_COLS) + col],
+          data[(3 * K_COLS) + col]};
+}
+
+void Matrix4x4::setColumn(const std::size_t col,
+                          const std::array<Complex, K_ROWS>& values) {
+  for (std::size_t row = 0; row < K_ROWS; ++row) {
+    data[(row * K_COLS) + col] = values[row];
+  }
+}
+
+std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
+Matrix4x4::realPart() const {
+  std::array<double, K_SIZE_AT_COMPILE_TIME> out{};
+  for (std::size_t i = 0; i < K_SIZE_AT_COMPILE_TIME; ++i) {
+    out[i] = data[i].real();
+  }
+  return out;
+}
+
+std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
+Matrix4x4::imagPart() const {
+  std::array<double, K_SIZE_AT_COMPILE_TIME> out{};
+  for (std::size_t i = 0; i < K_SIZE_AT_COMPILE_TIME; ++i) {
+    out[i] = data[i].imag();
+  }
+  return out;
 }
 
 bool Matrix4x4::assignFrom(const DynamicMatrix& src) {
@@ -451,6 +521,105 @@ bool DynamicMatrix::isApprox(const Matrix4x4& other, const double tol) const {
 bool DynamicMatrix::isApprox(const DynamicMatrix& other,
                              const double tol) const {
   return entriesAreApprox(impl_->data, other.impl_->data, tol);
+}
+
+Matrix2x2 operator*(const Complex& scalar, const Matrix2x2& matrix) {
+  return matrix * scalar;
+}
+
+Matrix4x4 operator*(const Complex& scalar, const Matrix4x4& matrix) {
+  return matrix * scalar;
+}
+
+Matrix4x4 kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
+  Matrix4x4 out{};
+  for (std::size_t i = 0; i < Matrix2x2::K_ROWS; ++i) {
+    for (std::size_t j = 0; j < Matrix2x2::K_COLS; ++j) {
+      const Complex a = lhs(i, j);
+      for (std::size_t k = 0; k < Matrix2x2::K_ROWS; ++k) {
+        for (std::size_t l = 0; l < Matrix2x2::K_COLS; ++l) {
+          out((2 * i) + k, (2 * j) + l) = a * rhs(k, l);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+SymmetricEigen4 jacobiSymmetricEigen(const std::array<double, 16>& symmetric) {
+  constexpr std::size_t n = 4;
+  constexpr int maxSweeps = 100;
+
+  std::array<double, 16> a = symmetric;
+  std::array<double, 16> v{};
+  for (std::size_t i = 0; i < n; ++i) {
+    v[(i * n) + i] = 1.0;
+  }
+
+  for (int sweep = 0; sweep < maxSweeps; ++sweep) {
+    double off = 0.0;
+    for (std::size_t p = 0; p < n; ++p) {
+      for (std::size_t q = p + 1; q < n; ++q) {
+        off += a[(p * n) + q] * a[(p * n) + q];
+      }
+    }
+    if (off <= 1e-30) {
+      break;
+    }
+
+    for (std::size_t p = 0; p < n; ++p) {
+      for (std::size_t q = p + 1; q < n; ++q) {
+        const double apq = a[(p * n) + q];
+        if (std::abs(apq) <= 1e-300) {
+          continue;
+        }
+        const double app = a[(p * n) + p];
+        const double aqq = a[(q * n) + q];
+        // Rotation angle that annihilates the (p, q) off-diagonal entry.
+        const double phi = 0.5 * std::atan2(2.0 * apq, aqq - app);
+        const double c = std::cos(phi);
+        const double s = std::sin(phi);
+
+        // Right-multiply by the Givens rotation: columns p and q.
+        for (std::size_t k = 0; k < n; ++k) {
+          const double akp = a[(k * n) + p];
+          const double akq = a[(k * n) + q];
+          a[(k * n) + p] = (c * akp) - (s * akq);
+          a[(k * n) + q] = (s * akp) + (c * akq);
+        }
+        // Left-multiply by the transposed rotation: rows p and q.
+        for (std::size_t k = 0; k < n; ++k) {
+          const double apk = a[(p * n) + k];
+          const double aqk = a[(q * n) + k];
+          a[(p * n) + k] = (c * apk) - (s * aqk);
+          a[(q * n) + k] = (s * apk) + (c * aqk);
+        }
+        // Accumulate the rotation into the eigenvector matrix.
+        for (std::size_t k = 0; k < n; ++k) {
+          const double vkp = v[(k * n) + p];
+          const double vkq = v[(k * n) + q];
+          v[(k * n) + p] = (c * vkp) - (s * vkq);
+          v[(k * n) + q] = (s * vkp) + (c * vkq);
+        }
+      }
+    }
+  }
+
+  std::array<double, 4> evals{a[0], a[5], a[10], a[15]};
+  std::array<std::size_t, 4> order{0, 1, 2, 3};
+  std::ranges::sort(order, [&evals](const std::size_t x, const std::size_t y) {
+    return evals[x] < evals[y];
+  });
+
+  SymmetricEigen4 result;
+  for (std::size_t j = 0; j < n; ++j) {
+    const std::size_t src = order[j];
+    result.eigenvalues[j] = evals[src];
+    for (std::size_t i = 0; i < n; ++i) {
+      result.eigenvectors(i, j) = Complex{v[(i * n) + src], 0.0};
+    }
+  }
+  return result;
 }
 
 } // namespace mlir::qco

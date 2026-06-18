@@ -12,8 +12,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
@@ -33,20 +31,6 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 using namespace mlir::qco::native_synth;
-
-TEST(NativePolicyTest, ComputeGateSequenceMetricsDepth) {
-  QubitGateSequence seq;
-  seq.gates.push_back(
-      {.type = GateKind::RZ, .parameter = {0.1}, .qubitId = {0}});
-  seq.gates.push_back(
-      {.type = GateKind::RZ, .parameter = {0.2}, .qubitId = {0}});
-  seq.gates.push_back(
-      {.type = GateKind::RZZ, .parameter = {0.3}, .qubitId = {0, 1}});
-  const CandidateMetrics m = computeGateSequenceMetrics(seq);
-  EXPECT_EQ(m.numOneQ, 2U);
-  EXPECT_EQ(m.numTwoQ, 1U);
-  EXPECT_EQ(m.depth, 3U);
-}
 
 TEST(NativePolicyTest, UsesCxAndCzFromResolvedSpec) {
   const auto cxOnly = resolveNativeGatesSpec("u,cx");

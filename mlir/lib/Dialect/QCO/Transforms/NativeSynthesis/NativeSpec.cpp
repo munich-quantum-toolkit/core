@@ -10,7 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
 #include <llvm/ADT/DenseSet.h>
@@ -20,7 +20,6 @@
 #include <llvm/Support/ErrorHandling.h>
 
 #include <optional>
-#include <utility>
 
 namespace mlir::qco::native_synth {
 
@@ -62,32 +61,12 @@ parseGateSet(llvm::StringRef nativeGates) {
   return gates;
 }
 
-/// Build a fully-resolved `SingleQubitEmitterSpec` for `mode`, including the
-/// list of Euler bases the matrix-fallback path is allowed to use.
+/// Build a fully-resolved `SingleQubitEmitterSpec` for `mode`.
 static SingleQubitEmitterSpec
 makeEmitterSpec(SingleQubitMode mode, AxisPair axisPair = AxisPair::RxRz,
                 bool supportsDirectRx = false) {
-  llvm::SmallVector<decomposition::GateEulerBasis> bases;
-  switch (mode) {
-  case SingleQubitMode::ZSXX:
-    bases = {decomposition::GateEulerBasis::ZSXX};
-    break;
-  case SingleQubitMode::U3:
-    bases = {decomposition::GateEulerBasis::U3};
-    break;
-  case SingleQubitMode::R:
-    // XYX decomposes any 1Q unitary into Rx-Ry-Rx chains, all of which the
-    // R emitter lowers back into the native R(theta, phi) gate.
-    bases = {decomposition::GateEulerBasis::XYX};
-    break;
-  case SingleQubitMode::AxisPair:
-    bases = getEulerBasesForAxisPair(axisPair);
-    break;
-  }
-  return {.mode = mode,
-          .axisPair = axisPair,
-          .eulerBases = std::move(bases),
-          .supportsDirectRx = supportsDirectRx};
+  return {
+      .mode = mode, .axisPair = axisPair, .supportsDirectRx = supportsDirectRx};
 }
 
 /// Append a new emitter for `(mode, axisPair, supportsDirectRx)` to
@@ -166,17 +145,35 @@ static void populateAllowedGates(NativeProfileSpec& spec) {
   }
 }
 
-llvm::SmallVector<decomposition::GateEulerBasis>
-getEulerBasesForAxisPair(AxisPair axisPair) {
+/// Euler basis reconstructing a two-axis single-qubit unitary for `axisPair`.
+static decomposition::EulerBasis eulerBasisForAxisPair(AxisPair axisPair) {
   switch (axisPair) {
   case AxisPair::RxRz:
-    return {decomposition::GateEulerBasis::XZX};
+    return decomposition::EulerBasis::XZX;
   case AxisPair::RxRy:
-    return {decomposition::GateEulerBasis::XYX};
+    return decomposition::EulerBasis::XYX;
   case AxisPair::RyRz:
-    return {decomposition::GateEulerBasis::ZYZ};
+    return decomposition::EulerBasis::ZYZ;
   }
   llvm_unreachable("unknown axis pair");
+}
+
+decomposition::EulerBasis
+emitterEulerBasis(const SingleQubitEmitterSpec& emitter) {
+  switch (emitter.mode) {
+  case SingleQubitMode::ZSXX:
+    return decomposition::EulerBasis::ZSXX;
+  case SingleQubitMode::U3:
+    return decomposition::EulerBasis::U;
+  case SingleQubitMode::R:
+    // The R basis decomposes any 1Q unitary into an X-Y-X chain emitted
+    // directly as native R(theta, phi) gates (`Rx(a) == R(a, 0)`,
+    // `Ry(a) == R(a, pi/2)`).
+    return decomposition::EulerBasis::R;
+  case SingleQubitMode::AxisPair:
+    return eulerBasisForAxisPair(emitter.axisPair);
+  }
+  llvm_unreachable("unknown single-qubit mode");
 }
 
 std::optional<NativeProfileSpec>

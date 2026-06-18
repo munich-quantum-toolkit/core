@@ -184,6 +184,12 @@ struct Matrix2x2 {
   [[nodiscard]] Matrix2x2 adjoint() const;
 
   /**
+   * @brief Returns the (non-conjugate) transpose of this matrix.
+   * @return Transposed matrix `A^T`.
+   */
+  [[nodiscard]] Matrix2x2 transpose() const;
+
+  /**
    * @brief Returns the trace of this matrix.
    * @return Sum of diagonal entries.
    */
@@ -194,6 +200,13 @@ struct Matrix2x2 {
    * @return Complex determinant `ad - bc`.
    */
   [[nodiscard]] Complex determinant() const;
+
+  /**
+   * @brief Checks whether this matrix is approximately the identity.
+   * @param tol Maximum allowed complex modulus of each entry difference.
+   * @return True if every entry is within @p tol of the identity.
+   */
+  [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
 
   /**
    * @brief Checks approximate equality using an absolute entry-wise tolerance.
@@ -323,6 +336,12 @@ struct Matrix4x4 {
   [[nodiscard]] Matrix4x4 adjoint() const;
 
   /**
+   * @brief Returns the (non-conjugate) transpose of this matrix.
+   * @return Transposed matrix `A^T`.
+   */
+  [[nodiscard]] Matrix4x4 transpose() const;
+
+  /**
    * @brief Returns the trace of this matrix.
    * @return Sum of diagonal entries.
    */
@@ -333,6 +352,53 @@ struct Matrix4x4 {
    * @return Complex determinant computed via Laplace expansion.
    */
   [[nodiscard]] Complex determinant() const;
+
+  /**
+   * @brief Checks whether this matrix is approximately the identity.
+   * @param tol Maximum allowed complex modulus of each entry difference.
+   * @return True if every entry is within @p tol of the identity.
+   */
+  [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
+
+  /**
+   * @brief Returns the four diagonal entries `(m00, m11, m22, m33)`.
+   * @return Array of diagonal entries.
+   */
+  [[nodiscard]] std::array<Complex, K_ROWS> diagonal() const;
+
+  /**
+   * @brief Builds a diagonal matrix from four diagonal entries.
+   * @param diagonalEntries Diagonal entries `(m00, m11, m22, m33)`.
+   * @return Diagonal matrix with the given entries.
+   */
+  [[nodiscard]] static Matrix4x4
+  fromDiagonal(const std::array<Complex, K_ROWS>& diagonalEntries);
+
+  /**
+   * @brief Returns the entries of column @p col, top to bottom.
+   * @param col Column index in `[0, K_COLS)`.
+   * @return Array of the four column entries.
+   */
+  [[nodiscard]] std::array<Complex, K_ROWS> column(std::size_t col) const;
+
+  /**
+   * @brief Overwrites column @p col with @p values.
+   * @param col Column index in `[0, K_COLS)`.
+   * @param values New column entries, top to bottom.
+   */
+  void setColumn(std::size_t col, const std::array<Complex, K_ROWS>& values);
+
+  /**
+   * @brief Returns the element-wise real parts in row-major order.
+   * @return Real parts of all entries.
+   */
+  [[nodiscard]] std::array<double, K_SIZE_AT_COMPILE_TIME> realPart() const;
+
+  /**
+   * @brief Returns the element-wise imaginary parts in row-major order.
+   * @return Imaginary parts of all entries.
+   */
+  [[nodiscard]] std::array<double, K_SIZE_AT_COMPILE_TIME> imagPart() const;
 
   /**
    * @brief Checks approximate equality using an absolute entry-wise tolerance.
@@ -558,4 +624,54 @@ inline constexpr bool
     std::disjunction_v<std::is_same<T, Matrix1x1>, std::is_same<T, Matrix2x2>,
                        std::is_same<T, Matrix4x4>,
                        std::is_same<T, DynamicMatrix>>;
+
+/**
+ * @brief Kronecker product `lhs (x) rhs` of two single-qubit matrices.
+ *
+ * Uses the computational-basis bit order where the first operand labels the
+ * high bit, matching `UnitaryOpInterface::getUnitaryMatrix4x4`.
+ *
+ * @param lhs Left factor (acts on the high bit / qubit 0).
+ * @param rhs Right factor (acts on the low bit / qubit 1).
+ * @return The `4x4` Kronecker product.
+ */
+[[nodiscard]] Matrix4x4 kron(const Matrix2x2& lhs, const Matrix2x2& rhs);
+
+/// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
+/// `matrix * scalar`). Provided so generic code can scale a matrix from
+/// either side.
+[[nodiscard]] Matrix2x2 operator*(const Complex& scalar,
+                                  const Matrix2x2& matrix);
+/// @copydoc operator*(const Complex&, const Matrix2x2&)
+[[nodiscard]] Matrix4x4 operator*(const Complex& scalar,
+                                  const Matrix4x4& matrix);
+
+/**
+ * @brief Eigenvalues and eigenvectors of a real symmetric `4x4` matrix.
+ *
+ * `eigenvalues` are sorted ascending and `eigenvectors` holds the
+ * corresponding orthonormal eigenvectors as columns (column `j` is the
+ * eigenvector for `eigenvalues[j]`), matching the convention of
+ * `Eigen::SelfAdjointEigenSolver`.
+ */
+struct SymmetricEigen4 {
+  /// Eigenvalues sorted in ascending order.
+  std::array<double, 4> eigenvalues{};
+  /// Orthonormal eigenvectors as columns (real-valued, zero imaginary part).
+  Matrix4x4 eigenvectors{};
+};
+
+/**
+ * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
+ *
+ * Implements the cyclic Jacobi eigenvalue algorithm, which is numerically
+ * robust for small symmetric matrices and yields orthonormal eigenvectors
+ * even for degenerate spectra.
+ *
+ * @param symmetric Row-major real symmetric `4x4` matrix.
+ * @return Ascending eigenvalues and matching eigenvectors (as columns).
+ */
+[[nodiscard]] SymmetricEigen4
+jacobiSymmetricEigen(const std::array<double, 16>& symmetric);
+
 } // namespace mlir::qco

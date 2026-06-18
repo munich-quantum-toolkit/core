@@ -10,9 +10,9 @@
 
 #pragma once
 
-#include "EulerBasis.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core> // NOLINT(misc-include-cleaner)
+#include <array>
 #include <complex>
 #include <cstdint>
 #include <optional>
@@ -57,7 +57,7 @@ public:
    *                 gate and thus potentially decreasing the number of basis
    *                 gates.
    */
-  static TwoQubitWeylDecomposition create(const Eigen::Matrix4cd& unitaryMatrix,
+  static TwoQubitWeylDecomposition create(const Matrix4x4& unitaryMatrix,
                                           std::optional<double> fidelity);
 
   ~TwoQubitWeylDecomposition() = default;
@@ -70,7 +70,7 @@ public:
   /**
    * Calculate matrix of canonical gate based on its parameters a, b, c.
    */
-  [[nodiscard]] Eigen::Matrix4cd getCanonicalMatrix() const {
+  [[nodiscard]] Matrix4x4 getCanonicalMatrix() const {
     return getCanonicalMatrix(a_, b_, c_);
   }
 
@@ -104,7 +104,7 @@ public:
    *            A
    * q0 - k2l - N - *k1l* -
    */
-  [[nodiscard]] const Eigen::Matrix2cd& k1l() const { return k1l_; }
+  [[nodiscard]] const Matrix2x2& k1l() const { return k1l_; }
   /**
    * "Left" qubit before canonical gate.
    *
@@ -112,7 +112,7 @@ public:
    *              A
    * q0 - *k2l* - N - k1l -
    */
-  [[nodiscard]] const Eigen::Matrix2cd& k2l() const { return k2l_; }
+  [[nodiscard]] const Matrix2x2& k2l() const { return k2l_; }
   /**
    * "Right" qubit after canonical gate.
    *
@@ -120,7 +120,7 @@ public:
    *            A
    * q0 - k2l - N -  k1l  -
    */
-  [[nodiscard]] const Eigen::Matrix2cd& k1r() const { return k1r_; }
+  [[nodiscard]] const Matrix2x2& k1r() const { return k1r_; }
   /**
    * "Right" qubit before canonical gate.
    *
@@ -128,13 +128,13 @@ public:
    *              A
    * q0 -  k2l  - N - k1l -
    */
-  [[nodiscard]] const Eigen::Matrix2cd& k2r() const { return k2r_; }
+  [[nodiscard]] const Matrix2x2& k2r() const { return k2r_; }
 
   /**
    * Calculate matrix of canonical gate based on given parameters a, b, c.
    */
-  [[nodiscard]] static Eigen::Matrix4cd getCanonicalMatrix(double a, double b,
-                                                           double c);
+  [[nodiscard]] static Matrix4x4 getCanonicalMatrix(double a, double b,
+                                                    double c);
 
 protected:
   enum class Specialization : std::uint8_t {
@@ -165,9 +165,8 @@ protected:
 
   TwoQubitWeylDecomposition() = default;
 
-  [[nodiscard]] static Eigen::Matrix4cd
-  magicBasisTransform(const Eigen::Matrix4cd& unitary,
-                      MagicBasisTransform direction);
+  [[nodiscard]] static Matrix4x4
+  magicBasisTransform(const Matrix4x4& unitary, MagicBasisTransform direction);
 
   [[nodiscard]] static double closestPartialSwap(double a, double b, double c);
 
@@ -185,8 +184,8 @@ protected:
    *
    * @return pair of (P, D.diagonal())
    */
-  [[nodiscard]] static std::pair<Eigen::Matrix4cd, Eigen::Vector4cd>
-  diagonalizeComplexSymmetric(const Eigen::Matrix4cd& m, double precision);
+  [[nodiscard]] static std::pair<Matrix4x4, std::array<Complex, 4>>
+  diagonalizeComplexSymmetric(const Matrix4x4& m, double precision);
 
   /**
    * Decompose a special unitary matrix C that is the combination of two
@@ -199,8 +198,8 @@ protected:
    * @return single-qubit matrices A and B and the required
    *         global phase adjustment
    */
-  static std::tuple<Eigen::Matrix2cd, Eigen::Matrix2cd, double>
-  decomposeTwoQubitProductGate(const Eigen::Matrix4cd& specialUnitary);
+  static std::tuple<Matrix2x2, Matrix2x2, double>
+  decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary);
 
   /**
    * Calculate trace of two sets of parameters for the canonical gate.
@@ -229,15 +228,14 @@ private:
   double globalPhase_{};
   // Single-qubit factors surrounding the canonical gate; see the accessors
   // for the per-field wiring diagram.
-  Eigen::Matrix2cd k1l_;
-  Eigen::Matrix2cd k2l_;
-  Eigen::Matrix2cd k1r_;
-  Eigen::Matrix2cd k2r_;
+  Matrix2x2 k1l_;
+  Matrix2x2 k2l_;
+  Matrix2x2 k1r_;
+  Matrix2x2 k2r_;
   Specialization specialization{Specialization::General};
-  GateEulerBasis defaultEulerBasis{GateEulerBasis::U3};
   /// Optional `traceToFidelity` floor for specialization; unset disables it.
   std::optional<double> requestedFidelity;
   double calculatedFidelity{};
-  Eigen::Matrix4cd unitaryMatrix;
+  Matrix4x4 unitaryMatrix;
 };
 } // namespace mlir::qco::decomposition

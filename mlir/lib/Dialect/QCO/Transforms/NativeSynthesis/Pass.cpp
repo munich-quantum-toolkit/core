@@ -11,11 +11,10 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/PassTwoQubitWindows.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Scoring.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/SingleQubit.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/TwoQubit.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
@@ -24,13 +23,9 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
@@ -41,13 +36,9 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 
-#include <Eigen/Core>
-#include <cassert>
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <optional>
-#include <utility>
 
 namespace mlir::qco {
 #define GEN_PASS_DEF_NATIVEGATESYNTHESISPASS
@@ -57,37 +48,28 @@ namespace mlir::qco {
 namespace mlir::qco {
 
 using native_synth::allowsSingleQubitOp;
-using native_synth::areValidScoreWeights;
-using native_synth::CandidateClass;
-using native_synth::collectSingleQubitCandidates;
-using native_synth::collectTwoQubitBasisCandidates;
-using native_synth::collectTwoQubitBasisCandidatesFromMatrix;
+using native_synth::canDirectlyDecomposeToAxisPair;
+using native_synth::canDirectlyDecomposeToR;
+using native_synth::canDirectlyDecomposeToU3;
+using native_synth::canDirectlyDecomposeToZSXX;
 using native_synth::collectUnitaryOpsInPreOrder;
 using native_synth::decomposeToAxisPair;
 using native_synth::decomposeToR;
 using native_synth::decomposeToU3;
 using native_synth::decomposeToZSXX;
-using native_synth::emitSynthesizedSingleQubitFromMatrix;
-using native_synth::emitTwoQubitGateSequence;
-using native_synth::eulerSequenceForMatrixSynthesis;
+using native_synth::emitSingleQubitMatrix;
+using native_synth::emitterEulerBasis;
+using native_synth::emitTwoQubitNative;
 using native_synth::getBlockTwoQubitMatrix;
 using native_synth::NativeGateKind;
 using native_synth::NativeProfileSpec;
 using native_synth::resolveNativeGatesSpec;
 using native_synth::rewriteXXPlusMinusYYViaRzz;
-using native_synth::ScoreWeights;
-using native_synth::selectBestCandidate;
 using native_synth::SingleQubitEmitterSpec;
 using native_synth::SingleQubitMode;
-using native_synth::SingleQubitRewritePlan;
-using native_synth::SingleQubitRewriteStrategy;
-using native_synth::SynthesisCandidate;
-using native_synth::toEigen;
-using native_synth::TwoQubitRewritePlan;
 using native_synth::TwoQubitWindowConsolidator;
 using native_synth::usesCxEntangler;
 using native_synth::usesCzEntangler;
-using native_synth::xxPlusMinusYyRzzRewriteScoringMetrics;
 
 namespace {
 
@@ -98,8 +80,11 @@ struct OneQubitRun {
 
 } // namespace
 
-/// If profitable, replace the run with one synthesized single-qubit op.
+/// If profitable, replace the run with one synthesized single-qubit op in
+/// `basis` (mirrors `FuseSingleQubitUnitaryRuns`). Fuses when any op is
+/// off-menu or when Euler resynthesis strictly shortens the run.
 static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
+                         const decomposition::EulerBasis basis,
                          const NativeProfileSpec& spec) {
   Matrix2x2 fused = Matrix2x2::identity();
   for (UnitaryOpInterface u : run.ops) {
@@ -109,67 +94,25 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
     }
     fused.premultiplyBy(m);
   }
-  const Eigen::Matrix2cd fusedEigen = toEigen(fused);
 
   const bool anyNonNative = llvm::any_of(run.ops, [&](UnitaryOpInterface u) {
     return !allowsSingleQubitOp(u, spec);
   });
-
-  assert(!spec.singleQubitEmitters.empty() && "expected at least one emitter");
-
-  constexpr auto kInvalidLen = std::numeric_limits<std::size_t>::max();
-  const SingleQubitEmitterSpec* bestEmitter = nullptr;
-  std::size_t bestLen = kInvalidLen;
-  std::optional<decomposition::QubitGateSequence> bestEuler;
-  for (const auto& emitter : spec.singleQubitEmitters) {
-    std::size_t len = 0;
-    std::optional<decomposition::QubitGateSequence> euler;
-    if (emitter.mode == SingleQubitMode::U3) {
-      len = 1;
-    } else {
-      euler = eulerSequenceForMatrixSynthesis(fusedEigen, emitter);
-      if (!euler) {
-        continue;
-      }
-      len = euler->gates.size();
-    }
-    if (bestEmitter == nullptr || len < bestLen) {
-      bestLen = len;
-      bestEmitter = &emitter;
-      bestEuler = std::move(euler);
-    }
-  }
-  if (bestEmitter == nullptr) {
-    return false;
-  }
-
-  // Fully native runs: fuse only if some emitter strictly shortens the chain.
-  if (!anyNonNative && bestLen >= run.ops.size()) {
-    return false;
-  }
 
   Operation* firstOp = run.ops.front().getOperation();
   const Value inQubit = run.ops.front().getInputQubit(0);
   const Value outQubit = run.ops.back().getOutputQubit(0);
 
   rewriter.setInsertionPoint(firstOp);
-  Value replacement;
-  if (bestEmitter->mode == SingleQubitMode::U3) {
-    replacement = emitSynthesizedSingleQubitFromMatrix(
-        rewriter, firstOp->getLoc(), inQubit, fusedEigen, *bestEmitter);
-  } else {
-    assert(bestEuler.has_value());
-    replacement = emitSynthesizedSingleQubitFromMatrix(
-        rewriter, firstOp->getLoc(), inQubit, fusedEigen, *bestEmitter,
-        &*bestEuler);
-  }
+  const auto replacement = decomposition::synthesizeUnitary1QEuler(
+      rewriter, firstOp->getLoc(), inQubit, fused, run.ops.size(), anyNonNative,
+      basis);
   if (!replacement) {
     return false;
   }
-  rewriter.replaceAllUsesWith(outQubit, replacement);
+  rewriter.replaceAllUsesWith(outQubit, *replacement);
   for (auto& op : llvm::reverse(run.ops)) {
-    Operation* toErase = op.getOperation();
-    rewriter.eraseOp(toErase);
+    rewriter.eraseOp(op.getOperation());
   }
   return true;
 }
@@ -205,6 +148,23 @@ static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   return unitary;
 }
 
+/// Whether `emitter` can lower the single-qubit `op` directly (used for ops
+/// with non-constant angles, which have no constant `2×2` matrix).
+static bool emitterHasDirectLowering(Operation* op,
+                                     const SingleQubitEmitterSpec& emitter) {
+  switch (emitter.mode) {
+  case SingleQubitMode::ZSXX:
+    return canDirectlyDecomposeToZSXX(op, emitter.supportsDirectRx);
+  case SingleQubitMode::U3:
+    return canDirectlyDecomposeToU3(op);
+  case SingleQubitMode::R:
+    return canDirectlyDecomposeToR(op);
+  case SingleQubitMode::AxisPair:
+    return canDirectlyDecomposeToAxisPair(op, emitter.axisPair);
+  }
+  return false;
+}
+
 /// Dispatch `op`'s direct (non-matrix) single-qubit lowering to the
 /// `decomposeTo*` helper for `emitter.mode`. Returns the output qubit value
 /// or a null `Value` if no direct rule applies for this op.
@@ -226,9 +186,11 @@ applyDirectSingleQubitLowering(IRRewriter& rewriter, Operation* op, Value in,
 
 namespace {
 
-/// Lowers unitary QCO ops to a comma-separated native gate menu (single-qubit
-/// fuse, two-qubit windows, synthesis sweeps, seam single-qubit fuse, `rz`
-/// through `ctrl` controls, another single-qubit fuse, optional cleanup sweeps.
+/// Lowers unitary QCO ops to a comma-separated native gate menu using a
+/// deterministic, matrix-driven synthesizer: single-qubit fuse, two-qubit
+/// window consolidation, synthesis sweeps, seam single-qubit fuse, `rz`
+/// through `ctrl` controls, another single-qubit fuse, optional cleanup
+/// sweeps.
 struct NativeGateSynthesisPass
     : impl::NativeGateSynthesisPassBase<NativeGateSynthesisPass> {
   /// Default-construct the pass with the TableGen-generated option defaults.
@@ -244,30 +206,15 @@ struct NativeGateSynthesisPass
   /// used by pipeline code that cannot include the TableGen-generated header.
   explicit NativeGateSynthesisPass(const NativeGateSynthesisOptions& options) {
     nativeGates = options.nativeGates;
-    scoreWeightTwoQ = options.scoreWeightTwoQ;
-    scoreWeightOneQ = options.scoreWeightOneQ;
-    scoreWeightDepth = options.scoreWeightDepth;
   }
 
 protected:
-  /// Top-level pass entry point. Validates the score weights and native-gate
-  /// menu, then drives the staged rewrite pipeline: one-qubit run fusion,
-  /// two-qubit window consolidation, synthesis sweeps until the single-qubit
-  /// surface is native, seam cleanup, `rz`-through-`ctrl` folding, and a
-  /// final fusion pass. Fails the pass on invalid input or non-convergence.
+  /// Top-level pass entry point. Resolves the native-gate menu, then drives
+  /// the staged rewrite pipeline: one-qubit run fusion, two-qubit window
+  /// consolidation, synthesis sweeps until the single-qubit surface is native,
+  /// seam cleanup, `rz`-through-`ctrl` folding, and a final fusion pass. Fails
+  /// the pass on invalid input or non-convergence.
   void runOnOperation() override {
-    const ScoreWeights weights{.twoQ = scoreWeightTwoQ,
-                               .oneQ = scoreWeightOneQ,
-                               .depth = scoreWeightDepth};
-    if (!areValidScoreWeights(weights)) {
-      getOperation().emitError()
-          << "invalid native synthesis score weights (twoq=" << scoreWeightTwoQ
-          << ", oneq=" << scoreWeightOneQ << ", depth=" << scoreWeightDepth
-          << ")";
-      signalPassFailure();
-      return;
-    }
-
     // Empty native-gates string: no-op.
     if (llvm::StringRef(nativeGates).trim().empty()) {
       return;
@@ -281,11 +228,15 @@ protected:
       return;
     }
     const auto& spec = *specOpt;
+    // Deterministic single-qubit basis: the first emitter drives all matrix
+    // synthesis and run fusion.
+    const decomposition::EulerBasis oneQubitBasis =
+        emitterEulerBasis(spec.singleQubitEmitters.front());
 
     IRRewriter rewriter(&getContext());
 
-    fuseOneQubitRuns(rewriter, spec);
-    if (failed(consolidateTwoQubitBlocks(rewriter, spec, weights))) {
+    fuseOneQubitRuns(rewriter, spec, oneQubitBasis);
+    if (failed(consolidateTwoQubitBlocks(rewriter, spec))) {
       signalPassFailure();
       return;
     }
@@ -293,7 +244,7 @@ protected:
     // repeat until clean or hit the sweep cap before seam / `rz` cleanup.
     constexpr unsigned kMaxSynthesisSweeps = 4;
     for (unsigned i = 0; i < kMaxSynthesisSweeps; ++i) {
-      if (failed(synthesizeRemainingOps(rewriter, spec, weights))) {
+      if (failed(synthesizeRemainingOps(rewriter, spec, oneQubitBasis))) {
         signalPassFailure();
         return;
       }
@@ -310,19 +261,19 @@ protected:
       return;
     }
     // Fuse single-qubit seams between two-qubit blocks.
-    fuseOneQubitRuns(rewriter, spec);
+    fuseOneQubitRuns(rewriter, spec, oneQubitBasis);
     // Fuse `rz` through control wires of `ctrl` (diagonal control phase).
     fuseRzAcrossCtrlControls(rewriter);
-    fuseOneQubitRuns(rewriter, spec);
+    fuseOneQubitRuns(rewriter, spec, oneQubitBasis);
     // Re-check full menu (single-qubit ops, native `ctrl`, allowed bare `rzz`).
     constexpr unsigned kPostMenuCleanupSweeps = 4;
     unsigned postMenuSweepsRemaining = kPostMenuCleanupSweeps;
     while (hasNonNativeMenuOps(spec) && postMenuSweepsRemaining-- > 0) {
-      if (failed(synthesizeRemainingOps(rewriter, spec, weights))) {
+      if (failed(synthesizeRemainingOps(rewriter, spec, oneQubitBasis))) {
         signalPassFailure();
         return;
       }
-      fuseOneQubitRuns(rewriter, spec);
+      fuseOneQubitRuns(rewriter, spec, oneQubitBasis);
     }
     if (hasNonNativeMenuOps(spec)) {
       getOperation().emitError()
@@ -419,7 +370,8 @@ protected:
 private:
   /// Fuse adjacent single-qubit runs when the emitter wins on length or any op
   /// is off-menu.
-  void fuseOneQubitRuns(IRRewriter& rewriter, const NativeProfileSpec& spec) {
+  void fuseOneQubitRuns(IRRewriter& rewriter, const NativeProfileSpec& spec,
+                        const decomposition::EulerBasis basis) {
     llvm::SmallVector<OneQubitRun> runs;
     llvm::DenseMap<Operation*, size_t> tailOpToRun;
 
@@ -454,7 +406,7 @@ private:
       if (run.ops.size() < 2) {
         continue;
       }
-      (void)maybeFuseRun(rewriter, run, spec);
+      (void)maybeFuseRun(rewriter, run, basis, spec);
     }
   }
 
@@ -537,31 +489,14 @@ private:
   /// Two-qubit windows with absorbed single-qubit ops: replace when a cheaper
   /// native sequence exists.
   LogicalResult consolidateTwoQubitBlocks(IRRewriter& rewriter,
-                                          const NativeProfileSpec& spec,
-                                          const ScoreWeights& weights) {
+                                          const NativeProfileSpec& spec) {
     llvm::SmallVector<Operation*, 32> ops;
     collectUnitaryOpsInPreOrder(getOperation(), ops);
     TwoQubitWindowConsolidator consolidator;
     for (Operation* op : ops) {
       consolidator.process(op, spec);
     }
-    return consolidator.materialize(rewriter, spec, weights);
-  }
-
-  /// Lower one single-qubit rewrite plan; null `Value` on failure.
-  static Value emitSingleQCandidate(IRRewriter& rewriter, Operation* op,
-                                    UnitaryOpInterface unitary,
-                                    const SingleQubitRewritePlan& plan) {
-    const Value in = unitary.getInputQubit(0);
-    if (plan.strategy == SingleQubitRewriteStrategy::Direct) {
-      return applyDirectSingleQubitLowering(rewriter, op, in, plan.emitter);
-    }
-    Matrix2x2 matrix;
-    if (!unitary.isSingleQubit() || !unitary.getUnitaryMatrix2x2(matrix)) {
-      return {};
-    }
-    return emitSynthesizedSingleQubitFromMatrix(rewriter, op->getLoc(), in,
-                                                toEigen(matrix), plan.emitter);
+    return consolidator.materialize(rewriter, spec);
   }
 
   /// One synthesis sweep over the whole function: rewrite every remaining
@@ -571,7 +506,7 @@ private:
   /// `runOnOperation` iterates until convergence.
   LogicalResult synthesizeRemainingOps(IRRewriter& rewriter,
                                        const NativeProfileSpec& spec,
-                                       const ScoreWeights& weights) {
+                                       const decomposition::EulerBasis basis) {
     llvm::SmallVector<Operation*, 32> ops;
     collectUnitaryOpsInPreOrder(getOperation(), ops);
     llvm::DenseSet<Operation*> erasedOps;
@@ -597,8 +532,7 @@ private:
 
       if (unitary.isSingleQubit()) {
         if (!allowsSingleQubitOp(unitary, spec)) {
-          if (failed(
-                  rewriteSingleQubit(rewriter, op, unitary, spec, weights))) {
+          if (failed(rewriteSingleQubit(rewriter, op, unitary, spec, basis))) {
             return failure();
           }
           erasedOps.insert(op);
@@ -608,7 +542,7 @@ private:
 
       if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
         const bool wasAlreadyNative = ctrlMatchesNativeMenu(ctrl, spec);
-        if (failed(rewriteControlled(rewriter, ctrl, spec, weights))) {
+        if (failed(rewriteControlled(rewriter, ctrl, spec))) {
           return failure();
         }
         if (!wasAlreadyNative) {
@@ -618,7 +552,7 @@ private:
       }
 
       if (unitary.isTwoQubit()) {
-        if (failed(rewriteTwoQubit(rewriter, op, unitary, spec, weights))) {
+        if (failed(rewriteTwoQubit(rewriter, op, unitary, spec))) {
           return failure();
         }
         erasedOps.insert(op);
@@ -628,35 +562,43 @@ private:
     return success();
   }
 
-  /// Lower one off-menu single-qubit `op`: enumerate all valid rewrite
-  /// candidates for the active native profile, pick the best by `weights`,
-  /// emit it, and replace `op`.
-  static LogicalResult rewriteSingleQubit(IRRewriter& rewriter, Operation* op,
-                                          UnitaryOpInterface unitary,
-                                          const NativeProfileSpec& spec,
-                                          const ScoreWeights& weights) {
+  /// Lower one off-menu single-qubit `op`. Constant unitaries use the
+  /// matrix-driven Euler synthesizer in `basis`; ops with non-constant angles
+  /// fall back to the symbolic `decomposeTo*` lowering of the first emitter
+  /// that handles them.
+  static LogicalResult
+  rewriteSingleQubit(IRRewriter& rewriter, Operation* op,
+                     UnitaryOpInterface unitary, const NativeProfileSpec& spec,
+                     const decomposition::EulerBasis basis) {
     rewriter.setInsertionPoint(op);
-    const auto candidates = collectSingleQubitCandidates(unitary, spec);
-    const auto* best = selectBestCandidate(llvm::ArrayRef(candidates), weights);
-    const Value replaced =
-        best != nullptr
-            ? emitSingleQCandidate(rewriter, op, unitary, best->payload)
-            : Value{};
-    if (!replaced) {
-      op->emitError("single-qubit operation not in selected native profile");
-      return failure();
+    const Value in = unitary.getInputQubit(0);
+    Matrix2x2 matrix;
+    if (unitary.isSingleQubit() && unitary.getUnitaryMatrix2x2(matrix)) {
+      const Value replaced =
+          emitSingleQubitMatrix(rewriter, op->getLoc(), in, matrix, basis);
+      rewriter.replaceOp(op, replaced);
+      return success();
     }
-    rewriter.replaceOp(op, replaced);
-    return success();
+    for (const auto& emitter : spec.singleQubitEmitters) {
+      if (!emitterHasDirectLowering(op, emitter)) {
+        continue;
+      }
+      if (const Value replaced =
+              applyDirectSingleQubitLowering(rewriter, op, in, emitter)) {
+        rewriter.replaceOp(op, replaced);
+        return success();
+      }
+    }
+    op->emitError("single-qubit operation not in selected native profile");
+    return failure();
   }
 
   /// Lower a single-control, single-target `CtrlOp` to the native profile.
   /// Fast-path: already-native `CX`/`CZ` are kept as-is. Otherwise, lift the
-  /// controlled op to its 4x4 matrix (with SU(4) normalization), run the
-  /// Weyl-based basis-decomposer search, and emit the best candidate.
+  /// controlled op to its 4x4 matrix and run the deterministic two-qubit
+  /// synthesizer.
   static LogicalResult rewriteControlled(IRRewriter& rewriter, CtrlOp ctrl,
-                                         const NativeProfileSpec& spec,
-                                         const ScoreWeights& weights) {
+                                         const NativeProfileSpec& spec) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       ctrl.emitError("native synthesis currently only supports 1-control "
                      "1-target controlled gates");
@@ -668,8 +610,7 @@ private:
     if ((usesCxEntangler(spec) && hasCX) || (usesCzEntangler(spec) && hasCZ)) {
       return success();
     }
-    // Otherwise treat as a generic `4×4` (Weyl + basis decomposer + scorer).
-    Eigen::Matrix4cd matrix;
+    Matrix4x4 matrix;
     if (hasCX || hasCZ) {
       if (!getBlockTwoQubitMatrix(ctrl.getOperation(), matrix)) {
         ctrl.emitError("failed to compute 4x4 matrix for CtrlOp");
@@ -677,126 +618,62 @@ private:
       }
     } else {
       auto u = llvm::cast<UnitaryOpInterface>(ctrl.getOperation());
-      Matrix4x4 raw;
-      if (!u.isTwoQubit() || !u.getUnitaryMatrix4x4(raw)) {
+      if (!u.isTwoQubit() || !u.getUnitaryMatrix4x4(matrix)) {
         ctrl.emitError(
             "native synthesis: cannot build a constant 4x4 matrix for this "
             "controlled gate (unsupported body or non-constant parameters)");
         return failure();
       }
-      matrix = toEigen(raw);
     }
-    native_synth::normalizeToSU4(matrix); // SU(4) convention for Weyl
-
-    const auto candidates =
-        collectTwoQubitBasisCandidatesFromMatrix(matrix, spec);
-    const auto* best = selectBestCandidate(llvm::ArrayRef(candidates), weights);
-    if (best == nullptr) {
+    rewriter.setInsertionPoint(ctrl);
+    Value out0;
+    Value out1;
+    if (failed(emitTwoQubitNative(
+            rewriter, ctrl.getLoc(), ctrl.getInputControl(0),
+            ctrl.getInputTarget(0), matrix, spec, out0, out1))) {
       ctrl.emitError("controlled gate not allowed by selected profile");
       return failure();
     }
-    if (!best->payload.sequence) {
-      ctrl.emitError("internal error: missing two-qubit rewrite sequence");
-      return failure();
-    }
-    rewriter.setInsertionPoint(ctrl);
-    if (failed(emitTwoQubitGateSequence(
-            rewriter, ctrl.getOperation(), ctrl.getInputControl(0),
-            ctrl.getInputTarget(0), *best->payload.sequence))) {
-      ctrl.emitError(
-          "failed to emit two-qubit gate sequence for selected candidate");
-      return failure();
-    }
+    rewriter.replaceOp(ctrl, ValueRange{out0, out1});
     return success();
   }
 
   /// Lower an off-menu generic two-qubit op (`RZZ`, `XXPlusYY`, `XXMinusYY`,
   /// or any arbitrary 4x4 unitary). Handles the `Rzz`-native fast path; for
-  /// `XXPlusYY` / `XXMinusYY` with `rzz` on the menu, scores the dedicated
-  /// `XX±YY -> Rzz` rewrite against Weyl basis candidates and picks the
-  /// cheaper option under `weights`.
+  /// `XXPlusYY` / `XXMinusYY` with `rzz` on the menu, uses the dedicated
+  /// `XX±YY -> Rzz` rewrite. All other two-qubit unitaries go through the
+  /// deterministic KAK synthesizer.
   static LogicalResult rewriteTwoQubit(IRRewriter& rewriter, Operation* op,
                                        UnitaryOpInterface unitary,
-                                       const NativeProfileSpec& spec,
-                                       const ScoreWeights& weights) {
+                                       const NativeProfileSpec& spec) {
     if (spec.allowRzz && llvm::isa<RZZOp>(op)) {
       return success();
     }
     if (spec.allowRzz &&
         (llvm::isa<XXPlusYYOp>(op) || llvm::isa<XXMinusYYOp>(op))) {
-      SmallVector<SynthesisCandidate<std::optional<TwoQubitRewritePlan>>, 0>
-          combined;
-      unsigned nextIndex = 0;
-      combined.push_back(SynthesisCandidate<std::optional<TwoQubitRewritePlan>>{
-          .candidateClass = CandidateClass::XxPlusMinusViaRzz,
-          .metrics = xxPlusMinusYyRzzRewriteScoringMetrics(),
-          .enumerationIndex = nextIndex++,
-          .payload = std::nullopt,
-      });
-      if (!spec.entanglerBases.empty()) {
-        for (const auto& cand : collectTwoQubitBasisCandidates(unitary, spec)) {
-          combined.push_back(
-              SynthesisCandidate<std::optional<TwoQubitRewritePlan>>{
-                  .candidateClass = cand.candidateClass,
-                  .metrics = cand.metrics,
-                  .enumerationIndex = nextIndex++,
-                  .payload = cand.payload,
-              });
-        }
+      rewriter.setInsertionPoint(op);
+      if (succeeded(rewriteXXPlusMinusYYViaRzz(rewriter, op))) {
+        return success();
       }
-      if (const auto* best =
-              selectBestCandidate(llvm::ArrayRef(combined), weights)) {
-        rewriter.setInsertionPoint(op);
-        if (best->candidateClass == CandidateClass::XxPlusMinusViaRzz) {
-          if (succeeded(rewriteXXPlusMinusYYViaRzz(rewriter, op))) {
-            return success();
-          }
-          if (!spec.entanglerBases.empty()) {
-            const auto basisCandidates =
-                collectTwoQubitBasisCandidates(unitary, spec);
-            if (const auto* basisBest = selectBestCandidate(
-                    llvm::ArrayRef(basisCandidates), weights)) {
-              if (!basisBest->payload.sequence) {
-                return failure();
-              }
-              if (succeeded(emitTwoQubitGateSequence(
-                      rewriter, op, unitary.getInputQubit(0),
-                      unitary.getInputQubit(1),
-                      *basisBest->payload.sequence))) {
-                return success();
-              }
-            }
-          }
-          return failure();
-        }
-        if (best->payload.has_value() && best->payload->sequence &&
-            succeeded(emitTwoQubitGateSequence(
-                rewriter, op, unitary.getInputQubit(0),
-                unitary.getInputQubit(1), *best->payload->sequence))) {
-          return success();
-        }
-      }
+      // Fall through to entangler-based synthesis when the dedicated rewrite
+      // could not be applied (e.g. no entangler-free realization).
+    }
+    Matrix4x4 matrix;
+    if (!getBlockTwoQubitMatrix(op, matrix)) {
       op->emitError("unsupported two-qubit operation for selected profile");
       return failure();
     }
-    if (!spec.entanglerBases.empty()) {
-      const auto candidates = collectTwoQubitBasisCandidates(unitary, spec);
-      if (const auto* best =
-              selectBestCandidate(llvm::ArrayRef(candidates), weights)) {
-        if (!best->payload.sequence) {
-          op->emitError("internal error: missing two-qubit rewrite sequence");
-          return failure();
-        }
-        rewriter.setInsertionPoint(op);
-        if (succeeded(emitTwoQubitGateSequence(
-                rewriter, op, unitary.getInputQubit(0),
-                unitary.getInputQubit(1), *best->payload.sequence))) {
-          return success();
-        }
-      }
+    rewriter.setInsertionPoint(op);
+    Value out0;
+    Value out1;
+    if (failed(emitTwoQubitNative(
+            rewriter, op->getLoc(), unitary.getInputQubit(0),
+            unitary.getInputQubit(1), matrix, spec, out0, out1))) {
+      op->emitError("unsupported two-qubit operation for selected profile");
+      return failure();
     }
-    op->emitError("unsupported two-qubit operation for selected profile");
-    return failure();
+    rewriter.replaceOp(op, ValueRange{out0, out1});
+    return success();
   }
 };
 

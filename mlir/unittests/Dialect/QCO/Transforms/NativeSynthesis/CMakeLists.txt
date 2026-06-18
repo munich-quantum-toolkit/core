@@ -15,8 +15,7 @@ add_executable(
   test_native_synthesis_pass_custom_menus.cpp
   test_native_synthesis_pass_fusion.cpp
   test_native_synthesis_pass_multi_qubit.cpp
-  test_native_synthesis_pass_profiles.cpp
-  test_native_synthesis_pass_scoring.cpp)
+  test_native_synthesis_pass_profiles.cpp)
 
 target_link_libraries(
   ${target_name}

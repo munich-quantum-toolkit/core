@@ -10,26 +10,43 @@
 
 #pragma once
 
-#include "EulerBasis.h"
-#include "GateSequence.h"
+#include "Gate.h"
 #include "WeylDecomposition.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/SmallVector.h>
 
-#include <Eigen/Core>
 #include <array>
 #include <complex>
 #include <cstdint>
 #include <optional>
 #include <utility>
-#include <vector>
 
 namespace mlir::qco::decomposition {
 
 /// Intermediate single-qubit ``2×2`` unitaries produced while expanding a
 /// two-qubit basis decomposition.
-using TwoQubitLocalUnitaryList =
-    std::vector<Eigen::Matrix2cd, Eigen::aligned_allocator<Eigen::Matrix2cd>>;
+using TwoQubitLocalUnitaryList = llvm::SmallVector<Matrix2x2, 8>;
+
+/**
+ * Result of a two-qubit basis decomposition expressed as raw single-qubit
+ * factors interleaved with a fixed number of basis-gate (entangler) uses.
+ *
+ * The factors are stored in emission order. For `i` in `[0, numBasisUses)` the
+ * pair `(singleQubitFactors[2*i], singleQubitFactors[2*i + 1])` is applied to
+ * qubits `1` and `0` respectively, followed by one entangler. The final pair
+ * `(singleQubitFactors[2*numBasisUses], singleQubitFactors[2*numBasisUses+1])`
+ * is applied after the last entangler. The list therefore has length
+ * `2 * (numBasisUses + 1)`.
+ */
+struct TwoQubitNativeDecomposition {
+  /// Number of basis-gate (entangler) uses.
+  std::uint8_t numBasisUses = 0;
+  /// Single-qubit factors in emission order (see struct comment).
+  TwoQubitLocalUnitaryList singleQubitFactors;
+  /// Residual global phase (radians) not represented by factors/entanglers.
+  double globalPhase = 0.0;
+};
 
 /**
  * Decomposer that must be initialized with a two-qubit basis gate that will
@@ -66,21 +83,15 @@ public:
    *
    * @param targetDecomposition Prepared Weyl decomposition of unitary matrix
    *                            to be decomposed.
-   * @param target1qEulerBases List of Euler bases that should be tried out to
-   *                           find the best one for each euler decomposition.
-   *                           All bases will be mixed to get the best overall
-   *                           result.
-   * @param basisFidelity Fidelity for lowering the number of basis gates
-   *                      required
-   * @param approximate If true, use basisFidelity or, if std::nullopt, use
-   *                    basisFidelity of this decomposer. If false, fidelity
-   *                    of 1.0 will be assumed.
-   * @param numBasisGateUses Force use of given number of basis gates.
+   * @param numBasisGateUses Force use of given number of basis gates. When
+   *                         unset, the optimal count is selected from the
+   *                         Hilbert-Schmidt traces.
+   * @return The single-qubit factors and entangler count, or `std::nullopt`
+   *         when more than one basis gate would be required but the basis gate
+   *         is not super-controlled.
    */
-  [[nodiscard]] std::optional<TwoQubitGateSequence> twoQubitDecompose(
+  [[nodiscard]] std::optional<TwoQubitNativeDecomposition> twoQubitDecompose(
       const decomposition::TwoQubitWeylDecomposition& targetDecomposition,
-      const llvm::SmallVector<GateEulerBasis>& target1qEulerBases,
-      std::optional<double> basisFidelity, bool approximate,
       std::optional<std::uint8_t> numBasisGateUses) const;
 
 protected:
@@ -91,16 +102,13 @@ protected:
   TwoQubitBasisDecomposer(
       Gate basisGate, double basisFidelity,
       const decomposition::TwoQubitWeylDecomposition& basisDecomposer,
-      bool isSuperControlled, const Eigen::Matrix2cd& u0l,
-      const Eigen::Matrix2cd& u0r, const Eigen::Matrix2cd& u1l,
-      const Eigen::Matrix2cd& u1ra, const Eigen::Matrix2cd& u1rb,
-      const Eigen::Matrix2cd& u2la, const Eigen::Matrix2cd& u2lb,
-      const Eigen::Matrix2cd& u2ra, const Eigen::Matrix2cd& u2rb,
-      const Eigen::Matrix2cd& u3l, const Eigen::Matrix2cd& u3r,
-      const Eigen::Matrix2cd& q0l, const Eigen::Matrix2cd& q0r,
-      const Eigen::Matrix2cd& q1la, const Eigen::Matrix2cd& q1lb,
-      const Eigen::Matrix2cd& q1ra, const Eigen::Matrix2cd& q1rb,
-      const Eigen::Matrix2cd& q2l, const Eigen::Matrix2cd& q2r)
+      bool isSuperControlled, const Matrix2x2& u0l, const Matrix2x2& u0r,
+      const Matrix2x2& u1l, const Matrix2x2& u1ra, const Matrix2x2& u1rb,
+      const Matrix2x2& u2la, const Matrix2x2& u2lb, const Matrix2x2& u2ra,
+      const Matrix2x2& u2rb, const Matrix2x2& u3l, const Matrix2x2& u3r,
+      const Matrix2x2& q0l, const Matrix2x2& q0r, const Matrix2x2& q1la,
+      const Matrix2x2& q1lb, const Matrix2x2& q1ra, const Matrix2x2& q1rb,
+      const Matrix2x2& q2l, const Matrix2x2& q2r)
       : basisGate{std::move(basisGate)}, basisFidelity{basisFidelity},
         basisDecomposer{basisDecomposer}, isSuperControlled{isSuperControlled},
         u0l{u0l}, u0r{u0r}, u1l{u1l}, u1ra{u1ra}, u1rb{u1rb}, u2la{u2la},
@@ -121,9 +129,6 @@ protected:
    *     4\Big\vert (\cos(x)\cos(y)\cos(z)+ j \sin(x)\sin(y)\sin(z)\Big\vert
    *
    * which is optimal for all targets and bases
-   *
-   * @note Stored in ``TwoQubitLocalUnitaryList`` so each matrix is allocated
-   *       with Eigen's required alignment (portable across hosts / CRTs).
    */
   [[nodiscard]] static TwoQubitLocalUnitaryList
   decomp0(const decomposition::TwoQubitWeylDecomposition& target);
@@ -141,8 +146,6 @@ protected:
    *     \sin(x-a)\sin(y-b)\sin(z-c)\Big\vert
    *
    * which is optimal for all targets and bases with ``z==0`` or ``c==0``.
-   *
-   * @note Stored in ``TwoQubitLocalUnitaryList`` (see ``decomp0``).
    */
   [[nodiscard]] TwoQubitLocalUnitaryList
   decomp1(const decomposition::TwoQubitWeylDecomposition& target) const;
@@ -169,8 +172,6 @@ protected:
    * decomposition). This is an exact decomposition for supercontrolled basis
    * and target :math:`\sim U_d(x, y, 0)`. No guarantees for
    * non-supercontrolled basis.
-   *
-   * @note Stored in ``TwoQubitLocalUnitaryList`` (see ``decomp0``).
    */
   [[nodiscard]] TwoQubitLocalUnitaryList decomp2Supercontrolled(
       const decomposition::TwoQubitWeylDecomposition& target) const;
@@ -183,8 +184,6 @@ protected:
    * This is an exact decomposition for supercontrolled basis
    * :math:`\sim U_d(\pi/4, b, 0)`, all b, and any target. No guarantees for
    * non-supercontrolled basis.
-   *
-   * @note Stored in ``TwoQubitLocalUnitaryList`` (see ``decomp0``).
    */
   [[nodiscard]] TwoQubitLocalUnitaryList decomp3Supercontrolled(
       const decomposition::TwoQubitWeylDecomposition& target) const;
@@ -197,15 +196,6 @@ protected:
    */
   [[nodiscard]] std::array<std::complex<double>, 4>
   traces(const decomposition::TwoQubitWeylDecomposition& target) const;
-  /**
-   * Decompose a single-qubit unitary matrix into a single-qubit gate
-   * sequence. Multiple Euler bases may be specified and the one with the
-   * least complexity will be chosen.
-   */
-  [[nodiscard]] static OneQubitGateSequence unitaryToGateSequence(
-      const Eigen::Matrix2cd& unitaryMat,
-      const llvm::SmallVector<GateEulerBasis>& targetBasisList, bool simplify,
-      std::optional<double> atol);
 
   [[nodiscard]] static bool relativeEq(double lhs, double rhs, double epsilon,
                                        double maxRelative);
@@ -221,27 +211,27 @@ private:
   bool isSuperControlled;
 
   // pre-built components for decomposition with 3 basis gates
-  Eigen::Matrix2cd u0l;
-  Eigen::Matrix2cd u0r;
-  Eigen::Matrix2cd u1l;
-  Eigen::Matrix2cd u1ra;
-  Eigen::Matrix2cd u1rb;
-  Eigen::Matrix2cd u2la;
-  Eigen::Matrix2cd u2lb;
-  Eigen::Matrix2cd u2ra;
-  Eigen::Matrix2cd u2rb;
-  Eigen::Matrix2cd u3l;
-  Eigen::Matrix2cd u3r;
+  Matrix2x2 u0l;
+  Matrix2x2 u0r;
+  Matrix2x2 u1l;
+  Matrix2x2 u1ra;
+  Matrix2x2 u1rb;
+  Matrix2x2 u2la;
+  Matrix2x2 u2lb;
+  Matrix2x2 u2ra;
+  Matrix2x2 u2rb;
+  Matrix2x2 u3l;
+  Matrix2x2 u3r;
 
   // pre-built components for decomposition with 2 basis gates
-  Eigen::Matrix2cd q0l;
-  Eigen::Matrix2cd q0r;
-  Eigen::Matrix2cd q1la;
-  Eigen::Matrix2cd q1lb;
-  Eigen::Matrix2cd q1ra;
-  Eigen::Matrix2cd q1rb;
-  Eigen::Matrix2cd q2l;
-  Eigen::Matrix2cd q2r;
+  Matrix2x2 q0l;
+  Matrix2x2 q0r;
+  Matrix2x2 q1la;
+  Matrix2x2 q1lb;
+  Matrix2x2 q1ra;
+  Matrix2x2 q1rb;
+  Matrix2x2 q2l;
+  Matrix2x2 q2r;
 };
 
 } // namespace mlir::qco::decomposition

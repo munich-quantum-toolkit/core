@@ -15,14 +15,9 @@
 
 #include <mlir/IR/Operation.h>
 
-#include <optional>
-
-/// Menu checks and cost hints for synthesis candidates (no IR rewrites).
+/// Menu membership checks for native synthesis (no IR rewrites).
 
 namespace mlir::qco::native_synth {
-
-/// Score weights are valid iff they are finite and non-negative.
-bool areValidScoreWeights(const ScoreWeights& weights);
 
 /// Whether the menu contains the corresponding two-qubit entangler. Used by
 /// the 2q rewrite path to pick between CX and CZ emission.
@@ -33,23 +28,13 @@ bool usesCzEntangler(const NativeProfileSpec& spec);
 /// further rewrite needed).
 bool allowsSingleQubitOp(UnitaryOpInterface op, const NativeProfileSpec& spec);
 
-/// Count 1q/2q gates and compute the depth of a gate sequence.
-CandidateMetrics
-computeGateSequenceMetrics(const decomposition::QubitGateSequence& seq);
-
 /// Whether `op` has a direct (non-matrix) lowering via the corresponding
-/// `decomposeTo*` helper in `SingleQubit.h`.
+/// `decomposeTo*` helper in `SingleQubit.h`. These are used for ops whose
+/// angles are not compile-time constants, so no constant ``2×2`` matrix is
+/// available for the matrix-driven path.
 bool canDirectlyDecomposeToZSXX(Operation* op, bool supportsDirectRx);
 bool canDirectlyDecomposeToU3(Operation* op);
 bool canDirectlyDecomposeToR(Operation* op);
 bool canDirectlyDecomposeToAxisPair(Operation* op, AxisPair axisPair);
-
-/// Estimated metrics for the direct and matrix-fallback lowerings.
-CandidateMetrics
-estimateDirectSingleQubitMetrics(Operation* op,
-                                 const SingleQubitEmitterSpec& emitter);
-std::optional<CandidateMetrics>
-estimateMatrixSingleQubitMetrics(UnitaryOpInterface unitary,
-                                 const SingleQubitEmitterSpec& emitter);
 
 } // namespace mlir::qco::native_synth

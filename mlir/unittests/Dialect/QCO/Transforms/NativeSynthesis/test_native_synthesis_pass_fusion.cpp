@@ -86,12 +86,17 @@ TEST_P(NativeSynthesisOneQFusionU3GPhaseTest, FusesAdjacentNativeUChain) {
 
 INSTANTIATE_TEST_SUITE_P(
     OneQRunMergingU3GPhaseMatrix, NativeSynthesisOneQFusionU3GPhaseTest,
-    testing::Values(OneQU3FusionGPhaseRow{"EmitsGlobalPhaseOnU3",
+    // `T * S = diag(1, e^{i*3pi/4})` is captured exactly by `U(0, 0, 3pi/4)`,
+    // so no residual `gphase` is needed. A generic `SU(2)` run (two det-1 `U`
+    // gates) cannot be written as a single `U` gate without a residual phase,
+    // because `U(theta, phi, lambda)` has determinant `e^{i*(phi + lambda)}`;
+    // the leftover `-(phi + lambda) / 2` global phase is emitted as `gphase`.
+    testing::Values(OneQU3FusionGPhaseRow{"OmitsGPhaseWhenU3IsExact",
                                           mlir::qc::nativeSynthFusionTS,
-                                          /*expectGPhaseCount=*/1U},
-                    OneQU3FusionGPhaseRow{"OmitsGPhaseWhenResidualIsTrivial",
+                                          /*expectGPhaseCount=*/0U},
+                    OneQU3FusionGPhaseRow{"EmitsGlobalPhaseForSu2ViaU3",
                                           mlir::qc::nativeSynthFusionUUTwoQDet1,
-                                          /*expectGPhaseCount=*/0U}),
+                                          /*expectGPhaseCount=*/1U}),
     [](const testing::TestParamInfo<OneQU3FusionGPhaseRow>& info) {
       return info.param.name;
     });
@@ -130,9 +135,8 @@ TEST_P(NativeSynthesisTwoQBlockEquivGenericU3CxTest,
 
 TEST(NativeSynthesisFusionTest,
      IsEquivalentUpToGlobalPhaseRejectsNearZeroOverlap) {
-  const Eigen::Matrix2cd lhs = Eigen::Matrix2cd::Identity();
-  const Eigen::Matrix2cd rhs =
-      (Eigen::Matrix2cd() << 1.0, 0.0, 0.0, -1.0).finished();
+  const Matrix2x2 lhs = Matrix2x2::identity();
+  const Matrix2x2 rhs = Matrix2x2::fromElements(1.0, 0.0, 0.0, -1.0);
   // overlap = trace(rhs^H * lhs) = trace(Z) = 0 -> early false branch.
   EXPECT_FALSE(isEquivalentUpToGlobalPhase(lhs, rhs, 1e-10));
 }

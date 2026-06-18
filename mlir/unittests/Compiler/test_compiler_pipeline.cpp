@@ -48,7 +48,6 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <Eigen/Core>
 #include <cstddef>
 #include <cstdlib>
 #include <iosfwd>
@@ -757,13 +756,13 @@ using mqt::test::isEquivalentUpToGlobalPhase;
 /// `qco.x`, `qco.p`, `qco.u`; and `qco.gphase`, which is skipped). Returns
 /// `std::nullopt` if the IR contains an unsupported op or non-constant
 /// parameters.
-static std::optional<Eigen::Matrix4cd>
+static std::optional<mlir::qco::Matrix4x4>
 computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
   if (module == nullptr) {
     return std::nullopt;
   }
 
-  Eigen::Matrix4cd unitary = Eigen::Matrix4cd::Identity();
+  mlir::qco::Matrix4x4 unitary = mlir::qco::Matrix4x4::identity();
   llvm::DenseMap<mlir::Value, std::size_t> qubitIds;
 
   const auto getQubitId = [&](mlir::Value qubit) -> std::optional<std::size_t> {
@@ -800,12 +799,10 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
           if (!qid) {
             return std::nullopt;
           }
-          mlir::qco::Matrix2x2 rawOneQ;
-          if (!op.getUnitaryMatrix2x2(rawOneQ)) {
+          mlir::qco::Matrix2x2 oneQ;
+          if (!op.getUnitaryMatrix2x2(oneQ)) {
             return std::nullopt;
           }
-          const Eigen::Matrix2cd oneQ =
-              mlir::qco::native_synth::toEigen(rawOneQ);
           unitary =
               mlir::qco::decomposition::expandToTwoQubits(oneQ, *qid) * unitary;
           qubitIds[op.getOutputQubit(0)] = *qid;
@@ -818,7 +815,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
           if (!q0 || !q1) {
             return std::nullopt;
           }
-          Eigen::Matrix4cd twoQ;
+          mlir::qco::Matrix4x4 twoQ;
           if (auto ctrl = llvm::dyn_cast<mlir::qco::CtrlOp>(&rawOp)) {
             if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
               return std::nullopt;
@@ -826,19 +823,17 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
             auto* body = ctrl.getBodyUnitary(0).getOperation();
             if (llvm::isa<mlir::qco::XOp>(body)) {
               // CX matrix (same 4×4 layout as QCO unitary interface).
-              twoQ << 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0;
+              twoQ = mlir::qco::Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0,
+                                                        0, 0, 0, 1, 0, 0, 1, 0);
             } else if (llvm::isa<mlir::qco::ZOp>(body)) {
-              twoQ = Eigen::Matrix4cd::Identity();
-              twoQ(3, 3) = -1.0;
+              // CZ matrix: identity with a `-1` phase on the `|11>` entry.
+              twoQ = mlir::qco::Matrix4x4::fromElements(
+                  1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1);
             } else {
               return std::nullopt;
             }
-          } else {
-            mlir::qco::Matrix4x4 rawTwoQ;
-            if (!op.getUnitaryMatrix4x4(rawTwoQ)) {
-              return std::nullopt;
-            }
-            twoQ = mlir::qco::native_synth::toEigen(rawTwoQ);
+          } else if (!op.getUnitaryMatrix4x4(twoQ)) {
+            return std::nullopt;
           }
           const llvm::SmallVector<mlir::qco::decomposition::QubitId, 2> ids{
               static_cast<mlir::qco::decomposition::QubitId>(*q0),
@@ -890,14 +885,6 @@ TEST_F(CompilerPipelineNativeSynthesisConfigTest,
 
   EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
   EXPECT_EQ(record.afterOptimization.find("qco.h"), std::string::npos);
-}
-
-TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       RejectsInvalidNativeSynthesisScoreWeightsInStage5) {
-  config.nativeGates = "u,cx";
-  config.nativeGateScoreWeightTwoQ = -1.0;
-
-  runPipelineAndExpectFailure();
 }
 
 TEST_F(CompilerPipelineNativeSynthesisConfigTest,

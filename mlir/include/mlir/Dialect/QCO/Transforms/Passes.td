@@ -189,25 +189,15 @@ def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
     holds (including native `qco.ctrl` shells and bare `rzz` when allowed). If
     anything is still off-menu, the pass fails.
 
-    Candidate selection minimises the linear cost
-    `score-weight-twoq * #2q + score-weight-oneq * #1q +
-    score-weight-depth * local-depth`. Defaults (`1.0 / 0.1 / 0.01`) favour
-    minimising two-qubit count first, then single-qubit count, then depth.
+    Lowering is deterministic: the entangler is chosen as `cx` before `cz`, the
+    single-qubit factors use the first emitter's Euler basis, and the minimal
+    KAK entangler count drives two-qubit window replacement.
   }];
-  let options =
-      [Option<"nativeGates", "native-gates", "std::string", "\"\"",
-              "Comma-separated native gate menu. Empty or whitespace-only is "
-              "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz, rzz. "
-              "Examples: x,sx,rz,cx; x,sx,rz,rx,rzz,cz; u,cx; r,cz; rx,rz,cx.">,
-       Option<"scoreWeightTwoQ", "score-weight-twoq", "double", "1.0",
-              "Weight for the number of two-qubit gates in candidate "
-              "scoring. Must be finite and non-negative.">,
-       Option<"scoreWeightOneQ", "score-weight-oneq", "double", "0.1",
-              "Weight for the number of single-qubit gates in candidate "
-              "scoring. Must be finite and non-negative.">,
-       Option<"scoreWeightDepth", "score-weight-depth", "double", "0.01",
-              "Weight for the local candidate depth in candidate scoring. "
-              "Must be finite and non-negative.">];
+  let options = [Option<
+      "nativeGates", "native-gates", "std::string", "\"\"",
+      "Comma-separated native gate menu. Empty or whitespace-only is "
+      "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz, rzz. "
+      "Examples: x,sx,rz,cx; x,sx,rz,rx,rzz,cz; u,cx; r,cz; rx,rz,cx.">];
 }
 
 //===----------------------------------------------------------------------===//

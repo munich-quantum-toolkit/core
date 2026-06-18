@@ -366,14 +366,6 @@ TEST_F(NativeSynthesisPassTest, FailsForNativeGateMenuWithoutSingleQEmitter) {
       "cx,cz");
 }
 
-TEST_F(NativeSynthesisPassTest, FailsForNegativeScoreWeight) {
-  expectSynthesisFailure(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(), mlir::qc::h);
-      },
-      "u,cx", -1.0, 0.1, 0.01);
-}
-
 TEST_F(NativeSynthesisPassTest, CandidateSelectionIsDeterministicAcrossRuns) {
   auto buildFn = [&] {
     return mlir::qc::QCProgramBuilder::build(
@@ -389,22 +381,19 @@ TEST_F(NativeSynthesisPassTest, CandidateSelectionIsDeterministicAcrossRuns) {
 }
 
 TEST_F(NativeSynthesisPassTest,
-       RichCustomMenuSelectionRemainsDeterministicAcrossWeightsAndRuns) {
+       RichCustomMenuSelectionRemainsDeterministicAcrossRuns) {
   auto buildFn = [&] {
     return mlir::qc::QCProgramBuilder::build(
         context.get(), mlir::qc::nativeSynthDeterminismTwoQubitSwap);
   };
 
   auto firstModule = buildFn();
-  runNativeSynthesis(firstModule, "u,rx,rz,cx,cz", 1.0, 0.1, 0.01);
+  runNativeSynthesis(firstModule, "u,rx,rz,cx,cz");
   auto secondModule = buildFn();
-  runNativeSynthesis(secondModule, "u,rx,rz,cx,cz", 1.0, 0.1, 0.01);
+  runNativeSynthesis(secondModule, "u,rx,rz,cx,cz");
   EXPECT_EQ(moduleToString(firstModule), moduleToString(secondModule));
-
-  auto alternateWeightsModule = buildFn();
-  runNativeSynthesis(alternateWeightsModule, "u,rx,rz,cx,cz", 3.0, 0.5, 0.0);
-  EXPECT_TRUE(onlyUOrAxisPairRxRzCxOps(alternateWeightsModule) ||
-              onlyGenericU3CxOrCzOps(alternateWeightsModule));
+  EXPECT_TRUE(onlyUOrAxisPairRxRzCxOps(firstModule) ||
+              onlyGenericU3CxOrCzOps(firstModule));
 }
 
 TEST_F(NativeSynthesisPassTest, FailsForMultiControlledGateStructure) {

@@ -10,16 +10,14 @@
 
 #include "decomposition_test_utils.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 
 #include <cstddef>
@@ -28,7 +26,6 @@
 #include <optional>
 #include <random>
 #include <tuple>
-#include <unsupported/Eigen/KroneckerProduct>
 
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
@@ -36,63 +33,67 @@ using namespace mlir::qco::decomposition_test;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_P` at global scope
 class BasisDecomposerTest
-    : public testing::TestWithParam<std::tuple<
-          Gate, llvm::SmallVector<GateEulerBasis>, Eigen::Matrix4cd (*)()>> {
+    : public testing::TestWithParam<std::tuple<Gate, Matrix4x4 (*)()>> {
 public:
-  [[nodiscard]] static Eigen::Matrix4cd
-  restore(const TwoQubitGateSequence& sequence) {
-    Eigen::Matrix4cd matrix = Eigen::Matrix4cd::Identity();
-    for (auto&& gate : sequence.gates) {
-      matrix = getTwoQubitMatrix(gate) * matrix;
+  /// Reconstruct the 4x4 unitary realized by a native two-qubit decomposition.
+  ///
+  /// The factors come in `(r, l)` pairs: `factors[2i]` acts on qubit 1 (LSB)
+  /// and `factors[2i + 1]` on qubit 0 (MSB), mirroring `emitTwoQubitNative`.
+  /// Each interior pair is followed by one entangler, with a trailing pair
+  /// after the last entangler.
+  [[nodiscard]] static Matrix4x4
+  restore(const TwoQubitNativeDecomposition& decomposition,
+          const Gate& basisGate) {
+    const Matrix4x4 entangler = getTwoQubitMatrix(basisGate);
+    const auto& factors = decomposition.singleQubitFactors;
+    const auto layer = [&](std::size_t i) {
+      return kron(factors[(2 * i) + 1], factors[2 * i]);
+    };
+    Matrix4x4 matrix = layer(0);
+    for (std::uint8_t i = 0; i < decomposition.numBasisUses; ++i) {
+      matrix = entangler * matrix;
+      matrix = layer(static_cast<std::size_t>(i) + 1) * matrix;
     }
-
-    matrix *= helpers::globalPhaseFactor(sequence.globalPhase);
-    return matrix;
+    return matrix * helpers::globalPhaseFactor(decomposition.globalPhase);
   }
 
 protected:
   void SetUp() override {
     basisGate = std::get<0>(GetParam());
-    eulerBases = std::get<1>(GetParam());
-    target = std::get<2>(GetParam())();
+    target = std::get<1>(GetParam())();
     targetDecomposition = std::make_unique<TwoQubitWeylDecomposition>(
         TwoQubitWeylDecomposition::create(target, std::optional<double>{1.0}));
   }
 
-  Eigen::Matrix4cd target;
+  Matrix4x4 target;
   Gate basisGate;
-  llvm::SmallVector<GateEulerBasis> eulerBases;
   std::unique_ptr<TwoQubitWeylDecomposition> targetDecomposition;
 };
 
 TEST_P(BasisDecomposerTest, TestExact) {
   const auto& originalMatrix = target;
   auto decomposer = TwoQubitBasisDecomposer::create(basisGate, 1.0);
-  auto decomposedSequence = decomposer.twoQubitDecompose(
-      *targetDecomposition, eulerBases, 1.0, false, std::nullopt);
+  auto decomposed =
+      decomposer.twoQubitDecompose(*targetDecomposition, std::nullopt);
 
-  ASSERT_TRUE(decomposedSequence.has_value());
+  ASSERT_TRUE(decomposed.has_value());
 
-  auto restoredMatrix = restore(*decomposedSequence);
+  auto restoredMatrix = restore(*decomposed, basisGate);
 
-  EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix))
-      << "RESULT:\n"
-      << restoredMatrix << '\n';
+  EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix));
 }
 
 TEST_P(BasisDecomposerTest, TestApproximation) {
   const auto& originalMatrix = target;
   auto decomposer = TwoQubitBasisDecomposer::create(basisGate, 1.0 - 1e-12);
-  auto decomposedSequence = decomposer.twoQubitDecompose(
-      *targetDecomposition, eulerBases, 1.0 - 1e-12, true, std::nullopt);
+  auto decomposed =
+      decomposer.twoQubitDecompose(*targetDecomposition, std::nullopt);
 
-  ASSERT_TRUE(decomposedSequence.has_value());
+  ASSERT_TRUE(decomposed.has_value());
 
-  auto restoredMatrix = restore(*decomposedSequence);
+  auto restoredMatrix = restore(*decomposed, basisGate);
 
-  EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix))
-      << "RESULT:\n"
-      << restoredMatrix << '\n';
+  EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix));
 }
 
 TEST(BasisDecomposerTest, Random) {
@@ -102,55 +103,41 @@ TEST(BasisDecomposerTest, Random) {
   const llvm::SmallVector<Gate, 2> basisGates{
       {.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}},
       {.type = GateKind::X, .parameter = {}, .qubitId = {1, 0}}};
-  const llvm::SmallVector<GateEulerBasis, 4> eulerBases = {
-      GateEulerBasis::XYX, GateEulerBasis::ZXZ, GateEulerBasis::ZYZ,
-      GateEulerBasis::XZX};
   std::uniform_int_distribution<std::size_t> distBasisGate{
       0, basisGates.size() - 1};
-  std::uniform_int_distribution<std::size_t> distEulerBases{1,
-                                                            eulerBases.size()};
-
-  auto selectRandomEulerBases = [&]() {
-    auto tmp = eulerBases;
-    llvm::shuffle(tmp.begin(), tmp.end(), rng);
-    tmp.resize(distEulerBases(rng));
-    return tmp;
-  };
   auto selectRandomBasisGate = [&]() { return basisGates[distBasisGate(rng)]; };
 
   for (int i = 0; i < maxIterations; ++i) {
-    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix4cd>(rng);
+    auto originalMatrix = randomUnitary4x4(rng);
 
     auto targetDecomposition = TwoQubitWeylDecomposition::create(
         originalMatrix, std::optional<double>{1.0});
-    auto decomposer =
-        TwoQubitBasisDecomposer::create(selectRandomBasisGate(), 1.0);
-    auto decomposedSequence = decomposer.twoQubitDecompose(
-        targetDecomposition, selectRandomEulerBases(), 1.0, true, std::nullopt);
+    const auto basisGate = selectRandomBasisGate();
+    auto decomposer = TwoQubitBasisDecomposer::create(basisGate, 1.0);
+    auto decomposed =
+        decomposer.twoQubitDecompose(targetDecomposition, std::nullopt);
 
-    ASSERT_TRUE(decomposedSequence.has_value());
+    ASSERT_TRUE(decomposed.has_value());
 
-    auto restoredMatrix = BasisDecomposerTest::restore(*decomposedSequence);
+    auto restoredMatrix = BasisDecomposerTest::restore(*decomposed, basisGate);
 
-    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix))
-        << "ORIGINAL:\n"
-        << originalMatrix << '\n'
-        << "RESULT:\n"
-        << restoredMatrix << '\n';
+    // Reconstruction accumulates the Weyl diagonalization residual through up
+    // to three entangler layers, so allow a correspondingly relaxed tolerance.
+    EXPECT_TRUE(
+        restoredMatrix.isApprox(originalMatrix, SANITY_CHECK_PRECISION));
   }
 }
 
 TEST(BasisDecomposerNumBasisTest, ForcesZeroBasisUsesForIdentityTarget) {
   const Gate basis{.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}};
   const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
-  const Eigen::Matrix4cd target = Eigen::Matrix4cd::Identity();
+  const Matrix4x4 target = Matrix4x4::identity();
   const auto weyl =
       TwoQubitWeylDecomposition::create(target, std::optional<double>{1.0});
-  const llvm::SmallVector<GateEulerBasis> eulerBases{GateEulerBasis::ZYZ};
-  const auto decomposed = decomposer.twoQubitDecompose(weyl, eulerBases, 1.0,
-                                                       false, std::uint8_t{0});
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{0});
   ASSERT_TRUE(decomposed.has_value());
-  const Eigen::Matrix4cd restored = BasisDecomposerTest::restore(*decomposed);
+  EXPECT_EQ(decomposed->numBasisUses, 0);
+  const Matrix4x4 restored = BasisDecomposerTest::restore(*decomposed, basis);
   EXPECT_TRUE(restored.isApprox(target));
 }
 
@@ -161,22 +148,14 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(
             Gate{.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}},
             Gate{.type = GateKind::X, .parameter = {}, .qubitId = {1, 0}}),
-        // sets of Euler bases
-        testing::Values(llvm::SmallVector<GateEulerBasis>{GateEulerBasis::ZYZ},
-                        llvm::SmallVector<GateEulerBasis>{
-                            GateEulerBasis::ZYZ, GateEulerBasis::ZXZ,
-                            GateEulerBasis::XYX, GateEulerBasis::XZX},
-                        llvm::SmallVector<GateEulerBasis>{GateEulerBasis::XZX}),
         // targets to be decomposed
-        testing::Values(
-            []() -> Eigen::Matrix4cd { return Eigen::Matrix4cd::Identity(); },
-            []() -> Eigen::Matrix4cd {
-              return Eigen::kroneckerProduct(rzMatrix(1.0), ryMatrix(3.1));
-            },
-            []() -> Eigen::Matrix4cd {
-              return Eigen::kroneckerProduct(Eigen::Matrix2cd::Identity(),
-                                             rxMatrix(0.1));
-            })));
+        testing::Values([]() -> Matrix4x4 { return Matrix4x4::identity(); },
+                        []() -> Matrix4x4 {
+                          return kron(rzMatrix(1.0), ryMatrix(3.1));
+                        },
+                        []() -> Matrix4x4 {
+                          return kron(Matrix2x2::identity(), rxMatrix(0.1));
+                        })));
 
 INSTANTIATE_TEST_SUITE_P(
     TwoQubitMatrices, BasisDecomposerTest,
@@ -185,36 +164,27 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(
             Gate{.type = GateKind::X, .parameter = {}, .qubitId = {0, 1}},
             Gate{.type = GateKind::X, .parameter = {}, .qubitId = {1, 0}}),
-        // sets of Euler bases
-        testing::Values(llvm::SmallVector<GateEulerBasis>{GateEulerBasis::ZYZ},
-                        llvm::SmallVector<GateEulerBasis>{
-                            GateEulerBasis::ZYZ, GateEulerBasis::ZXZ,
-                            GateEulerBasis::XYX, GateEulerBasis::XZX},
-                        llvm::SmallVector<GateEulerBasis>{GateEulerBasis::XZX,
-                                                          GateEulerBasis::XYX}),
         // targets to be decomposed
         ::testing::Values(
-            []() -> Eigen::Matrix4cd { return rzzMatrix(2.0); },
-            []() -> Eigen::Matrix4cd {
+            []() -> Matrix4x4 { return rzzMatrix(2.0); },
+            []() -> Matrix4x4 {
               return ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0);
             },
-            []() -> Eigen::Matrix4cd {
+            []() -> Matrix4x4 {
               return TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2,
                                                                    0.0) *
-                     Eigen::kroneckerProduct(rxMatrix(1.0),
-                                             Eigen::Matrix2cd::Identity());
+                     kron(rxMatrix(1.0), Matrix2x2::identity());
             },
-            []() -> Eigen::Matrix4cd {
-              return Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
+            []() -> Matrix4x4 {
+              return kron(rxMatrix(1.0), ryMatrix(1.0)) *
                      TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2,
                                                                    3.0) *
-                     Eigen::kroneckerProduct(rxMatrix(1.0),
-                                             Eigen::Matrix2cd::Identity());
+                     kron(rxMatrix(1.0), Matrix2x2::identity());
             },
-            []() -> Eigen::Matrix4cd {
-              return Eigen::kroneckerProduct(H_GATE, IPZ) *
+            []() -> Matrix4x4 {
+              return kron(hGate(), ipz()) *
                      getTwoQubitMatrix({.type = GateKind::X,
                                         .parameter = {},
                                         .qubitId = {0, 1}}) *
-                     Eigen::kroneckerProduct(IPX, IPY);
+                     kron(ipx(), ipy());
             })));

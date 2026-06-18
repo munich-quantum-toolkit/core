@@ -11,13 +11,10 @@
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/SingleQubit.h"
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerDecomposition.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateKind.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -27,13 +24,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 
-#include <cassert>
-#include <cmath>
-#include <complex>
-#include <cstddef>
-#include <limits>
 #include <numbers>
-#include <optional>
 
 namespace mlir::qco::native_synth {
 
@@ -108,133 +99,6 @@ struct SingleQubitEmitter {
 
 } // namespace
 
-/// Materialize an `GateEulerBasis::ZSXX` decomposition (`rz` / `sx` / `x`) into
-/// QCO ops.
-static Value
-emitEulerSequenceZsxx(SingleQubitEmitter e, Value q,
-                      const decomposition::QubitGateSequence& seq) {
-  for (const auto& gate : seq.gates) {
-    switch (gate.type) {
-    case decomposition::GateKind::RZ:
-      if (gate.parameter.size() != 1) {
-        return {};
-      }
-      q = e.rz(q, gate.parameter[0]);
-      break;
-    case decomposition::GateKind::SX:
-      q = e.sx(q);
-      break;
-    case decomposition::GateKind::X:
-      q = e.x(q);
-      break;
-    case decomposition::GateKind::I:
-      break;
-    default:
-      return {};
-    }
-  }
-  return q;
-}
-
-/// Materialize an `GateEulerBasis::XYX` decomposition into `R(theta, phi)` ops
-/// for the `R` emitter: `Rx(theta)` becomes `R(theta, 0)`, `Ry(theta)`
-/// becomes `R(theta, pi/2)`, Pauli `X`/`Y` become `R(pi, *)`, `I` is a
-/// no-op.
-static Value emitEulerSequenceR(SingleQubitEmitter e, Value q,
-                                const decomposition::QubitGateSequence& seq) {
-  for (const auto& gate : seq.gates) {
-    switch (gate.type) {
-    case decomposition::GateKind::RX:
-      if (gate.parameter.size() != 1) {
-        return {};
-      }
-      q = e.r(q, gate.parameter[0], 0.0);
-      break;
-    case decomposition::GateKind::RY:
-      if (gate.parameter.size() != 1) {
-        return {};
-      }
-      q = e.r(q, gate.parameter[0], HALF_PI);
-      break;
-    case decomposition::GateKind::X:
-      q = e.r(q, PI, 0.0);
-      break;
-    case decomposition::GateKind::Y:
-      q = e.r(q, PI, HALF_PI);
-      break;
-    case decomposition::GateKind::I:
-      break;
-    default:
-      return {};
-    }
-  }
-  return q;
-}
-
-/// Materialize an Euler decomposition in the two rotation axes named by
-/// `axis` (e.g. `{Rx, Rz}`). Every gate kind that falls outside the two
-/// chosen axes (or has the wrong parameter count) is rejected by returning
-/// a null `Value`; the matrix-based fallback is expected to pick a
-/// different basis in that case. Pauli gates are lowered to the
-/// corresponding `R*(pi)` when their axis is available.
-static Value
-emitEulerSequenceAxisPair(SingleQubitEmitter e, Value q, AxisPair axis,
-                          const decomposition::QubitGateSequence& seq) {
-  for (const auto& gate : seq.gates) {
-    switch (gate.type) {
-    case decomposition::GateKind::RX:
-      if (axis == AxisPair::RyRz || gate.parameter.size() != 1) {
-        return {};
-      }
-      q = e.rx(q, gate.parameter[0]);
-      break;
-    case decomposition::GateKind::RY:
-      if (axis == AxisPair::RxRz || gate.parameter.size() != 1) {
-        return {};
-      }
-      q = e.ry(q, gate.parameter[0]);
-      break;
-    case decomposition::GateKind::RZ:
-      if (axis == AxisPair::RxRy || gate.parameter.size() != 1) {
-        return {};
-      }
-      q = e.rz(q, gate.parameter[0]);
-      break;
-    case decomposition::GateKind::X:
-      if (axis == AxisPair::RyRz) {
-        return {};
-      }
-      q = e.rx(q, PI);
-      break;
-    case decomposition::GateKind::Y:
-      if (axis == AxisPair::RxRz) {
-        return {};
-      }
-      q = e.ry(q, PI);
-      break;
-    case decomposition::GateKind::Z:
-      if (axis == AxisPair::RxRy) {
-        return {};
-      }
-      q = e.rz(q, PI);
-      break;
-    case decomposition::GateKind::I:
-      break;
-    default:
-      return {};
-    }
-  }
-  return q;
-}
-
-/// Decompose `matrix` numerically into a gate sequence in `basis` with
-/// zero-rotations pruned (`simplify=true`).
-static decomposition::QubitGateSequence
-runEuler(decomposition::GateEulerBasis basis, const Eigen::Matrix2cd& matrix) {
-  return decomposition::EulerDecomposition::generateCircuit(
-      basis, matrix, /*simplify=*/true, std::nullopt);
-}
-
 Value decomposeToZSXX(IRRewriter& rewriter, Operation* op, Value inQubit,
                       bool supportsDirectRx) {
   if (llvm::isa<IdOp>(op)) {
@@ -308,101 +172,16 @@ Value decomposeToU3(IRRewriter& rewriter, Operation* op, Value inQubit) {
   return {};
 }
 
-std::optional<decomposition::QubitGateSequence>
-eulerSequenceForMatrixSynthesis(const Eigen::Matrix2cd& matrix,
-                                const SingleQubitEmitterSpec& emitter) {
-  switch (emitter.mode) {
-  case SingleQubitMode::U3:
-    return std::nullopt;
-  case SingleQubitMode::ZSXX:
-    return runEuler(decomposition::GateEulerBasis::ZSXX, matrix);
-  case SingleQubitMode::R:
-    return runEuler(decomposition::GateEulerBasis::XYX, matrix);
-  case SingleQubitMode::AxisPair: {
-    const auto bases = getEulerBasesForAxisPair(emitter.axisPair);
-    if (bases.empty()) {
-      return std::nullopt;
-    }
-    return runEuler(bases.front(), matrix);
-  }
-  }
-  llvm_unreachable("unknown single-qubit mode");
-}
-
-std::size_t
-computeSynthesizedSingleQubitLength(const Eigen::Matrix2cd& matrix,
-                                    const SingleQubitEmitterSpec& emitter) {
-  if (emitter.mode == SingleQubitMode::U3) {
-    return 1;
-  }
-  const auto seq = eulerSequenceForMatrixSynthesis(matrix, emitter);
-  if (!seq) {
-    return std::numeric_limits<std::size_t>::max();
-  }
-  return seq->gates.size();
-}
-
-Value emitSynthesizedSingleQubitFromMatrix(
-    IRRewriter& rewriter, Location loc, Value inQubit,
-    const Eigen::Matrix2cd& matrix, const SingleQubitEmitterSpec& emitter,
-    const decomposition::QubitGateSequence* reuseEulerSeq) {
-  SingleQubitEmitter e{.rewriter = &rewriter, .loc = loc};
-  switch (emitter.mode) {
-  case SingleQubitMode::ZSXX: {
-    if (reuseEulerSeq != nullptr) {
-      emitGPhaseIfNonTrivial(rewriter, loc, reuseEulerSeq->globalPhase);
-      return emitEulerSequenceZsxx(e, inQubit, *reuseEulerSeq);
-    }
-    const auto seq = runEuler(decomposition::GateEulerBasis::ZSXX, matrix);
-    emitGPhaseIfNonTrivial(rewriter, loc, seq.globalPhase);
-    return emitEulerSequenceZsxx(e, inQubit, seq);
-  }
-  case SingleQubitMode::U3: {
-    assert(reuseEulerSeq == nullptr &&
-           "U3 matrix emission does not use a cached Euler sequence");
-    using namespace std::complex_literals;
-
-    // Project `matrix` into SU(2) before running the Euler decomposition.
-    // For a 2x2 unitary, det(U) sits on the unit circle, so dividing by the
-    // square root of det fixes det == 1. We use `arg(det) / 2` (not
-    // `/ 4` as in the 4x4 case) because `sqrt(det) = exp(i * arg(det) / 2)`.
-    // The removed global phase is re-emitted via `emitGPhaseIfNonTrivial`
-    // so the final sequence equals the original unitary, not just SU(2)-up
-    // to global phase.
-    Eigen::Matrix2cd m = matrix;
-    const auto det = m(0, 0) * m(1, 1) - m(0, 1) * m(1, 0);
-    const double phase = std::arg(det) / 2.0;
-    m *= std::exp(1i * (-phase));
-    const auto angles = decomposition::EulerDecomposition::anglesFromUnitary(
-        m, decomposition::GateEulerBasis::ZYZ);
-    emitGPhaseIfNonTrivial(rewriter, loc, phase);
-    return e.u(inQubit, angles[0], angles[1], angles[2]);
-  }
-  case SingleQubitMode::R: {
-    if (reuseEulerSeq != nullptr) {
-      emitGPhaseIfNonTrivial(rewriter, loc, reuseEulerSeq->globalPhase);
-      return emitEulerSequenceR(e, inQubit, *reuseEulerSeq);
-    }
-    const auto seq = runEuler(decomposition::GateEulerBasis::XYX, matrix);
-    emitGPhaseIfNonTrivial(rewriter, loc, seq.globalPhase);
-    return emitEulerSequenceR(e, inQubit, seq);
-  }
-  case SingleQubitMode::AxisPair: {
-    const auto bases = getEulerBasesForAxisPair(emitter.axisPair);
-    if (bases.empty()) {
-      return {};
-    }
-    if (reuseEulerSeq != nullptr) {
-      emitGPhaseIfNonTrivial(rewriter, loc, reuseEulerSeq->globalPhase);
-      return emitEulerSequenceAxisPair(e, inQubit, emitter.axisPair,
-                                       *reuseEulerSeq);
-    }
-    const auto seq = runEuler(bases.front(), matrix);
-    emitGPhaseIfNonTrivial(rewriter, loc, seq.globalPhase);
-    return emitEulerSequenceAxisPair(e, inQubit, emitter.axisPair, seq);
-  }
-  }
-  llvm_unreachable("unknown single-qubit mode");
+Value emitSingleQubitMatrix(IRRewriter& rewriter, Location loc, Value inQubit,
+                            const Matrix2x2& matrix,
+                            const decomposition::EulerBasis basis) {
+  // Force emission (`hasNonBasisGate = true`, `runSize = 0`) so the matrix is
+  // always lowered into native gates of `basis`, including any residual
+  // `qco.gphase`. With these arguments `synthesizeUnitary1QEuler` never
+  // returns `std::nullopt`.
+  return *decomposition::synthesizeUnitary1QEuler(
+      rewriter, loc, inQubit, matrix, /*runSize=*/0,
+      /*hasNonBasisGate=*/true, basis);
 }
 
 Value decomposeToR(IRRewriter& rewriter, Operation* op, Value inQubit) {

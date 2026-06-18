@@ -11,8 +11,8 @@
 #pragma once
 
 #include "Gate.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <llvm/ADT/SmallVector.h>
 
 /// Standard-basis matrix factories for the decomposition layer. Two-qubit
@@ -25,44 +25,46 @@ inline constexpr double FRAC1_SQRT2 =
     0.707106781186547524400844362104849039284835937688474036588L;
 
 /// Generic 3-parameter single-qubit unitary `U(theta, phi, lambda)`.
-[[nodiscard]] Eigen::Matrix2cd uMatrix(double theta, double phi, double lambda);
+[[nodiscard]] Matrix2x2 uMatrix(double theta, double phi, double lambda);
 /// `U2(phi, lambda) == U(pi/2, phi, lambda)`.
-[[nodiscard]] Eigen::Matrix2cd u2Matrix(double phi, double lambda);
+[[nodiscard]] Matrix2x2 u2Matrix(double phi, double lambda);
 /// Axis rotations `exp(-i theta/2 * sigma_{x,y,z})`.
-[[nodiscard]] Eigen::Matrix2cd rxMatrix(double theta);
-[[nodiscard]] Eigen::Matrix2cd ryMatrix(double theta);
-[[nodiscard]] Eigen::Matrix2cd rzMatrix(double theta);
+[[nodiscard]] Matrix2x2 rxMatrix(double theta);
+[[nodiscard]] Matrix2x2 ryMatrix(double theta);
+[[nodiscard]] Matrix2x2 rzMatrix(double theta);
 /// Two-qubit Ising-style rotations on the `XX`, `YY`, `ZZ` generators.
-[[nodiscard]] Eigen::Matrix4cd rxxMatrix(double theta);
-[[nodiscard]] Eigen::Matrix4cd ryyMatrix(double theta);
-[[nodiscard]] Eigen::Matrix4cd rzzMatrix(double theta);
+[[nodiscard]] Matrix4x4 rxxMatrix(double theta);
+[[nodiscard]] Matrix4x4 ryyMatrix(double theta);
+[[nodiscard]] Matrix4x4 rzzMatrix(double theta);
 /// Phase gate `diag(1, exp(i lambda))`.
-[[nodiscard]] Eigen::Matrix2cd pMatrix(double lambda);
+[[nodiscard]] Matrix2x2 pMatrix(double lambda);
 
-inline const Eigen::Matrix4cd SWAP_GATE{
-    {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
-inline const Eigen::Matrix2cd H_GATE{{FRAC1_SQRT2, FRAC1_SQRT2},
-                                     {FRAC1_SQRT2, -FRAC1_SQRT2}};
-/// `i * sigma_{x,y,z}`; useful when factoring Pauli rotations out of a 2x2.
-inline const Eigen::Matrix2cd IPZ{{{0, 1}, 0}, {0, {0, -1}}};
-inline const Eigen::Matrix2cd IPY{{0, 1}, {-1, 0}};
-inline const Eigen::Matrix2cd IPX{{0, {0, 1}}, {{0, 1}, 0}};
+/// `SWAP` gate (4x4).
+[[nodiscard]] const Matrix4x4& swapGate();
+/// Hadamard gate (2x2).
+[[nodiscard]] const Matrix2x2& hGate();
+/// `i * sigma_z`; useful when factoring Pauli rotations out of a 2x2.
+[[nodiscard]] const Matrix2x2& ipz();
+/// `i * sigma_y`.
+[[nodiscard]] const Matrix2x2& ipy();
+/// `i * sigma_x`.
+[[nodiscard]] const Matrix2x2& ipx();
 
 /// Kronecker-embed a 2x2 on wire ``qubitId`` (identity on the other wire).
-[[nodiscard]] Eigen::Matrix4cd
-expandToTwoQubits(const Eigen::Matrix2cd& singleQubitMatrix, QubitId qubitId);
+[[nodiscard]] Matrix4x4 expandToTwoQubits(const Matrix2x2& singleQubitMatrix,
+                                          QubitId qubitId);
 
 /// Reorder a 4x4 two-qubit matrix so its qubits match the canonical
 /// `(low, high)` order given the operand-order `qubitIds`. No-op when the
 /// operand order already matches.
-[[nodiscard]] Eigen::Matrix4cd
-fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
+[[nodiscard]] Matrix4x4
+fixTwoQubitMatrixQubitOrder(const Matrix4x4& twoQubitMatrix,
                             const llvm::SmallVector<QubitId, 2>& qubitIds);
 
 /// Construct the 2x2 / 4x4 matrix described by `gate`. Two-qubit gates are
 /// returned in the convention matching `expandToTwoQubits` + the gate's own
 /// operand order.
-[[nodiscard]] Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate);
-[[nodiscard]] Eigen::Matrix4cd getTwoQubitMatrix(const Gate& gate);
+[[nodiscard]] Matrix2x2 getSingleQubitMatrix(const Gate& gate);
+[[nodiscard]] Matrix4x4 getTwoQubitMatrix(const Gate& gate);
 
 } // namespace mlir::qco::decomposition

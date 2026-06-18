@@ -10,18 +10,20 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
 
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 
 #include <optional>
 
 namespace mlir::qco::native_synth {
 
-/// Euler bases that can reconstruct a two-axis single-qubit unitary.
-llvm::SmallVector<decomposition::GateEulerBasis>
-getEulerBasesForAxisPair(AxisPair axisPair);
+/// Euler basis used to synthesize an arbitrary single-qubit unitary into the
+/// gates emitted by `emitter`. This is the deterministic replacement for the
+/// scored multi-basis search.
+[[nodiscard]] decomposition::EulerBasis
+emitterEulerBasis(const SingleQubitEmitterSpec& emitter);
 
 /// Resolve a comma-separated native gate menu (e.g. `"x,sx,rz,cx"`) into a
 /// full `NativeProfileSpec`.

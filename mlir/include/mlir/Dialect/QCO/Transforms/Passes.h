@@ -35,9 +35,6 @@ namespace mlir::qco {
 /// for recognised tokens).
 struct NativeGateSynthesisOptions {
   std::string nativeGates;
-  double scoreWeightTwoQ = 1.0;
-  double scoreWeightOneQ = 0.1;
-  double scoreWeightDepth = 0.01;
 };
 
 std::unique_ptr<Pass>

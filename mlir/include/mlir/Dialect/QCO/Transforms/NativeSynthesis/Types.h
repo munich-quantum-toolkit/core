@@ -10,16 +10,12 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/Transforms/Decomposition/EulerBasis.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/GateSequence.h"
-
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 
 #include <cstdint>
-#include <memory>
 
-/// Types for native gate synthesis: menu, emitters, candidates, score weights.
+/// Types for native gate synthesis: the resolved menu and its emitters.
 
 namespace mlir::qco::native_synth {
 
@@ -61,12 +57,10 @@ enum class NativeGateKind : std::uint8_t {
 };
 
 /// Single-qubit emitter specification: the target mode plus any modifiers
-/// (axis pair, Euler bases to consider when decomposing, whether direct Rx
-/// emission is permitted).
+/// (axis pair, whether direct Rx emission is permitted).
 struct SingleQubitEmitterSpec {
   SingleQubitMode mode = SingleQubitMode::U3;
   AxisPair axisPair = AxisPair::RxRz;
-  llvm::SmallVector<decomposition::GateEulerBasis> eulerBases;
   /// Only meaningful for `SingleQubitMode::ZSXX`: when set, the emitter may
   /// emit Rx / Ry / R directly (via an `rz * rx * rz` sandwich for the latter
   /// two) instead of falling back to the ZSXX Euler sequence.
@@ -74,70 +68,13 @@ struct SingleQubitEmitterSpec {
 };
 
 /// Resolved menu: emitters to try for 1q synthesis and entangler bases for 2q.
-/// Built by `resolveNativeGatesSpec`.
+/// Built by `resolveNativeGatesSpec`. Single-qubit synthesis is deterministic:
+/// the first emitter is preferred and its Euler basis drives matrix synthesis.
 struct NativeProfileSpec {
   bool allowRzz = false;
   llvm::DenseSet<NativeGateKind> allowedGates;
   llvm::SmallVector<SingleQubitEmitterSpec> singleQubitEmitters;
   llvm::SmallVector<EntanglerBasis> entanglerBases;
-};
-
-/// Weights for the deterministic local cost model. Candidate cost is
-/// `twoQ * #2q + oneQ * #1q + depth * localDepth`; lower is better.
-struct ScoreWeights {
-  double twoQ = 1.0;
-  double oneQ = 0.1;
-  double depth = 0.01;
-};
-
-/// Gate counts describing a synthesized candidate.
-struct CandidateMetrics {
-  unsigned numOneQ = 0;
-  unsigned numTwoQ = 0;
-  unsigned depth = 0;
-};
-
-/// Tie-break classes in preference order (lower wins). Used as the final
-/// structural tiebreaker in `isBetterScore` after the weighted cost and the
-/// raw 2q/depth/1q counts.
-enum class CandidateClass : std::uint8_t {
-  NativePassthrough = 0,
-  DirectSingleQ = 1,
-  MatrixSingleQ = 2,
-  TwoQubitBasisRewrite = 3,
-  XxPlusMinusViaRzz = 4,
-};
-
-/// Generic candidate wrapper carrying a typed rewrite plan payload.
-template <typename Payload> struct SynthesisCandidate {
-  CandidateClass candidateClass = CandidateClass::NativePassthrough;
-  CandidateMetrics metrics;
-  unsigned enumerationIndex = 0;
-  Payload payload;
-};
-
-/// How to rewrite a single-qubit op onto the native menu.
-///
-/// - `Direct`: pattern-match the op type and emit the target gates directly
-///   via `decomposeTo*` (applicable to a small fixed set of op types per
-///   emitter).
-/// - `MatrixFallback`: fold the op to a 2x2 matrix and run an Euler
-///   decomposition in the emitter's basis; handles anything constant.
-enum class SingleQubitRewriteStrategy : std::uint8_t { Direct, MatrixFallback };
-
-/// Picked single-qubit rewrite: which emitter to use and how to drive it.
-struct SingleQubitRewritePlan {
-  SingleQubitRewriteStrategy strategy = SingleQubitRewriteStrategy::Direct;
-  SingleQubitEmitterSpec emitter;
-};
-
-/// Picked two-qubit rewrite: a pre-computed abstract gate sequence produced
-/// by `TwoQubitBasisDecomposer` plus the single-qubit emitter and entangler
-/// basis used when materializing the sequence back into MLIR.
-struct TwoQubitRewritePlan {
-  std::shared_ptr<decomposition::TwoQubitGateSequence> sequence;
-  SingleQubitEmitterSpec emitter;
-  EntanglerBasis entanglerBasis = EntanglerBasis::None;
 };
 
 } // namespace mlir::qco::native_synth
