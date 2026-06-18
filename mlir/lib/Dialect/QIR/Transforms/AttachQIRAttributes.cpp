@@ -244,7 +244,7 @@ private:
     return seen.size();
   }
 
-  /// Determine whether an loop (as a set of blocks) is an iterative loop (true)
+  /// Determine whether a loop (as a set of blocks) is an iterative loop (true)
   /// or a conditionally terminated loop (false).
   static bool classifyLoop(const SmallPtrSet<Block*, 8>& loop) {
     for (Block* block : loop) {
