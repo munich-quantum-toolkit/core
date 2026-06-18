@@ -141,9 +141,7 @@ private:
   static void removeExistingModuleFlags(ModuleOp m, IRRewriter& rewriter) {
     SmallVector<Operation*> flagOps;
     m->walk([&](LLVM::ModuleFlagsOp op) { flagOps.emplace_back(op); });
-    for (Operation* op : llvm::make_early_inc_range(flagOps)) {
-      rewriter.eraseOp(op);
-    }
+    llvm::for_each(flagOps, [&](Operation* op) { rewriter.eraseOp(op); });
   }
 
   /// Count the number of uniquely indexed qubit pointers.
