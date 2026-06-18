@@ -30,8 +30,8 @@
 
 #include <memory>
 #include <ostream>
-#include <sstream>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 
@@ -124,7 +124,7 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
 
   llvm::SourceMgr sourceMgr;
   auto buffer = llvm::MemoryBuffer::getMemBufferCopy(source);
-  sourceMgr.AddNewSourceBuffer(std::move(buffer), llvm::SMLoc());
+  sourceMgr.AddNewSourceBuffer(std::move(buffer), SMLoc());
 
   auto translated = qc::translateQASM3ToQC(context.get(), sourceMgr);
   ASSERT_TRUE(translated);

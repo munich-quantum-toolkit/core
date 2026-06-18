@@ -44,13 +44,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <fstream>
 #include <functional>
-#include <istream>
 #include <iterator>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -382,15 +382,11 @@ public:
   }
 
   void visitInitialLayout(
-      std::shared_ptr<qasm3::InitialLayout> /*initialLayout*/) override {
-    return;
-  }
+      std::shared_ptr<qasm3::InitialLayout> /*initialLayout*/) override {}
 
   void visitOutputPermutation(
       std::shared_ptr<qasm3::OutputPermutation> /*outputPermutation*/)
-      override {
-    return;
-  }
+      override {}
 
   void visitGateCallStatement(
       std::shared_ptr<qasm3::GateCallStatement> stmt) override {

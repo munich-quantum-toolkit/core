@@ -89,19 +89,10 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::init(false));
 
 /**
- * @brief Load and parse a .qasm file, dispatching to the chosen import path.
+ * @brief Load and parse a .qasm file
  */
 static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
                                           MLIRContext* context) {
-  return qc::translateQASM3ToQC(context, filename.str());
-}
-
-/**
- * @brief Load and parse a .mlir file
- */
-static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
-                                          MLIRContext* context) {
-  // Set up the input file
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
@@ -110,7 +101,24 @@ static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
     return nullptr;
   }
 
-  // Parse the input MLIR
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
+  return qc::translateQASM3ToQC(context, sourceMgr);
+}
+
+/**
+ * @brief Load and parse a .mlir file
+ */
+static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
+                                          MLIRContext* context) {
+  std::string errorMessage;
+  auto file = openInputFile(filename, &errorMessage);
+  if (!file) {
+    llvm::errs() << "Failed to load file '" << filename << "': '"
+                 << errorMessage << "'\n";
+    return nullptr;
+  }
+
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
   return parseSourceFile<ModuleOp>(sourceMgr, context);
