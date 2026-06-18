@@ -18,6 +18,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 namespace {
 
 class ErrorHandling : public ::testing::Test {
@@ -77,7 +79,7 @@ TEST_F(ErrorHandling, GetResultsBeforeDone) {
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 131072), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, std::pow(2, 20)), QDMI_SUCCESS);
   // Before submit → invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
