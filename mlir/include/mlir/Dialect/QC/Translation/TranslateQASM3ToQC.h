@@ -11,10 +11,15 @@
 #pragma once
 
 #include <llvm/Support/SourceMgr.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 
-namespace mlir::qc {
+namespace mlir {
+
+// Forward declarations
+class MLIRContext;
+class ModuleOp;
+
+namespace qc {
 
 /**
  * @brief Translate an OpenQASM 3 program to a QC program.
@@ -25,4 +30,6 @@ namespace mlir::qc {
 [[nodiscard]] OwningOpRef<ModuleOp>
 translateQASM3ToQC(MLIRContext* context, llvm::SourceMgr& sourceMgr);
 
-} // namespace mlir::qc
+} // namespace qc
+
+} // namespace mlir
