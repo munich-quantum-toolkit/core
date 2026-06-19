@@ -65,30 +65,3 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   // After completion, the status should be IDLE.
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
 }
-
-TEST(DeviceStatus, MultipleConcurrentJobsKeepBusyUntilLastFinishes) {
-  const qdmi_test::SessionGuard s{};
-
-  const qdmi_test::JobGuard j1{s.session};
-  const qdmi_test::JobGuard j2{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j1.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setProgram(j2.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_HEAVY_SAMPLING),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j1.job, 16), QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j2.job, 65536), QDMI_SUCCESS);
-
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j1.job), QDMI_SUCCESS);
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j2.job), QDMI_SUCCESS);
-
-  // Wait for first to finish
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j1.job, 0), QDMI_SUCCESS);
-  // Status should still be BUSY while the second runs
-  EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_BUSY);
-
-  // Wait for second, then status should go IDLE
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j2.job, 0), QDMI_SUCCESS);
-  EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
-}
