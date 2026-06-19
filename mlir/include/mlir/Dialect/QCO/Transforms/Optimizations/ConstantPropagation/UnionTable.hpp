@@ -206,7 +206,7 @@ class UnionTable {
       }
       std::vector<HybridState> unifiedHS = {};
       for (auto hs1 : newEntry.states) {
-        for (auto hs2 : newEntry.states) {
+        for (auto hs2 : e.states) {
           unifiedHS.push_back(hs1.unify(hs2));
         }
       }
@@ -221,8 +221,9 @@ class UnionTable {
         valuesToReplace.insert(v);
       }
     }
+    const auto ptrUTE = std::make_shared<UnionTableEntry>(newEntry);
     for (const auto& v : valuesToReplace) {
-      valuesToEntries[v] = std::make_shared<UnionTableEntry>(newEntry);
+      valuesToEntries[v] = ptrUTE;
     }
     for (const auto& e : entriesToUnify) {
       auto it = std::ranges::find_if(
@@ -231,7 +232,7 @@ class UnionTable {
         entries.erase(it);
       }
     }
-    entries.insert(std::make_shared<UnionTableEntry>(newEntry));
+    entries.insert(ptrUTE);
   }
 
 public:
