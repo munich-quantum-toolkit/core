@@ -32,9 +32,9 @@ cx q[0], q[1];
 
 inline constexpr const char* QASM3_MALFORMED = "Definitely not OpenQASM";
 
-// A slightly heavier 5-qubit sampling circuit to prolong runtime slightly while
+// A slightly heavier dynamic sampling circuit to prolong runtime slightly while
 // remaining fast
-inline constexpr auto QASM3_HEAVY_SAMPLING5 = R"(
+inline constexpr auto QASM3_HEAVY_SAMPLING = R"(
 OPENQASM 3;
 include "stdgates.inc";
 qubit[5] q;
@@ -57,6 +57,16 @@ cx q[2], q[3];
 cx q[1], q[2];
 cx q[0], q[1];
 // Measure all qubits
+c = measure q;
+// Add dynamic component
+if (c == 3) {
+  rx(0.7) q[0];
+  ry(0.5) q[1];
+  rz(1.1) q[2];
+  ry(0.3) q[3];
+  rx(0.9) q[4];
+}
+// Measure all qubits again
 c = measure q;
 )";
 
