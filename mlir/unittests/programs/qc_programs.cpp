@@ -11,7 +11,6 @@
 #include "qc_programs.h"
 
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/IR/Value.h"
 
 #include <numbers>
 
@@ -1617,4 +1616,5 @@ void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
     b.cx(reg[0], q0);
   });
 }
+
 } // namespace mlir::qc

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/DenseSet.h>
@@ -447,6 +448,12 @@ private:
   Matrix2x2 q2l;
   Matrix2x2 q2r;
 };
+
+/**
+ * @brief Euler basis used to emit single-qubit factors for @p emitter.
+ */
+[[nodiscard]] EulerBasis
+emitterEulerBasis(const SingleQubitEmitterSpec& emitter);
 
 /**
  * @brief Parses a comma-separated native-gate menu (e.g. `"u,cx,rzz"`).

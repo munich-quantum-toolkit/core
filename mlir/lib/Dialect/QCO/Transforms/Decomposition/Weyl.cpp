@@ -49,43 +49,6 @@ using mlir::qco::Complex;
 using mlir::qco::Matrix2x2;
 using mlir::qco::Matrix4x4;
 
-Matrix2x2 rxMatrix(double theta) {
-  const auto halfTheta = theta / 2.;
-  const Complex cos{std::cos(halfTheta), 0.};
-  const Complex isin{0., -std::sin(halfTheta)};
-  return Matrix2x2::fromElements(cos, isin, isin, cos);
-}
-
-Matrix2x2 ryMatrix(double theta) {
-  const auto halfTheta = theta / 2.;
-  const Complex cos{std::cos(halfTheta), 0.};
-  const Complex sin{std::sin(halfTheta), 0.};
-  return Matrix2x2::fromElements(cos, -sin, sin, cos);
-}
-
-Matrix2x2 rzMatrix(double theta) {
-  return Matrix2x2::fromElements(
-      Complex{std::cos(theta / 2.), -std::sin(theta / 2.)}, 0., 0.,
-      Complex{std::cos(theta / 2.), std::sin(theta / 2.)});
-}
-
-const Matrix2x2& ipz() {
-  static const Matrix2x2 matrix =
-      Matrix2x2::fromElements(Complex{0, 1}, 0, 0, Complex{0, -1});
-  return matrix;
-}
-
-const Matrix2x2& ipy() {
-  static const Matrix2x2 matrix = Matrix2x2::fromElements(0, 1, -1, 0);
-  return matrix;
-}
-
-const Matrix2x2& ipx() {
-  static const Matrix2x2 matrix =
-      Matrix2x2::fromElements(0, Complex{0, 1}, Complex{0, 1}, 0);
-  return matrix;
-}
-
 [[nodiscard]] bool isUnitaryMatrix(const Matrix2x2& matrix,
                                    double tolerance = 1e-12) {
   return (matrix.adjoint() * matrix).isIdentity(tolerance);
@@ -1277,47 +1240,12 @@ static void populateAllowedGates(NativeProfileSpec& spec) {
   }
 }
 
-[[nodiscard]] static EulerBasis eulerBasisForAxisPair(AxisPair axisPair) {
-  switch (axisPair) {
-  case AxisPair::RxRz:
-    return EulerBasis::XZX;
-  case AxisPair::RxRy:
-    return EulerBasis::XYX;
-  case AxisPair::RyRz:
-    return EulerBasis::ZYZ;
-  }
-  llvm_unreachable("unknown axis pair");
-}
-
-[[nodiscard]] static EulerBasis
-emitterEulerBasis(const SingleQubitEmitterSpec& emitter) {
-  switch (emitter.mode) {
-  case SingleQubitMode::ZSXX:
-    return EulerBasis::ZSXX;
-  case SingleQubitMode::U3:
-    return EulerBasis::U;
-  case SingleQubitMode::R:
-    return EulerBasis::R;
-  case SingleQubitMode::AxisPair:
-    return eulerBasisForAxisPair(emitter.axisPair);
-  }
-  llvm_unreachable("unknown single-qubit mode");
-}
-
-[[nodiscard]] static bool usesCxEntangler(const NativeProfileSpec& spec) {
-  return llvm::is_contained(spec.entanglerBases, EntanglerBasis::Cx);
-}
-
-[[nodiscard]] static bool usesCzEntangler(const NativeProfileSpec& spec) {
-  return llvm::is_contained(spec.entanglerBases, EntanglerBasis::Cz);
-}
-
 [[nodiscard]] static std::optional<EntanglerBasis>
 selectEntangler(const NativeProfileSpec& spec) {
-  if (usesCxEntangler(spec)) {
+  if (llvm::is_contained(spec.entanglerBases, EntanglerBasis::Cx)) {
     return EntanglerBasis::Cx;
   }
-  if (usesCzEntangler(spec)) {
+  if (llvm::is_contained(spec.entanglerBases, EntanglerBasis::Cz)) {
     return EntanglerBasis::Cz;
   }
   return std::nullopt;
@@ -1353,6 +1281,28 @@ static void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc,
 }
 
 } // namespace
+
+EulerBasis emitterEulerBasis(const SingleQubitEmitterSpec& emitter) {
+  switch (emitter.mode) {
+  case SingleQubitMode::ZSXX:
+    return EulerBasis::ZSXX;
+  case SingleQubitMode::U3:
+    return EulerBasis::U;
+  case SingleQubitMode::R:
+    return EulerBasis::R;
+  case SingleQubitMode::AxisPair:
+    switch (emitter.axisPair) {
+    case AxisPair::RxRz:
+      return EulerBasis::XZX;
+    case AxisPair::RxRy:
+      return EulerBasis::XYX;
+    case AxisPair::RyRz:
+      return EulerBasis::ZYZ;
+    }
+    break;
+  }
+  llvm_unreachable("unknown single-qubit mode");
+}
 
 std::optional<NativeProfileSpec> parseNativeSpec(llvm::StringRef nativeGates) {
   const auto gates = parseGateSet(nativeGates);
@@ -1474,6 +1424,43 @@ twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec) {
     return std::nullopt;
   }
   return native->numBasisUses;
+}
+
+Matrix2x2 rxMatrix(double theta) {
+  const auto halfTheta = theta / 2.;
+  const Complex cos{std::cos(halfTheta), 0.};
+  const Complex isin{0., -std::sin(halfTheta)};
+  return Matrix2x2::fromElements(cos, isin, isin, cos);
+}
+
+Matrix2x2 ryMatrix(double theta) {
+  const auto halfTheta = theta / 2.;
+  const Complex cos{std::cos(halfTheta), 0.};
+  const Complex sin{std::sin(halfTheta), 0.};
+  return Matrix2x2::fromElements(cos, -sin, sin, cos);
+}
+
+Matrix2x2 rzMatrix(double theta) {
+  return Matrix2x2::fromElements(
+      Complex{std::cos(theta / 2.), -std::sin(theta / 2.)}, 0., 0.,
+      Complex{std::cos(theta / 2.), std::sin(theta / 2.)});
+}
+
+const Matrix2x2& ipz() {
+  static const Matrix2x2 matrix =
+      Matrix2x2::fromElements(Complex{0, 1}, 0, 0, Complex{0, -1});
+  return matrix;
+}
+
+const Matrix2x2& ipy() {
+  static const Matrix2x2 matrix = Matrix2x2::fromElements(0, 1, -1, 0);
+  return matrix;
+}
+
+const Matrix2x2& ipx() {
+  static const Matrix2x2 matrix =
+      Matrix2x2::fromElements(0, Complex{0, 1}, Complex{0, 1}, 0);
+  return matrix;
 }
 
 } // namespace mlir::qco::decomposition

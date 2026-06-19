@@ -523,11 +523,107 @@ bool DynamicMatrix::isApprox(const DynamicMatrix& other,
   return entriesAreApprox(impl_->data, other.impl_->data, tol);
 }
 
+Complex DynamicMatrix::trace() const {
+  Complex sum{0.0, 0.0};
+  const auto udim = checkedDim(impl_->dim);
+  for (std::size_t i = 0; i < udim; ++i) {
+    sum += impl_->data[(i * udim) + i];
+  }
+  return sum;
+}
+
+DynamicMatrix DynamicMatrix::operator*(const DynamicMatrix& rhs) const {
+  if (impl_->dim != rhs.impl_->dim) {
+    llvm::reportFatalInternalError(
+        "DynamicMatrix multiply requires matching dimensions");
+  }
+  const auto udim = checkedDim(impl_->dim);
+  DynamicMatrix out(impl_->dim);
+  for (std::size_t row = 0; row < udim; ++row) {
+    for (std::size_t col = 0; col < udim; ++col) {
+      Complex sum{0.0, 0.0};
+      for (std::size_t k = 0; k < udim; ++k) {
+        sum +=
+            impl_->data[(row * udim) + k] * rhs.impl_->data[(k * udim) + col];
+      }
+      out.impl_->data[(row * udim) + col] = sum;
+    }
+  }
+  return out;
+}
+
+DynamicMatrix DynamicMatrix::operator*(const Complex& scalar) const {
+  DynamicMatrix out(impl_->dim);
+  for (std::size_t i = 0; i < impl_->data.size(); ++i) {
+    out.impl_->data[i] = impl_->data[i] * scalar;
+  }
+  return out;
+}
+
+bool DynamicMatrix::isIdentity(const double tol) const {
+  const auto udim = checkedDim(impl_->dim);
+  for (std::size_t row = 0; row < udim; ++row) {
+    for (std::size_t col = 0; col < udim; ++col) {
+      const Complex expected =
+          (row == col) ? Complex{1.0, 0.0} : Complex{0.0, 0.0};
+      if (std::abs(impl_->data[(row * udim) + col] - expected) > tol) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+namespace {
+
+[[nodiscard]] std::size_t qubitBitAt(const std::size_t index,
+                                     const std::size_t numQubits,
+                                     const std::size_t qubitIndex) {
+  return (index >> (numQubits - 1 - qubitIndex)) & 1U;
+}
+
+[[nodiscard]] bool otherQubitBitsMatch(const std::size_t row,
+                                       const std::size_t col,
+                                       const std::size_t numQubits,
+                                       const std::size_t skipA,
+                                       const std::size_t skipB) {
+  for (std::size_t q = 0; q < numQubits; ++q) {
+    if (q == skipA || q == skipB) {
+      continue;
+    }
+    if (qubitBitAt(row, numQubits, q) != qubitBitAt(col, numQubits, q)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+[[nodiscard]] bool otherSingleQubitBitsMatch(const std::size_t row,
+                                             const std::size_t col,
+                                             const std::size_t numQubits,
+                                             const std::size_t skip) {
+  for (std::size_t q = 0; q < numQubits; ++q) {
+    if (q == skip) {
+      continue;
+    }
+    if (qubitBitAt(row, numQubits, q) != qubitBitAt(col, numQubits, q)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+} // namespace
+
 Matrix2x2 operator*(const Complex& scalar, const Matrix2x2& matrix) {
   return matrix * scalar;
 }
 
 Matrix4x4 operator*(const Complex& scalar, const Matrix4x4& matrix) {
+  return matrix * scalar;
+}
+
+DynamicMatrix operator*(const Complex& scalar, const DynamicMatrix& matrix) {
   return matrix * scalar;
 }
 
@@ -541,6 +637,94 @@ Matrix4x4 kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
           out((2 * i) + k, (2 * j) + l) = a * rhs(k, l);
         }
       }
+    }
+  }
+  return out;
+}
+
+const Matrix4x4& twoQubitSwapMatrix() {
+  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+                                                          0, 0, 1, 0, //
+                                                          0, 1, 0, 0, //
+                                                          0, 0, 0, 1);
+  return matrix;
+}
+
+Matrix4x4 embedSingleQubitInTwoQubit(const Matrix2x2& matrix,
+                                     const std::size_t qubitIndex) {
+  if (qubitIndex == 0) {
+    return kron(matrix, Matrix2x2::identity());
+  }
+  if (qubitIndex == 1) {
+    return kron(Matrix2x2::identity(), matrix);
+  }
+  llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
+}
+
+Matrix4x4 reorderTwoQubitMatrix(const Matrix4x4& matrix,
+                                const std::size_t q0Index,
+                                const std::size_t q1Index) {
+  if (q0Index == 0 && q1Index == 1) {
+    return matrix;
+  }
+  if (q0Index == 1 && q1Index == 0) {
+    const auto& swap = twoQubitSwapMatrix();
+    return swap * matrix * swap;
+  }
+  llvm::reportFatalInternalError("Invalid qubit indices for two-qubit reorder");
+}
+
+DynamicMatrix embedSingleQubitInNqubit(const Matrix2x2& matrix,
+                                       const std::size_t numQubits,
+                                       const std::size_t qubitIndex) {
+  if (qubitIndex >= numQubits) {
+    llvm::reportFatalInternalError(
+        "Invalid qubit index for single-qubit embed");
+  }
+  if (numQubits == 2) {
+    return DynamicMatrix(embedSingleQubitInTwoQubit(matrix, qubitIndex));
+  }
+  const auto dim = static_cast<std::int64_t>(1ULL << numQubits);
+  DynamicMatrix out(dim);
+  const auto udim = static_cast<std::size_t>(dim);
+  for (std::size_t row = 0; row < udim; ++row) {
+    for (std::size_t col = 0; col < udim; ++col) {
+      if (!otherSingleQubitBitsMatch(row, col, numQubits, qubitIndex)) {
+        continue;
+      }
+      const std::size_t rowBit = qubitBitAt(row, numQubits, qubitIndex);
+      const std::size_t colBit = qubitBitAt(col, numQubits, qubitIndex);
+      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
+          matrix(rowBit, colBit);
+    }
+  }
+  return out;
+}
+
+DynamicMatrix embedTwoQubitInNqubit(const Matrix4x4& matrix,
+                                    const std::size_t numQubits,
+                                    const std::size_t q0Index,
+                                    const std::size_t q1Index) {
+  if (q0Index >= numQubits || q1Index >= numQubits || q0Index == q1Index) {
+    llvm::reportFatalInternalError("Invalid qubit indices for two-qubit embed");
+  }
+  if (numQubits == 2) {
+    return DynamicMatrix(reorderTwoQubitMatrix(matrix, q0Index, q1Index));
+  }
+  const auto dim = static_cast<std::int64_t>(1ULL << numQubits);
+  DynamicMatrix out(dim);
+  const auto udim = static_cast<std::size_t>(dim);
+  for (std::size_t row = 0; row < udim; ++row) {
+    for (std::size_t col = 0; col < udim; ++col) {
+      if (!otherQubitBitsMatch(row, col, numQubits, q0Index, q1Index)) {
+        continue;
+      }
+      const std::size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
+                                  qubitBitAt(row, numQubits, q1Index);
+      const std::size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
+                                  qubitBitAt(col, numQubits, q1Index);
+      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
+          matrix(rowPair, colPair);
     }
   }
   return out;

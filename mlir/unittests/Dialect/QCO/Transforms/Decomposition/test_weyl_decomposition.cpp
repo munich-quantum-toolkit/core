@@ -18,10 +18,6 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-namespace mlir::qco::native_synth {
-bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix);
-} // namespace mlir::qco::native_synth
-
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
@@ -50,134 +46,9 @@ bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix);
 #include <tuple>
 #include <vector>
 
-namespace {
-
-constexpr double SANITY_CHECK_PRECISION = 1e-12;
-
-[[nodiscard]] bool isUnitaryMatrix(const mlir::qco::Matrix2x2& matrix,
-                                   double tolerance = 1e-12) {
-  return (matrix.adjoint() * matrix).isIdentity(tolerance);
-}
-
-[[nodiscard]] double remEuclid(double a, double b) {
-  if (b == 0.0) {
-    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
-  }
-  const auto r = std::fmod(a, b);
-  return (r < 0.0) ? r + std::abs(b) : r;
-}
-
-[[nodiscard]] double traceToFidelity(const std::complex<double>& x) {
-  const auto xAbs = std::abs(x);
-  return (4.0 + (xAbs * xAbs)) / 20.0;
-}
-
-[[nodiscard]] std::complex<double> globalPhaseFactor(double globalPhase) {
-  return std::exp(std::complex<double>{0, 1} * globalPhase);
-}
-
-[[nodiscard]] mlir::qco::Matrix4x4 rxxMatrix(double theta) {
-  const auto cosTheta = std::cos(theta / 2.);
-  const mlir::qco::Complex misin{0., -std::sin(theta / 2.)};
-  return mlir::qco::Matrix4x4::fromElements(cosTheta, 0, 0, misin, //
-                                            0, cosTheta, misin, 0, //
-                                            0, misin, cosTheta, 0, //
-                                            misin, 0, 0, cosTheta);
-}
-
-[[nodiscard]] mlir::qco::Matrix4x4 ryyMatrix(double theta) {
-  const auto cosTheta = std::cos(theta / 2.);
-  const mlir::qco::Complex isin{0., std::sin(theta / 2.)};
-  const mlir::qco::Complex misin{0., -std::sin(theta / 2.)};
-  return mlir::qco::Matrix4x4::fromElements(cosTheta, 0, 0, isin,  //
-                                            0, cosTheta, misin, 0, //
-                                            0, misin, cosTheta, 0, //
-                                            isin, 0, 0, cosTheta);
-}
-
-[[nodiscard]] mlir::qco::Matrix4x4 rzzMatrix(double theta) {
-  const auto cosTheta = std::cos(theta / 2.);
-  const auto sinTheta = std::sin(theta / 2.);
-  const mlir::qco::Complex em{cosTheta, -sinTheta};
-  const mlir::qco::Complex ep{cosTheta, sinTheta};
-  return mlir::qco::Matrix4x4::fromElements(em, 0, 0, 0, //
-                                            0, ep, 0, 0, //
-                                            0, 0, ep, 0, //
-                                            0, 0, 0, em);
-}
-
-[[nodiscard]] const mlir::qco::Matrix4x4& cxGate01() {
-  static const mlir::qco::Matrix4x4 matrix =
-      mlir::qco::Matrix4x4::fromElements(1, 0, 0, 0, //
-                                         0, 1, 0, 0, //
-                                         0, 0, 0, 1, //
-                                         0, 0, 1, 0);
-  return matrix;
-}
-
-[[nodiscard]] const mlir::qco::Matrix4x4& cxGate10() {
-  static const mlir::qco::Matrix4x4 matrix =
-      mlir::qco::Matrix4x4::fromElements(1, 0, 0, 0, //
-                                         0, 0, 0, 1, //
-                                         0, 0, 1, 0, //
-                                         0, 1, 0, 0);
-  return matrix;
-}
-
-[[nodiscard]] std::vector<std::complex<double>>
-randomUnitaryData(std::size_t dim, std::mt19937& rng) {
-  std::normal_distribution<double> normalDist(0.0, 1.0);
-  std::vector<std::vector<std::complex<double>>> columns(
-      dim, std::vector<std::complex<double>>(dim));
-  for (auto& column : columns) {
-    for (auto& entry : column) {
-      entry = std::complex<double>(normalDist(rng), normalDist(rng));
-    }
-  }
-  for (std::size_t j = 0; j < dim; ++j) {
-    for (std::size_t k = 0; k < j; ++k) {
-      std::complex<double> projection{0.0, 0.0};
-      for (std::size_t i = 0; i < dim; ++i) {
-        projection += std::conj(columns[k][i]) * columns[j][i];
-      }
-      for (std::size_t i = 0; i < dim; ++i) {
-        columns[j][i] -= projection * columns[k][i];
-      }
-    }
-    double norm = 0.0;
-    for (std::size_t i = 0; i < dim; ++i) {
-      norm += std::norm(columns[j][i]);
-    }
-    norm = std::sqrt(norm);
-    for (std::size_t i = 0; i < dim; ++i) {
-      columns[j][i] /= norm;
-    }
-  }
-  std::vector<std::complex<double>> data(dim * dim);
-  for (std::size_t row = 0; row < dim; ++row) {
-    for (std::size_t col = 0; col < dim; ++col) {
-      data[(row * dim) + col] = columns[col][row];
-    }
-  }
-  return data;
-}
-
-[[nodiscard]] mlir::qco::Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
-  const auto data = randomUnitaryData(4, rng);
-  const mlir::qco::Matrix4x4 unitary = mlir::qco::Matrix4x4::fromElements(
-      data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-      data[8], data[9], data[10], data[11], data[12], data[13], data[14],
-      data[15]);
-  assert((unitary.adjoint() * unitary).isIdentity(1e-12));
-  return unitary;
-}
-
-} // namespace
-
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-using namespace mlir::qco::native_synth;
 using namespace mqt::test;
 
 // Weyl / basis / helpers.
@@ -224,7 +95,7 @@ public:
 
   [[nodiscard]] static std::complex<double>
   globalPhaseFactor(const TwoQubitWeylDecomposition& decomposition) {
-    return ::globalPhaseFactor(decomposition.globalPhase());
+    return mqt::test::globalPhaseFactor(decomposition.globalPhase());
   }
   [[nodiscard]] static Matrix4x4
   can(const TwoQubitWeylDecomposition& decomposition) {
@@ -291,8 +162,7 @@ TEST(WeylDecompositionStandalone, Random) {
 
     // The reconstruction accuracy is bounded by the iterative diagonalization
     // residual rather than the (much tighter) default matrix tolerance.
-    EXPECT_TRUE(
-        restoredMatrix.isApprox(originalMatrix, SANITY_CHECK_PRECISION));
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, kSanityCheckPrecision));
   }
 }
 
@@ -416,8 +286,7 @@ TEST(BasisDecomposerTest, Random) {
 
     // Reconstruction accumulates the Weyl diagonalization residual through up
     // to three entangler layers, so allow a correspondingly relaxed tolerance.
-    EXPECT_TRUE(
-        restoredMatrix.isApprox(originalMatrix, SANITY_CHECK_PRECISION));
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, kSanityCheckPrecision));
   }
 }
 
@@ -478,7 +347,69 @@ INSTANTIATE_TEST_SUITE_P(
 
 namespace {
 
-[[nodiscard]] static std::optional<Value>
+static void fusionCxCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.cx(q0, q1);
+}
+
+static void fusionHCxInterleavedTCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.cx(q0, q1);
+  b.t(q1);
+  b.s(q0);
+  b.cx(q0, q1);
+}
+
+static void fusionThreeLineCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  b.cx(q0, q1);
+  b.cx(q1, q2);
+  b.cx(q0, q1);
+}
+
+static void fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.barrier({q0, q1});
+  b.cx(q0, q1);
+}
+
+static void fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.cx(q1, q0);
+  b.cx(q0, q1);
+}
+
+static void fusionHRzzSRzz(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.h(q0);
+  b.rzz(-0.29, q0, q1);
+  b.s(q1);
+  b.rzz(0.17, q0, q1);
+}
+
+} // namespace
+
+namespace {
+
+using mqt::test::cxGate01;
+using mqt::test::czGate;
+using mqt::test::expandToTwoQubits;
+using mqt::test::fixTwoQubitMatrixQubitOrder;
+using mqt::test::isEquivalentUpToGlobalPhase;
+using mqt::test::QubitId;
+
+[[nodiscard]] std::optional<Value>
 getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
@@ -490,7 +421,7 @@ getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-[[nodiscard]] static std::optional<Value>
+[[nodiscard]] std::optional<Value>
 getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
@@ -502,12 +433,12 @@ getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-static bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
-                                     Matrix2x2& out) {
+[[nodiscard]] bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
+                                            Matrix2x2& out) {
   if (op.getUnitaryMatrix2x2(out)) {
     return true;
   }
-  qco::DynamicMatrix dynamic;
+  DynamicMatrix dynamic;
   if (!op.getUnitaryMatrixDynamic(dynamic) || dynamic.rows() != 2 ||
       dynamic.cols() != 2) {
     return false;
@@ -517,14 +448,27 @@ static bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
   return true;
 }
 
-static bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Matrix4x4& out) {
-  if (getBlockTwoQubitMatrix(op.getOperation(), out)) {
-    return true;
+[[nodiscard]] bool extractTwoQubitMatrix(qco::UnitaryOpInterface op,
+                                         Matrix4x4& out) {
+  if (auto ctrl = llvm::dyn_cast<qco::CtrlOp>(op.getOperation())) {
+    if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
+      return false;
+    }
+    auto* body = ctrl.getBodyUnitary(0).getOperation();
+    if (llvm::isa<qco::XOp>(body)) {
+      out = cxGate01();
+      return true;
+    }
+    if (llvm::isa<qco::ZOp>(body)) {
+      out = czGate();
+      return true;
+    }
+    return false;
   }
   return op.getUnitaryMatrix4x4(out);
 }
 
-static std::optional<Matrix4x4>
+[[nodiscard]] std::optional<Matrix4x4>
 computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   ModuleOp module = moduleOp.get();
   if (!module) {
@@ -626,6 +570,17 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   return unitary;
 }
 
+void expectTwoQubitQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
+                                        const OwningOpRef<ModuleOp>& rhs) {
+  const auto lhsUnitary = computeTwoQubitUnitaryFromModule(lhs);
+  ASSERT_TRUE(lhsUnitary.has_value());
+  const auto rhsUnitary = computeTwoQubitUnitaryFromModule(rhs);
+  ASSERT_TRUE(rhsUnitary.has_value());
+  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*lhsUnitary, *rhsUnitary));
+}
+
+} // namespace
+
 struct TwoQFuseFixture {
   std::unique_ptr<MLIRContext> context;
 
@@ -667,77 +622,20 @@ static OwningOpRef<ModuleOp> buildProgram(MLIRContext* ctx, ProgramT program) {
   return mlir::qc::QCProgramBuilder::build(ctx, program);
 }
 
-static void fusionCxCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.cx(q0, q1);
-  b.cx(q0, q1);
-}
-
-static void fusionHCxInterleavedTCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.h(q0);
-  b.cx(q0, q1);
-  b.t(q1);
-  b.s(q0);
-  b.cx(q0, q1);
-}
-
-static void fusionThreeLineCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  const auto q2 = b.allocQubit();
-  b.cx(q0, q1);
-  b.cx(q1, q2);
-  b.cx(q0, q1);
-}
-
-static void fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.cx(q0, q1);
-  b.barrier({q0, q1});
-  b.cx(q0, q1);
-}
-
-static void fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.cx(q0, q1);
-  b.cx(q1, q0);
-  b.cx(q0, q1);
-}
-
-static void fusionHRzzSRzz(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.h(q0);
-  b.rzz(-0.29, q0, q1);
-  b.s(q1);
-  b.rzz(0.17, q0, q1);
-}
-
 template <typename ProgramT>
 static void expectTwoQFusePreservesUnitary(MLIRContext* ctx, ProgramT program,
                                            StringRef nativeGates) {
   auto expected = buildProgram(ctx, program);
   ASSERT_TRUE(expected);
   ASSERT_TRUE(succeeded(runQcToQco(*expected)));
-  const auto expectedUnitary = computeTwoQubitUnitaryFromModule(expected);
-  ASSERT_TRUE(expectedUnitary.has_value());
 
   auto fused = buildProgram(ctx, program);
   ASSERT_TRUE(fused);
   ASSERT_TRUE(succeeded(runQcToQco(*fused)));
   ASSERT_TRUE(succeeded(runTwoQFuse(*fused, nativeGates)));
   ASSERT_TRUE(succeeded(verify(*fused)));
-  const auto fusedUnitary = computeTwoQubitUnitaryFromModule(fused);
-  ASSERT_TRUE(fusedUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*expectedUnitary, *fusedUnitary));
+  expectTwoQubitQcoModulesEquivalent(expected, fused);
 }
-
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // FuseTwoQubitUnitaryRuns tests

@@ -605,6 +605,34 @@ public:
   [[nodiscard]] bool isApprox(const DynamicMatrix& other,
                               double tol = MATRIX_TOLERANCE) const;
 
+  /**
+   * @brief Returns the trace of this matrix.
+   * @return Sum of diagonal entries.
+   */
+  [[nodiscard]] Complex trace() const;
+
+  /**
+   * @brief Matrix product `*this * rhs`.
+   * @param rhs Right-hand factor.
+   * @return Product of the two matrices.
+   */
+  [[nodiscard]] DynamicMatrix operator*(const DynamicMatrix& rhs) const;
+
+  /**
+   * @brief Element-wise scaling by a complex scalar.
+   * @param scalar Factor applied to every matrix entry.
+   * @return Scaled copy of this matrix.
+   */
+  [[nodiscard]] DynamicMatrix operator*(const Complex& scalar) const;
+
+  /**
+   * @brief Checks whether this matrix is approximately the identity.
+   * @param tol Maximum allowed complex modulus of each off-diagonal entry and
+   * each diagonal deviation from one.
+   * @return True when the matrix is close to the identity.
+   */
+  [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
@@ -645,6 +673,9 @@ inline constexpr bool
 /// @copydoc operator*(const Complex&, const Matrix2x2&)
 [[nodiscard]] Matrix4x4 operator*(const Complex& scalar,
                                   const Matrix4x4& matrix);
+/// @copydoc operator*(const Complex&, const Matrix2x2&)
+[[nodiscard]] DynamicMatrix operator*(const Complex& scalar,
+                                      const DynamicMatrix& matrix);
 
 /**
  * @brief Eigenvalues and eigenvectors of a real symmetric `4x4` matrix.
@@ -673,5 +704,46 @@ struct SymmetricEigen4 {
  */
 [[nodiscard]] SymmetricEigen4
 jacobiSymmetricEigen(const std::array<double, 16>& symmetric);
+
+/// `SWAP` on two qubits.
+[[nodiscard]] const Matrix4x4& twoQubitSwapMatrix();
+
+/**
+ * @brief Embed a single-qubit matrix into the two-qubit space on @p qubitIndex.
+ *
+ * @param qubitIndex `0` for the high bit, `1` for the low bit.
+ */
+[[nodiscard]] Matrix4x4 embedSingleQubitInTwoQubit(const Matrix2x2& matrix,
+                                                   std::size_t qubitIndex);
+
+/**
+ * @brief Reorder a two-qubit matrix to act on qubits `{0, 1}`.
+ *
+ * @param q0Index Wire index of operand 0; @p q1Index wire index of operand 1.
+ */
+[[nodiscard]] Matrix4x4 reorderTwoQubitMatrix(const Matrix4x4& matrix,
+                                              std::size_t q0Index,
+                                              std::size_t q1Index);
+
+/**
+ * @brief Embed a single-qubit matrix into an @p numQubits-qubit Hilbert space.
+ *
+ * Qubit @p qubitIndex uses the same MSB-first convention as
+ * @ref embedSingleQubitInTwoQubit.
+ */
+[[nodiscard]] DynamicMatrix embedSingleQubitInNqubit(const Matrix2x2& matrix,
+                                                     std::size_t numQubits,
+                                                     std::size_t qubitIndex);
+
+/**
+ * @brief Embed a two-qubit matrix into an @p numQubits-qubit Hilbert space.
+ *
+ * Operand 0 labels the high bit of the pair and acts on @p q0Index; operand 1
+ * labels the low bit and acts on @p q1Index.
+ */
+[[nodiscard]] DynamicMatrix embedTwoQubitInNqubit(const Matrix4x4& matrix,
+                                                  std::size_t numQubits,
+                                                  std::size_t q0Index,
+                                                  std::size_t q1Index);
 
 } // namespace mlir::qco

@@ -364,6 +364,34 @@ TEST(UnitaryMatrix4x4, KroneckerProduct) {
                                                   0, 0, 1, 0)));
 }
 
+TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
+  const Matrix2x2 x = pauliX();
+  const Matrix4x4 cx = Matrix4x4::fromElements(1, 0, 0, 0, //
+                                               0, 1, 0, 0, //
+                                               0, 0, 0, 1, //
+                                               0, 0, 1, 0);
+  EXPECT_TRUE(embedSingleQubitInNqubit(x, 2, 0).isApprox(
+      embedSingleQubitInTwoQubit(x, 0)));
+  EXPECT_TRUE(embedTwoQubitInNqubit(cx, 2, 0, 1)
+                  .isApprox(reorderTwoQubitMatrix(cx, 0, 1)));
+  const DynamicMatrix cxOn01 = embedTwoQubitInNqubit(cx, 3, 0, 1);
+  const DynamicMatrix cxOn12 = embedTwoQubitInNqubit(cx, 3, 1, 2);
+  EXPECT_EQ(cxOn01.rows(), 8);
+  EXPECT_EQ(cxOn12.rows(), 8);
+  EXPECT_FALSE(cxOn01.isApprox(cxOn12));
+}
+
+TEST(UnitaryDynamicMatrix, MultiplyTraceAndScalar) {
+  const Matrix2x2 x = pauliX();
+  const DynamicMatrix embedded = embedSingleQubitInNqubit(x, 2, 0);
+  EXPECT_FALSE(embedded.isIdentity());
+  const Complex scalar = std::exp(1i * 0.3);
+  EXPECT_TRUE((scalar * embedded).isApprox(embedded * scalar));
+  const DynamicMatrix product = embedded * embedded;
+  EXPECT_TRUE(product.isIdentity());
+  EXPECT_NEAR(product.trace().real(), 4.0, 1e-12);
+}
+
 TEST(UnitaryMatrix2x2, ScalarLeftMultiply) {
   const Matrix2x2 x = pauliX();
   const Complex scalar = std::exp(1i * 0.5);
