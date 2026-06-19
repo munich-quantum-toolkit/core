@@ -15,11 +15,11 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Graph.h"
+#include "mlir/Dialect/QCO/Utils/Layout.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -51,10 +51,8 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
-#include <numeric>
 #include <random>
 #include <ranges>
-#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -77,148 +75,6 @@ private:
   using Window = SmallVector<IndexPairType>;
 
   enum class RoutingMode : std::uint8_t { Cold, Hot };
-
-  /**
-   * @brief A qubit layout that maps program and hardware indices without
-   * storing Values. Used for efficient memory usage when Value tracking isn't
-   * needed.
-   *
-   * Note that we use the terminology "hardware" and "program" qubits here,
-   * because "virtual" (opposed to physical) and "static" (opposed to dynamic)
-   * are C++ keywords.
-   */
-  class [[nodiscard]] Layout {
-  public:
-    /**
-     * @brief Constructs the identity (i->i) layout.
-     * @param nqubits The number of qubits.
-     * @return The identity layout.
-     */
-    static Layout identity(const size_t nqubits) {
-      Layout layout(nqubits);
-      for (size_t i = 0; i < nqubits; ++i) {
-        layout.add(i, i);
-      }
-      return layout;
-    }
-
-    /**
-     * @brief Constructs a random layout.
-     * @param nqubits The number of qubits.
-     * @param seed A seed for randomization.
-     * @return The random layout.
-     */
-    static Layout random(const size_t nqubits, const size_t seed) {
-      SmallVector<IndexType> mapping(nqubits);
-      std::iota(mapping.begin(), mapping.end(), IndexType{0});
-      std::ranges::shuffle(mapping, std::mt19937_64{seed});
-
-      Layout layout(nqubits);
-      for (const auto [prog, hw] : enumerate(mapping)) {
-        layout.add(prog, hw);
-      }
-
-      return layout;
-    }
-
-    /**
-     * @brief Insert program:hardware index mapping.
-     * @param prog The program index.
-     * @param hw The hardware index.
-     */
-    void add(IndexType prog, IndexType hw) {
-      assert(prog < programToHardware_.size() &&
-             "add: program index out of bounds");
-      assert(hw < hardwareToProgram_.size() &&
-             "add: hardware index out of bounds");
-      programToHardware_[prog] = hw;
-      hardwareToProgram_[hw] = prog;
-    }
-
-    /**
-     * @brief Look up program index for a hardware index.
-     * @param hw The hardware index.
-     * @return The program index of the respective hardware index.
-     */
-    [[nodiscard]] IndexType getProgramIndex(const IndexType hw) const {
-      assert(hw < hardwareToProgram_.size() &&
-             "getProgramIndex: hardware index out of bounds");
-      return hardwareToProgram_[hw];
-    }
-
-    /**
-     * @brief Look up hardware index for a program index.
-     * @param prog The program index.
-     * @return The hardware index of the respective program index.
-     */
-    [[nodiscard]] IndexType getHardwareIndex(const IndexType prog) const {
-      assert(prog < programToHardware_.size() &&
-             "getHardwareIndex: program index out of bounds");
-      return programToHardware_[prog];
-    }
-
-    /**
-     * @brief Convenience function to lookup multiple hardware indices at once.
-     * @param progs The program indices.
-     * @return A tuple of hardware indices.
-     */
-    template <typename... ProgIndices>
-      requires(sizeof...(ProgIndices) > 0) &&
-              ((std::is_convertible_v<ProgIndices, IndexType>) && ...)
-    [[nodiscard]] auto getHardwareIndices(ProgIndices... progs) const {
-      return std::tuple{getHardwareIndex(static_cast<IndexType>(progs))...};
-    }
-
-    /**
-     * @brief Convenience function to lookup multiple program indices at once.
-     * @param hws The hardware indices.
-     * @return A tuple of program indices.
-     */
-    template <typename... HwIndices>
-      requires(sizeof...(HwIndices) > 0) &&
-              ((std::is_convertible_v<HwIndices, size_t>) && ...)
-    [[nodiscard]] auto getProgramIndices(HwIndices... hws) const {
-      return std::tuple{getProgramIndex(static_cast<IndexType>(hws))...};
-    }
-
-    /**
-     * @brief Swap the mapping to program indices of two hardware indices.
-     */
-    void swap(const IndexType hw0, const IndexType hw1) {
-      const auto prog0 = hardwareToProgram_[hw0];
-      const auto prog1 = hardwareToProgram_[hw1];
-
-      std::swap(hardwareToProgram_[hw0], hardwareToProgram_[hw1]);
-      std::swap(programToHardware_[prog0], programToHardware_[prog1]);
-    }
-
-    /**
-     * @returns the number of qubits managed by the layout.
-     */
-    [[nodiscard]] size_t nqubits() const { return programToHardware_.size(); }
-
-    /**
-     * @returns the program to hardware mapping.
-     */
-    [[nodiscard]] ArrayRef<IndexType> getProgramToHardware() const {
-      return programToHardware_;
-    }
-
-  protected:
-    /**
-     * @brief Maps a program qubit index to its hardware index.
-     */
-    SmallVector<IndexType> programToHardware_;
-
-    /**
-     * @brief Maps a hardware qubit index to its program index.
-     */
-    SmallVector<IndexType> hardwareToProgram_;
-
-  private:
-    explicit Layout(const size_t nqubits)
-        : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
-  };
 
   class [[nodiscard]] AugmentedDevice {
   public:
@@ -411,6 +267,8 @@ protected:
       return;
     }
 
+    // TODO: This really should be checked with an query to an previously run
+    // analysis pass...
     if (wires->size() > device.nqubits()) {
       func.emitError()
           << "requires " + Twine(wires.value().size()) +
@@ -902,6 +760,8 @@ private:
     return window;
   }
 
+  /// Return the sequence of SWAPs to move from one layout to another.
+  /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
     SmallVector<IndexPairType> swaps;
 
@@ -1033,9 +893,6 @@ private:
         // Preserve program-indexed wire semantics.
         wires[prog0] = WireIterator(out1);
         wires[prog1] = WireIterator(out0);
-
-        assert(isa<SWAPOp>(w0.operation()));
-        assert(isa<SWAPOp>(w1.operation()));
       }
 
       layout.swap(hw0, hw1);
