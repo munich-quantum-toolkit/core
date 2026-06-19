@@ -988,8 +988,7 @@ private:
                 [&](BarrierOp op) { released.emplace_back(op); })
             .template Case<scf::ForOp>([&](scf::ForOp op) {
               // TODO: Don't ignore result here.
-              std::ignore =
-                  routeForLoop<Direction, Mode>(op, layout, stats, rewriter);
+              std::ignore = route<Direction, Mode>(op, layout, stats, rewriter);
 
               released.emplace_back(op);
             });
@@ -1022,10 +1021,7 @@ private:
         const auto in0 = w0.qubit();
         const auto in1 = w1.qubit();
 
-        // Hot routing is only called on the forward direction. Hence,
-        // setInsertionPoint*After*Value is valid here.
-
-        rewriter->setInsertionPointAfterValue(in0);
+        rewriter->setInsertionPointAfterValue(in0); // Valid bc. Hot => Forward.
         auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
 
         const auto out0 = swapOp.getQubit0Out();
@@ -1055,10 +1051,9 @@ private:
    * @returns failure() if A* search isn't able to find a solution.
    */
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
+    requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   LogicalResult route(SmallVector<WireIterator>& wires, Layout& layout,
                       Statistics& stats, IRRewriter* rewriter = nullptr) {
-    using Traits = WireTraversalTraits<Direction>;
-
     while (true) {
       advanceAndRecurse<Direction, Mode>(wires, layout, stats, rewriter);
 
@@ -1082,9 +1077,7 @@ private:
         // gates.
 
         for (auto& it : wires) {
-          std::ranges::advance(it, it == std::default_sentinel
-                                       ? -2 * Traits::stride()
-                                       : -Traits::stride());
+          std::ranges::advance(it, it == std::default_sentinel ? -2 : -1);
         }
       }
 
@@ -1100,9 +1093,7 @@ private:
         // multi-qubit op of the current or subsequent layer or to a sink (and
         // thus std::default_sentinel).
 
-        llvm::for_each(wires, [](auto& it) {
-          std::ranges::advance(it, Traits::stride());
-        });
+        llvm::for_each(wires, [](auto& it) { std::ranges::advance(it, 1); });
       }
 
       stats.nswaps += swaps->size();
@@ -1112,9 +1103,9 @@ private:
   }
 
   template <WireDirection Direction, RoutingMode Mode>
-  LogicalResult routeForLoop(scf::ForOp op, Layout& base, Statistics& stats,
-                             IRRewriter* rewriter) {
-    using Traits = WireTraversalTraits<Direction>;
+    requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
+  LogicalResult route(scf::ForOp op, Layout& base, Statistics& stats,
+                      IRRewriter* rewriter) {
 
     assert(llvm::all_of(op.getInitArgs(),
                         [](Value v) { return isa<QubitType>(v.getType()); }));
@@ -1138,18 +1129,13 @@ private:
       return failure();
     }
 
-    const auto swaps = restore(remote, base);
-
     if constexpr (Mode == RoutingMode::Hot) {
-      assert(llvm::all_of(wires, [](const WireIterator& it) {
-        return it == std::default_sentinel;
-      }));
-
-      llvm::for_each(wires, [](auto& it) {
-        std::ranges::advance(it, -2 * Traits::stride());
-      });
+      assert(llvm::all_of(
+          wires, [](const auto& it) { return it == std::default_sentinel; }));
+      llvm::for_each(wires, [](auto& it) { std::ranges::advance(it, -2); });
     }
 
+    const auto swaps = restore(remote, base);
     insertSWAPs<Mode>(swaps, wires, remote, rewriter);
     stats.nswaps += swaps.size();
 
