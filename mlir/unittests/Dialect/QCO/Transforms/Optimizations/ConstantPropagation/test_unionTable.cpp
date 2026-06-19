@@ -72,7 +72,7 @@ protected:
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     swapOp = SWAPOp::create(programBuilder, programBuilder.getLoc(),
-                            {q[0].getType()}, {q[0], q[1], q[2], q[3]});
+                            {q[0].getType(), q[1].getType()}, {q[0], q[1]});
 
     v0 = q[0];
     v1 = q[1];
@@ -629,7 +629,7 @@ TEST_F(UnionTablePropertiesTest, bitAlwaysZeroIsTrueOneIsFalse) {
 }
 
 TEST_F(UnionTablePropertiesTest, bitAlwaysZeroIsFalseOneIsTrue) {
-  const std::vector ctrl = {i0};
+  std::vector ctrl = {i0};
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q1, q5, q4);
