@@ -30,7 +30,7 @@ std::string UnionTable::toString() const {
   std::string result;
   for (const auto& entry : entries) {
     std::vector<unsigned int> qubitIndices;
-    for (const auto& q : entry.participatingQubits) {
+    for (const auto& q : entry->participatingQubits) {
       qubitIndices.push_back(qubitsToGlobalIndices.at(q));
     }
     std::ranges::sort(qubitIndices, std::greater<int>());
@@ -40,7 +40,7 @@ std::string UnionTable::toString() const {
     }
     result += ", HybridStates: {";
     bool first = true;
-    for (HybridState const& hs : entry.states) {
+    for (HybridState const& hs : entry->states) {
       if (!first) {
         result += " ";
       }
@@ -57,7 +57,7 @@ bool UnionTable::areStatesAllTop() {
     return true;
   }
   for (const auto& ute : entries) {
-    if (!ute.top) {
+    if (!ute->top) {
       return false;
     }
   }
@@ -186,14 +186,15 @@ void UnionTable::propagateQubitAlloc(const Value qubit) {
     maxIndex = std::ranges::max(qubitsToGlobalIndices.values()) + 1;
   }
   std::vector globalQubitIndex = {maxIndex};
-  auto hs = HybridState(globalQubitIndex, maxNonzeroAmplitudes);
+  const auto hs = HybridState(globalQubitIndex, maxNonzeroAmplitudes);
 
   qubitsToGlobalIndices[qubit] = maxIndex;
   auto ute = UnionTableEntry();
   ute.states.push_back(hs);
   ute.participatingQubits.insert(qubit);
-  entries.insert(ute);
-  valuesToEntries[qubit] = std::make_shared<UnionTableEntry>(ute);
+  const auto ptrToUTE = std::make_shared<UnionTableEntry>(ute);
+  entries.insert(ptrToUTE);
+  valuesToEntries[qubit] = ptrToUTE;
 }
 
 void UnionTable::propagateIntAlloc(const Value intValue, const int64_t number) {
@@ -203,7 +204,7 @@ void UnionTable::propagateIntAlloc(const Value intValue, const int64_t number) {
   auto ute = UnionTableEntry();
   ute.states.push_back(hs);
   ute.participatingClassicalValues.insert(intValue);
-  entries.insert(ute);
+  entries.insert(std::make_shared<UnionTableEntry>(ute));
   valuesToEntries[intValue] = std::make_shared<UnionTableEntry>(ute);
 }
 
@@ -215,7 +216,7 @@ void UnionTable::propagateDoubleAlloc(const Value doubleValue,
   auto ute = UnionTableEntry();
   ute.states.push_back(hs);
   ute.participatingClassicalValues.insert(doubleValue);
-  entries.insert(ute);
+  entries.insert(std::make_shared<UnionTableEntry>(ute));
   valuesToEntries[doubleValue] = std::make_shared<UnionTableEntry>(ute);
 }
 

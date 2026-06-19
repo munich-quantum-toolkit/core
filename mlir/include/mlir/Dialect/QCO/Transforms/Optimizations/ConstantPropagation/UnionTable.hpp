@@ -70,7 +70,7 @@ class UnionTable {
   std::size_t maximumHybridEntries;
   llvm::DenseMap<Value, std::shared_ptr<UnionTableEntry>> valuesToEntries =
       llvm::DenseMap<Value, std::shared_ptr<UnionTableEntry>>();
-  std::set<UnionTableEntry> entries;
+  std::set<std::shared_ptr<UnionTableEntry>> entries;
   llvm::DenseMap<Value, unsigned int> qubitsToGlobalIndices;
 
   /** @brief: Replaces values globally by new values
@@ -89,7 +89,7 @@ class UnionTable {
     for (unsigned int i = 0; i < replacedValues.size(); ++i) {
       const auto rV = replacedValues[i];
       const auto nV = newValues[i];
-      qubitsToGlobalIndices[nV] = qubitsToGlobalIndices[rV];
+      qubitsToGlobalIndices[nV] = qubitsToGlobalIndices.at(rV);
       qubitsToGlobalIndices.erase(rV);
       const auto ute = valuesToEntries.at(rV);
       valuesToEntries.erase(rV);
@@ -150,9 +150,13 @@ class UnionTable {
       topUnionTableEntry.participatingClassicalValues.insert(
           e.participatingClassicalValues.begin(),
           e.participatingClassicalValues.end());
-      entries.erase(e);
+      auto it = std::ranges::find_if(
+          entries, [&](auto const& entry) { return *entry == e; });
+      if (it != entries.end()) {
+        entries.erase(it);
+      }
     }
-    entries.insert(topUnionTableEntry);
+    entries.insert(std::make_shared<UnionTableEntry>(topUnionTableEntry));
   }
 
   /**
@@ -221,9 +225,13 @@ class UnionTable {
       valuesToEntries[v] = std::make_shared<UnionTableEntry>(newEntry);
     }
     for (const auto& e : entriesToUnify) {
-      entries.erase(e);
+      auto it = std::ranges::find_if(
+          entries, [&](auto const& entry) { return *entry == e; });
+      if (it != entries.end()) {
+        entries.erase(it);
+      }
     }
-    entries.insert(newEntry);
+    entries.insert(std::make_shared<UnionTableEntry>(newEntry));
   }
 
 public:
