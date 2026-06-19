@@ -32,49 +32,41 @@ cx q[0], q[1];
 
 inline constexpr const char* QASM3_MALFORMED = "Definitely not OpenQASM";
 
-// A slightly heavier 7-qubit sampling circuit to prolong runtime slightly while
+// A slightly heavier dynamic sampling circuit to prolong runtime slightly while
 // remaining fast
 inline constexpr auto QASM3_HEAVY_SAMPLING = R"(
 OPENQASM 3;
 include "stdgates.inc";
-qubit[11] q;
-bit[11] c;
+qubit[5] q;
+bit[5] c;
 // GHZ-like entanglement chain
 h q[0];
 cx q[0], q[1];
 cx q[1], q[2];
 cx q[2], q[3];
 cx q[3], q[4];
-cx q[4], q[5];
-cx q[5], q[6];
-cx q[6], q[7];
-cx q[7], q[8];
-cx q[8], q[9];
-cx q[9], q[10];
 // Some single-qubit rotations for additional depth
 rx(0.7) q[0];
 ry(0.5) q[1];
 rz(1.1) q[2];
 ry(0.3) q[3];
 rx(0.9) q[4];
-rz(0.4) q[5];
-rx(0.2) q[6];
-rz(0.8) q[7];
-ry(0.6) q[8];
-rz(0.4) q[9];
-rx(0.5) q[10];
 // Reverse entanglement to add more two-qubit layers
-cx q[9], q[10];
-cx q[8], q[9];
-cx q[7], q[8];
-cx q[6], q[7];
-cx q[5], q[6];
-cx q[4], q[5];
 cx q[3], q[4];
 cx q[2], q[3];
 cx q[1], q[2];
 cx q[0], q[1];
 // Measure all qubits
+c = measure q;
+// Add dynamic component
+if (c == 3) {
+  rx(0.7) q[0];
+  ry(0.5) q[1];
+  rz(1.1) q[2];
+  ry(0.3) q[3];
+  rx(0.9) q[4];
+}
+// Measure all qubits again
 c = measure q;
 )";
 
