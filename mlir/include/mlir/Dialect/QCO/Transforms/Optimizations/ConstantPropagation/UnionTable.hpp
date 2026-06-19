@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <set>
 #include <span>
+#include <stdexcept>
 
 namespace mlir::qco {
 
@@ -37,7 +38,7 @@ struct UnionTableEntry {
   bool top = false;
   std::vector<HybridState> states = {};
   // Values and global indices of the participating qubits
-  llvm::DenseMap<Value, unsigned int> participatingQubits;
+  llvm::DenseSet<Value> participatingQubits = {};
   llvm::DenseSet<Value> participatingClassicalValues = {};
 
   bool operator<(const UnionTableEntry& ute) const noexcept {
@@ -70,6 +71,7 @@ class UnionTable {
   llvm::DenseMap<Value, std::shared_ptr<UnionTableEntry>> valuesToEntries =
       llvm::DenseMap<Value, std::shared_ptr<UnionTableEntry>>();
   std::set<UnionTableEntry> entries;
+  llvm::DenseMap<Value, unsigned int> qubitsToGlobalIndices;
 
   /** @brief: Replaces values globally by new values
    *
@@ -77,8 +79,8 @@ class UnionTable {
    * @param newValues Values the first values are replaced with.
    * @throws runtime_error if the size of the two parameters is not equal.
    */
-  void replaceValuesGlobally(std::span<Value> replacedValues,
-                             std::span<Value> newValues) {
+  void replaceValuesGlobally(const std::span<Value> replacedValues,
+                             const std::span<Value> newValues) {
     if (replacedValues.size() != newValues.size()) {
       throw std::domain_error(
           "replacedValues and newValues do not have the same size.");
@@ -87,11 +89,13 @@ class UnionTable {
     for (unsigned int i = 0; i < replacedValues.size(); ++i) {
       const auto rV = replacedValues[i];
       const auto nV = newValues[i];
+      qubitsToGlobalIndices[nV] = qubitsToGlobalIndices[rV];
+      qubitsToGlobalIndices.erase(rV);
       const auto ute = valuesToEntries.at(rV);
       valuesToEntries.erase(rV);
       valuesToEntries[nV] = ute;
       if (ute->participatingQubits.contains(rV)) {
-        ute->participatingQubits[nV] = ute->participatingQubits[rV];
+        ute->participatingQubits.insert(nV);
         ute->participatingQubits.erase(rV);
       } else {
         ute->participatingClassicalValues.insert(nV);
@@ -108,10 +112,12 @@ class UnionTable {
    * @param negCtrlsClassical An array of the values of the negative ctrl bits.
    * @param params The parameter applied to the gate.
    */
-  std::set<UnionTableEntry> collectParticipatingEntries(
-      const std::span<Value> targets, const std::span<Value> ctrlsQuantum,
-      const std::span<Value> posCtrlsClassical,
-      const std::span<Value> negCtrlsClassical, const std::span<Value> params) {
+  std::set<UnionTableEntry>
+  collectParticipatingEntries(const std::span<Value> targets,
+                              const std::span<Value> ctrlsQuantum,
+                              const std::span<Value> posCtrlsClassical,
+                              const std::span<Value> negCtrlsClassical,
+                              const std::span<Value> params = {}) {
     std::set<UnionTableEntry> participatingEntries;
     for (auto const q : targets) {
       participatingEntries.insert(*valuesToEntries.at(q));
@@ -220,9 +226,6 @@ class UnionTable {
     entries.insert(newEntry);
   }
 
-  void applySwapGate(std::span<Value> targets,
-                     std::span<Value> newQuantumTargets) {}
-
 public:
   explicit UnionTable(std::size_t maxNonzeroAmplitudes,
                       std::size_t maximumHybridEntries);
@@ -235,7 +238,7 @@ public:
   std::string toString() const;
 
   [[nodiscard("UnionTable::allTop called but ignored")]]
-  bool areStatesAllTop() const;
+  bool areStatesAllTop();
 
   /**
    * @brief This method applies a gate to the qubits.
@@ -258,7 +261,7 @@ public:
                      std::span<Value> ctrlsQuantum = {},
                      std::span<Value> posCtrlsClassical = {},
                      std::span<Value> negCtrlsClassical = {},
-                     std::vector<Value> params = {});
+                     std::span<Value> params = {});
 
   /**
    * @brief This method applies a measurement.
