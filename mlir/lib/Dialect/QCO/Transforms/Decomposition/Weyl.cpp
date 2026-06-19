@@ -32,29 +32,26 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <random>
 #include <tuple>
 #include <utility>
 
-namespace {
-
-constexpr double SANITY_CHECK_PRECISION = 1e-12;
-/// Common constant `1/sqrt(2)` used by gate-matrix factories.
-inline constexpr double FRAC1_SQRT2 =
-    0.707106781186547524400844362104849039284835937688474036588L;
-
 using mlir::qco::Complex;
 using mlir::qco::Matrix2x2;
 using mlir::qco::Matrix4x4;
 
-[[nodiscard]] bool isUnitaryMatrix(const Matrix2x2& matrix,
-                                   double tolerance = 1e-12) {
+static constexpr double SANITY_CHECK_PRECISION = 1e-12;
+
+[[nodiscard]] static bool isUnitaryMatrix(const Matrix2x2& matrix,
+                                          double tolerance = 1e-12) {
   return (matrix.adjoint() * matrix).isIdentity(tolerance);
 }
 
-[[nodiscard]] double remEuclid(double a, double b) {
+[[nodiscard]] static double remEuclid(double a, double b) {
   if (b == 0.0) {
     llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
   }
@@ -62,16 +59,17 @@ using mlir::qco::Matrix4x4;
   return (r < 0.0) ? r + std::abs(b) : r;
 }
 
-[[nodiscard]] double traceToFidelity(const std::complex<double>& x) {
+[[nodiscard]] static double traceToFidelity(const std::complex<double>& x) {
   const auto xAbs = std::abs(x);
   return (4.0 + (xAbs * xAbs)) / 20.0;
 }
 
-[[nodiscard]] std::complex<double> globalPhaseFactor(double globalPhase) {
+[[nodiscard]] static std::complex<double>
+globalPhaseFactor(double globalPhase) {
   return std::exp(std::complex<double>{0, 1} * globalPhase);
 }
 
-[[nodiscard]] Matrix4x4 rxxMatrix(double theta) {
+[[nodiscard]] static Matrix4x4 rxxMatrix(double theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const Complex misin{0., -std::sin(theta / 2.)};
   return Matrix4x4::fromElements(cosTheta, 0, 0, misin, //
@@ -80,7 +78,7 @@ using mlir::qco::Matrix4x4;
                                  misin, 0, 0, cosTheta);
 }
 
-[[nodiscard]] Matrix4x4 ryyMatrix(double theta) {
+[[nodiscard]] static Matrix4x4 ryyMatrix(double theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const Complex isin{0., std::sin(theta / 2.)};
   const Complex misin{0., -std::sin(theta / 2.)};
@@ -90,7 +88,7 @@ using mlir::qco::Matrix4x4;
                                  isin, 0, 0, cosTheta);
 }
 
-[[nodiscard]] Matrix4x4 rzzMatrix(double theta) {
+[[nodiscard]] static Matrix4x4 rzzMatrix(double theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
   const Complex em{cosTheta, -sinTheta};
@@ -101,39 +99,37 @@ using mlir::qco::Matrix4x4;
                                  0, 0, 0, em);
 }
 
-[[nodiscard]] const Matrix4x4& swapGate() {
-  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+[[nodiscard]] static const Matrix4x4& swapGate() {
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
                                                           0, 0, 1, 0, //
                                                           0, 1, 0, 0, //
                                                           0, 0, 0, 1);
-  return matrix;
+  return MATRIX;
 }
 
-[[nodiscard]] const Matrix4x4& cxGate01() {
-  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+[[nodiscard]] static const Matrix4x4& cxGate01() {
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
                                                           0, 1, 0, 0, //
                                                           0, 0, 0, 1, //
                                                           0, 0, 1, 0);
-  return matrix;
+  return MATRIX;
 }
 
-[[nodiscard]] const Matrix4x4& cxGate10() {
-  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+[[nodiscard]] static const Matrix4x4& cxGate10() {
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
                                                           0, 0, 0, 1, //
                                                           0, 0, 1, 0, //
                                                           0, 1, 0, 0);
-  return matrix;
+  return MATRIX;
 }
 
-[[nodiscard]] const Matrix4x4& czGate() {
-  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+[[nodiscard]] static const Matrix4x4& czGate() {
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
                                                           0, 1, 0, 0, //
                                                           0, 0, 1, 0, //
                                                           0, 0, 0, -1);
-  return matrix;
+  return MATRIX;
 }
-
-} // namespace
 
 namespace mlir::qco::decomposition {
 
@@ -194,8 +190,8 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
     cstemp[i] = std::min(tmp, (pi / 2.0) - tmp);
   }
   std::array<std::size_t, 3> order{0, 1, 2};
-  std::stable_sort(order.begin(), order.end(),
-                   [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
+  std::ranges::stable_sort(
+      order, [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
   order = {order[1], order[2], order[0]};
   cs = {cs[order[0]], cs[order[1]], cs[order[2]]};
   {
@@ -1124,9 +1120,7 @@ bool TwoQubitBasisDecomposer::relativeEq(double lhs, double rhs, double epsilon,
 // Native-spec parsing and two-qubit synthesis
 //===----------------------------------------------------------------------===//
 
-namespace {
-
-constexpr double PI = std::numbers::pi;
+static constexpr double PI = std::numbers::pi;
 
 [[nodiscard]] static std::optional<NativeGateKind>
 parseGateToken(llvm::StringRef name) {
@@ -1279,8 +1273,6 @@ static void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc,
                                    /*runSize=*/0, /*hasNonBasisGate=*/true,
                                    basis);
 }
-
-} // namespace
 
 EulerBasis emitterEulerBasis(const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
@@ -1447,20 +1439,20 @@ Matrix2x2 rzMatrix(double theta) {
 }
 
 const Matrix2x2& ipz() {
-  static const Matrix2x2 matrix =
+  static const Matrix2x2 MATRIX =
       Matrix2x2::fromElements(Complex{0, 1}, 0, 0, Complex{0, -1});
-  return matrix;
+  return MATRIX;
 }
 
 const Matrix2x2& ipy() {
-  static const Matrix2x2 matrix = Matrix2x2::fromElements(0, 1, -1, 0);
-  return matrix;
+  static const Matrix2x2 MATRIX = Matrix2x2::fromElements(0, 1, -1, 0);
+  return MATRIX;
 }
 
 const Matrix2x2& ipx() {
-  static const Matrix2x2 matrix =
+  static const Matrix2x2 MATRIX =
       Matrix2x2::fromElements(0, Complex{0, 1}, Complex{0, 1}, 0);
-  return matrix;
+  return MATRIX;
 }
 
 } // namespace mlir::qco::decomposition

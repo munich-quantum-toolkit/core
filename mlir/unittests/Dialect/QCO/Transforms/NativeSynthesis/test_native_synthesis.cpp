@@ -16,12 +16,12 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -30,7 +30,6 @@
 #include <mlir/Dialect/QC/Builder/QCProgramBuilder.h>
 #include <mlir/Dialect/QC/IR/QCDialect.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
@@ -44,9 +43,11 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -58,9 +59,7 @@ using mqt::test::cxGate01;
 using mqt::test::czGate;
 using mqt::test::isEquivalentUpToGlobalPhase;
 
-namespace {
-
-[[nodiscard]] std::optional<mlir::Value>
+[[nodiscard]] static std::optional<mlir::Value>
 getUnitaryQubitOperand(mlir::qco::UnitaryOpInterface op, std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
@@ -72,7 +71,7 @@ getUnitaryQubitOperand(mlir::qco::UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-[[nodiscard]] std::optional<mlir::Value>
+[[nodiscard]] static std::optional<mlir::Value>
 getUnitaryQubitResult(mlir::qco::UnitaryOpInterface op, std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
@@ -84,8 +83,9 @@ getUnitaryQubitResult(mlir::qco::UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-[[nodiscard]] bool extractSingleQubitMatrix(mlir::qco::UnitaryOpInterface op,
-                                            mlir::qco::Matrix2x2& out) {
+[[nodiscard]] static bool
+extractSingleQubitMatrix(mlir::qco::UnitaryOpInterface op,
+                         mlir::qco::Matrix2x2& out) {
   if (op.getUnitaryMatrix2x2(out)) {
     return true;
   }
@@ -99,8 +99,9 @@ getUnitaryQubitResult(mlir::qco::UnitaryOpInterface op, std::size_t index) {
   return true;
 }
 
-[[nodiscard]] bool extractTwoQubitMatrix(mlir::qco::UnitaryOpInterface op,
-                                         mlir::qco::Matrix4x4& out) {
+[[nodiscard]] static bool
+extractTwoQubitMatrix(mlir::qco::UnitaryOpInterface op,
+                      mlir::qco::Matrix4x4& out) {
   if (auto ctrl = llvm::dyn_cast<mlir::qco::CtrlOp>(op.getOperation())) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
@@ -119,7 +120,7 @@ getUnitaryQubitResult(mlir::qco::UnitaryOpInterface op, std::size_t index) {
   return op.getUnitaryMatrix4x4(out);
 }
 
-[[nodiscard]] std::optional<mlir::qco::DynamicMatrix>
+[[nodiscard]] static std::optional<mlir::qco::DynamicMatrix>
 computeUnitaryFromModule(const mlir::OwningOpRef<mlir::ModuleOp>& moduleOp) {
   mlir::ModuleOp module = moduleOp.get();
   if (!module) {
@@ -231,8 +232,9 @@ computeUnitaryFromModule(const mlir::OwningOpRef<mlir::ModuleOp>& moduleOp) {
   return unitary;
 }
 
-void expectQcoModulesEquivalent(const mlir::OwningOpRef<mlir::ModuleOp>& lhs,
-                                const mlir::OwningOpRef<mlir::ModuleOp>& rhs) {
+static void
+expectQcoModulesEquivalent(const mlir::OwningOpRef<mlir::ModuleOp>& lhs,
+                           const mlir::OwningOpRef<mlir::ModuleOp>& rhs) {
   const auto lhsUnitary = computeUnitaryFromModule(lhs);
   ASSERT_TRUE(lhsUnitary.has_value());
   const auto rhsUnitary = computeUnitaryFromModule(rhs);
@@ -240,15 +242,15 @@ void expectQcoModulesEquivalent(const mlir::OwningOpRef<mlir::ModuleOp>& lhs,
   EXPECT_TRUE(isEquivalentUpToGlobalPhase(*lhsUnitary, *rhsUnitary));
 }
 
-} // namespace
-
 /// One row of the standard multi-profile equivalence sweeps in tests.
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_F` at global scope
 struct NativeSynthesisProfileSweepCase {
   const char* nativeGates;
   bool (*isNative)(mlir::OwningOpRef<mlir::ModuleOp>&);
 };
 
 /// Shared gtest fixture for native-gate synthesis pass tests.
+// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_F` at global scope
 class NativeSynthesisPassTest : public testing::Test {
 protected:
   void SetUp() override {
@@ -435,8 +437,6 @@ protected:
 
 using namespace mlir::qco::native_synth_test;
 
-namespace {
-
 struct NativeSynthMenuRow {
   const char* name;
   const char* nativeGates;
@@ -570,8 +570,6 @@ static void determinismSwap(mlir::qc::QCProgramBuilder& b) {
   b.dealloc(q0);
   b.dealloc(q1);
 }
-
-} // namespace
 
 // --- NativeSpec / NativePolicy ---
 

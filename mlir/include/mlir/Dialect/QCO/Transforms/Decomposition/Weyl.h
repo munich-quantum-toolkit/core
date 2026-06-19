@@ -498,7 +498,7 @@ twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec);
 
 /// Common constant `1/sqrt(2)` used by gate-matrix factories.
 inline constexpr double FRAC1_SQRT2 =
-    0.707106781186547524400844362104849039284835937688474036588L;
+    0.707106781186547524400844362104849039284835937688474036588;
 
 /// Axis rotations `exp(-i theta/2 * sigma_{x,y,z})`.
 [[nodiscard]] Matrix2x2 rxMatrix(double theta);

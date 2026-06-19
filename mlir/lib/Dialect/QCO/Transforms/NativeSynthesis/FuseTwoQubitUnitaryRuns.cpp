@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
@@ -20,14 +19,12 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
@@ -43,10 +40,9 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_FUSETWOQUBITUNITARYRUNS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-namespace {
-
-void collectUnitaryOpsInPreOrder(Operation* root,
-                                 llvm::SmallVectorImpl<Operation*>& ops) {
+static void
+collectUnitaryOpsInPreOrder(Operation* root,
+                            llvm::SmallVectorImpl<Operation*>& ops) {
   root->walk([&](Operation* op) {
     if (op->getParentOfType<CtrlOp>()) {
       return;
@@ -60,9 +56,9 @@ void collectUnitaryOpsInPreOrder(Operation* root,
   });
 }
 
-Value emitSingleQubitMatrix(IRRewriter& rewriter, Location loc, Value inQubit,
-                            const Matrix2x2& matrix,
-                            const decomposition::EulerBasis basis) {
+static Value emitSingleQubitMatrix(IRRewriter& rewriter, Location loc,
+                                   Value inQubit, const Matrix2x2& matrix,
+                                   const decomposition::EulerBasis basis) {
   // Force emission (`hasNonBasisGate = true`, `runSize = 0`) so the matrix is
   // always lowered into native gates of `basis`, including any residual
   // `qco.gphase`. With these arguments `synthesizeUnitary1QEuler` never
@@ -129,8 +125,8 @@ singleQubitNativeGateKind(UnitaryOpInterface op) {
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): test-visible (see comment above).
-bool allowsSingleQubitOp(UnitaryOpInterface op,
-                         const decomposition::NativeProfileSpec& spec) {
+static bool allowsSingleQubitOp(UnitaryOpInterface op,
+                                const decomposition::NativeProfileSpec& spec) {
   if (llvm::isa<BarrierOp, GPhaseOp>(op.getOperation())) {
     return true;
   }
@@ -138,7 +134,7 @@ bool allowsSingleQubitOp(UnitaryOpInterface op,
   return gate && spec.allowedGates.contains(*gate);
 }
 
-bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix) {
+static bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix) {
   if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
     return false;
   }
@@ -177,8 +173,8 @@ bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix) {
 /// native menu: a single-control `CX`/`CZ` consistent with the active
 /// entangler, or `Rzz` when `spec.allowRzz` is set. Multi-control and other
 /// two-qubit ops are considered non-native.
-bool isNativeTwoQubitOp(Operation* op,
-                        const decomposition::NativeProfileSpec& spec) {
+static bool isNativeTwoQubitOp(Operation* op,
+                               const decomposition::NativeProfileSpec& spec) {
   if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
@@ -201,15 +197,15 @@ bool isNativeTwoQubitOp(Operation* op,
 /// replace a window that contains any non-native op (we have to lower them
 /// anyway); otherwise only replace when the deterministic synthesizer uses
 /// strictly fewer entanglers than the window already contains.
-bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
-                                 std::uint8_t numBasisUses) {
+static bool shouldApplyBlockReplacement(const TwoQubitBlock& block,
+                                        std::uint8_t numBasisUses) {
   if (block.anyNonNative) {
     return true;
   }
   return numBasisUses < block.numTwoQ;
 }
 
-LogicalResult
+static LogicalResult
 materializeSingleTwoQubitBlock(IRRewriter& rewriter, const TwoQubitBlock& block,
                                const decomposition::NativeProfileSpec& spec) {
   Operation* firstOp = block.ops.front();
@@ -425,7 +421,7 @@ LogicalResult TwoQubitWindowConsolidator::materialize(
   return success();
 }
 
-LogicalResult
+static LogicalResult
 fuseTwoQubitUnitaryRuns(IRRewriter& rewriter, Operation* root,
                         const decomposition::NativeProfileSpec& spec) {
   llvm::SmallVector<Operation*, 32> ops;
@@ -445,9 +441,9 @@ struct OneQubitRun {
 /// If profitable, replace the run with one synthesized single-qubit op in
 /// `basis` (mirrors `FuseSingleQubitUnitaryRuns`). Fuses when any op is
 /// off-menu or when Euler resynthesis strictly shortens the run.
-bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
-                  const decomposition::EulerBasis basis,
-                  const decomposition::NativeProfileSpec& spec) {
+static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
+                         const decomposition::EulerBasis basis,
+                         const decomposition::NativeProfileSpec& spec) {
   Matrix2x2 fused = Matrix2x2::identity();
   for (UnitaryOpInterface u : run.ops) {
     Matrix2x2 m;
@@ -481,7 +477,7 @@ bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
 
 /// True when `op` lives in a `ctrl`/`inv` region body (not the shell op).
 /// Skips nested unitaries so they are handled via the enclosing modifier.
-bool isHiddenInsideCtrlOrInvBody(Operation* op) {
+static bool isHiddenInsideCtrlOrInvBody(Operation* op) {
   if (op->getParentOfType<CtrlOp>()) {
     return true;
   }
@@ -492,7 +488,7 @@ bool isHiddenInsideCtrlOrInvBody(Operation* op) {
 }
 
 /// Single-qubit op eligible for fusion (constant `2×2`, not under `ctrl`).
-UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
+static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
   if (!unitary || !unitary.isSingleQubit()) {
     return {};
@@ -902,5 +898,4 @@ private:
   }
 };
 
-} // namespace
 } // namespace mlir::qco

@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
@@ -574,19 +575,17 @@ bool DynamicMatrix::isIdentity(const double tol) const {
   return true;
 }
 
-namespace {
-
-[[nodiscard]] std::size_t qubitBitAt(const std::size_t index,
-                                     const std::size_t numQubits,
-                                     const std::size_t qubitIndex) {
-  return (index >> (numQubits - 1 - qubitIndex)) & 1U;
+[[nodiscard]] static std::size_t qubitBitAt(const std::size_t stateIndex,
+                                            const std::size_t numQubits,
+                                            const std::size_t qubitIndex) {
+  return (stateIndex >> (numQubits - 1 - qubitIndex)) & 1U;
 }
 
-[[nodiscard]] bool otherQubitBitsMatch(const std::size_t row,
-                                       const std::size_t col,
-                                       const std::size_t numQubits,
-                                       const std::size_t skipA,
-                                       const std::size_t skipB) {
+[[nodiscard]] static bool otherQubitBitsMatch(const std::size_t row,
+                                              const std::size_t col,
+                                              const std::size_t numQubits,
+                                              const std::size_t skipA,
+                                              const std::size_t skipB) {
   for (std::size_t q = 0; q < numQubits; ++q) {
     if (q == skipA || q == skipB) {
       continue;
@@ -598,10 +597,10 @@ namespace {
   return true;
 }
 
-[[nodiscard]] bool otherSingleQubitBitsMatch(const std::size_t row,
-                                             const std::size_t col,
-                                             const std::size_t numQubits,
-                                             const std::size_t skip) {
+[[nodiscard]] static bool otherSingleQubitBitsMatch(const std::size_t row,
+                                                    const std::size_t col,
+                                                    const std::size_t numQubits,
+                                                    const std::size_t skip) {
   for (std::size_t q = 0; q < numQubits; ++q) {
     if (q == skip) {
       continue;
@@ -612,8 +611,6 @@ namespace {
   }
   return true;
 }
-
-} // namespace
 
 Matrix2x2 operator*(const Complex& scalar, const Matrix2x2& matrix) {
   return matrix * scalar;
@@ -643,11 +640,11 @@ Matrix4x4 kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
 }
 
 const Matrix4x4& twoQubitSwapMatrix() {
-  static const Matrix4x4 matrix = Matrix4x4::fromElements(1, 0, 0, 0, //
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
                                                           0, 0, 1, 0, //
                                                           0, 1, 0, 0, //
                                                           0, 0, 0, 1);
-  return matrix;
+  return MATRIX;
 }
 
 Matrix4x4 embedSingleQubitInTwoQubit(const Matrix2x2& matrix,

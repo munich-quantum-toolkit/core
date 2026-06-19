@@ -14,15 +14,15 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/QC/IR/QCDialect.h>
@@ -44,7 +44,6 @@
 #include <optional>
 #include <random>
 #include <tuple>
-#include <vector>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -345,8 +344,6 @@ INSTANTIATE_TEST_SUITE_P(
               return kron(hGate(), ipz()) * cxGate01() * kron(ipx(), ipy());
             })));
 
-namespace {
-
 static void fusionCxCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
@@ -398,10 +395,6 @@ static void fusionHRzzSRzz(mlir::qc::QCProgramBuilder& b) {
   b.rzz(0.17, q0, q1);
 }
 
-} // namespace
-
-namespace {
-
 using mqt::test::cxGate01;
 using mqt::test::czGate;
 using mqt::test::expandToTwoQubits;
@@ -409,7 +402,7 @@ using mqt::test::fixTwoQubitMatrixQubitOrder;
 using mqt::test::isEquivalentUpToGlobalPhase;
 using mqt::test::QubitId;
 
-[[nodiscard]] std::optional<Value>
+[[nodiscard]] static std::optional<Value>
 getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
@@ -421,7 +414,7 @@ getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-[[nodiscard]] std::optional<Value>
+[[nodiscard]] static std::optional<Value>
 getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
@@ -433,8 +426,8 @@ getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-[[nodiscard]] bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
-                                            Matrix2x2& out) {
+[[nodiscard]] static bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
+                                                   Matrix2x2& out) {
   if (op.getUnitaryMatrix2x2(out)) {
     return true;
   }
@@ -448,8 +441,8 @@ getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
   return true;
 }
 
-[[nodiscard]] bool extractTwoQubitMatrix(qco::UnitaryOpInterface op,
-                                         Matrix4x4& out) {
+[[nodiscard]] static bool extractTwoQubitMatrix(qco::UnitaryOpInterface op,
+                                                Matrix4x4& out) {
   if (auto ctrl = llvm::dyn_cast<qco::CtrlOp>(op.getOperation())) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
@@ -468,7 +461,7 @@ getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
   return op.getUnitaryMatrix4x4(out);
 }
 
-[[nodiscard]] std::optional<Matrix4x4>
+[[nodiscard]] static std::optional<Matrix4x4>
 computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   ModuleOp module = moduleOp.get();
   if (!module) {
@@ -570,16 +563,15 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   return unitary;
 }
 
-void expectTwoQubitQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
-                                        const OwningOpRef<ModuleOp>& rhs) {
+static void
+expectTwoQubitQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
+                                   const OwningOpRef<ModuleOp>& rhs) {
   const auto lhsUnitary = computeTwoQubitUnitaryFromModule(lhs);
   ASSERT_TRUE(lhsUnitary.has_value());
   const auto rhsUnitary = computeTwoQubitUnitaryFromModule(rhs);
   ASSERT_TRUE(rhsUnitary.has_value());
   EXPECT_TRUE(isEquivalentUpToGlobalPhase(*lhsUnitary, *rhsUnitary));
 }
-
-} // namespace
 
 struct TwoQFuseFixture {
   std::unique_ptr<MLIRContext> context;
