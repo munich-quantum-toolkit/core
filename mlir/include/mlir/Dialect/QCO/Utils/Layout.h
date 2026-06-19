@@ -1,10 +1,11 @@
 #pragma once
 
-#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
-#include <string_view>
+#include <tuple>
+#include <type_traits>
 
 namespace mlir::qco {
 

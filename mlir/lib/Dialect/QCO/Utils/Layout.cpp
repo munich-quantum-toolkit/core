@@ -1,5 +1,7 @@
 #include "mlir/Dialect/QCO/Utils/Layout.h"
 
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Support/LLVM.h>
 
