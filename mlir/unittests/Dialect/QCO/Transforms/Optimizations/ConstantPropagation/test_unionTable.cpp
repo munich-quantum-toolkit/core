@@ -629,7 +629,7 @@ TEST_F(UnionTablePropertiesTest, bitAlwaysZeroIsTrueOneIsFalse) {
 }
 
 TEST_F(UnionTablePropertiesTest, bitAlwaysZeroIsFalseOneIsTrue) {
-  std::vector ctrl = {i0};
+  const std::vector ctrl = {i0};
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q1, q5, q4);
@@ -659,7 +659,7 @@ TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
   ut.propagateGate(xOp, q0, q3);
   ut.propagateGate(xOp, q1, q4);
   ut.propagateGate(xOp, q2, q5);
-  auto globalPhase = ut.globalPhaseThatIsAdded(zOp, q5, qCtrl);
+  const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, q5, qCtrl);
   EXPECT_TRUE(globalPhase.has_value());
   EXPECT_EQ(-1, globalPhase.value());
 }
@@ -668,14 +668,14 @@ TEST_F(UnionTablePropertiesTest, testMinusOneGlobalPhase) {
   std::vector qCtrl = {v4, v5};
   ut.propagateGate(xOp, q0, q4);
   ut.propagateGate(xOp, q1, q5);
-  auto emptyGlobalPhase = ut.globalPhaseThatIsAdded(zOp, q5, q4);
-  auto globalPhase = ut.globalPhaseThatIsAdded(zOp, q2, qCtrl);
+  const auto emptyGlobalPhase = ut.globalPhaseThatIsAdded(zOp, q5, q4);
+  const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, q2, qCtrl);
   EXPECT_FALSE(emptyGlobalPhase.has_value());
   EXPECT_TRUE(globalPhase.has_value());
   EXPECT_EQ(1, globalPhase.value());
 }
 
-class SmallUnionTableTest : public ::testing::Test {
+class SmallUnionTableTest : public testing::Test {
 protected:
   mlir::MLIRContext context;
   QCOProgramBuilder programBuilder;
