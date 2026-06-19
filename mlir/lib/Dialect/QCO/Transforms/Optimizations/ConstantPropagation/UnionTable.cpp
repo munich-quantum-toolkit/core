@@ -30,8 +30,8 @@ std::string UnionTable::toString() const {
   std::string result;
   for (const auto& entry : entries) {
     std::vector<unsigned int> qubitIndices;
-    for (const auto& [_, q] : entry.participatingQubits) {
-      qubitIndices.push_back(q);
+    for (const auto& q : entry.participatingQubits) {
+      qubitIndices.push_back(qubitsToGlobalIndices.at(q));
     }
     std::ranges::sort(qubitIndices, std::greater<int>());
     result += "Qubits: ";
@@ -52,17 +52,29 @@ std::string UnionTable::toString() const {
   return result;
 }
 
-bool UnionTable::areStatesAllTop() const { return allTop; }
+bool UnionTable::areStatesAllTop() {
+  if (allTop) {
+    return true;
+  }
+  for (const auto& ute : entries) {
+    if (!ute.top) {
+      return false;
+    }
+  }
+  allTop = true;
+  return true;
+}
 
-void UnionTable::propagateGate(Operation* gate, std::span<Value> targets,
-                               std::span<Value> newQuantumTargets,
-                               std::span<Value> ctrlsQuantum,
-                               std::span<Value> posCtrlsClassical,
-                               std::span<Value> negCtrlsClassical,
-                               std::vector<Value> params) {
+void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
+                               const std::span<Value> newQuantumTargets,
+                               const std::span<Value> ctrlsQuantum,
+                               const std::span<Value> posCtrlsClassical,
+                               const std::span<Value> negCtrlsClassical,
+                               const std::span<Value> params) {
   if (isa<SWAPOp>(*gate) && ctrlsQuantum.empty() && posCtrlsClassical.empty() &&
       negCtrlsClassical.empty()) {
-    applySwapGate(targets, newQuantumTargets);
+    std::ranges::reverse(newQuantumTargets);
+    replaceValuesGlobally(targets, newQuantumTargets);
     return;
   }
 
@@ -78,51 +90,176 @@ void UnionTable::propagateGate(Operation* gate, std::span<Value> targets,
     return;
   }
 
-  auto ute = valuesToEntries.at(*targets.begin());
   std::vector<unsigned int> targetQubitIndices;
   std::vector<unsigned int> ctrlQubitIndices;
   for (auto const q : targets) {
-    targetQubitIndices.push_back(ute->participatingQubits.at(q));
+    targetQubitIndices.push_back(qubitsToGlobalIndices.at(q));
   }
   for (auto const q : ctrlsQuantum) {
-    ctrlQubitIndices.push_back(ute->participatingQubits.at(q));
+    ctrlQubitIndices.push_back(qubitsToGlobalIndices.at(q));
   }
 
+  const auto ute = valuesToEntries.at(*targets.begin());
   for (auto hs : ute->states) {
     try {
       hs.propagateGate(gate, targetQubitIndices, ctrlQubitIndices,
                        posCtrlsClassical, negCtrlsClassical, params);
     } catch (std::domain_error&) {
-      putEntriesToTop(participatingEntries);
+      putEntriesToTop({*ute});
       break;
     }
   }
   replaceValuesGlobally(targets, newQuantumTargets);
 }
 
-void UnionTable::propagateMeasurement(Value quantumTarget,
-                                      Value newQuantumValue,
-                                      Value classicalTarget,
-                                      std::span<Value> posCtrlsClassical,
-                                      std::span<Value> negCtrlsClassical) {}
+void UnionTable::propagateMeasurement(
+    const Value quantumTarget, const Value newQuantumValue,
+    const Value classicalTarget, const std::span<Value> posCtrlsClassical,
+    const std::span<Value> negCtrlsClassical) {
 
-void UnionTable::propagateReset(Value quantumTarget, Value newQuantumValue,
-                                std::span<Value> posCtrlsClassical,
-                                std::span<Value> negCtrlsClassical) {}
+  std::vector targetVec = {quantumTarget, classicalTarget};
+  const std::set<UnionTableEntry> participatingEntries =
+      collectParticipatingEntries(targetVec, {}, posCtrlsClassical,
+                                  negCtrlsClassical);
 
-void UnionTable::propagateQubitAlloc(Value qubit) {}
+  std::vector quantumTargetVec = {quantumTarget};
+  std::vector newQuantumValueVec = {newQuantumValue};
+  try {
+    unifyEntries(participatingEntries);
+  } catch (std::domain_error&) {
+    putEntriesToTop(participatingEntries);
+    replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
+    return;
+  }
 
-void UnionTable::propagateIntAlloc(Value intValue, int64_t number) {}
+  const auto ute = valuesToEntries.at(quantumTarget);
 
-void UnionTable::propagateDoubleAlloc(Value doubleValue, double number) {}
+  for (auto hs : ute->states) {
+    try {
+      hs.propagateMeasurement(qubitsToGlobalIndices.at(quantumTarget),
+                              classicalTarget, posCtrlsClassical,
+                              negCtrlsClassical);
+    } catch (std::domain_error&) {
+      putEntriesToTop({*ute});
+      break;
+    }
+  }
+  replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
+}
 
-bool UnionTable::isQubitAlwaysOne(Value q) const {}
+void UnionTable::propagateReset(const Value quantumTarget,
+                                const Value newQuantumValue,
+                                const std::span<Value> posCtrlsClassical,
+                                const std::span<Value> negCtrlsClassical) {
 
-bool UnionTable::isQubitAlwaysZero(Value q) const {}
+  std::vector quantumTargetVec = {quantumTarget};
+  const std::set<UnionTableEntry> participatingEntries =
+      collectParticipatingEntries(quantumTargetVec, {}, posCtrlsClassical,
+                                  negCtrlsClassical);
 
-bool UnionTable::isClassicalValueAlwaysTrue(Value c) const {}
+  std::vector newQuantumValueVec = {newQuantumValue};
+  try {
+    unifyEntries(participatingEntries);
+  } catch (std::domain_error&) {
+    putEntriesToTop(participatingEntries);
+    replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
+    return;
+  }
 
-bool UnionTable::isClassicalValueAlwaysFalse(Value c) const {}
+  const auto ute = valuesToEntries.at(quantumTarget);
+
+  for (auto hs : ute->states) {
+    try {
+      hs.propagateReset(qubitsToGlobalIndices.at(quantumTarget),
+                        posCtrlsClassical, negCtrlsClassical);
+    } catch (std::domain_error&) {
+      putEntriesToTop({*ute});
+      break;
+    }
+  }
+  replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
+}
+
+void UnionTable::propagateQubitAlloc(const Value qubit) {
+  unsigned int maxIndex = 0;
+  if (!qubitsToGlobalIndices.empty()) {
+    maxIndex = std::ranges::max(qubitsToGlobalIndices.values()) + 1;
+  }
+  std::vector globalQubitIndex = {maxIndex};
+  auto hs = HybridState(globalQubitIndex, maxNonzeroAmplitudes);
+
+  qubitsToGlobalIndices[qubit] = maxIndex;
+  auto ute = UnionTableEntry();
+  ute.states.push_back(hs);
+  ute.participatingQubits.insert(qubit);
+  entries.insert(ute);
+  valuesToEntries[qubit] = std::make_shared<UnionTableEntry>(ute);
+}
+
+void UnionTable::propagateIntAlloc(const Value intValue, const int64_t number) {
+  auto hs = HybridState({}, maxNonzeroAmplitudes);
+  hs.addIntegerValue(intValue, number);
+
+  auto ute = UnionTableEntry();
+  ute.states.push_back(hs);
+  ute.participatingClassicalValues.insert(intValue);
+  entries.insert(ute);
+  valuesToEntries[intValue] = std::make_shared<UnionTableEntry>(ute);
+}
+
+void UnionTable::propagateDoubleAlloc(const Value doubleValue,
+                                      const double number) {
+  auto hs = HybridState({}, maxNonzeroAmplitudes);
+  hs.addDoubleValue(doubleValue, number);
+
+  auto ute = UnionTableEntry();
+  ute.states.push_back(hs);
+  ute.participatingClassicalValues.insert(doubleValue);
+  entries.insert(ute);
+  valuesToEntries[doubleValue] = std::make_shared<UnionTableEntry>(ute);
+}
+
+bool UnionTable::isQubitAlwaysOne(const Value q) const {
+  const unsigned int qubitIndex = qubitsToGlobalIndices.at(q);
+  const auto ute = valuesToEntries.at(q);
+  for (auto const& hs : ute->states) {
+    if (!hs.isQubitAlwaysOne(qubitIndex)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool UnionTable::isQubitAlwaysZero(const Value q) const {
+  const unsigned int qubitIndex = qubitsToGlobalIndices.at(q);
+  const auto ute = valuesToEntries.at(q);
+  for (auto const& hs : ute->states) {
+    if (!hs.isQubitAlwaysZero(qubitIndex)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool UnionTable::isClassicalValueAlwaysTrue(const Value c) const {
+  const auto ute = valuesToEntries.at(c);
+  for (auto const& hs : ute->states) {
+    if (!hs.isValueTrue(c)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool UnionTable::isClassicalValueAlwaysFalse(const Value c) const {
+  const auto ute = valuesToEntries.at(c);
+  for (auto const& hs : ute->states) {
+    if (hs.isValueTrue(c)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 bool UnionTable::hasAlwaysZeroProbability(
     std::span<Value> qubits, unsigned int qubitValue,
