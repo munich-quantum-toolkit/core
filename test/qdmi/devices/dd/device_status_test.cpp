@@ -78,7 +78,7 @@ TEST(DeviceStatus, MultipleConcurrentJobsKeepBusyUntilLastFinishes) {
                                   qdmi_test::QASM3_HEAVY_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j1.job, 16), QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j2.job, 16384), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j2.job, 65536), QDMI_SUCCESS);
 
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j1.job), QDMI_SUCCESS);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j2.job), QDMI_SUCCESS);
