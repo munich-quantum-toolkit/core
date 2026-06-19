@@ -10,10 +10,8 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Qubits.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -33,71 +31,6 @@
 #include <utility>
 
 namespace mlir::qco {
-
-using WalkProgramFn = function_ref<WalkResult(Operation*, Qubits&)>;
-
-/**
- * @brief Perform top-down non-recursive walk of all operations within a
- * region of a quantum program and apply a callback function.
- * @details The signature of the callback function is:
- *
- *     (Operation*, Qubits& q) -> WalkResult
- *
- * where the Qubits object tracks the front of qubit SSA values.
- * Depending on the template parameter, the callback is executed before or after
- * updating the Qubits state.
- * @param region The targeted region.
- * @param qubits An empty or filled qubits object.
- * @param fn The callback function.
- * @returns success(), if all operations have been visited.
- */
-template <WalkOrder Order = WalkOrder::PreOrder>
-LogicalResult walkProgram(Region& region, Qubits& qubits,
-                          const WalkProgramFn& fn) {
-  for (Operation& curr : region.getOps()) {
-    if constexpr (Order == WalkOrder::PreOrder) {
-      if (fn(&curr, qubits).wasInterrupted()) {
-        return failure();
-      }
-    }
-
-    TypeSwitch<Operation*>(&curr)
-        .template Case<StaticOp>(
-            [&](StaticOp op) { qubits.add(op.getQubit(), op.getIndex()); })
-        .template Case<AllocOp>([&](AllocOp op) { qubits.add(op.getResult()); })
-        .template Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
-          for (const auto& [prevV, nextV] :
-               llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-            const auto prevQ = cast<TypedValue<QubitType>>(prevV);
-            const auto nextQ = cast<TypedValue<QubitType>>(nextV);
-            qubits.remap(prevQ, nextQ);
-          }
-        })
-        .template Case<scf::ForOp>([&](scf::ForOp op) {
-          for (OpOperand& operand : op.getInitsMutable()) {
-            auto result = op.getTiedLoopResult(&operand);
-            const auto prevQ = cast<TypedValue<QubitType>>(operand.get());
-            const auto nextQ = cast<TypedValue<QubitType>>(result);
-            qubits.remap(prevQ, nextQ);
-          }
-        })
-        .template Case<ResetOp>([&](ResetOp op) {
-          qubits.remap(op.getQubitIn(), op.getQubitOut());
-        })
-        .template Case<MeasureOp>([&](MeasureOp op) {
-          qubits.remap(op.getQubitIn(), op.getQubitOut());
-        })
-        .template Case<SinkOp>(
-            [&](SinkOp op) { qubits.remove(op.getQubit()); });
-
-    if constexpr (Order == WalkOrder::PostOrder) {
-      if (fn(&curr, qubits).wasInterrupted()) {
-        return failure();
-      }
-    }
-  }
-  return success();
-}
 
 using ReleasedOps = SmallVector<Operation*, 8>;
 using PendingWiresMap = DenseMap<Operation*, SmallVector<size_t, 2>>;

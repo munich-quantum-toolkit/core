@@ -10,14 +10,13 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/Drivers.h"
-#include "mlir/Dialect/QCO/Utils/Qubits.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -47,43 +46,90 @@ struct Device {
   DenseSet<std::pair<size_t, size_t>> couplingSet;
 };
 
-/**
- * @returns llvm::success() if all two-qubit gates inside @p region
- * fulfill the given coupling constraints. llvm::failure(), otherwise.
- */
-static LogicalResult
-isExecutable(Region& region,
+/// Return true, if the entry point fulfills the given coupling constraints.
+static bool
+isExecutable(func::FuncOp entry,
              const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
-  Qubits qubits;
-  return walkProgram(
-      region, qubits, [&](Operation* curr, const Qubits& qubits) {
-        if (auto op = dyn_cast<UnitaryOpInterface>(curr)) {
-          if (isa<BarrierOp>(op)) {
-            return WalkResult::advance();
-          }
+  DenseMap<Value, size_t> indices;
 
-          assert(op.getNumQubits() <= 2 &&
-                 "isExecutable: expected two-qubit gate decomposition");
+  SmallVector<std::pair<Region&, DenseMap<Value, size_t>>> stack;
+  stack.emplace_back(entry.getFunctionBody(), DenseMap<Value, size_t>{});
 
-          if (op.getNumQubits() > 1) {
-            const auto q0 = cast<TypedValue<QubitType>>(op.getInputQubit(0));
-            const auto q1 = cast<TypedValue<QubitType>>(op.getInputQubit(1));
-            const auto i0 = qubits.getIndex(q0);
-            const auto i1 = qubits.getIndex(q1);
+  while (!stack.empty()) {
+    auto [region, qubits] = stack.pop_back_val();
 
-            if (!couplingSet.contains(std::make_pair(i0, i1))) {
-              return WalkResult::interrupt();
+    for (Operation& rop : region.getOps()) {
+      bool executable = true;
+      TypeSwitch<Operation*>(&rop)
+          .Case<StaticOp>([&](StaticOp op) {
+            qubits.try_emplace(op.getQubit(), op.getIndex());
+          })
+          .Case<BarrierOp>([&](BarrierOp op) {
+            for (const auto [pred, succ] :
+                 llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
+              const auto hw = qubits.at(pred);
+              qubits.try_emplace(succ, hw);
+              qubits.erase(pred);
             }
-          }
-        }
+          })
+          .Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
+            assert(op.getNumQubits() <= 2 && "expected two-qubit decomp.");
 
-        return WalkResult::advance();
-      });
+            if (op.getNumQubits() > 1) {
+              const auto hwA = qubits.at(op.getInputQubit(0));
+              const auto hwB = qubits.at(op.getInputQubit(1));
+              if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
+                llvm::dbgs() << "not executable: \n";
+                op->dump();
+                executable = false;
+              }
+            }
+
+            for (const auto [pred, succ] :
+                 llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
+              const auto hw = qubits.at(pred);
+              qubits.try_emplace(succ, hw);
+              qubits.erase(pred);
+            }
+          })
+          .Case<scf::ForOp>([&](scf::ForOp op) {
+            SmallVector<size_t> permutation;
+            DenseMap<Value, size_t> rqubits;
+            for (const auto [init, arg] :
+                 llvm::zip_equal(op.getInits(), op.getRegionIterArgs())) {
+              const auto hw = qubits.at(init);
+              permutation.emplace_back(hw);
+              rqubits.try_emplace(arg, hw);
+            }
+
+            for (OpOperand& operand : op.getInitsMutable()) {
+              const auto pred = operand.get();
+              const auto succ = op.getTiedLoopResult(&operand);
+              const auto hw = qubits.at(pred);
+              qubits.try_emplace(succ, hw);
+              qubits.erase(pred);
+            }
+
+            stack.emplace_back(op.getRegion(), rqubits);
+          })
+          .Case<ResetOp, MeasureOp>([&](auto op) {
+            const auto pred = op.getQubitIn();
+            const auto succ = op.getQubitOut();
+            const auto hw = qubits.at(pred);
+            qubits.try_emplace(succ, hw);
+            qubits.erase(pred);
+          });
+
+      if (!executable) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
-/**
- * @returns a 9x9 square-grid coupling set.
- */
+/// Return a 9x9 square-grid coupling set.
 static Device getNineQubitSquareGrid() {
   return {.nqubits = 9,
           .couplingSet = {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
@@ -227,8 +273,7 @@ TEST_P(MappingPassTest, GHZ) {
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(
-      isExecutable(entry.getFunctionBody(), device.couplingSet).succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
 TEST_P(MappingPassTest, GHZUnrolled) {
@@ -272,8 +317,7 @@ TEST_P(MappingPassTest, GHZUnrolled) {
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(
-      isExecutable(entry.getFunctionBody(), device.couplingSet).succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
 TEST_P(MappingPassTest, GroverLike) {
@@ -361,9 +405,10 @@ TEST_P(MappingPassTest, GroverLike) {
   auto res = pm.run(m.get());
   auto entry = getEntryPoint(m.get());
 
+  m->dump();
+
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(
-      isExecutable(entry.getFunctionBody(), device.couplingSet).succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
 TEST_P(MappingPassTest, Sabre) {
@@ -457,8 +502,7 @@ TEST_P(MappingPassTest, Sabre) {
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(
-      isExecutable(entry.getFunctionBody(), device.couplingSet).succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
 INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,

@@ -282,8 +282,6 @@ protected:
       return;
     }
 
-    func->dumpPretty();
-
     // Collect statistics.
     numSwaps += s.nswaps;
 
@@ -459,28 +457,28 @@ private:
     stack.emplace_back(body, DenseSet<Value>{});
 
     while (!stack.empty()) {
-      auto [region, m] = stack.pop_back_val();
+      auto [region, qubits] = stack.pop_back_val();
 
       for (Operation& op : llvm::make_early_inc_range(region.getOps())) {
         TypeSwitch<Operation*>(&op)
-            .Case<StaticOp>([&](StaticOp op) { m.insert(op.getQubit()); })
+            .Case<StaticOp>([&](StaticOp op) { qubits.insert(op.getQubit()); })
             .Case<UnitaryOpInterface>([&](UnitaryOpInterface& op) {
               for (const auto [pred, succ] :
                    llvm::zip_equal(op.getInputQubits(), op.getOutputQubits())) {
-                m.insert(succ);
-                m.erase(pred);
+                qubits.insert(succ);
+                qubits.erase(pred);
               }
             })
             .Case<scf::ForOp>([&](scf::ForOp loop) {
-              assert(m.size() == layout.nqubits());
+              assert(qubits.size() == layout.nqubits());
 
-              DenseSet<Value> addons(m);
+              DenseSet<Value> addons(qubits);
               llvm::for_each(loop.getInits(), [&](auto v) { addons.erase(v); });
               auto newLoop = extend(loop, to_vector(addons), rewriter);
 
               for (OpOperand& operand : newLoop.getInitsMutable()) {
-                m.insert(newLoop.getTiedLoopResult(&operand));
-                m.erase(operand.get());
+                qubits.insert(newLoop.getTiedLoopResult(&operand));
+                qubits.erase(operand.get());
               }
 
               stack.emplace_back(
@@ -489,8 +487,8 @@ private:
                                   newLoop.getRegionIterArgs().end()));
             })
             .Case<ResetOp, MeasureOp>([&](auto op) {
-              m.insert(op.getQubitOut());
-              m.erase(op.getQubitIn());
+              qubits.insert(op.getQubitOut());
+              qubits.erase(op.getQubitIn());
             })
             .Case<AllocOp, qtensor::AllocOp>([&](auto) {
               llvm::reportFatalInternalError("unexpected dynamic qubit alloc");
@@ -654,6 +652,65 @@ private:
     return failure();
   }
 
+  /// Return the sequence of SWAPs to move from one layout to another.
+  /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
+  SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
+    SmallVector<IndexPairType> swaps;
+
+    Layout curr(from);
+
+    Graph<GraphType::Directed, size_t> g;
+    const auto constructEdge = [&](size_t hwX, size_t hwY) {
+      const auto prog = curr.getProgramIndex(hwX);
+
+      const auto hwGoal = to.getHardwareIndex(prog);
+      const auto distPre = device.distanceBetween(hwX, hwGoal);
+      const auto distPost = device.distanceBetween(hwY, hwGoal);
+
+      if (distPost < distPre) {
+        llvm::dbgs() << "prog=" << prog << " edge=(" << hwX << ", " << hwY
+                     << ")"
+                     << " dist(pre)=" << distPre << " dist(post)=" << distPost
+                     << '\n';
+        g.addEdge(hwX, hwY);
+      }
+    };
+
+    do {
+      // Construct 'F' graph.
+      g.clear();
+      for (const auto& [hwA, hwB] : device.couplings()) {
+        constructEdge(hwA, hwB);
+        constructEdge(hwB, hwA);
+      }
+
+      // Find happy swap chain or unhappy swap.
+      if (const auto cycle = g.findCycle(); cycle) {
+        // Apply happy SWAP chain.
+        for (size_t i = 0; i < cycle->size() - 1; ++i) {
+          llvm::dbgs() << "happySWAP=(" << (*cycle)[i] << ", "
+                       << (*cycle)[i + 1] << ")\n";
+          curr.swap((*cycle)[i], (*cycle)[i + 1]);
+          swaps.emplace_back((*cycle)[i], (*cycle)[i + 1]);
+        }
+
+        continue;
+      }
+
+      for (const auto e : g.getEdges()) {
+        if (g.getDegree(e.second) == 0) {
+          llvm::dbgs() << "unhappySWAP=(" << e.first << ", " << e.second
+                       << ")\n";
+          curr.swap(e.first, e.second);
+          swaps.emplace_back(e.first, e.second);
+          break;
+        }
+      }
+    } while (!g.empty());
+
+    return swaps;
+  }
+
   /**
    * @brief Skip a qubit-pair block.
    * @details Traverses the pair of wire iterators in tandem until a two-qubit
@@ -746,65 +803,6 @@ private:
     return window;
   }
 
-  /// Return the sequence of SWAPs to move from one layout to another.
-  /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
-  SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
-    SmallVector<IndexPairType> swaps;
-
-    Layout curr(from);
-
-    Graph<GraphType::Directed, size_t> g;
-    const auto constructEdge = [&](size_t hwX, size_t hwY) {
-      const auto prog = curr.getProgramIndex(hwX);
-
-      const auto hwGoal = to.getHardwareIndex(prog);
-      const auto distPre = device.distanceBetween(hwX, hwGoal);
-      const auto distPost = device.distanceBetween(hwY, hwGoal);
-
-      if (distPost < distPre) {
-        llvm::dbgs() << "prog=" << prog << " edge=(" << hwX << ", " << hwY
-                     << ")"
-                     << " dist(pre)=" << distPre << " dist(post)=" << distPost
-                     << '\n';
-        g.addEdge(hwX, hwY);
-      }
-    };
-
-    do {
-      // Construct 'F' graph.
-      g.clear();
-      for (const auto& [hwA, hwB] : device.couplings()) {
-        constructEdge(hwA, hwB);
-        constructEdge(hwB, hwA);
-      }
-
-      // Find happy swap chain or unhappy swap.
-      if (const auto cycle = g.findCycle(); cycle) {
-        // Apply happy SWAP chain.
-        for (size_t i = 0; i < cycle->size() - 1; ++i) {
-          llvm::dbgs() << "happySWAP=(" << (*cycle)[i] << ", "
-                       << (*cycle)[i + 1] << ")\n";
-          curr.swap((*cycle)[i], (*cycle)[i + 1]);
-          swaps.emplace_back((*cycle)[i], (*cycle)[i + 1]);
-        }
-
-        continue;
-      }
-
-      for (const auto e : g.getEdges()) {
-        if (g.getDegree(e.second) == 0) {
-          llvm::dbgs() << "unhappySWAP=(" << e.first << ", " << e.second
-                       << ")\n";
-          curr.swap(e.first, e.second);
-          swaps.emplace_back(e.first, e.second);
-          break;
-        }
-      }
-    } while (!g.empty());
-
-    return swaps;
-  }
-
   /**
    * @brief Advance past all executable gates and recurse into nested regions,
    * if necessary.
@@ -822,7 +820,9 @@ private:
 
       for (const auto& [readyOp, progs] : ready) {
         TypeSwitch<Operation*>(readyOp)
-            .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+            .template Case<BarrierOp>(
+                [&](BarrierOp op) { released.emplace_back(op); })
+            .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
               const auto [hw0, hw1] =
                   layout.getHardwareIndices(progs[0], progs[1]);
 
@@ -830,8 +830,6 @@ private:
                 released.emplace_back(op);
               }
             })
-            .template Case<BarrierOp>(
-                [&](BarrierOp op) { released.emplace_back(op); })
             .template Case<scf::ForOp>([&](scf::ForOp op) {
               // TODO: Don't ignore result here.
               std::ignore = route<Direction, Mode>(op, layout, stats, rewriter);
@@ -891,6 +889,8 @@ private:
    * A* search to find a sequence of SWAPs that makes that layer executable.
    * Depending on the template parameter, this function only updates
    * (and hence modifies) the layout or also inserts the SWAPs into the IR.
+   *
+   * Assumes that wires[i] = i-th program qubit.
    * @returns failure() if A* search isn't able to find a solution.
    */
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
