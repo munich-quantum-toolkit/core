@@ -153,8 +153,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
         if (config_.enableHadamardLifting) {
           pm.addPass(qco::createHadamardLifting());
         }
-        pm.addPass(
-            qco::createNativeGateSynthesisPass(qco::NativeGateSynthesisOptions{
+        pm.addPass(qco::createFuseTwoQubitUnitaryRuns(
+            qco::FuseTwoQubitUnitaryRunsOptions{
                 .nativeGates = config_.nativeGates,
             }));
       }))) {

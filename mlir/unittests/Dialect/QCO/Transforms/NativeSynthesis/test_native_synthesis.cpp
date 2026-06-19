@@ -15,17 +15,20 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/NativeSpec.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Policy.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Types.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "qc_programs.h"
 
+namespace mlir::qco::native_synth {
+bool allowsSingleQubitOp(UnitaryOpInterface op,
+                         const decomposition::NativeProfileSpec& spec);
+bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix);
+} // namespace mlir::qco::native_synth
+
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
@@ -262,8 +265,8 @@ protected:
                                  const std::string& nativeGates) {
     mlir::PassManager pm(moduleOp->getContext());
     pm.addPass(mlir::createQCToQCO());
-    pm.addPass(mlir::qco::createNativeGateSynthesisPass(
-        mlir::qco::NativeGateSynthesisOptions{
+    pm.addPass(mlir::qco::createFuseTwoQubitUnitaryRuns(
+        mlir::qco::FuseTwoQubitUnitaryRunsOptions{
             .nativeGates = nativeGates,
         }));
     ASSERT_TRUE(mlir::succeeded(pm.run(*moduleOp)));
@@ -297,8 +300,8 @@ protected:
     auto moduleOp = buildFn();
     mlir::PassManager pm(moduleOp->getContext());
     pm.addPass(mlir::createQCToQCO());
-    pm.addPass(mlir::qco::createNativeGateSynthesisPass(
-        mlir::qco::NativeGateSynthesisOptions{
+    pm.addPass(mlir::qco::createFuseTwoQubitUnitaryRuns(
+        mlir::qco::FuseTwoQubitUnitaryRunsOptions{
             .nativeGates = nativeGates,
         }));
     EXPECT_TRUE(mlir::failed(pm.run(*moduleOp)));
@@ -459,6 +462,10 @@ bool extractTwoQubitMatrix(qco::UnitaryOpInterface op, Matrix4x4& out) {
   return op.getUnitaryMatrix4x4(out);
 }
 
+using mqt::test::expandToTwoQubits;
+using mqt::test::fixTwoQubitMatrixQubitOrder;
+using mqt::test::QubitId;
+
 std::optional<Matrix4x4>
 computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   ModuleOp module = moduleOp.get();
@@ -514,9 +521,8 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
           if (!extractSingleQubitMatrix(op, oneQ)) {
             return std::nullopt;
           }
-          unitary = decomposition::expandToTwoQubits(
-                        oneQ, static_cast<decomposition::QubitId>(*qid)) *
-                    unitary;
+          unitary =
+              expandToTwoQubits(oneQ, static_cast<QubitId>(*qid)) * unitary;
           const auto qOut = getUnitaryQubitResult(op, 0);
           if (!qOut) {
             return std::nullopt;
@@ -542,11 +548,9 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
           }
           // Reorder the gate's (operand0, operand1) layout into the canonical
           // (qubit 0, qubit 1) order used by `unitary`.
-          const llvm::SmallVector<decomposition::QubitId, 2> ids{
-              static_cast<decomposition::QubitId>(*q0id),
-              static_cast<decomposition::QubitId>(*q1id)};
-          unitary =
-              decomposition::fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
+          const llvm::SmallVector<QubitId, 2> ids{static_cast<QubitId>(*q0id),
+                                                  static_cast<QubitId>(*q1id)};
+          unitary = fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
           const auto q0Out = getUnitaryQubitResult(op, 0);
           const auto q1Out = getUnitaryQubitResult(op, 1);
           if (!q0Out || !q1Out) {
@@ -869,44 +873,40 @@ static void determinismSwap(mlir::qc::QCProgramBuilder& b) {
 // --- NativeSpec / NativePolicy ---
 
 TEST(NativeSpecTest, ResolveIbmBasicCx) {
-  const auto spec = resolveNativeGatesSpec("x,sx,rz,cx");
+  const auto spec = decomposition::parseNativeSpec("x,sx,rz,cx");
   ASSERT_TRUE(spec);
-  EXPECT_TRUE(spec->allowedGates.contains(NativeGateKind::Cx));
-  EXPECT_TRUE(spec->allowedGates.contains(NativeGateKind::X));
+  EXPECT_TRUE(spec->allowedGates.contains(decomposition::NativeGateKind::Cx));
+  EXPECT_TRUE(spec->allowedGates.contains(decomposition::NativeGateKind::X));
   EXPECT_FALSE(spec->allowRzz);
 }
 
 TEST(NativeSpecTest, ResolveRejectsUnknownToken) {
-  EXPECT_FALSE(resolveNativeGatesSpec("x,sx,rz,not-a-gate").has_value());
+  EXPECT_FALSE(
+      decomposition::parseNativeSpec("x,sx,rz,not-a-gate").has_value());
 }
 
 TEST(NativeSpecTest, PhaseAliasPMatchesRzInIbmStyleMenu) {
-  const auto pMenu = resolveNativeGatesSpec("x,sx,p,cx");
-  const auto rzMenu = resolveNativeGatesSpec("x,sx,rz,cx");
+  const auto pMenu = decomposition::parseNativeSpec("x,sx,p,cx");
+  const auto rzMenu = decomposition::parseNativeSpec("x,sx,rz,cx");
   ASSERT_TRUE(pMenu);
   ASSERT_TRUE(rzMenu);
   EXPECT_EQ(pMenu->allowedGates, rzMenu->allowedGates);
 }
 
-TEST(NativeSpecTest, EmitterEulerBasisForAxisPair) {
-  EXPECT_EQ(emitterEulerBasis(SingleQubitEmitterSpec{
-                .mode = SingleQubitMode::AxisPair, .axisPair = AxisPair::RxRz}),
-            EulerBasis::XZX);
-  EXPECT_EQ(emitterEulerBasis(SingleQubitEmitterSpec{
-                .mode = SingleQubitMode::AxisPair, .axisPair = AxisPair::RyRz}),
-            EulerBasis::ZYZ);
-}
-
 TEST(NativePolicyTest, UsesCxAndCzFromResolvedSpec) {
-  const auto cxOnly = resolveNativeGatesSpec("u,cx");
+  const auto cxOnly = decomposition::parseNativeSpec("u,cx");
   ASSERT_TRUE(cxOnly);
-  EXPECT_TRUE(usesCxEntangler(*cxOnly));
-  EXPECT_FALSE(usesCzEntangler(*cxOnly));
+  EXPECT_TRUE(llvm::is_contained(cxOnly->entanglerBases,
+                                 decomposition::EntanglerBasis::Cx));
+  EXPECT_FALSE(llvm::is_contained(cxOnly->entanglerBases,
+                                  decomposition::EntanglerBasis::Cz));
 
-  const auto both = resolveNativeGatesSpec("u,cx,cz");
+  const auto both = decomposition::parseNativeSpec("u,cx,cz");
   ASSERT_TRUE(both);
-  EXPECT_TRUE(usesCxEntangler(*both));
-  EXPECT_TRUE(usesCzEntangler(*both));
+  EXPECT_TRUE(llvm::is_contained(both->entanglerBases,
+                                 decomposition::EntanglerBasis::Cx));
+  EXPECT_TRUE(llvm::is_contained(both->entanglerBases,
+                                 decomposition::EntanglerBasis::Cz));
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
@@ -925,7 +925,7 @@ protected:
 };
 
 TEST_F(NativePolicyAllowsOpTest, AllowsSingleQubitOpRespectsMenu) {
-  const auto spec = resolveNativeGatesSpec("x,sx,rz,cx");
+  const auto spec = decomposition::parseNativeSpec("x,sx,rz,cx");
   ASSERT_TRUE(spec);
   Value q = builder.staticQubit(0);
   q = builder.x(q);
@@ -942,7 +942,7 @@ TEST_F(NativePolicyAllowsOpTest, AllowsSingleQubitOpRespectsMenu) {
 }
 
 TEST_F(NativePolicyAllowsOpTest, RejectsSingleQubitOpNotInMenu) {
-  const auto spec = resolveNativeGatesSpec("u,cx");
+  const auto spec = decomposition::parseNativeSpec("u,cx");
   ASSERT_TRUE(spec);
   Value q = builder.staticQubit(0);
   q = builder.x(q);
@@ -956,20 +956,6 @@ TEST_F(NativePolicyAllowsOpTest, RejectsSingleQubitOpNotInMenu) {
   ASSERT_TRUE(xop);
   EXPECT_FALSE(allowsSingleQubitOp(
       llvm::cast<UnitaryOpInterface>(xop.getOperation()), *spec));
-}
-
-TEST_F(NativePolicyAllowsOpTest, CanDirectlyDecomposeToU3OnRxInCircuit) {
-  Value q = builder.staticQubit(0);
-  q = builder.rx(0.1, q);
-  auto mod = builder.finalize();
-  ASSERT_TRUE(mod);
-  RXOp rx;
-  mod->walk([&](RXOp op) {
-    rx = op;
-    return WalkResult::interrupt();
-  });
-  ASSERT_TRUE(rx);
-  EXPECT_TRUE(canDirectlyDecomposeToU3(rx.getOperation()));
 }
 
 // --- Pass profile coverage ---

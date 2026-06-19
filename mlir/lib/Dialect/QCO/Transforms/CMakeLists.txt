@@ -22,7 +22,7 @@ add_mlir_library(
   DEPENDS
   MLIRQCOTransformsIncGen)
 
-# collect header files (subdirs: NativeSynthesis/, Decomposition/, …)
+# collect header files (subdirs: Decomposition/, …)
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE CONFIGURE_DEPENDS
      "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.h")
 file(GLOB_RECURSE PASSES_HEADERS_BUILD CONFIGURE_DEPENDS

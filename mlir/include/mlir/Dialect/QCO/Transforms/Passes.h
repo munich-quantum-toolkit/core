@@ -29,15 +29,4 @@ namespace mlir::qco {
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
-/// Options for the native gate synthesis pass.
-///
-/// @p nativeGates is a comma-separated list of gate tokens (see `Passes.td`
-/// for recognised tokens).
-struct NativeGateSynthesisOptions {
-  std::string nativeGates;
-};
-
-std::unique_ptr<Pass>
-createNativeGateSynthesisPass(const NativeGateSynthesisOptions& options);
-
 } // namespace mlir::qco

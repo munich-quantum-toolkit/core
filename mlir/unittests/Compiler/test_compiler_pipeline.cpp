@@ -17,8 +17,8 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -748,6 +748,14 @@ protected:
 
 using mqt::test::isEquivalentUpToGlobalPhase;
 
+namespace {
+
+using mqt::test::expandToTwoQubits;
+using mqt::test::fixTwoQubitMatrixQubitOrder;
+using mqt::test::QubitId;
+
+} // namespace
+
 /// Compute the 4×4 unitary of a two-qubit QCO module whose qubits are
 /// introduced by `qco.static` ops with indices 0 and 1. Handles the op set
 /// that stage-4/stage-5 IR can contain for the `staticQubitsWithOps`
@@ -802,8 +810,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
           if (!op.getUnitaryMatrix2x2(oneQ)) {
             return std::nullopt;
           }
-          unitary =
-              mlir::qco::decomposition::expandToTwoQubits(oneQ, *qid) * unitary;
+          unitary = expandToTwoQubits(oneQ, *qid) * unitary;
           qubitIds[op.getOutputQubit(0)] = *qid;
           continue;
         }
@@ -834,12 +841,9 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
           } else if (!op.getUnitaryMatrix4x4(twoQ)) {
             return std::nullopt;
           }
-          const llvm::SmallVector<mlir::qco::decomposition::QubitId, 2> ids{
-              static_cast<mlir::qco::decomposition::QubitId>(*q0),
-              static_cast<mlir::qco::decomposition::QubitId>(*q1)};
-          unitary =
-              mlir::qco::decomposition::fixTwoQubitMatrixQubitOrder(twoQ, ids) *
-              unitary;
+          const llvm::SmallVector<QubitId, 2> ids{static_cast<QubitId>(*q0),
+                                                  static_cast<QubitId>(*q1)};
+          unitary = fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
           qubitIds[op.getOutputQubit(0)] = *q0;
           qubitIds[op.getOutputQubit(1)] = *q1;
           continue;

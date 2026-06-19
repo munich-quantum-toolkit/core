@@ -10,11 +10,14 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 
@@ -155,6 +158,62 @@ public:
 private:
   std::vector<std::pair<std::string, std::string>> entries_;
 };
+
+// ---------------------------------------------------------------------------
+// Gate-matrix factories and two-qubit layout helpers shared by the
+// decomposition / native-synthesis unit tests. They build reference unitaries
+// for equivalence checks and are intentionally test-only, so they live here
+// rather than in the production decomposition headers.
+// ---------------------------------------------------------------------------
+
+/// Hadamard gate (2x2).
+[[nodiscard]] inline const mlir::qco::Matrix2x2& hGate() {
+  constexpr double frac1Sqrt2 =
+      0.707106781186547524400844362104849039284835937688474036588L;
+  static const mlir::qco::Matrix2x2 matrix = mlir::qco::Matrix2x2::fromElements(
+      frac1Sqrt2, frac1Sqrt2, frac1Sqrt2, -frac1Sqrt2);
+  return matrix;
+}
+
+/// Logical qubit index within a two-qubit reference matrix.
+using QubitId = std::size_t;
+
+/// `SWAP` gate in MQT operand order (qubit 0 = MSB).
+[[nodiscard]] inline const mlir::qco::Matrix4x4& swapGate() {
+  static const mlir::qco::Matrix4x4 matrix =
+      mlir::qco::Matrix4x4::fromElements(1, 0, 0, 0, //
+                                         0, 0, 1, 0, //
+                                         0, 1, 0, 0, //
+                                         0, 0, 0, 1);
+  return matrix;
+}
+
+/// Embed a single-qubit matrix into the two-qubit space acting on `qubitId`.
+[[nodiscard]] inline mlir::qco::Matrix4x4
+expandToTwoQubits(const mlir::qco::Matrix2x2& singleQubitMatrix,
+                  QubitId qubitId) {
+  if (qubitId == 0) {
+    return kron(singleQubitMatrix, mlir::qco::Matrix2x2::identity());
+  }
+  if (qubitId == 1) {
+    return kron(mlir::qco::Matrix2x2::identity(), singleQubitMatrix);
+  }
+  llvm::reportFatalInternalError("Invalid qubit id for single-qubit expansion");
+}
+
+/// Reorder a two-qubit matrix so it acts on qubits `{0, 1}` in MQT order.
+[[nodiscard]] inline mlir::qco::Matrix4x4
+fixTwoQubitMatrixQubitOrder(const mlir::qco::Matrix4x4& twoQubitMatrix,
+                            const llvm::SmallVector<QubitId, 2>& qubitIds) {
+  if (qubitIds == llvm::SmallVector<QubitId, 2>{1, 0}) {
+    return swapGate() * twoQubitMatrix * swapGate();
+  }
+  if (qubitIds == llvm::SmallVector<QubitId, 2>{0, 1}) {
+    return twoQubitMatrix;
+  }
+  llvm::reportFatalInternalError(
+      "Invalid qubit IDs for fixing two-qubit matrix");
+}
 
 } // namespace mqt::test
 

@@ -94,8 +94,8 @@ static llvm::cl::opt<bool> enableHadamardLifting(
 static llvm::cl::opt<std::string> nativeGates(
     "native-gates",
     llvm::cl::desc(
-        "Comma-separated native gate menu for the native-gate-synthesis "
-        "pass (empty or whitespace-only disables synthesis)"),
+        "Comma-separated native gate menu for the fuse-two-qubit-unitary-runs "
+        "pass"),
     llvm::cl::value_desc("csv"), llvm::cl::init(""));
 
 /**

@@ -8,24 +8,25 @@
  * Licensed under the MIT License
  */
 
-#include "decomposition_test_utils.h"
+#include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/BasisDecomposer.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Helpers.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/UnitaryMatrices.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/WeylDecomposition.h"
-#include "mlir/Dialect/QCO/Transforms/NativeSynthesis/Utils.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+
+namespace mlir::qco::native_synth {
+bool getBlockTwoQubitMatrix(Operation* op, Matrix4x4& matrix);
+} // namespace mlir::qco::native_synth
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/QC/IR/QCDialect.h>
@@ -38,6 +39,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cassert>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -46,13 +48,137 @@
 #include <optional>
 #include <random>
 #include <tuple>
+#include <vector>
+
+namespace {
+
+constexpr double SANITY_CHECK_PRECISION = 1e-12;
+
+[[nodiscard]] bool isUnitaryMatrix(const mlir::qco::Matrix2x2& matrix,
+                                   double tolerance = 1e-12) {
+  return (matrix.adjoint() * matrix).isIdentity(tolerance);
+}
+
+[[nodiscard]] double remEuclid(double a, double b) {
+  if (b == 0.0) {
+    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
+  }
+  const auto r = std::fmod(a, b);
+  return (r < 0.0) ? r + std::abs(b) : r;
+}
+
+[[nodiscard]] double traceToFidelity(const std::complex<double>& x) {
+  const auto xAbs = std::abs(x);
+  return (4.0 + (xAbs * xAbs)) / 20.0;
+}
+
+[[nodiscard]] std::complex<double> globalPhaseFactor(double globalPhase) {
+  return std::exp(std::complex<double>{0, 1} * globalPhase);
+}
+
+[[nodiscard]] mlir::qco::Matrix4x4 rxxMatrix(double theta) {
+  const auto cosTheta = std::cos(theta / 2.);
+  const mlir::qco::Complex misin{0., -std::sin(theta / 2.)};
+  return mlir::qco::Matrix4x4::fromElements(cosTheta, 0, 0, misin, //
+                                            0, cosTheta, misin, 0, //
+                                            0, misin, cosTheta, 0, //
+                                            misin, 0, 0, cosTheta);
+}
+
+[[nodiscard]] mlir::qco::Matrix4x4 ryyMatrix(double theta) {
+  const auto cosTheta = std::cos(theta / 2.);
+  const mlir::qco::Complex isin{0., std::sin(theta / 2.)};
+  const mlir::qco::Complex misin{0., -std::sin(theta / 2.)};
+  return mlir::qco::Matrix4x4::fromElements(cosTheta, 0, 0, isin,  //
+                                            0, cosTheta, misin, 0, //
+                                            0, misin, cosTheta, 0, //
+                                            isin, 0, 0, cosTheta);
+}
+
+[[nodiscard]] mlir::qco::Matrix4x4 rzzMatrix(double theta) {
+  const auto cosTheta = std::cos(theta / 2.);
+  const auto sinTheta = std::sin(theta / 2.);
+  const mlir::qco::Complex em{cosTheta, -sinTheta};
+  const mlir::qco::Complex ep{cosTheta, sinTheta};
+  return mlir::qco::Matrix4x4::fromElements(em, 0, 0, 0, //
+                                            0, ep, 0, 0, //
+                                            0, 0, ep, 0, //
+                                            0, 0, 0, em);
+}
+
+[[nodiscard]] const mlir::qco::Matrix4x4& cxGate01() {
+  static const mlir::qco::Matrix4x4 matrix =
+      mlir::qco::Matrix4x4::fromElements(1, 0, 0, 0, //
+                                         0, 1, 0, 0, //
+                                         0, 0, 0, 1, //
+                                         0, 0, 1, 0);
+  return matrix;
+}
+
+[[nodiscard]] const mlir::qco::Matrix4x4& cxGate10() {
+  static const mlir::qco::Matrix4x4 matrix =
+      mlir::qco::Matrix4x4::fromElements(1, 0, 0, 0, //
+                                         0, 0, 0, 1, //
+                                         0, 0, 1, 0, //
+                                         0, 1, 0, 0);
+  return matrix;
+}
+
+[[nodiscard]] std::vector<std::complex<double>>
+randomUnitaryData(std::size_t dim, std::mt19937& rng) {
+  std::normal_distribution<double> normalDist(0.0, 1.0);
+  std::vector<std::vector<std::complex<double>>> columns(
+      dim, std::vector<std::complex<double>>(dim));
+  for (auto& column : columns) {
+    for (auto& entry : column) {
+      entry = std::complex<double>(normalDist(rng), normalDist(rng));
+    }
+  }
+  for (std::size_t j = 0; j < dim; ++j) {
+    for (std::size_t k = 0; k < j; ++k) {
+      std::complex<double> projection{0.0, 0.0};
+      for (std::size_t i = 0; i < dim; ++i) {
+        projection += std::conj(columns[k][i]) * columns[j][i];
+      }
+      for (std::size_t i = 0; i < dim; ++i) {
+        columns[j][i] -= projection * columns[k][i];
+      }
+    }
+    double norm = 0.0;
+    for (std::size_t i = 0; i < dim; ++i) {
+      norm += std::norm(columns[j][i]);
+    }
+    norm = std::sqrt(norm);
+    for (std::size_t i = 0; i < dim; ++i) {
+      columns[j][i] /= norm;
+    }
+  }
+  std::vector<std::complex<double>> data(dim * dim);
+  for (std::size_t row = 0; row < dim; ++row) {
+    for (std::size_t col = 0; col < dim; ++col) {
+      data[(row * dim) + col] = columns[col][row];
+    }
+  }
+  return data;
+}
+
+[[nodiscard]] mlir::qco::Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
+  const auto data = randomUnitaryData(4, rng);
+  const mlir::qco::Matrix4x4 unitary = mlir::qco::Matrix4x4::fromElements(
+      data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
+      data[8], data[9], data[10], data[11], data[12], data[13], data[14],
+      data[15]);
+  assert((unitary.adjoint() * unitary).isIdentity(1e-12));
+  return unitary;
+}
+
+} // namespace
 
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-using namespace mlir::qco::decomposition_test;
-using namespace mlir::qco::helpers;
 using namespace mlir::qco::native_synth;
+using namespace mqt::test;
 
 // Weyl / basis / helpers.
 
@@ -98,7 +224,7 @@ public:
 
   [[nodiscard]] static std::complex<double>
   globalPhaseFactor(const TwoQubitWeylDecomposition& decomposition) {
-    return helpers::globalPhaseFactor(decomposition.globalPhase());
+    return ::globalPhaseFactor(decomposition.globalPhase());
   }
   [[nodiscard]] static Matrix4x4
   can(const TwoQubitWeylDecomposition& decomposition) {
@@ -147,10 +273,10 @@ TEST(WeylDecompositionStandalone,
   EXPECT_LE(decomp.a(), piOver4 + 1e-10);
   EXPECT_LE(decomp.b(), piOver4 + 1e-10);
   EXPECT_LE(decomp.c(), piOver4 + 1e-10);
-  EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k1l()));
-  EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k2l()));
-  EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k1r()));
-  EXPECT_TRUE(helpers::isUnitaryMatrix(decomp.k2r()));
+  EXPECT_TRUE(isUnitaryMatrix(decomp.k1l()));
+  EXPECT_TRUE(isUnitaryMatrix(decomp.k2l()));
+  EXPECT_TRUE(isUnitaryMatrix(decomp.k1r()));
+  EXPECT_TRUE(isUnitaryMatrix(decomp.k2r()));
 }
 
 TEST(WeylDecompositionStandalone, Random) {
@@ -220,7 +346,7 @@ public:
       matrix = entangler * matrix;
       matrix = layer(static_cast<std::size_t>(i) + 1) * matrix;
     }
-    return matrix * helpers::globalPhaseFactor(decomposition.globalPhase);
+    return matrix * ::globalPhaseFactor(decomposition.globalPhase);
   }
 
 protected:
@@ -453,9 +579,8 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
           if (!extractSingleQubitMatrix(op, oneQ)) {
             return std::nullopt;
           }
-          unitary = decomposition::expandToTwoQubits(
-                        oneQ, static_cast<decomposition::QubitId>(*qid)) *
-                    unitary;
+          unitary =
+              expandToTwoQubits(oneQ, static_cast<QubitId>(*qid)) * unitary;
           const auto qOut = getUnitaryQubitResult(op, 0);
           if (!qOut) {
             return std::nullopt;
@@ -479,11 +604,9 @@ computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
           if (!extractTwoQubitMatrix(op, twoQ)) {
             return std::nullopt;
           }
-          const llvm::SmallVector<decomposition::QubitId, 2> ids{
-              static_cast<decomposition::QubitId>(*q0id),
-              static_cast<decomposition::QubitId>(*q1id)};
-          unitary =
-              decomposition::fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
+          const llvm::SmallVector<QubitId, 2> ids{static_cast<QubitId>(*q0id),
+                                                  static_cast<QubitId>(*q1id)};
+          unitary = fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
           const auto q0Out = getUnitaryQubitResult(op, 0);
           const auto q1Out = getUnitaryQubitResult(op, 1);
           if (!q0Out || !q1Out) {

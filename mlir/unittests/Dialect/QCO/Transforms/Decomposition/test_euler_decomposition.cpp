@@ -104,22 +104,11 @@ class EulerSynthesisExactTest
 // Euler synthesis support
 //===----------------------------------------------------------------------===//
 
-[[nodiscard]] static Matrix2x2 rzMatrix(const double theta) {
-  const auto m00 = std::polar(1.0, -theta / 2.0);
-  const auto m11 = std::polar(1.0, theta / 2.0);
-  return Matrix2x2::fromElements(m00, 0, 0, m11);
-}
-
-[[nodiscard]] static Matrix2x2 ryMatrix(const double theta) {
-  const auto m00 = std::cos(theta / 2.0);
-  const auto m01 = -std::sin(theta / 2.0);
-  return Matrix2x2::fromElements(m00, m01, -m01, m00);
-}
-
 [[nodiscard]] static Matrix2x2 randomUnitaryMatrix(std::mt19937& rng) {
   std::uniform_real_distribution dist(-std::numbers::pi, std::numbers::pi);
-  const Matrix2x2 su2 =
-      rzMatrix(dist(rng)) * ryMatrix(dist(rng)) * rzMatrix(dist(rng));
+  const Matrix2x2 su2 = decomposition::rzMatrix(dist(rng)) *
+                        decomposition::ryMatrix(dist(rng)) *
+                        decomposition::rzMatrix(dist(rng));
   const Complex globalPhase = std::polar(1.0, dist(rng));
   return Matrix2x2::fromElements(
       globalPhase * su2(0, 0), globalPhase * su2(0, 1), globalPhase * su2(1, 0),
@@ -351,52 +340,59 @@ TEST_P(ZSXXShortcutTest, SynthesisMatchesGateCount) {
 
 INSTANTIATE_TEST_SUITE_P(
     ZSXXShortcuts, ZSXXShortcutTest,
-    testing::Values(
-        ZSXXShortcutCase{
-            "Identity",
-            [](MLIRContext*) -> Matrix2x2 { return Matrix2x2::identity(); }, 0,
-            0, 0},
-        ZSXXShortcutCase{
-            "PauliX",
-            [](MLIRContext*) -> Matrix2x2 { return XOp::getUnitaryMatrix(); },
-            0, 0, 1},
-        ZSXXShortcutCase{"PureZ",
-                         [](MLIRContext*) -> Matrix2x2 {
-                           return rzMatrix(0.3) * rzMatrix(0.7);
-                         },
-                         1, 0, 0},
-        ZSXXShortcutCase{"ZYZNearZeroTheta",
-                         [](MLIRContext*) -> Matrix2x2 {
-                           constexpr double tol = 0.5 * mlir::utils::TOLERANCE;
-                           return rzMatrix(0.4) * ryMatrix(tol) * rzMatrix(0.3);
-                         },
-                         1, 0, 0},
-        ZSXXShortcutCase{"RYHalfPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(ctx,
-                                                       std::numbers::pi / 2.0);
-                         },
-                         2, 1, 0},
-        ZSXXShortcutCase{"RYNearHalfPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, (std::numbers::pi / 2.0) +
-                                        (0.5 * mlir::utils::TOLERANCE));
-                         },
-                         2, 1, 0},
-        ZSXXShortcutCase{"RYNearZero",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, 0.5 * mlir::utils::TOLERANCE);
-                         },
-                         0, 0, 0},
-        ZSXXShortcutCase{"RYNearPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, std::numbers::pi -
-                                        (0.5 * mlir::utils::TOLERANCE));
-                         },
-                         1, 0, 1}),
+    testing::Values(ZSXXShortcutCase{"Identity",
+                                     [](MLIRContext*) -> Matrix2x2 {
+                                       return Matrix2x2::identity();
+                                     },
+                                     0, 0, 0},
+                    ZSXXShortcutCase{"PauliX",
+                                     [](MLIRContext*) -> Matrix2x2 {
+                                       return XOp::getUnitaryMatrix();
+                                     },
+                                     0, 0, 1},
+                    ZSXXShortcutCase{"PureZ",
+                                     [](MLIRContext*) -> Matrix2x2 {
+                                       return decomposition::rzMatrix(0.3) *
+                                              decomposition::rzMatrix(0.7);
+                                     },
+                                     1, 0, 0},
+                    ZSXXShortcutCase{"ZYZNearZeroTheta",
+                                     [](MLIRContext*) -> Matrix2x2 {
+                                       constexpr double tol =
+                                           0.5 * mlir::utils::TOLERANCE;
+                                       return decomposition::rzMatrix(0.4) *
+                                              decomposition::ryMatrix(tol) *
+                                              decomposition::rzMatrix(0.3);
+                                     },
+                                     1, 0, 0},
+                    ZSXXShortcutCase{"RYHalfPi",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx, std::numbers::pi / 2.0);
+                                     },
+                                     2, 1, 0},
+                    ZSXXShortcutCase{"RYNearHalfPi",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx,
+                                           (std::numbers::pi / 2.0) +
+                                               (0.5 * mlir::utils::TOLERANCE));
+                                     },
+                                     2, 1, 0},
+                    ZSXXShortcutCase{"RYNearZero",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx, 0.5 * mlir::utils::TOLERANCE);
+                                     },
+                                     0, 0, 0},
+                    ZSXXShortcutCase{"RYNearPi",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx,
+                                           std::numbers::pi -
+                                               (0.5 * mlir::utils::TOLERANCE));
+                                     },
+                                     1, 0, 1}),
     [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
       return std::string(info.param.label);
     });
@@ -541,11 +537,11 @@ static void expectFusePreserved(func::FuncOp funcOp, const Matrix2x2& original,
 }
 
 [[nodiscard]] static Matrix2x2 splitFixtureRZSXSegmentMatrix() {
-  return SXOp::getUnitaryMatrix() * rzMatrix(0.321);
+  return SXOp::getUnitaryMatrix() * decomposition::rzMatrix(0.321);
 }
 
 [[nodiscard]] static Matrix2x2 overlongZSXXPureZRunMatrix() {
-  return SXOp::getUnitaryMatrix() * rzMatrix(std::numbers::pi) *
+  return SXOp::getUnitaryMatrix() * decomposition::rzMatrix(std::numbers::pi) *
          SXOp::getUnitaryMatrix();
 }
 template <typename OpTy, typename ParentOp>

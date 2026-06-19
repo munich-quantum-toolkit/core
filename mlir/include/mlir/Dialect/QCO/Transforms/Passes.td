@@ -69,30 +69,56 @@ def FuseSingleQubitUnitaryRuns
 def FuseTwoQubitUnitaryRuns
     : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "Fuse two-qubit unitary runs using Weyl/KAK resynthesis";
+  let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
   let description = [{
-    Scans the module for maximal two-qubit windows: contiguous sequences of
-    two-qubit unitaries on the same wire pair, with single-qubit gates on those
-    wires absorbed into the window's accumulated `4×4` unitary when they have
-    a single use. Each window with at least two ops is replaced when beneficial:
-    when the window contains any gate outside the `native-gates` menu, or when
-    deterministic Weyl/KAK resynthesis to that menu uses strictly fewer
-    entanglers than the window already contains.
+    This pass rewrites a module so that every remaining unitary operation is
+    allowed by the `native-gates` menu. `qco.barrier` and `qco.gphase` are
+    preserved; controlled gates (`qco.ctrl`) must have a single control and a
+    single target.
 
-    The `native-gates` option uses the same comma-separated token list as
-    `native-gate-synthesis` (e.g. `u,cx`, `x,sx,rz,cx`). An empty or
-    whitespace-only menu is a no-op. An unrecognised token causes the pass to
-    fail.
+    The menu is a comma-separated list of gate tokens (order not significant)
+    from which the pass builds a profile: a single-qubit synthesis mode
+    (generic `qco.u` when `u` is present; IBM-style surface gates when all of
+    `x`, `sx`, and `rz`/`p` are present; IQM-style `qco.r` when `r` is present;
+    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus optional
+    two-qubit entanglers `cx`, `cz`, and optional `rzz`.
 
-    Barriers, global phase, fan-out, and ops on more than two qubits close
-    open windows. Bodies nested under `qco.ctrl` or `qco.inv` are not tracked
-    independently.
+    Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`, `cx`,
+    `cz`, `rzz`. An empty or whitespace-only menu is a no-op, which is the
+    intended pipeline default when synthesis is not needed. An unrecognised
+    token causes the pass to fail.
+
+    Example menus (each line is one illustrative menu; pick either `cx` or
+    `cz` as the entangler, or list both if both are native):
+    - IBM basic (no fractional two-qubit): `x,sx,rz,cx` or `x,sx,rz,cz`
+    - IBM fractional: `x,sx,rz,rx,rzz,cx` or `x,sx,rz,rx,rzz,cz`
+    - Generic single-qubit U: `u,cx` or `u,cz`
+    - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
+    - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
+      Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
+
+    Execution order (mirrors the implementation): fuse consecutive
+    single-qubit runs; fuse two-qubit windows (including absorbed
+    single-qubit padding); run up to four synthesis sweeps over remaining
+    non-native unitaries until every single-qubit op matches the menu (two-qubit
+    lowering may temporarily emit off-menu 1q ops that later sweeps absorb—if
+    any remain after that cap, the pass fails); fuse 1q seams between two-qubit
+    blocks; then up to four further synthesis + fusion rounds until the full menu
+    holds (including native `qco.ctrl` shells and bare `rzz` when allowed). If
+    anything is still off-menu, the pass fails.
+
+    Lowering is deterministic: the entangler is chosen as `cx` before `cz`, the
+    single-qubit factors use the first emitter's Euler basis, and the minimal
+    KAK entangler count drives two-qubit window replacement.
   }];
   let options = [Option<
       "nativeGates", "native-gates", "std::string", "\"\"",
       "Comma-separated native gate menu. Empty or whitespace-only is "
-      "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz, rzz.">];
+      "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz, rzz. "
+      "Examples: x,sx,rz,cx; x,sx,rz,rx,rzz,cz; u,cx; r,cz; rx,rz,cx.">];
 }
+
+//===----------------------------------------------------------------------===//
 
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
@@ -169,61 +195,6 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "A seed used for randomization.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
-}
-
-//===----------------------------------------------------------------------===//
-// Native gate synthesis
-//===----------------------------------------------------------------------===//
-
-def NativeGateSynthesisPass : Pass<"native-gate-synthesis", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
-  let description = [{
-    This pass rewrites a module so that every remaining unitary operation is
-    allowed by the `native-gates` menu. `qco.barrier` and `qco.gphase` are
-    preserved; controlled gates (`qco.ctrl`) must have a single control and a
-    single target.
-
-    The menu is a comma-separated list of gate tokens (order not significant)
-    from which the pass builds a profile: a single-qubit synthesis mode
-    (generic `qco.u` when `u` is present; IBM-style surface gates when all of
-    `x`, `sx`, and `rz`/`p` are present; IQM-style `qco.r` when `r` is present;
-    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus optional
-    two-qubit entanglers `cx`, `cz`, and optional `rzz`.
-
-    Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`, `cx`,
-    `cz`, `rzz`. An empty or whitespace-only menu is a no-op, which is the
-    intended pipeline default when synthesis is not needed. An unrecognised
-    token causes the pass to fail.
-
-    Example menus (each line is one illustrative menu; pick either `cx` or
-    `cz` as the entangler, or list both if both are native):
-    - IBM basic (no fractional two-qubit): `x,sx,rz,cx` or `x,sx,rz,cz`
-    - IBM fractional: `x,sx,rz,rx,rzz,cx` or `x,sx,rz,rx,rzz,cz`
-    - Generic single-qubit U: `u,cx` or `u,cz`
-    - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
-    - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
-      Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
-
-    Execution order (mirrors the implementation): fuse consecutive
-    single-qubit runs; fuse two-qubit windows (including absorbed
-    single-qubit padding) via `fuse-two-qubit-unitary-runs`; run up to four synthesis sweeps over remaining
-    non-native unitaries until every single-qubit op matches the menu (two-qubit
-    lowering may temporarily emit off-menu 1q ops that later sweeps absorb—if
-    any remain after that cap, the pass fails); fuse 1q seams between two-qubit
-    blocks; then up to four further synthesis + fusion rounds until the full menu
-    holds (including native `qco.ctrl` shells and bare `rzz` when allowed). If
-    anything is still off-menu, the pass fails.
-
-    Lowering is deterministic: the entangler is chosen as `cx` before `cz`, the
-    single-qubit factors use the first emitter's Euler basis, and the minimal
-    KAK entangler count drives two-qubit window replacement.
-  }];
-  let options = [Option<
-      "nativeGates", "native-gates", "std::string", "\"\"",
-      "Comma-separated native gate menu. Empty or whitespace-only is "
-      "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz, rzz. "
-      "Examples: x,sx,rz,cx; x,sx,rz,rx,rzz,cz; u,cx; r,cz; rx,rz,cx.">];
 }
 
 //===----------------------------------------------------------------------===//
