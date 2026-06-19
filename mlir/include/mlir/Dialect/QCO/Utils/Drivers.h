@@ -25,6 +25,7 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstddef>
 #include <functional>
 #include <iterator>
@@ -52,7 +53,7 @@ using WalkProgramFn = function_ref<WalkResult(Operation*, Qubits&)>;
  */
 template <WalkOrder Order = WalkOrder::PreOrder>
 LogicalResult walkProgram(Region& region, Qubits& qubits,
-                          const WalkProgramFn& fn) {                           
+                          const WalkProgramFn& fn) {
   for (Operation& curr : region.getOps()) {
     if constexpr (Order == WalkOrder::PreOrder) {
       if (fn(&curr, qubits).wasInterrupted()) {
@@ -167,6 +168,14 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
     for (size_t i : curr) {
       auto& it = wires[i];
       while (Traits::isActive(it)) {
+
+        if (it.qubit() != nullptr && isa<BlockArgument>(it.qubit())) {
+          std::ranges::advance(it, Traits::stride());
+          continue;
+        }
+
+        assert(it.operation() != nullptr);
+
         const auto res =
             TypeSwitch<Operation*, WalkResult>(it.operation())
                 .template Case<UnitaryOpInterface>([&](auto& op) {
