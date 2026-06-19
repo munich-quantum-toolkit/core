@@ -14,6 +14,8 @@
 
 #include <llvm/ADT/DenseMap.h>
 
+#include <cstddef>
+#include <set>
 #include <span>
 
 namespace mlir::qco {
@@ -28,6 +30,34 @@ struct SuperfluousResult {
 };
 
 /**
+ * @brief Managing entries of the union table
+ */
+struct UnionTableEntry {
+  const unsigned int index;
+  bool top = false;
+  std::vector<HybridState> states = {};
+  // Values and global indices of the participating qubits
+  llvm::DenseMap<Value, unsigned int> participatingQubits;
+  llvm::DenseSet<Value> participatingClassicalValues = {};
+
+  bool operator<(const UnionTableEntry& ute) const noexcept {
+    return index < ute.index;
+  }
+
+  bool operator==(const UnionTableEntry& ute) const noexcept {
+    return index == ute.index;
+  }
+
+  UnionTableEntry() : index(nextId()) {}
+
+private:
+  static std::uint64_t nextId() {
+    static unsigned int counter = 0;
+    return ++counter;
+  }
+};
+
+/**
  * @brief This class represents a union table.
  *
  * This class holds multiple hybrid states and can propagate operations on the
@@ -35,9 +65,163 @@ struct SuperfluousResult {
  */
 class UnionTable {
   bool allTop = false;
+  std::size_t maxNonzeroAmplitudes;
   std::size_t maximumHybridEntries;
-  llvm::DenseMap<Value, int64_t> globalQubitIndices;
-  llvm::DenseMap<Value, std::shared_ptr<HybridState>> valuesToEntries;
+  llvm::DenseMap<Value, std::shared_ptr<UnionTableEntry>> valuesToEntries =
+      llvm::DenseMap<Value, std::shared_ptr<UnionTableEntry>>();
+  std::set<UnionTableEntry> entries;
+
+  /** @brief: Replaces values globally by new values
+   *
+   * @param replacedValues Values to be replaced
+   * @param newValues Values the first values are replaced with.
+   * @throws runtime_error if the size of the two parameters is not equal.
+   */
+  void replaceValuesGlobally(std::span<Value> replacedValues,
+                             std::span<Value> newValues) {
+    if (replacedValues.size() != newValues.size()) {
+      throw std::domain_error(
+          "replacedValues and newValues do not have the same size.");
+    }
+
+    for (unsigned int i = 0; i < replacedValues.size(); ++i) {
+      const auto rV = replacedValues[i];
+      const auto nV = newValues[i];
+      const auto ute = valuesToEntries.at(rV);
+      valuesToEntries.erase(rV);
+      valuesToEntries[nV] = ute;
+      if (ute->participatingQubits.contains(rV)) {
+        ute->participatingQubits[nV] = ute->participatingQubits[rV];
+        ute->participatingQubits.erase(rV);
+      } else {
+        ute->participatingClassicalValues.insert(nV);
+        ute->participatingClassicalValues.erase(rV);
+      }
+    }
+  }
+
+  /** @brief: Collects a set of all participating entries.
+   *
+   * @param targets An array of the Values of the target qubits.
+   * @param ctrlsQuantum An array of the values of the ctrl qubits.
+   * @param posCtrlsClassical An array of the values of the ctrl bits.
+   * @param negCtrlsClassical An array of the values of the negative ctrl bits.
+   * @param params The parameter applied to the gate.
+   */
+  std::set<UnionTableEntry> collectParticipatingEntries(
+      const std::span<Value> targets, const std::span<Value> ctrlsQuantum,
+      const std::span<Value> posCtrlsClassical,
+      const std::span<Value> negCtrlsClassical, const std::span<Value> params) {
+    std::set<UnionTableEntry> participatingEntries;
+    for (auto const q : targets) {
+      participatingEntries.insert(*valuesToEntries.at(q));
+    }
+    for (auto const q : ctrlsQuantum) {
+      participatingEntries.insert(*valuesToEntries.at(q));
+    }
+    for (auto const i : posCtrlsClassical) {
+      participatingEntries.insert(*valuesToEntries.at(i));
+    }
+    for (auto const i : negCtrlsClassical) {
+      participatingEntries.insert(*valuesToEntries.at(i));
+    }
+    for (auto const i : params) {
+      participatingEntries.insert(*valuesToEntries.at(i));
+    }
+    return participatingEntries;
+  }
+
+  /** @brief Puts the given UnionTableEntries to top
+   *
+   * @param entriesToTop The UnionTableEntries to become top.
+   */
+  void putEntriesToTop(const std::set<UnionTableEntry>& entriesToTop) {
+    auto topUnionTableEntry = UnionTableEntry();
+    topUnionTableEntry.top = true;
+    for (const auto& e : entriesToTop) {
+      topUnionTableEntry.participatingQubits.insert(
+          e.participatingQubits.begin(), e.participatingQubits.end());
+      topUnionTableEntry.participatingClassicalValues.insert(
+          e.participatingClassicalValues.begin(),
+          e.participatingClassicalValues.end());
+      entries.erase(e);
+    }
+    entries.insert(topUnionTableEntry);
+  }
+
+  /**
+   * @brief This method unifies the given UnionTableEntries.
+   *
+   * This method unifies the given UnionTableEntries. If the new states have
+   * more than maxNonzeroAmplitudes, it throws a domain_error. The same holds
+   * if the resulting hybridStates are more than maximumHybridEntries.
+   *
+   * @param entriesToUnify The UnionTableEntries to be unified.
+   * @throws domain_error If more than maNonzeroAmplitudes are created in a
+   * quantumstate or more than maximumHybridEntries are created.
+   */
+  void unifyEntries(const std::set<UnionTableEntry>& entriesToUnify) {
+    if (entriesToUnify.size() == 1) {
+      return;
+    }
+    for (const auto& e : entriesToUnify) {
+      if (e.top) {
+        putEntriesToTop(entriesToUnify);
+      }
+    }
+
+    // Check if the number of entries would be too large
+    unsigned int numberOfNewEntries = 1;
+    for (const auto& e : entriesToUnify) {
+      numberOfNewEntries *= e.states.size();
+    }
+    if (numberOfNewEntries > maximumHybridEntries) {
+      throw std::domain_error("Maximum of allowed hybrid entries exceeded.");
+    }
+
+    // Create new entry
+    auto newEntry = UnionTableEntry();
+    for (auto e : entriesToUnify) {
+      auto classicalValues = e.participatingClassicalValues;
+      auto qubits = e.participatingQubits;
+      newEntry.participatingClassicalValues.insert(classicalValues.begin(),
+                                                   classicalValues.end());
+      newEntry.participatingQubits.insert(qubits.begin(), qubits.end());
+      if (newEntry.states.empty()) {
+        newEntry.states = e.states;
+        continue;
+      }
+      if (e.states.empty()) {
+        continue;
+      }
+      std::vector<HybridState> unifiedHS = {};
+      for (auto hs1 : newEntry.states) {
+        for (auto hs2 : newEntry.states) {
+          unifiedHS.push_back(hs1.unify(hs2));
+        }
+      }
+      newEntry.states = unifiedHS;
+    }
+
+    // Adapt global data structures to new entry
+    auto valuesToReplace = llvm::DenseSet<Value>();
+    for (const auto& [v, _] : valuesToEntries) {
+      if (newEntry.participatingQubits.contains(v) ||
+          newEntry.participatingClassicalValues.contains(v)) {
+        valuesToReplace.insert(v);
+      }
+    }
+    for (const auto& v : valuesToReplace) {
+      valuesToEntries[v] = std::make_shared<UnionTableEntry>(newEntry);
+    }
+    for (const auto& e : entriesToUnify) {
+      entries.erase(e);
+    }
+    entries.insert(newEntry);
+  }
+
+  void applySwapGate(std::span<Value> targets,
+                     std::span<Value> newQuantumTargets) {}
 
 public:
   explicit UnionTable(std::size_t maxNonzeroAmplitudes,
@@ -51,7 +235,7 @@ public:
   std::string toString() const;
 
   [[nodiscard("UnionTable::allTop called but ignored")]]
-  bool areStatesAllTop();
+  bool areStatesAllTop() const;
 
   /**
    * @brief This method applies a gate to the qubits.
