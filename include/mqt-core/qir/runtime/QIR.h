@@ -167,6 +167,31 @@ bool __quantum__rt__read_result(Result*);
 /// the label is included in the output or omitted.
 void __quantum__rt__result_record_output(Result*, const char*);
 
+/// Adds a boolean value to the generated output. The second parameter defines
+/// a string label for the value. Depending on the output schema, the label is
+/// included in the output or omitted.
+void __quantum__rt__bool_record_output(bool, const char*);
+
+/// Adds an integer value to the generated output. The second parameter defines
+/// a string label for the value. Depending on the output schema, the label is
+/// included in the output or omitted.
+void __quantum__rt__int_record_output(int64_t, const char*);
+
+/// Adds a floating-point value to the generated output. The second parameter
+/// defines a string label for the value. Depending on the output schema, the
+/// label is included in the output or omitted.
+void __quantum__rt__float_record_output(double, const char*);
+
+/// Inserts a marker in the generated output indicating that the next
+/// `elementCount` recorded values form the contents of a tuple. The second
+/// parameter defines a string label for the tuple.
+void __quantum__rt__tuple_record_output(int64_t elementCount, const char*);
+
+/// Inserts a marker in the generated output indicating that the next `size`
+/// recorded values form the contents of an array. The second parameter defines
+/// a string label for the array.
+void __quantum__rt__array_record_output(int64_t size, const char*);
+
 // NOLINTEND(readability-identifier-naming)
 // NOLINTEND(modernize-deprecated-headers)
 // NOLINTEND(modernize-use-using)

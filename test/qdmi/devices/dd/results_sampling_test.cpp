@@ -52,14 +52,15 @@ protected:
 #endif
 
   using Histogram = std::pair<std::vector<std::string>, std::vector<size_t>>;
-  static constexpr size_t SHOTS = 1024;
+  static constexpr size_t NUM_SHOTS = 1024;
+  static constexpr size_t NUM_QUBITS = 3;
 
   static Histogram runProgram(const QDMI_Program_Format format,
                               const std::string_view program) {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
     EXPECT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
-    EXPECT_EQ(qdmi_test::setShots(j.job, SHOTS), QDMI_SUCCESS);
+    EXPECT_EQ(qdmi_test::setShots(j.job, NUM_SHOTS), QDMI_SUCCESS);
     EXPECT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
     return qdmi_test::getHistogram(j.job);
   }
@@ -71,12 +72,29 @@ protected:
     ASSERT_EQ(keys.size(), vals.size());
     // Values should sum up to the number of SHOTS.
     const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
-    EXPECT_EQ(sum, SHOTS);
+    EXPECT_EQ(sum, NUM_SHOTS);
     // Both keys '00' and '11' should be expected.
     ASSERT_EQ(keys.size(), 2U);
     // And no other keys should be expected.
     EXPECT_TRUE(std::ranges::all_of(
         keys, [](const auto& k) { return k == "00" || k == "11"; }));
+  }
+
+  /// Smoke check: used for circuits whose distribution we don't pin down (e.g.
+  /// multi-output adaptive programs).
+  static void checkSmokeHistogram(const Histogram& hist) {
+    const auto& [keys, vals] = hist;
+    // Both vectors have the same size.
+    ASSERT_EQ(keys.size(), vals.size());
+    // Values sum up to the number of SHOTS.
+    const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
+    EXPECT_EQ(sum, NUM_SHOTS);
+    // Every key is a NUM_QUBITS-character bit string.
+    EXPECT_TRUE(std::ranges::all_of(keys, [](const auto& k) {
+      return k.size() == NUM_QUBITS && std::ranges::all_of(k, [](char c) {
+               return c == '0' || c == '1';
+             });
+    }));
   }
 };
 
@@ -143,6 +161,18 @@ TEST_F(QIRHistogramTestString, Adaptive) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
   checkHistogram(
       runProgram(format, qir_test::getProgram("BellPairAdaptive.ll")));
+}
+
+TEST_F(QIRHistogramTestModule, AdaptiveRecordOutputs) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  checkSmokeHistogram(
+      runProgram(format, getProgram("AdaptiveRecordOutputs.ll")));
+}
+
+TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  checkSmokeHistogram(
+      runProgram(format, qir_test::getProgram("AdaptiveRecordOutputs.ll")));
 }
 #endif
 

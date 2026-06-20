@@ -37,7 +37,7 @@ TEST_F(JitSessionTest, LoadModuleFromMemory) {
   const auto program = qir_test::getProgram("BellPairStatic.ll");
   const qir::JitSession session(program, "BellPairStatic.ll");
   ASSERT_EQ(session.run(), 0);
-  EXPECT_FALSE(qir::Runtime::getInstance().getRecordedOutputs().empty());
+  EXPECT_FALSE(qir::Runtime::getInstance().getMeasurements().empty());
 }
 
 TEST_F(JitSessionTest, SamplingRecordsOutputs) {
@@ -45,14 +45,14 @@ TEST_F(JitSessionTest, SamplingRecordsOutputs) {
   // qir::Execution::Sampling is the default Execution mode
   const qir::JitSession session(path.string());
   ASSERT_EQ(session.run(), 0);
-  EXPECT_FALSE(qir::Runtime::getInstance().getRecordedOutputs().empty());
+  EXPECT_FALSE(qir::Runtime::getInstance().getMeasurements().empty());
 }
 
 TEST_F(JitSessionTest, StateExtractionLeavesNoRecordedOutputs) {
   const auto path = std::filesystem::path(QIR_FILES_DIR) / "BellPairStatic.ll";
   const qir::JitSession session(path.string(), qir::Execution::StateExtraction);
   ASSERT_EQ(session.run(), 0);
-  EXPECT_TRUE(qir::Runtime::getInstance().getRecordedOutputs().empty());
+  EXPECT_TRUE(qir::Runtime::getInstance().getMeasurements().empty());
 }
 
 TEST(JitSessionErrors, MalformedIRThrows) {

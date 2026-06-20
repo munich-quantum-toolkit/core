@@ -29,6 +29,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -52,13 +53,14 @@ auto Runtime::reset() -> void {
   addressMode = AddressMode::UNKNOWN;
   qRegister.clear();
   rRegister.clear();
+  measurements.clear();
   // NOLINTBEGIN(performance-no-int-to-ptr)
   rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
                     ResultStruct{.refcount = 0, .r = false});
   rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
                     ResultStruct{.refcount = 0, .r = true});
   // NOLINTEND(performance-no-int-to-ptr)
-  recordedOutputs.clear();
+  measurements.clear();
   currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
   currentMaxQubitId = 0;
   currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
@@ -164,12 +166,12 @@ auto Runtime::equal(Result* result1, Result* result2) -> bool {
   return deref(result1).r == deref(result2).r;
 }
 
-auto Runtime::recordOutput(Result* result) -> void {
-  recordedOutputs.push_back(deref(result).r ? '1' : '0');
+auto Runtime::appendMeasurementBit(bool result) -> void {
+  measurements.push_back(result ? '1' : '0');
 }
 
-auto Runtime::getRecordedOutputs() const -> const std::string& {
-  return recordedOutputs;
+auto Runtime::getMeasurements() const -> const std::string& {
+  return measurements;
 }
 
 auto Runtime::takeState() -> QState {
@@ -178,7 +180,17 @@ auto Runtime::takeState() -> QState {
   return ret;
 }
 
-auto Runtime::getOstream() -> std::ostream& { return *os; }
+auto Runtime::outputContainer(const char* label,
+                              int64_t /* elementCount */) const -> void {
+  *os << (label != nullptr ? label : "") << ":\n";
+}
+
+auto Runtime::outputValue(const char* label, std::string_view valueStr) const
+    -> void {
+  *os << (label != nullptr ? label : "") << ": " << valueStr << "\n";
+}
+
+auto Runtime::getOstream() const -> std::ostream& { return *os; }
 
 auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
 
