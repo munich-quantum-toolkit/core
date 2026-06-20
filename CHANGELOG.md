@@ -12,8 +12,8 @@ with the exception that minor releases may include breaking changes.
 
 ### Added
 
-- ✨ Add a `absorb-swaps` pass for absorbing initial SWAPs ([#1750])
-  ([**@jmoosburger**], [**@MatthiasReumann**])
+- ✨ Add an `absorb-swaps` pass for absorbing initial SWAPs ([#1750])
+  ([**@jmoosburger**], [**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
   for fusing compile-time single-qubit unitary runs via Euler resynthesis
   ([#1672]) ([**@simon1hofmann**], [**@burgholzer**])
