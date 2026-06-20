@@ -98,8 +98,8 @@ TEST_F(SwapAbsorbPassTest, PassReordersTwoQubitCircuitWithLeadingSwap) {
   auto moduleThroughPass = builder.finalize();
   applySwapAbsorb(moduleThroughPass);
 
-  ASSERT_EQ(q10, ((IdOp)q02.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q00, ((IdOp)q12.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q10, mlir::cast<IdOp>(q02.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q00, mlir::cast<IdOp>(q12.getDefiningOp()).getInputQubit(0));
 }
 
 TEST_F(SwapAbsorbPassTest, PassAbsorbsTwoIndependentSwaps) {
@@ -128,10 +128,10 @@ TEST_F(SwapAbsorbPassTest, PassAbsorbsTwoIndependentSwaps) {
   auto moduleThroughPass = builder.finalize();
   applySwapAbsorb(moduleThroughPass);
 
-  ASSERT_EQ(q10, ((IdOp)q02.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q00, ((IdOp)q12.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q30, ((IdOp)q22.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q20, ((IdOp)q32.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q10, mlir::cast<IdOp>(q02.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q00, mlir::cast<IdOp>(q12.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q30, mlir::cast<IdOp>(q22.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q20, mlir::cast<IdOp>(q32.getDefiningOp()).getInputQubit(0));
 }
 
 TEST_F(SwapAbsorbPassTest, PassAbsorbsSwapWithLeadingSingleQubitGates) {
@@ -156,8 +156,8 @@ TEST_F(SwapAbsorbPassTest, PassAbsorbsSwapWithLeadingSingleQubitGates) {
   auto moduleThroughPass = builder.finalize();
   applySwapAbsorb(moduleThroughPass);
 
-  ASSERT_EQ(q11, ((IdOp)q03.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q01, ((IdOp)q13.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q11, mlir::cast<IdOp>(q03.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q01, mlir::cast<IdOp>(q13.getDefiningOp()).getInputQubit(0));
 }
 
 TEST_F(SwapAbsorbPassTest, PassAbsorbsTwoDependentSwaps) {
@@ -183,7 +183,7 @@ TEST_F(SwapAbsorbPassTest, PassAbsorbsTwoDependentSwaps) {
   auto moduleThroughPass = builder.finalize();
   applySwapAbsorb(moduleThroughPass);
 
-  ASSERT_EQ(q20, ((IdOp)q13.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q00, ((IdOp)q22.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q10, ((IdOp)q02.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q20, mlir::cast<IdOp>(q13.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q00, mlir::cast<IdOp>(q22.getDefiningOp()).getInputQubit(0));
+  ASSERT_EQ(q10, mlir::cast<IdOp>(q02.getDefiningOp()).getInputQubit(0));
 }
