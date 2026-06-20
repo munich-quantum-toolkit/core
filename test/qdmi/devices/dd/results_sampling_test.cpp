@@ -70,7 +70,7 @@ protected:
     // Keys and values come from two independent device queries.
     // Check both vectors have the same size.
     ASSERT_EQ(keys.size(), vals.size());
-    // Values should sum up to the number of SHOTS.
+    // Values should sum up to NUM_SHOTS.
     const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
     EXPECT_EQ(sum, NUM_SHOTS);
     // Both keys '00' and '11' should be expected.
@@ -80,8 +80,8 @@ protected:
         keys, [](const auto& k) { return k == "00" || k == "11"; }));
   }
 
-  /// Smoke check: used for circuits whose distribution we don't pin down (e.g.
-  /// multi-output adaptive programs).
+  /// Smoke check used for circuits whose distribution we do not know precisely.
+  /// For example, multi-output adaptive programs.
   static void checkSmokeHistogram(const Histogram& hist) {
     const auto& [keys, vals] = hist;
     // Both vectors have the same size.
@@ -89,7 +89,7 @@ protected:
     // Values sum up to NUM_SHOTS.
     const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
     EXPECT_EQ(sum, NUM_SHOTS);
-    // Every key is a NUM_QUBITS-character bit string.
+    // Every key is a NUM_QUBITS long bit string.
     EXPECT_TRUE(std::ranges::all_of(keys, [](const auto& k) {
       return k.size() == NUM_QUBITS && std::ranges::all_of(k, [](char c) {
                return c == '0' || c == '1';
