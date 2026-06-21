@@ -8,17 +8,7 @@
 
 # Build the compiler driver executable
 add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline SUPPORT_PLUGINS)
-target_link_libraries(
-  mqt-cc
-  PRIVATE MQTCompilerPipeline
-          # Required for parsing .mlir files
-          MLIRParser
-          # Required for file I/O
-          MLIRSupport
-          # Required for OpenQASM parsing
-          MQT::CoreQASM
-          MQT::CoreIR
-          MLIRQCTranslation)
+target_link_libraries(mqt-cc PRIVATE MQTCompilerPipeline MLIRParser MLIRSupport MLIRQCTranslation)
 
 mqt_mlir_target_use_project_options(mqt-cc)
 llvm_update_compile_flags(mqt-cc)

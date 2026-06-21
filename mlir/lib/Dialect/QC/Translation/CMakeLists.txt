@@ -9,13 +9,15 @@
 add_mlir_library(
   MLIRQCTranslation
   TranslateQuantumComputationToQC.cpp
+  TranslateQASM3ToQC.cpp
   LINK_LIBS
   MLIRArithDialect
   MLIRFuncDialect
   MLIRSCFDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
-  MQT::CoreIR)
+  MQT::CoreIR
+  MQT::CoreQASM)
 
 mqt_mlir_target_use_project_options(MLIRQCTranslation)
 
