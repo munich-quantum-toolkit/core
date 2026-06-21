@@ -404,6 +404,16 @@ TEST(UnitaryMatrix4x4, ScalarLeftMultiply) {
   EXPECT_TRUE((scalar * swap).isApprox(swap * scalar));
 }
 
+TEST(GateMatrixFactories, RemEuclidAndControlledGates) {
+  EXPECT_DOUBLE_EQ(remEuclid(-1.0, 3.0), 2.0);
+  EXPECT_TRUE(twoQubitControlledX01().isApprox(
+      Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0)));
+  EXPECT_TRUE(twoQubitControlledX10().isApprox(
+      reorderTwoQubitMatrix(twoQubitControlledX01(), 1, 0)));
+  EXPECT_TRUE(rxMatrix(0.0).isIdentity());
+  EXPECT_TRUE((iPauliX() * iPauliX()).isApprox(-1.0 * Matrix2x2::identity()));
+}
+
 TEST(JacobiEigensolver, DiagonalMatrix) {
   std::array<double, 16> a{};
   a[0] = 3.0;

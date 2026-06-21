@@ -686,9 +686,7 @@ inline constexpr bool
  * `Eigen::SelfAdjointEigenSolver`.
  */
 struct SymmetricEigen4 {
-  /// Eigenvalues sorted in ascending order.
   std::array<double, 4> eigenvalues{};
-  /// Orthonormal eigenvectors as columns (real-valued, zero imaginary part).
   Matrix4x4 eigenvectors{};
 };
 
@@ -745,5 +743,57 @@ jacobiSymmetricEigen(const std::array<double, 16>& symmetric);
                                                   std::size_t numQubits,
                                                   std::size_t q0Index,
                                                   std::size_t q1Index);
+
+inline constexpr double FRAC1_SQRT2 =
+    0.707106781186547524400844362104849039284835937688474036588;
+
+/**
+ * @brief Non-negative remainder of @p a modulo @p b.
+ *
+ * Unlike `std::fmod`, the result is always in `[0, |b|)`.
+ */
+[[nodiscard]] double remEuclid(double a, double b);
+
+/**
+ * @brief Average two-qubit gate fidelity from a Hilbert-Schmidt trace.
+ *
+ * Maps `|tr(U^dag V)|` to fidelity via `(4 + |tr|^2) / 20`.
+ */
+[[nodiscard]] double traceToFidelity(const Complex& trace);
+
+/** @brief Unit-modulus global phase factor `exp(i * phase)`. */
+[[nodiscard]] Complex globalPhaseFactor(double phase);
+
+/** @brief Returns true when @p matrix is unitary within @p tolerance. */
+[[nodiscard]] bool isUnitaryMatrix(const Matrix2x2& matrix,
+                                   double tolerance = MATRIX_TOLERANCE);
+
+[[nodiscard]] Matrix2x2 rxMatrix(double theta);
+[[nodiscard]] Matrix2x2 ryMatrix(double theta);
+[[nodiscard]] Matrix2x2 rzMatrix(double theta);
+
+[[nodiscard]] const Matrix2x2& iPauliX();
+[[nodiscard]] const Matrix2x2& iPauliY();
+[[nodiscard]] const Matrix2x2& iPauliZ();
+
+[[nodiscard]] Matrix4x4 rxxMatrix(double theta);
+[[nodiscard]] Matrix4x4 ryyMatrix(double theta);
+[[nodiscard]] Matrix4x4 rzzMatrix(double theta);
+
+/**
+ * @brief Controlled-`X` with control on qubit 0 (MSB) and target on qubit 1.
+ *
+ * Operand order matches @ref embedSingleQubitInTwoQubit and QCO unitaries.
+ */
+[[nodiscard]] const Matrix4x4& twoQubitControlledX01();
+
+/**
+ * @brief Controlled-`X` with control on qubit 1 and target on qubit 0.
+ *
+ * Same entangling content as @ref twoQubitControlledX01 but with wires
+ * reversed; useful when parametrizing basis-decomposer tests.
+ */
+[[nodiscard]] const Matrix4x4& twoQubitControlledX10();
+[[nodiscard]] const Matrix4x4& twoQubitControlledZ();
 
 } // namespace mlir::qco

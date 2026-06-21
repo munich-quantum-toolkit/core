@@ -746,21 +746,6 @@ protected:
 
 using mqt::test::isEquivalentUpToGlobalPhase;
 
-namespace {
-
-using mqt::test::expandToTwoQubits;
-using mqt::test::fixTwoQubitMatrixQubitOrder;
-using mqt::test::QubitId;
-
-} // namespace
-
-/// Compute the 4×4 unitary of a two-qubit QCO module whose qubits are
-/// introduced by `qco.static` ops with indices 0 and 1. Handles the op set
-/// that stage-4/stage-5 IR can contain for the `staticQubitsWithOps`
-/// program (pre-synthesis: `qco.h`; post-synthesis: `qco.rz`, `qco.sx`,
-/// `qco.x`, `qco.p`, `qco.u`; and `qco.gphase`, which is skipped). Returns
-/// `std::nullopt` if the IR contains an unsupported op or non-constant
-/// parameters.
 static std::optional<mlir::qco::Matrix4x4>
 computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
   if (module == nullptr) {
@@ -808,7 +793,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
           if (!op.getUnitaryMatrix2x2(oneQ)) {
             return std::nullopt;
           }
-          unitary = expandToTwoQubits(oneQ, *qid) * unitary;
+          unitary = mlir::qco::embedSingleQubitInTwoQubit(oneQ, *qid) * unitary;
           qubitIds[op.getOutputQubit(0)] = *qid;
           continue;
         }
@@ -826,22 +811,18 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
             }
             auto* body = ctrl.getBodyUnitary(0).getOperation();
             if (llvm::isa<mlir::qco::XOp>(body)) {
-              // CX matrix (same 4×4 layout as QCO unitary interface).
-              twoQ = mlir::qco::Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0,
-                                                        0, 0, 0, 1, 0, 0, 1, 0);
+              twoQ = mlir::qco::twoQubitControlledX01();
             } else if (llvm::isa<mlir::qco::ZOp>(body)) {
-              // CZ matrix: identity with a `-1` phase on the `|11>` entry.
-              twoQ = mlir::qco::Matrix4x4::fromElements(
-                  1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1);
+              twoQ = mlir::qco::twoQubitControlledZ();
             } else {
               return std::nullopt;
             }
           } else if (!op.getUnitaryMatrix4x4(twoQ)) {
             return std::nullopt;
           }
-          const llvm::SmallVector<QubitId, 2> ids{static_cast<QubitId>(*q0),
-                                                  static_cast<QubitId>(*q1)};
-          unitary = fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
+          const llvm::SmallVector<std::size_t, 2> ids{*q0, *q1};
+          unitary =
+              mlir::qco::reorderTwoQubitMatrix(twoQ, ids[0], ids[1]) * unitary;
           qubitIds[op.getOutputQubit(0)] = *q0;
           qubitIds[op.getOutputQubit(1)] = *q1;
           continue;
@@ -861,9 +842,7 @@ TEST_F(CompilerPipelineNativeSynthesisConfigTest,
 
   const auto record = runPipelineAndExpectSuccess();
 
-  // Stage 4 still contains unsynthesized H operations from the source program.
   EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
-  // Stage 5 must rewrite them when a native menu is configured.
   EXPECT_EQ(record.afterOptimization.find("qco.h"), std::string::npos);
 }
 
@@ -890,8 +869,6 @@ TEST_F(CompilerPipelineNativeSynthesisConfigTest,
 
 TEST_F(CompilerPipelineNativeSynthesisConfigTest,
        RejectsUnderSpecifiedNativeSynthesisMenuInStage5) {
-  // A menu with only two-qubit entanglers cannot synthesize any single-qubit
-  // operation.
   config.nativeGates = "cx,cz";
 
   runPipelineAndExpectFailure();
@@ -899,7 +876,6 @@ TEST_F(CompilerPipelineNativeSynthesisConfigTest,
 
 TEST_F(CompilerPipelineNativeSynthesisConfigTest,
        RejectsInvalidNativeGateTokenInStage5) {
-  // Unknown tokens in the menu must be rejected.
   config.nativeGates = "not-a-gate";
 
   runPipelineAndExpectFailure();
@@ -907,9 +883,6 @@ TEST_F(CompilerPipelineNativeSynthesisConfigTest,
 
 TEST_F(CompilerPipelineNativeSynthesisConfigTest,
        LeavesIRUnchangedWhenNoNativeProfileIsConfigured) {
-  // Stage 5 must be a no-op when `nativeGates` is empty (the documented
-  // default): the stage-4 (QCO canonicalized) and stage-5 (optimization +
-  // native gate synthesis) IRs have to be byte-identical.
   config.nativeGates = "";
 
   const auto record = runPipelineAndExpectSuccess();
@@ -930,10 +903,6 @@ TEST_F(CompilerPipelineNativeSynthesisConfigTest,
 
 TEST_F(CompilerPipelineNativeSynthesisConfigTest,
        NativeSynthesisPreservesUnitaryOnStaticQubits) {
-  // End-to-end unitary equivalence check: after the pipeline lowers
-  // `staticQubitsWithOps` (H on two static qubits) onto the `x,sx,rz,cx`
-  // native gate set, the 4×4 unitary of the IR after stage 5 must match the
-  // unitary of the pre-synthesis (`afterQCOCanon`) IR up to a global phase.
   config.nativeGates = "x,sx,rz,cx";
 
   const auto record = runPipelineAndExpectSuccess();

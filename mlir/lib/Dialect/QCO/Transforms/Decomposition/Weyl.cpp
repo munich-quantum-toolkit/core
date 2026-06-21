@@ -10,21 +10,12 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <array>
@@ -46,94 +37,228 @@ using mlir::qco::Matrix4x4;
 
 static constexpr double SANITY_CHECK_PRECISION = 1e-12;
 
-[[nodiscard]] static bool isUnitaryMatrix(const Matrix2x2& matrix,
-                                          double tolerance = 1e-12) {
-  return (matrix.adjoint() * matrix).isIdentity(tolerance);
-}
-
-[[nodiscard]] static double remEuclid(double a, double b) {
-  if (b == 0.0) {
-    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
-  }
-  const auto r = std::fmod(a, b);
-  return (r < 0.0) ? r + std::abs(b) : r;
-}
-
-[[nodiscard]] static double traceToFidelity(const std::complex<double>& x) {
-  const auto xAbs = std::abs(x);
-  return (4.0 + (xAbs * xAbs)) / 20.0;
-}
-
-[[nodiscard]] static std::complex<double>
-globalPhaseFactor(double globalPhase) {
-  return std::exp(std::complex<double>{0, 1} * globalPhase);
-}
-
-[[nodiscard]] static Matrix4x4 rxxMatrix(double theta) {
-  const auto cosTheta = std::cos(theta / 2.);
-  const Complex misin{0., -std::sin(theta / 2.)};
-  return Matrix4x4::fromElements(cosTheta, 0, 0, misin, //
-                                 0, cosTheta, misin, 0, //
-                                 0, misin, cosTheta, 0, //
-                                 misin, 0, 0, cosTheta);
-}
-
-[[nodiscard]] static Matrix4x4 ryyMatrix(double theta) {
-  const auto cosTheta = std::cos(theta / 2.);
-  const Complex isin{0., std::sin(theta / 2.)};
-  const Complex misin{0., -std::sin(theta / 2.)};
-  return Matrix4x4::fromElements(cosTheta, 0, 0, isin,  //
-                                 0, cosTheta, misin, 0, //
-                                 0, misin, cosTheta, 0, //
-                                 isin, 0, 0, cosTheta);
-}
-
-[[nodiscard]] static Matrix4x4 rzzMatrix(double theta) {
-  const auto cosTheta = std::cos(theta / 2.);
-  const auto sinTheta = std::sin(theta / 2.);
-  const Complex em{cosTheta, -sinTheta};
-  const Complex ep{cosTheta, sinTheta};
-  return Matrix4x4::fromElements(em, 0, 0, 0, //
-                                 0, ep, 0, 0, //
-                                 0, 0, ep, 0, //
-                                 0, 0, 0, em);
-}
-
-[[nodiscard]] static const Matrix4x4& swapGate() {
-  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
-                                                          0, 0, 1, 0, //
-                                                          0, 1, 0, 0, //
-                                                          0, 0, 0, 1);
-  return MATRIX;
-}
-
-[[nodiscard]] static const Matrix4x4& cxGate01() {
-  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
-                                                          0, 1, 0, 0, //
-                                                          0, 0, 0, 1, //
-                                                          0, 0, 1, 0);
-  return MATRIX;
-}
-
-[[nodiscard]] static const Matrix4x4& cxGate10() {
-  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
-                                                          0, 0, 0, 1, //
-                                                          0, 0, 1, 0, //
-                                                          0, 1, 0, 0);
-  return MATRIX;
-}
-
-[[nodiscard]] static const Matrix4x4& czGate() {
-  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
-                                                          0, 1, 0, 0, //
-                                                          0, 0, 1, 0, //
-                                                          0, 0, 0, -1);
-  return MATRIX;
-}
-
 namespace mlir::qco::decomposition {
 
 using namespace std::complex_literals;
+
+namespace {
+
+enum class Specialization : std::uint8_t {
+  General,
+  IdEquiv,
+  SWAPEquiv,
+  PartialSWAPEquiv,
+  PartialSWAPFlipEquiv,
+  ControlledEquiv,
+  MirrorControlledEquiv,
+  FSimaabEquiv,
+  FSimabbEquiv,
+  FSimabmbEquiv,
+};
+
+enum class MagicBasisTransform : std::uint8_t {
+  Into,
+  OutOf,
+};
+
+static constexpr auto DIAGONALIZATION_PRECISION = 1e-13;
+
+[[nodiscard]] Matrix4x4 magicBasisTransform(const Matrix4x4& unitary,
+                                            MagicBasisTransform direction) {
+  const Matrix4x4 bNonNormalized = Matrix4x4::fromElements( //
+      1, 1i, 0, 0,                                          //
+      0, 0, 1i, 1,                                          //
+      0, 0, 1i, -1,                                         //
+      1, -1i, 0, 0);
+  const Matrix4x4 bNonNormalizedDagger = Matrix4x4::fromElements( //
+      0.5, 0, 0, 0.5,                                             //
+      Complex{0.0, -0.5}, 0, 0, Complex{0.0, 0.5},                //
+      0, Complex{0.0, -0.5}, Complex{0.0, -0.5}, 0,               //
+      0, 0.5, -0.5, 0);
+  if (direction == MagicBasisTransform::OutOf) {
+    return bNonNormalizedDagger * unitary * bNonNormalized;
+  }
+  if (direction == MagicBasisTransform::Into) {
+    return bNonNormalized * unitary * bNonNormalizedDagger;
+  }
+  llvm::reportFatalInternalError("Unknown MagicBasisTransform direction!");
+}
+
+[[nodiscard]] double closestPartialSwap(double a, double b, double c) {
+  auto m = (a + b + c) / 3.;
+  auto [am, bm, cm] = std::array{a - m, b - m, c - m};
+  auto [ab, bc, ca] = std::array{a - b, b - c, c - a};
+  return m + (am * bm * cm * (6. + (ab * ab) + (bc * bc) + (ca * ca)) / 18.);
+}
+
+[[nodiscard]] std::pair<Matrix4x4, std::array<Complex, 4>>
+diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
+  auto state = std::mt19937{2023};
+  std::normal_distribution<double> dist;
+
+  const auto mReal = m.realPart();
+  const auto mImag = m.imagPart();
+
+  double bestErr = 1e300;
+  constexpr auto maxDiagonalizationAttempts = 100;
+  for (int i = 0; i < maxDiagonalizationAttempts; ++i) {
+    double randA{};
+    double randB{};
+    if (i == 0) {
+      randA = 1.2602066112249388;
+      randB = 0.22317849046722027;
+    } else {
+      randA = dist(state);
+      randB = dist(state);
+    }
+    std::array<double, 16> m2Real{};
+    for (std::size_t k = 0; k < m2Real.size(); ++k) {
+      m2Real[k] = (randA * mReal[k]) + (randB * mImag[k]);
+    }
+    const Matrix4x4 p = jacobiSymmetricEigen(m2Real).eigenvectors;
+    const std::array<Complex, 4> d = (p.transpose() * m * p).diagonal();
+
+    const auto compare = p * Matrix4x4::fromDiagonal(d) * p.transpose();
+    {
+      double err = 0.0;
+      for (std::size_t r = 0; r < 4; ++r) {
+        for (std::size_t cc = 0; cc < 4; ++cc) {
+          err = std::max(err, std::abs(compare(r, cc) - m(r, cc)));
+        }
+      }
+      bestErr = std::min(bestErr, err);
+    }
+    if (compare.isApprox(m, precision)) {
+      assert((p.transpose() * p).isIdentity(SANITY_CHECK_PRECISION));
+      assert(std::abs(Matrix4x4::fromDiagonal(d).determinant() - 1.0) <
+             SANITY_CHECK_PRECISION);
+      return std::make_pair(p, d);
+    }
+  }
+  llvm::reportFatalInternalError(llvm::formatv(
+      "TwoQubitWeylDecomposition: failed to diagonalize M2 ({0} iterations). "
+      "best error = {1:e}, precision = {2:e}",
+      maxDiagonalizationAttempts, bestErr, precision));
+}
+
+[[nodiscard]] std::tuple<Matrix2x2, Matrix2x2, double>
+decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
+  Matrix2x2 r =
+      Matrix2x2::fromElements(specialUnitary(0, 0), specialUnitary(0, 1),
+                              specialUnitary(1, 0), specialUnitary(1, 1));
+  auto detR = r.determinant();
+  if (std::abs(detR) < 0.1) {
+    r = Matrix2x2::fromElements(specialUnitary(2, 0), specialUnitary(2, 1),
+                                specialUnitary(3, 0), specialUnitary(3, 1));
+    detR = r.determinant();
+  }
+  if (std::abs(detR) < 0.1) {
+    llvm::reportFatalInternalError(
+        "decomposeTwoQubitProductGate: unable to decompose: det_r < 0.1");
+  }
+  r *= (1.0 / std::sqrt(detR));
+  const Matrix2x2 rTConj = r.adjoint();
+
+  Matrix4x4 temp = specialUnitary * kron(Matrix2x2::identity(), rTConj);
+
+  Matrix2x2 l =
+      Matrix2x2::fromElements(temp(0, 0), temp(0, 2), temp(2, 0), temp(2, 2));
+  auto detL = l.determinant();
+  if (std::abs(detL) < 0.9) {
+    llvm::reportFatalInternalError(
+        "decomposeTwoQubitProductGate: unable to decompose: detL < 0.9");
+  }
+  l *= (1.0 / std::sqrt(detL));
+  auto phase = std::arg(detL) / 2.;
+
+  return {l, r, phase};
+}
+
+[[nodiscard]] std::complex<double> getTrace(double a, double b, double c,
+                                            double ap, double bp, double cp) {
+  auto da = a - ap;
+  auto db = b - bp;
+  auto dc = c - cp;
+  return 4. * std::complex<double>{std::cos(da) * std::cos(db) * std::cos(dc),
+                                   std::sin(da) * std::sin(db) * std::sin(dc)};
+}
+
+[[nodiscard]] Specialization
+bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
+                   const std::optional<double>& requestedFidelity) {
+  auto isClose = [&](double ap, double bp, double cp) -> bool {
+    auto tr = getTrace(decomposition.a(), decomposition.b(), decomposition.c(),
+                       ap, bp, cp);
+    if (requestedFidelity) {
+      return traceToFidelity(tr) >= *requestedFidelity;
+    }
+    return false;
+  };
+
+  auto closestAbc = closestPartialSwap(decomposition.a(), decomposition.b(),
+                                       decomposition.c());
+  auto closestAbMinusC = closestPartialSwap(
+      decomposition.a(), decomposition.b(), -decomposition.c());
+
+  if (isClose(0., 0., 0.)) {
+    return Specialization::IdEquiv;
+  }
+  if (isClose((std::numbers::pi / 4.0), (std::numbers::pi / 4.0),
+              (std::numbers::pi / 4.0)) ||
+      isClose((std::numbers::pi / 4.0), (std::numbers::pi / 4.0),
+              -(std::numbers::pi / 4.0))) {
+    return Specialization::SWAPEquiv;
+  }
+  if (isClose(closestAbc, closestAbc, closestAbc)) {
+    return Specialization::PartialSWAPEquiv;
+  }
+  if (isClose(closestAbMinusC, closestAbMinusC, -closestAbMinusC)) {
+    return Specialization::PartialSWAPFlipEquiv;
+  }
+  if (isClose(decomposition.a(), 0., 0.)) {
+    return Specialization::ControlledEquiv;
+  }
+  if (isClose((std::numbers::pi / 4.0), (std::numbers::pi / 4.0),
+              decomposition.c())) {
+    return Specialization::MirrorControlledEquiv;
+  }
+  if (isClose((decomposition.a() + decomposition.b()) / 2.,
+              (decomposition.a() + decomposition.b()) / 2.,
+              decomposition.c())) {
+    return Specialization::FSimaabEquiv;
+  }
+  if (isClose(decomposition.a(), (decomposition.b() + decomposition.c()) / 2.,
+              (decomposition.b() + decomposition.c()) / 2.)) {
+    return Specialization::FSimabbEquiv;
+  }
+  if (isClose(decomposition.a(), (decomposition.b() - decomposition.c()) / 2.,
+              (decomposition.c() - decomposition.b()) / 2.)) {
+    return Specialization::FSimabmbEquiv;
+  }
+  return Specialization::General;
+}
+
+[[nodiscard]] bool relativeEq(double lhs, double rhs, double epsilon,
+                              double maxRelative) {
+  if (lhs == rhs) {
+    return true;
+  }
+  if (std::isinf(lhs) || std::isinf(rhs)) {
+    return false;
+  }
+  auto absDiff = std::abs(lhs - rhs);
+  if (absDiff <= epsilon) {
+    return true;
+  }
+  auto absLhs = std::abs(lhs);
+  auto absRhs = std::abs(rhs);
+  if (absRhs > absLhs) {
+    return absDiff <= absRhs * maxRelative;
+  }
+  return absDiff <= absLhs * maxRelative;
+}
+
+} // namespace
 
 TwoQubitWeylDecomposition
 TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
@@ -267,28 +392,28 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   // Flip into Weyl chamber
   if (cs[0] > (pi / 2.0)) {
     cs[0] -= 3.0 * (pi / 2.0);
-    K1l = K1l * ipy();
-    K1r = K1r * ipy();
+    K1l = K1l * iPauliY();
+    K1r = K1r * iPauliY();
     globalPhase += (pi / 2.0);
   }
   if (cs[1] > (pi / 2.0)) {
     cs[1] -= 3.0 * (pi / 2.0);
-    K1l = K1l * ipx();
-    K1r = K1r * ipx();
+    K1l = K1l * iPauliX();
+    K1r = K1r * iPauliX();
     globalPhase += (pi / 2.0);
   }
   auto conjs = 0;
   if (cs[0] > (pi / 4.0)) {
     cs[0] = (pi / 2.0) - cs[0];
-    K1l = K1l * ipy();
-    K2r = ipy() * K2r;
+    K1l = K1l * iPauliY();
+    K2r = iPauliY() * K2r;
     conjs += 1;
     globalPhase -= (pi / 2.0);
   }
   if (cs[1] > (pi / 4.0)) {
     cs[1] = (pi / 2.0) - cs[1];
-    K1l = K1l * ipx();
-    K2r = ipx() * K2r;
+    K1l = K1l * iPauliX();
+    K2r = iPauliX() * K2r;
     conjs += 1;
     globalPhase += (pi / 2.0);
     if (conjs == 1) {
@@ -297,8 +422,8 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   }
   if (cs[2] > (pi / 2.0)) {
     cs[2] -= 3.0 * (pi / 2.0);
-    K1l = K1l * ipz();
-    K1r = K1r * ipz();
+    K1l = K1l * iPauliZ();
+    K1r = K1r * iPauliZ();
     globalPhase += (pi / 2.0);
     if (conjs == 1) {
       globalPhase -= pi;
@@ -306,14 +431,14 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   }
   if (conjs == 1) {
     cs[2] = (pi / 2.0) - cs[2];
-    K1l = K1l * ipz();
-    K2r = ipz() * K2r;
+    K1l = K1l * iPauliZ();
+    K2r = iPauliZ() * K2r;
     globalPhase += (pi / 2.0);
   }
   if (cs[2] > (pi / 4.0)) {
     cs[2] -= (pi / 2.0);
-    K1l = K1l * ipz();
-    K1r = K1r * ipz();
+    K1l = K1l * iPauliZ();
+    K1r = K1r * iPauliZ();
     globalPhase -= (pi / 2.0);
   }
 
@@ -329,7 +454,8 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   decomposition.k2l_ = K2l;
   decomposition.k1r_ = K1r;
   decomposition.k2r_ = K2r;
-  decomposition.specialization = Specialization::General;
+  decomposition.specializationKind_ =
+      static_cast<std::uint8_t>(Specialization::General);
   decomposition.requestedFidelity = fidelity;
 
   // make sure decomposition is equal to input
@@ -341,18 +467,17 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   // matrices can potentially be simplified
   auto flippedFromOriginal = decomposition.applySpecialization();
 
-  auto getTrace = [&]() {
+  auto getTraceValue = [&]() {
     if (flippedFromOriginal) {
-      return TwoQubitWeylDecomposition::getTrace(
-          (pi / 2.0) - a, b, -c, decomposition.a_, decomposition.b_,
-          decomposition.c_);
+      return getTrace((pi / 2.0) - a, b, -c, decomposition.a_, decomposition.b_,
+                      decomposition.c_);
     }
-    return TwoQubitWeylDecomposition::getTrace(
-        a, b, c, decomposition.a_, decomposition.b_, decomposition.c_);
+    return getTrace(a, b, c, decomposition.a_, decomposition.b_,
+                    decomposition.c_);
   };
   // use trace to calculate fidelity of applied specialization and
   // adjust global phase
-  auto trace = getTrace();
+  auto trace = getTraceValue();
   const double calculatedFidelity = traceToFidelity(trace);
   // final check if specialization is close enough to the original matrix to
   // satisfy the requested fidelity; since no forced specialization is
@@ -390,231 +515,15 @@ Matrix4x4 TwoQubitWeylDecomposition::getCanonicalMatrix(double a, double b,
   return zz * yy * xx;
 }
 
-Matrix4x4
-TwoQubitWeylDecomposition::magicBasisTransform(const Matrix4x4& unitary,
-                                               MagicBasisTransform direction) {
-  // Makhlin "magic basis" transform. Conjugating a 2-qubit unitary by
-  // `bNonNormalized` maps SU(2) x SU(2) factors onto SO(4) and diagonalizes
-  // the canonical (Weyl) gate. The matrices are stored unnormalized: the
-  // `1/2` pre-factor that would normally appear in `B^dagger` is absorbed
-  // into `bNonNormalizedDagger` directly so the product `Bd * B == I`
-  // without an extra scalar.
-  const Matrix4x4 bNonNormalized = Matrix4x4::fromElements( //
-      1, 1i, 0, 0,                                          //
-      0, 0, 1i, 1,                                          //
-      0, 0, 1i, -1,                                         //
-      1, -1i, 0, 0);
-  const Matrix4x4 bNonNormalizedDagger = Matrix4x4::fromElements( //
-      0.5, 0, 0, 0.5,                                             //
-      Complex{0.0, -0.5}, 0, 0, Complex{0.0, 0.5},                //
-      0, Complex{0.0, -0.5}, Complex{0.0, -0.5}, 0,               //
-      0, 0.5, -0.5, 0);
-  if (direction == MagicBasisTransform::OutOf) {
-    return bNonNormalizedDagger * unitary * bNonNormalized;
-  }
-  if (direction == MagicBasisTransform::Into) {
-    return bNonNormalized * unitary * bNonNormalizedDagger;
-  }
-  llvm::reportFatalInternalError("Unknown MagicBasisTransform direction!");
-}
-
-double TwoQubitWeylDecomposition::closestPartialSwap(double a, double b,
-                                                     double c) {
-  auto m = (a + b + c) / 3.;
-  auto [am, bm, cm] = std::array{a - m, b - m, c - m};
-  auto [ab, bc, ca] = std::array{a - b, b - c, c - a};
-  return m + (am * bm * cm * (6. + (ab * ab) + (bc * bc) + (ca * ca)) / 18.);
-}
-
-std::pair<Matrix4x4, std::array<Complex, 4>>
-TwoQubitWeylDecomposition::diagonalizeComplexSymmetric(const Matrix4x4& m,
-                                                       double precision) {
-  // We can't use raw `eig` directly because it isn't guaranteed to give
-  // us real or orthogonal eigenvectors. Instead, since `M` is
-  // complex-symmetric,
-  //   M = A + iB
-  // for real-symmetric `A` and `B`, and as
-  //   M^+ @ M2 = A^2 + B^2 + i [A, B] = 1
-  // we must have `A` and `B` commute, and consequently they are
-  // simultaneously diagonalizable. Mixing them together _should_ account
-  // for any degeneracy problems, but it's not guaranteed, so we repeat it
-  // a little bit.  The fixed seed is to make failures deterministic; the
-  // value is not important.
-  auto state = std::mt19937{2023};
-  std::normal_distribution<double> dist;
-
-  const auto mReal = m.realPart();
-  const auto mImag = m.imagPart();
-
-  double bestErr = 1e300;
-  constexpr auto maxDiagonalizationAttempts = 100;
-  for (int i = 0; i < maxDiagonalizationAttempts; ++i) {
-    double randA{};
-    double randB{};
-    // For debugging the algorithm use the same RNG values as the
-    // Qiskit implementation for the first random trial.
-    // In most cases this loop only executes a single iteration and
-    // using the same rng values rules out possible RNG differences
-    // as the root cause of a test failure
-    if (i == 0) {
-      randA = 1.2602066112249388;
-      randB = 0.22317849046722027;
-    } else {
-      randA = dist(state);
-      randB = dist(state);
-    }
-    std::array<double, 16> m2Real{};
-    for (std::size_t k = 0; k < m2Real.size(); ++k) {
-      m2Real[k] = (randA * mReal[k]) + (randB * mImag[k]);
-    }
-    const Matrix4x4 p = jacobiSymmetricEigen(m2Real).eigenvectors;
-    const std::array<Complex, 4> d = (p.transpose() * m * p).diagonal();
-
-    const auto compare = p * Matrix4x4::fromDiagonal(d) * p.transpose();
-    {
-      double err = 0.0;
-      for (std::size_t r = 0; r < 4; ++r) {
-        for (std::size_t cc = 0; cc < 4; ++cc) {
-          err = std::max(err, std::abs(compare(r, cc) - m(r, cc)));
-        }
-      }
-      bestErr = std::min(bestErr, err);
-    }
-    if (compare.isApprox(m, precision)) {
-      // p are the eigenvectors which are decomposed into the
-      // single-qubit gates surrounding the canonical gate
-      // d is the sqrt of the eigenvalues that are used to determine the
-      // weyl coordinates and thus the parameters of the canonical gate
-      // check that p is in SO(4)
-      assert((p.transpose() * p).isIdentity(SANITY_CHECK_PRECISION));
-      // make sure determinant of eigenvalues is 1.0
-      assert(std::abs(Matrix4x4::fromDiagonal(d).determinant() - 1.0) <
-             SANITY_CHECK_PRECISION);
-      return std::make_pair(p, d);
-    }
-  }
-  llvm::reportFatalInternalError(llvm::formatv(
-      "TwoQubitWeylDecomposition: failed to diagonalize M2 ({0} iterations). "
-      "best error = {1:e}, precision = {2:e}",
-      maxDiagonalizationAttempts, bestErr, precision));
-}
-
-std::tuple<Matrix2x2, Matrix2x2, double>
-TwoQubitWeylDecomposition::decomposeTwoQubitProductGate(
-    const Matrix4x4& specialUnitary) {
-  // for alternative approaches, see
-  // pennylane's math.decomposition.su2su2_to_tensor_products
-  // or quantumflow.kronecker_decomposition
-
-  // first quadrant
-  Matrix2x2 r =
-      Matrix2x2::fromElements(specialUnitary(0, 0), specialUnitary(0, 1),
-                              specialUnitary(1, 0), specialUnitary(1, 1));
-  auto detR = r.determinant();
-  if (std::abs(detR) < 0.1) {
-    // third quadrant
-    r = Matrix2x2::fromElements(specialUnitary(2, 0), specialUnitary(2, 1),
-                                specialUnitary(3, 0), specialUnitary(3, 1));
-    detR = r.determinant();
-  }
-  if (std::abs(detR) < 0.1) {
-    llvm::reportFatalInternalError(
-        "decomposeTwoQubitProductGate: unable to decompose: det_r < 0.1");
-  }
-  r *= (1.0 / std::sqrt(detR));
-  // transpose with complex conjugate of each element
-  const Matrix2x2 rTConj = r.adjoint();
-
-  Matrix4x4 temp = specialUnitary * kron(Matrix2x2::identity(), rTConj);
-
-  // [[a, b, c, d],
-  //  [e, f, g, h], => [[a, c],
-  //  [i, j, k, l],     [i, k]]
-  //  [m, n, o, p]]
-  Matrix2x2 l =
-      Matrix2x2::fromElements(temp(0, 0), temp(0, 2), temp(2, 0), temp(2, 2));
-  auto detL = l.determinant();
-  if (std::abs(detL) < 0.9) {
-    llvm::reportFatalInternalError(
-        "decomposeTwoQubitProductGate: unable to decompose: detL < 0.9");
-  }
-  l *= (1.0 / std::sqrt(detL));
-  auto phase = std::arg(detL) / 2.;
-
-  return {l, r, phase};
-}
-
-std::complex<double> TwoQubitWeylDecomposition::getTrace(double a, double b,
-                                                         double c, double ap,
-                                                         double bp, double cp) {
-  // Closed-form Hilbert-Schmidt overlap `tr(U_d(a,b,c)^dag * U_d(ap,bp,cp))`
-  // between two canonical (Weyl) gates, expressed in terms of the coordinate
-  // differences. Feeding the result into `traceToFidelity` gives the average
-  // two-qubit gate fidelity between the two canonical gates, which
-  // `bestSpecialization` uses to rank candidate specializations.
-  // Reference: Zhang et al., "Geometric theory of nonlocal two-qubit
-  // operations", Phys. Rev. A 67, 042313 (2003), Eq. (20).
-  auto da = a - ap;
-  auto db = b - bp;
-  auto dc = c - cp;
-  return 4. * std::complex<double>{std::cos(da) * std::cos(db) * std::cos(dc),
-                                   std::sin(da) * std::sin(db) * std::sin(dc)};
-}
-
-TwoQubitWeylDecomposition::Specialization
-TwoQubitWeylDecomposition::bestSpecialization() const {
-  auto isClose = [this](double ap, double bp, double cp) -> bool {
-    auto tr = getTrace(a_, b_, c_, ap, bp, cp);
-    if (requestedFidelity) {
-      return traceToFidelity(tr) >= *requestedFidelity;
-    }
-    return false;
-  };
-
-  auto closestAbc = closestPartialSwap(a_, b_, c_);
-  auto closestAbMinusC = closestPartialSwap(a_, b_, -c_);
-
-  if (isClose(0., 0., 0.)) {
-    return Specialization::IdEquiv;
-  }
-  if (isClose((std::numbers::pi / 4.0), (std::numbers::pi / 4.0),
-              (std::numbers::pi / 4.0)) ||
-      isClose((std::numbers::pi / 4.0), (std::numbers::pi / 4.0),
-              -(std::numbers::pi / 4.0))) {
-    return Specialization::SWAPEquiv;
-  }
-  if (isClose(closestAbc, closestAbc, closestAbc)) {
-    return Specialization::PartialSWAPEquiv;
-  }
-  if (isClose(closestAbMinusC, closestAbMinusC, -closestAbMinusC)) {
-    return Specialization::PartialSWAPFlipEquiv;
-  }
-  if (isClose(a_, 0., 0.)) {
-    return Specialization::ControlledEquiv;
-  }
-  if (isClose((std::numbers::pi / 4.0), (std::numbers::pi / 4.0), c_)) {
-    return Specialization::MirrorControlledEquiv;
-  }
-  if (isClose((a_ + b_) / 2., (a_ + b_) / 2., c_)) {
-    return Specialization::FSimaabEquiv;
-  }
-  if (isClose(a_, (b_ + c_) / 2., (b_ + c_) / 2.)) {
-    return Specialization::FSimabbEquiv;
-  }
-  if (isClose(a_, (b_ - c_) / 2., (c_ - b_) / 2.)) {
-    return Specialization::FSimabmbEquiv;
-  }
-  return Specialization::General;
-}
-
 bool TwoQubitWeylDecomposition::applySpecialization() {
-  if (specialization != Specialization::General) {
+  if (specializationKind_ !=
+      static_cast<std::uint8_t>(Specialization::General)) {
     llvm::reportFatalInternalError(
         "Application of specialization only works on "
         "general Weyl decompositions!");
   }
   bool flippedFromOriginal = false;
-  auto newSpecialization = bestSpecialization();
+  const auto newSpecialization = bestSpecialization(*this, requestedFidelity);
   if (newSpecialization == Specialization::General) {
     // U has no special symmetry.
     //
@@ -622,7 +531,7 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     // make the single-qubit pre-/post-gates canonical.
     return flippedFromOriginal;
   }
-  specialization = newSpecialization;
+  specializationKind_ = static_cast<std::uint8_t>(newSpecialization);
 
   if (newSpecialization == Specialization::IdEquiv) {
     // :math:`U \sim U_d(0,0,0)`
@@ -656,8 +565,8 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
       flippedFromOriginal = true;
 
       globalPhase_ += (std::numbers::pi / 2.0);
-      k1l_ = k1l_ * ipz() * k2r_;
-      k1r_ = k1r_ * ipz() * k2l_;
+      k1l_ = k1l_ * iPauliZ() * k2r_;
+      k1r_ = k1r_ * iPauliZ() * k2l_;
       k2l_ = Matrix2x2::identity();
       k2r_ = Matrix2x2::identity();
     }
@@ -700,8 +609,8 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     c_ = -closest;
     // unmodified global phase
     k1l_ = k1l_ * k2l_;
-    k1r_ = k1r_ * ipz() * k2l_ * ipz();
-    k2r_ = ipz() * k2lDagger * ipz() * k2r_;
+    k1r_ = k1r_ * iPauliZ() * k2l_ * iPauliZ();
+    k2r_ = iPauliZ() * k2lDagger * iPauliZ() * k2r_;
     k2l_ = Matrix2x2::identity();
   } else if (newSpecialization == Specialization::ControlledEquiv) {
     // :math:`U \sim U_d(\alpha, 0, 0)`
@@ -798,8 +707,8 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     globalPhase_ = globalPhase_ + k2lphase;
     k1l_ = k1l_ * rxMatrix(k2lphi);
     k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
-    k1r_ = k1r_ * ipz() * rxMatrix(k2lphi) * ipz();
-    k2r_ = ipz() * rxMatrix(-k2lphi) * ipz() * k2r_;
+    k1r_ = k1r_ * iPauliZ() * rxMatrix(k2lphi) * iPauliZ();
+    k2r_ = iPauliZ() * rxMatrix(-k2lphi) * iPauliZ() * k2r_;
   } else {
     llvm::reportFatalInternalError(
         "Unknown specialization for Weyl decomposition!");
@@ -816,26 +725,8 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
       Matrix2x2::fromElements(Complex{0.5, 0.5}, Complex{0.5, 0.5},
                               Complex{-0.5, 0.5}, Complex{0.5, -0.5});
 
-  // The Shende-Markov-Bullock 3-CX sandwich (and its 1/2-CX reductions) used
-  // below is derived for a basis CX whose 4x4 matrix is the Qiskit/LSB form
-  // `[[1,0,0,0],[0,0,0,1],[0,0,1,0],[0,1,0,0]]`, i.e. "control on the LSB
-  // factor, target on the MSB factor" of the tensor product. MQT's wider
-  // convention places operand 0 on the MSB factor, so the CX/CZ matrix for
-  // control-on-wire-0 gives the SWAP-conjugate
-  // `[[1,0,0,0],[0,1,0,0],[0,0,0,1],[0,0,1,0]]`.
-  //
-  // Because `SWAP * C(a,b,c) * SWAP = C(a,b,c)` but
-  // `SWAP * (K1l ⊗ K1r) * SWAP = (K1r ⊗ K1l)`, feeding the MSB matrix directly
-  // into the Weyl decomposer would swap the roles of `k1l`/`k1r` (and `k2l`/
-  // `k2r`) relative to the hard-coded constants above. To keep the SMB algebra
-  // self-consistent we SWAP-conjugate the basis matrix here (restoring the
-  // Qiskit/LSB 4x4) and then absorb the resulting "left/right" relabeling at
-  // the emission boundary in `decomp{0,1,2,3}` below. This reproduces the
-  // pre-flip gate counts without having to re-derive every SMB constant for
-  // the MSB basis -- the two routes are algebraically equivalent.
-  const Matrix4x4 basisMatrixLsb = swapGate() * basisMatrix * swapGate();
   const auto basisDecomposer =
-      TwoQubitWeylDecomposition::create(basisMatrixLsb, basisFidelity);
+      TwoQubitWeylDecomposition::create(basisMatrix, basisFidelity);
   const auto isSuperControlled =
       relativeEq(basisDecomposer.a(), std::numbers::pi / 4.0, 1e-13, 1e-09) &&
       relativeEq(basisDecomposer.c(), 0.0, 1e-13, 1e-09);
@@ -888,38 +779,38 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
   auto u3r = k2rDagger * k12RArr;
   // Pre-build the fixed parts of the matrices used in the 2-part decomposition
   auto q0l = k12LArr.adjoint() * k1lDagger;
-  auto q0r = k12RArr.adjoint() * ipz() * k1rDagger;
+  auto q0r = k12RArr.adjoint() * iPauliZ() * k1rDagger;
   auto q1la = k2lDagger * k11l.adjoint();
   auto q1lb = k11l * k1lDagger;
-  auto q1ra = k2rDagger * ipz() * k11r.adjoint();
+  auto q1ra = k2rDagger * iPauliZ() * k11r.adjoint();
   auto q1rb = k11r * k1rDagger;
   auto q2l = k2lDagger * k12LArr;
   auto q2r = k2rDagger * k12RArr;
 
-  return TwoQubitBasisDecomposer{
-      basisFidelity,
-      basisDecomposer,
-      isSuperControlled,
-      u0l,
-      u0r,
-      u1l,
-      u1ra,
-      u1rb,
-      u2la,
-      u2lb,
-      u2ra,
-      u2rb,
-      u3l,
-      u3r,
-      q0l,
-      q0r,
-      q1la,
-      q1lb,
-      q1ra,
-      q1rb,
-      q2l,
-      q2r,
-  };
+  TwoQubitBasisDecomposer decomposer;
+  decomposer.basisFidelity = basisFidelity;
+  decomposer.basisDecomposer = basisDecomposer;
+  decomposer.isSuperControlled = isSuperControlled;
+  decomposer.smb.u0l = u0l;
+  decomposer.smb.u0r = u0r;
+  decomposer.smb.u1l = u1l;
+  decomposer.smb.u1ra = u1ra;
+  decomposer.smb.u1rb = u1rb;
+  decomposer.smb.u2la = u2la;
+  decomposer.smb.u2lb = u2lb;
+  decomposer.smb.u2ra = u2ra;
+  decomposer.smb.u2rb = u2rb;
+  decomposer.smb.u3l = u3l;
+  decomposer.smb.u3r = u3r;
+  decomposer.smb.q0l = q0l;
+  decomposer.smb.q0r = q0r;
+  decomposer.smb.q1la = q1la;
+  decomposer.smb.q1lb = q1lb;
+  decomposer.smb.q1ra = q1ra;
+  decomposer.smb.q1rb = q1rb;
+  decomposer.smb.q2l = q2l;
+  decomposer.smb.q2r = q2r;
+  return decomposer;
 }
 
 std::optional<TwoQubitNativeDecomposition>
@@ -976,7 +867,7 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
   TwoQubitLocalUnitaryList factors = chooseDecomposition();
 #ifndef NDEBUG
   for (const auto& factor : factors) {
-    assert(isUnitaryMatrix(factor));
+    assert(isUnitaryMatrix(factor, 1e-12));
   }
 #endif
 
@@ -1000,13 +891,8 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
   };
 }
 
-// Ported SMB helpers assume Qiskit Weyl k-factor layout; QCO 4x4 input order
-// swaps l/r vs that port. Swap k1l<->k1r and k2l<->k2r when reading ``target``,
-// and swap adjacent pairs in each return vector so the emission boundary maps
-// matrices to the same wires as the upstream decomposer. ``decomp0`` cancels to
-// the unswapped formula.
-TwoQubitLocalUnitaryList
-TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
+TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp0(
+    const TwoQubitWeylDecomposition& target) const {
   return TwoQubitLocalUnitaryList{
       target.k1r() * target.k2r(),
       target.k1l() * target.k2l(),
@@ -1017,10 +903,10 @@ TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp1(
     const TwoQubitWeylDecomposition& target) const {
   // may not work for z != 0 and c != 0 (not always in Weyl chamber)
   return TwoQubitLocalUnitaryList{
-      basisDecomposer.k2l().adjoint() * target.k2r(),
-      basisDecomposer.k2r().adjoint() * target.k2l(),
-      target.k1r() * basisDecomposer.k1l().adjoint(),
-      target.k1l() * basisDecomposer.k1r().adjoint(),
+      basisDecomposer.k2r().adjoint() * target.k2r(),
+      basisDecomposer.k2l().adjoint() * target.k2l(),
+      target.k1r() * basisDecomposer.k1r().adjoint(),
+      target.k1l() * basisDecomposer.k1l().adjoint(),
   };
 }
 
@@ -1032,12 +918,12 @@ TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp2Supercontrolled(
         "- no guarantee for exact decomposition with two basis gates");
   }
   return TwoQubitLocalUnitaryList{
-      q2l * target.k2r(),
-      q2r * target.k2l(),
-      q1la * rzMatrix(-2. * target.a()) * q1lb,
-      q1ra * rzMatrix(2. * target.b()) * q1rb,
-      target.k1r() * q0l,
-      target.k1l() * q0r,
+      smb.q2r * target.k2r(),
+      smb.q2l * target.k2l(),
+      smb.q1ra * rzMatrix(2. * target.b()) * smb.q1rb,
+      smb.q1la * rzMatrix(-2. * target.a()) * smb.q1lb,
+      target.k1r() * smb.q0r,
+      target.k1l() * smb.q0l,
   };
 }
 
@@ -1049,14 +935,14 @@ TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp3Supercontrolled(
         "- no guarantee for exact decomposition with three basis gates");
   }
   return TwoQubitLocalUnitaryList{
-      u3l * target.k2r(),
-      u3r * target.k2l(),
-      u2la * rzMatrix(-2. * target.a()) * u2lb,
-      u2ra * rzMatrix(2. * target.b()) * u2rb,
-      u1l,
-      u1ra * rzMatrix(-2. * target.c()) * u1rb,
-      target.k1r() * u0l,
-      target.k1l() * u0r,
+      smb.u3r * target.k2r(),
+      smb.u3l * target.k2l(),
+      smb.u2ra * rzMatrix(2. * target.b()) * smb.u2rb,
+      smb.u2la * rzMatrix(-2. * target.a()) * smb.u2lb,
+      smb.u1ra * rzMatrix(-2. * target.c()) * smb.u1rb,
+      smb.u1l,
+      target.k1r() * smb.u0r,
+      target.k1l() * smb.u0l,
   };
 }
 
@@ -1087,372 +973,6 @@ TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
       std::complex<double>{4. * std::cos(target.c()), 0.},
       std::complex<double>{4., 0.},
   };
-}
-
-bool TwoQubitBasisDecomposer::relativeEq(double lhs, double rhs, double epsilon,
-                                         double maxRelative) {
-  // Handle same infinities
-  if (lhs == rhs) {
-    return true;
-  }
-
-  // Handle remaining infinities
-  if (std::isinf(lhs) || std::isinf(rhs)) {
-    return false;
-  }
-
-  auto absDiff = std::abs(lhs - rhs);
-
-  // For when the numbers are really close together
-  if (absDiff <= epsilon) {
-    return true;
-  }
-
-  auto absLhs = std::abs(lhs);
-  auto absRhs = std::abs(rhs);
-  if (absRhs > absLhs) {
-    return absDiff <= absRhs * maxRelative;
-  }
-  return absDiff <= absLhs * maxRelative;
-}
-
-//===----------------------------------------------------------------------===//
-// Native-spec parsing and two-qubit synthesis
-//===----------------------------------------------------------------------===//
-
-static constexpr double PI = std::numbers::pi;
-
-[[nodiscard]] static std::optional<NativeGateKind>
-parseGateToken(llvm::StringRef name) {
-  return llvm::StringSwitch<std::optional<NativeGateKind>>(name)
-      .Case("u", NativeGateKind::U)
-      .Case("x", NativeGateKind::X)
-      .Case("sx", NativeGateKind::Sx)
-      .Cases("rz", "p", NativeGateKind::Rz)
-      .Case("rx", NativeGateKind::Rx)
-      .Case("ry", NativeGateKind::Ry)
-      .Case("r", NativeGateKind::R)
-      .Case("cx", NativeGateKind::Cx)
-      .Case("cz", NativeGateKind::Cz)
-      .Case("rzz", NativeGateKind::Rzz)
-      .Default(std::nullopt);
-}
-
-[[nodiscard]] static std::optional<llvm::DenseSet<NativeGateKind>>
-parseGateSet(llvm::StringRef nativeGates) {
-  llvm::DenseSet<NativeGateKind> gates;
-  llvm::SmallVector<llvm::StringRef> parts;
-  nativeGates.split(parts, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-  for (llvm::StringRef part : parts) {
-    const auto token = part.trim().lower();
-    if (token.empty()) {
-      continue;
-    }
-    const auto gate = parseGateToken(token);
-    if (!gate) {
-      return std::nullopt;
-    }
-    gates.insert(*gate);
-  }
-  return gates;
-}
-
-[[nodiscard]] static SingleQubitEmitterSpec
-makeEmitterSpec(SingleQubitMode mode, AxisPair axisPair = AxisPair::RxRz,
-                bool supportsDirectRx = false) {
-  return {
-      .mode = mode, .axisPair = axisPair, .supportsDirectRx = supportsDirectRx};
-}
-
-static void
-addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
-                   SingleQubitMode mode, AxisPair axisPair = AxisPair::RxRz,
-                   bool supportsDirectRx = false) {
-  const bool present = llvm::any_of(emitters, [&](const auto& e) {
-    return e.mode == mode && e.axisPair == axisPair &&
-           e.supportsDirectRx == supportsDirectRx;
-  });
-  if (!present) {
-    emitters.push_back(makeEmitterSpec(mode, axisPair, supportsDirectRx));
-  }
-}
-
-[[nodiscard]] static llvm::SmallVector<NativeGateKind, 4>
-allowedGatesForEmitter(const SingleQubitEmitterSpec& emitter) {
-  switch (emitter.mode) {
-  case SingleQubitMode::ZSXX: {
-    llvm::SmallVector<NativeGateKind, 4> gates{
-        NativeGateKind::X, NativeGateKind::Sx, NativeGateKind::Rz};
-    if (emitter.supportsDirectRx) {
-      gates.push_back(NativeGateKind::Rx);
-    }
-    return gates;
-  }
-  case SingleQubitMode::U3:
-    return {NativeGateKind::U};
-  case SingleQubitMode::R:
-    return {NativeGateKind::R};
-  case SingleQubitMode::AxisPair:
-    switch (emitter.axisPair) {
-    case AxisPair::RxRz:
-      return {NativeGateKind::Rx, NativeGateKind::Rz};
-    case AxisPair::RxRy:
-      return {NativeGateKind::Rx, NativeGateKind::Ry};
-    case AxisPair::RyRz:
-      return {NativeGateKind::Ry, NativeGateKind::Rz};
-    }
-    break;
-  }
-  llvm_unreachable("unknown single-qubit mode");
-}
-
-[[nodiscard]] static llvm::SmallVector<NativeGateKind, 2>
-allowedGatesForEntangler(EntanglerBasis entangler) {
-  switch (entangler) {
-  case EntanglerBasis::None:
-    return {};
-  case EntanglerBasis::Cx:
-    return {NativeGateKind::Cx};
-  case EntanglerBasis::Cz:
-    return {NativeGateKind::Cz};
-  }
-  llvm_unreachable("unknown entangler basis");
-}
-
-static void populateAllowedGates(NativeProfileSpec& spec) {
-  spec.allowedGates.clear();
-  for (const auto& emitter : spec.singleQubitEmitters) {
-    const auto allowed = allowedGatesForEmitter(emitter);
-    spec.allowedGates.insert(allowed.begin(), allowed.end());
-  }
-  for (const auto entangler : spec.entanglerBases) {
-    const auto allowed = allowedGatesForEntangler(entangler);
-    spec.allowedGates.insert(allowed.begin(), allowed.end());
-  }
-  if (spec.allowRzz) {
-    spec.allowedGates.insert(NativeGateKind::Rzz);
-  }
-}
-
-[[nodiscard]] static std::optional<EntanglerBasis>
-selectEntangler(const NativeProfileSpec& spec) {
-  if (llvm::is_contained(spec.entanglerBases, EntanglerBasis::Cx)) {
-    return EntanglerBasis::Cx;
-  }
-  if (llvm::is_contained(spec.entanglerBases, EntanglerBasis::Cz)) {
-    return EntanglerBasis::Cz;
-  }
-  return std::nullopt;
-}
-
-[[nodiscard]] static Matrix4x4 entanglerMatrix(EntanglerBasis entangler) {
-  return entangler == EntanglerBasis::Cz ? czGate() : cxGate01();
-}
-
-[[nodiscard]] static std::optional<TwoQubitNativeDecomposition>
-decomposeWithEntangler(const Matrix4x4& target, EntanglerBasis entangler) {
-  auto decomposer =
-      TwoQubitBasisDecomposer::create(entanglerMatrix(entangler), 1.0);
-  auto weyl = TwoQubitWeylDecomposition::create(target, std::nullopt);
-  return decomposer.twoQubitDecompose(weyl, std::nullopt);
-}
-
-static void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc,
-                                   double phase) {
-  constexpr double epsilon = 1e-12;
-  if (std::abs(phase) > epsilon) {
-    GPhaseOp::create(builder, loc, phase);
-  }
-}
-
-[[nodiscard]] static Value emitSingleQubitMatrix(OpBuilder& builder,
-                                                 Location loc, Value inQubit,
-                                                 const Matrix2x2& matrix,
-                                                 EulerBasis basis) {
-  return *synthesizeUnitary1QEuler(builder, loc, inQubit, matrix,
-                                   /*runSize=*/0, /*hasNonBasisGate=*/true,
-                                   basis);
-}
-
-EulerBasis emitterEulerBasis(const SingleQubitEmitterSpec& emitter) {
-  switch (emitter.mode) {
-  case SingleQubitMode::ZSXX:
-    return EulerBasis::ZSXX;
-  case SingleQubitMode::U3:
-    return EulerBasis::U;
-  case SingleQubitMode::R:
-    return EulerBasis::R;
-  case SingleQubitMode::AxisPair:
-    switch (emitter.axisPair) {
-    case AxisPair::RxRz:
-      return EulerBasis::XZX;
-    case AxisPair::RxRy:
-      return EulerBasis::XYX;
-    case AxisPair::RyRz:
-      return EulerBasis::ZYZ;
-    }
-    break;
-  }
-  llvm_unreachable("unknown single-qubit mode");
-}
-
-std::optional<NativeProfileSpec> parseNativeSpec(llvm::StringRef nativeGates) {
-  const auto gates = parseGateSet(nativeGates);
-  if (!gates || gates->empty()) {
-    return std::nullopt;
-  }
-  const auto has = [&](NativeGateKind kind) { return gates->contains(kind); };
-
-  NativeProfileSpec spec;
-
-  if (has(NativeGateKind::U)) {
-    addEmitterIfAbsent(spec.singleQubitEmitters, SingleQubitMode::U3);
-  }
-  const bool hasXSxRz = has(NativeGateKind::X) && has(NativeGateKind::Sx) &&
-                        has(NativeGateKind::Rz);
-  if (hasXSxRz) {
-    addEmitterIfAbsent(spec.singleQubitEmitters, SingleQubitMode::ZSXX,
-                       AxisPair::RxRz,
-                       /*supportsDirectRx=*/has(NativeGateKind::Rx));
-  }
-  if (has(NativeGateKind::R)) {
-    addEmitterIfAbsent(spec.singleQubitEmitters, SingleQubitMode::R);
-  }
-  struct AxisPairRule {
-    AxisPair axis;
-    NativeGateKind left;
-    NativeGateKind right;
-  };
-  for (const auto& rule : {
-           AxisPairRule{.axis = AxisPair::RxRz,
-                        .left = NativeGateKind::Rx,
-                        .right = NativeGateKind::Rz},
-           AxisPairRule{.axis = AxisPair::RxRy,
-                        .left = NativeGateKind::Rx,
-                        .right = NativeGateKind::Ry},
-           AxisPairRule{.axis = AxisPair::RyRz,
-                        .left = NativeGateKind::Ry,
-                        .right = NativeGateKind::Rz},
-       }) {
-    if (has(rule.left) && has(rule.right)) {
-      addEmitterIfAbsent(spec.singleQubitEmitters, SingleQubitMode::AxisPair,
-                         rule.axis);
-    }
-  }
-  if (spec.singleQubitEmitters.empty()) {
-    return std::nullopt;
-  }
-
-  if (has(NativeGateKind::Cx)) {
-    spec.entanglerBases.push_back(EntanglerBasis::Cx);
-  }
-  if (has(NativeGateKind::Cz)) {
-    spec.entanglerBases.push_back(EntanglerBasis::Cz);
-  }
-  spec.allowRzz = has(NativeGateKind::Rzz);
-
-  populateAllowedGates(spec);
-  return spec;
-}
-
-LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
-                                      Value qubit0, Value qubit1,
-                                      const Matrix4x4& target,
-                                      const NativeProfileSpec& spec,
-                                      Value& outQubit0, Value& outQubit1) {
-  const auto entangler = selectEntangler(spec);
-  if (!entangler) {
-    return failure();
-  }
-  const auto native = decomposeWithEntangler(target, *entangler);
-  if (!native) {
-    return failure();
-  }
-  const auto basis = emitterEulerBasis(spec.singleQubitEmitters.front());
-
-  emitGPhaseIfNonTrivial(builder, loc, native->globalPhase);
-
-  Value wire0 = qubit0;
-  Value wire1 = qubit1;
-  const auto& factors = native->singleQubitFactors;
-  const std::uint8_t numBasisUses = native->numBasisUses;
-  const auto emitFactor = [&](Value& wire, std::size_t index) {
-    wire = emitSingleQubitMatrix(builder, loc, wire, factors[index], basis);
-  };
-  const auto emitEntangler = [&]() {
-    auto ctrlOp = CtrlOp::create(
-        builder, loc, ValueRange{wire0}, ValueRange{wire1},
-        [&](ValueRange targetArgs) -> llvm::SmallVector<Value> {
-          if (*entangler == EntanglerBasis::Cz) {
-            return {ZOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
-          }
-          return {XOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
-        });
-    wire0 = ctrlOp.getOutputControl(0);
-    wire1 = ctrlOp.getOutputTarget(0);
-  };
-
-  for (std::uint8_t i = 0; i < numBasisUses; ++i) {
-    emitFactor(wire1, static_cast<std::size_t>(2 * i));
-    emitFactor(wire0, static_cast<std::size_t>((2 * i) + 1));
-    emitEntangler();
-  }
-  emitFactor(wire1, static_cast<std::size_t>(2 * numBasisUses));
-  emitFactor(wire0, static_cast<std::size_t>((2 * numBasisUses) + 1));
-
-  outQubit0 = wire0;
-  outQubit1 = wire1;
-  return success();
-}
-
-std::optional<std::uint8_t>
-twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec) {
-  const auto entangler = selectEntangler(spec);
-  if (!entangler) {
-    return std::nullopt;
-  }
-  const auto native = decomposeWithEntangler(target, *entangler);
-  if (!native) {
-    return std::nullopt;
-  }
-  return native->numBasisUses;
-}
-
-Matrix2x2 rxMatrix(double theta) {
-  const auto halfTheta = theta / 2.;
-  const Complex cos{std::cos(halfTheta), 0.};
-  const Complex isin{0., -std::sin(halfTheta)};
-  return Matrix2x2::fromElements(cos, isin, isin, cos);
-}
-
-Matrix2x2 ryMatrix(double theta) {
-  const auto halfTheta = theta / 2.;
-  const Complex cos{std::cos(halfTheta), 0.};
-  const Complex sin{std::sin(halfTheta), 0.};
-  return Matrix2x2::fromElements(cos, -sin, sin, cos);
-}
-
-Matrix2x2 rzMatrix(double theta) {
-  return Matrix2x2::fromElements(
-      Complex{std::cos(theta / 2.), -std::sin(theta / 2.)}, 0., 0.,
-      Complex{std::cos(theta / 2.), std::sin(theta / 2.)});
-}
-
-const Matrix2x2& ipz() {
-  static const Matrix2x2 MATRIX =
-      Matrix2x2::fromElements(Complex{0, 1}, 0, 0, Complex{0, -1});
-  return MATRIX;
-}
-
-const Matrix2x2& ipy() {
-  static const Matrix2x2 MATRIX = Matrix2x2::fromElements(0, 1, -1, 0);
-  return MATRIX;
-}
-
-const Matrix2x2& ipx() {
-  static const Matrix2x2 MATRIX =
-      Matrix2x2::fromElements(0, Complex{0, 1}, Complex{0, 1}, 0);
-  return MATRIX;
 }
 
 } // namespace mlir::qco::decomposition

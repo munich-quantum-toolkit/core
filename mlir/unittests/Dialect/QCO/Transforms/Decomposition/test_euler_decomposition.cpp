@@ -37,7 +37,6 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <array>
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <functional>
@@ -103,18 +102,6 @@ class EulerSynthesisExactTest
 //===----------------------------------------------------------------------===//
 // Euler synthesis support
 //===----------------------------------------------------------------------===//
-
-[[nodiscard]] static Matrix2x2 rzMatrix(const double theta) {
-  const auto m00 = std::polar(1.0, -theta / 2.0);
-  const auto m11 = std::polar(1.0, theta / 2.0);
-  return Matrix2x2::fromElements(m00, 0, 0, m11);
-}
-
-[[nodiscard]] static Matrix2x2 ryMatrix(const double theta) {
-  const auto m00 = std::cos(theta / 2.0);
-  const auto m01 = -std::sin(theta / 2.0);
-  return Matrix2x2::fromElements(m00, m01, -m01, m00);
-}
 
 [[nodiscard]] static Matrix2x2 randomUnitaryMatrix(std::mt19937& rng) {
   std::uniform_real_distribution dist(-std::numbers::pi, std::numbers::pi);

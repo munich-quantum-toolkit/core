@@ -71,10 +71,9 @@ def FuseTwoQubitUnitaryRuns
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
   let description = [{
-    This pass rewrites a module so that every remaining unitary operation is
-    allowed by the `native-gates` menu. `qco.barrier` and `qco.gphase` are
-    preserved; controlled gates (`qco.ctrl`) must have a single control and a
-    single target.
+    Rewrites unitaries to match the comma-separated `native-gates` menu.
+    `qco.barrier` and `qco.gphase` are preserved; `qco.ctrl` must have a
+    single control and a single target.
 
     The menu is a comma-separated list of gate tokens (order not significant)
     from which the pass builds a profile: a single-qubit synthesis mode
@@ -97,19 +96,14 @@ def FuseTwoQubitUnitaryRuns
     - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
       Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
 
-    Execution order (mirrors the implementation): fuse consecutive
-    single-qubit runs; fuse two-qubit windows (including absorbed
-    single-qubit padding); run up to four synthesis sweeps over remaining
-    non-native unitaries until every single-qubit op matches the menu (two-qubit
-    lowering may temporarily emit off-menu 1q ops that later sweeps absorb—if
-    any remain after that cap, the pass fails); fuse 1q seams between two-qubit
-    blocks; then up to four further synthesis + fusion rounds until the full menu
-    holds (including native `qco.ctrl` shells and bare `rzz` when allowed). If
-    anything is still off-menu, the pass fails.
+    Stages: fuse single-qubit runs; fuse two-qubit windows; up to four
+    synthesis sweeps over remaining off-menu ops; fuse 1q seams; up to four
+    further synthesis and fusion rounds until the full menu holds. The pass
+    fails if anything remains off-menu after those caps.
 
-    Lowering is deterministic: the entangler is chosen as `cx` before `cz`, the
-    single-qubit factors use the first emitter's Euler basis, and the minimal
-    KAK entangler count drives two-qubit window replacement.
+    Lowering is deterministic: `cx` is preferred over `cz`, single-qubit
+    factors use the first emitter's Euler basis, and two-qubit window
+    replacement uses the minimal entangler count from the synthesizer.
   }];
   let options = [Option<
       "nativeGates", "native-gates", "std::string", "\"\"",

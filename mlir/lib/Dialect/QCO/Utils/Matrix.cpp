@@ -803,4 +803,116 @@ SymmetricEigen4 jacobiSymmetricEigen(const std::array<double, 16>& symmetric) {
   return result;
 }
 
+double remEuclid(double a, double b) {
+  if (b == 0.0) {
+    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
+  }
+  const auto r = std::fmod(a, b);
+  return (r < 0.0) ? r + std::abs(b) : r;
+}
+
+double traceToFidelity(const Complex& trace) {
+  const auto traceAbs = std::abs(trace);
+  return (4.0 + (traceAbs * traceAbs)) / 20.0;
+}
+
+Complex globalPhaseFactor(double phase) {
+  return std::exp(Complex{0.0, 1.0} * phase);
+}
+
+bool isUnitaryMatrix(const Matrix2x2& matrix, const double tolerance) {
+  return (matrix.adjoint() * matrix).isIdentity(tolerance);
+}
+
+Matrix2x2 rxMatrix(const double theta) {
+  const auto halfTheta = theta / 2.0;
+  const Complex cos{std::cos(halfTheta), 0.0};
+  const Complex isin{0.0, -std::sin(halfTheta)};
+  return Matrix2x2::fromElements(cos, isin, isin, cos);
+}
+
+Matrix2x2 ryMatrix(const double theta) {
+  const auto halfTheta = theta / 2.0;
+  const Complex cos{std::cos(halfTheta), 0.0};
+  const Complex sin{std::sin(halfTheta), 0.0};
+  return Matrix2x2::fromElements(cos, -sin, sin, cos);
+}
+
+Matrix2x2 rzMatrix(const double theta) {
+  return Matrix2x2::fromElements(
+      Complex{std::cos(theta / 2.0), -std::sin(theta / 2.0)}, 0.0, 0.0,
+      Complex{std::cos(theta / 2.0), std::sin(theta / 2.0)});
+}
+
+const Matrix2x2& iPauliZ() {
+  static const Matrix2x2 matrix =
+      Matrix2x2::fromElements(Complex{0.0, 1.0}, 0.0, 0.0, Complex{0.0, -1.0});
+  return matrix;
+}
+
+const Matrix2x2& iPauliY() {
+  static const Matrix2x2 matrix = Matrix2x2::fromElements(0.0, 1.0, -1.0, 0.0);
+  return matrix;
+}
+
+const Matrix2x2& iPauliX() {
+  static const Matrix2x2 matrix =
+      Matrix2x2::fromElements(0.0, Complex{0.0, 1.0}, Complex{0.0, 1.0}, 0.0);
+  return matrix;
+}
+
+Matrix4x4 rxxMatrix(const double theta) {
+  const auto cosTheta = std::cos(theta / 2.0);
+  const Complex misin{0.0, -std::sin(theta / 2.0)};
+  return Matrix4x4::fromElements(cosTheta, 0.0, 0.0, misin, //
+                                 0.0, cosTheta, misin, 0.0, //
+                                 0.0, misin, cosTheta, 0.0, //
+                                 misin, 0.0, 0.0, cosTheta);
+}
+
+Matrix4x4 ryyMatrix(const double theta) {
+  const auto cosTheta = std::cos(theta / 2.0);
+  const Complex isin{0.0, std::sin(theta / 2.0)};
+  const Complex misin{0.0, -std::sin(theta / 2.0)};
+  return Matrix4x4::fromElements(cosTheta, 0.0, 0.0, isin,  //
+                                 0.0, cosTheta, misin, 0.0, //
+                                 0.0, misin, cosTheta, 0.0, //
+                                 isin, 0.0, 0.0, cosTheta);
+}
+
+Matrix4x4 rzzMatrix(const double theta) {
+  const auto cosTheta = std::cos(theta / 2.0);
+  const auto sinTheta = std::sin(theta / 2.0);
+  const Complex em{cosTheta, -sinTheta};
+  const Complex ep{cosTheta, sinTheta};
+  return Matrix4x4::fromElements(em, 0.0, 0.0, 0.0, //
+                                 0.0, ep, 0.0, 0.0, //
+                                 0.0, 0.0, ep, 0.0, //
+                                 0.0, 0.0, 0.0, em);
+}
+
+const Matrix4x4& twoQubitControlledX01() {
+  static const Matrix4x4 matrix = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+                                                          0.0, 1.0, 0.0, 0.0, //
+                                                          0.0, 0.0, 0.0, 1.0, //
+                                                          0.0, 0.0, 1.0, 0.0);
+  return matrix;
+}
+
+const Matrix4x4& twoQubitControlledX10() {
+  static const Matrix4x4 matrix = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+                                                          0.0, 0.0, 0.0, 1.0, //
+                                                          0.0, 0.0, 1.0, 0.0, //
+                                                          0.0, 1.0, 0.0, 0.0);
+  return matrix;
+}
+
+const Matrix4x4& twoQubitControlledZ() {
+  static const Matrix4x4 matrix = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+                                                          0.0, 1.0, 0.0, 0.0, //
+                                                          0.0, 0.0, 1.0, 0.0, //
+                                                          0.0, 0.0, 0.0, -1.0);
+  return matrix;
+}
+
 } // namespace mlir::qco

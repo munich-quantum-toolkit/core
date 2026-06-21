@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
@@ -31,9 +30,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
@@ -42,26 +39,100 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
-#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;
+using namespace mqt::test;
 
-namespace mlir::qco::fuse_two_qubit_test {
+namespace {
 
-using mqt::test::cxGate01;
-using mqt::test::czGate;
-using mqt::test::expandToTwoQubits;
-using mqt::test::fixTwoQubitMatrixQubitOrder;
-using mqt::test::isEquivalentUpToGlobalPhase;
-using mqt::test::QubitId;
+using ProgramFn = void (*)(mlir::qc::QCProgramBuilder&);
+using NativePredicate = bool (*)(OwningOpRef<ModuleOp>&);
 
-[[nodiscard]] static std::optional<Value>
-getUnitaryQubitOperand(UnitaryOpInterface op, std::size_t index) {
+struct ProfileCase {
+  const char* name;
+  ProgramFn program;
+  const char* nativeGates;
+  NativePredicate isNative;
+  bool checkEquivalence;
+};
+
+struct FusionCase {
+  const char* name;
+  ProgramFn program;
+  const char* nativeGates;
+  std::optional<std::size_t> exactCtrlCount;
+  std::optional<std::size_t> minCtrlCount;
+  bool checkTwoQUnitary;
+};
+
+template <typename... Allowed1QOps>
+bool onlyTheseOps(OwningOpRef<ModuleOp>& moduleOp, bool allowCx, bool allowCz) {
+  bool ok = true;
+  std::ignore = moduleOp->walk([&](UnitaryOpInterface op) {
+    Operation* raw = op.getOperation();
+    if (llvm::isa_and_present<CtrlOp>(raw->getParentOp())) {
+      return WalkResult::advance();
+    }
+    if (llvm::isa<BarrierOp, GPhaseOp>(raw)) {
+      return WalkResult::advance();
+    }
+    if (auto ctrl = llvm::dyn_cast<CtrlOp>(raw)) {
+      if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
+        ok = false;
+        return WalkResult::interrupt();
+      }
+      Operation* body = ctrl.getBodyUnitary(0).getOperation();
+      const bool isCx = llvm::isa<XOp>(body);
+      const bool isCz = llvm::isa<ZOp>(body);
+      if ((isCx && allowCx) || (isCz && allowCz)) {
+        return WalkResult::advance();
+      }
+      ok = false;
+      return WalkResult::interrupt();
+    }
+    if (!llvm::isa<Allowed1QOps...>(raw)) {
+      ok = false;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return ok;
+}
+
+bool onlyIbmBasicCxOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<XOp, SXOp, RZOp, POp>(m, true, false);
+}
+bool onlyIbmBasicCzOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<XOp, SXOp, RZOp, POp>(m, false, true);
+}
+bool onlyGenericU3CxOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<UOp>(m, true, false);
+}
+bool onlyIqmDefaultOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<ROp>(m, false, true);
+}
+bool onlyIbmFractionalOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<XOp, SXOp, RZOp, POp, RXOp, RZZOp>(m, false, true);
+}
+bool onlyAxisPairRxRzCxOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<RXOp, RZOp, POp>(m, true, false);
+}
+bool onlyAxisPairRxRyCxOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<RXOp, RYOp>(m, true, false);
+}
+bool onlyAxisPairRyRzCzOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<RYOp, RZOp, POp>(m, false, true);
+}
+bool onlyGenericU3CxOrCzOps(OwningOpRef<ModuleOp>& m) {
+  return onlyTheseOps<UOp>(m, true, true);
+}
+
+[[nodiscard]] std::optional<Value> unitaryQubitOperand(UnitaryOpInterface op,
+                                                       std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
   }
@@ -72,8 +143,8 @@ getUnitaryQubitOperand(UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-[[nodiscard]] static std::optional<Value>
-getUnitaryQubitResult(UnitaryOpInterface op, std::size_t index) {
+[[nodiscard]] std::optional<Value> unitaryQubitResult(UnitaryOpInterface op,
+                                                      std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
   }
@@ -84,8 +155,8 @@ getUnitaryQubitResult(UnitaryOpInterface op, std::size_t index) {
   return v;
 }
 
-[[nodiscard]] static bool extractSingleQubitMatrix(UnitaryOpInterface op,
-                                                   Matrix2x2& out) {
+[[nodiscard]] bool extractSingleQubitMatrix(UnitaryOpInterface op,
+                                            Matrix2x2& out) {
   if (op.getUnitaryMatrix2x2(out)) {
     return true;
   }
@@ -99,19 +170,19 @@ getUnitaryQubitResult(UnitaryOpInterface op, std::size_t index) {
   return true;
 }
 
-[[nodiscard]] static bool extractTwoQubitMatrix(UnitaryOpInterface op,
-                                                Matrix4x4& out) {
+[[nodiscard]] bool extractTwoQubitMatrix(UnitaryOpInterface op,
+                                         Matrix4x4& out) {
   if (auto ctrl = llvm::dyn_cast<CtrlOp>(op.getOperation())) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
-    auto* body = ctrl.getBodyUnitary(0).getOperation();
+    Operation* body = ctrl.getBodyUnitary(0).getOperation();
     if (llvm::isa<XOp>(body)) {
-      out = cxGate01();
+      out = twoQubitControlledX01();
       return true;
     }
     if (llvm::isa<ZOp>(body)) {
-      out = czGate();
+      out = twoQubitControlledZ();
       return true;
     }
     return false;
@@ -119,8 +190,8 @@ getUnitaryQubitResult(UnitaryOpInterface op, std::size_t index) {
   return op.getUnitaryMatrix4x4(out);
 }
 
-[[nodiscard]] static std::optional<DynamicMatrix>
-computeUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
+[[nodiscard]] std::optional<DynamicMatrix>
+computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
   ModuleOp module = moduleOp.get();
   if (!module) {
     return std::nullopt;
@@ -153,7 +224,7 @@ computeUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
       DynamicMatrix::identity(static_cast<std::int64_t>(1ULL << numQubits));
 
   auto getQubitId = [&](Value qubit) -> std::optional<std::size_t> {
-    auto it = qubitIds.find(qubit);
+    const auto it = qubitIds.find(qubit);
     if (it == qubitIds.end()) {
       return std::nullopt;
     }
@@ -172,11 +243,11 @@ computeUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
         }
 
         if (op.isSingleQubit()) {
-          const auto qIn = getUnitaryQubitOperand(op, 0);
+          const auto qIn = unitaryQubitOperand(op, 0);
           if (!qIn) {
             return std::nullopt;
           }
-          auto qid = getQubitId(*qIn);
+          const auto qid = getQubitId(*qIn);
           if (!qid) {
             return std::nullopt;
           }
@@ -185,7 +256,7 @@ computeUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
             return std::nullopt;
           }
           unitary = embedSingleQubitInNqubit(oneQ, numQubits, *qid) * unitary;
-          const auto qOut = getUnitaryQubitResult(op, 0);
+          const auto qOut = unitaryQubitResult(op, 0);
           if (!qOut) {
             return std::nullopt;
           }
@@ -194,13 +265,13 @@ computeUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
         }
 
         if (op.isTwoQubit()) {
-          const auto q0In = getUnitaryQubitOperand(op, 0);
-          const auto q1In = getUnitaryQubitOperand(op, 1);
+          const auto q0In = unitaryQubitOperand(op, 0);
+          const auto q1In = unitaryQubitOperand(op, 1);
           if (!q0In || !q1In) {
             return std::nullopt;
           }
-          auto q0id = getQubitId(*q0In);
-          auto q1id = getQubitId(*q1In);
+          const auto q0id = getQubitId(*q0In);
+          const auto q1id = getQubitId(*q1In);
           if (!q0id || !q1id) {
             return std::nullopt;
           }
@@ -210,8 +281,8 @@ computeUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
           }
           unitary =
               embedTwoQubitInNqubit(twoQ, numQubits, *q0id, *q1id) * unitary;
-          const auto q0Out = getUnitaryQubitResult(op, 0);
-          const auto q1Out = getUnitaryQubitResult(op, 1);
+          const auto q0Out = unitaryQubitResult(op, 0);
+          const auto q1Out = unitaryQubitResult(op, 1);
           if (!q0Out || !q1Out) {
             return std::nullopt;
           }
@@ -228,136 +299,7 @@ computeUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
   return unitary;
 }
 
-[[nodiscard]] static std::optional<Matrix4x4>
-computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
-  ModuleOp module = moduleOp.get();
-  if (!module) {
-    return std::nullopt;
-  }
-  Matrix4x4 unitary = Matrix4x4::identity();
-  llvm::DenseMap<Value, std::size_t> qubitIds;
-  std::size_t nextQubitId = 0;
-
-  for (auto func : module.getOps<func::FuncOp>()) {
-    for (auto& block : func.getBlocks()) {
-      for (auto& rawOp : block.getOperations()) {
-        if (auto alloc = llvm::dyn_cast<AllocOp>(&rawOp)) {
-          if (nextQubitId >= 2) {
-            return std::nullopt;
-          }
-          qubitIds.try_emplace(alloc.getResult(), nextQubitId++);
-        }
-      }
-    }
-  }
-
-  auto getQubitId = [&](Value qubit) -> std::optional<std::size_t> {
-    auto it = qubitIds.find(qubit);
-    if (it == qubitIds.end()) {
-      return std::nullopt;
-    }
-    return it->second;
-  };
-
-  for (auto func : module.getOps<func::FuncOp>()) {
-    for (auto& block : func.getBlocks()) {
-      for (auto& rawOp : block.getOperations()) {
-        auto op = llvm::dyn_cast<UnitaryOpInterface>(&rawOp);
-        if (!op) {
-          continue;
-        }
-        if (llvm::isa<BarrierOp, GPhaseOp>(op.getOperation())) {
-          continue;
-        }
-
-        if (op.isSingleQubit()) {
-          const auto qIn = getUnitaryQubitOperand(op, 0);
-          if (!qIn) {
-            return std::nullopt;
-          }
-          auto qid = getQubitId(*qIn);
-          if (!qid) {
-            return std::nullopt;
-          }
-          Matrix2x2 oneQ;
-          if (!extractSingleQubitMatrix(op, oneQ)) {
-            return std::nullopt;
-          }
-          unitary =
-              expandToTwoQubits(oneQ, static_cast<QubitId>(*qid)) * unitary;
-          const auto qOut = getUnitaryQubitResult(op, 0);
-          if (!qOut) {
-            return std::nullopt;
-          }
-          qubitIds[*qOut] = *qid;
-          continue;
-        }
-
-        if (op.isTwoQubit()) {
-          const auto q0In = getUnitaryQubitOperand(op, 0);
-          const auto q1In = getUnitaryQubitOperand(op, 1);
-          if (!q0In || !q1In) {
-            return std::nullopt;
-          }
-          auto q0id = getQubitId(*q0In);
-          auto q1id = getQubitId(*q1In);
-          if (!q0id || !q1id) {
-            return std::nullopt;
-          }
-          Matrix4x4 twoQ;
-          if (!extractTwoQubitMatrix(op, twoQ)) {
-            return std::nullopt;
-          }
-          const llvm::SmallVector<QubitId, 2> ids{static_cast<QubitId>(*q0id),
-                                                  static_cast<QubitId>(*q1id)};
-          unitary = fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
-          const auto q0Out = getUnitaryQubitResult(op, 0);
-          const auto q1Out = getUnitaryQubitResult(op, 1);
-          if (!q0Out || !q1Out) {
-            return std::nullopt;
-          }
-          qubitIds[*q0Out] = *q0id;
-          qubitIds[*q1Out] = *q1id;
-          continue;
-        }
-      }
-    }
-  }
-
-  if (nextQubitId != 2) {
-    return std::nullopt;
-  }
-  return unitary;
-}
-
-static void expectQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
-                                       const OwningOpRef<ModuleOp>& rhs) {
-  const auto lhsUnitary = computeUnitaryFromModule(lhs);
-  ASSERT_TRUE(lhsUnitary.has_value());
-  const auto rhsUnitary = computeUnitaryFromModule(rhs);
-  ASSERT_TRUE(rhsUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*lhsUnitary, *rhsUnitary));
-}
-
-static void
-expectTwoQubitQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
-                                   const OwningOpRef<ModuleOp>& rhs) {
-  const auto lhsUnitary = computeTwoQubitUnitaryFromModule(lhs);
-  ASSERT_TRUE(lhsUnitary.has_value());
-  const auto rhsUnitary = computeTwoQubitUnitaryFromModule(rhs);
-  ASSERT_TRUE(rhsUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*lhsUnitary, *rhsUnitary));
-}
-
-/// One row of the standard multi-profile equivalence sweeps in tests.
-// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_F` at global scope
-struct FuseTwoQubitProfileSweepCase {
-  const char* nativeGates;
-  bool (*isNative)(OwningOpRef<ModuleOp>&);
-};
-
-/// Shared gtest fixture for ``fuse-two-qubit-unitary-runs`` pass tests.
-// NOLINTNEXTLINE(misc-use-internal-linkage) -- gtest `TEST_F` at global scope
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 class FuseTwoQubitUnitaryRunsPassTest : public testing::Test {
 protected:
   void SetUp() override {
@@ -369,106 +311,12 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  template <typename... Allowed1QOps>
-  static bool onlyTheseOps(OwningOpRef<ModuleOp>& moduleOp, const bool allowCx,
-                           const bool allowCz) {
-    bool ok = true;
-    std::ignore = moduleOp->walk([&](UnitaryOpInterface op) {
-      Operation* raw = op.getOperation();
-      if (llvm::isa_and_present<CtrlOp>(raw->getParentOp())) {
-        return WalkResult::advance();
-      }
-      if (llvm::isa<BarrierOp, GPhaseOp>(raw)) {
-        return WalkResult::advance();
-      }
-      if (auto ctrl = llvm::dyn_cast<CtrlOp>(raw)) {
-        if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
-          ok = false;
-          return WalkResult::interrupt();
-        }
-        Operation* body = ctrl.getBodyUnitary(0).getOperation();
-        const bool isCx = llvm::isa<XOp>(body);
-        const bool isCz = llvm::isa<ZOp>(body);
-        if ((isCx && allowCx) || (isCz && allowCz)) {
-          return WalkResult::advance();
-        }
-        ok = false;
-        return WalkResult::interrupt();
-      }
-
-      if (!llvm::isa<Allowed1QOps...>(raw)) {
-        ok = false;
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    });
-    return ok;
-  }
-
-  static bool onlyIbmBasicCxOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<XOp, SXOp, RZOp, POp>(moduleOp, /*allowCx=*/true,
-                                              /*allowCz=*/false);
-  }
-
-  static bool onlyIbmBasicCzOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<XOp, SXOp, RZOp, POp>(moduleOp, /*allowCx=*/false,
-                                              /*allowCz=*/true);
-  }
-
-  static bool onlyGenericU3CxOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<UOp>(moduleOp, /*allowCx=*/true, /*allowCz=*/false);
-  }
-
-  static bool onlyGenericU3CzOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<UOp>(moduleOp, /*allowCx=*/false, /*allowCz=*/true);
-  }
-
-  static bool onlyIqmDefaultOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<ROp>(moduleOp, /*allowCx=*/false, /*allowCz=*/true);
-  }
-
-  static bool onlyIbmFractionalOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<XOp, SXOp, RZOp, POp, RXOp, RZZOp>(
-        moduleOp, /*allowCx=*/false, /*allowCz=*/true);
-  }
-
-  static bool onlyAxisPairRxRzCxOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<RXOp, RZOp, POp>(moduleOp, /*allowCx=*/true,
-                                         /*allowCz=*/false);
-  }
-
-  static bool onlyAxisPairRxRyCxOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<RXOp, RYOp>(moduleOp, /*allowCx=*/true,
-                                    /*allowCz=*/false);
-  }
-
-  static bool onlyAxisPairRyRzCzOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<RYOp, RZOp, POp>(moduleOp, /*allowCx=*/false,
-                                         /*allowCz=*/true);
-  }
-
-  static bool onlyUOrAxisPairRxRzCxOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<UOp, RXOp, RZOp, POp>(moduleOp, /*allowCx=*/true,
-                                              /*allowCz=*/false);
-  }
-
-  static bool onlyGenericU3CxOrCzOps(OwningOpRef<ModuleOp>& moduleOp) {
-    return onlyTheseOps<UOp>(moduleOp, /*allowCx=*/true, /*allowCz=*/true);
-  }
-
-  static std::array<FuseTwoQubitProfileSweepCase, 3> coreEquivalenceProfiles() {
-    return {{{.nativeGates = "x,sx,rz,cx", .isNative = &onlyIbmBasicCxOps},
-             {.nativeGates = "u,cx", .isNative = &onlyGenericU3CxOps},
-             {.nativeGates = "r,cz", .isNative = &onlyIqmDefaultOps}}};
-  }
-
-  static void
-  runFuseTwoQubitUnitaryRunsPipeline(OwningOpRef<ModuleOp>& moduleOp,
-                                     const std::string& nativeGates) {
+  static void runFusePipeline(OwningOpRef<ModuleOp>& moduleOp,
+                              StringRef nativeGates) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
     pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
-        .nativeGates = nativeGates,
+        .nativeGates = nativeGates.str(),
     }));
     ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   }
@@ -488,62 +336,55 @@ protected:
     ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   }
 
-  static std::string moduleToString(const OwningOpRef<ModuleOp>& moduleOp) {
-    std::string text;
-    llvm::raw_string_ostream os(text);
-    moduleOp.get()->print(os);
-    return text;
+  static void expectQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
+                                         const OwningOpRef<ModuleOp>& rhs) {
+    const auto lhsUnitary = computeUnitaryFromQcoModule(lhs);
+    ASSERT_TRUE(lhsUnitary.has_value());
+    const auto rhsUnitary = computeUnitaryFromQcoModule(rhs);
+    ASSERT_TRUE(rhsUnitary.has_value());
+    EXPECT_TRUE(isEquivalentUpToGlobalPhase(*lhsUnitary, *rhsUnitary));
   }
 
-  template <typename BuildFn, typename PredicateFn>
-  void expectNativeAfterSynthesis(BuildFn buildFn,
-                                  const std::string& nativeGates,
-                                  PredicateFn isNative) {
-    auto moduleOp = buildFn();
-    runFuseTwoQubitUnitaryRunsPipeline(moduleOp, nativeGates);
+  void expectNativeAfterSynthesis(ProgramFn program, StringRef nativeGates,
+                                  NativePredicate isNative) {
+    auto moduleOp = mlir::qc::QCProgramBuilder::build(context.get(), program);
+    runFusePipeline(moduleOp, nativeGates);
     EXPECT_TRUE(isNative(moduleOp));
   }
 
-  template <typename BuildFn>
-  void expectSynthesisFailure(BuildFn buildFn, const std::string& nativeGates) {
-    auto moduleOp = buildFn();
+  void expectEquivalentAndNativeAfterSynthesis(ProgramFn program,
+                                               StringRef nativeGates,
+                                               NativePredicate isNative) {
+    auto expected = mlir::qc::QCProgramBuilder::build(context.get(), program);
+    runQcToQco(expected);
+    auto synthesized =
+        mlir::qc::QCProgramBuilder::build(context.get(), program);
+    runFusePipeline(synthesized, nativeGates);
+    EXPECT_TRUE(isNative(synthesized));
+    expectQcoModulesEquivalent(expected, synthesized);
+  }
+
+  void expectSynthesisFailure(ProgramFn program, StringRef nativeGates) {
+    auto moduleOp = mlir::qc::QCProgramBuilder::build(context.get(), program);
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
     pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
-        .nativeGates = nativeGates,
+        .nativeGates = nativeGates.str(),
     }));
     EXPECT_TRUE(failed(pm.run(*moduleOp)));
   }
 
-  template <typename BuildFn, typename PredicateFn>
-  void expectEquivalentAndNativeAfterSynthesis(BuildFn buildFn,
-                                               const std::string& nativeGates,
-                                               PredicateFn isNative) {
-    auto expectedModule = buildFn();
-    runQcToQco(expectedModule);
-
-    auto synthesizedModule = buildFn();
-    runFuseTwoQubitUnitaryRunsPipeline(synthesizedModule, nativeGates);
-    EXPECT_TRUE(isNative(synthesizedModule));
-    expectQcoModulesEquivalent(expectedModule, synthesizedModule);
-  }
-
-  template <typename ProgramT>
-  static void expectTwoQFusePreservesUnitary(MLIRContext* ctx, ProgramT program,
-                                             StringRef nativeGates) {
-    auto build = [&](MLIRContext* context) {
-      return mlir::qc::QCProgramBuilder::build(context, program);
-    };
-    auto expected = build(ctx);
+  void expectTwoQFusePreservesUnitary(ProgramFn program,
+                                      StringRef nativeGates) {
+    auto expected = mlir::qc::QCProgramBuilder::build(context.get(), program);
     ASSERT_TRUE(expected);
     runQcToQco(expected);
-
-    auto fused = build(ctx);
+    auto fused = mlir::qc::QCProgramBuilder::build(context.get(), program);
     ASSERT_TRUE(fused);
     runQcToQco(fused);
     runTwoQFuse(fused, nativeGates);
     ASSERT_TRUE(succeeded(verify(*fused)));
-    expectTwoQubitQcoModulesEquivalent(expected, fused);
+    expectQcoModulesEquivalent(expected, fused);
   }
 
   static std::size_t countCtrlOps(const OwningOpRef<ModuleOp>& moduleOp) {
@@ -555,17 +396,13 @@ protected:
   std::unique_ptr<MLIRContext> context;
 };
 
-} // namespace mlir::qco::fuse_two_qubit_test
+class FuseTwoQubitProfileTest
+    : public FuseTwoQubitUnitaryRunsPassTest,
+      public testing::WithParamInterface<ProfileCase> {};
 
-using namespace mlir::qco::fuse_two_qubit_test;
-
-struct NativeSynthMenuRow {
-  const char* name;
-  const char* nativeGates;
-  bool (*isNative)(OwningOpRef<ModuleOp>&);
+class FuseTwoQubitFusionTest : public FuseTwoQubitUnitaryRunsPassTest,
+                               public testing::WithParamInterface<FusionCase> {
 };
-
-// --- Inline circuit builders ---
 
 static void fusionCxCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
@@ -591,6 +428,15 @@ static void fusionThreeLineCx(mlir::qc::QCProgramBuilder& b) {
   b.cx(q0, q1);
   b.cx(q1, q2);
   b.cx(q0, q1);
+}
+
+static void fusionCxRSharedOtherPair(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  b.cx(q0, q1);
+  b.rz(0.17, q1);
+  b.cx(q1, q2);
 }
 
 static void fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
@@ -744,152 +590,61 @@ static void determinismSwap(mlir::qc::QCProgramBuilder& b) {
   b.dealloc(q1);
 }
 
-// --- Pass profile coverage ---
+} // namespace
 
-// NOLINTNEXTLINE(misc-use-internal-linkage)
-class FuseTwoQubitSwapProfileTest
-    : public FuseTwoQubitUnitaryRunsPassTest,
-      public testing::WithParamInterface<NativeSynthMenuRow> {
-public:
-  using FuseTwoQubitUnitaryRunsPassTest::onlyGenericU3CxOps;
-  using FuseTwoQubitUnitaryRunsPassTest::onlyIbmBasicCxOps;
-  using FuseTwoQubitUnitaryRunsPassTest::onlyIqmDefaultOps;
-};
-
-TEST_P(FuseTwoQubitSwapProfileTest, DecomposesSwapToProfile) {
-  const NativeSynthMenuRow& param = GetParam();
-  expectNativeAfterSynthesis(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(), mlir::qc::swap);
-      },
-      param.nativeGates, param.isNative);
+TEST_P(FuseTwoQubitProfileTest, SynthesizesToNativeMenu) {
+  const ProfileCase& c = GetParam();
+  if (c.checkEquivalence) {
+    expectEquivalentAndNativeAfterSynthesis(c.program, c.nativeGates,
+                                            c.isNative);
+  } else {
+    expectNativeAfterSynthesis(c.program, c.nativeGates, c.isNative);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    SwapMenuMatrix, FuseTwoQubitSwapProfileTest,
+    Menus, FuseTwoQubitProfileTest,
     testing::Values(
-        NativeSynthMenuRow{"IbmBasicCx", "x,sx,rz,cx",
-                           &FuseTwoQubitSwapProfileTest::onlyIbmBasicCxOps},
-        NativeSynthMenuRow{"GenericU3Cx", "u,cx",
-                           &FuseTwoQubitSwapProfileTest::onlyGenericU3CxOps},
-        NativeSynthMenuRow{"IqmDefault", "r,cz",
-                           &FuseTwoQubitSwapProfileTest::onlyIqmDefaultOps}),
-    [](const testing::TestParamInfo<NativeSynthMenuRow>& info) {
+        ProfileCase{"SwapIbmBasic", mlir::qc::swap, "x,sx,rz,cx",
+                    onlyIbmBasicCxOps, false},
+        ProfileCase{"SwapGeneric", mlir::qc::swap, "u,cx", onlyGenericU3CxOps,
+                    false},
+        ProfileCase{"SwapIqm", mlir::qc::swap, "r,cz", onlyIqmDefaultOps,
+                    false},
+        ProfileCase{"HstycxIbm", hstycxTwoQ, "x,sx,rz,cx", onlyIbmBasicCxOps,
+                    false},
+        ProfileCase{"CxYIqm", cxYOnQ1, "r,cz", onlyIqmDefaultOps, false},
+        ProfileCase{"BroadOneQIqm", broadOneQThenCz, "r,cz", onlyIqmDefaultOps,
+                    false},
+        ProfileCase{"ZeroAngleRyRzCz", zeroAngleThenCz, "ry,rz,cz",
+                    onlyAxisPairRyRzCzOps, false},
+        ProfileCase{"HCxTIbmCz", hCxTOnQ1, "x,sx,rz,cz", onlyIbmBasicCzOps,
+                    false},
+        ProfileCase{"XYSXCzIqm", xYSXCz, "r,cz", onlyIqmDefaultOps, false},
+        ProfileCase{"IbmFractional", ibmFractionalGateFamilies,
+                    "x,sx,rz,rx,rzz,cz", onlyIbmFractionalOps, false},
+        ProfileCase{"HYCxRxRz", hYCx, "rx,rz,cx", onlyAxisPairRxRzCxOps, false},
+        ProfileCase{"ZCxRxRy", zCx, "rx,ry,cx", onlyAxisPairRxRyCxOps, false},
+        ProfileCase{"Hq0Yq1CxSq0", hq0Yq1CxSq0, "u,cx", onlyGenericU3CxOps,
+                    true},
+        ProfileCase{"XHCzRyRz", xHCz, "ry,rz,cz", onlyAxisPairRyRzCzOps, true},
+        ProfileCase{"HCxSq1MultiEnt", hCxSq1, "u,cx,cz", onlyGenericU3CxOrCzOps,
+                    true}),
+    [](const testing::TestParamInfo<ProfileCase>& info) {
       return info.param.name;
     });
 
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, DecomposesHstycxToIbmBasicCx) {
-  expectNativeAfterSynthesis(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(), hstycxTwoQ);
-      },
-      "x,sx,rz,cx", &FuseTwoQubitUnitaryRunsPassTest::onlyIbmBasicCxOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, DecomposesCxYOnQ1ToIqmDefault) {
-  expectNativeAfterSynthesis(
-      [&] { return mlir::qc::QCProgramBuilder::build(context.get(), cxYOnQ1); },
-      "r,cz", &FuseTwoQubitUnitaryRunsPassTest::onlyIqmDefaultOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, BroadOneQCanonicalizationOnIqmDefault) {
-  auto moduleOp =
-      mlir::qc::QCProgramBuilder::build(context.get(), broadOneQThenCz);
-  runFuseTwoQubitUnitaryRunsPipeline(moduleOp, "r,cz");
-  EXPECT_TRUE(onlyIqmDefaultOps(moduleOp));
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, ZeroAngleCanonicalizationOnRyRzCz) {
-  auto moduleOp =
-      mlir::qc::QCProgramBuilder::build(context.get(), zeroAngleThenCz);
-  runFuseTwoQubitUnitaryRunsPipeline(moduleOp, "ry,rz,cz");
-  EXPECT_TRUE(onlyAxisPairRyRzCzOps(moduleOp));
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, DecomposesCxToCzForIbmBasicCzProfile) {
-  expectNativeAfterSynthesis(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(), hCxTOnQ1);
-      },
-      "x,sx,rz,cz", &FuseTwoQubitUnitaryRunsPassTest::onlyIbmBasicCzOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, DecomposesToIqmDefaultProfile) {
-  expectNativeAfterSynthesis(
-      [&] { return mlir::qc::QCProgramBuilder::build(context.get(), xYSXCz); },
-      "r,cz", &FuseTwoQubitUnitaryRunsPassTest::onlyIqmDefaultOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, DecomposesToIbmFractionalProfile) {
-  expectNativeAfterSynthesis(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(),
-                                                 ibmFractionalGateFamilies);
-      },
-      "x,sx,rz,rx,rzz,cz",
-      &FuseTwoQubitUnitaryRunsPassTest::onlyIbmFractionalOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, DecomposesToAxisPairRxRzCxProfile) {
-  expectNativeAfterSynthesis(
-      [&] { return mlir::qc::QCProgramBuilder::build(context.get(), hYCx); },
-      "rx,rz,cx", &FuseTwoQubitUnitaryRunsPassTest::onlyAxisPairRxRzCxOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, DecomposesRzToAxisPairRxRyCxProfile) {
-  expectNativeAfterSynthesis(
-      [&] { return mlir::qc::QCProgramBuilder::build(context.get(), zCx); },
-      "rx,ry,cx", &FuseTwoQubitUnitaryRunsPassTest::onlyAxisPairRxRyCxOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest,
-       GenericProfileMatchesGenericU3CxBehavior) {
-  expectEquivalentAndNativeAfterSynthesis(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(), hq0Yq1CxSq0);
-      },
-      "u,cx", &FuseTwoQubitUnitaryRunsPassTest::onlyGenericU3CxOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest,
-       GenericProfileMatchesAxisPairRyRzCzBehavior) {
-  expectEquivalentAndNativeAfterSynthesis(
-      [&] { return mlir::qc::QCProgramBuilder::build(context.get(), xHCz); },
-      "ry,rz,cz", &FuseTwoQubitUnitaryRunsPassTest::onlyAxisPairRyRzCzOps);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest,
-       CustomProfileAcceptsMultipleEntanglersMenu) {
-  expectEquivalentAndNativeAfterSynthesis(
-      [&] { return mlir::qc::QCProgramBuilder::build(context.get(), hCxSq1); },
-      "u,cx,cz", &FuseTwoQubitUnitaryRunsPassTest::onlyGenericU3CxOrCzOps);
-}
-
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, FailsForUnsupportedNativeGateMenu) {
-  expectSynthesisFailure(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(), mlir::qc::h);
-      },
-      "not-a-gate");
+  expectSynthesisFailure(mlir::qc::h, "not-a-gate");
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest,
        FailsForNativeGateMenuWithoutSingleQEmitter) {
-  expectSynthesisFailure(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(),
-                                                 mlir::qc::singleControlledX);
-      },
-      "cx,cz");
+  expectSynthesisFailure(mlir::qc::singleControlledX, "cx,cz");
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, FailsForMultiControlledGateStructure) {
-  expectSynthesisFailure(
-      [&] {
-        return mlir::qc::QCProgramBuilder::build(context.get(),
-                                                 mlir::qc::multipleControlledX);
-      },
-      "x,sx,rz,cx");
+  expectSynthesisFailure(mlir::qc::multipleControlledX, "x,sx,rz,cx");
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest,
@@ -898,26 +653,84 @@ TEST_F(FuseTwoQubitUnitaryRunsPassTest,
     return mlir::qc::QCProgramBuilder::build(context.get(), determinismSwap);
   };
   auto firstModule = buildFn();
-  runFuseTwoQubitUnitaryRunsPipeline(firstModule, "u,cx");
+  runFusePipeline(firstModule, "u,cx");
   auto secondModule = buildFn();
-  runFuseTwoQubitUnitaryRunsPipeline(secondModule, "u,cx");
-  EXPECT_EQ(moduleToString(firstModule), moduleToString(secondModule));
+  runFusePipeline(secondModule, "u,cx");
+
+  std::string first;
+  std::string second;
+  llvm::raw_string_ostream osFirst(first);
+  llvm::raw_string_ostream osSecond(second);
+  firstModule->print(osFirst);
+  secondModule->print(osSecond);
+  EXPECT_EQ(first, second);
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, ThreeQubitGhzEquivalentOnCoreProfiles) {
-  for (const auto& profileCase : coreEquivalenceProfiles()) {
+  const std::array<ProfileCase, 3> profiles{{
+      {.name = "GhzIbm",
+       .program = threeQGhz,
+       .nativeGates = "x,sx,rz,cx",
+       .isNative = onlyIbmBasicCxOps,
+       .checkEquivalence = false},
+      {.name = "GhzGeneric",
+       .program = threeQGhz,
+       .nativeGates = "u,cx",
+       .isNative = onlyGenericU3CxOps,
+       .checkEquivalence = false},
+      {.name = "GhzIqm",
+       .program = threeQGhz,
+       .nativeGates = "r,cz",
+       .isNative = onlyIqmDefaultOps,
+       .checkEquivalence = false},
+  }};
+  for (const ProfileCase& profile : profiles) {
     auto expected = mlir::qc::QCProgramBuilder::build(context.get(), threeQGhz);
     runQcToQco(expected);
-
     auto synthesized =
         mlir::qc::QCProgramBuilder::build(context.get(), threeQGhz);
-    runFuseTwoQubitUnitaryRunsPipeline(synthesized, profileCase.nativeGates);
-    EXPECT_TRUE(profileCase.isNative(synthesized));
+    runFusePipeline(synthesized, profile.nativeGates);
+    EXPECT_TRUE(profile.isNative(synthesized));
     expectQcoModulesEquivalent(expected, synthesized);
   }
 }
 
-// --- Two-qubit window fusion (pass internals) ---
+TEST_P(FuseTwoQubitFusionTest, WindowFusionBehavior) {
+  const FusionCase& c = GetParam();
+  if (c.checkTwoQUnitary) {
+    expectTwoQFusePreservesUnitary(c.program, c.nativeGates);
+  }
+  auto module = mlir::qc::QCProgramBuilder::build(context.get(), c.program);
+  ASSERT_TRUE(module);
+  runQcToQco(module);
+  runTwoQFuse(module, c.nativeGates);
+  if (c.exactCtrlCount) {
+    EXPECT_EQ(countCtrlOps(module), *c.exactCtrlCount);
+  }
+  if (c.minCtrlCount) {
+    EXPECT_GE(countCtrlOps(module), *c.minCtrlCount);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Windows, FuseTwoQubitFusionTest,
+    testing::Values(FusionCase{"AdjacentCxCancel", fusionCxCx, "u,cx", 0,
+                               std::nullopt, true},
+                    FusionCase{"InterleavedOneQ", fusionHCxInterleavedTCx,
+                               "u,cx", std::nullopt, std::nullopt, true},
+                    FusionCase{"DifferentPairBoundary", fusionThreeLineCx,
+                               "u,cx", std::nullopt, 1, false},
+                    FusionCase{"SharedWireOneQ", fusionCxRSharedOtherPair,
+                               "u,cx", std::nullopt, 2, false},
+                    FusionCase{"BarrierBoundary", fusionCxBarrierCx, "u,cx", 2,
+                               std::nullopt, false},
+                    FusionCase{"SwappedWireOrder", fusionSwapCxPattern, "u,cx",
+                               std::nullopt, std::nullopt, true},
+                    FusionCase{"RzzBlock", fusionHRzzSRzz, "x,sx,rz,rx,rzz,cz",
+                               std::nullopt, std::nullopt, true}),
+    [](const testing::TestParamInfo<FusionCase>& info) {
+      return info.param.name;
+    });
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, InvalidNativeGatesFailsPass) {
   auto module = mlir::qc::QCProgramBuilder::build(context.get(), fusionCxCx);
@@ -928,46 +741,4 @@ TEST_F(FuseTwoQubitUnitaryRunsPassTest, InvalidNativeGatesFailsPass) {
       .nativeGates = "not-a-gate",
   }));
   EXPECT_TRUE(failed(pm.run(*module)));
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, AdjacentCxCancel) {
-  expectTwoQFusePreservesUnitary(context.get(), fusionCxCx, "u,cx");
-
-  auto module = mlir::qc::QCProgramBuilder::build(context.get(), fusionCxCx);
-  ASSERT_TRUE(module);
-  runQcToQco(module);
-  runTwoQFuse(module, "u,cx");
-  EXPECT_EQ(countCtrlOps(module), 0U);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, FusesCxThroughInterleavedOneQOps) {
-  expectTwoQFusePreservesUnitary(context.get(), fusionHCxInterleavedTCx,
-                                 "u,cx");
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, StopsAtDifferentPairBoundary) {
-  auto module =
-      mlir::qc::QCProgramBuilder::build(context.get(), fusionThreeLineCx);
-  ASSERT_TRUE(module);
-  runQcToQco(module);
-  runTwoQFuse(module, "u,cx");
-  EXPECT_GE(countCtrlOps(module), 1U);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, DoesNotFuseAcrossBarrier) {
-  auto module =
-      mlir::qc::QCProgramBuilder::build(context.get(), fusionCxBarrierCx);
-  ASSERT_TRUE(module);
-  runQcToQco(module);
-  runTwoQFuse(module, "u,cx");
-  EXPECT_EQ(countCtrlOps(module), 2U);
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, HandlesSwappedWireOrder) {
-  expectTwoQFusePreservesUnitary(context.get(), fusionSwapCxPattern, "u,cx");
-}
-
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, HandlesRzzBlock) {
-  expectTwoQFusePreservesUnitary(context.get(), fusionHRzzSRzz,
-                                 "x,sx,rz,rx,rzz,cz");
 }
