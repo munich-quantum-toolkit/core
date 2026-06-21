@@ -6,8 +6,8 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-native-synthesis)
-add_executable(${target_name} test_native_synthesis.cpp)
+set(target_name mqt-core-mlir-unittest-fuse-two-qubit-unitary-runs)
+add_executable(${target_name} test_fuse_two_qubit_unitary_runs.cpp)
 
 target_link_libraries(
   ${target_name}
@@ -19,6 +19,9 @@ target_link_libraries(
           MLIRQCToQCO
           MLIRQCOTransforms
           MLIRPass
+          MLIRFuncDialect
+          MLIRArithDialect
+          MLIRIR
           MLIRSupport
           LLVMSupport)
 

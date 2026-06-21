@@ -9,30 +9,27 @@
  */
 
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/QC/IR/QCDialect.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cassert>
@@ -344,242 +341,18 @@ INSTANTIATE_TEST_SUITE_P(
               return kron(hGate(), ipz()) * cxGate01() * kron(ipx(), ipy());
             })));
 
-static void fusionCxCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.cx(q0, q1);
-  b.cx(q0, q1);
-}
+//===----------------------------------------------------------------------===//
+// Two-qubit Weyl IR synthesis
+//===----------------------------------------------------------------------===//
 
-static void fusionHCxInterleavedTCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.h(q0);
-  b.cx(q0, q1);
-  b.t(q1);
-  b.s(q0);
-  b.cx(q0, q1);
-}
+namespace {
 
-static void fusionThreeLineCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  const auto q2 = b.allocQubit();
-  b.cx(q0, q1);
-  b.cx(q1, q2);
-  b.cx(q0, q1);
-}
-
-static void fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.cx(q0, q1);
-  b.barrier({q0, q1});
-  b.cx(q0, q1);
-}
-
-static void fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.cx(q0, q1);
-  b.cx(q1, q0);
-  b.cx(q0, q1);
-}
-
-static void fusionHRzzSRzz(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.h(q0);
-  b.rzz(-0.29, q0, q1);
-  b.s(q1);
-  b.rzz(0.17, q0, q1);
-}
-
-using mqt::test::cxGate01;
-using mqt::test::czGate;
-using mqt::test::expandToTwoQubits;
-using mqt::test::fixTwoQubitMatrixQubitOrder;
-using mqt::test::isEquivalentUpToGlobalPhase;
-using mqt::test::QubitId;
-
-[[nodiscard]] static std::optional<Value>
-getUnitaryQubitOperand(qco::UnitaryOpInterface op, std::size_t index) {
-  if (index >= op.getNumQubits()) {
-    return std::nullopt;
-  }
-  Value v = op->getOperand(index);
-  if (!llvm::isa<qco::QubitType>(v.getType())) {
-    return std::nullopt;
-  }
-  return v;
-}
-
-[[nodiscard]] static std::optional<Value>
-getUnitaryQubitResult(qco::UnitaryOpInterface op, std::size_t index) {
-  if (index >= op.getNumQubits()) {
-    return std::nullopt;
-  }
-  Value v = op->getResult(index);
-  if (!llvm::isa<qco::QubitType>(v.getType())) {
-    return std::nullopt;
-  }
-  return v;
-}
-
-[[nodiscard]] static bool extractSingleQubitMatrix(qco::UnitaryOpInterface op,
-                                                   Matrix2x2& out) {
-  if (op.getUnitaryMatrix2x2(out)) {
-    return true;
-  }
-  DynamicMatrix dynamic;
-  if (!op.getUnitaryMatrixDynamic(dynamic) || dynamic.rows() != 2 ||
-      dynamic.cols() != 2) {
-    return false;
-  }
-  out = Matrix2x2::fromElements(dynamic(0, 0), dynamic(0, 1), dynamic(1, 0),
-                                dynamic(1, 1));
-  return true;
-}
-
-[[nodiscard]] static bool extractTwoQubitMatrix(qco::UnitaryOpInterface op,
-                                                Matrix4x4& out) {
-  if (auto ctrl = llvm::dyn_cast<qco::CtrlOp>(op.getOperation())) {
-    if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
-      return false;
-    }
-    auto* body = ctrl.getBodyUnitary(0).getOperation();
-    if (llvm::isa<qco::XOp>(body)) {
-      out = cxGate01();
-      return true;
-    }
-    if (llvm::isa<qco::ZOp>(body)) {
-      out = czGate();
-      return true;
-    }
-    return false;
-  }
-  return op.getUnitaryMatrix4x4(out);
-}
-
-[[nodiscard]] static std::optional<Matrix4x4>
-computeTwoQubitUnitaryFromModule(const OwningOpRef<ModuleOp>& moduleOp) {
-  ModuleOp module = moduleOp.get();
-  if (!module) {
-    return std::nullopt;
-  }
-  Matrix4x4 unitary = Matrix4x4::identity();
-  llvm::DenseMap<Value, std::size_t> qubitIds;
-  std::size_t nextQubitId = 0;
-
-  for (auto func : module.getOps<func::FuncOp>()) {
-    for (auto& block : func.getBlocks()) {
-      for (auto& rawOp : block.getOperations()) {
-        if (auto alloc = llvm::dyn_cast<qco::AllocOp>(&rawOp)) {
-          if (nextQubitId >= 2) {
-            return std::nullopt;
-          }
-          qubitIds.try_emplace(alloc.getResult(), nextQubitId++);
-        }
-      }
-    }
-  }
-
-  auto getQubitId = [&](Value qubit) -> std::optional<std::size_t> {
-    auto it = qubitIds.find(qubit);
-    if (it == qubitIds.end()) {
-      return std::nullopt;
-    }
-    return it->second;
-  };
-
-  for (auto func : module.getOps<func::FuncOp>()) {
-    for (auto& block : func.getBlocks()) {
-      for (auto& rawOp : block.getOperations()) {
-        auto op = llvm::dyn_cast<qco::UnitaryOpInterface>(&rawOp);
-        if (!op) {
-          continue;
-        }
-        if (llvm::isa<qco::BarrierOp, qco::GPhaseOp>(op.getOperation())) {
-          continue;
-        }
-
-        if (op.isSingleQubit()) {
-          const auto qIn = getUnitaryQubitOperand(op, 0);
-          if (!qIn) {
-            return std::nullopt;
-          }
-          auto qid = getQubitId(*qIn);
-          if (!qid) {
-            return std::nullopt;
-          }
-          Matrix2x2 oneQ;
-          if (!extractSingleQubitMatrix(op, oneQ)) {
-            return std::nullopt;
-          }
-          unitary =
-              expandToTwoQubits(oneQ, static_cast<QubitId>(*qid)) * unitary;
-          const auto qOut = getUnitaryQubitResult(op, 0);
-          if (!qOut) {
-            return std::nullopt;
-          }
-          qubitIds[*qOut] = *qid;
-          continue;
-        }
-
-        if (op.isTwoQubit()) {
-          const auto q0In = getUnitaryQubitOperand(op, 0);
-          const auto q1In = getUnitaryQubitOperand(op, 1);
-          if (!q0In || !q1In) {
-            return std::nullopt;
-          }
-          auto q0id = getQubitId(*q0In);
-          auto q1id = getQubitId(*q1In);
-          if (!q0id || !q1id) {
-            return std::nullopt;
-          }
-          Matrix4x4 twoQ;
-          if (!extractTwoQubitMatrix(op, twoQ)) {
-            return std::nullopt;
-          }
-          const llvm::SmallVector<QubitId, 2> ids{static_cast<QubitId>(*q0id),
-                                                  static_cast<QubitId>(*q1id)};
-          unitary = fixTwoQubitMatrixQubitOrder(twoQ, ids) * unitary;
-          const auto q0Out = getUnitaryQubitResult(op, 0);
-          const auto q1Out = getUnitaryQubitResult(op, 1);
-          if (!q0Out || !q1Out) {
-            return std::nullopt;
-          }
-          qubitIds[*q0Out] = *q0id;
-          qubitIds[*q1Out] = *q1id;
-          continue;
-        }
-      }
-    }
-  }
-
-  if (nextQubitId != 2) {
-    return std::nullopt;
-  }
-  return unitary;
-}
-
-static void
-expectTwoQubitQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
-                                   const OwningOpRef<ModuleOp>& rhs) {
-  const auto lhsUnitary = computeTwoQubitUnitaryFromModule(lhs);
-  ASSERT_TRUE(lhsUnitary.has_value());
-  const auto rhsUnitary = computeTwoQubitUnitaryFromModule(rhs);
-  ASSERT_TRUE(rhsUnitary.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*lhsUnitary, *rhsUnitary));
-}
-
-struct TwoQFuseFixture {
+struct WeylSynthesisFixture {
   std::unique_ptr<MLIRContext> context;
 
   void setUp() {
     DialectRegistry registry;
-    registry.insert<mlir::qc::QCDialect, qco::QCODialect, arith::ArithDialect,
-                    func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -588,106 +361,253 @@ struct TwoQFuseFixture {
   [[nodiscard]] MLIRContext* ctx() const { return context.get(); }
 };
 
-static std::size_t countCtrlOps(const OwningOpRef<ModuleOp>& moduleOp) {
-  std::size_t count = 0;
-  moduleOp.get()->walk([&](qco::CtrlOp) { ++count; });
-  return count;
+struct SynthesizedTwoQubitCircuit {
+  OwningOpRef<ModuleOp> mlirModule;
+  func::FuncOp func;
+};
+
+[[nodiscard]] bool extractTwoQubitMatrix(UnitaryOpInterface op,
+                                         Matrix4x4& out) {
+  if (auto ctrl = llvm::dyn_cast<CtrlOp>(op.getOperation())) {
+    if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
+      return false;
+    }
+    Operation* body = ctrl.getBodyUnitary(0).getOperation();
+    if (llvm::isa<XOp>(body)) {
+      out = cxGate01();
+      return true;
+    }
+    if (llvm::isa<ZOp>(body)) {
+      out = czGate();
+      return true;
+    }
+    return false;
+  }
+  return op.getUnitaryMatrix4x4(out);
 }
 
-static LogicalResult runQcToQco(ModuleOp moduleOp) {
-  PassManager pm(moduleOp.getContext());
-  pm.addPass(mlir::createQCToQCO());
-  return pm.run(moduleOp);
+[[nodiscard]] std::optional<Matrix4x4>
+compute2QUnitaryFromFunc(func::FuncOp funcOp) {
+  Matrix4x4 acc = Matrix4x4::identity();
+  std::complex<double> global{1.0, 0.0};
+  llvm::DenseMap<Value, QubitId> wireIds;
+  wireIds[funcOp.getArgument(0)] = 0;
+  wireIds[funcOp.getArgument(1)] = 1;
+
+  auto wireId = [&](Value qubit) -> std::optional<QubitId> {
+    const auto it = wireIds.find(qubit);
+    if (it == wireIds.end()) {
+      return std::nullopt;
+    }
+    return it->second;
+  };
+
+  for (Operation& rawOp : funcOp.getBody().front()) {
+    if (llvm::isa<func::ReturnOp>(&rawOp)) {
+      continue;
+    }
+    if (auto gphase = llvm::dyn_cast<GPhaseOp>(&rawOp)) {
+      if (const auto matrix = gphase.getUnitaryMatrix()) {
+        global *= (*matrix)(0, 0);
+      }
+      continue;
+    }
+    auto op = llvm::dyn_cast<UnitaryOpInterface>(&rawOp);
+    if (!op) {
+      continue;
+    }
+
+    if (op.isSingleQubit()) {
+      const auto qIn = op->getOperand(0);
+      const auto qid = wireId(qIn);
+      if (!qid) {
+        return std::nullopt;
+      }
+      Matrix2x2 oneQ;
+      if (!op.getUnitaryMatrix2x2(oneQ)) {
+        DynamicMatrix dynamic;
+        if (!op.getUnitaryMatrixDynamic(dynamic) || dynamic.rows() != 2 ||
+            dynamic.cols() != 2) {
+          return std::nullopt;
+        }
+        oneQ = Matrix2x2::fromElements(dynamic(0, 0), dynamic(0, 1),
+                                       dynamic(1, 0), dynamic(1, 1));
+      }
+      acc = expandToTwoQubits(oneQ, *qid) * acc;
+      wireIds[op->getResult(0)] = *qid;
+      continue;
+    }
+
+    if (op.isTwoQubit()) {
+      const auto q0In = op->getOperand(0);
+      const auto q1In = op->getOperand(1);
+      const auto q0id = wireId(q0In);
+      const auto q1id = wireId(q1In);
+      if (!q0id || !q1id) {
+        return std::nullopt;
+      }
+      Matrix4x4 twoQ;
+      if (!extractTwoQubitMatrix(op, twoQ)) {
+        return std::nullopt;
+      }
+      const llvm::SmallVector<QubitId, 2> ids{*q0id, *q1id};
+      acc = fixTwoQubitMatrixQubitOrder(twoQ, ids) * acc;
+      wireIds[op->getResult(0)] = *q0id;
+      wireIds[op->getResult(1)] = *q1id;
+    }
+  }
+
+  return acc * global;
 }
 
-static LogicalResult runTwoQFuse(ModuleOp moduleOp, StringRef nativeGates) {
-  PassManager pm(moduleOp.getContext());
-  pm.addPass(mlir::qco::createFuseTwoQubitUnitaryRuns(
-      mlir::qco::FuseTwoQubitUnitaryRunsOptions{
-          .nativeGates = nativeGates.str(),
-      }));
-  return pm.run(moduleOp);
+[[nodiscard]] SynthesizedTwoQubitCircuit
+synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
+                   const NativeProfileSpec& spec) {
+  OwningOpRef<ModuleOp> mlirModule = ModuleOp::create(UnknownLoc::get(ctx));
+  OpBuilder builder(ctx);
+  builder.setInsertionPointToStart(mlirModule->getBody());
+
+  const auto qubitTy = QubitType::get(ctx);
+  const auto funcTy =
+      builder.getFunctionType({qubitTy, qubitTy}, {qubitTy, qubitTy});
+  const Location loc = mlirModule->getLoc();
+  auto func = func::FuncOp::create(builder, loc, "main", funcTy);
+  auto* entry = func.addEntryBlock();
+
+  builder.setInsertionPointToStart(entry);
+  Value q0 = entry->getArgument(0);
+  Value q1 = entry->getArgument(1);
+  Value out0;
+  Value out1;
+  if (failed(synthesizeUnitary2QWeyl(builder, loc, q0, q1, target, spec, out0,
+                                     out1))) {
+    llvm::report_fatal_error(
+        "synthesizeUnitary2QWeyl failed during test synthesis");
+  }
+  func::ReturnOp::create(builder, loc, ValueRange{out0, out1});
+  return SynthesizedTwoQubitCircuit{.mlirModule = std::move(mlirModule),
+                                    .func = func};
 }
 
-template <typename ProgramT>
-static OwningOpRef<ModuleOp> buildProgram(MLIRContext* ctx, ProgramT program) {
-  return mlir::qc::QCProgramBuilder::build(ctx, program);
+void expect2QMatrixPreserved(func::FuncOp funcOp, const Matrix4x4& original) {
+  const auto actual = compute2QUnitaryFromFunc(funcOp);
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*actual, original));
 }
 
-template <typename ProgramT>
-static void expectTwoQFusePreservesUnitary(MLIRContext* ctx, ProgramT program,
-                                           StringRef nativeGates) {
-  auto expected = buildProgram(ctx, program);
-  ASSERT_TRUE(expected);
-  ASSERT_TRUE(succeeded(runQcToQco(*expected)));
+void expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
+                               const NativeProfileSpec& spec) {
+  const auto circuit = synthesize2QMatrix(ctx, target, spec);
+  ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
+  expect2QMatrixPreserved(circuit.func, target);
+}
 
-  auto fused = buildProgram(ctx, program);
-  ASSERT_TRUE(fused);
-  ASSERT_TRUE(succeeded(runQcToQco(*fused)));
-  ASSERT_TRUE(succeeded(runTwoQFuse(*fused, nativeGates)));
-  ASSERT_TRUE(succeeded(verify(*fused)));
-  expectTwoQubitQcoModulesEquivalent(expected, fused);
+} // namespace
+
+TEST(WeylSynthesisTest, ReconstructsCxWithGenericProfile) {
+  WeylSynthesisFixture fx;
+  fx.setUp();
+  const auto spec = parseNativeSpec("u,cx");
+  ASSERT_TRUE(spec);
+  expectSynthesized2QMatrix(fx.ctx(), cxGate01(), *spec);
+}
+
+TEST(WeylSynthesisTest, ReconstructsProductUnitaryWithGenericProfile) {
+  WeylSynthesisFixture fx;
+  fx.setUp();
+  const auto spec = parseNativeSpec("u,cx");
+  ASSERT_TRUE(spec);
+  const Matrix4x4 target = kron(rzMatrix(1.0), ryMatrix(0.3));
+  expectSynthesized2QMatrix(fx.ctx(), target, *spec);
+}
+
+TEST(WeylSynthesisTest, ReconstructsWithIbmBasicProfile) {
+  WeylSynthesisFixture fx;
+  fx.setUp();
+  const auto spec = parseNativeSpec("x,sx,rz,cx");
+  ASSERT_TRUE(spec);
+  const Matrix4x4 target = kron(hGate(), Matrix2x2::identity()) * cxGate01() *
+                           kron(rzMatrix(0.2), ryMatrix(0.1));
+  expectSynthesized2QMatrix(fx.ctx(), target, *spec);
+}
+
+TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
+  WeylSynthesisFixture fx;
+  fx.setUp();
+  const auto spec = parseNativeSpec("u,cx");
+  ASSERT_TRUE(spec);
+  const auto count = twoQubitEntanglerCount(Matrix4x4::identity(), *spec);
+  ASSERT_TRUE(count.has_value());
+  EXPECT_EQ(*count, 0U);
+}
+
+TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
+  WeylSynthesisFixture fx;
+  fx.setUp();
+  const auto spec = parseNativeSpec("u");
+  ASSERT_TRUE(spec);
+  EXPECT_TRUE(spec->entanglerBases.empty());
+
+  OwningOpRef<ModuleOp> mlirModule =
+      ModuleOp::create(UnknownLoc::get(fx.ctx()));
+  OpBuilder builder(fx.ctx());
+  builder.setInsertionPointToStart(mlirModule->getBody());
+  const auto qubitTy = QubitType::get(fx.ctx());
+  const auto funcTy =
+      builder.getFunctionType({qubitTy, qubitTy}, {qubitTy, qubitTy});
+  const Location loc = mlirModule->getLoc();
+  auto func = func::FuncOp::create(builder, loc, "main", funcTy);
+  auto* entry = func.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+  Value out0;
+  Value out1;
+  EXPECT_TRUE(failed(synthesizeUnitary2QWeyl(
+      builder, loc, entry->getArgument(0), entry->getArgument(1), cxGate01(),
+      *spec, out0, out1)));
 }
 
 //===----------------------------------------------------------------------===//
-// FuseTwoQubitUnitaryRuns tests
+// Native gate menu parsing (Weyl library API)
 //===----------------------------------------------------------------------===//
 
-TEST(FuseTwoQubitUnitaryRunsTest, InvalidNativeGatesFailsPass) {
-  TwoQFuseFixture fx;
-  fx.setUp();
-  auto module = buildProgram(fx.ctx(), fusionCxCx);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runQcToQco(*module)));
-  EXPECT_TRUE(failed(runTwoQFuse(*module, "not-a-gate")));
+TEST(NativeSpecTest, ResolveIbmBasicCx) {
+  const auto spec = parseNativeSpec("x,sx,rz,cx");
+  ASSERT_TRUE(spec);
+  EXPECT_TRUE(spec->allowedGates.contains(NativeGateKind::Cx));
+  EXPECT_TRUE(spec->allowedGates.contains(NativeGateKind::X));
+  EXPECT_FALSE(spec->allowRzz);
 }
 
-TEST(FuseTwoQubitUnitaryRunsTest, AdjacentCxCancel) {
-  TwoQFuseFixture fx;
-  fx.setUp();
-  expectTwoQFusePreservesUnitary(fx.ctx(), fusionCxCx, "u,cx");
-
-  auto module = buildProgram(fx.ctx(), fusionCxCx);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runQcToQco(*module)));
-  ASSERT_TRUE(succeeded(runTwoQFuse(*module, "u,cx")));
-  EXPECT_EQ(countCtrlOps(module), 0U);
+TEST(NativeSpecTest, ResolveRejectsUnknownToken) {
+  EXPECT_FALSE(parseNativeSpec("x,sx,rz,not-a-gate").has_value());
 }
 
-TEST(FuseTwoQubitUnitaryRunsTest, FusesCxThroughInterleavedOneQOps) {
-  TwoQFuseFixture fx;
-  fx.setUp();
-  expectTwoQFusePreservesUnitary(fx.ctx(), fusionHCxInterleavedTCx, "u,cx");
+TEST(NativeSpecTest, PhaseAliasPMatchesRzInIbmStyleMenu) {
+  const auto pMenu = parseNativeSpec("x,sx,p,cx");
+  const auto rzMenu = parseNativeSpec("x,sx,rz,cx");
+  ASSERT_TRUE(pMenu);
+  ASSERT_TRUE(rzMenu);
+  EXPECT_EQ(pMenu->allowedGates, rzMenu->allowedGates);
 }
 
-TEST(FuseTwoQubitUnitaryRunsTest, StopsAtDifferentPairBoundary) {
-  TwoQFuseFixture fx;
-  fx.setUp();
-  auto module = buildProgram(fx.ctx(), fusionThreeLineCx);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runQcToQco(*module)));
-  ASSERT_TRUE(succeeded(runTwoQFuse(*module, "u,cx")));
-  EXPECT_GE(countCtrlOps(module), 1U);
+TEST(NativePolicyTest, UsesCxAndCzFromResolvedSpec) {
+  const auto cxOnly = parseNativeSpec("u,cx");
+  ASSERT_TRUE(cxOnly);
+  EXPECT_TRUE(llvm::is_contained(cxOnly->entanglerBases, EntanglerBasis::Cx));
+  EXPECT_FALSE(llvm::is_contained(cxOnly->entanglerBases, EntanglerBasis::Cz));
+
+  const auto both = parseNativeSpec("u,cx,cz");
+  ASSERT_TRUE(both);
+  EXPECT_TRUE(llvm::is_contained(both->entanglerBases, EntanglerBasis::Cx));
+  EXPECT_TRUE(llvm::is_contained(both->entanglerBases, EntanglerBasis::Cz));
 }
 
-TEST(FuseTwoQubitUnitaryRunsTest, DoesNotFuseAcrossBarrier) {
-  TwoQFuseFixture fx;
-  fx.setUp();
-  auto module = buildProgram(fx.ctx(), fusionCxBarrierCx);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runQcToQco(*module)));
-  ASSERT_TRUE(succeeded(runTwoQFuse(*module, "u,cx")));
-  EXPECT_EQ(countCtrlOps(module), 2U);
-}
-
-TEST(FuseTwoQubitUnitaryRunsTest, HandlesSwappedWireOrder) {
-  TwoQFuseFixture fx;
-  fx.setUp();
-  expectTwoQFusePreservesUnitary(fx.ctx(), fusionSwapCxPattern, "u,cx");
-}
-
-TEST(FuseTwoQubitUnitaryRunsTest, HandlesRzzBlock) {
-  TwoQFuseFixture fx;
-  fx.setUp();
-  expectTwoQFusePreservesUnitary(fx.ctx(), fusionHRzzSRzz, "x,sx,rz,rx,rzz,cz");
+TEST(NativePolicyTest, ExcludesGateKindsNotInMenu) {
+  const auto spec = parseNativeSpec("u,cx");
+  ASSERT_TRUE(spec);
+  EXPECT_TRUE(spec->allowedGates.contains(NativeGateKind::U));
+  EXPECT_TRUE(spec->allowedGates.contains(NativeGateKind::Cx));
+  EXPECT_FALSE(spec->allowedGates.contains(NativeGateKind::X));
+  EXPECT_FALSE(spec->allowedGates.contains(NativeGateKind::Sx));
+  EXPECT_FALSE(spec->allowedGates.contains(NativeGateKind::Rz));
 }

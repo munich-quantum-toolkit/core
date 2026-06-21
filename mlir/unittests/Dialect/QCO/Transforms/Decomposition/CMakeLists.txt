@@ -12,9 +12,7 @@ add_executable(${target_name} test_euler_decomposition.cpp test_weyl_decompositi
 target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
-          MLIRQCPrograms
           MLIRQCOProgramBuilder
-          MLIRQCToQCO
           MLIRQCOTransforms
           MLIRQCOUtils
           MLIRPass
@@ -22,8 +20,7 @@ target_link_libraries(
           MLIRArithDialect
           MLIRIR
           MLIRSupport
-          MLIRQTensorDialect
-          LLVMSupport)
+          MLIRQTensorDialect)
 
 mqt_mlir_configure_unittest_target(${target_name})
 
