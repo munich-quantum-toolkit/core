@@ -41,8 +41,6 @@ namespace mlir::qco::decomposition {
 
 using namespace std::complex_literals;
 
-namespace {
-
 enum class Specialization : std::uint8_t {
   General,
   IdEquiv,
@@ -63,8 +61,8 @@ enum class MagicBasisTransform : std::uint8_t {
 
 static constexpr auto DIAGONALIZATION_PRECISION = 1e-13;
 
-[[nodiscard]] Matrix4x4 magicBasisTransform(const Matrix4x4& unitary,
-                                            MagicBasisTransform direction) {
+static Matrix4x4 magicBasisTransform(const Matrix4x4& unitary,
+                                     MagicBasisTransform direction) {
   const Matrix4x4 bNonNormalized = Matrix4x4::fromElements( //
       1, 1i, 0, 0,                                          //
       0, 0, 1i, 1,                                          //
@@ -84,14 +82,14 @@ static constexpr auto DIAGONALIZATION_PRECISION = 1e-13;
   llvm::reportFatalInternalError("Unknown MagicBasisTransform direction!");
 }
 
-[[nodiscard]] double closestPartialSwap(double a, double b, double c) {
+static double closestPartialSwap(double a, double b, double c) {
   auto m = (a + b + c) / 3.;
   auto [am, bm, cm] = std::array{a - m, b - m, c - m};
   auto [ab, bc, ca] = std::array{a - b, b - c, c - a};
   return m + (am * bm * cm * (6. + (ab * ab) + (bc * bc) + (ca * ca)) / 18.);
 }
 
-[[nodiscard]] std::pair<Matrix4x4, std::array<Complex, 4>>
+static std::pair<Matrix4x4, std::array<Complex, 4>>
 diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
   auto state = std::mt19937{2023};
   std::normal_distribution<double> dist;
@@ -141,7 +139,7 @@ diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
       maxDiagonalizationAttempts, bestErr, precision));
 }
 
-[[nodiscard]] std::tuple<Matrix2x2, Matrix2x2, double>
+static std::tuple<Matrix2x2, Matrix2x2, double>
 decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
   Matrix2x2 r =
       Matrix2x2::fromElements(specialUnitary(0, 0), specialUnitary(0, 1),
@@ -174,8 +172,8 @@ decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
   return {l, r, phase};
 }
 
-[[nodiscard]] std::complex<double> getTrace(double a, double b, double c,
-                                            double ap, double bp, double cp) {
+static std::complex<double> getTrace(double a, double b, double c, double ap,
+                                     double bp, double cp) {
   auto da = a - ap;
   auto db = b - bp;
   auto dc = c - cp;
@@ -183,7 +181,7 @@ decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
                                    std::sin(da) * std::sin(db) * std::sin(dc)};
 }
 
-[[nodiscard]] Specialization
+static Specialization
 bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
                    const std::optional<double>& requestedFidelity) {
   auto isClose = [&](double ap, double bp, double cp) -> bool {
@@ -238,8 +236,8 @@ bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
   return Specialization::General;
 }
 
-[[nodiscard]] bool relativeEq(double lhs, double rhs, double epsilon,
-                              double maxRelative) {
+static bool relativeEq(double lhs, double rhs, double epsilon,
+                       double maxRelative) {
   if (lhs == rhs) {
     return true;
   }
@@ -257,8 +255,6 @@ bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
   }
   return absDiff <= absLhs * maxRelative;
 }
-
-} // namespace
 
 TwoQubitWeylDecomposition
 TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
@@ -891,8 +887,8 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
   };
 }
 
-TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp0(
-    const TwoQubitWeylDecomposition& target) const {
+TwoQubitLocalUnitaryList
+TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
   return TwoQubitLocalUnitaryList{
       target.k1r() * target.k2r(),
       target.k1l() * target.k2l(),

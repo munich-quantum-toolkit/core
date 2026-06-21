@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -31,23 +30,25 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mqt::test;
-
-namespace {
 
 using ProgramFn = void (*)(mlir::qc::QCProgramBuilder&);
 using NativePredicate = bool (*)(OwningOpRef<ModuleOp>&);
@@ -70,7 +71,8 @@ struct FusionCase {
 };
 
 template <typename... Allowed1QOps>
-bool onlyTheseOps(OwningOpRef<ModuleOp>& moduleOp, bool allowCx, bool allowCz) {
+static bool onlyTheseOps(OwningOpRef<ModuleOp>& moduleOp, bool allowCx,
+                         bool allowCz) {
   bool ok = true;
   std::ignore = moduleOp->walk([&](UnitaryOpInterface op) {
     Operation* raw = op.getOperation();
@@ -103,36 +105,36 @@ bool onlyTheseOps(OwningOpRef<ModuleOp>& moduleOp, bool allowCx, bool allowCz) {
   return ok;
 }
 
-bool onlyIbmBasicCxOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyIbmBasicCxOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<XOp, SXOp, RZOp, POp>(m, true, false);
 }
-bool onlyIbmBasicCzOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyIbmBasicCzOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<XOp, SXOp, RZOp, POp>(m, false, true);
 }
-bool onlyGenericU3CxOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyGenericU3CxOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<UOp>(m, true, false);
 }
-bool onlyIqmDefaultOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyIqmDefaultOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<ROp>(m, false, true);
 }
-bool onlyIbmFractionalOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyIbmFractionalOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<XOp, SXOp, RZOp, POp, RXOp, RZZOp>(m, false, true);
 }
-bool onlyAxisPairRxRzCxOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyAxisPairRxRzCxOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<RXOp, RZOp, POp>(m, true, false);
 }
-bool onlyAxisPairRxRyCxOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyAxisPairRxRyCxOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<RXOp, RYOp>(m, true, false);
 }
-bool onlyAxisPairRyRzCzOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyAxisPairRyRzCzOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<RYOp, RZOp, POp>(m, false, true);
 }
-bool onlyGenericU3CxOrCzOps(OwningOpRef<ModuleOp>& m) {
+static bool onlyGenericU3CxOrCzOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<UOp>(m, true, true);
 }
 
-[[nodiscard]] std::optional<Value> unitaryQubitOperand(UnitaryOpInterface op,
-                                                       std::size_t index) {
+static std::optional<Value> unitaryQubitOperand(UnitaryOpInterface op,
+                                                std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
   }
@@ -143,8 +145,8 @@ bool onlyGenericU3CxOrCzOps(OwningOpRef<ModuleOp>& m) {
   return v;
 }
 
-[[nodiscard]] std::optional<Value> unitaryQubitResult(UnitaryOpInterface op,
-                                                      std::size_t index) {
+static std::optional<Value> unitaryQubitResult(UnitaryOpInterface op,
+                                               std::size_t index) {
   if (index >= op.getNumQubits()) {
     return std::nullopt;
   }
@@ -155,8 +157,7 @@ bool onlyGenericU3CxOrCzOps(OwningOpRef<ModuleOp>& m) {
   return v;
 }
 
-[[nodiscard]] bool extractSingleQubitMatrix(UnitaryOpInterface op,
-                                            Matrix2x2& out) {
+static bool extractSingleQubitMatrix(UnitaryOpInterface op, Matrix2x2& out) {
   if (op.getUnitaryMatrix2x2(out)) {
     return true;
   }
@@ -170,8 +171,7 @@ bool onlyGenericU3CxOrCzOps(OwningOpRef<ModuleOp>& m) {
   return true;
 }
 
-[[nodiscard]] bool extractTwoQubitMatrix(UnitaryOpInterface op,
-                                         Matrix4x4& out) {
+static bool extractTwoQubitMatrix(UnitaryOpInterface op, Matrix4x4& out) {
   if (auto ctrl = llvm::dyn_cast<CtrlOp>(op.getOperation())) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
@@ -190,7 +190,7 @@ bool onlyGenericU3CxOrCzOps(OwningOpRef<ModuleOp>& m) {
   return op.getUnitaryMatrix4x4(out);
 }
 
-[[nodiscard]] std::optional<DynamicMatrix>
+static std::optional<DynamicMatrix>
 computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
   ModuleOp module = moduleOp.get();
   if (!module) {
@@ -299,7 +299,8 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
   return unitary;
 }
 
-// NOLINTNEXTLINE(misc-use-internal-linkage)
+namespace {
+
 class FuseTwoQubitUnitaryRunsPassTest : public testing::Test {
 protected:
   void SetUp() override {
@@ -311,8 +312,7 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static void runFusePipeline(OwningOpRef<ModuleOp>& moduleOp,
-                              StringRef nativeGates) {
+  void runFusePipeline(OwningOpRef<ModuleOp>& moduleOp, StringRef nativeGates) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
     pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
@@ -321,14 +321,13 @@ protected:
     ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   }
 
-  static void runQcToQco(OwningOpRef<ModuleOp>& moduleOp) {
+  void runQcToQco(OwningOpRef<ModuleOp>& moduleOp) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
     ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   }
 
-  static void runTwoQFuse(OwningOpRef<ModuleOp>& moduleOp,
-                          StringRef nativeGates) {
+  void runTwoQFuse(OwningOpRef<ModuleOp>& moduleOp, StringRef nativeGates) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
         .nativeGates = nativeGates.str(),
@@ -336,8 +335,8 @@ protected:
     ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   }
 
-  static void expectQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
-                                         const OwningOpRef<ModuleOp>& rhs) {
+  void expectQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
+                                  const OwningOpRef<ModuleOp>& rhs) {
     const auto lhsUnitary = computeUnitaryFromQcoModule(lhs);
     ASSERT_TRUE(lhsUnitary.has_value());
     const auto rhsUnitary = computeUnitaryFromQcoModule(rhs);
@@ -387,7 +386,7 @@ protected:
     expectQcoModulesEquivalent(expected, fused);
   }
 
-  static std::size_t countCtrlOps(const OwningOpRef<ModuleOp>& moduleOp) {
+  std::size_t countCtrlOps(const OwningOpRef<ModuleOp>& moduleOp) {
     std::size_t count = 0;
     moduleOp.get()->walk([&](CtrlOp) { ++count; });
     return count;
@@ -403,6 +402,8 @@ class FuseTwoQubitProfileTest
 class FuseTwoQubitFusionTest : public FuseTwoQubitUnitaryRunsPassTest,
                                public testing::WithParamInterface<FusionCase> {
 };
+
+} // namespace
 
 static void fusionCxCx(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
@@ -589,8 +590,6 @@ static void determinismSwap(mlir::qc::QCProgramBuilder& b) {
   b.dealloc(q0);
   b.dealloc(q1);
 }
-
-} // namespace
 
 TEST_P(FuseTwoQubitProfileTest, SynthesizesToNativeMenu) {
   const ProfileCase& c = GetParam();

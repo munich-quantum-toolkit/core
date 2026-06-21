@@ -845,20 +845,20 @@ Matrix2x2 rzMatrix(const double theta) {
 }
 
 const Matrix2x2& iPauliZ() {
-  static const Matrix2x2 matrix =
+  static const Matrix2x2 MATRIX =
       Matrix2x2::fromElements(Complex{0.0, 1.0}, 0.0, 0.0, Complex{0.0, -1.0});
-  return matrix;
+  return MATRIX;
 }
 
 const Matrix2x2& iPauliY() {
-  static const Matrix2x2 matrix = Matrix2x2::fromElements(0.0, 1.0, -1.0, 0.0);
-  return matrix;
+  static const Matrix2x2 MATRIX = Matrix2x2::fromElements(0.0, 1.0, -1.0, 0.0);
+  return MATRIX;
 }
 
 const Matrix2x2& iPauliX() {
-  static const Matrix2x2 matrix =
+  static const Matrix2x2 MATRIX =
       Matrix2x2::fromElements(0.0, Complex{0.0, 1.0}, Complex{0.0, 1.0}, 0.0);
-  return matrix;
+  return MATRIX;
 }
 
 Matrix4x4 rxxMatrix(const double theta) {
@@ -892,27 +892,27 @@ Matrix4x4 rzzMatrix(const double theta) {
 }
 
 const Matrix4x4& twoQubitControlledX01() {
-  static const Matrix4x4 matrix = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
                                                           0.0, 1.0, 0.0, 0.0, //
                                                           0.0, 0.0, 0.0, 1.0, //
                                                           0.0, 0.0, 1.0, 0.0);
-  return matrix;
+  return MATRIX;
 }
 
 const Matrix4x4& twoQubitControlledX10() {
-  static const Matrix4x4 matrix = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
                                                           0.0, 0.0, 0.0, 1.0, //
                                                           0.0, 0.0, 1.0, 0.0, //
                                                           0.0, 1.0, 0.0, 0.0);
-  return matrix;
+  return MATRIX;
 }
 
 const Matrix4x4& twoQubitControlledZ() {
-  static const Matrix4x4 matrix = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
                                                           0.0, 1.0, 0.0, 0.0, //
                                                           0.0, 0.0, 1.0, 0.0, //
                                                           0.0, 0.0, 0.0, -1.0);
-  return matrix;
+  return MATRIX;
 }
 
 } // namespace mlir::qco

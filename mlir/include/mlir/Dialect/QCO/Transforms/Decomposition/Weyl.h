@@ -188,8 +188,8 @@ private:
     Matrix2x2 q2r;
   };
 
-  [[nodiscard]] TwoQubitLocalUnitaryList
-  decomp0(const TwoQubitWeylDecomposition& target) const;
+  [[nodiscard]] static TwoQubitLocalUnitaryList
+  decomp0(const TwoQubitWeylDecomposition& target);
   [[nodiscard]] TwoQubitLocalUnitaryList
   decomp1(const TwoQubitWeylDecomposition& target) const;
   [[nodiscard]] TwoQubitLocalUnitaryList

@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
@@ -19,6 +20,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringSwitch.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
@@ -27,21 +29,16 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <utility>
 
 using mlir::qco::Matrix2x2;
 using mlir::qco::Matrix4x4;
-using mlir::qco::twoQubitControlledX01;
-using mlir::qco::twoQubitControlledZ;
 
 namespace mlir::qco::decomposition {
 
-namespace {
-
-[[nodiscard]] std::optional<NativeGateKind>
-parseGateToken(llvm::StringRef name) {
+static std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
   return llvm::StringSwitch<std::optional<NativeGateKind>>(name)
       .Case("u", NativeGateKind::U)
       .Case("x", NativeGateKind::X)
@@ -56,7 +53,7 @@ parseGateToken(llvm::StringRef name) {
       .Default(std::nullopt);
 }
 
-[[nodiscard]] std::optional<llvm::DenseSet<NativeGateKind>>
+static std::optional<llvm::DenseSet<NativeGateKind>>
 parseGateSet(llvm::StringRef nativeGates) {
   llvm::DenseSet<NativeGateKind> gates;
   llvm::SmallVector<llvm::StringRef> parts;
@@ -75,17 +72,17 @@ parseGateSet(llvm::StringRef nativeGates) {
   return gates;
 }
 
-[[nodiscard]] SingleQubitEmitterSpec
+static SingleQubitEmitterSpec
 makeEmitterSpec(SingleQubitMode mode, AxisPair axisPair = AxisPair::RxRz,
                 bool supportsDirectRx = false) {
   return {
       .mode = mode, .axisPair = axisPair, .supportsDirectRx = supportsDirectRx};
 }
 
-void addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
-                        SingleQubitMode mode,
-                        AxisPair axisPair = AxisPair::RxRz,
-                        bool supportsDirectRx = false) {
+static void
+addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
+                   SingleQubitMode mode, AxisPair axisPair = AxisPair::RxRz,
+                   bool supportsDirectRx = false) {
   const bool present = llvm::any_of(emitters, [&](const auto& e) {
     return e.mode == mode && e.axisPair == axisPair &&
            e.supportsDirectRx == supportsDirectRx;
@@ -95,7 +92,7 @@ void addEmitterIfAbsent(llvm::SmallVectorImpl<SingleQubitEmitterSpec>& emitters,
   }
 }
 
-[[nodiscard]] llvm::SmallVector<NativeGateKind, 4>
+static llvm::SmallVector<NativeGateKind, 4>
 allowedGatesForEmitter(const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
   case SingleQubitMode::ZSXX: {
@@ -124,7 +121,7 @@ allowedGatesForEmitter(const SingleQubitEmitterSpec& emitter) {
   llvm_unreachable("unknown single-qubit mode");
 }
 
-[[nodiscard]] llvm::SmallVector<NativeGateKind, 2>
+static llvm::SmallVector<NativeGateKind, 2>
 allowedGatesForEntangler(EntanglerBasis entangler) {
   switch (entangler) {
   case EntanglerBasis::None:
@@ -137,7 +134,7 @@ allowedGatesForEntangler(EntanglerBasis entangler) {
   llvm_unreachable("unknown entangler basis");
 }
 
-void populateAllowedGates(NativeProfileSpec& spec) {
+static void populateAllowedGates(NativeProfileSpec& spec) {
   spec.allowedGates.clear();
   for (const auto& emitter : spec.singleQubitEmitters) {
     const auto allowed = allowedGatesForEmitter(emitter);
@@ -152,7 +149,7 @@ void populateAllowedGates(NativeProfileSpec& spec) {
   }
 }
 
-[[nodiscard]] std::optional<EntanglerBasis>
+static std::optional<EntanglerBasis>
 selectEntangler(const NativeProfileSpec& spec) {
   if (llvm::is_contained(spec.entanglerBases, EntanglerBasis::Cx)) {
     return EntanglerBasis::Cx;
@@ -163,12 +160,12 @@ selectEntangler(const NativeProfileSpec& spec) {
   return std::nullopt;
 }
 
-[[nodiscard]] Matrix4x4 entanglerMatrix(EntanglerBasis entangler) {
-  return entangler == EntanglerBasis::Cz ? twoQubitControlledZ()
-                                         : twoQubitControlledX01();
+static Matrix4x4 entanglerMatrix(EntanglerBasis entangler) {
+  return entangler == EntanglerBasis::Cz ? mlir::qco::twoQubitControlledZ()
+                                         : mlir::qco::twoQubitControlledX01();
 }
 
-[[nodiscard]] std::optional<TwoQubitNativeDecomposition>
+static std::optional<TwoQubitNativeDecomposition>
 decomposeWithEntangler(const Matrix4x4& target, EntanglerBasis entangler) {
   auto decomposer =
       TwoQubitBasisDecomposer::create(entanglerMatrix(entangler), 1.0);
@@ -176,23 +173,21 @@ decomposeWithEntangler(const Matrix4x4& target, EntanglerBasis entangler) {
   return decomposer.twoQubitDecompose(weyl, std::nullopt);
 }
 
-void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc, double phase) {
+static void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc,
+                                   double phase) {
   constexpr double epsilon = 1e-12;
   if (std::abs(phase) > epsilon) {
     GPhaseOp::create(builder, loc, phase);
   }
 }
 
-[[nodiscard]] Value emitSingleQubitMatrix(OpBuilder& builder, Location loc,
-                                          Value inQubit,
-                                          const Matrix2x2& matrix,
-                                          EulerBasis basis) {
+static Value emitSingleQubitMatrix(OpBuilder& builder, Location loc,
+                                   Value inQubit, const Matrix2x2& matrix,
+                                   EulerBasis basis) {
   return *synthesizeUnitary1QEuler(builder, loc, inQubit, matrix,
                                    /*runSize=*/0, /*hasNonBasisGate=*/true,
                                    basis);
 }
-
-} // namespace
 
 EulerBasis emitterEulerBasis(const SingleQubitEmitterSpec& emitter) {
   switch (emitter.mode) {
@@ -417,8 +412,8 @@ bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
     if (!basis) {
       return false;
     }
-    matrix = *basis == EntanglerBasis::Cz ? twoQubitControlledZ()
-                                          : twoQubitControlledX01();
+    matrix = *basis == EntanglerBasis::Cz ? mlir::qco::twoQubitControlledZ()
+                                          : mlir::qco::twoQubitControlledX01();
     return true;
   }
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);

@@ -22,6 +22,7 @@
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -147,6 +148,8 @@ static bool isTwoQubitRunStart(UnitaryOpInterface op) {
   return isTwoQubitRunMember(op) && !feedsFromSameTwoQubitWindow(op);
 }
 
+namespace {
+
 struct FusableTwoQubitRun {
   llvm::SmallVector<Operation*, 8> ops;
   Matrix4x4 composed = Matrix4x4::identity();
@@ -158,17 +161,16 @@ struct FusableTwoQubitRun {
 
 // Replace when off-menu ops must be lowered, or when resynthesis uses fewer
 // entanglers than the fused window.
-static bool shouldApplyTwoQubitRunReplacement(const FusableTwoQubitRun& run,
-                                              std::uint8_t numBasisUses) {
+bool shouldApplyTwoQubitRunReplacement(const FusableTwoQubitRun& run,
+                                       std::uint8_t numBasisUses) {
   if (run.anyNonNative) {
     return true;
   }
   return numBasisUses < run.numTwoQ;
 }
 
-static void
-absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
-                      const decomposition::NativeProfileSpec& spec) {
+void absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
+                           const decomposition::NativeProfileSpec& spec) {
   Matrix4x4 opMatrix;
   if (!decomposition::assignTwoQubitOpMatrix(op.getOperation(), opMatrix)) {
     return;
@@ -195,10 +197,9 @@ absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
   }
 }
 
-static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
-                                  UnitaryOpInterface op,
-                                  const decomposition::NativeProfileSpec& spec,
-                                  unsigned wireIndex) {
+void absorbOneQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
+                           const decomposition::NativeProfileSpec& spec,
+                           unsigned wireIndex) {
   Matrix2x2 raw;
   if (!op.getUnitaryMatrix2x2(raw)) {
     return;
@@ -216,7 +217,7 @@ static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
   }
 }
 
-static FusableTwoQubitRun
+FusableTwoQubitRun
 scanFusableTwoQubitRun(UnitaryOpInterface head,
                        const decomposition::NativeProfileSpec& spec) {
   FusableTwoQubitRun run;
@@ -239,13 +240,16 @@ scanFusableTwoQubitRun(UnitaryOpInterface head,
     UnitaryOpInterface nextOnA = uniqueUnitaryUser(run.tailA);
     UnitaryOpInterface nextOnB = uniqueUnitaryUser(run.tailB);
 
-    if (nextOnA && nextOnA == nextOnB && nextOnA.isTwoQubit()) {
+    if (nextOnA && nextOnB &&
+        nextOnA.getOperation() == nextOnB.getOperation() &&
+        nextOnA.isTwoQubit()) {
       absorbTwoQubitIntoRun(run, nextOnA, spec);
       continue;
     }
 
-    if (nextOnA && nextOnB && nextOnA != nextOnB && nextOnA.isSingleQubit() &&
-        nextOnB.isSingleQubit()) {
+    if (nextOnA && nextOnB &&
+        nextOnA.getOperation() != nextOnB.getOperation() &&
+        nextOnA.isSingleQubit() && nextOnB.isSingleQubit()) {
       if (nextOnA->isBeforeInBlock(nextOnB)) {
         absorbOneQubitIntoRun(run, nextOnA, spec, /*wireIndex=*/0);
         continue;
@@ -254,12 +258,14 @@ scanFusableTwoQubitRun(UnitaryOpInterface head,
       continue;
     }
 
-    if (nextOnA && nextOnA.isSingleQubit() && nextOnA != nextOnB) {
+    if (nextOnA && nextOnA.isSingleQubit() &&
+        (!nextOnB || nextOnA.getOperation() != nextOnB.getOperation())) {
       absorbOneQubitIntoRun(run, nextOnA, spec, /*wireIndex=*/0);
       continue;
     }
 
-    if (nextOnB && nextOnB.isSingleQubit() && nextOnB != nextOnA) {
+    if (nextOnB && nextOnB.isSingleQubit() &&
+        (!nextOnA || nextOnB.getOperation() != nextOnA.getOperation())) {
       absorbOneQubitIntoRun(run, nextOnB, spec, /*wireIndex=*/1);
       continue;
     }
@@ -269,8 +275,8 @@ scanFusableTwoQubitRun(UnitaryOpInterface head,
   return run;
 }
 
-static void eraseFusableTwoQubitRun(PatternRewriter& rewriter,
-                                    const FusableTwoQubitRun& run) {
+void eraseFusableTwoQubitRun(PatternRewriter& rewriter,
+                             const FusableTwoQubitRun& run) {
   for (Operation* op : llvm::reverse(run.ops)) {
     rewriter.eraseOp(op);
   }
@@ -279,8 +285,8 @@ static void eraseFusableTwoQubitRun(PatternRewriter& rewriter,
 struct FuseTwoQubitWindowPattern
     : public OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseTwoQubitWindowPattern(MLIRContext* ctx,
-                            const decomposition::NativeProfileSpec& spec)
-      : OpInterfaceRewritePattern(ctx), spec(spec) {}
+                            decomposition::NativeProfileSpec specIn)
+      : OpInterfaceRewritePattern(ctx), spec(std::move(specIn)) {}
 
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
@@ -320,10 +326,10 @@ struct FuseTwoQubitWindowPattern
     return success();
   }
 
-  const decomposition::NativeProfileSpec& spec;
+  decomposition::NativeProfileSpec spec;
 };
 
-static LogicalResult
+LogicalResult
 fuseTwoQubitUnitaryRuns(Operation* root,
                         const decomposition::NativeProfileSpec& spec) {
   RewritePatternSet patterns(root->getContext());
@@ -335,9 +341,9 @@ struct OneQubitRun {
   llvm::SmallVector<UnitaryOpInterface, 4> ops;
 };
 
-static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
-                         const decomposition::EulerBasis basis,
-                         const decomposition::NativeProfileSpec& spec) {
+bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
+                  const decomposition::EulerBasis basis,
+                  const decomposition::NativeProfileSpec& spec) {
   Matrix2x2 fused = Matrix2x2::identity();
   for (UnitaryOpInterface u : run.ops) {
     Matrix2x2 m;
@@ -369,7 +375,7 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
   return true;
 }
 
-static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
+UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
   if (!unitary || !unitary.isSingleQubit()) {
     return {};
@@ -676,5 +682,7 @@ private:
     return success();
   }
 };
+
+} // namespace
 
 } // namespace mlir::qco
