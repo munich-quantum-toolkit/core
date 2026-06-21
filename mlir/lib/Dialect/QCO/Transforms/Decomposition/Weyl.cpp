@@ -41,6 +41,8 @@ namespace mlir::qco::decomposition {
 
 using namespace std::complex_literals;
 
+namespace {
+
 enum class Specialization : std::uint8_t {
   General,
   IdEquiv,
@@ -58,6 +60,8 @@ enum class MagicBasisTransform : std::uint8_t {
   Into,
   OutOf,
 };
+
+} // namespace
 
 static constexpr auto DIAGONALIZATION_PRECISION = 1e-13;
 

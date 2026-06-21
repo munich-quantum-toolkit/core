@@ -53,23 +53,6 @@ using namespace mqt::test;
 using ProgramFn = void (*)(mlir::qc::QCProgramBuilder&);
 using NativePredicate = bool (*)(OwningOpRef<ModuleOp>&);
 
-struct ProfileCase {
-  const char* name;
-  ProgramFn program;
-  const char* nativeGates;
-  NativePredicate isNative;
-  bool checkEquivalence;
-};
-
-struct FusionCase {
-  const char* name;
-  ProgramFn program;
-  const char* nativeGates;
-  std::optional<std::size_t> exactCtrlCount;
-  std::optional<std::size_t> minCtrlCount;
-  bool checkTwoQUnitary;
-};
-
 template <typename... Allowed1QOps>
 static bool onlyTheseOps(OwningOpRef<ModuleOp>& moduleOp, bool allowCx,
                          bool allowCz) {
@@ -301,6 +284,23 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
 
 namespace {
 
+struct ProfileCase {
+  const char* name;
+  ProgramFn program;
+  const char* nativeGates;
+  NativePredicate isNative;
+  bool checkEquivalence;
+};
+
+struct FusionCase {
+  const char* name;
+  ProgramFn program;
+  const char* nativeGates;
+  std::optional<std::size_t> exactCtrlCount;
+  std::optional<std::size_t> minCtrlCount;
+  bool checkTwoQUnitary;
+};
+
 class FuseTwoQubitUnitaryRunsPassTest : public testing::Test {
 protected:
   void SetUp() override {
@@ -312,7 +312,8 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  void runFusePipeline(OwningOpRef<ModuleOp>& moduleOp, StringRef nativeGates) {
+  static void runFusePipeline(OwningOpRef<ModuleOp>& moduleOp,
+                              StringRef nativeGates) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
     pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
@@ -321,13 +322,14 @@ protected:
     ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   }
 
-  void runQcToQco(OwningOpRef<ModuleOp>& moduleOp) {
+  static void runQcToQco(OwningOpRef<ModuleOp>& moduleOp) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
     ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   }
 
-  void runTwoQFuse(OwningOpRef<ModuleOp>& moduleOp, StringRef nativeGates) {
+  static void runTwoQFuse(OwningOpRef<ModuleOp>& moduleOp,
+                          StringRef nativeGates) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
         .nativeGates = nativeGates.str(),
@@ -335,8 +337,8 @@ protected:
     ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   }
 
-  void expectQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
-                                  const OwningOpRef<ModuleOp>& rhs) {
+  static void expectQcoModulesEquivalent(const OwningOpRef<ModuleOp>& lhs,
+                                         const OwningOpRef<ModuleOp>& rhs) {
     const auto lhsUnitary = computeUnitaryFromQcoModule(lhs);
     ASSERT_TRUE(lhsUnitary.has_value());
     const auto rhsUnitary = computeUnitaryFromQcoModule(rhs);
@@ -386,7 +388,7 @@ protected:
     expectQcoModulesEquivalent(expected, fused);
   }
 
-  std::size_t countCtrlOps(const OwningOpRef<ModuleOp>& moduleOp) {
+  static std::size_t countCtrlOps(const OwningOpRef<ModuleOp>& moduleOp) {
     std::size_t count = 0;
     moduleOp.get()->walk([&](CtrlOp) { ++count; });
     return count;

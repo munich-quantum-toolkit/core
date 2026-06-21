@@ -252,20 +252,6 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
   return unitary * global;
 }
 
-struct MlirTestContext {
-  std::unique_ptr<MLIRContext> context;
-
-  void setUp() {
-    DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
-
-  [[nodiscard]] MLIRContext* ctx() const { return context.get(); }
-};
-
 static func::FuncOp synthesize2QIntoFunc(MLIRContext* ctx,
                                          const Matrix4x4& target,
                                          const NativeProfileSpec& spec,
@@ -314,6 +300,20 @@ TEST(DecompositionHelpersTest, MatrixUtilitySanity) {
 }
 
 namespace {
+
+struct MlirTestContext {
+  std::unique_ptr<MLIRContext> context;
+
+  void setUp() {
+    DialectRegistry registry;
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    context = std::make_unique<MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
+
+  [[nodiscard]] MLIRContext* ctx() const { return context.get(); }
+};
 
 class WeylDecompositionTest : public testing::TestWithParam<Matrix4x4 (*)()> {};
 

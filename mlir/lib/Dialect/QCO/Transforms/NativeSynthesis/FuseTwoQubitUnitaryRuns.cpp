@@ -159,18 +159,25 @@ struct FusableTwoQubitRun {
   Value tailB;
 };
 
+struct OneQubitRun {
+  llvm::SmallVector<UnitaryOpInterface, 4> ops;
+};
+
+} // namespace
+
 // Replace when off-menu ops must be lowered, or when resynthesis uses fewer
 // entanglers than the fused window.
-bool shouldApplyTwoQubitRunReplacement(const FusableTwoQubitRun& run,
-                                       std::uint8_t numBasisUses) {
+static bool shouldApplyTwoQubitRunReplacement(const FusableTwoQubitRun& run,
+                                              std::uint8_t numBasisUses) {
   if (run.anyNonNative) {
     return true;
   }
   return numBasisUses < run.numTwoQ;
 }
 
-void absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
-                           const decomposition::NativeProfileSpec& spec) {
+static void
+absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
+                      const decomposition::NativeProfileSpec& spec) {
   Matrix4x4 opMatrix;
   if (!decomposition::assignTwoQubitOpMatrix(op.getOperation(), opMatrix)) {
     return;
@@ -197,9 +204,10 @@ void absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
   }
 }
 
-void absorbOneQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
-                           const decomposition::NativeProfileSpec& spec,
-                           unsigned wireIndex) {
+static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
+                                  UnitaryOpInterface op,
+                                  const decomposition::NativeProfileSpec& spec,
+                                  unsigned wireIndex) {
   Matrix2x2 raw;
   if (!op.getUnitaryMatrix2x2(raw)) {
     return;
@@ -217,7 +225,7 @@ void absorbOneQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
   }
 }
 
-FusableTwoQubitRun
+static FusableTwoQubitRun
 scanFusableTwoQubitRun(UnitaryOpInterface head,
                        const decomposition::NativeProfileSpec& spec) {
   FusableTwoQubitRun run;
@@ -275,12 +283,66 @@ scanFusableTwoQubitRun(UnitaryOpInterface head,
   return run;
 }
 
-void eraseFusableTwoQubitRun(PatternRewriter& rewriter,
-                             const FusableTwoQubitRun& run) {
+static void eraseFusableTwoQubitRun(PatternRewriter& rewriter,
+                                    const FusableTwoQubitRun& run) {
   for (Operation* op : llvm::reverse(run.ops)) {
     rewriter.eraseOp(op);
   }
 }
+
+static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
+                         const decomposition::EulerBasis basis,
+                         const decomposition::NativeProfileSpec& spec) {
+  Matrix2x2 fused = Matrix2x2::identity();
+  for (UnitaryOpInterface u : run.ops) {
+    Matrix2x2 m;
+    if (!u.getUnitaryMatrix2x2(m)) {
+      return false;
+    }
+    fused.premultiplyBy(m);
+  }
+
+  const bool anyNonNative = llvm::any_of(run.ops, [&](UnitaryOpInterface u) {
+    return !decomposition::allowsSingleQubitOp(u, spec);
+  });
+
+  Operation* firstOp = run.ops.front().getOperation();
+  const Value inQubit = run.ops.front().getInputQubit(0);
+  const Value outQubit = run.ops.back().getOutputQubit(0);
+
+  rewriter.setInsertionPoint(firstOp);
+  const auto replacement = decomposition::synthesizeUnitary1QEuler(
+      rewriter, firstOp->getLoc(), inQubit, fused, run.ops.size(), anyNonNative,
+      basis);
+  if (!replacement) {
+    return false;
+  }
+  rewriter.replaceAllUsesWith(outQubit, *replacement);
+  for (auto& op : llvm::reverse(run.ops)) {
+    rewriter.eraseOp(op.getOperation());
+  }
+  return true;
+}
+
+static UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
+  auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
+  if (!unitary || !unitary.isSingleQubit()) {
+    return {};
+  }
+  if (llvm::isa<BarrierOp, GPhaseOp, CtrlOp>(op)) {
+    return {};
+  }
+  if (isExcludedFromTopLevelUnitaryWalk(op)) {
+    return {};
+  }
+  Matrix2x2 matrix;
+  if (!unitary.getUnitaryMatrix2x2(matrix)) {
+    return {};
+  }
+  return unitary;
+}
+
+namespace {
 
 struct FuseTwoQubitWindowPattern
     : public OpInterfaceRewritePattern<UnitaryOpInterface> {
@@ -329,7 +391,9 @@ struct FuseTwoQubitWindowPattern
   decomposition::NativeProfileSpec spec;
 };
 
-LogicalResult
+} // namespace
+
+static LogicalResult
 fuseTwoQubitUnitaryRuns(Operation* root,
                         const decomposition::NativeProfileSpec& spec) {
   RewritePatternSet patterns(root->getContext());
@@ -337,61 +401,7 @@ fuseTwoQubitUnitaryRuns(Operation* root,
   return applyPatternsGreedily(root, std::move(patterns));
 }
 
-struct OneQubitRun {
-  llvm::SmallVector<UnitaryOpInterface, 4> ops;
-};
-
-bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
-                  const decomposition::EulerBasis basis,
-                  const decomposition::NativeProfileSpec& spec) {
-  Matrix2x2 fused = Matrix2x2::identity();
-  for (UnitaryOpInterface u : run.ops) {
-    Matrix2x2 m;
-    if (!u.getUnitaryMatrix2x2(m)) {
-      return false;
-    }
-    fused.premultiplyBy(m);
-  }
-
-  const bool anyNonNative = llvm::any_of(run.ops, [&](UnitaryOpInterface u) {
-    return !decomposition::allowsSingleQubitOp(u, spec);
-  });
-
-  Operation* firstOp = run.ops.front().getOperation();
-  const Value inQubit = run.ops.front().getInputQubit(0);
-  const Value outQubit = run.ops.back().getOutputQubit(0);
-
-  rewriter.setInsertionPoint(firstOp);
-  const auto replacement = decomposition::synthesizeUnitary1QEuler(
-      rewriter, firstOp->getLoc(), inQubit, fused, run.ops.size(), anyNonNative,
-      basis);
-  if (!replacement) {
-    return false;
-  }
-  rewriter.replaceAllUsesWith(outQubit, *replacement);
-  for (auto& op : llvm::reverse(run.ops)) {
-    rewriter.eraseOp(op.getOperation());
-  }
-  return true;
-}
-
-UnitaryOpInterface fusibleSingleQubitOp(Operation* op) {
-  auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
-  if (!unitary || !unitary.isSingleQubit()) {
-    return {};
-  }
-  if (llvm::isa<BarrierOp, GPhaseOp, CtrlOp>(op)) {
-    return {};
-  }
-  if (isExcludedFromTopLevelUnitaryWalk(op)) {
-    return {};
-  }
-  Matrix2x2 matrix;
-  if (!unitary.getUnitaryMatrix2x2(matrix)) {
-    return {};
-  }
-  return unitary;
-}
+namespace {
 
 struct FuseTwoQubitUnitaryRunsPass
     : impl::FuseTwoQubitUnitaryRunsBase<FuseTwoQubitUnitaryRunsPass> {
