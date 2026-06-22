@@ -370,7 +370,7 @@ TEST(UnitaryMatrix4x4, TransposeAndIsIdentity) {
   EXPECT_FALSE(swapMatrix().isIdentity());
 }
 
-TEST(UnitaryMatrix4x4, DiagonalColumnsAndParts) {
+TEST(UnitaryMatrix4x4, DiagonalRowsColumnsAndParts) {
   Matrix4x4 m =
       Matrix4x4::fromElements(Complex{1, 1}, 0, 0, 0, 0, Complex{2, 2}, 0, 0, 0,
                               0, Complex{3, 3}, 0, 0, 0, 0, Complex{4, 4});
@@ -386,6 +386,19 @@ TEST(UnitaryMatrix4x4, DiagonalColumnsAndParts) {
   EXPECT_EQ(n(0, 2), 1i);
   EXPECT_EQ(n(3, 2), 4i);
 
+  const auto row1 = m.row(1);
+  ASSERT_EQ(row1.size(), Matrix4x4::K_COLS);
+  EXPECT_EQ(row1[0], (Complex{0, 0}));
+  EXPECT_EQ(row1[1], (Complex{2, 2}));
+  EXPECT_EQ(row1[0], m(1, 0));
+  EXPECT_EQ(row1[3], m(1, 3));
+
+  Matrix4x4 r = Matrix4x4::identity();
+  r.setRow(2, {1.0, 2.0, 3.0, 4.0});
+  EXPECT_EQ(r(2, 0), 1.0);
+  EXPECT_EQ(r(2, 3), 4.0);
+  EXPECT_EQ(r.row(2)[1], 2.0);
+
   const auto re = m.realPart();
   const auto im = m.imagPart();
   EXPECT_EQ(re[0], 1.0);
@@ -397,13 +410,13 @@ TEST(UnitaryMatrix4x4, DiagonalColumnsAndParts) {
 TEST(UnitaryMatrix4x4, KroneckerProduct) {
   const Matrix2x2 x = pauliX();
   // X (x) I should swap the high bit.
-  const Matrix4x4 xi = kron(x, Matrix2x2::identity());
+  const Matrix4x4 xi = Matrix4x4::kron(x, Matrix2x2::identity());
   EXPECT_TRUE(xi.isApprox(Matrix4x4::fromElements(0, 0, 1, 0, // row 0
                                                   0, 0, 0, 1, // row 1
                                                   1, 0, 0, 0, // row 2
                                                   0, 1, 0, 0)));
   // I (x) X swaps the low bit.
-  const Matrix4x4 ix = kron(Matrix2x2::identity(), x);
+  const Matrix4x4 ix = Matrix4x4::kron(Matrix2x2::identity(), x);
   EXPECT_TRUE(ix.isApprox(Matrix4x4::fromElements(0, 1, 0, 0, // row 0
                                                   1, 0, 0, 0, // row 1
                                                   0, 0, 0, 1, // row 2
@@ -412,12 +425,12 @@ TEST(UnitaryMatrix4x4, KroneckerProduct) {
 
 TEST(UnitaryMatrix4x4, ReorderTwoQubitMatrix) {
   const Matrix2x2 x = pauliX();
-  const Matrix4x4 onHigh = kron(x, Matrix2x2::identity());
-  const Matrix4x4 onLow = kron(Matrix2x2::identity(), x);
+  const Matrix4x4 onHigh = Matrix4x4::kron(x, Matrix2x2::identity());
+  const Matrix4x4 onLow = Matrix4x4::kron(Matrix2x2::identity(), x);
 
-  EXPECT_TRUE(reorderTwoQubitMatrix(onHigh, 0, 1).isApprox(onHigh));
-  EXPECT_TRUE(reorderTwoQubitMatrix(onHigh, 1, 0).isApprox(onLow));
-  EXPECT_TRUE(reorderTwoQubitMatrix(onLow, 1, 0).isApprox(onHigh));
+  EXPECT_TRUE(onHigh.reorderForQubits(0, 1).isApprox(onHigh));
+  EXPECT_TRUE(onHigh.reorderForQubits(1, 0).isApprox(onLow));
+  EXPECT_TRUE(onLow.reorderForQubits(1, 0).isApprox(onHigh));
 }
 
 TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
@@ -426,14 +439,13 @@ TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
                                                0, 1, 0, 0, //
                                                0, 0, 0, 1, //
                                                0, 0, 1, 0);
-  EXPECT_TRUE(embedSingleQubitInNqubit(x, 2, 0).isApprox(
-      kron(x, Matrix2x2::identity())));
-  EXPECT_TRUE(embedSingleQubitInNqubit(x, 2, 1).isApprox(
-      kron(Matrix2x2::identity(), x)));
-  EXPECT_TRUE(embedTwoQubitInNqubit(cx, 2, 0, 1)
-                  .isApprox(reorderTwoQubitMatrix(cx, 0, 1)));
-  const DynamicMatrix cxOn01 = embedTwoQubitInNqubit(cx, 3, 0, 1);
-  const DynamicMatrix cxOn12 = embedTwoQubitInNqubit(cx, 3, 1, 2);
+  EXPECT_TRUE(x.embedInNqubit(2, 0).isApprox(
+      Matrix4x4::kron(x, Matrix2x2::identity())));
+  EXPECT_TRUE(x.embedInNqubit(2, 1).isApprox(
+      Matrix4x4::kron(Matrix2x2::identity(), x)));
+  EXPECT_TRUE(cx.embedInNqubit(2, 0, 1).isApprox(cx.reorderForQubits(0, 1)));
+  const DynamicMatrix cxOn01 = cx.embedInNqubit(3, 0, 1);
+  const DynamicMatrix cxOn12 = cx.embedInNqubit(3, 1, 2);
   EXPECT_EQ(cxOn01.rows(), 8);
   EXPECT_EQ(cxOn12.rows(), 8);
   EXPECT_FALSE(cxOn01.isApprox(cxOn12));
@@ -441,7 +453,7 @@ TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
 
 TEST(UnitaryDynamicMatrix, EmbedSingleQubitOnMiddleWire) {
   const Matrix2x2 x = pauliX();
-  const DynamicMatrix embedded = embedSingleQubitInNqubit(x, 3, 1);
+  const DynamicMatrix embedded = x.embedInNqubit(3, 1);
   EXPECT_EQ(embedded.rows(), 8);
   EXPECT_FALSE(embedded.isIdentity());
 
@@ -452,7 +464,7 @@ TEST(UnitaryDynamicMatrix, EmbedSingleQubitOnMiddleWire) {
 
 TEST(UnitaryDynamicMatrix, MultiplyTraceAndScalar) {
   const Matrix2x2 x = pauliX();
-  const DynamicMatrix embedded = embedSingleQubitInNqubit(x, 2, 0);
+  const DynamicMatrix embedded = x.embedInNqubit(2, 0);
   EXPECT_FALSE(embedded.isIdentity());
   const Complex scalar = std::exp(1i * 0.3);
   EXPECT_TRUE((scalar * embedded).isApprox(embedded * scalar));
@@ -506,7 +518,7 @@ TEST(SymmetricEigensolver, DiagonalMatrix) {
   a[5] = 1.0;
   a[10] = 4.0;
   a[15] = 2.0;
-  const SymmetricEigen4 result = symmetricEigen4(a);
+  const SymmetricEigen4 result = Matrix4x4::symmetricEigen4(a);
   EXPECT_NEAR(result.eigenvalues[0], 1.0, MATRIX_TOLERANCE);
   EXPECT_NEAR(result.eigenvalues[1], 2.0, MATRIX_TOLERANCE);
   EXPECT_NEAR(result.eigenvalues[2], 3.0, MATRIX_TOLERANCE);
@@ -523,8 +535,8 @@ TEST(SymmetricEigensolver, Matrix4x4Overload) {
   for (std::size_t k = 0; k < 16; ++k) {
     matrix(k / 4, k % 4) = a[k];
   }
-  const SymmetricEigen4 fromArray = symmetricEigen4(a);
-  const SymmetricEigen4 fromMatrix = symmetricEigen4(matrix);
+  const SymmetricEigen4 fromArray = Matrix4x4::symmetricEigen4(a);
+  const SymmetricEigen4 fromMatrix = matrix.symmetricEigen4();
   for (std::size_t i = 0; i < 4; ++i) {
     EXPECT_NEAR(fromMatrix.eigenvalues[i], fromArray.eigenvalues[i],
                 MATRIX_TOLERANCE);
@@ -544,7 +556,7 @@ TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
         a[(j * 4) + i] = value;
       }
     }
-    const SymmetricEigen4 result = symmetricEigen4(a);
+    const SymmetricEigen4 result = Matrix4x4::symmetricEigen4(a);
 
     // Eigenvalues are ascending.
     for (std::size_t i = 0; i + 1 < 4; ++i) {
@@ -576,7 +588,7 @@ TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
   for (std::size_t i = 0; i < 4; ++i) {
     a[(i * 4) + i] = 2.5;
   }
-  const SymmetricEigen4 result = symmetricEigen4(a);
+  const SymmetricEigen4 result = Matrix4x4::symmetricEigen4(a);
   for (const double value : result.eigenvalues) {
     EXPECT_NEAR(value, 2.5, MATRIX_TOLERANCE);
   }
