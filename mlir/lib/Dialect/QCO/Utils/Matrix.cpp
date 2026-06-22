@@ -805,7 +805,7 @@ Matrix4x4::symmetricEigen4(const std::array<double, 16>& symmetric) {
 
   for (std::size_t col = 0; col < n; ++col) {
     for (std::size_t row = 0; row < n; ++row) {
-      result.eigenvectors(row, col) = Complex{z[row + (col * n)], 0.0};
+      result.eigenvectors(row, col) = z[row + (col * n);
     }
   }
   return result;
