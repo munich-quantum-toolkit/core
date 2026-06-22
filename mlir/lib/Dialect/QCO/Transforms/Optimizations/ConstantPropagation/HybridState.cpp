@@ -18,6 +18,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <format>
@@ -114,6 +115,11 @@ void HybridState::addIntegerValue(const Value value, const int64_t number) {
 
 void HybridState::addDoubleValue(const Value value, const double number) {
   doubleValues[value] = number;
+}
+
+void HybridState::changeGlobalIndex(const unsigned int target,
+                                    const unsigned int newIndex) const {
+  qState->changeGlobalIndex(target, newIndex);
 }
 
 void HybridState::propagateGate(Operation* gate,

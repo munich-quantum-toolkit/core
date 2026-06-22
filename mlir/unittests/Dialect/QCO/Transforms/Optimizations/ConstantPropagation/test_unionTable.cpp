@@ -15,6 +15,7 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <mlir/IR/Value.h>
 
 #include <mlir/Dialect/Func/IR/FuncOpsDialect.h.inc>
 
@@ -154,12 +155,12 @@ TEST_F(UnionTableTest, ApplyClassicalControlledGateThatsFalse) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, {}, classicalControl);
+  ut.propagateGate(xOp, q6, q7, q5, classicalControl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
                   "Qubits: 31, HybridStates: {{|10> "
-                  "-> 0.71, |11> -> 0.71}: integerValue0 = 0, p = 1.00;}"));
+                  "-> 0.71, |11> -> 0.71}: integerValue0 = 0; p = 1.00;}"));
 }
 
 TEST_F(UnionTableTest, ApplyClassicalControlledGateThatsTrue) {
@@ -168,12 +169,12 @@ TEST_F(UnionTableTest, ApplyClassicalControlledGateThatsTrue) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, {}, classicalControl);
+  ut.propagateGate(xOp, q6, q7, q5, classicalControl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
-                  "Qubits: 31, HybridStates: {{|00> "
-                  "-> 0.71, |01> -> 0.71}: integerValue0 = 1, p = 1.00;}"));
+                  "Qubits: 31, HybridStates: {{|01> "
+                  "-> 0.71, |10> -> 0.71}: integerValue0 = 1; p = 1.00;}"));
 }
 
 TEST_F(UnionTableTest, ApplyNegClassicalControlledGateThatsTrue) {
@@ -182,12 +183,12 @@ TEST_F(UnionTableTest, ApplyNegClassicalControlledGateThatsTrue) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, {}, {}, classicalControl);
+  ut.propagateGate(xOp, q6, q7, q5, {}, classicalControl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
                   "Qubits: 31, HybridStates: {{|10> "
-                  "-> 0.71, |11> -> 0.71}: integerValue0 = 0, p = 1.00;}"));
+                  "-> 0.71, |11> -> 0.71}: integerValue0 = 1; p = 1.00;}"));
 }
 
 TEST_F(UnionTableTest, ApplyNegClassicalControlledGateThatsFalse) {
@@ -196,12 +197,12 @@ TEST_F(UnionTableTest, ApplyNegClassicalControlledGateThatsFalse) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, {}, classicalControl);
+  ut.propagateGate(xOp, q6, q7, q5, {}, classicalControl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
-                  "Qubits: 31, HybridStates: {{|00> "
-                  "-> 0.71, |01> -> 0.71}: integerValue0 = 1, p = 1.00;}"));
+                  "Qubits: 31, HybridStates: {{|01> "
+                  "-> 0.71, |10> -> 0.71}: integerValue0 = 0; p = 1.00;}"));
 }
 
 TEST_F(UnionTableTest, ApplyPosNegClassicalControlledGateThatsFalse) {
@@ -211,12 +212,12 @@ TEST_F(UnionTableTest, ApplyPosNegClassicalControlledGateThatsFalse) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, {}, classicalControlOne, classicalControlZero);
+  ut.propagateGate(xOp, q6, q7, q5, classicalControlOne, classicalControlZero);
 
   EXPECT_THAT(ut.toString(),
-              testing::HasSubstr(
-                  "Qubits: 31, HybridStates: {{|10> "
-                  "-> 0.71, |11> -> 0.71}: integerValue0 = 0, p = 1.00;}"));
+              testing::HasSubstr("Qubits: 31, HybridStates: {{|10> "
+                                 "-> 0.71, |11> -> 0.71}: integerValue0 = 0, "
+                                 "integerValue1 = 0; p = 1.00;}"));
 }
 
 TEST_F(UnionTableTest, ApplyPosNegClassicalControlledGateThatsTrue) {
@@ -226,12 +227,18 @@ TEST_F(UnionTableTest, ApplyPosNegClassicalControlledGateThatsTrue) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, classicalControlTrue, classicalControlFalse);
+  ut.propagateGate(xOp, q6, q7, q5, classicalControlTrue,
+                   classicalControlFalse);
 
-  EXPECT_THAT(ut.toString(),
-              testing::HasSubstr(
-                  "Qubits: 31, HybridStates: {{|00> "
-                  "-> 0.71, |01> -> 0.71}: integerValue0 = 1, p = 1.00;}"));
+  EXPECT_THAT(
+      ut.toString(),
+      testing::AnyOf(
+          testing::HasSubstr("Qubits: 31, HybridStates: {{|01> "
+                             "-> 0.71, |10> -> 0.71}: integerValue0 = 1, "
+                             "integerValue1 = 0; p = 1.00;}"),
+          testing::HasSubstr("Qubits: 31, HybridStates: {{|01> "
+                             "-> 0.71, |10> -> 0.71}: integerValue0 = 0, "
+                             "integerValue1 = 1; p = 1.00;}")));
 }
 
 TEST_F(UnionTableTest, ApplyControlledTwoBitGate) {
@@ -257,7 +264,7 @@ TEST_F(UnionTableTest, doMeasurementWithOneResult) {
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 0, HybridStates: {{|1> "
-                                 "-> 1.00}: integerValue0 = 1, p = 1.00;}"));
+                                 "-> 1.00}: integerValue0 = 1; p = 1.00;}"));
 }
 
 TEST_F(UnionTableTest, doMeasurementWithTwoResults) {
@@ -268,8 +275,8 @@ TEST_F(UnionTableTest, doMeasurementWithTwoResults) {
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 10, HybridStates: {{|00> "
-                                 "-> 1.00}: integerValue0 = 0, p = 0.50; {|11> "
-                                 "-> 1.00}: integerValue0 = 1, p = 0.50;}"));
+                                 "-> 1.00}: integerValue0 = 0; p = 0.50; {|11> "
+                                 "-> 1.00}: integerValue0 = 1; p = 0.50;}"));
 }
 
 TEST_F(UnionTableTest, doMeasurementWithNegPosCtrl) {
@@ -282,7 +289,7 @@ TEST_F(UnionTableTest, doMeasurementWithNegPosCtrl) {
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
                   "Qubits: 10, HybridStates: {{|00> "
-                  "-> 0.71, |11> -> 0.71}: integerValue0 = 0, p = 1.00;}"));
+                  "-> 0.71, |11> -> 0.71}: integerValue0 = 0; p = 1.00;}"));
 }
 
 TEST_F(UnionTableTest, doMeasurementWithPosNegCtrl) {
@@ -295,7 +302,7 @@ TEST_F(UnionTableTest, doMeasurementWithPosNegCtrl) {
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
                   "Qubits: 10, HybridStates: {{|00> "
-                  "-> 0.71, |11> -> 0.71}: integerValue0 = 10, p = 1.00;}"));
+                  "-> 0.71, |11> -> 0.71}: integerValue0 = 10; p = 1.00;}"));
 }
 
 TEST_F(UnionTableTest, doResetWithOneResult) {
@@ -319,13 +326,13 @@ TEST_F(UnionTableTest, doResetWithTwoResults) {
 }
 
 TEST_F(UnionTableTest, swapGateApplicationDifferentStates) {
-  std::vector swapTargets = {v6, v7};
-  std::vector swapDestinations = {v8, v9};
+  std::vector swapTargets = {v6, v2};
+  std::vector swapDestinations = {v7, v8};
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q1, q5, q4);
   ut.propagateGate(xOp, q5, q6);
-  ut.propagateGate(xOp, q2, q7);
   ut.propagateGate(swapOp, swapTargets, swapDestinations);
+  ut.propagateGate(xOp, q7, q9);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 20, HybridStates: {{|01> -> 0.71, "
@@ -345,7 +352,7 @@ TEST_F(UnionTableTest, swapGateApplicationSameState) {
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 10, HybridStates: {{|01> -> 0.71, "
-                                 "|10> -> 0.71}: p = 1.00;}"));
+                                 "|10> -> 0.50, |11> -> 0.50}: p = 1.00;}"));
 }
 
 class UnionTableWithoutSetupAllocationsTest : public testing::Test {
@@ -430,24 +437,26 @@ TEST_F(UnionTableWithoutSetupAllocationsTest, doMeasurementsAndGetToTop) {
   auto ut = UnionTable(4, 1);
   ut.propagateQubitAlloc(v1);
   ut.propagateQubitAlloc(v2);
+  ut.propagateIntAlloc(i0, 10);
   ut.propagateGate(hOp, q1, q3);
   ut.propagateMeasurement(v3, v4, i0);
 
   EXPECT_THAT(ut.toString(),
-              testing::HasSubstr("Qubits: 0, Bits: 0, HybridStates: {TOP}"));
+              testing::HasSubstr("Qubits: 0, HybridStates: {TOP}"));
 }
 
 TEST_F(UnionTableWithoutSetupAllocationsTest, doMeasurementsOnTop) {
   auto ut = UnionTable(2, 2);
   ut.propagateQubitAlloc(v0);
   ut.propagateQubitAlloc(v1);
+  ut.propagateIntAlloc(i0, 10);
   ut.propagateGate(hOp, q0, q2);
   ut.propagateGate(xOp, q1, q3, q2);
   ut.propagateGate(hOp, q3, q4); // State enters TOP
   ut.propagateMeasurement(v4, v5, i0);
 
   EXPECT_THAT(ut.toString(),
-              testing::HasSubstr("Qubits: 10, Bits: 0, HybridStates: {TOP}"));
+              testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
 }
 
 TEST_F(UnionTableWithoutSetupAllocationsTest, doResetOnTop) {
@@ -460,20 +469,21 @@ TEST_F(UnionTableWithoutSetupAllocationsTest, doResetOnTop) {
   ut.propagateReset(v4, v5);
 
   EXPECT_THAT(ut.toString(),
-              testing::HasSubstr("Qubits: 10, Bits: 0, HybridStates: {TOP}"));
+              testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
 }
 
 TEST_F(UnionTableWithoutSetupAllocationsTest, unifyTooLargeHybridStates) {
-  auto ut = UnionTable(4, 2);
+  auto ut = UnionTable(4, 1);
   ut.propagateQubitAlloc(v0);
   ut.propagateQubitAlloc(v1);
   ut.propagateQubitAlloc(v2);
+  ut.propagateIntAlloc(i0, 10);
   ut.propagateGate(hOp, q0, q3);
   ut.propagateMeasurement(v3, v4, i0);
   ut.propagateGate(xOp, q1, q5, q4);
 
   EXPECT_THAT(ut.toString(),
-              testing::HasSubstr("Qubits: 10, Bits: 0, HybridStates: {TOP}"));
+              testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
 }
 
 class UnionTablePropertiesTest : public testing::Test {
@@ -532,7 +542,7 @@ protected:
     zOp = ZOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     swapOp = SWAPOp::create(programBuilder, programBuilder.getLoc(),
-                            {q[0].getType()}, {q[0], q[1], q[2], q[3]});
+                            {q[0].getType(), q[1].getType()}, {q[0], q[1]});
 
     v0 = q[0];
     v1 = q[1];
