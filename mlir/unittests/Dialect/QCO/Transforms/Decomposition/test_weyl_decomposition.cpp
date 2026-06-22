@@ -186,6 +186,8 @@ TEST(DecompositionHelpersTest, GateMatrixFactoriesMatchCanonicalForm) {
   }
 }
 
+namespace {
+
 class WeylDecompositionTest : public testing::TestWithParam<Matrix4x4 (*)()> {};
 
 class BasisDecomposerTest : public testing::TestWithParam<
@@ -202,6 +204,8 @@ protected:
   Matrix4x4 basisMatrix;
   std::unique_ptr<TwoQubitWeylDecomposition> targetDecomposition;
 };
+
+} // namespace
 
 TEST_P(WeylDecompositionTest, ReconstructsWithinRequestedFidelity) {
   const Matrix4x4 originalMatrix = GetParam()();
