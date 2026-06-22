@@ -568,11 +568,11 @@ DynamicMatrix DynamicMatrix::operator*(const DynamicMatrix& rhs) const {
         "DynamicMatrix multiply requires matching dimensions");
   }
   DynamicMatrix out(impl_->dim);
-  if (impl_->dim == static_cast<std::int64_t>(Matrix2x2::K_ROWS)) {
+  if (std::cmp_equal(impl_->dim, Matrix2x2::K_ROWS)) {
     multiply2x2(impl_->data, rhs.impl_->data, out.impl_->data);
     return out;
   }
-  if (impl_->dim == static_cast<std::int64_t>(Matrix4x4::K_ROWS)) {
+  if (std::cmp_equal(impl_->dim, Matrix4x4::K_ROWS)) {
     multiply4x4(impl_->data, rhs.impl_->data, out.impl_->data);
     return out;
   }
