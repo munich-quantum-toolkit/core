@@ -142,10 +142,48 @@ static auto cxBasisCases() {
                            []() { return twoQubitControlledX10(); });
 }
 
+static auto specializedMatrixCases() {
+  return ::testing::Values(
+      []() {
+        return twoQubitControlledX01() * twoQubitControlledX10() *
+               twoQubitControlledX01();
+      },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.5);
+      },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, -0.5);
+      },
+      []() { return twoQubitControlledX01() * twoQubitControlledX10(); },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.1);
+      },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, 0.1);
+      },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, -0.1);
+      });
+}
+
 TEST(DecompositionHelpersTest, MatrixUtilitySanity) {
   EXPECT_NEAR(std::abs(globalPhaseFactor(1.25)), 1.0, 1e-14);
   EXPECT_FALSE(isUnitaryMatrix(Matrix2x2::fromElements(2.0, 0.0, 0.0, 2.0)));
   EXPECT_TRUE(isUnitaryMatrix(Matrix2x2::identity()));
+}
+
+TEST(DecompositionHelpersTest, GateMatrixFactoriesMatchCanonicalForm) {
+  for (const double theta : {0.0, 0.25, 1.0, 2.5, -1.3}) {
+    EXPECT_TRUE(rxxMatrix(theta).isApprox(
+        TwoQubitWeylDecomposition::getCanonicalMatrix(-theta / 2.0, 0.0, 0.0),
+        WEYL_TOLERANCE));
+    EXPECT_TRUE(ryyMatrix(theta).isApprox(
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.0, -theta / 2.0, 0.0),
+        WEYL_TOLERANCE));
+    EXPECT_TRUE(rzzMatrix(theta).isApprox(
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.0, 0.0, -theta / 2.0),
+        WEYL_TOLERANCE));
+  }
 }
 
 class WeylDecompositionTest : public testing::TestWithParam<Matrix4x4 (*)()> {};
@@ -170,7 +208,8 @@ TEST_P(WeylDecompositionTest, ReconstructsWithinRequestedFidelity) {
   for (const double fidelity : {1.0, 1.0 - 1e-12}) {
     const auto decomposition =
         TwoQubitWeylDecomposition::create(originalMatrix, fidelity);
-    EXPECT_TRUE(restoreWeyl(decomposition).isApprox(originalMatrix));
+    EXPECT_TRUE(
+        restoreWeyl(decomposition).isApprox(originalMatrix, WEYL_TOLERANCE));
   }
 }
 
@@ -205,6 +244,8 @@ INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, WeylDecompositionTest,
                          productMatrixCases());
 INSTANTIATE_TEST_SUITE_P(TwoQubitMatrices, WeylDecompositionTest,
                          entangledMatrixCases());
+INSTANTIATE_TEST_SUITE_P(SpecializedMatrices, WeylDecompositionTest,
+                         specializedMatrixCases());
 
 TEST_P(BasisDecomposerTest, ReconstructsWithinRequestedFidelity) {
   for (const double fidelity : {1.0, 1.0 - 1e-12}) {
@@ -213,7 +254,8 @@ TEST_P(BasisDecomposerTest, ReconstructsWithinRequestedFidelity) {
     const auto decomposed =
         decomposer.twoQubitDecompose(*targetDecomposition, std::nullopt);
     ASSERT_TRUE(decomposed.has_value());
-    EXPECT_TRUE(restoreBasis(*decomposed, basisMatrix).isApprox(target));
+    EXPECT_TRUE(restoreBasis(*decomposed, basisMatrix)
+                    .isApprox(target, WEYL_TOLERANCE));
   }
 }
 
@@ -245,7 +287,8 @@ TEST(BasisDecomposerNumBasisTest, ForcesZeroBasisUsesForIdentityTarget) {
   const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{0});
   ASSERT_TRUE(decomposed.has_value());
   EXPECT_EQ(decomposed->numBasisUses, 0);
-  EXPECT_TRUE(restoreBasis(*decomposed, basis).isApprox(target));
+  EXPECT_TRUE(
+      restoreBasis(*decomposed, basis).isApprox(target, WEYL_TOLERANCE));
 }
 
 INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, BasisDecomposerTest,
