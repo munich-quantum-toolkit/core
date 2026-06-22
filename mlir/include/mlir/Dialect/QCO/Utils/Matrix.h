@@ -795,4 +795,31 @@ struct SymmetricEigen4 {
   Matrix4x4 eigenvectors{};
 };
 
+/** @brief Constant-folded `RX(theta)` unitary. */
+[[nodiscard]] Matrix2x2 rxMatrix(double theta);
+
+/** @brief Constant-folded `RY(theta)` unitary. */
+[[nodiscard]] Matrix2x2 ryMatrix(double theta);
+
+/** @brief Constant-folded `RZ(theta)` unitary. */
+[[nodiscard]] Matrix2x2 rzMatrix(double theta);
+
+/** @brief `i` times Pauli-X. */
+[[nodiscard]] const Matrix2x2& iPauliX();
+
+/** @brief `i` times Pauli-Y. */
+[[nodiscard]] const Matrix2x2& iPauliY();
+
+/** @brief `i` times Pauli-Z. */
+[[nodiscard]] const Matrix2x2& iPauliZ();
+
+/** @brief Constant-folded two-qubit `RXX(theta)` unitary. */
+[[nodiscard]] Matrix4x4 rxxMatrix(double theta);
+
+/** @brief Constant-folded two-qubit `RYY(theta)` unitary. */
+[[nodiscard]] Matrix4x4 ryyMatrix(double theta);
+
+/** @brief Constant-folded two-qubit `RZZ(theta)` unitary. */
+[[nodiscard]] Matrix4x4 rzzMatrix(double theta);
+
 } // namespace mlir::qco
