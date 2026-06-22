@@ -789,7 +789,9 @@ inline constexpr bool
  * eigenvector for `eigenvalues[j]`).
  */
 struct SymmetricEigen4 {
+  /// Eigenvalues in ascending order.
   std::array<double, 4> eigenvalues{};
+  /// Orthonormal eigenvectors as columns (column `j` matches `eigenvalues[j]`).
   Matrix4x4 eigenvectors{};
 };
 

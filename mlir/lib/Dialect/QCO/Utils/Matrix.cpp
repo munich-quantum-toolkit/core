@@ -155,6 +155,14 @@ static void multiply4x4(const ArrayRef<Complex> lhs,
   return udim * udim;
 }
 
+/// Returns `2^numQubits` as `int64_t` after checking it fits.
+[[nodiscard]] static std::int64_t
+checkedHilbertDim(const std::size_t numQubits) {
+  assert(numQubits < std::numeric_limits<std::int64_t>::digits &&
+         "Hilbert-space dimension must fit in int64_t");
+  return std::int64_t{static_cast<int64_t>(std::uint64_t{1} << numQubits)};
+}
+
 static void validateCornerDims(const std::int64_t matrixDim,
                                const std::int64_t blockDim) {
   assert(matrixDim >= 0 && blockDim >= 0 && blockDim <= matrixDim &&
@@ -321,7 +329,7 @@ DynamicMatrix Matrix2x2::embedInNqubit(const std::size_t numQubits,
   if (numQubits == 2) {
     return DynamicMatrix(embedInTwoQubit(qubitIndex));
   }
-  const auto dim = static_cast<std::int64_t>(1ULL << numQubits);
+  const auto dim = checkedHilbertDim(numQubits);
   DynamicMatrix out(dim);
   const auto udim = static_cast<std::size_t>(dim);
   for (std::size_t row = 0; row < udim; ++row) {
@@ -345,7 +353,7 @@ Matrix4x4 Matrix2x2::embedInTwoQubit(const std::size_t qubitIndex) const {
   if (qubitIndex == 1) {
     return Matrix4x4::kron(Matrix2x2::identity(), *this);
   }
-  assert(false && "Invalid qubit index for single-qubit embed");
+  llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
 }
 
 Matrix4x4 Matrix4x4::fromElements(const Complex& m00, const Complex& m01,
@@ -452,12 +460,14 @@ Matrix4x4 Matrix4x4::kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
 
 std::array<Complex, Matrix4x4::K_ROWS>
 Matrix4x4::column(const std::size_t col) const {
+  assert(col < K_COLS);
   return {data[col], data[K_COLS + col], data[(2 * K_COLS) + col],
           data[(3 * K_COLS) + col]};
 }
 
 void Matrix4x4::setColumn(const std::size_t col,
                           const ArrayRef<Complex> values) {
+  assert(col < K_COLS);
   assert(values.size() == K_ROWS &&
          "setColumn requires exactly K_ROWS entries");
   for (std::size_t row = 0; row < K_ROWS; ++row) {
@@ -467,7 +477,7 @@ void Matrix4x4::setColumn(const std::size_t col,
 
 ArrayRef<const Complex> Matrix4x4::row(const std::size_t row) const {
   assert(row < K_ROWS);
-  return ArrayRef<const Complex>(data).slice(row * K_COLS, K_COLS);
+  return ArrayRef(data).slice(row * K_COLS, K_COLS);
 }
 
 void Matrix4x4::setRow(const std::size_t row, const ArrayRef<Complex> values) {
@@ -510,7 +520,7 @@ DynamicMatrix Matrix4x4::embedInNqubit(const std::size_t numQubits,
   if (numQubits == 2) {
     return DynamicMatrix(reorderForQubits(q0Index, q1Index));
   }
-  const auto dim = static_cast<std::int64_t>(1ULL << numQubits);
+  const auto dim = checkedHilbertDim(numQubits);
   DynamicMatrix out(dim);
   const auto udim = static_cast<std::size_t>(dim);
   for (std::size_t row = 0; row < udim; ++row) {
@@ -541,7 +551,7 @@ Matrix4x4 Matrix4x4::reorderForQubits(const std::size_t q0Index,
     return fromElements(m[0], m[2], m[1], m[3], m[8], m[10], m[9], m[11], m[4],
                         m[6], m[5], m[7], m[12], m[14], m[13], m[15]);
   }
-  assert(false && "Invalid qubit indices for two-qubit reorder");
+  llvm::reportFatalInternalError("Invalid qubit indices for two-qubit reorder");
 }
 
 SymmetricEigen4 Matrix4x4::symmetricEigen4() const {
