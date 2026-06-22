@@ -12,7 +12,7 @@
 
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/SmallVector.h>
+#include <mlir/Support/LLVM.h>
 
 #include <array>
 #include <complex>
@@ -22,11 +22,11 @@
 namespace mlir::qco::decomposition {
 
 /**
- * @brief Weyl decomposition of a 2-qubit unitary matrix (4x4).
+ * @brief Weyl decomposition of a 2-qubit unitary.
  *
- * The result consists of four 2x2 single-qubit matrices (`k1l`, `k2l`,
- * `k1r`, `k2r`) and three parameters for a canonical gate (`a`, `b`, `c`).
- * The canonical gate is `RXX(-2 * a) * RYY(-2 * b) * RZZ(-2 * c)`.
+ * A 4x4 unitary is factored as
+ * `(K1l ⊗ K1r) · U_canon(a,b,c) · (K2l ⊗ K2r)` up to global phase, where
+ * `U_canon(a,b,c) = RXX(-2a) · RYY(-2b) · RZZ(-2c)`.
  *
  * @note Adapted from TwoQubitWeylDecomposition in the IBM Qiskit framework.
  *       (C) Copyright IBM 2023
@@ -42,16 +42,8 @@ namespace mlir::qco::decomposition {
  */
 class TwoQubitWeylDecomposition {
 public:
-  static TwoQubitWeylDecomposition create(const Matrix4x4& unitaryMatrix,
-                                          std::optional<double> fidelity);
-
-  ~TwoQubitWeylDecomposition() = default;
-  TwoQubitWeylDecomposition() = default;
-  TwoQubitWeylDecomposition(const TwoQubitWeylDecomposition&) = default;
-  TwoQubitWeylDecomposition(TwoQubitWeylDecomposition&&) = default;
-  TwoQubitWeylDecomposition&
-  operator=(const TwoQubitWeylDecomposition&) = default;
-  TwoQubitWeylDecomposition& operator=(TwoQubitWeylDecomposition&&) = default;
+  [[nodiscard]] static TwoQubitWeylDecomposition
+  create(const Matrix4x4& unitaryMatrix, std::optional<double> fidelity);
 
   [[nodiscard]] Matrix4x4 getCanonicalMatrix() const {
     return getCanonicalMatrix(a_, b_, c_);
@@ -68,38 +60,20 @@ public:
    * ```
    * q1 - k2r - C -  k1r  -
    *            A
-   * q0 - k2l - N - *k1l* -
+   * q0 - k2l - N -  k1l  -
    * ```
    */
   [[nodiscard]] const Matrix2x2& k1l() const { return k1l_; }
   /**
    * @brief Left single-qubit factor before the canonical gate.
-   *
-   * ```
-   * q1 -  k2r  - C - k1r -
-   *              A
-   * q0 - *k2l* - N - k1l -
-   * ```
    */
   [[nodiscard]] const Matrix2x2& k2l() const { return k2l_; }
   /**
    * @brief Right single-qubit factor after the canonical gate.
-   *
-   * ```
-   * q1 - k2r - C - *k1r* -
-   *            A
-   * q0 - k2l - N -  k1l  -
-   * ```
    */
   [[nodiscard]] const Matrix2x2& k1r() const { return k1r_; }
   /**
    * @brief Right single-qubit factor before the canonical gate.
-   *
-   * ```
-   * q1 - *k2r* - C - k1r -
-   *              A
-   * q0 -  k2l  - N - k1l -
-   * ```
    */
   [[nodiscard]] const Matrix2x2& k2r() const { return k2r_; }
 
@@ -107,7 +81,7 @@ public:
                                                     double c);
 
 private:
-  bool applySpecialization();
+  bool applySpecialization(const std::optional<double>& requestedFidelity);
 
   double a_{};
   double b_{};
@@ -117,32 +91,25 @@ private:
   Matrix2x2 k2l_;
   Matrix2x2 k1r_;
   Matrix2x2 k2r_;
-  std::uint8_t specializationKind_{0};
-  std::optional<double> requestedFidelity;
 };
 
-using TwoQubitLocalUnitaryList = llvm::SmallVector<Matrix2x2, 8>;
-
 /**
- * @brief Result of a two-qubit basis decomposition as single-qubit factors and
- *        entangler uses.
+ * @brief Single-qubit factors and entangler count for basis-gate synthesis.
  *
  * Factors are stored in emission order. For `i` in `[0, numBasisUses)` the
  * pair `(singleQubitFactors[2*i], singleQubitFactors[2*i + 1])` is applied to
  * qubits `1` and `0` respectively, followed by one entangler. The final pair
  * `(singleQubitFactors[2*numBasisUses], singleQubitFactors[2*numBasisUses+1])`
- * is applied after the last entangler. The list therefore has length
- * `2 * (numBasisUses + 1)`.
+ * is applied after the last entangler.
  */
 struct TwoQubitNativeDecomposition {
   std::uint8_t numBasisUses = 0;
-  TwoQubitLocalUnitaryList singleQubitFactors;
+  SmallVector<Matrix2x2, 8> singleQubitFactors;
   double globalPhase = 0.0;
 };
 
 /**
- * @brief Decomposer initialized with a two-qubit basis gate for canonical-gate
- *        (RXX+RYY+RZZ) synthesis.
+ * @brief Decomposer for a fixed two-qubit basis gate (e.g. CX/CZ).
  *
  * @note Adapted from TwoQubitBasisDecomposer in the IBM Qiskit framework.
  *       (C) Copyright IBM 2023
@@ -188,13 +155,13 @@ private:
     Matrix2x2 q2r;
   };
 
-  [[nodiscard]] static TwoQubitLocalUnitaryList
+  [[nodiscard]] static SmallVector<Matrix2x2, 8>
   decomp0(const TwoQubitWeylDecomposition& target);
-  [[nodiscard]] TwoQubitLocalUnitaryList
+  [[nodiscard]] SmallVector<Matrix2x2, 8>
   decomp1(const TwoQubitWeylDecomposition& target) const;
-  [[nodiscard]] TwoQubitLocalUnitaryList
+  [[nodiscard]] SmallVector<Matrix2x2, 8>
   decomp2Supercontrolled(const TwoQubitWeylDecomposition& target) const;
-  [[nodiscard]] TwoQubitLocalUnitaryList
+  [[nodiscard]] SmallVector<Matrix2x2, 8>
   decomp3Supercontrolled(const TwoQubitWeylDecomposition& target) const;
   [[nodiscard]] std::array<std::complex<double>, 4>
   traces(const TwoQubitWeylDecomposition& target) const;
@@ -204,5 +171,14 @@ private:
   bool isSuperControlled{};
   SmbPrecomputed smb{};
 };
+
+/**
+ * @brief Decomposes @p target with respect to a two-qubit basis gate matrix.
+ */
+[[nodiscard]] std::optional<TwoQubitNativeDecomposition>
+decomposeTwoQubitWithBasis(
+    const Matrix4x4& target, const Matrix4x4& basisMatrix,
+    double basisFidelity = 1.0,
+    std::optional<std::uint8_t> numBasisUses = std::nullopt);
 
 } // namespace mlir::qco::decomposition

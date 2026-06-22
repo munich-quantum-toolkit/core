@@ -56,17 +56,12 @@ enum class Specialization : std::uint8_t {
   FSimabmbEquiv,
 };
 
-enum class MagicBasisTransform : std::uint8_t {
-  Into,
-  OutOf,
-};
-
 } // namespace
 
 static constexpr auto DIAGONALIZATION_PRECISION = 1e-13;
 
 static Matrix4x4 magicBasisTransform(const Matrix4x4& unitary,
-                                     MagicBasisTransform direction) {
+                                     bool outOfMagicBasis) {
   const Matrix4x4 bNonNormalized = Matrix4x4::fromElements( //
       1, 1i, 0, 0,                                          //
       0, 0, 1i, 1,                                          //
@@ -77,13 +72,10 @@ static Matrix4x4 magicBasisTransform(const Matrix4x4& unitary,
       Complex{0.0, -0.5}, 0, 0, Complex{0.0, 0.5},                //
       0, Complex{0.0, -0.5}, Complex{0.0, -0.5}, 0,               //
       0, 0.5, -0.5, 0);
-  if (direction == MagicBasisTransform::OutOf) {
+  if (outOfMagicBasis) {
     return bNonNormalizedDagger * unitary * bNonNormalized;
   }
-  if (direction == MagicBasisTransform::Into) {
-    return bNonNormalized * unitary * bNonNormalizedDagger;
-  }
-  llvm::reportFatalInternalError("Unknown MagicBasisTransform direction!");
+  return bNonNormalized * unitary * bNonNormalizedDagger;
 }
 
 static double closestPartialSwap(double a, double b, double c) {
@@ -287,7 +279,7 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   // 1. if uP ∈ SO(4), V = A ⊗ B (SO(4) → SU(2) ⊗ SU(2))
   // 2. magic basis diagonalizes canonical gate, allowing calculation of
   //    canonical gate parameters later on
-  auto uP = magicBasisTransform(u, MagicBasisTransform::OutOf);
+  auto uP = magicBasisTransform(u, /*outOfMagicBasis=*/true);
   const Matrix4x4 m2 = uP.transpose() * uP;
 
   // diagonalization yields eigenvectors (p) and eigenvalues (d);
@@ -360,14 +352,14 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   // residual rather than the (much tighter) default matrix tolerance.
   assert((k1.transpose() * k1).isIdentity(SANITY_CHECK_PRECISION));
   assert(k1.determinant().real() > 0.0);
-  k1 = magicBasisTransform(k1, MagicBasisTransform::Into);
+  k1 = magicBasisTransform(k1, /*outOfMagicBasis=*/false);
 
   // combined matrix k2 of 1q gates before canonical gate
   Matrix4x4 k2 = p.adjoint();
   // k2 must be orthogonal; see the tolerance note on the k1 check above.
   assert((k2.transpose() * k2).isIdentity(SANITY_CHECK_PRECISION));
   assert(k2.determinant().real() > 0.0);
-  k2 = magicBasisTransform(k2, MagicBasisTransform::Into);
+  k2 = magicBasisTransform(k2, /*outOfMagicBasis=*/false);
 
   // ensure k1 and k2 are correct (when combined with the canonical gate
   // parameters in-between, they are equivalent to u)
@@ -377,7 +369,7 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   }
   assert((k1 *
           magicBasisTransform(Matrix4x4::fromDiagonal(tempConjDiag),
-                              MagicBasisTransform::Into) *
+                              /*outOfMagicBasis=*/false) *
           k2)
              .isApprox(u, SANITY_CHECK_PRECISION));
 
@@ -455,9 +447,6 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   decomposition.k2l_ = K2l;
   decomposition.k1r_ = K1r;
   decomposition.k2r_ = K2r;
-  decomposition.specializationKind_ =
-      static_cast<std::uint8_t>(Specialization::General);
-  decomposition.requestedFidelity = fidelity;
 
   // make sure decomposition is equal to input
   assert((Matrix4x4::kron(K1l, K1r) * decomposition.getCanonicalMatrix() *
@@ -466,7 +455,7 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
 
   // determine actual specialization of canonical gate so that the 1q
   // matrices can potentially be simplified
-  auto flippedFromOriginal = decomposition.applySpecialization();
+  auto flippedFromOriginal = decomposition.applySpecialization(fidelity);
 
   auto getTraceValue = [&]() {
     if (flippedFromOriginal) {
@@ -483,12 +472,11 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   // final check if specialization is close enough to the original matrix to
   // satisfy the requested fidelity; since no forced specialization is
   // allowed, this should never fail
-  if (decomposition.requestedFidelity &&
-      calculatedFidelity + 1.0e-13 < *decomposition.requestedFidelity) {
+  if (fidelity && calculatedFidelity + 1.0e-13 < *fidelity) {
     llvm::reportFatalInternalError(llvm::formatv(
         "TwoQubitWeylDecomposition: Calculated fidelity of "
         "specialization is worse than requested fidelity ({0:F4} vs {1:F4})!",
-        calculatedFidelity, *decomposition.requestedFidelity));
+        calculatedFidelity, *fidelity));
   }
   decomposition.globalPhase_ += std::arg(trace);
 
@@ -516,13 +504,8 @@ Matrix4x4 TwoQubitWeylDecomposition::getCanonicalMatrix(double a, double b,
   return zz * yy * xx;
 }
 
-bool TwoQubitWeylDecomposition::applySpecialization() {
-  if (specializationKind_ !=
-      static_cast<std::uint8_t>(Specialization::General)) {
-    llvm::reportFatalInternalError(
-        "Application of specialization only works on "
-        "general Weyl decompositions!");
-  }
+bool TwoQubitWeylDecomposition::applySpecialization(
+    const std::optional<double>& requestedFidelity) {
   bool flippedFromOriginal = false;
   const auto newSpecialization = bestSpecialization(*this, requestedFidelity);
   if (newSpecialization == Specialization::General) {
@@ -532,7 +515,6 @@ bool TwoQubitWeylDecomposition::applySpecialization() {
     // make the single-qubit pre-/post-gates canonical.
     return flippedFromOriginal;
   }
-  specializationKind_ = static_cast<std::uint8_t>(newSpecialization);
 
   if (newSpecialization == Specialization::IdEquiv) {
     // :math:`U \sim U_d(0,0,0)`
@@ -865,7 +847,7 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
         llvm::Twine(bestNbasis) + ")!");
     llvm_unreachable("");
   };
-  TwoQubitLocalUnitaryList factors = chooseDecomposition();
+  SmallVector<Matrix2x2, 8> factors = chooseDecomposition();
 #ifndef NDEBUG
   for (const auto& factor : factors) {
     assert(isUnitaryMatrix(factor, 1e-12));
@@ -892,18 +874,18 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
   };
 }
 
-TwoQubitLocalUnitaryList
+SmallVector<Matrix2x2, 8>
 TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
-  return TwoQubitLocalUnitaryList{
+  return SmallVector<Matrix2x2, 8>{
       target.k1r() * target.k2r(),
       target.k1l() * target.k2l(),
   };
 }
 
-TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp1(
+SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp1(
     const TwoQubitWeylDecomposition& target) const {
   // may not work for z != 0 and c != 0 (not always in Weyl chamber)
-  return TwoQubitLocalUnitaryList{
+  return SmallVector<Matrix2x2, 8>{
       basisDecomposer.k2r().adjoint() * target.k2r(),
       basisDecomposer.k2l().adjoint() * target.k2l(),
       target.k1r() * basisDecomposer.k1r().adjoint(),
@@ -911,14 +893,14 @@ TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp1(
   };
 }
 
-TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp2Supercontrolled(
+SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp2Supercontrolled(
     const TwoQubitWeylDecomposition& target) const {
   if (!isSuperControlled) {
     llvm::reportFatalInternalError(
         "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
         "- no guarantee for exact decomposition with two basis gates");
   }
-  return TwoQubitLocalUnitaryList{
+  return SmallVector<Matrix2x2, 8>{
       smb.q2r * target.k2r(),
       smb.q2l * target.k2l(),
       smb.q1ra * rzMatrix(2. * target.b()) * smb.q1rb,
@@ -928,14 +910,14 @@ TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp2Supercontrolled(
   };
 }
 
-TwoQubitLocalUnitaryList TwoQubitBasisDecomposer::decomp3Supercontrolled(
+SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp3Supercontrolled(
     const TwoQubitWeylDecomposition& target) const {
   if (!isSuperControlled) {
     llvm::reportFatalInternalError(
         "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
         "- no guarantee for exact decomposition with three basis gates");
   }
-  return TwoQubitLocalUnitaryList{
+  return SmallVector<Matrix2x2, 8>{
       smb.u3r * target.k2r(),
       smb.u3l * target.k2l(),
       smb.u2ra * rzMatrix(2. * target.b()) * smb.u2rb,
@@ -974,6 +956,17 @@ TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
       std::complex<double>{4. * std::cos(target.c()), 0.},
       std::complex<double>{4., 0.},
   };
+}
+
+std::optional<TwoQubitNativeDecomposition>
+decomposeTwoQubitWithBasis(const Matrix4x4& target,
+                           const Matrix4x4& basisMatrix,
+                           const double basisFidelity,
+                           const std::optional<std::uint8_t> numBasisUses) {
+  const auto decomposer =
+      TwoQubitBasisDecomposer::create(basisMatrix, basisFidelity);
+  const auto weyl = TwoQubitWeylDecomposition::create(target, std::nullopt);
+  return decomposer.twoQubitDecompose(weyl, numBasisUses);
 }
 
 } // namespace mlir::qco::decomposition

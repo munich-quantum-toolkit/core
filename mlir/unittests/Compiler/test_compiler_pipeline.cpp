@@ -28,7 +28,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -43,6 +42,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
@@ -820,7 +820,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
           } else if (!op.getUnitaryMatrix4x4(twoQ)) {
             return std::nullopt;
           }
-          const llvm::SmallVector<std::size_t, 2> ids{*q0, *q1};
+          const mlir::SmallVector<std::size_t, 2> ids{*q0, *q1};
           unitary = twoQ.reorderForQubits(ids[0], ids[1]) * unitary;
           qubitIds[op.getOutputQubit(0)] = *q0;
           qubitIds[op.getOutputQubit(1)] = *q1;

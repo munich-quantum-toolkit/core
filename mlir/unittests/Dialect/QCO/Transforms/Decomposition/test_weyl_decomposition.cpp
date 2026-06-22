@@ -19,7 +19,6 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -60,9 +59,8 @@ static const Matrix2x2& hGate() {
 }
 
 static Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
-  std::normal_distribution<double> normalDist(0.0, 1.0);
-  std::vector<std::vector<std::complex<double>>> columns(
-      4, std::vector<std::complex<double>>(4));
+  std::normal_distribution normalDist(0.0, 1.0);
+  std::vector columns(4, std::vector(4, std::complex{0.0, 0.0}));
   for (auto& column : columns) {
     for (auto& entry : column) {
       entry = std::complex<double>(normalDist(rng), normalDist(rng));
@@ -119,40 +117,33 @@ static Matrix4x4 restoreBasis(const TwoQubitNativeDecomposition& decomposition,
 
 static auto productMatrixCases() {
   return ::testing::Values(
-      []() -> Matrix4x4 { return Matrix4x4::identity(); },
-      []() -> Matrix4x4 {
-        return Matrix4x4::kron(rzMatrix(1.0), ryMatrix(3.1));
-      },
-      []() -> Matrix4x4 {
-        return Matrix4x4::kron(Matrix2x2::identity(), rxMatrix(0.1));
-      });
+      []() { return Matrix4x4::identity(); },
+      []() { return Matrix4x4::kron(rzMatrix(1.0), ryMatrix(3.1)); },
+      []() { return Matrix4x4::kron(Matrix2x2::identity(), rxMatrix(0.1)); });
 }
 
 static auto entangledMatrixCases() {
   return ::testing::Values(
-      []() -> Matrix4x4 { return rzzMatrix(2.0); },
-      []() -> Matrix4x4 {
-        return ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0);
-      },
-      []() -> Matrix4x4 {
+      []() { return rzzMatrix(2.0); },
+      []() { return ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0); },
+      []() {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
                Matrix4x4::kron(rxMatrix(1.0), Matrix2x2::identity());
       },
-      []() -> Matrix4x4 {
+      []() {
         return Matrix4x4::kron(rxMatrix(1.0), ryMatrix(1.0)) *
                TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
                Matrix4x4::kron(rxMatrix(1.0), Matrix2x2::identity());
       },
-      []() -> Matrix4x4 {
+      []() {
         return Matrix4x4::kron(hGate(), iPauliZ()) * twoQubitControlledX01() *
                Matrix4x4::kron(iPauliX(), iPauliY());
       });
 }
 
 static auto cxBasisCases() {
-  return ::testing::Values(
-      []() -> Matrix4x4 { return twoQubitControlledX01(); },
-      []() -> Matrix4x4 { return twoQubitControlledX10(); });
+  return ::testing::Values([]() { return twoQubitControlledX01(); },
+                           []() { return twoQubitControlledX10(); });
 }
 
 static bool extractSingleQubitMatrix(UnitaryOpInterface op, Matrix2x2& out) {
@@ -246,7 +237,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
       if (!extractTwoQubitMatrix(op, twoQ)) {
         return std::nullopt;
       }
-      const llvm::SmallVector<QubitId, 2> ids{*q0id, *q1id};
+      const SmallVector<QubitId, 2> ids{*q0id, *q1id};
       unitary = twoQ.reorderForQubits(ids[0], ids[1]) * unitary;
       wireIds[op->getResult(0)] = *q0id;
       wireIds[op->getResult(1)] = *q1id;
@@ -400,8 +391,8 @@ TEST_P(BasisDecomposerTest, ReconstructsWithinRequestedFidelity) {
 
 TEST(BasisDecomposerTest, Random) {
   std::mt19937 rng{123456UL};
-  const llvm::SmallVector<Matrix4x4, 2> basisMatrices{twoQubitControlledX01(),
-                                                      twoQubitControlledX10()};
+  const SmallVector<Matrix4x4, 2> basisMatrices{twoQubitControlledX01(),
+                                                twoQubitControlledX10()};
   std::uniform_int_distribution<std::size_t> distBasisGate{0, 1};
 
   for (int i = 0; i < 2000; ++i) {
@@ -478,7 +469,8 @@ TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
   fx.setUp();
   const auto spec = parseNativeSpec("u");
   ASSERT_TRUE(spec);
-  EXPECT_TRUE(spec->entanglerBases.empty());
+  EXPECT_FALSE(spec->gates.contains(NativeGateKind::Cx));
+  EXPECT_FALSE(spec->gates.contains(NativeGateKind::Cz));
   OpBuilder builder(fx.ctx());
   const auto qubitTy = QubitType::get(fx.ctx());
   const auto funcTy =
@@ -497,29 +489,29 @@ TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
 TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   const auto ibm = parseNativeSpec("x,sx,rz,cx");
   ASSERT_TRUE(ibm);
-  EXPECT_TRUE(ibm->allowedGates.contains(NativeGateKind::Cx));
-  EXPECT_TRUE(ibm->allowedGates.contains(NativeGateKind::X));
-  EXPECT_FALSE(ibm->allowRzz);
+  EXPECT_TRUE(ibm->gates.contains(NativeGateKind::Cx));
+  EXPECT_TRUE(ibm->gates.contains(NativeGateKind::X));
+  EXPECT_FALSE(ibm->gates.contains(NativeGateKind::Rzz));
   EXPECT_FALSE(parseNativeSpec("x,sx,rz,not-a-gate").has_value());
 
   const auto pMenu = parseNativeSpec("x,sx,p,cx");
   const auto rzMenu = parseNativeSpec("x,sx,rz,cx");
   ASSERT_TRUE(pMenu);
   ASSERT_TRUE(rzMenu);
-  EXPECT_EQ(pMenu->allowedGates, rzMenu->allowedGates);
+  EXPECT_EQ(pMenu->gates, rzMenu->gates);
 
   const auto cxOnly = parseNativeSpec("u,cx");
   ASSERT_TRUE(cxOnly);
-  EXPECT_TRUE(llvm::is_contained(cxOnly->entanglerBases, EntanglerBasis::Cx));
-  EXPECT_FALSE(llvm::is_contained(cxOnly->entanglerBases, EntanglerBasis::Cz));
+  EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::Cx));
+  EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::Cz));
 
   const auto both = parseNativeSpec("u,cx,cz");
   ASSERT_TRUE(both);
-  EXPECT_TRUE(llvm::is_contained(both->entanglerBases, EntanglerBasis::Cx));
-  EXPECT_TRUE(llvm::is_contained(both->entanglerBases, EntanglerBasis::Cz));
+  EXPECT_TRUE(both->gates.contains(NativeGateKind::Cx));
+  EXPECT_TRUE(both->gates.contains(NativeGateKind::Cz));
 
   const auto generic = parseNativeSpec("u,cx");
   ASSERT_TRUE(generic);
-  EXPECT_TRUE(generic->allowedGates.contains(NativeGateKind::U));
-  EXPECT_FALSE(generic->allowedGates.contains(NativeGateKind::X));
+  EXPECT_TRUE(generic->gates.contains(NativeGateKind::U));
+  EXPECT_FALSE(generic->gates.contains(NativeGateKind::X));
 }
