@@ -109,6 +109,10 @@ diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
   for (int i = 0; i < maxDiagonalizationAttempts; ++i) {
     double randA{};
     double randB{};
+    // Fixed perturbation coefficients for the first diagonalization attempt,
+    // carried over from Qiskit's two-qubit Weyl decomposition (legacy Python
+    // RNG values). The loop usually succeeds on this trial; fixing randA/randB
+    // keeps behavior deterministic while later attempts sample the distribution.
     if (i == 0) {
       randA = 1.2602066112249388;
       randB = 0.22317849046722027;
