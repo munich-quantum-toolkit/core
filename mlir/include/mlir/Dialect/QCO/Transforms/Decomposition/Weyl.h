@@ -57,27 +57,13 @@ public:
   [[nodiscard]] double c() const { return c_; }
   [[nodiscard]] double globalPhase() const { return globalPhase_; }
 
-  /**
-   * @brief Left single-qubit factor after the canonical gate.
-   *
-   * ```
-   * q1 - k2r - C -  k1r  -
-   *            A
-   * q0 - k2l - N -  k1l  -
-   * ```
-   */
+  /** @brief Single-qubit factor on qubit 0 after the canonical gate. */
   [[nodiscard]] const Matrix2x2& k1l() const { return k1l_; }
-  /**
-   * @brief Left single-qubit factor before the canonical gate.
-   */
+  /** @brief Single-qubit factor on qubit 0 before the canonical gate. */
   [[nodiscard]] const Matrix2x2& k2l() const { return k2l_; }
-  /**
-   * @brief Right single-qubit factor after the canonical gate.
-   */
+  /** @brief Single-qubit factor on qubit 1 after the canonical gate. */
   [[nodiscard]] const Matrix2x2& k1r() const { return k1r_; }
-  /**
-   * @brief Right single-qubit factor before the canonical gate.
-   */
+  /** @brief Single-qubit factor on qubit 1 before the canonical gate. */
   [[nodiscard]] const Matrix2x2& k2r() const { return k2r_; }
 
   [[nodiscard]] static Matrix4x4 getCanonicalMatrix(double a, double b,
@@ -97,13 +83,11 @@ private:
 };
 
 /**
- * @brief Single-qubit factors and entangler count for basis-gate synthesis.
+ * @brief Native two-qubit synthesis result.
  *
- * Factors are stored in emission order. For `i` in `[0, numBasisUses)` the
- * pair `(singleQubitFactors[2*i], singleQubitFactors[2*i + 1])` is applied to
- * qubits `1` and `0` respectively, followed by one entangler. The final pair
- * `(singleQubitFactors[2*numBasisUses], singleQubitFactors[2*numBasisUses+1])`
- * is applied after the last entangler.
+ * Emission order: for each `i`, apply `singleQubitFactors[2*i+1]` on q0 and
+ * `singleQubitFactors[2*i]` on q1, then the basis gate (except after the last
+ * pair).
  */
 struct TwoQubitNativeDecomposition {
   std::uint8_t numBasisUses = 0;
@@ -175,9 +159,7 @@ private:
   SmbPrecomputed smb{};
 };
 
-/**
- * @brief Decomposes @p target with respect to a two-qubit basis gate matrix.
- */
+/** @brief Weyl-decomposes @p target using @p basisMatrix as entangler. */
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeTwoQubitWithBasis(
     const Matrix4x4& target, const Matrix4x4& basisMatrix,

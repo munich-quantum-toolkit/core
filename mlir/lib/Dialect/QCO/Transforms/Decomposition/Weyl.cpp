@@ -269,37 +269,23 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
                                   std::optional<double> fidelity) {
   auto u = unitaryMatrix;
   auto detU = u.determinant();
-  // Project into SU(4) by dividing out the fourth root of det(U): for a 4x4
-  // unitary, |det(U)| == 1 so `det^{-1/4}` both enforces det == 1 and removes
-  // the global phase. The extracted phase is tracked separately in
-  // `globalPhase` (quarter of arg(det) to match the fourth-root choice) so the
-  // caller can reconstruct the original matrix exactly if needed.
+  // Project into SU(4): det^{-1/4} removes global phase; arg(det)/4 is tracked.
   auto detPow = std::pow(detU, -0.25);
-  u *= detPow; // remove global phase from unitary matrix
+  u *= detPow;
   auto globalPhase = std::arg(detU) / 4.;
 
-  // Numerical drift can still leave tiny determinant errors after root
-  // normalization. Re-normalize once more instead of aborting.
   auto detNormalized = u.determinant();
   if (std::abs(detNormalized - Complex{1.0, 0.0}) > WEYL_TOLERANCE &&
       std::abs(detNormalized) > WEYL_TOLERANCE) {
     u *= std::pow(detNormalized, -0.25);
   }
 
-  // transform unitary matrix to magic basis; this enables two properties:
-  // 1. if uP ∈ SO(4), V = A ⊗ B (SO(4) → SU(2) ⊗ SU(2))
-  // 2. magic basis diagonalizes canonical gate, allowing calculation of
-  //    canonical gate parameters later on
   auto uP = magicBasisTransform(u, /*outOfMagicBasis=*/true);
   const Matrix4x4 m2 = uP.transpose() * uP;
 
-  // diagonalization yields eigenvectors (p) and eigenvalues (d);
-  // p is used to calculate K1/K2 (and thus the single-qubit gates
-  // surrounding the canonical gate); d is used to determine the Weyl
-  // coordinates and thus the parameters of the canonical gate
   auto [p, d] = diagonalizeComplexSymmetric(m2, DIAGONALIZATION_PRECISION);
 
-  // extract Weyl coordinates from eigenvalues, map to [0, 2*pi)
+  // Map eigenvalue phases to Weyl coordinates in [0, 2*pi).
   constexpr double pi = std::numbers::pi;
   std::array<double, 4> dReal{};
   for (std::size_t i = 0; i < d.size(); ++i) {
@@ -311,8 +297,7 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
     cs[i] = remEuclid((dReal[i] + dReal[3]) / 2.0, 2.0 * pi);
   }
 
-  // Reorder coordinates according to min(a, pi/2 - a) with
-  // a = x mod pi/2 for each Weyl coordinate x
+  // Sort coordinates by min(x mod pi/2, pi/2 - x mod pi/2).
   std::array<double, 3> cstemp{};
   for (std::size_t i = 0; i < cs.size(); ++i) {
     const auto tmp = remEuclid(cs[i], pi / 2.0);
@@ -331,13 +316,10 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
     dReal[2] = reordered[2];
   }
 
-  // update eigenvectors (columns of p) according to new order of
-  // weyl coordinates
   const Matrix4x4 pOrig = p;
   for (std::size_t i = 0; i < order.size(); ++i) {
     p.setColumn(i, pOrig.column(order[i]));
   }
-  // apply correction for determinant if necessary
   if (p.determinant().real() < 0.0) {
     auto lastColumn = p.column(3);
     for (auto& entry : lastColumn) {
@@ -347,33 +329,23 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   }
   assert(std::abs(p.determinant() - 1.0) < WEYL_TOLERANCE);
 
-  // re-create complex eigenvalue matrix; this matrix contains the
-  // parameters of the canonical gate which is later used in the
-  // verification. Since the matrix is diagonal, the matrix exponential is
-  // equivalent to the element-wise exponential function.
   std::array<Complex, 4> tempDiag{};
   for (std::size_t k = 0; k < tempDiag.size(); ++k) {
     tempDiag[k] = std::exp(1i * dReal[k]);
   }
   const Matrix4x4 temp = Matrix4x4::fromDiagonal(tempDiag);
 
-  // combined matrix k1 of 1q gates after canonical gate
   Matrix4x4 k1 = uP * p * temp;
-  // k1 must be orthogonal; the tolerance matches the iterative diagonalization
-  // residual rather than the (much tighter) default matrix tolerance.
+  // Orthogonality checks use WEYL_TOLERANCE (diagonalization residual scale).
   assert((k1.transpose() * k1).isIdentity(WEYL_TOLERANCE));
   assert(k1.determinant().real() > 0.0);
   k1 = magicBasisTransform(k1, /*outOfMagicBasis=*/false);
 
-  // combined matrix k2 of 1q gates before canonical gate
   Matrix4x4 k2 = p.adjoint();
-  // k2 must be orthogonal; see the tolerance note on the k1 check above.
   assert((k2.transpose() * k2).isIdentity(WEYL_TOLERANCE));
   assert(k2.determinant().real() > 0.0);
   k2 = magicBasisTransform(k2, /*outOfMagicBasis=*/false);
 
-  // ensure k1 and k2 are correct (when combined with the canonical gate
-  // parameters in-between, they are equivalent to u)
   std::array<Complex, 4> tempConjDiag{};
   for (std::size_t k = 0; k < tempConjDiag.size(); ++k) {
     tempConjDiag[k] = std::conj(tempDiag[k]);
@@ -384,16 +356,13 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
           k2)
              .isApprox(u, WEYL_TOLERANCE));
 
-  // calculate k1 = K1l ⊗ K1r
   auto [K1l, K1r, phaseL] = decomposeTwoQubitProductGate(k1);
-  // decompose k2 = K2l ⊗ K2r
   auto [K2l, K2r, phaseR] = decomposeTwoQubitProductGate(k2);
   assert(Matrix4x4::kron(K1l, K1r).isApprox(k1, WEYL_TOLERANCE));
   assert(Matrix4x4::kron(K2l, K2r).isApprox(k2, WEYL_TOLERANCE));
-  // accumulate global phase
   globalPhase += phaseL + phaseR;
 
-  // Flip into Weyl chamber
+  // Map into the Weyl chamber.
   if (cs[0] > (pi / 2.0)) {
     cs[0] -= 3.0 * (pi / 2.0);
     K1l = K1l * iPauliY();
@@ -446,7 +415,7 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
     globalPhase -= (pi / 2.0);
   }
 
-  // bind weyl coordinates as parameters of canonical gate
+  // Bind Weyl coordinates to the canonical gate.
   auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
 
   TwoQubitWeylDecomposition decomposition;
@@ -459,13 +428,10 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   decomposition.k1r_ = K1r;
   decomposition.k2r_ = K2r;
 
-  // make sure decomposition is equal to input
   assert((Matrix4x4::kron(K1l, K1r) * decomposition.getCanonicalMatrix() *
           Matrix4x4::kron(K2l, K2r) * std::exp(Complex{0.0, 1.0} * globalPhase))
              .isApprox(unitaryMatrix, WEYL_TOLERANCE));
 
-  // determine actual specialization of canonical gate so that the 1q
-  // matrices can potentially be simplified
   auto flippedFromOriginal = decomposition.applySpecialization(fidelity);
 
   auto getTraceValue = [&]() {
@@ -476,13 +442,8 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
     return getTrace(a, b, c, decomposition.a_, decomposition.b_,
                     decomposition.c_);
   };
-  // use trace to calculate fidelity of applied specialization and
-  // adjust global phase
-  auto trace = getTraceValue();
+  const auto trace = getTraceValue();
   const double calculatedFidelity = traceToFidelity(trace);
-  // final check if specialization is close enough to the original matrix to
-  // satisfy the requested fidelity; since no forced specialization is
-  // allowed, this should never fail
   if (fidelity && calculatedFidelity + 1.0e-13 < *fidelity) {
     llvm::reportFatalInternalError(llvm::formatv(
         "TwoQubitWeylDecomposition: Calculated fidelity of "
@@ -491,7 +452,6 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   }
   decomposition.globalPhase_ += std::arg(trace);
 
-  // final check if decomposition is still valid after specialization
   assert((Matrix4x4::kron(decomposition.k1l_, decomposition.k1r_) *
           decomposition.getCanonicalMatrix() *
           Matrix4x4::kron(decomposition.k2l_, decomposition.k2r_) *
@@ -503,12 +463,8 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
 
 Matrix4x4 TwoQubitWeylDecomposition::getCanonicalMatrix(double a, double b,
                                                         double c) {
-  // Canonical gate `U_d(a, b, c) = exp(i * (a*XX + b*YY + c*ZZ))`. XX/YY/ZZ
-  // commute pairwise, so any product order is equivalent; the order below is
-  // chosen to match common Qiskit/QuantumFlow references. The negated rotation
-  // angles (`-2 * a`, ...) compensate for the `RXX/RYY/RZZ` convention
-  // `exp(-i * theta/2 * XX)`, so that the factored angles sum back to the
-  // intended `+a`, `+b`, `+c`.
+  // U_d(a,b,c) = exp(i(a XX + b YY + c ZZ)); `-2*a/b/c` matches RXX/RYY/RZZ
+  // gate convention; product order matches Qiskit (RZZ · RYY · RXX).
   const auto xx = rxxMatrix(-2.0 * a);
   const auto yy = ryyMatrix(-2.0 * b);
   const auto zz = rzzMatrix(-2.0 * c);
@@ -520,37 +476,19 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   bool flippedFromOriginal = false;
   const auto newSpecialization = bestSpecialization(*this, requestedFidelity);
   if (newSpecialization == Specialization::General) {
-    // U has no special symmetry.
-    //
-    // This gate binds all 6 possible parameters, so there is no need to
-    // make the single-qubit pre-/post-gates canonical.
     return flippedFromOriginal;
   }
 
   if (newSpecialization == Specialization::IdEquiv) {
-    // :math:`U \sim U_d(0,0,0)`
-    // Thus, :math:`\sim Id`
-    //
-    // This gate binds 0 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Id` , :math:`K2_r = Id`.
     a_ = 0.;
     b_ = 0.;
     c_ = 0.;
-    // unmodified global phase
     k1l_ = k1l_ * k2l_;
     k2l_ = Matrix2x2::identity();
     k1r_ = k1r_ * k2r_;
     k2r_ = Matrix2x2::identity();
   } else if (newSpecialization == Specialization::SWAPEquiv) {
-    // :math:`U \sim U_d(\pi/4, \pi/4, \pi/4) \sim U(\pi/4, \pi/4, -\pi/4)`
-    // Thus, :math:`U \sim \text{SWAP}`
-    //
-    // This gate binds 0 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Id` , :math:`K2_r = Id`.
     if (c_ > 0.) {
-      // unmodified global phase
       k1l_ = k1l_ * k2r_;
       k1r_ = k1r_ * k2l_;
       k2l_ = Matrix2x2::identity();
@@ -568,58 +506,33 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     b_ = (std::numbers::pi / 4.0);
     c_ = (std::numbers::pi / 4.0);
   } else if (newSpecialization == Specialization::PartialSWAPEquiv) {
-    // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, \alpha\pi/4)`
-    // Thus, :math:`U \sim \text{SWAP}^\alpha`
-    //
-    // This gate binds 3 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Id`.
     auto closest = closestPartialSwap(a_, b_, c_);
     auto k2lDagger = k2l_.adjoint();
 
     a_ = closest;
     b_ = closest;
     c_ = closest;
-    // unmodified global phase
     k1l_ = k1l_ * k2l_;
     k1r_ = k1r_ * k2l_;
     k2r_ = k2lDagger * k2r_;
     k2l_ = Matrix2x2::identity();
   } else if (newSpecialization == Specialization::PartialSWAPFlipEquiv) {
-    // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, -\alpha\pi/4)`
-    // Thus, :math:`U \sim \text{SWAP}^\alpha`
-    //
-    // (a non-equivalent root of SWAP from the TwoQubitWeylPartialSWAPEquiv
-    // similar to how :math:`x = (\pm \sqrt(x))^2`)
-    //
-    // This gate binds 3 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Id`
     auto closest = closestPartialSwap(a_, b_, -c_);
     auto k2lDagger = k2l_.adjoint();
 
     a_ = closest;
     b_ = closest;
     c_ = -closest;
-    // unmodified global phase
     k1l_ = k1l_ * k2l_;
     k1r_ = k1r_ * iPauliZ() * k2l_ * iPauliZ();
     k2r_ = iPauliZ() * k2lDagger * iPauliZ() * k2r_;
     k2l_ = Matrix2x2::identity();
   } else if (newSpecialization == Specialization::ControlledEquiv) {
-    // :math:`U \sim U_d(\alpha, 0, 0)`
-    // Thus, :math:`U \sim \text{Ctrl-U}`
-    //
-    // This gate binds 4 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Ry(\theta_l) Rx(\lambda_l)`
-    // :math:`K2_r = Ry(\theta_r) Rx(\lambda_r)`
     const EulerBasis eulerBasis = EulerBasis::XYX;
     const auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
         anglesFromUnitary(k2l_, eulerBasis);
     const auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
         anglesFromUnitary(k2r_, EulerBasis::XYX);
-    // unmodified parameter a
     b_ = 0.;
     c_ = 0.;
     globalPhase_ = globalPhase_ + k2lphase + k2rphase;
@@ -628,55 +541,35 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     k1r_ = k1r_ * rxMatrix(k2rphi);
     k2r_ = ryMatrix(k2rtheta) * rxMatrix(k2rlambda);
   } else if (newSpecialization == Specialization::MirrorControlledEquiv) {
-    // :math:`U \sim U_d(\pi/4, \pi/4, \alpha)`
-    // Thus, :math:`U \sim \text{SWAP} \cdot \text{Ctrl-U}`
-    //
-    // This gate binds 4 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)`
-    // :math:`K2_r = Ry(\theta_r)\cdot Rz(\lambda_r)`
     const auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
         anglesFromUnitary(k2l_, EulerBasis::ZYZ);
     const auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
         anglesFromUnitary(k2r_, EulerBasis::ZYZ);
     a_ = (std::numbers::pi / 4.0);
     b_ = (std::numbers::pi / 4.0);
-    // unmodified parameter c
     globalPhase_ = globalPhase_ + k2lphase + k2rphase;
     k1l_ = k1l_ * rzMatrix(k2rphi);
     k2l_ = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
     k1r_ = k1r_ * rzMatrix(k2lphi);
     k2r_ = ryMatrix(k2rtheta) * rzMatrix(k2rlambda);
   } else if (newSpecialization == Specialization::FSimaabEquiv) {
-    // :math:`U \sim U_d(\alpha, \alpha, \beta), \alpha \geq |\beta|`
-    //
-    // This gate binds 5 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Ry(\theta_l) \cdot Rz(\lambda_l)`.
     auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
         anglesFromUnitary(k2l_, EulerBasis::ZYZ);
     auto ab = (a_ + b_) / 2.;
 
     a_ = ab;
     b_ = ab;
-    // unmodified parameter c
     globalPhase_ = globalPhase_ + k2lphase;
     k1l_ = k1l_ * rzMatrix(k2lphi);
     k2l_ = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
     k1r_ = k1r_ * rzMatrix(k2lphi);
     k2r_ = rzMatrix(-k2lphi) * k2r_;
   } else if (newSpecialization == Specialization::FSimabbEquiv) {
-    // :math:`U \sim U_d(\alpha, \beta, \beta), \alpha \geq \beta \geq 0`
-    //
-    // This gate binds 5 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Ry(\theta_l) \cdot Rx(\lambda_l)`
     auto eulerBasis = EulerBasis::XYX;
     auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
         anglesFromUnitary(k2l_, eulerBasis);
     auto bc = (b_ + c_) / 2.;
 
-    // unmodified parameter a
     b_ = bc;
     c_ = bc;
     globalPhase_ = globalPhase_ + k2lphase;
@@ -685,17 +578,11 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     k1r_ = k1r_ * rxMatrix(k2lphi);
     k2r_ = rxMatrix(-k2lphi) * k2r_;
   } else if (newSpecialization == Specialization::FSimabmbEquiv) {
-    // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
-    //
-    // This gate binds 5 parameters, we make it canonical by setting:
-    //
-    // :math:`K2_l = Ry(\theta_l) \cdot Rx(\lambda_l)`
     auto eulerBasis = EulerBasis::XYX;
     auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
         anglesFromUnitary(k2l_, eulerBasis);
     auto bc = (b_ - c_) / 2.;
 
-    // unmodified parameter a
     b_ = bc;
     c_ = -bc;
     globalPhase_ = globalPhase_ + k2lphase;
@@ -725,8 +612,6 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
       relativeEq(basisDecomposer.a(), std::numbers::pi / 4.0, 1e-13, 1e-09) &&
       relativeEq(basisDecomposer.c(), 0.0, 1e-13, 1e-09);
 
-  // Create some useful matrices U1, U2, U3 are equivalent to the basis,
-  // expand as Ui = Ki1.Ubasis.Ki2
   auto b = basisDecomposer.b();
   Complex temp{0.5, -0.5};
   const Matrix2x2 k11l = Matrix2x2::fromElements(
@@ -758,7 +643,6 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
   auto k1rDagger = basisDecomposer.k1r().adjoint();
   auto k2lDagger = basisDecomposer.k2l().adjoint();
   auto k2rDagger = basisDecomposer.k2r().adjoint();
-  // Pre-build the fixed parts of the matrices used in 3-part decomposition
   auto u0l = k31l * k1lDagger;
   auto u0r = k31r * k1rDagger;
   auto u1l = k2lDagger * k32lK21l * k1lDagger;
@@ -770,7 +654,6 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
   auto u2rb = k11r * k1rDagger;
   auto u3l = k2lDagger * k12LArr;
   auto u3r = k2rDagger * k12RArr;
-  // Pre-build the fixed parts of the matrices used in the 2-part decomposition
   auto q0l = k12LArr.adjoint() * k1lDagger;
   auto q0r = k12RArr.adjoint() * iPauliZ() * k1rDagger;
   auto q1la = k2lDagger * k11l.adjoint();
@@ -812,8 +695,7 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
     std::optional<std::uint8_t> numBasisGateUses) const {
   auto traces = this->traces(targetDecomposition);
   auto getDefaultNbasis = [&]() -> std::uint8_t {
-    // Pick the number of basis gate uses `i ∈ {0, 1, 2, 3}` that maximizes
-    //   expected_fidelity(i) = traceToFidelity(traces[i]) * basisFidelity^i.
+    // Maximize traceToFidelity(traces[i]) * basisFidelity^i over i in {0..3}.
     auto bestValue = std::numeric_limits<double>::lowest();
     auto bestIndex = -1;
     for (int i = 0; std::cmp_less(i, traces.size()); ++i) {
@@ -832,11 +714,9 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
     }
     return static_cast<std::uint8_t>(bestIndex);
   };
-  // number of basis gates that need to be used in the decomposition
   auto bestNbasis = numBasisGateUses.value_or(getDefaultNbasis());
   if (bestNbasis > 1 && !isSuperControlled) {
-    // cannot reliably decompose with more than one basis gate and a
-    // non-super-controlled basis gate
+    // More than one basis gate requires a super-controlled basis (e.g. CX).
     return std::nullopt;
   }
   auto chooseDecomposition = [&]() {
@@ -862,14 +742,9 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
   double globalPhase = targetDecomposition.globalPhase();
   globalPhase -= bestNbasis * basisDecomposer.globalPhase();
   if (bestNbasis == 2) {
-    // The two-basis (2x CX/CZ) template in `decomp2Supercontrolled` produces
-    // a sequence whose global phase is off by `pi` relative to the target;
-    // compensate here so the emitted sequence reproduces the target unitary
-    // exactly, not just up to sign.
+    // Two-basis template is exact up to a pi global-phase offset.
     globalPhase += std::numbers::pi;
   }
-  // large global phases can be generated by the decomposition, thus limit
-  // it to [0, +2*pi)
   globalPhase = remEuclid(globalPhase, 2.0 * std::numbers::pi);
 
   return TwoQubitNativeDecomposition{
@@ -889,7 +764,7 @@ TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
 
 SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp1(
     const TwoQubitWeylDecomposition& target) const {
-  // may not work for z != 0 and c != 0 (not always in Weyl chamber)
+  // One basis gate; reliable only when the target is in the Weyl chamber.
   return SmallVector<Matrix2x2, 8>{
       basisDecomposer.k2r().adjoint() * target.k2r(),
       basisDecomposer.k2l().adjoint() * target.k2l(),
@@ -936,16 +811,8 @@ SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp3Supercontrolled(
 
 std::array<std::complex<double>, 4>
 TwoQubitBasisDecomposer::traces(const TwoQubitWeylDecomposition& target) const {
-  // Returns the Hilbert-Schmidt traces between the target canonical gate and
-  // the best candidate reachable with `0, 1, 2, 3` uses of the basis gate,
-  // respectively. Fed into `traceToFidelity` by `getDefaultNbasis` to pick
-  // the best basis-gate count. The closed-form expressions specialize
-  // `TwoQubitWeylDecomposition::getTrace(a, b, c, ap, bp, cp)` for:
-  //   i == 0: no basis gate       (ap == bp == cp == 0)
-  //   i == 1: one basis use       (ap == pi/4, bp == basis.b, cp == 0)
-  //   i == 2: two basis uses      (ap == 0, bp == 0, cp == -target.c)
-  //   i == 3: three basis uses    (target reachable exactly -> trace == 4)
-  // so the array has length 4 and is indexed by the number of basis uses.
+  // Hilbert-Schmidt traces for 0..3 basis uses; index i == numBasisUses.
+  // i=0: identity; i=1: one basis gate; i=2: two uses; i=3: exact (trace=4).
   return {
       4. * std::complex<double>{std::cos(target.a()) * std::cos(target.b()) *
                                     std::cos(target.c()),
