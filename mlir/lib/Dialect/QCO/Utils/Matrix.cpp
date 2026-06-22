@@ -443,9 +443,10 @@ Matrix4x4 Matrix4x4::fromDiagonal(const ArrayRef<Complex> diagonalEntries) {
   assert(diagonalEntries.size() == K_ROWS &&
          "fromDiagonal requires exactly K_ROWS entries");
   Matrix4x4 out{};
-  for (std::size_t i = 0; i < K_ROWS; ++i) {
-    out.data[(i * K_COLS) + i] = diagonalEntries[i];
-  }
+  out.data[0] = diagonalEntries[0];
+  out.data[5] = diagonalEntries[1];
+  out.data[10] = diagonalEntries[2];
+  out.data[15] = diagonalEntries[3];
   return out;
 }
 
@@ -470,9 +471,10 @@ void Matrix4x4::setColumn(const std::size_t col,
   assert(col < K_COLS);
   assert(values.size() == K_ROWS &&
          "setColumn requires exactly K_ROWS entries");
-  for (std::size_t row = 0; row < K_ROWS; ++row) {
-    data[(row * K_COLS) + col] = values[row];
-  }
+  data[col] = values[0];
+  data[K_COLS + col] = values[1];
+  data[(2 * K_COLS) + col] = values[2];
+  data[(3 * K_COLS) + col] = values[3];
 }
 
 ArrayRef<const Complex> Matrix4x4::row(const std::size_t row) const {
@@ -483,9 +485,11 @@ ArrayRef<const Complex> Matrix4x4::row(const std::size_t row) const {
 void Matrix4x4::setRow(const std::size_t row, const ArrayRef<Complex> values) {
   assert(row < K_ROWS);
   assert(values.size() == K_COLS && "setRow requires exactly K_COLS entries");
-  for (std::size_t col = 0; col < K_COLS; ++col) {
-    data[(row * K_COLS) + col] = values[col];
-  }
+  const std::size_t rowBase = row * K_COLS;
+  data[rowBase + 0] = values[0];
+  data[rowBase + 1] = values[1];
+  data[rowBase + 2] = values[2];
+  data[rowBase + 3] = values[3];
 }
 
 std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
@@ -805,7 +809,7 @@ Matrix4x4::symmetricEigen4(const std::array<double, 16>& symmetric) {
 
   for (std::size_t col = 0; col < n; ++col) {
     for (std::size_t row = 0; row < n; ++row) {
-      result.eigenvectors(row, col) = Complex{z[row + (col * n)], 0.0};
+      result.eigenvectors(row, col) = z[row + (col * n)];
     }
   }
   return result;
