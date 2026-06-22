@@ -218,14 +218,16 @@ MeasurementResult QuantumState::resetQubit(const unsigned int target) {
 }
 
 bool QuantumState::isQubitAlwaysOne(const unsigned int q) const {
-  const auto mask = 1U << q;
+  const auto localIndex = globalToLocalQubitNumber.at(q);
+  const auto mask = 1U << localIndex;
   return std::ranges::all_of(
       amplitudeMap | std::views::keys,
       [mask](auto qubits) { return (qubits & mask) == mask; });
 }
 
 bool QuantumState::isQubitAlwaysZero(const unsigned int q) const {
-  const auto mask = 1U << q;
+  const auto localIndex = globalToLocalQubitNumber.at(q);
+  const auto mask = 1U << localIndex;
   return std::ranges::all_of(
       amplitudeMap | std::views::keys,
       [mask](auto qubits) { return (qubits & mask) == 0; });

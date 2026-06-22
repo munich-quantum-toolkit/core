@@ -14,15 +14,19 @@
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
+#include <mlir/IR/Value.h>
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace mlir::qco {
 
@@ -31,8 +35,8 @@ namespace mlir::qco {
  */
 struct SuperfluousResult {
   bool completelySuperfluous = false;
-  std::vector<Value> superfluousQubits;
-  std::vector<Value> superfluousClassicalValues;
+  llvm::DenseSet<Value> superfluousQubits;
+  llvm::DenseSet<Value> superfluousClassicalValues;
 };
 
 /**
@@ -434,8 +438,8 @@ public:
    */
   [[nodiscard(
       "UnionTable::getValueThatIsEquivalentToQubit called but ignored")]] std::
-      pair<std::optional<Value>, bool>
-      getValueThatIsEquivalentToQubit(unsigned int qubit) const;
+      optional<std::pair<Value, bool>>
+      getValueThatIsEquivalentToQubit(Value qubit) const;
 
   /**
    * @brief This method checks whether a diagonal gate only adds a global phase
@@ -479,7 +483,7 @@ public:
    * @returns The superfluous result, i.e. the qubits and classical values that
    * are superfluous and whether the whole operation is superfluous.
    */
-  static SuperfluousResult
+  SuperfluousResult
   getSuperfluousControls(std::span<Value> qubitTargets,
                          std::span<Value> qubitCtrls,
                          std::span<Value> posCtrlsClassical = {},
@@ -496,10 +500,9 @@ public:
    * values.
    * @returns Whether there are satisfiable combinations or not.
    */
-  static bool
-  areThereSatisfiableCombinations(std::span<Value> qubitCtrls,
-                                  std::span<Value> posCtrlsClassical = {},
-                                  std::span<Value> negCtrlsClassical = {});
+  bool areThereSatisfiableCombinations(std::span<Value> qubitCtrls,
+                                       std::span<Value> posCtrlsClassical = {},
+                                       std::span<Value> negCtrlsClassical = {});
 
   /**
    * @brief Returns the qubits and classical values that imply the given qubit.
@@ -517,7 +520,7 @@ public:
    * of q.
    */
   static std::pair<std::set<Value>, std::set<Value>>
-  getAntecedentsOfQubit(unsigned int q, std::span<Value> qubits,
+  getAntecedentsOfQubit(Value q, std::span<Value> qubits,
                         std::span<Value> classicalPositive,
                         std::span<Value> classicalNegative);
 };
