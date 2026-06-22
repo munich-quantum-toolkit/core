@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
@@ -271,10 +272,7 @@ Matrix2x2 Matrix2x2::operator*(const Matrix2x2& rhs) const {
   return out;
 }
 
-void Matrix2x2::premultiplyBy(const Matrix2x2& lhs) {
-  const std::array<Complex, K_SIZE_AT_COMPILE_TIME> rhs = data;
-  multiply2x2(lhs.data, rhs, data);
-}
+void Matrix2x2::premultiplyBy(const Matrix2x2& lhs) { *this = lhs * *this; }
 
 Matrix2x2 Matrix2x2::operator*(const Complex& scalar) const {
   Matrix2x2 out = *this;
@@ -377,10 +375,7 @@ Matrix4x4 Matrix4x4::operator*(const Matrix4x4& rhs) const {
   return out;
 }
 
-void Matrix4x4::premultiplyBy(const Matrix4x4& lhs) {
-  const std::array<Complex, K_SIZE_AT_COMPILE_TIME> rhs = data;
-  multiply4x4(lhs.data, rhs, data);
-}
+void Matrix4x4::premultiplyBy(const Matrix4x4& lhs) { *this = lhs * *this; }
 
 Matrix4x4 Matrix4x4::operator*(const Complex& scalar) const {
   Matrix4x4 out = *this;
