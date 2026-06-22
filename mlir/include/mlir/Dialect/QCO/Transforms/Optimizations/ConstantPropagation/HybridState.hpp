@@ -118,7 +118,7 @@ class HybridState {
         reset ? qState->resetQubit(quantumTarget)
               : qState->measureQubit(quantumTarget);
 
-    for (const size_t i : {0, 1}) {
+    for (const long i : {0, 1}) {
       if (!availableStates.contains(i) || !availableStates.at(i)) {
         continue;
       }

@@ -21,6 +21,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace mlir::qco {
 
@@ -306,8 +307,8 @@ bool UnionTable::hasAlwaysZeroProbability(
     std::span<std::pair<Value, int64_t>> classicalIntegerValues,
     std::span<std::pair<Value, double>> classicalDoubleValues) const {}
 
-std::pair<std::optional<Value>, bool>
-UnionTable::getValueThatIsEquivalentToQubit(unsigned int qubit) const {}
+std::optional<std::pair<Value, bool>>
+UnionTable::getValueThatIsEquivalentToQubit(Value qubit) const {}
 
 std::optional<double> UnionTable::globalPhaseThatIsAdded(
     Operation* diagonalOp, std::span<Value> targets,
@@ -323,7 +324,7 @@ bool UnionTable::areThereSatisfiableCombinations(
     std::span<Value> negCtrlsClassical) {}
 std::pair<std::set<Value>, std::set<Value>>
 
-UnionTable::getAntecedentsOfQubit(unsigned int q, std::span<Value> qubits,
+UnionTable::getAntecedentsOfQubit(Value q, std::span<Value> qubits,
                                   std::span<Value> classicalPositive,
                                   std::span<Value> classicalNegative) {}
 
