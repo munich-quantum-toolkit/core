@@ -31,14 +31,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 using mlir::qco::Matrix2x2;
 using mlir::qco::Matrix4x4;
 
 namespace mlir::qco::decomposition {
-namespace {
 
-std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
+static std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
   return llvm::StringSwitch<std::optional<NativeGateKind>>(name)
       .Case("u", NativeGateKind::U)
       .Case("x", NativeGateKind::X)
@@ -53,7 +53,7 @@ std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
       .Default(std::nullopt);
 }
 
-std::optional<llvm::DenseSet<NativeGateKind>>
+static std::optional<llvm::DenseSet<NativeGateKind>>
 parseGateSet(llvm::StringRef nativeGates) {
   llvm::DenseSet<NativeGateKind> gates;
   SmallVector<llvm::StringRef> parts;
@@ -72,7 +72,8 @@ parseGateSet(llvm::StringRef nativeGates) {
   return gates;
 }
 
-bool hasSingleQubitStrategy(const llvm::DenseSet<NativeGateKind>& gates) {
+static bool
+hasSingleQubitStrategy(const llvm::DenseSet<NativeGateKind>& gates) {
   const auto has = [&](NativeGateKind kind) { return gates.contains(kind); };
   if (has(NativeGateKind::U)) {
     return true;
@@ -89,7 +90,8 @@ bool hasSingleQubitStrategy(const llvm::DenseSet<NativeGateKind>& gates) {
          (has(NativeGateKind::Ry) && has(NativeGateKind::Rz));
 }
 
-std::optional<NativeGateKind> selectEntangler(const NativeProfileSpec& spec) {
+static std::optional<NativeGateKind>
+selectEntangler(const NativeProfileSpec& spec) {
   if (spec.gates.contains(NativeGateKind::Cx)) {
     return NativeGateKind::Cx;
   }
@@ -99,12 +101,12 @@ std::optional<NativeGateKind> selectEntangler(const NativeProfileSpec& spec) {
   return std::nullopt;
 }
 
-Matrix4x4 entanglerMatrix(NativeGateKind entangler) {
+static Matrix4x4 entanglerMatrix(NativeGateKind entangler) {
   return entangler == NativeGateKind::Cz ? mlir::qco::twoQubitControlledZ()
                                          : mlir::qco::twoQubitControlledX01();
 }
 
-std::optional<TwoQubitNativeDecomposition>
+static std::optional<TwoQubitNativeDecomposition>
 decomposeForProfile(const Matrix4x4& target, const NativeProfileSpec& spec) {
   const auto entangler = selectEntangler(spec);
   if (!entangler) {
@@ -113,21 +115,23 @@ decomposeForProfile(const Matrix4x4& target, const NativeProfileSpec& spec) {
   return decomposeTwoQubitWithBasis(target, entanglerMatrix(*entangler));
 }
 
-void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc, double phase) {
+static void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc,
+                                   double phase) {
   constexpr double epsilon = 1e-12;
   if (std::abs(phase) > epsilon) {
     GPhaseOp::create(builder, loc, phase);
   }
 }
 
-Value emitSingleQubitMatrix(OpBuilder& builder, Location loc, Value inQubit,
-                            const Matrix2x2& matrix, EulerBasis basis) {
+static Value emitSingleQubitMatrix(OpBuilder& builder, Location loc,
+                                   Value inQubit, const Matrix2x2& matrix,
+                                   EulerBasis basis) {
   return *synthesizeUnitary1QEuler(builder, loc, inQubit, matrix,
                                    /*runSize=*/0, /*hasNonBasisGate=*/true,
                                    basis);
 }
 
-std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
+static std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
   Operation* raw = op.getOperation();
   if (llvm::isa<UOp>(raw)) {
     return NativeGateKind::U;
@@ -153,7 +157,7 @@ std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
   return std::nullopt;
 }
 
-std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
+static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
   if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
     return std::nullopt;
   }
@@ -166,8 +170,6 @@ std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
   }
   return std::nullopt;
 }
-
-} // namespace
 
 EulerBasis NativeProfileSpec::eulerBasis() const {
   const auto has = [&](NativeGateKind kind) { return gates.contains(kind); };
@@ -194,11 +196,11 @@ EulerBasis NativeProfileSpec::eulerBasis() const {
 }
 
 std::optional<NativeProfileSpec> parseNativeSpec(llvm::StringRef nativeGates) {
-  const auto gates = parseGateSet(nativeGates);
+  auto gates = parseGateSet(nativeGates);
   if (!gates || gates->empty() || !hasSingleQubitStrategy(*gates)) {
     return std::nullopt;
   }
-  return NativeProfileSpec{.gates = std::move(*gates)};
+  return NativeProfileSpec{.gates = std::move(gates).value()};
 }
 
 LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
