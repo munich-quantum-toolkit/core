@@ -97,9 +97,9 @@ static Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
 }
 
 static Matrix4x4 restoreWeyl(const TwoQubitWeylDecomposition& decomposition) {
-  return kron(decomposition.k1l(), decomposition.k1r()) *
+  return Matrix4x4::kron(decomposition.k1l(), decomposition.k1r()) *
          decomposition.getCanonicalMatrix() *
-         kron(decomposition.k2l(), decomposition.k2r()) *
+         Matrix4x4::kron(decomposition.k2l(), decomposition.k2r()) *
          globalPhaseFactor(decomposition.globalPhase());
 }
 
@@ -107,7 +107,7 @@ static Matrix4x4 restoreBasis(const TwoQubitNativeDecomposition& decomposition,
                               const Matrix4x4& entangler) {
   const auto& factors = decomposition.singleQubitFactors;
   const auto layer = [&](std::size_t i) {
-    return kron(factors[(2 * i) + 1], factors[2 * i]);
+    return Matrix4x4::kron(factors[(2 * i) + 1], factors[2 * i]);
   };
   Matrix4x4 matrix = layer(0);
   for (std::uint8_t i = 0; i < decomposition.numBasisUses; ++i) {
@@ -120,8 +120,12 @@ static Matrix4x4 restoreBasis(const TwoQubitNativeDecomposition& decomposition,
 static auto productMatrixCases() {
   return ::testing::Values(
       []() -> Matrix4x4 { return Matrix4x4::identity(); },
-      []() -> Matrix4x4 { return kron(rzMatrix(1.0), ryMatrix(3.1)); },
-      []() -> Matrix4x4 { return kron(Matrix2x2::identity(), rxMatrix(0.1)); });
+      []() -> Matrix4x4 {
+        return Matrix4x4::kron(rzMatrix(1.0), ryMatrix(3.1));
+      },
+      []() -> Matrix4x4 {
+        return Matrix4x4::kron(Matrix2x2::identity(), rxMatrix(0.1));
+      });
 }
 
 static auto entangledMatrixCases() {
@@ -132,16 +136,16 @@ static auto entangledMatrixCases() {
       },
       []() -> Matrix4x4 {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
-               kron(rxMatrix(1.0), Matrix2x2::identity());
+               Matrix4x4::kron(rxMatrix(1.0), Matrix2x2::identity());
       },
       []() -> Matrix4x4 {
-        return kron(rxMatrix(1.0), ryMatrix(1.0)) *
+        return Matrix4x4::kron(rxMatrix(1.0), ryMatrix(1.0)) *
                TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
-               kron(rxMatrix(1.0), Matrix2x2::identity());
+               Matrix4x4::kron(rxMatrix(1.0), Matrix2x2::identity());
       },
       []() -> Matrix4x4 {
-        return kron(hGate(), iPauliZ()) * twoQubitControlledX01() *
-               kron(iPauliX(), iPauliY());
+        return Matrix4x4::kron(hGate(), iPauliZ()) * twoQubitControlledX01() *
+               Matrix4x4::kron(iPauliX(), iPauliY());
       });
 }
 
@@ -225,7 +229,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
       if (!extractSingleQubitMatrix(op, oneQ)) {
         return std::nullopt;
       }
-      unitary = embedSingleQubitInTwoQubit(oneQ, *qid) * unitary;
+      unitary = oneQ.embedInTwoQubit(*qid) * unitary;
       wireIds[op->getResult(0)] = *qid;
       continue;
     }
@@ -243,7 +247,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
         return std::nullopt;
       }
       const llvm::SmallVector<QubitId, 2> ids{*q0id, *q1id};
-      unitary = reorderTwoQubitMatrix(twoQ, ids[0], ids[1]) * unitary;
+      unitary = twoQ.reorderForQubits(ids[0], ids[1]) * unitary;
       wireIds[op->getResult(0)] = *q0id;
       wireIds[op->getResult(1)] = *q1id;
     }
@@ -442,17 +446,21 @@ TEST_P(WeylSynthesisTest, PreservesTargetUnitary) {
 
 INSTANTIATE_TEST_SUITE_P(
     Profiles, WeylSynthesisTest,
-    testing::Values(
-        WeylSynthesisCase{"CxGeneric", "u,cx",
-                          [] { return twoQubitControlledX01(); }},
-        WeylSynthesisCase{"ProductGeneric", "u,cx",
-                          [] { return kron(rzMatrix(1.0), ryMatrix(0.3)); }},
-        WeylSynthesisCase{"IbmBasic", "x,sx,rz,cx",
-                          [] {
-                            return kron(hGate(), Matrix2x2::identity()) *
-                                   twoQubitControlledX01() *
-                                   kron(rzMatrix(0.2), ryMatrix(0.1));
-                          }}),
+    testing::Values(WeylSynthesisCase{"CxGeneric", "u,cx",
+                                      [] { return twoQubitControlledX01(); }},
+                    WeylSynthesisCase{"ProductGeneric", "u,cx",
+                                      [] {
+                                        return Matrix4x4::kron(rzMatrix(1.0),
+                                                               ryMatrix(0.3));
+                                      }},
+                    WeylSynthesisCase{
+                        "IbmBasic", "x,sx,rz,cx",
+                        [] {
+                          return Matrix4x4::kron(hGate(),
+                                                 Matrix2x2::identity()) *
+                                 twoQubitControlledX01() *
+                                 Matrix4x4::kron(rzMatrix(0.2), ryMatrix(0.1));
+                        }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });

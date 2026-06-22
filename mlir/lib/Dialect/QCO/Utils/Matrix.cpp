@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
@@ -27,14 +28,20 @@
 
 namespace mlir::qco {
 
+/// Returns true if @p lhs and @p rhs differ by at most @p tol (complex
+/// modulus).
+[[nodiscard]] static bool entryIsApprox(const Complex& lhs, const Complex& rhs,
+                                        const double tol) {
+  return std::abs(lhs - rhs) <= tol;
+}
+
 /// Returns true if every entry pair differs by at most @p tol (complex
 /// modulus).
 [[nodiscard]] static bool entriesAreApprox(ArrayRef<Complex> lhs,
                                            ArrayRef<Complex> rhs, double tol) {
-  return std::ranges::equal(lhs, rhs,
-                            [tol](const Complex& a, const Complex& b) {
-                              return std::abs(a - b) <= tol;
-                            });
+  return llvm::equal(lhs, rhs, [tol](const Complex& a, const Complex& b) {
+    return entryIsApprox(a, b, tol);
+  });
 }
 
 /// Writes the conjugate transpose of @p in into @p out (square, row-major).
@@ -94,13 +101,6 @@ static void multiply2x2(const ArrayRef<Complex> lhs,
   out[3] = lhs[2] * rhs[1] + lhs[3] * rhs[3];
 }
 
-static void
-multiply2x2(const std::array<Complex, Matrix2x2::K_SIZE_AT_COMPILE_TIME>& lhs,
-            const std::array<Complex, Matrix2x2::K_SIZE_AT_COMPILE_TIME>& rhs,
-            std::array<Complex, Matrix2x2::K_SIZE_AT_COMPILE_TIME>& out) {
-  multiply2x2(ArrayRef(lhs), ArrayRef(rhs), MutableArrayRef(out));
-}
-
 /// Writes the row-major product `lhs * rhs` into @p out (4x4, unrolled rows).
 static void multiply4x4(const ArrayRef<Complex> lhs,
                         const ArrayRef<Complex> rhs,
@@ -121,24 +121,17 @@ static void multiply4x4(const ArrayRef<Complex> lhs,
   }
 }
 
-static void
-multiply4x4(const std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME>& lhs,
-            const std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME>& rhs,
-            std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME>& out) {
-  multiply4x4(ArrayRef(lhs), ArrayRef(rhs), MutableArrayRef(out));
-}
-
 /// Returns true if @p data is approximately the @p dim x @p dim identity
 /// matrix.
-template <std::size_t Dim>
-[[nodiscard]] static bool
-isIdentityEntries(const std::array<Complex, Dim * Dim>& data,
-                  const double tol) {
-  for (std::size_t row = 0; row < Dim; ++row) {
-    for (std::size_t col = 0; col < Dim; ++col) {
-      const Complex& entry = data[(row * Dim) + col];
+[[nodiscard]] static bool isIdentityEntries(ArrayRef<Complex> data,
+                                            const std::size_t dim,
+                                            const double tol) {
+  assert(data.size() >= dim * dim);
+  for (std::size_t row = 0; row < dim; ++row) {
+    for (std::size_t col = 0; col < dim; ++col) {
+      const Complex& entry = data[(row * dim) + col];
       if (row == col) {
-        if (std::abs(entry - Complex{1.0, 0.0}) > tol) {
+        if (!entryIsApprox(entry, Complex{1.0, 0.0}, tol)) {
           return false;
         }
       } else if (std::abs(entry) > tol) {
@@ -160,6 +153,14 @@ isIdentityEntries(const std::array<Complex, Dim * Dim>& data,
 [[nodiscard]] static std::size_t checkedStorageSize(const std::int64_t dim) {
   const auto udim = checkedDim(dim);
   return udim * udim;
+}
+
+/// Returns `2^numQubits` as `int64_t` after checking it fits.
+[[nodiscard]] static std::int64_t
+checkedHilbertDim(const std::size_t numQubits) {
+  assert(numQubits < std::numeric_limits<std::int64_t>::digits &&
+         "Hilbert-space dimension must fit in int64_t");
+  return std::int64_t{static_cast<int64_t>(std::uint64_t{1} << numQubits)};
 }
 
 static void validateCornerDims(const std::int64_t matrixDim,
@@ -187,10 +188,41 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
   }
 }
 
-struct DynamicMatrix::Impl {
-  std::int64_t dim = 0;
-  SmallVector<Complex> data;
-};
+/**
+ * @brief Returns the @p qubitIndex bit of a computational-basis label.
+ *
+ * Qubit 0 is the MSB of @p stateIndex, matching @ref Matrix4x4::kron and
+ * @ref Matrix2x2::embedInNqubit.
+ */
+[[nodiscard]] static std::size_t qubitBitAt(const std::size_t stateIndex,
+                                            const std::size_t numQubits,
+                                            const std::size_t qubitIndex) {
+  return (stateIndex >> (numQubits - 1 - qubitIndex)) & 1U;
+}
+
+/**
+ * @brief True when row and col agree on every wire except @p skipA and @p
+ * skipB.
+ *
+ * Used when embedding a gate: untouched qubits must match or the matrix entry
+ * is zero. For a single-qubit embed, pass @p skipB = @p numQubits so only @p
+ * skipA is skipped.
+ */
+[[nodiscard]] static bool otherQubitBitsMatch(const std::size_t row,
+                                              const std::size_t col,
+                                              const std::size_t numQubits,
+                                              const std::size_t skipA,
+                                              const std::size_t skipB) {
+  for (std::size_t q = 0; q < numQubits; ++q) {
+    if (q == skipA || q == skipB) {
+      continue;
+    }
+    if (qubitBitAt(row, numQubits, q) != qubitBitAt(col, numQubits, q)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 Matrix1x1 Matrix1x1::fromElements(const Complex m00) { return {m00}; }
 
@@ -206,7 +238,7 @@ Complex Matrix1x1::operator()(const std::size_t row,
 }
 
 bool Matrix1x1::isApprox(const Matrix1x1& other, const double tol) const {
-  return std::abs(value - other.value) <= tol;
+  return entryIsApprox(value, other.value, tol);
 }
 
 bool Matrix1x1::assignFrom(const DynamicMatrix& src) {
@@ -248,10 +280,7 @@ Matrix2x2 Matrix2x2::operator*(const Matrix2x2& rhs) const {
   return out;
 }
 
-void Matrix2x2::premultiplyBy(const Matrix2x2& lhs) {
-  const std::array<Complex, K_SIZE_AT_COMPILE_TIME> rhs = data;
-  multiply2x2(lhs.data, rhs, data);
-}
+void Matrix2x2::premultiplyBy(const Matrix2x2& lhs) { *this = lhs * *this; }
 
 Matrix2x2 Matrix2x2::operator*(const Complex& scalar) const {
   Matrix2x2 out = *this;
@@ -282,7 +311,7 @@ Complex Matrix2x2::determinant() const {
 }
 
 bool Matrix2x2::isIdentity(const double tol) const {
-  return isIdentityEntries<K_ROWS>(data, tol);
+  return isIdentityEntries(data, K_ROWS, tol);
 }
 
 bool Matrix2x2::isApprox(const Matrix2x2& other, const double tol) const {
@@ -291,6 +320,40 @@ bool Matrix2x2::isApprox(const Matrix2x2& other, const double tol) const {
 
 bool Matrix2x2::assignFrom(const DynamicMatrix& src) {
   return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
+}
+
+DynamicMatrix Matrix2x2::embedInNqubit(const std::size_t numQubits,
+                                       const std::size_t qubitIndex) const {
+  assert(qubitIndex < numQubits &&
+         "Invalid qubit index for single-qubit embed");
+  if (numQubits == 2) {
+    return DynamicMatrix(embedInTwoQubit(qubitIndex));
+  }
+  const auto dim = checkedHilbertDim(numQubits);
+  DynamicMatrix out(dim);
+  const auto udim = static_cast<std::size_t>(dim);
+  for (std::size_t row = 0; row < udim; ++row) {
+    for (std::size_t col = 0; col < udim; ++col) {
+      if (!otherQubitBitsMatch(row, col, numQubits, qubitIndex, numQubits)) {
+        continue;
+      }
+      const std::size_t rowBit = qubitBitAt(row, numQubits, qubitIndex);
+      const std::size_t colBit = qubitBitAt(col, numQubits, qubitIndex);
+      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
+          (*this)(rowBit, colBit);
+    }
+  }
+  return out;
+}
+
+Matrix4x4 Matrix2x2::embedInTwoQubit(const std::size_t qubitIndex) const {
+  if (qubitIndex == 0) {
+    return Matrix4x4::kron(*this, Matrix2x2::identity());
+  }
+  if (qubitIndex == 1) {
+    return Matrix4x4::kron(Matrix2x2::identity(), *this);
+  }
+  llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
 }
 
 Matrix4x4 Matrix4x4::fromElements(const Complex& m00, const Complex& m01,
@@ -320,10 +383,7 @@ Matrix4x4 Matrix4x4::operator*(const Matrix4x4& rhs) const {
   return out;
 }
 
-void Matrix4x4::premultiplyBy(const Matrix4x4& lhs) {
-  const std::array<Complex, K_SIZE_AT_COMPILE_TIME> rhs = data;
-  multiply4x4(lhs.data, rhs, data);
-}
+void Matrix4x4::premultiplyBy(const Matrix4x4& lhs) { *this = lhs * *this; }
 
 Matrix4x4 Matrix4x4::operator*(const Complex& scalar) const {
   Matrix4x4 out = *this;
@@ -372,15 +432,16 @@ Complex Matrix4x4::determinant() const {
 }
 
 bool Matrix4x4::isIdentity(const double tol) const {
-  return isIdentityEntries<K_ROWS>(data, tol);
+  return isIdentityEntries(data, K_ROWS, tol);
 }
 
 std::array<Complex, Matrix4x4::K_ROWS> Matrix4x4::diagonal() const {
   return {data[0], data[5], data[10], data[15]};
 }
 
-Matrix4x4
-Matrix4x4::fromDiagonal(const std::array<Complex, K_ROWS>& diagonalEntries) {
+Matrix4x4 Matrix4x4::fromDiagonal(const ArrayRef<Complex> diagonalEntries) {
+  assert(diagonalEntries.size() == K_ROWS &&
+         "fromDiagonal requires exactly K_ROWS entries");
   Matrix4x4 out{};
   for (std::size_t i = 0; i < K_ROWS; ++i) {
     out.data[(i * K_COLS) + i] = diagonalEntries[i];
@@ -388,16 +449,42 @@ Matrix4x4::fromDiagonal(const std::array<Complex, K_ROWS>& diagonalEntries) {
   return out;
 }
 
+Matrix4x4 Matrix4x4::kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
+  const auto& a = lhs.data;
+  const auto& b = rhs.data;
+  return fromElements(a[0] * b[0], a[0] * b[1], a[1] * b[0], a[1] * b[1],
+                      a[0] * b[2], a[0] * b[3], a[1] * b[2], a[1] * b[3],
+                      a[2] * b[0], a[2] * b[1], a[3] * b[0], a[3] * b[1],
+                      a[2] * b[2], a[2] * b[3], a[3] * b[2], a[3] * b[3]);
+}
+
 std::array<Complex, Matrix4x4::K_ROWS>
 Matrix4x4::column(const std::size_t col) const {
+  assert(col < K_COLS);
   return {data[col], data[K_COLS + col], data[(2 * K_COLS) + col],
           data[(3 * K_COLS) + col]};
 }
 
 void Matrix4x4::setColumn(const std::size_t col,
-                          const std::array<Complex, K_ROWS>& values) {
+                          const ArrayRef<Complex> values) {
+  assert(col < K_COLS);
+  assert(values.size() == K_ROWS &&
+         "setColumn requires exactly K_ROWS entries");
   for (std::size_t row = 0; row < K_ROWS; ++row) {
     data[(row * K_COLS) + col] = values[row];
+  }
+}
+
+ArrayRef<const Complex> Matrix4x4::row(const std::size_t row) const {
+  assert(row < K_ROWS);
+  return ArrayRef(data).slice(row * K_COLS, K_COLS);
+}
+
+void Matrix4x4::setRow(const std::size_t row, const ArrayRef<Complex> values) {
+  assert(row < K_ROWS);
+  assert(values.size() == K_COLS && "setRow requires exactly K_COLS entries");
+  for (std::size_t col = 0; col < K_COLS; ++col) {
+    data[(row * K_COLS) + col] = values[col];
   }
 }
 
@@ -425,279 +512,50 @@ bool Matrix4x4::assignFrom(const DynamicMatrix& src) {
   return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
 }
 
-DynamicMatrix::DynamicMatrix() : impl_(std::make_unique<Impl>()) {}
-
-DynamicMatrix::DynamicMatrix(const std::int64_t dim)
-    : impl_(std::make_unique<Impl>()) {
-  impl_->dim = dim;
-  impl_->data.assign(checkedStorageSize(dim), Complex{});
-}
-
-DynamicMatrix::DynamicMatrix(const Matrix2x2& src)
-    : impl_(std::make_unique<Impl>()) {
-  assignFrom(src);
-}
-
-DynamicMatrix::DynamicMatrix(const Matrix4x4& src)
-    : impl_(std::make_unique<Impl>()) {
-  assignFrom(src);
-}
-
-DynamicMatrix::DynamicMatrix(const DynamicMatrix& other)
-    : impl_(std::make_unique<Impl>(*other.impl_)) {}
-
-DynamicMatrix::DynamicMatrix(DynamicMatrix&& other) noexcept = default;
-
-DynamicMatrix& DynamicMatrix::operator=(const DynamicMatrix& other) {
-  if (this != &other) {
-    *impl_ = *other.impl_;
+DynamicMatrix Matrix4x4::embedInNqubit(const std::size_t numQubits,
+                                       const std::size_t q0Index,
+                                       const std::size_t q1Index) const {
+  assert(q0Index < numQubits && q1Index < numQubits && q0Index != q1Index &&
+         "Invalid qubit indices for two-qubit embed");
+  if (numQubits == 2) {
+    return DynamicMatrix(reorderForQubits(q0Index, q1Index));
   }
-  return *this;
-}
-
-DynamicMatrix&
-DynamicMatrix::operator=(DynamicMatrix&& other) noexcept = default;
-
-DynamicMatrix::~DynamicMatrix() = default;
-
-std::int64_t DynamicMatrix::rows() const { return impl_->dim; }
-
-std::int64_t DynamicMatrix::cols() const { return impl_->dim; }
-
-DynamicMatrix DynamicMatrix::identity(const std::int64_t dim) {
-  DynamicMatrix matrix(dim);
-  const auto udim = checkedDim(dim);
-  for (std::size_t i = 0; i < udim; ++i) {
-    matrix.impl_->data[(i * udim) + i] = 1.0;
-  }
-  return matrix;
-}
-
-DynamicMatrix DynamicMatrix::fromAdjoint(const Matrix2x2& src) {
-  return DynamicMatrix(src.adjoint());
-}
-
-Complex& DynamicMatrix::operator()(const std::int64_t row,
-                                   const std::int64_t col) {
-  return impl_->data[static_cast<std::size_t>((row * impl_->dim) + col)];
-}
-
-Complex DynamicMatrix::operator()(const std::int64_t row,
-                                  const std::int64_t col) const {
-  return impl_->data[static_cast<std::size_t>((row * impl_->dim) + col)];
-}
-
-void DynamicMatrix::setBottomRightCorner(const Matrix2x2& block) {
-  copyBottomRightCorner(impl_->dim, impl_->data,
-                        static_cast<std::int64_t>(Matrix2x2::K_ROWS),
-                        block.data);
-}
-
-void DynamicMatrix::setBottomRightCorner(const Matrix4x4& block) {
-  copyBottomRightCorner(impl_->dim, impl_->data,
-                        static_cast<std::int64_t>(Matrix4x4::K_ROWS),
-                        block.data);
-}
-
-void DynamicMatrix::setBottomRightCorner(const DynamicMatrix& block) {
-  copyBottomRightCorner(impl_->dim, impl_->data, block.impl_->dim,
-                        block.impl_->data);
-}
-
-DynamicMatrix DynamicMatrix::adjoint() const {
-  DynamicMatrix out(impl_->dim);
-  adjointInto(impl_->data, out.impl_->data, checkedDim(impl_->dim));
-  return out;
-}
-
-void DynamicMatrix::assignFrom(const Matrix1x1& src) {
-  impl_->dim = 1;
-  impl_->data.assign({src.value});
-}
-
-void DynamicMatrix::assignFrom(const Matrix2x2& src) {
-  assignFixedImpl<Matrix2x2::K_ROWS, Matrix2x2::K_SIZE_AT_COMPILE_TIME>(
-      impl_->dim, impl_->data, src.data);
-}
-
-void DynamicMatrix::assignFrom(const Matrix4x4& src) {
-  assignFixedImpl<Matrix4x4::K_ROWS, Matrix4x4::K_SIZE_AT_COMPILE_TIME>(
-      impl_->dim, impl_->data, src.data);
-}
-
-void DynamicMatrix::assignFrom(const DynamicMatrix& src) {
-  *impl_ = *src.impl_;
-}
-
-bool DynamicMatrix::isApprox(const Matrix1x1& other, const double tol) const {
-  if (impl_->dim != 1) {
-    return false;
-  }
-  return std::abs(impl_->data[0] - other.value) <= tol;
-}
-
-bool DynamicMatrix::isApprox(const Matrix2x2& other, const double tol) const {
-  return isApproxFixedImpl<Matrix2x2::K_ROWS,
-                           Matrix2x2::K_SIZE_AT_COMPILE_TIME>(
-      impl_->dim, impl_->data, other.data, tol);
-}
-
-bool DynamicMatrix::isApprox(const Matrix4x4& other, const double tol) const {
-  return isApproxFixedImpl<Matrix4x4::K_ROWS,
-                           Matrix4x4::K_SIZE_AT_COMPILE_TIME>(
-      impl_->dim, impl_->data, other.data, tol);
-}
-
-bool DynamicMatrix::isApprox(const DynamicMatrix& other,
-                             const double tol) const {
-  return entriesAreApprox(impl_->data, other.impl_->data, tol);
-}
-
-Complex DynamicMatrix::trace() const {
-  Complex sum{0.0, 0.0};
-  const auto udim = checkedDim(impl_->dim);
-  for (std::size_t i = 0; i < udim; ++i) {
-    sum += impl_->data[(i * udim) + i];
-  }
-  return sum;
-}
-
-DynamicMatrix DynamicMatrix::operator*(const DynamicMatrix& rhs) const {
-  if (impl_->dim != rhs.impl_->dim) {
-    llvm::reportFatalInternalError(
-        "DynamicMatrix multiply requires matching dimensions");
-  }
-  DynamicMatrix out(impl_->dim);
-  if (impl_->dim == static_cast<std::int64_t>(Matrix2x2::K_ROWS)) {
-    multiply2x2(impl_->data, rhs.impl_->data, out.impl_->data);
-    return out;
-  }
-  if (impl_->dim == static_cast<std::int64_t>(Matrix4x4::K_ROWS)) {
-    multiply4x4(impl_->data, rhs.impl_->data, out.impl_->data);
-    return out;
-  }
-
-  const auto udim = checkedDim(impl_->dim);
+  const auto dim = checkedHilbertDim(numQubits);
+  DynamicMatrix out(dim);
+  const auto udim = static_cast<std::size_t>(dim);
   for (std::size_t row = 0; row < udim; ++row) {
     for (std::size_t col = 0; col < udim; ++col) {
-      Complex sum{0.0, 0.0};
-      for (std::size_t k = 0; k < udim; ++k) {
-        sum +=
-            impl_->data[(row * udim) + k] * rhs.impl_->data[(k * udim) + col];
+      if (!otherQubitBitsMatch(row, col, numQubits, q0Index, q1Index)) {
+        continue;
       }
-      out.impl_->data[(row * udim) + col] = sum;
+      const std::size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
+                                  qubitBitAt(row, numQubits, q1Index);
+      const std::size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
+                                  qubitBitAt(col, numQubits, q1Index);
+      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
+          (*this)(rowPair, colPair);
     }
   }
   return out;
 }
 
-DynamicMatrix DynamicMatrix::operator*(const Complex& scalar) const {
-  DynamicMatrix out(impl_->dim);
-  for (std::size_t i = 0; i < impl_->data.size(); ++i) {
-    out.impl_->data[i] = impl_->data[i] * scalar;
+Matrix4x4 Matrix4x4::reorderForQubits(const std::size_t q0Index,
+                                      const std::size_t q1Index) const {
+  if (q0Index == 0 && q1Index == 1) {
+    return *this;
   }
-  return out;
-}
-
-DynamicMatrix& DynamicMatrix::operator*=(const Complex& scalar) {
-  for (Complex& entry : impl_->data) {
-    entry *= scalar;
+  if (q0Index == 1 && q1Index == 0) {
+    // Conjugate by SWAP: out[i, j] = matrix[pi(i), pi(j)] with pi swapping |01>
+    // and |10> (basis indices 1 and 2).
+    const auto& m = data;
+    return fromElements(m[0], m[2], m[1], m[3], m[8], m[10], m[9], m[11], m[4],
+                        m[6], m[5], m[7], m[12], m[14], m[13], m[15]);
   }
-  return *this;
+  llvm::reportFatalInternalError("Invalid qubit indices for two-qubit reorder");
 }
 
-bool DynamicMatrix::isIdentity(const double tol) const {
-  const auto udim = checkedDim(impl_->dim);
-  for (std::size_t row = 0; row < udim; ++row) {
-    for (std::size_t col = 0; col < udim; ++col) {
-      const Complex& entry = impl_->data[(row * udim) + col];
-      if (row == col) {
-        if (std::abs(entry - Complex{1.0, 0.0}) > tol) {
-          return false;
-        }
-      } else if (std::abs(entry) > tol) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-/**
- * @brief Returns the @p qubitIndex bit of a computational-basis label.
- *
- * Qubit 0 is the MSB of @p stateIndex, matching @ref kron and
- * @ref embedSingleQubitInNqubit.
- */
-[[nodiscard]] static std::size_t qubitBitAt(const std::size_t stateIndex,
-                                            const std::size_t numQubits,
-                                            const std::size_t qubitIndex) {
-  return (stateIndex >> (numQubits - 1 - qubitIndex)) & 1U;
-}
-
-/**
- * @brief True when row and col agree on every wire except @p skipA and @p
- * skipB.
- *
- * Used when embedding a gate: untouched qubits must match or the matrix entry
- * is zero. For a single-qubit embed, pass @p skipB = @p numQubits so only @p
- * skipA is skipped.
- */
-[[nodiscard]] static bool otherQubitBitsMatch(const std::size_t row,
-                                              const std::size_t col,
-                                              const std::size_t numQubits,
-                                              const std::size_t skipA,
-                                              const std::size_t skipB) {
-  for (std::size_t q = 0; q < numQubits; ++q) {
-    if (q == skipA || q == skipB) {
-      continue;
-    }
-    if (qubitBitAt(row, numQubits, q) != qubitBitAt(col, numQubits, q)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-Matrix4x4 kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
-  const auto& a = lhs.data;
-  const auto& b = rhs.data;
-  return Matrix4x4::fromElements(
-      a[0] * b[0], a[0] * b[1], a[1] * b[0], a[1] * b[1], a[0] * b[2],
-      a[0] * b[3], a[1] * b[2], a[1] * b[3], a[2] * b[0], a[2] * b[1],
-      a[3] * b[0], a[3] * b[1], a[2] * b[2], a[2] * b[3], a[3] * b[2],
-      a[3] * b[3]);
-}
-
-Matrix2x2 operator*(const Complex& scalar, const Matrix2x2& matrix) {
-  return matrix * scalar;
-}
-
-Matrix4x4 operator*(const Complex& scalar, const Matrix4x4& matrix) {
-  return matrix * scalar;
-}
-
-DynamicMatrix operator*(const Complex& scalar, const DynamicMatrix& matrix) {
-  return matrix * scalar;
-}
-
-[[nodiscard]] static double pythag2(const double a, const double b) {
-  const double absA = std::abs(a);
-  const double absB = std::abs(b);
-  if (absA > absB) {
-    const double ratio = absB / absA;
-    return absA * std::sqrt(1.0 + (ratio * ratio));
-  }
-  if (absB == 0.0) {
-    return 0.0;
-  }
-  const double ratio = absA / absB;
-  return absB * std::sqrt(1.0 + (ratio * ratio));
-}
-
-[[nodiscard]] static double copySign(const double magnitude,
-                                     const double signSource) {
-  return (signSource >= 0.0) ? std::abs(magnitude) : -std::abs(magnitude);
+SymmetricEigen4 Matrix4x4::symmetricEigen4() const {
+  return symmetricEigen4(realPart());
 }
 
 // Adapted from John Burkardt's MIT-licensed EISPACK C port (`tred2` / `tql2`):
@@ -748,7 +606,7 @@ static void symmetricTred24(const std::array<double, 16>& input,
       h += diag[k] * diag[k];
     }
     const double f = diag[l];
-    const double g = -std::sqrt(h) * copySign(1.0, f);
+    const double g = -std::sqrt(h) * std::copysign(1.0, f);
     subdiag[ui] = scale * g;
     h -= f * g;
     diag[l] = f - g;
@@ -862,9 +720,9 @@ static void symmetricTql24(std::array<double, 4>& diag,
         const std::size_t l2 = l1 + 1;
         const double g = diag[l];
         const double p = (diag[l1] - g) / (2.0 * subdiag[l]);
-        const double r = pythag2(p, 1.0);
-        diag[l] = subdiag[l] / (p + copySign(std::abs(r), p));
-        diag[l1] = subdiag[l] * (p + copySign(std::abs(r), p));
+        const double r = std::hypot(p, 1.0);
+        diag[l] = subdiag[l] / (p + std::copysign(std::abs(r), p));
+        diag[l1] = subdiag[l] * (p + std::copysign(std::abs(r), p));
         const double dl1 = diag[l1];
         const double hh = g - diag[l];
         for (std::size_t i = l2; i < n; ++i) {
@@ -887,7 +745,7 @@ static void symmetricTql24(std::array<double, 4>& diag,
           const std::size_t i = m - ii;
           const double gi = c * subdiag[i];
           const double hi = c * pv;
-          const double ri = pythag2(pv, subdiag[i]);
+          const double ri = std::hypot(pv, subdiag[i]);
           subdiag[i + 1] = s * ri;
           s = subdiag[i] / ri;
           c = pv / ri;
@@ -935,18 +793,17 @@ static void symmetricTql24(std::array<double, 4>& diag,
   }
 }
 
-SymmetricEigen4 symmetricEigen4(const std::array<double, 16>& symmetric) {
+SymmetricEigen4
+Matrix4x4::symmetricEigen4(const std::array<double, 16>& symmetric) {
   constexpr std::size_t n = 4;
 
-  std::array<double, 16> z{};
-  std::array<double, 4> diag{};
-  std::array<double, 4> subdiag{};
-  symmetricTred24(symmetric, z, diag, subdiag);
-  symmetricTql24(diag, subdiag, z);
-
   SymmetricEigen4 result;
+  std::array<double, 16> z{};
+  std::array<double, 4> subdiag{};
+  symmetricTred24(symmetric, z, result.eigenvalues, subdiag);
+  symmetricTql24(result.eigenvalues, subdiag, z);
+
   for (std::size_t col = 0; col < n; ++col) {
-    result.eigenvalues[col] = diag[col];
     for (std::size_t row = 0; row < n; ++row) {
       result.eigenvectors(row, col) = Complex{z[row + (col * n)], 0.0};
     }
@@ -954,8 +811,204 @@ SymmetricEigen4 symmetricEigen4(const std::array<double, 16>& symmetric) {
   return result;
 }
 
-SymmetricEigen4 symmetricEigen4(const Matrix4x4& symmetric) {
-  return symmetricEigen4(symmetric.realPart());
+struct DynamicMatrix::Impl {
+  std::int64_t dim = 0;
+  SmallVector<Complex> data;
+};
+
+DynamicMatrix::DynamicMatrix() : impl_(std::make_unique<Impl>()) {}
+
+DynamicMatrix::DynamicMatrix(const std::int64_t dim)
+    : impl_(std::make_unique<Impl>()) {
+  impl_->dim = dim;
+  impl_->data.assign(checkedStorageSize(dim), Complex{});
+}
+
+DynamicMatrix::DynamicMatrix(const Matrix2x2& src)
+    : impl_(std::make_unique<Impl>()) {
+  assignFrom(src);
+}
+
+DynamicMatrix::DynamicMatrix(const Matrix4x4& src)
+    : impl_(std::make_unique<Impl>()) {
+  assignFrom(src);
+}
+
+DynamicMatrix::DynamicMatrix(const DynamicMatrix& other)
+    : impl_(std::make_unique<Impl>(*other.impl_)) {}
+
+DynamicMatrix::DynamicMatrix(DynamicMatrix&& other) noexcept = default;
+
+DynamicMatrix& DynamicMatrix::operator=(const DynamicMatrix& other) {
+  if (this != &other) {
+    *impl_ = *other.impl_;
+  }
+  return *this;
+}
+
+DynamicMatrix&
+DynamicMatrix::operator=(DynamicMatrix&& other) noexcept = default;
+
+DynamicMatrix::~DynamicMatrix() = default;
+
+std::int64_t DynamicMatrix::rows() const { return impl_->dim; }
+
+std::int64_t DynamicMatrix::cols() const { return impl_->dim; }
+
+DynamicMatrix DynamicMatrix::identity(const std::int64_t dim) {
+  DynamicMatrix matrix(dim);
+  const auto udim = checkedDim(dim);
+  for (std::size_t i = 0; i < udim; ++i) {
+    matrix.impl_->data[(i * udim) + i] = 1.0;
+  }
+  return matrix;
+}
+
+DynamicMatrix DynamicMatrix::fromAdjoint(const Matrix2x2& src) {
+  return DynamicMatrix(src.adjoint());
+}
+
+Complex& DynamicMatrix::operator()(const std::int64_t row,
+                                   const std::int64_t col) {
+  return impl_->data[static_cast<std::size_t>((row * impl_->dim) + col)];
+}
+
+Complex DynamicMatrix::operator()(const std::int64_t row,
+                                  const std::int64_t col) const {
+  return impl_->data[static_cast<std::size_t>((row * impl_->dim) + col)];
+}
+
+void DynamicMatrix::setBottomRightCorner(const Matrix2x2& block) {
+  copyBottomRightCorner(impl_->dim, impl_->data,
+                        static_cast<std::int64_t>(Matrix2x2::K_ROWS),
+                        block.data);
+}
+
+void DynamicMatrix::setBottomRightCorner(const Matrix4x4& block) {
+  copyBottomRightCorner(impl_->dim, impl_->data,
+                        static_cast<std::int64_t>(Matrix4x4::K_ROWS),
+                        block.data);
+}
+
+void DynamicMatrix::setBottomRightCorner(const DynamicMatrix& block) {
+  copyBottomRightCorner(impl_->dim, impl_->data, block.impl_->dim,
+                        block.impl_->data);
+}
+
+DynamicMatrix DynamicMatrix::adjoint() const {
+  DynamicMatrix out(impl_->dim);
+  adjointInto(impl_->data, out.impl_->data, checkedDim(impl_->dim));
+  return out;
+}
+
+void DynamicMatrix::assignFrom(const Matrix1x1& src) {
+  impl_->dim = 1;
+  impl_->data.assign({src.value});
+}
+
+void DynamicMatrix::assignFrom(const Matrix2x2& src) {
+  assignFixedImpl<Matrix2x2::K_ROWS, Matrix2x2::K_SIZE_AT_COMPILE_TIME>(
+      impl_->dim, impl_->data, src.data);
+}
+
+void DynamicMatrix::assignFrom(const Matrix4x4& src) {
+  assignFixedImpl<Matrix4x4::K_ROWS, Matrix4x4::K_SIZE_AT_COMPILE_TIME>(
+      impl_->dim, impl_->data, src.data);
+}
+
+void DynamicMatrix::assignFrom(const DynamicMatrix& src) {
+  *impl_ = *src.impl_;
+}
+
+bool DynamicMatrix::isApprox(const Matrix1x1& other, const double tol) const {
+  if (impl_->dim != 1) {
+    return false;
+  }
+  return entryIsApprox(impl_->data[0], other.value, tol);
+}
+
+bool DynamicMatrix::isApprox(const Matrix2x2& other, const double tol) const {
+  return isApproxFixedImpl<Matrix2x2::K_ROWS,
+                           Matrix2x2::K_SIZE_AT_COMPILE_TIME>(
+      impl_->dim, impl_->data, other.data, tol);
+}
+
+bool DynamicMatrix::isApprox(const Matrix4x4& other, const double tol) const {
+  return isApproxFixedImpl<Matrix4x4::K_ROWS,
+                           Matrix4x4::K_SIZE_AT_COMPILE_TIME>(
+      impl_->dim, impl_->data, other.data, tol);
+}
+
+bool DynamicMatrix::isApprox(const DynamicMatrix& other,
+                             const double tol) const {
+  return entriesAreApprox(impl_->data, other.impl_->data, tol);
+}
+
+Complex DynamicMatrix::trace() const {
+  Complex sum{0.0, 0.0};
+  const auto udim = checkedDim(impl_->dim);
+  for (std::size_t i = 0; i < udim; ++i) {
+    sum += impl_->data[(i * udim) + i];
+  }
+  return sum;
+}
+
+DynamicMatrix DynamicMatrix::operator*(const DynamicMatrix& rhs) const {
+  assert(impl_->dim == rhs.impl_->dim &&
+         "DynamicMatrix multiply requires matching dimensions");
+  DynamicMatrix out(impl_->dim);
+  if (std::cmp_equal(impl_->dim, Matrix2x2::K_ROWS)) {
+    multiply2x2(impl_->data, rhs.impl_->data, out.impl_->data);
+    return out;
+  }
+  if (std::cmp_equal(impl_->dim, Matrix4x4::K_ROWS)) {
+    multiply4x4(impl_->data, rhs.impl_->data, out.impl_->data);
+    return out;
+  }
+
+  const auto udim = checkedDim(impl_->dim);
+  for (std::size_t row = 0; row < udim; ++row) {
+    for (std::size_t col = 0; col < udim; ++col) {
+      Complex sum{0.0, 0.0};
+      for (std::size_t k = 0; k < udim; ++k) {
+        sum +=
+            impl_->data[(row * udim) + k] * rhs.impl_->data[(k * udim) + col];
+      }
+      out.impl_->data[(row * udim) + col] = sum;
+    }
+  }
+  return out;
+}
+
+DynamicMatrix DynamicMatrix::operator*(const Complex& scalar) const {
+  DynamicMatrix out(impl_->dim);
+  for (std::size_t i = 0; i < impl_->data.size(); ++i) {
+    out.impl_->data[i] = impl_->data[i] * scalar;
+  }
+  return out;
+}
+
+DynamicMatrix& DynamicMatrix::operator*=(const Complex& scalar) {
+  for (Complex& entry : impl_->data) {
+    entry *= scalar;
+  }
+  return *this;
+}
+
+bool DynamicMatrix::isIdentity(const double tol) const {
+  return isIdentityEntries(impl_->data, checkedDim(impl_->dim), tol);
+}
+
+Matrix2x2 operator*(const Complex& scalar, const Matrix2x2& matrix) {
+  return matrix * scalar;
+}
+
+Matrix4x4 operator*(const Complex& scalar, const Matrix4x4& matrix) {
+  return matrix * scalar;
+}
+
+DynamicMatrix operator*(const Complex& scalar, const DynamicMatrix& matrix) {
+  return matrix * scalar;
 }
 
 const Matrix4x4& twoQubitSwapMatrix() {
@@ -964,90 +1017,6 @@ const Matrix4x4& twoQubitSwapMatrix() {
                                                           0, 1, 0, 0, //
                                                           0, 0, 0, 1);
   return MATRIX;
-}
-
-Matrix4x4 embedSingleQubitInTwoQubit(const Matrix2x2& matrix,
-                                     const std::size_t qubitIndex) {
-  if (qubitIndex == 0) {
-    return kron(matrix, Matrix2x2::identity());
-  }
-  if (qubitIndex == 1) {
-    return kron(Matrix2x2::identity(), matrix);
-  }
-  llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
-}
-
-Matrix4x4 reorderTwoQubitMatrix(const Matrix4x4& matrix,
-                                const std::size_t q0Index,
-                                const std::size_t q1Index) {
-  if (q0Index == 0 && q1Index == 1) {
-    return matrix;
-  }
-  if (q0Index == 1 && q1Index == 0) {
-    // Conjugate by SWAP: out[i, j] = matrix[pi(i), pi(j)] with pi swapping |01>
-    // and |10> (basis indices 1 and 2).
-    const auto& m = matrix.data;
-    return Matrix4x4::fromElements(m[0], m[2], m[1], m[3], m[8], m[10], m[9],
-                                   m[11], m[4], m[6], m[5], m[7], m[12], m[14],
-                                   m[13], m[15]);
-  }
-  llvm::reportFatalInternalError("Invalid qubit indices for two-qubit reorder");
-}
-
-DynamicMatrix embedSingleQubitInNqubit(const Matrix2x2& matrix,
-                                       const std::size_t numQubits,
-                                       const std::size_t qubitIndex) {
-  if (qubitIndex >= numQubits) {
-    llvm::reportFatalInternalError(
-        "Invalid qubit index for single-qubit embed");
-  }
-  if (numQubits == 2) {
-    return DynamicMatrix(embedSingleQubitInTwoQubit(matrix, qubitIndex));
-  }
-  const auto dim = static_cast<std::int64_t>(1ULL << numQubits);
-  DynamicMatrix out(dim);
-  const auto udim = static_cast<std::size_t>(dim);
-  for (std::size_t row = 0; row < udim; ++row) {
-    for (std::size_t col = 0; col < udim; ++col) {
-      if (!otherQubitBitsMatch(row, col, numQubits, qubitIndex, numQubits)) {
-        continue;
-      }
-      const std::size_t rowBit = qubitBitAt(row, numQubits, qubitIndex);
-      const std::size_t colBit = qubitBitAt(col, numQubits, qubitIndex);
-      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
-          matrix(rowBit, colBit);
-    }
-  }
-  return out;
-}
-
-DynamicMatrix embedTwoQubitInNqubit(const Matrix4x4& matrix,
-                                    const std::size_t numQubits,
-                                    const std::size_t q0Index,
-                                    const std::size_t q1Index) {
-  if (q0Index >= numQubits || q1Index >= numQubits || q0Index == q1Index) {
-    llvm::reportFatalInternalError("Invalid qubit indices for two-qubit embed");
-  }
-  if (numQubits == 2) {
-    return DynamicMatrix(reorderTwoQubitMatrix(matrix, q0Index, q1Index));
-  }
-  const auto dim = static_cast<std::int64_t>(1ULL << numQubits);
-  DynamicMatrix out(dim);
-  const auto udim = static_cast<std::size_t>(dim);
-  for (std::size_t row = 0; row < udim; ++row) {
-    for (std::size_t col = 0; col < udim; ++col) {
-      if (!otherQubitBitsMatch(row, col, numQubits, q0Index, q1Index)) {
-        continue;
-      }
-      const std::size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
-                                  qubitBitAt(row, numQubits, q1Index);
-      const std::size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
-                                  qubitBitAt(col, numQubits, q1Index);
-      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
-          matrix(rowPair, colPair);
-    }
-  }
-  return out;
 }
 
 double remEuclid(double a, double b) {

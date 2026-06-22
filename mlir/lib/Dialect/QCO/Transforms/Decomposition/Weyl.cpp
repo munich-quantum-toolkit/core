@@ -117,7 +117,7 @@ diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
     for (std::size_t k = 0; k < m2Real.size(); ++k) {
       m2Real[k] = (randA * mReal[k]) + (randB * mImag[k]);
     }
-    const Matrix4x4 p = symmetricEigen4(m2Real).eigenvectors;
+    const Matrix4x4 p = Matrix4x4::symmetricEigen4(m2Real).eigenvectors;
     const std::array<Complex, 4> d = (p.transpose() * m * p).diagonal();
 
     const auto compare = p * Matrix4x4::fromDiagonal(d) * p.transpose();
@@ -161,7 +161,8 @@ decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
   r *= (1.0 / std::sqrt(detR));
   const Matrix2x2 rTConj = r.adjoint();
 
-  Matrix4x4 temp = specialUnitary * kron(Matrix2x2::identity(), rTConj);
+  Matrix4x4 temp =
+      specialUnitary * Matrix4x4::kron(Matrix2x2::identity(), rTConj);
 
   Matrix2x2 l =
       Matrix2x2::fromElements(temp(0, 0), temp(0, 2), temp(2, 0), temp(2, 2));
@@ -384,8 +385,8 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   auto [K1l, K1r, phaseL] = decomposeTwoQubitProductGate(k1);
   // decompose k2 = K2l ⊗ K2r
   auto [K2l, K2r, phaseR] = decomposeTwoQubitProductGate(k2);
-  assert(kron(K1l, K1r).isApprox(k1, SANITY_CHECK_PRECISION));
-  assert(kron(K2l, K2r).isApprox(k2, SANITY_CHECK_PRECISION));
+  assert(Matrix4x4::kron(K1l, K1r).isApprox(k1, SANITY_CHECK_PRECISION));
+  assert(Matrix4x4::kron(K2l, K2r).isApprox(k2, SANITY_CHECK_PRECISION));
   // accumulate global phase
   globalPhase += phaseL + phaseR;
 
@@ -459,8 +460,8 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   decomposition.requestedFidelity = fidelity;
 
   // make sure decomposition is equal to input
-  assert((kron(K1l, K1r) * decomposition.getCanonicalMatrix() * kron(K2l, K2r) *
-          globalPhaseFactor(globalPhase))
+  assert((Matrix4x4::kron(K1l, K1r) * decomposition.getCanonicalMatrix() *
+          Matrix4x4::kron(K2l, K2r) * globalPhaseFactor(globalPhase))
              .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
   // determine actual specialization of canonical gate so that the 1q
@@ -492,9 +493,9 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   decomposition.globalPhase_ += std::arg(trace);
 
   // final check if decomposition is still valid after specialization
-  assert((kron(decomposition.k1l_, decomposition.k1r_) *
+  assert((Matrix4x4::kron(decomposition.k1l_, decomposition.k1r_) *
           decomposition.getCanonicalMatrix() *
-          kron(decomposition.k2l_, decomposition.k2r_) *
+          Matrix4x4::kron(decomposition.k2l_, decomposition.k2r_) *
           globalPhaseFactor(decomposition.globalPhase_))
              .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 

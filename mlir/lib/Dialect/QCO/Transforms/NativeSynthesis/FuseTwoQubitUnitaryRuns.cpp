@@ -196,7 +196,7 @@ absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
   } else {
     return;
   }
-  run.composed = reorderTwoQubitMatrix(opMatrix, ids[0], ids[1]) * run.composed;
+  run.composed = opMatrix.reorderForQubits(ids[0], ids[1]) * run.composed;
   run.ops.push_back(op.getOperation());
   ++run.numTwoQ;
   if (!decomposition::allowsTwoQubitOp(op.getOperation(), spec)) {
@@ -212,7 +212,7 @@ static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
   if (!op.getUnitaryMatrix2x2(raw)) {
     return;
   }
-  const auto pad = embedSingleQubitInTwoQubit(raw, wireIndex);
+  const auto pad = raw.embedInTwoQubit(wireIndex);
   run.composed = pad * run.composed;
   run.ops.push_back(op.getOperation());
   if (!decomposition::allowsSingleQubitOp(op, spec)) {

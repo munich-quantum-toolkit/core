@@ -238,7 +238,7 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
           if (!extractSingleQubitMatrix(op, oneQ)) {
             return std::nullopt;
           }
-          unitary = embedSingleQubitInNqubit(oneQ, numQubits, *qid) * unitary;
+          unitary = oneQ.embedInNqubit(numQubits, *qid) * unitary;
           const auto qOut = unitaryQubitResult(op, 0);
           if (!qOut) {
             return std::nullopt;
@@ -262,8 +262,7 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
           if (!extractTwoQubitMatrix(op, twoQ)) {
             return std::nullopt;
           }
-          unitary =
-              embedTwoQubitInNqubit(twoQ, numQubits, *q0id, *q1id) * unitary;
+          unitary = twoQ.embedInNqubit(numQubits, *q0id, *q1id) * unitary;
           const auto q0Out = unitaryQubitResult(op, 0);
           const auto q1Out = unitaryQubitResult(op, 1);
           if (!q0Out || !q1Out) {

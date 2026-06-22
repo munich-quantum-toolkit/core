@@ -793,7 +793,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
           if (!op.getUnitaryMatrix2x2(oneQ)) {
             return std::nullopt;
           }
-          unitary = mlir::qco::embedSingleQubitInTwoQubit(oneQ, *qid) * unitary;
+          unitary = oneQ.embedInTwoQubit(*qid) * unitary;
           qubitIds[op.getOutputQubit(0)] = *qid;
           continue;
         }
@@ -821,8 +821,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
             return std::nullopt;
           }
           const llvm::SmallVector<std::size_t, 2> ids{*q0, *q1};
-          unitary =
-              mlir::qco::reorderTwoQubitMatrix(twoQ, ids[0], ids[1]) * unitary;
+          unitary = twoQ.reorderForQubits(ids[0], ids[1]) * unitary;
           qubitIds[op.getOutputQubit(0)] = *q0;
           qubitIds[op.getOutputQubit(1)] = *q1;
           continue;
