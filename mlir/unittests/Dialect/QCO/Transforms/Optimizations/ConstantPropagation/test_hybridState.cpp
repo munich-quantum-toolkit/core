@@ -16,6 +16,7 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Value.h>
 
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOpsDialect.h.inc>

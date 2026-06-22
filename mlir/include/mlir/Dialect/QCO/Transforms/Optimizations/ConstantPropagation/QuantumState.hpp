@@ -249,6 +249,14 @@ public:
   unify(const QuantumState& that);
 
   /**
+   * @brief This method changes the global index of a qubit.
+   *
+   * @param target The old global index of a qubit.
+   * @param newIndex The new global index for the qubit.
+   */
+  void changeGlobalIndex(unsigned int target, unsigned int newIndex);
+
+  /**
    * @brief This method applies a gate to the qubits.
    *
    * This method changes the amplitudes of a QuantumState according to the

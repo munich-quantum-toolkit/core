@@ -23,6 +23,7 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -150,7 +151,10 @@ public:
   [[nodiscard("HybridState::toString called but ignored")]]
   std::string toString() const;
 
-  bool isHybridStateTop() const { return top; }
+  [[nodiscard("HybridState::isHybridStateTop called but ignored")]] bool
+  isHybridStateTop() const {
+    return top;
+  }
 
   /**
    * @brief This method adds a classical integer value to the hybrid state.
@@ -167,6 +171,15 @@ public:
    * @param number The number of the new value.
    */
   void addDoubleValue(Value value, double number);
+
+  /**
+   * @brief This method changes the global index of a qubit in the quantum
+   * state.
+   *
+   * @param target The old global index of a qubit.
+   * @param newIndex The new global index for the qubit.
+   */
+  void changeGlobalIndex(unsigned int target, unsigned int newIndex) const;
 
   /**
    * @brief This method applies a gate to the state.

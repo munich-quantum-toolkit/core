@@ -13,11 +13,16 @@
 #include "HybridState.hpp"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <memory>
+#include <ostream>
 #include <set>
 #include <span>
 #include <stdexcept>
+#include <string>
 
 namespace mlir::qco {
 
@@ -156,7 +161,16 @@ class UnionTable {
         entries.erase(it);
       }
     }
-    entries.insert(std::make_shared<UnionTableEntry>(topUnionTableEntry));
+    const auto ptrUte = std::make_shared<UnionTableEntry>(topUnionTableEntry);
+    entries.insert(ptrUte);
+    for (auto q : ptrUte->participatingQubits) {
+      valuesToEntries.erase(q);
+      valuesToEntries[q] = ptrUte;
+    }
+    for (auto c : ptrUte->participatingClassicalValues) {
+      valuesToEntries.erase(c);
+      valuesToEntries[c] = ptrUte;
+    }
   }
 
   /**
@@ -174,10 +188,9 @@ class UnionTable {
     if (entriesToUnify.size() == 1) {
       return;
     }
+    bool entriesBecomeTop = false;
     for (const auto& e : entriesToUnify) {
-      if (e.top) {
-        putEntriesToTop(entriesToUnify);
-      }
+      entriesBecomeTop |= e.top;
     }
 
     // Check if the number of entries would be too large
@@ -191,17 +204,18 @@ class UnionTable {
 
     // Create new entry
     auto newEntry = UnionTableEntry();
-    for (auto e : entriesToUnify) {
+    newEntry.top = entriesBecomeTop;
+    for (const auto& e : entriesToUnify) {
       auto classicalValues = e.participatingClassicalValues;
       auto qubits = e.participatingQubits;
       newEntry.participatingClassicalValues.insert(classicalValues.begin(),
                                                    classicalValues.end());
       newEntry.participatingQubits.insert(qubits.begin(), qubits.end());
-      if (newEntry.states.empty()) {
+      if (!newEntry.top & newEntry.states.empty()) {
         newEntry.states = e.states;
         continue;
       }
-      if (e.states.empty()) {
+      if (newEntry.top || e.states.empty()) {
         continue;
       }
       std::vector<HybridState> unifiedHS = {};
@@ -233,6 +247,30 @@ class UnionTable {
       }
     }
     entries.insert(ptrUTE);
+  }
+
+  /**
+   * @brief This method applies a swap gate by switching two qubits if the
+   * qubits are in different entries.
+   *
+   * @param targets The values that partake in the swap.
+   * @param newQuantumTargets The values after the swap.
+   */
+  void applySwapGate(const std::span<Value> targets,
+                     const std::span<Value> newQuantumTargets) {
+    for (const auto& hs : valuesToEntries.at(targets[0])->states) {
+      hs.changeGlobalIndex(qubitsToGlobalIndices.at(targets[0]),
+                           qubitsToGlobalIndices.at(targets[1]));
+    }
+    for (const auto& hs : valuesToEntries.at(targets[1])->states) {
+      hs.changeGlobalIndex(qubitsToGlobalIndices.at(targets[1]),
+                           qubitsToGlobalIndices.at(targets[0]));
+    }
+    const auto targetOneIndex = qubitsToGlobalIndices.at(targets[0]);
+    qubitsToGlobalIndices[targets[0]] = qubitsToGlobalIndices.at(targets[1]);
+    qubitsToGlobalIndices[targets[1]] = targetOneIndex;
+    std::ranges::reverse(newQuantumTargets);
+    replaceValuesGlobally(targets, newQuantumTargets);
   }
 
 public:

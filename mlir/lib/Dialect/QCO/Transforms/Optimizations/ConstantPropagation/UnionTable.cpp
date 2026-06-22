@@ -15,6 +15,13 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <mlir/IR/Operation.h>
+
+#include <set>
+#include <span>
+#include <stdexcept>
+#include <string>
+
 namespace mlir::qco {
 
 UnionTable::UnionTable(std::size_t maxNonzeroAmplitudes,
@@ -39,13 +46,17 @@ std::string UnionTable::toString() const {
       result += std::to_string(qit);
     }
     result += ", HybridStates: {";
-    bool first = true;
-    for (HybridState const& hs : entry->states) {
-      if (!first) {
-        result += " ";
+    if (entry->top) {
+      result += "TOP";
+    } else {
+      bool first = true;
+      for (HybridState const& hs : entry->states) {
+        if (!first) {
+          result += " ";
+        }
+        first = false;
+        result += hs.toString();
       }
-      first = false;
-      result += hs.toString();
     }
     result += "}\n";
   }
@@ -71,21 +82,26 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
                                const std::span<Value> posCtrlsClassical,
                                const std::span<Value> negCtrlsClassical,
                                const std::span<Value> params) {
-  if (isa<SWAPOp>(*gate) && ctrlsQuantum.empty() && posCtrlsClassical.empty() &&
-      negCtrlsClassical.empty()) {
-    std::ranges::reverse(newQuantumTargets);
-    replaceValuesGlobally(targets, newQuantumTargets);
-    return;
-  }
-
   const std::set<UnionTableEntry> participatingEntries =
       collectParticipatingEntries(targets, ctrlsQuantum, posCtrlsClassical,
                                   negCtrlsClassical, params);
+
+  if (isa<SWAPOp>(*gate) && ctrlsQuantum.empty() && posCtrlsClassical.empty() &&
+      negCtrlsClassical.empty() && participatingEntries.size() == 2 &&
+      !valuesToEntries.at(targets[0])->top &&
+      !valuesToEntries.at(targets[1])->top) {
+    applySwapGate(targets, newQuantumTargets);
+    return;
+  }
 
   try {
     unifyEntries(participatingEntries);
   } catch (std::domain_error&) {
     putEntriesToTop(participatingEntries);
+    replaceValuesGlobally(targets, newQuantumTargets);
+    return;
+  }
+  if (valuesToEntries.at(targets[0])->top) {
     replaceValuesGlobally(targets, newQuantumTargets);
     return;
   }
@@ -101,10 +117,9 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
 
   const auto ute = valuesToEntries.at(*targets.begin());
   for (auto hs : ute->states) {
-    try {
-      hs.propagateGate(gate, targetQubitIndices, ctrlQubitIndices,
-                       posCtrlsClassical, negCtrlsClassical, params);
-    } catch (std::domain_error&) {
+    hs.propagateGate(gate, targetQubitIndices, ctrlQubitIndices,
+                     posCtrlsClassical, negCtrlsClassical, params);
+    if (hs.isHybridStateTop()) {
       putEntriesToTop({*ute});
       break;
     }
@@ -133,16 +148,29 @@ void UnionTable::propagateMeasurement(
   }
 
   const auto ute = valuesToEntries.at(quantumTarget);
+  if (ute->top) {
+    replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
+    return;
+  }
+
+  std::vector<HybridState> vecOfNewStates;
 
   for (auto hs : ute->states) {
-    try {
-      hs.propagateMeasurement(qubitsToGlobalIndices.at(quantumTarget),
-                              classicalTarget, posCtrlsClassical,
-                              negCtrlsClassical);
-    } catch (std::domain_error&) {
+    auto newStates = hs.propagateMeasurement(
+        qubitsToGlobalIndices.at(quantumTarget), classicalTarget,
+        posCtrlsClassical, negCtrlsClassical);
+    if (hs.isHybridStateTop()) {
       putEntriesToTop({*ute});
+      vecOfNewStates.clear();
       break;
     }
+    vecOfNewStates.insert(vecOfNewStates.end(), newStates.begin(),
+                          newStates.end());
+  }
+  if (vecOfNewStates.size() > maximumHybridEntries) {
+    putEntriesToTop({*ute});
+  } else {
+    ute->states = vecOfNewStates;
   }
   replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
 }
@@ -167,16 +195,27 @@ void UnionTable::propagateReset(const Value quantumTarget,
   }
 
   const auto ute = valuesToEntries.at(quantumTarget);
+  if (ute->top) {
+    replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
+    return;
+  }
+
+  std::vector<HybridState> vecOfNewStates;
 
   for (auto hs : ute->states) {
     try {
-      hs.propagateReset(qubitsToGlobalIndices.at(quantumTarget),
-                        posCtrlsClassical, negCtrlsClassical);
+      auto newStates =
+          hs.propagateReset(qubitsToGlobalIndices.at(quantumTarget),
+                            posCtrlsClassical, negCtrlsClassical);
+      vecOfNewStates.insert(vecOfNewStates.end(), newStates.begin(),
+                            newStates.end());
     } catch (std::domain_error&) {
       putEntriesToTop({*ute});
+      vecOfNewStates.clear();
       break;
     }
   }
+  ute->states = vecOfNewStates;
   replaceValuesGlobally(quantumTargetVec, newQuantumValueVec);
 }
 

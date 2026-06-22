@@ -14,7 +14,10 @@
 
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/GateToMap.h"
 
+#include <mlir/IR/Operation.h>
+
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <iterator>
 #include <ranges>
@@ -166,6 +169,13 @@ QuantumState QuantumState::unify(const QuantumState& that) {
   newState.globalToLocalQubitNumber = newGlobalToLocalMapping;
 
   return newState;
+}
+
+void QuantumState::changeGlobalIndex(const unsigned int target,
+                                     const unsigned int newIndex) {
+  const auto localIndex = globalToLocalQubitNumber.at(target);
+  globalToLocalQubitNumber.erase(target);
+  globalToLocalQubitNumber[newIndex] = localIndex;
 }
 
 void QuantumState::propagateGate(Operation* gate,
