@@ -27,14 +27,20 @@
 
 namespace mlir::qco {
 
+/// Returns true if @p lhs and @p rhs differ by at most @p tol (complex
+/// modulus).
+[[nodiscard]] static bool entryIsApprox(const Complex& lhs, const Complex& rhs,
+                                        const double tol) {
+  return std::abs(lhs - rhs) <= tol;
+}
+
 /// Returns true if every entry pair differs by at most @p tol (complex
 /// modulus).
 [[nodiscard]] static bool entriesAreApprox(ArrayRef<Complex> lhs,
                                            ArrayRef<Complex> rhs, double tol) {
-  return std::ranges::equal(lhs, rhs,
-                            [tol](const Complex& a, const Complex& b) {
-                              return std::abs(a - b) <= tol;
-                            });
+  return llvm::equal(lhs, rhs, [tol](const Complex& a, const Complex& b) {
+    return entryIsApprox(a, b, tol);
+  });
 }
 
 /// Writes the conjugate transpose of @p in into @p out (square, row-major).
@@ -130,15 +136,15 @@ multiply4x4(const std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME>& lhs,
 
 /// Returns true if @p data is approximately the @p dim x @p dim identity
 /// matrix.
-template <std::size_t Dim>
-[[nodiscard]] static bool
-isIdentityEntries(const std::array<Complex, Dim * Dim>& data,
-                  const double tol) {
-  for (std::size_t row = 0; row < Dim; ++row) {
-    for (std::size_t col = 0; col < Dim; ++col) {
-      const Complex& entry = data[(row * Dim) + col];
+[[nodiscard]] static bool isIdentityEntries(ArrayRef<Complex> data,
+                                            const std::size_t dim,
+                                            const double tol) {
+  assert(data.size() >= dim * dim);
+  for (std::size_t row = 0; row < dim; ++row) {
+    for (std::size_t col = 0; col < dim; ++col) {
+      const Complex& entry = data[(row * dim) + col];
       if (row == col) {
-        if (std::abs(entry - Complex{1.0, 0.0}) > tol) {
+        if (!entryIsApprox(entry, Complex{1.0, 0.0}, tol)) {
           return false;
         }
       } else if (std::abs(entry) > tol) {
@@ -206,7 +212,7 @@ Complex Matrix1x1::operator()(const std::size_t row,
 }
 
 bool Matrix1x1::isApprox(const Matrix1x1& other, const double tol) const {
-  return std::abs(value - other.value) <= tol;
+  return entryIsApprox(value, other.value, tol);
 }
 
 bool Matrix1x1::assignFrom(const DynamicMatrix& src) {
@@ -282,7 +288,7 @@ Complex Matrix2x2::determinant() const {
 }
 
 bool Matrix2x2::isIdentity(const double tol) const {
-  return isIdentityEntries<K_ROWS>(data, tol);
+  return isIdentityEntries(data, K_ROWS, tol);
 }
 
 bool Matrix2x2::isApprox(const Matrix2x2& other, const double tol) const {
@@ -372,7 +378,7 @@ Complex Matrix4x4::determinant() const {
 }
 
 bool Matrix4x4::isIdentity(const double tol) const {
-  return isIdentityEntries<K_ROWS>(data, tol);
+  return isIdentityEntries(data, K_ROWS, tol);
 }
 
 std::array<Complex, Matrix4x4::K_ROWS> Matrix4x4::diagonal() const {
@@ -533,7 +539,7 @@ bool DynamicMatrix::isApprox(const Matrix1x1& other, const double tol) const {
   if (impl_->dim != 1) {
     return false;
   }
-  return std::abs(impl_->data[0] - other.value) <= tol;
+  return entryIsApprox(impl_->data[0], other.value, tol);
 }
 
 bool DynamicMatrix::isApprox(const Matrix2x2& other, const double tol) const {
@@ -563,10 +569,8 @@ Complex DynamicMatrix::trace() const {
 }
 
 DynamicMatrix DynamicMatrix::operator*(const DynamicMatrix& rhs) const {
-  if (impl_->dim != rhs.impl_->dim) {
-    llvm::reportFatalInternalError(
-        "DynamicMatrix multiply requires matching dimensions");
-  }
+  assert(impl_->dim == rhs.impl_->dim &&
+         "DynamicMatrix multiply requires matching dimensions");
   DynamicMatrix out(impl_->dim);
   if (std::cmp_equal(impl_->dim, Matrix2x2::K_ROWS)) {
     multiply2x2(impl_->data, rhs.impl_->data, out.impl_->data);
@@ -607,20 +611,7 @@ DynamicMatrix& DynamicMatrix::operator*=(const Complex& scalar) {
 }
 
 bool DynamicMatrix::isIdentity(const double tol) const {
-  const auto udim = checkedDim(impl_->dim);
-  for (std::size_t row = 0; row < udim; ++row) {
-    for (std::size_t col = 0; col < udim; ++col) {
-      const Complex& entry = impl_->data[(row * udim) + col];
-      if (row == col) {
-        if (std::abs(entry - Complex{1.0, 0.0}) > tol) {
-          return false;
-        }
-      } else if (std::abs(entry) > tol) {
-        return false;
-      }
-    }
-  }
-  return true;
+  return isIdentityEntries(impl_->data, checkedDim(impl_->dim), tol);
 }
 
 /**
@@ -681,25 +672,6 @@ DynamicMatrix operator*(const Complex& scalar, const DynamicMatrix& matrix) {
   return matrix * scalar;
 }
 
-[[nodiscard]] static double pythag2(const double a, const double b) {
-  const double absA = std::abs(a);
-  const double absB = std::abs(b);
-  if (absA > absB) {
-    const double ratio = absB / absA;
-    return absA * std::sqrt(1.0 + (ratio * ratio));
-  }
-  if (absB == 0.0) {
-    return 0.0;
-  }
-  const double ratio = absA / absB;
-  return absB * std::sqrt(1.0 + (ratio * ratio));
-}
-
-[[nodiscard]] static double copySign(const double magnitude,
-                                     const double signSource) {
-  return (signSource >= 0.0) ? std::abs(magnitude) : -std::abs(magnitude);
-}
-
 // Adapted from John Burkardt's MIT-licensed EISPACK C port (`tred2` / `tql2`):
 // https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
 // Specialized to `n = 4`; input is row-major, accumulator `z` is column-major.
@@ -748,7 +720,7 @@ static void symmetricTred24(const std::array<double, 16>& input,
       h += diag[k] * diag[k];
     }
     const double f = diag[l];
-    const double g = -std::sqrt(h) * copySign(1.0, f);
+    const double g = -std::sqrt(h) * std::copysign(1.0, f);
     subdiag[ui] = scale * g;
     h -= f * g;
     diag[l] = f - g;
@@ -862,9 +834,9 @@ static void symmetricTql24(std::array<double, 4>& diag,
         const std::size_t l2 = l1 + 1;
         const double g = diag[l];
         const double p = (diag[l1] - g) / (2.0 * subdiag[l]);
-        const double r = pythag2(p, 1.0);
-        diag[l] = subdiag[l] / (p + copySign(std::abs(r), p));
-        diag[l1] = subdiag[l] * (p + copySign(std::abs(r), p));
+        const double r = std::hypot(p, 1.0);
+        diag[l] = subdiag[l] / (p + std::copysign(std::abs(r), p));
+        diag[l1] = subdiag[l] * (p + std::copysign(std::abs(r), p));
         const double dl1 = diag[l1];
         const double hh = g - diag[l];
         for (std::size_t i = l2; i < n; ++i) {
@@ -887,7 +859,7 @@ static void symmetricTql24(std::array<double, 4>& diag,
           const std::size_t i = m - ii;
           const double gi = c * subdiag[i];
           const double hi = c * pv;
-          const double ri = pythag2(pv, subdiag[i]);
+          const double ri = std::hypot(pv, subdiag[i]);
           subdiag[i + 1] = s * ri;
           s = subdiag[i] / ri;
           c = pv / ri;
@@ -966,7 +938,7 @@ static Matrix4x4 embedSingleQubitInTwoQubit(const Matrix2x2& matrix,
   if (qubitIndex == 1) {
     return kron(Matrix2x2::identity(), matrix);
   }
-  llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
+  assert(false && "Invalid qubit index for single-qubit embed");
 }
 
 Matrix4x4 reorderTwoQubitMatrix(const Matrix4x4& matrix,
@@ -983,16 +955,14 @@ Matrix4x4 reorderTwoQubitMatrix(const Matrix4x4& matrix,
                                    m[11], m[4], m[6], m[5], m[7], m[12], m[14],
                                    m[13], m[15]);
   }
-  llvm::reportFatalInternalError("Invalid qubit indices for two-qubit reorder");
+  assert(false && "Invalid qubit indices for two-qubit reorder");
 }
 
 DynamicMatrix embedSingleQubitInNqubit(const Matrix2x2& matrix,
                                        const std::size_t numQubits,
                                        const std::size_t qubitIndex) {
-  if (qubitIndex >= numQubits) {
-    llvm::reportFatalInternalError(
-        "Invalid qubit index for single-qubit embed");
-  }
+  assert(qubitIndex < numQubits &&
+         "Invalid qubit index for single-qubit embed");
   if (numQubits == 2) {
     return DynamicMatrix(embedSingleQubitInTwoQubit(matrix, qubitIndex));
   }
@@ -1017,9 +987,8 @@ DynamicMatrix embedTwoQubitInNqubit(const Matrix4x4& matrix,
                                     const std::size_t numQubits,
                                     const std::size_t q0Index,
                                     const std::size_t q1Index) {
-  if (q0Index >= numQubits || q1Index >= numQubits || q0Index == q1Index) {
-    llvm::reportFatalInternalError("Invalid qubit indices for two-qubit embed");
-  }
+  assert(q0Index < numQubits && q1Index < numQubits && q0Index != q1Index &&
+         "Invalid qubit indices for two-qubit embed");
   if (numQubits == 2) {
     return DynamicMatrix(reorderTwoQubitMatrix(matrix, q0Index, q1Index));
   }

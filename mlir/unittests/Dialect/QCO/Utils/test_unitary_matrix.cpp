@@ -352,6 +352,11 @@ TEST(UnitaryMatrix2x2, TransposeAndIsIdentity) {
   EXPECT_TRUE(m.transpose().isApprox(Matrix2x2::fromElements(1, 3, 2i, 4)));
   EXPECT_TRUE(Matrix2x2::identity().isIdentity());
   EXPECT_FALSE(pauliX().isIdentity());
+  Matrix2x2 nearIdentity = Matrix2x2::identity();
+  nearIdentity(0, 1) = 1e-15;
+  EXPECT_TRUE(nearIdentity.isIdentity());
+  nearIdentity(0, 1) = 1.0;
+  EXPECT_FALSE(nearIdentity.isIdentity());
 }
 
 TEST(UnitaryMatrix4x4, TransposeAndIsIdentity) {
@@ -466,6 +471,21 @@ TEST(DynamicMatrix, MultiplyAdjointTraceAt4) {
 
   const DynamicMatrix adjoint = swap.adjoint();
   EXPECT_TRUE(adjoint.isApprox(swapMatrix()));
+}
+
+TEST(DynamicMatrix, MultiplyAt2) {
+  const DynamicMatrix x(pauliX());
+  EXPECT_EQ(x.rows(), 2);
+  const DynamicMatrix product = x * x;
+  EXPECT_TRUE(product.isIdentity());
+  EXPECT_NEAR(product.trace().real(), 2.0, MATRIX_TOLERANCE);
+  EXPECT_TRUE(product.isApprox(pauliX() * pauliX()));
+}
+
+TEST(DynamicMatrix, IsIdentityOffDiagonal) {
+  DynamicMatrix matrix = DynamicMatrix::identity(2);
+  matrix(0, 1) = 1.0;
+  EXPECT_FALSE(matrix.isIdentity());
 }
 
 TEST(UnitaryMatrix2x2, ScalarLeftMultiply) {
