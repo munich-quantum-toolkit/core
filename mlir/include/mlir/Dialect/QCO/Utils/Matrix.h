@@ -626,6 +626,13 @@ public:
   [[nodiscard]] DynamicMatrix operator*(const Complex& scalar) const;
 
   /**
+   * @brief Element-wise in-place scaling by a complex scalar.
+   * @param scalar Factor applied to every matrix entry.
+   * @return Reference to this matrix.
+   */
+  DynamicMatrix& operator*=(const Complex& scalar);
+
+  /**
    * @brief Checks whether this matrix is approximately the identity.
    * @param tol Maximum allowed complex modulus of each off-diagonal entry and
    * each diagonal deviation from one.
@@ -682,8 +689,7 @@ inline constexpr bool
  *
  * `eigenvalues` are sorted ascending and `eigenvectors` holds the
  * corresponding orthonormal eigenvectors as columns (column `j` is the
- * eigenvector for `eigenvalues[j]`), matching the convention of
- * `Eigen::SelfAdjointEigenSolver`.
+ * eigenvector for `eigenvalues[j]`).
  */
 struct SymmetricEigen4 {
   std::array<double, 4> eigenvalues{};
@@ -693,15 +699,28 @@ struct SymmetricEigen4 {
 /**
  * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
  *
- * Implements the cyclic Jacobi eigenvalue algorithm, which is numerically
- * robust for small symmetric matrices and yields orthonormal eigenvectors
- * even for degenerate spectra.
+ * Uses Householder tridiagonalization (EISPACK `tred2`) followed by implicit
+ * QL iteration (`tql2`) on the tridiagonal form.
+ *
+ * @pre @p symmetric is real and symmetric: `symmetric[i,j] == symmetric[j,i]`
+ * for all `i, j`. Only the lower triangle (including the diagonal) is read,
+ * but supplying a non-symmetric matrix yields undefined numerical results.
  *
  * @param symmetric Row-major real symmetric `4x4` matrix.
  * @return Ascending eigenvalues and matching eigenvectors (as columns).
  */
 [[nodiscard]] SymmetricEigen4
-jacobiSymmetricEigen(const std::array<double, 16>& symmetric);
+symmetricEigen4(const std::array<double, 16>& symmetric);
+
+/**
+ * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
+ *
+ * @copydoc symmetricEigen4(const std::array<double, 16>&)
+ *
+ * @pre Entries of @p symmetric are real (imaginary parts must be negligible).
+ * The real parts must form a symmetric matrix; imaginary parts are ignored.
+ */
+[[nodiscard]] SymmetricEigen4 symmetricEigen4(const Matrix4x4& symmetric);
 
 /// `SWAP` on two qubits.
 [[nodiscard]] const Matrix4x4& twoQubitSwapMatrix();
@@ -726,8 +745,9 @@ jacobiSymmetricEigen(const std::array<double, 16>& symmetric);
 /**
  * @brief Embed a single-qubit matrix into an @p numQubits-qubit Hilbert space.
  *
- * Qubit @p qubitIndex uses the same MSB-first convention as
- * @ref embedSingleQubitInTwoQubit.
+ * Qubit @p qubitIndex uses the same MSB-first convention as @ref kron
+ * (high bit first operand, low bit second). For each basis pair whose untouched
+ * wires match, copies @p matrix at the target qubit's row/column bits.
  */
 [[nodiscard]] DynamicMatrix embedSingleQubitInNqubit(const Matrix2x2& matrix,
                                                      std::size_t numQubits,
@@ -737,7 +757,8 @@ jacobiSymmetricEigen(const std::array<double, 16>& symmetric);
  * @brief Embed a two-qubit matrix into an @p numQubits-qubit Hilbert space.
  *
  * Operand 0 labels the high bit of the pair and acts on @p q0Index; operand 1
- * labels the low bit and acts on @p q1Index.
+ * labels the low bit and acts on @p q1Index. For each basis pair whose other
+ * wires match, copies @p matrix at the packed two-qubit row/column indices.
  */
 [[nodiscard]] DynamicMatrix embedTwoQubitInNqubit(const Matrix4x4& matrix,
                                                   std::size_t numQubits,

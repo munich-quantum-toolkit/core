@@ -117,7 +117,7 @@ diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
     for (std::size_t k = 0; k < m2Real.size(); ++k) {
       m2Real[k] = (randA * mReal[k]) + (randB * mImag[k]);
     }
-    const Matrix4x4 p = jacobiSymmetricEigen(m2Real).eigenvectors;
+    const Matrix4x4 p = symmetricEigen4(m2Real).eigenvectors;
     const std::array<Complex, 4> d = (p.transpose() * m * p).diagonal();
 
     const auto compare = p * Matrix4x4::fromDiagonal(d) * p.transpose();

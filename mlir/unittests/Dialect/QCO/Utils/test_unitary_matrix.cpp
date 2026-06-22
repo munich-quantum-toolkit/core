@@ -133,6 +133,7 @@ TEST(UnitaryMatrix4x4, MultiplyAdjointTraceDeterminant) {
   EXPECT_TRUE(scaled.isApprox(swap * 2.0));
   EXPECT_EQ(identity.trace(), Complex(4.0, 0.0));
   EXPECT_EQ(identity.determinant(), Complex(1.0, 0.0));
+  EXPECT_EQ(swap.determinant(), Complex(-1.0, 0.0));
 }
 
 TEST(UnitaryMatrix4x4, PremultiplyBy) {
@@ -189,6 +190,7 @@ TEST(DynamicMatrix, IdentityAndElementAccess) {
   EXPECT_EQ(identity(0, 0), 1.0);
   EXPECT_EQ(identity(1, 2), 0.0);
   EXPECT_EQ(identity(2, 2), 1.0);
+  EXPECT_TRUE(identity.isIdentity());
 
   DynamicMatrix mutableMatrix = identity;
   mutableMatrix(1, 1) = 0.5;
@@ -203,6 +205,13 @@ TEST(DynamicMatrix, FromAdjoint) {
       DynamicMatrix::fromAdjoint(x * global).isApprox((x * global).adjoint()));
   EXPECT_TRUE(DynamicMatrix(x).isApprox(x));
   EXPECT_TRUE(DynamicMatrix(swapMatrix()).isApprox(swapMatrix()));
+}
+
+TEST(DynamicMatrix, ScalarMultiplyAssign) {
+  DynamicMatrix matrix = DynamicMatrix::identity(2);
+  matrix *= std::exp(Complex{0.0, 0.5});
+  EXPECT_TRUE(matrix.isApprox(DynamicMatrix::identity(2) *
+                              std::exp(Complex{0.0, 0.5})));
 }
 
 TEST(DynamicMatrix, AssignFrom) {
@@ -268,6 +277,38 @@ TEST(DynamicMatrix, Adjoint) {
 
 TEST(DynamicMatrix, IsApproxRejectsMismatchedExtents) {
   EXPECT_FALSE(DynamicMatrix::identity(1).isApprox(DynamicMatrix::identity(2)));
+}
+
+TEST(DynamicMatrix, IsApproxOverloads) {
+  const Matrix1x1 phase = Matrix1x1::fromElements(Complex{0.25, 0.5});
+  const Matrix2x2 x = pauliX();
+  const Matrix4x4 swap = swapMatrix();
+
+  DynamicMatrix as1x1;
+  as1x1.assignFrom(phase);
+  EXPECT_TRUE(as1x1.isApprox(phase));
+  EXPECT_FALSE(as1x1.isApprox(Matrix1x1::fromElements(1.0)));
+
+  DynamicMatrix as2x2;
+  as2x2.assignFrom(x);
+  EXPECT_TRUE(as2x2.isApprox(x));
+  EXPECT_FALSE(as2x2.isApprox(Matrix2x2::identity()));
+
+  DynamicMatrix as4x4;
+  as4x4.assignFrom(swap);
+  EXPECT_TRUE(as4x4.isApprox(swap));
+  EXPECT_FALSE(as4x4.isApprox(Matrix4x4::identity()));
+
+  DynamicMatrix wrongDim = DynamicMatrix::identity(3);
+  EXPECT_FALSE(wrongDim.isApprox(phase));
+  EXPECT_FALSE(wrongDim.isApprox(x));
+  EXPECT_FALSE(wrongDim.isApprox(swap));
+
+  const DynamicMatrix a = DynamicMatrix::identity(2);
+  DynamicMatrix b = a;
+  b(1, 0) += 1e-15;
+  EXPECT_TRUE(a.isApprox(b));
+  EXPECT_FALSE(a.isApprox(DynamicMatrix::identity(3)));
 }
 
 TEST(Matrix1x1, AssignFromDynamicMatrix) {
@@ -364,6 +405,16 @@ TEST(UnitaryMatrix4x4, KroneckerProduct) {
                                                   0, 0, 1, 0)));
 }
 
+TEST(UnitaryMatrix4x4, ReorderTwoQubitMatrix) {
+  const Matrix2x2 x = pauliX();
+  const Matrix4x4 onHigh = kron(x, Matrix2x2::identity());
+  const Matrix4x4 onLow = kron(Matrix2x2::identity(), x);
+
+  EXPECT_TRUE(reorderTwoQubitMatrix(onHigh, 0, 1).isApprox(onHigh));
+  EXPECT_TRUE(reorderTwoQubitMatrix(onHigh, 1, 0).isApprox(onLow));
+  EXPECT_TRUE(reorderTwoQubitMatrix(onLow, 1, 0).isApprox(onHigh));
+}
+
 TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
   const Matrix2x2 x = pauliX();
   const Matrix4x4 cx = Matrix4x4::fromElements(1, 0, 0, 0, //
@@ -371,7 +422,9 @@ TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
                                                0, 0, 0, 1, //
                                                0, 0, 1, 0);
   EXPECT_TRUE(embedSingleQubitInNqubit(x, 2, 0).isApprox(
-      embedSingleQubitInTwoQubit(x, 0)));
+      kron(x, Matrix2x2::identity())));
+  EXPECT_TRUE(embedSingleQubitInNqubit(x, 2, 1).isApprox(
+      kron(Matrix2x2::identity(), x)));
   EXPECT_TRUE(embedTwoQubitInNqubit(cx, 2, 0, 1)
                   .isApprox(reorderTwoQubitMatrix(cx, 0, 1)));
   const DynamicMatrix cxOn01 = embedTwoQubitInNqubit(cx, 3, 0, 1);
@@ -379,6 +432,17 @@ TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
   EXPECT_EQ(cxOn01.rows(), 8);
   EXPECT_EQ(cxOn12.rows(), 8);
   EXPECT_FALSE(cxOn01.isApprox(cxOn12));
+}
+
+TEST(UnitaryDynamicMatrix, EmbedSingleQubitOnMiddleWire) {
+  const Matrix2x2 x = pauliX();
+  const DynamicMatrix embedded = embedSingleQubitInNqubit(x, 3, 1);
+  EXPECT_EQ(embedded.rows(), 8);
+  EXPECT_FALSE(embedded.isIdentity());
+
+  const DynamicMatrix product = embedded * embedded;
+  EXPECT_TRUE(product.isIdentity());
+  EXPECT_NEAR(product.trace().real(), 8.0, MATRIX_TOLERANCE);
 }
 
 TEST(UnitaryDynamicMatrix, MultiplyTraceAndScalar) {
@@ -389,7 +453,19 @@ TEST(UnitaryDynamicMatrix, MultiplyTraceAndScalar) {
   EXPECT_TRUE((scalar * embedded).isApprox(embedded * scalar));
   const DynamicMatrix product = embedded * embedded;
   EXPECT_TRUE(product.isIdentity());
-  EXPECT_NEAR(product.trace().real(), 4.0, 1e-12);
+  EXPECT_NEAR(product.trace().real(), 4.0, MATRIX_TOLERANCE);
+}
+
+TEST(DynamicMatrix, MultiplyAdjointTraceAt4) {
+  const auto swap = DynamicMatrix(swapMatrix());
+  EXPECT_EQ(swap.rows(), 4);
+
+  const DynamicMatrix product = swap * swap;
+  EXPECT_TRUE(product.isIdentity());
+  EXPECT_NEAR(product.trace().real(), 4.0, MATRIX_TOLERANCE);
+
+  const DynamicMatrix adjoint = swap.adjoint();
+  EXPECT_TRUE(adjoint.isApprox(swapMatrix()));
 }
 
 TEST(UnitaryMatrix2x2, ScalarLeftMultiply) {
@@ -404,32 +480,41 @@ TEST(UnitaryMatrix4x4, ScalarLeftMultiply) {
   EXPECT_TRUE((scalar * swap).isApprox(swap * scalar));
 }
 
-TEST(GateMatrixFactories, RemEuclidAndControlledGates) {
-  EXPECT_DOUBLE_EQ(remEuclid(-1.0, 3.0), 2.0);
-  EXPECT_TRUE(twoQubitControlledX01().isApprox(
-      Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0)));
-  EXPECT_TRUE(twoQubitControlledX10().isApprox(
-      reorderTwoQubitMatrix(twoQubitControlledX01(), 1, 0)));
-  EXPECT_TRUE(rxMatrix(0.0).isIdentity());
-  EXPECT_TRUE((iPauliX() * iPauliX()).isApprox(-1.0 * Matrix2x2::identity()));
-}
-
-TEST(JacobiEigensolver, DiagonalMatrix) {
+TEST(SymmetricEigensolver, DiagonalMatrix) {
   std::array<double, 16> a{};
   a[0] = 3.0;
   a[5] = 1.0;
   a[10] = 4.0;
   a[15] = 2.0;
-  const SymmetricEigen4 result = jacobiSymmetricEigen(a);
-  EXPECT_NEAR(result.eigenvalues[0], 1.0, 1e-12);
-  EXPECT_NEAR(result.eigenvalues[1], 2.0, 1e-12);
-  EXPECT_NEAR(result.eigenvalues[2], 3.0, 1e-12);
-  EXPECT_NEAR(result.eigenvalues[3], 4.0, 1e-12);
+  const SymmetricEigen4 result = symmetricEigen4(a);
+  EXPECT_NEAR(result.eigenvalues[0], 1.0, MATRIX_TOLERANCE);
+  EXPECT_NEAR(result.eigenvalues[1], 2.0, MATRIX_TOLERANCE);
+  EXPECT_NEAR(result.eigenvalues[2], 3.0, MATRIX_TOLERANCE);
+  EXPECT_NEAR(result.eigenvalues[3], 4.0, MATRIX_TOLERANCE);
 }
 
-TEST(JacobiEigensolver, ReconstructsRandomSymmetric) {
+TEST(SymmetricEigensolver, Matrix4x4Overload) {
+  std::array<double, 16> a{};
+  a[0] = 3.0;
+  a[5] = 1.0;
+  a[10] = 4.0;
+  a[15] = 2.0;
+  Matrix4x4 matrix{};
+  for (std::size_t k = 0; k < 16; ++k) {
+    matrix(k / 4, k % 4) = a[k];
+  }
+  const SymmetricEigen4 fromArray = symmetricEigen4(a);
+  const SymmetricEigen4 fromMatrix = symmetricEigen4(matrix);
+  for (std::size_t i = 0; i < 4; ++i) {
+    EXPECT_NEAR(fromMatrix.eigenvalues[i], fromArray.eigenvalues[i],
+                MATRIX_TOLERANCE);
+  }
+  EXPECT_TRUE(fromMatrix.eigenvectors.isApprox(fromArray.eigenvectors));
+}
+
+TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
   std::mt19937 rng(0xC0FFEE);
-  std::uniform_real_distribution<double> dist(-2.0, 2.0);
+  std::uniform_real_distribution dist(-2.0, 2.0);
   for (int trial = 0; trial < 50; ++trial) {
     std::array<double, 16> a{};
     for (std::size_t i = 0; i < 4; ++i) {
@@ -439,16 +524,17 @@ TEST(JacobiEigensolver, ReconstructsRandomSymmetric) {
         a[(j * 4) + i] = value;
       }
     }
-    const SymmetricEigen4 result = jacobiSymmetricEigen(a);
+    const SymmetricEigen4 result = symmetricEigen4(a);
 
     // Eigenvalues are ascending.
     for (std::size_t i = 0; i + 1 < 4; ++i) {
-      EXPECT_LE(result.eigenvalues[i], result.eigenvalues[i + 1] + 1e-12);
+      EXPECT_LE(result.eigenvalues[i],
+                result.eigenvalues[i + 1] + MATRIX_TOLERANCE);
     }
 
     // Eigenvectors are orthonormal: V^T V == I.
     const Matrix4x4& v = result.eigenvectors;
-    EXPECT_TRUE((v.transpose() * v).isIdentity(1e-9));
+    EXPECT_TRUE((v.transpose() * v).isIdentity());
 
     // Reconstruction: V D V^T == A.
     const Matrix4x4 d =
@@ -459,53 +545,31 @@ TEST(JacobiEigensolver, ReconstructsRandomSymmetric) {
     for (std::size_t k = 0; k < 16; ++k) {
       original(k / 4, k % 4) = a[k];
     }
-    EXPECT_TRUE(reconstructed.isApprox(original, 1e-9));
+    EXPECT_TRUE(reconstructed.isApprox(original));
   }
 }
 
-TEST(JacobiEigensolver, HandlesDegenerateSpectrum) {
+TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
   // A scalar multiple of the identity: every vector is an eigenvector, but the
   // returned basis must still be orthonormal.
   std::array<double, 16> a{};
   for (std::size_t i = 0; i < 4; ++i) {
     a[(i * 4) + i] = 2.5;
   }
-  const SymmetricEigen4 result = jacobiSymmetricEigen(a);
+  const SymmetricEigen4 result = symmetricEigen4(a);
   for (const double value : result.eigenvalues) {
-    EXPECT_NEAR(value, 2.5, 1e-12);
+    EXPECT_NEAR(value, 2.5, MATRIX_TOLERANCE);
   }
   const Matrix4x4& v = result.eigenvectors;
-  EXPECT_TRUE((v.transpose() * v).isIdentity(1e-9));
+  EXPECT_TRUE((v.transpose() * v).isIdentity());
 }
 
-TEST(DynamicMatrix, IsApproxOverloads) {
-  const Matrix1x1 phase = Matrix1x1::fromElements(Complex{0.25, 0.5});
-  const Matrix2x2 x = pauliX();
-  const Matrix4x4 swap = swapMatrix();
-
-  DynamicMatrix as1x1;
-  as1x1.assignFrom(phase);
-  EXPECT_TRUE(as1x1.isApprox(phase));
-  EXPECT_FALSE(as1x1.isApprox(Matrix1x1::fromElements(1.0)));
-
-  DynamicMatrix as2x2;
-  as2x2.assignFrom(x);
-  EXPECT_TRUE(as2x2.isApprox(x));
-  EXPECT_FALSE(as2x2.isApprox(Matrix2x2::identity()));
-
-  DynamicMatrix as4x4;
-  as4x4.assignFrom(swap);
-  EXPECT_TRUE(as4x4.isApprox(swap));
-  EXPECT_FALSE(as4x4.isApprox(Matrix4x4::identity()));
-
-  DynamicMatrix wrongDim = DynamicMatrix::identity(3);
-  EXPECT_FALSE(wrongDim.isApprox(phase));
-  EXPECT_FALSE(wrongDim.isApprox(x));
-  EXPECT_FALSE(wrongDim.isApprox(swap));
-
-  const DynamicMatrix a = DynamicMatrix::identity(2);
-  DynamicMatrix b = a;
-  b(1, 0) += 1e-15;
-  EXPECT_TRUE(a.isApprox(b));
-  EXPECT_FALSE(a.isApprox(DynamicMatrix::identity(3)));
+TEST(GateMatrixFactories, RemEuclidAndControlledGates) {
+  EXPECT_DOUBLE_EQ(remEuclid(-1.0, 3.0), 2.0);
+  EXPECT_TRUE(twoQubitControlledX01().isApprox(
+      Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0)));
+  EXPECT_TRUE(twoQubitControlledX10().isApprox(
+      reorderTwoQubitMatrix(twoQubitControlledX01(), 1, 0)));
+  EXPECT_TRUE(rxMatrix(0.0).isIdentity());
+  EXPECT_TRUE((iPauliX() * iPauliX()).isApprox(-1.0 * Matrix2x2::identity()));
 }
