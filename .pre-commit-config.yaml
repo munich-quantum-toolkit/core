@@ -9,9 +9,9 @@
 #
 
 ci:
-  autoupdate_commit_msg: "⬆️🪝 update pre-commit hooks"
+  autoupdate_commit_msg: "⬆️� update pre-commit hooks"
   autoupdate_schedule: quarterly
-  autofix_commit_msg: "🎨 pre-commit fixes"
+  autofix_commit_msg: "� pre-commit fixes"
   skip: [ty]
 
 repos:
@@ -47,7 +47,7 @@ repos:
 
   ## Check pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2026.06.12
+    rev: 2026.06.14
     hooks:
       - id: validate-pyproject
         priority: 0
