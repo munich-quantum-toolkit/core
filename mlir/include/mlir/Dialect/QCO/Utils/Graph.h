@@ -128,9 +128,9 @@ public:
     return dist;
   }
 
-  /// Return reverse cycle in graph or `std::nullopt` if none exists.
+  /// Return cycle in graph or `std::nullopt` if none exists.
   /// Implements an iterative depth-first search inspired by LLVM's SCC
-  /// utilities.
+  /// utilities. For a cycle [A, B, C, A], the function returns [A, B, C].
   [[nodiscard]] std::optional<Vector<IdT>> findCycle() const {
     enum struct State : uint8_t { Unseen, Seen, Finished };
 
@@ -189,6 +189,7 @@ public:
             path.emplace_back(curr);
           }
           path.emplace_back(nbrId);
+          std::ranges::reverse(path);
           return path;
         }
       }

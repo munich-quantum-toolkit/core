@@ -47,6 +47,7 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -128,33 +129,34 @@ private:
   struct WireInfos {
     /// Return the mapped wire index of a program index.
     [[nodiscard]] size_t lookupIndex(size_t prog) const {
-      return programToIndex.at(prog);
+      return programToIndex_.at(prog);
     }
 
     /// Return the mapped program index of a wire index.
     [[nodiscard]] size_t lookupProgram(size_t index) const {
-      return indexToProgram.at(index);
+      return indexToProgram_.at(index);
     }
 
     /// Bidirectionally map a wire index to a program index.
     /// Overwrites existing mappings.
     void map(size_t index, size_t prog) {
-      indexToProgram[index] = prog;
-      programToIndex[prog] = index;
+      indexToProgram_[index] = prog;
+      programToIndex_[prog] = index;
     }
 
     /// Swap two program indices.
     void swap(size_t prog0, size_t prog1) {
       const auto i0 = lookupIndex(prog0);
       const auto i1 = lookupIndex(prog1);
-      std::swap(programToIndex[prog0], programToIndex[prog1]);
-      std::swap(indexToProgram[i0], indexToProgram[i1]);
+      std::swap(programToIndex_[prog0], programToIndex_[prog1]);
+      std::swap(indexToProgram_[i0], indexToProgram_[i1]);
     }
 
+  private:
     /// Maps the i-th wire index to a program index.
-    DenseMap<size_t, size_t> indexToProgram;
+    DenseMap<size_t, size_t> indexToProgram_;
     /// Maps a program index to the i-th wire index.
-    DenseMap<size_t, size_t> programToIndex;
+    DenseMap<size_t, size_t> programToIndex_;
   };
 
   /// Statistics collected while routing.
@@ -693,47 +695,57 @@ private:
   /// Return the sequence of SWAPs to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
+    static constexpr size_t MIN_CYCLE_LENGTH = 2;
 
     Layout curr(from);
-
+    SmallVector<IndexPairType> swaps;
     Graph<GraphType::Directed, size_t> f;
-    const auto constructEdge = [&](size_t hwA, size_t hwB) {
+
+    const auto shouldAddEdge = [&](size_t hwA, size_t hwB) {
       const auto prog = curr.getProgramIndex(hwA);
       const auto hwGoal = to.getHardwareIndex(prog);
-      const auto distPre = device.distanceBetween(hwA, hwGoal);
-      const auto distPost = device.distanceBetween(hwB, hwGoal);
-
-      if (distPost < distPre) {
-        f.addEdge(hwA, hwB);
-      }
+      return device.distanceBetween(hwB, hwGoal) <
+             device.distanceBetween(hwA, hwGoal);
     };
 
-    SmallVector<IndexPairType> swaps;
     do {
-
       f.clear();
-      for (const auto& [hwA, hwB] : device.couplings()) {
-        constructEdge(hwA, hwB);
-        constructEdge(hwB, hwA);
+
+      // Build F-graph: add edges for both directions of each coupling
+      for (const auto& coupling : device.couplings()) {
+        const std::array<std::pair<size_t, size_t>, 2> directedEdges = {
+            {{coupling.first, coupling.second},
+             {coupling.second, coupling.first}}};
+
+        for (const auto& [hwA, hwB] : directedEdges) {
+          if (shouldAddEdge(hwA, hwB)) {
+            f.addEdge(hwA, hwB);
+          }
+        }
       }
 
-      // Find happy swap chain or unhappy swap.
+      // Try to find a directed cycle in the F graph. If there is one,
+      // we can apply a happy swap chain. Note that this happy swap chain
+      // does not include the final back edge closing the cycle because the
+      // first SWAP changes the token (the qubit) on the target, invalidating
+      // the edge in F.
 
-      if (const auto cycle = f.findCycle(); cycle) {
-        // Apply happy SWAP chain.
-
-        for (size_t i = 0; i < cycle->size() - 1; ++i) {
+      if (const auto cycle = f.findCycle();
+          cycle && cycle->size() >= MIN_CYCLE_LENGTH) {
+        for (size_t i = 0; i + 1 < cycle->size(); ++i) {
           curr.swap((*cycle)[i], (*cycle)[i + 1]);
           swaps.emplace_back((*cycle)[i], (*cycle)[i + 1]);
         }
-
         continue;
       }
 
-      for (const auto e : f.getEdges()) {
-        if (f.getDegree(e.second) == 0) {
-          curr.swap(e.first, e.second);
-          swaps.emplace_back(e.first, e.second);
+      // To be benchmarked: f.getEdges() is potentially to expensive because it builds a
+      // llvm::DenseMap.
+
+      for (const auto [u, v] : f.getEdges()) {
+        if (f.getDegree(v) == 0) {
+          curr.swap(u, v);
+          swaps.emplace_back(u, v);
           break;
         }
       }
@@ -880,8 +892,8 @@ private:
                                   IRRewriter* rewriter) {
     using Traits = WireTraversalTraits<Direction>;
     using StackFrame = std::pair<Operation*, SmallVector<size_t>>;
-    SmallVector<StackFrame> stack;
 
+    SmallVector<StackFrame> stack;
     while (true) {
 
       // Advance wires past all executable gates and push operations with
