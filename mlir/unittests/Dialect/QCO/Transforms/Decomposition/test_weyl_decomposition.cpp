@@ -308,6 +308,29 @@ TEST(BasisDecomposerTest, DecomposeTwoQubitWithBasisReconstructsTarget) {
       restoreBasis(*decomposed, basis).isApprox(target, WEYL_TOLERANCE));
 }
 
+TEST(BasisDecomposerTest, CachedDecomposerMatchesOneShotAcrossTargets) {
+  const Matrix4x4 basis = twoQubitControlledX01();
+  const auto cachedDecomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const mlir::SmallVector<Matrix4x4, 3> targets{
+      Matrix4x4::identity(),
+      twoQubitControlledX01(),
+      Matrix4x4::kron(rxMatrix(0.2), ryMatrix(0.3)) *
+          TwoQubitWeylDecomposition::getCanonicalMatrix(0.1, 0.2, 0.3) *
+          Matrix4x4::kron(rzMatrix(0.1), Matrix2x2::identity()),
+  };
+  for (const Matrix4x4& target : targets) {
+    const auto oneShot = decomposeTwoQubitWithBasis(target, basis);
+    const auto cached = cachedDecomposer.decomposeTarget(target);
+    ASSERT_TRUE(oneShot.has_value());
+    ASSERT_TRUE(cached.has_value());
+    EXPECT_TRUE(restoreBasis(*oneShot, basis).isApprox(target, WEYL_TOLERANCE));
+    EXPECT_TRUE(restoreBasis(*cached, basis).isApprox(target, WEYL_TOLERANCE));
+    EXPECT_EQ(cached->numBasisUses, oneShot->numBasisUses);
+    EXPECT_EQ(cached->singleQubitFactors.size(),
+              oneShot->singleQubitFactors.size());
+  }
+}
+
 TEST(BasisDecomposerTest, RejectsMultipleBasisUsesForNonSuperControlledBasis) {
   const Matrix4x4 basis = rzzMatrix(1.0);
   const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);

@@ -32,7 +32,7 @@ inline constexpr double WEYL_TOLERANCE = 100 * MATRIX_TOLERANCE;
  * `U_canon(a,b,c) = RXX(-2a) · RYY(-2b) · RZZ(-2c)`.
  *
  * @note Adapted from TwoQubitWeylDecomposition in the IBM Qiskit framework.
- *       (C) Copyright IBM 2023
+ *       (C) Copyright IBM 2026
  *
  *       This code is licensed under the Apache License, Version 2.0. You may
  *       obtain a copy of this license in the LICENSE.txt file in the root
@@ -99,7 +99,7 @@ struct TwoQubitNativeDecomposition {
  * @brief Decomposer for a fixed two-qubit basis gate (e.g. CX/CZ).
  *
  * @note Adapted from TwoQubitBasisDecomposer in the IBM Qiskit framework.
- *       (C) Copyright IBM 2023
+ *       (C) Copyright IBM 2026
  *
  *       This code is licensed under the Apache License, Version 2.0. You may
  *       obtain a copy of this license in the LICENSE.txt file in the root
@@ -112,12 +112,30 @@ struct TwoQubitNativeDecomposition {
  */
 class TwoQubitBasisDecomposer {
 public:
+  /**
+   * @brief Precomputes basis-gate data for repeated target decompositions.
+   *
+   * Creation performs a full Weyl decomposition of @p basisMatrix and
+   * precomputes the single-qubit templates used by @ref twoQubitDecompose.
+   * Reuse one instance for many targets that share the same entangler
+   * (e.g. CX) via @ref decomposeTarget.
+   */
   [[nodiscard]] static TwoQubitBasisDecomposer
   create(const Matrix4x4& basisMatrix, double basisFidelity);
 
   [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
   twoQubitDecompose(const TwoQubitWeylDecomposition& targetDecomposition,
                     std::optional<std::uint8_t> numBasisGateUses) const;
+
+  /**
+   * @brief Decomposes @p targetUnitary using this cached basis decomposer.
+   *
+   * Only the target undergoes Weyl decomposition; basis precomputation from
+   * @ref create is reused.
+   */
+  [[nodiscard]] std::optional<TwoQubitNativeDecomposition> decomposeTarget(
+      const Matrix4x4& targetUnitary,
+      std::optional<std::uint8_t> numBasisGateUses = std::nullopt) const;
 
 private:
   struct SmbPrecomputed {
@@ -159,7 +177,13 @@ private:
   SmbPrecomputed smb{};
 };
 
-/** @brief Weyl-decomposes @p target using @p basisMatrix as entangler. */
+/**
+ * @brief Convenience wrapper that builds a fresh basis decomposer per call.
+ *
+ * For a fixed basis gate decomposed many times, prefer caching
+ * `TwoQubitBasisDecomposer::create(basisMatrix, basisFidelity)` and calling
+ * `TwoQubitBasisDecomposer::decomposeTarget` for each target.
+ */
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeTwoQubitWithBasis(
     const Matrix4x4& target, const Matrix4x4& basisMatrix,

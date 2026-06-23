@@ -75,22 +75,24 @@ static double traceToFidelity(const Complex& trace) {
 
 static constexpr double INV_SQRT2 = 1.0 / std::numbers::sqrt2;
 
+static const Matrix4x4 kMagicBasisNonNormalized = Matrix4x4::fromElements( //
+    1, 1i, 0, 0,                                                           //
+    0, 0, 1i, 1,                                                           //
+    0, 0, 1i, -1,                                                          //
+    1, -1i, 0, 0);
+static const Matrix4x4 kMagicBasisNonNormalizedDagger =
+    Matrix4x4::fromElements(                          //
+        0.5, 0, 0, 0.5,                               //
+        Complex{0.0, -0.5}, 0, 0, Complex{0.0, 0.5},  //
+        0, Complex{0.0, -0.5}, Complex{0.0, -0.5}, 0, //
+        0, 0.5, -0.5, 0);
+
 static Matrix4x4 magicBasisTransform(const Matrix4x4& unitary,
                                      bool outOfMagicBasis) {
-  const Matrix4x4 bNonNormalized = Matrix4x4::fromElements( //
-      1, 1i, 0, 0,                                          //
-      0, 0, 1i, 1,                                          //
-      0, 0, 1i, -1,                                         //
-      1, -1i, 0, 0);
-  const Matrix4x4 bNonNormalizedDagger = Matrix4x4::fromElements( //
-      0.5, 0, 0, 0.5,                                             //
-      Complex{0.0, -0.5}, 0, 0, Complex{0.0, 0.5},                //
-      0, Complex{0.0, -0.5}, Complex{0.0, -0.5}, 0,               //
-      0, 0.5, -0.5, 0);
   if (outOfMagicBasis) {
-    return bNonNormalizedDagger * unitary * bNonNormalized;
+    return kMagicBasisNonNormalizedDagger * unitary * kMagicBasisNonNormalized;
   }
-  return bNonNormalized * unitary * bNonNormalizedDagger;
+  return kMagicBasisNonNormalized * unitary * kMagicBasisNonNormalizedDagger;
 }
 
 static double closestPartialSwap(double a, double b, double c) {
@@ -693,6 +695,15 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
 }
 
 std::optional<TwoQubitNativeDecomposition>
+TwoQubitBasisDecomposer::decomposeTarget(
+    const Matrix4x4& targetUnitary,
+    const std::optional<std::uint8_t> numBasisGateUses) const {
+  const auto targetWeyl =
+      TwoQubitWeylDecomposition::create(targetUnitary, DEFAULT_FIDELITY);
+  return twoQubitDecompose(targetWeyl, numBasisGateUses);
+}
+
+std::optional<TwoQubitNativeDecomposition>
 TwoQubitBasisDecomposer::twoQubitDecompose(
     const TwoQubitWeylDecomposition& targetDecomposition,
     std::optional<std::uint8_t> numBasisGateUses) const {
@@ -840,8 +851,7 @@ decomposeTwoQubitWithBasis(const Matrix4x4& target,
                            const std::optional<std::uint8_t> numBasisUses) {
   const auto decomposer =
       TwoQubitBasisDecomposer::create(basisMatrix, basisFidelity);
-  const auto weyl = TwoQubitWeylDecomposition::create(target, DEFAULT_FIDELITY);
-  return decomposer.twoQubitDecompose(weyl, numBasisUses);
+  return decomposer.decomposeTarget(target, numBasisUses);
 }
 
 } // namespace mlir::qco::decomposition
