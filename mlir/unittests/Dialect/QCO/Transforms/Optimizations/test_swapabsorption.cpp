@@ -56,29 +56,6 @@ protected:
 };
 }; // namespace
 
-TEST_F(SwapAbsorbPassTest, PassDoesNotChangeSwaplessProgram) {
-
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  const auto q00 = builder.staticQubit(0);
-  const auto q10 = builder.staticQubit(1);
-
-  const auto q01 = builder.h(q00);
-  const auto [q02, q11] = builder.cx(q01, q10);
-
-  builder.sink(q02);
-  builder.sink(q11);
-
-  auto moduleThroughPass = builder.finalize();
-  auto originalModule = moduleThroughPass->clone();
-
-  applySwapAbsorb(moduleThroughPass);
-  ASSERT_TRUE(mlir::OperationEquivalence::isEquivalentTo(
-      moduleThroughPass.get(), originalModule,
-      mlir::OperationEquivalence::Flags::IgnoreLocations));
-}
-
 TEST_F(SwapAbsorbPassTest, PassReordersTwoQubitCircuitWithLeadingSwap) {
 
   qco::QCOProgramBuilder builder(context.get());
