@@ -335,14 +335,13 @@ public:
    * This method receives a number of global qubit indices and checks whether
    * they have for a given value always a zero amplitude.
    *
-   * @param qubits The qubits which are being checked.
-   * @param value The value for which is tested whether there is a nonzero
-   * amplitude.
+   * @param qubitValues Pairs of the qubits that are being checked and the
+   * values that they are being checked for.
    * @returns True if the amplitude is always zero, false otherwise.
    */
   [[nodiscard("QuantumState::hasAlwaysZeroAmplitude called but ignored")]] bool
-  hasAlwaysZeroAmplitude(std::span<unsigned int> qubits,
-                         unsigned int value) const;
+  hasAlwaysZeroAmplitude(
+      const std::unordered_map<unsigned int, bool>& qubitValues) const;
 };
 
 } // namespace mlir::qco

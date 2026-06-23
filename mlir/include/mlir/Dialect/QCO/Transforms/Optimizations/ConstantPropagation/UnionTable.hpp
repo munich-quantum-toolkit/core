@@ -26,6 +26,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mlir::qco {
@@ -45,7 +46,7 @@ struct SuperfluousResult {
 struct UnionTableEntry {
   const unsigned int index;
   bool top = false;
-  std::vector<HybridState> states = {};
+  std::vector<HybridState> states;
   // Values and global indices of the participating qubits
   llvm::DenseSet<Value> participatingQubits = {};
   llvm::DenseSet<Value> participatingClassicalValues = {};
@@ -277,6 +278,31 @@ class UnionTable {
     replaceValuesGlobally(targets, newQuantumTargets);
   }
 
+  /**
+   * @brief This method returns classical values which are always either true or
+   * false.
+   *
+   * @return A map of values as keys. The values of th emap say wether the
+   * classical values are always true or always false.
+   */
+  llvm::DenseMap<Value, bool>
+  getClassicalValuesThatAreAlwaysTrueOrFalse() const {
+    llvm::DenseMap<Value, bool> result;
+    for (auto const& e : entries) {
+      for (auto const& v : e->participatingClassicalValues) {
+        for (auto const& hs : e->states) {
+          const auto isTrue = hs.isValueTrue(v);
+          if (result.contains(v) && result.at(v) != isTrue) {
+            result.erase(v);
+            break;
+          }
+          result[v] = isTrue;
+        }
+      }
+    }
+    return result;
+  }
+
 public:
   explicit UnionTable(std::size_t maxNonzeroAmplitudes,
                       std::size_t maximumHybridEntries);
@@ -408,9 +434,8 @@ public:
    * The values for the classical values are not the numeric ones, but whether
    * they are zero (false) or non-zero (true).
    *
-   * @param qubits The qubits which are being checked.
-   * @param qubitValue The value for which is tested whether there is a nonzero
-   * amplitude.
+   * @param qubitValues Pairs of the qubits that are being checked and the
+   * values that they are being checked for.
    * @param classicalIntegerValues The integer values to check.
    * @param classicalDoubleValues The double values to check.
    * @throws invalid_argument if a value is given, but is not found in the
@@ -419,9 +444,9 @@ public:
    */
   [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
   hasAlwaysZeroProbability(
-      std::span<Value> qubits, unsigned int qubitValue,
-      std::span<std::pair<Value, int64_t>> classicalIntegerValues = {},
-      std::span<std::pair<Value, double>> classicalDoubleValues = {}) const;
+      const llvm::DenseMap<Value, bool>& qubitValues,
+      const llvm::DenseMap<Value, int64_t>& classicalIntegerValues,
+      const llvm::DenseMap<Value, double>& classicalDoubleValues) const;
 
   /**
    * @brief Returns a classical value that is equivalent to qubit.
@@ -432,13 +457,13 @@ public:
    * is false.
    *
    * @param qubit Index of qubit.
-   * @returns Classical value that is equivalent or inverse to qubit if it
-   * exists and true, if the qubit is equivalent to the value. False, if the
-   * qubit is the inverse of the value.
+   * @returns A map of classical values that are equivalent or inverse to qubit.
+   * The value of the map is true, if the qubit is equivalent to the value.
+   * False, if the qubit is the inverse of the value.
    */
   [[nodiscard(
-      "UnionTable::getValueThatIsEquivalentToQubit called but ignored")]] std::
-      optional<std::pair<Value, bool>>
+      "UnionTable::getValueThatIsEquivalentToQubit called but ignored")]] llvm::
+      DenseMap<Value, bool>
       getValueThatIsEquivalentToQubit(Value qubit) const;
 
   /**

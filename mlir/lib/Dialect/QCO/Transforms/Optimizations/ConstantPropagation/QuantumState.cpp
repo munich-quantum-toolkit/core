@@ -232,16 +232,14 @@ bool QuantumState::isQubitAlwaysZero(const unsigned int q) const {
       amplitudeMap | std::views::keys,
       [mask](auto qubits) { return (qubits & mask) == 0; });
 }
-bool QuantumState::hasAlwaysZeroAmplitude(const std::span<unsigned int> qubits,
-                                          const unsigned int value) const {
+bool QuantumState::hasAlwaysZeroAmplitude(
+    const std::unordered_map<unsigned int, bool>& qubitValues) const {
   unsigned int localValue = 0;
   unsigned int mask = 0;
-  for (unsigned int i = 0; i < qubits.size(); ++i) {
-    const unsigned int bitMask = 1U << i;
-    const unsigned int qubitMask = 1U << qubits[i];
-    mask += qubitMask;
-    if ((value & bitMask) != 0) {
-      localValue += qubitMask;
+  for (const auto& [qubitIndex, qubitOne] : qubitValues) {
+    mask |= 1U << globalToLocalQubitNumber.at(qubitIndex);
+    if (qubitOne) {
+      localValue |= 1U << globalToLocalQubitNumber.at(qubitIndex);
     }
   }
   return std::ranges::all_of(

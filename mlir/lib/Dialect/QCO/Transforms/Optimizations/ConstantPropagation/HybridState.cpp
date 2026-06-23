@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/ClassicalArithOperation.h"
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/QuantumState.hpp"
 
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
 
@@ -27,6 +28,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mlir::qco {
@@ -275,9 +277,9 @@ bool HybridState::isValueTrue(const Value v) const {
 }
 
 bool HybridState::hasAlwaysZeroProbability(
-    const std::span<unsigned int> qubits, const unsigned int qubitValue,
-    std::span<std::pair<Value, int64_t>> classicalIntegerValues,
-    std::span<std::pair<Value, double>> classicalDoubleValues) const {
+    const std::unordered_map<unsigned int, bool>& qubitValues,
+    const llvm::DenseMap<Value, int64_t>& classicalIntegerValues,
+    const llvm::DenseMap<Value, double>& classicalDoubleValues) const {
   for (const auto& [v, i] : classicalIntegerValues) {
     if (!integerValues.contains(v)) {
       throw std::domain_error("Value of a classical value is asked which does "
@@ -298,33 +300,33 @@ bool HybridState::hasAlwaysZeroProbability(
     }
   }
 
-  return qState->hasAlwaysZeroAmplitude(qubits, qubitValue);
+  return qState->hasAlwaysZeroAmplitude(qubitValues);
 }
 
-std::pair<std::optional<Value>, bool>
+llvm::DenseMap<Value, bool>
 HybridState::getValueThatIsEquivalentToQubit(const unsigned int qubit) const {
-  if (integerValues.empty() && doubleValues.empty()) {
-    return {std::optional<Value>(), false};
-  }
+  llvm::DenseMap<Value, bool> result;
   const bool qubitZero = qState->isQubitAlwaysZero(qubit);
   const bool qubitOne = qubitZero ? false : qState->isQubitAlwaysOne(qubit);
   if (!qubitZero && !qubitOne) {
-    return {std::optional<Value>(), false};
+    return result;
   }
   for (const auto& [v, i] : integerValues) {
     if ((qubitZero && i == 0) || (qubitOne && i != 0)) {
-      return {std::optional(v), true};
+      result[v] = true;
+    } else {
+      result[v] = false;
     }
-    return {std::optional(v), false};
   }
   for (const auto& [v, d] : doubleValues) {
     if ((qubitZero && std::norm(d) < 1e-4) ||
         (qubitOne && std::norm(d) >= 1e-4)) {
-      return {std::optional(v), true};
+      result[v] = true;
+    } else {
+      result[v] = false;
     }
-    return {std::optional(v), false};
   }
-  return {std::optional<Value>(), false};
+  return result;
 }
 
 } // namespace mlir::qco

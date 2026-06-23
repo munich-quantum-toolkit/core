@@ -303,12 +303,95 @@ bool UnionTable::isClassicalValueAlwaysFalse(const Value c) const {
 }
 
 bool UnionTable::hasAlwaysZeroProbability(
-    std::span<Value> qubits, unsigned int qubitValue,
-    std::span<std::pair<Value, int64_t>> classicalIntegerValues,
-    std::span<std::pair<Value, double>> classicalDoubleValues) const {}
+    const llvm::DenseMap<Value, bool>& qubitValues,
+    const llvm::DenseMap<Value, int64_t>& classicalIntegerValues,
+    const llvm::DenseMap<Value, double>& classicalDoubleValues) const {
+  std::set<UnionTableEntry> participatingEntries;
+  for (auto& [qV, _] : qubitValues) {
+    participatingEntries.insert(*valuesToEntries.at(qV));
+  }
+  for (auto& [iV, _] : classicalIntegerValues) {
+    participatingEntries.insert(*valuesToEntries.at(iV));
+  }
+  for (auto& [dV, _] : classicalDoubleValues) {
+    participatingEntries.insert(*valuesToEntries.at(dV));
+  }
+  for (const auto& ute : participatingEntries) {
+    std::unordered_map<unsigned int, bool> qubitValuesThisEntry;
+    llvm::DenseMap<Value, int64_t> intValuesThisEntry;
+    llvm::DenseMap<Value, double> doubleValuesThisEntry;
+    for (const auto& [qV, qBool] : qubitValues) {
+      if (ute.participatingQubits.contains(qV)) {
+        qubitValuesThisEntry[qubitsToGlobalIndices.at(qV)] = qBool;
+      }
+    }
+    for (const auto& [iV, number] : classicalIntegerValues) {
+      if (ute.participatingClassicalValues.contains(iV)) {
+        intValuesThisEntry[iV] = number;
+      }
+    }
+    for (const auto& [dV, number] : classicalDoubleValues) {
+      if (ute.participatingClassicalValues.contains(dV)) {
+        doubleValuesThisEntry[dV] = number;
+      }
+    }
+    bool oneEntryIsNonzero = false;
+    for (const auto& hs : ute.states) {
+      if (!hs.hasAlwaysZeroProbability(qubitValuesThisEntry, intValuesThisEntry,
+                                       doubleValuesThisEntry)) {
+        oneEntryIsNonzero = true;
+        break;
+      }
+    }
+    if (!oneEntryIsNonzero) {
+      return true;
+    }
+  }
+  return false;
+}
 
-std::optional<std::pair<Value, bool>>
-UnionTable::getValueThatIsEquivalentToQubit(Value qubit) const {}
+llvm::DenseMap<Value, bool>
+UnionTable::getValueThatIsEquivalentToQubit(Value qubit) const {
+  const auto uteOfQubit = valuesToEntries.at(qubit);
+  const auto indexOfQubit = qubitsToGlobalIndices.at(qubit);
+  llvm::DenseMap<Value, bool> result;
+  bool found = false;
+  bool alwaysOne = true;
+  bool alwaysZero = true;
+  for (const auto& hs : uteOfQubit->states) {
+    alwaysOne &= hs.isQubitAlwaysOne(indexOfQubit);
+    alwaysZero &= hs.isQubitAlwaysZero(indexOfQubit);
+    auto currentResult = hs.getValueThatIsEquivalentToQubit(indexOfQubit);
+    if (currentResult.empty() || (result.empty() && found)) {
+      result.clear();
+      continue;
+    }
+    if (!found) {
+      result = currentResult;
+      found = true;
+    } else {
+      for (const auto& [value, inverse] : currentResult) {
+        if (!result.contains(value) || result.at(value) != inverse) {
+          result.erase(value);
+        }
+      }
+    }
+  }
+  if (alwaysOne) {
+    auto valuesThatAreAlwaysTrue = getClassicalValuesThatAreAlwaysTrueOrFalse();
+    result.reserve(valuesThatAreAlwaysTrue.size());
+    for (const auto& [k, v] : valuesThatAreAlwaysTrue) {
+      result[k] = v;
+    }
+  } else if (alwaysZero) {
+    auto valuesThatAreAlwaysTrue = getClassicalValuesThatAreAlwaysTrueOrFalse();
+    result.reserve(valuesThatAreAlwaysTrue.size());
+    for (const auto& [k, v] : valuesThatAreAlwaysTrue) {
+      result[k] = !v;
+    }
+  }
+  return result;
+}
 
 std::optional<double> UnionTable::globalPhaseThatIsAdded(
     Operation* diagonalOp, std::span<Value> targets,
