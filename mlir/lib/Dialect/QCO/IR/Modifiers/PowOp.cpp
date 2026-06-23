@@ -689,6 +689,13 @@ void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
               MoveCtrlOutside, NegPowToInvPow>(context);
 }
 
+bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
+  return all_of(getBody()->getOps<UnitaryOpInterface>(),
+                [](UnitaryOpInterface op) {
+                  return op.hasCompileTimeKnownUnitaryMatrix();
+                });
+}
+
 std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
   auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
   if (!bodyUnitary) {

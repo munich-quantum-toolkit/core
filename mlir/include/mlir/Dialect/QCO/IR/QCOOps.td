@@ -1274,6 +1274,7 @@ def PowOp
         OperandRange getParameters() { return getBodyUnitary().getParameters(); }
         double getExponentValue();
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
