@@ -221,17 +221,12 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
     auto targets = llvm::to_vector(innerCtrl.getTargets());
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange ctrlArgs) {
-          // Remap old CtrlOp's block arguments to the new CtrlOp's block
-          // arguments, since the inlined ops reference them and the old
-          // CtrlOp is about to be erased with the old PowOp.
-          for (auto [oldArg, newArg] :
-               llvm::zip_equal(innerCtrl.getBody()->getArguments(), ctrlArgs)) {
-            rewriter.replaceAllUsesWith(oldArg, newArg);
-          }
           PowOp::create(rewriter, op.getLoc(), op.getExponentValue(), [&] {
             auto* powBody = rewriter.getInsertionBlock();
+            // Inline the old CtrlOp's body, remapping its block arguments to
+            // the new CtrlOp's block arguments.
             rewriter.inlineBlockBefore(innerCtrl.getBody(), powBody,
-                                       powBody->begin());
+                                       powBody->begin(), ctrlArgs);
             rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
           });
         });
