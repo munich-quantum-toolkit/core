@@ -83,6 +83,9 @@ private:
   /// Return true, if an op doesn't return, but only consumes, a qubit value.
   static bool isSinkLikeOperation(Operation* op);
 
+  /// Return true, if an op doesn't consume, but only returns, a qubit value.
+  static bool isSourceLikeOperation(Operation* op);
+
   /// Move to the next operation on the qubit wire.
   void forward();
 

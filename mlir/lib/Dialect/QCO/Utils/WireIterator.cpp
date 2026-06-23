@@ -31,6 +31,10 @@ bool WireIterator::isSinkLikeOperation(Operation* op) {
   return isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op);
 }
 
+bool WireIterator::isSourceLikeOperation(Operation* op) {
+  return isa<AllocOp, StaticOp, qtensor::ExtractOp>(op);
+}
+
 Value WireIterator::qubit() const {
   if (op_ != nullptr && isSinkLikeOperation(op_)) {
     return nullptr;
@@ -60,7 +64,7 @@ void WireIterator::forward() {
     return;
   }
 
-  if (!(isa<AllocOp, StaticOp, qtensor::ExtractOp>(op_))) {
+  if (!isSourceLikeOperation(op_)) {
     // Find the output from the input qubit SSA value.
     TypeSwitch<Operation*>(op_)
         .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
@@ -99,15 +103,15 @@ void WireIterator::backward() {
   }
 
   // For these operations, qubit_ is an OpOperand. Hence, only get the def-op.
-  if (isa<SinkOp, YieldOp, scf::YieldOp, qtensor::InsertOp>(op_)) {
+  if (isSinkLikeOperation(op_)) {
     op_ = qubit_.getDefiningOp();
     isFinal_ = false;
     return;
   }
 
-  // Allocations or static definitions define the start of the qubit wire.
+  // Source-like ops define the start of the qubit wire.
   // Consequently, stop and early exit.
-  if (isa<AllocOp, StaticOp, qtensor::ExtractOp>(op_)) {
+  if (isSourceLikeOperation(op_)) {
     return;
   }
 
