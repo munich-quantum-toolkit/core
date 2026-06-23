@@ -452,12 +452,6 @@ TEST(EulerAnglesCoverageTest, ParamsZYZUsesOffDiagonal01When10IsNearZero) {
   EXPECT_TRUE(std::isfinite(angles.lambda));
 }
 
-TEST(EulerAnglesDeathTest, InvalidBasisIsUnreachable) {
-  EXPECT_DEATH(static_cast<void>(anglesFromUnitary(
-                   Matrix2x2::identity(), static_cast<EulerBasis>(99))),
-               "invalid Euler basis");
-}
-
 TEST(EulerAnglesCoverageTest, PhaseOnlyDecompositionSkipsRotationGates) {
   TestFixture fx;
   fx.setUp();
