@@ -134,14 +134,14 @@ void WireIterator::backward() {
       .Case<qco::IfOp>([&](qco::IfOp op) {
         if (auto res = dyn_cast<OpResult>(qubit_)) {
           auto it = llvm::find(op.getResults(), res);
-          assert(it != op->result_end());
-          const auto idx = std::distance(op.result_begin(), it);
+          assert(it != op.getResults().end());
+          const auto idx = std::distance(op.getResults().begin(), it);
           qubit_ = op.getQubits()[idx];
           return;
         }
 
         llvm::reportFatalInternalError(
-            "expected scf.for result for tied init lookup");
+            "expected scf.if result for tied init lookup");
       })
       .Default([&](Operation* op) {
         llvm::reportFatalInternalError("unknown op in def-use chain: " +
