@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <functional>
 #include <ios>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -439,6 +440,80 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
       expectMatrixPreserved(circuit.func, original, basisStr);
     });
   }
+}
+
+TEST(EulerAnglesCoverageTest, ParamsZYZUsesOffDiagonal01When10IsNearZero) {
+  Matrix2x2 matrix = rxMatrix(0.4);
+  matrix(1, 0) = Complex{0.0, 0.0};
+  ASSERT_GT(std::abs(matrix(0, 1)), mlir::utils::TOLERANCE);
+  const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
+  EXPECT_TRUE(std::isfinite(angles.theta));
+  EXPECT_TRUE(std::isfinite(angles.phi));
+  EXPECT_TRUE(std::isfinite(angles.lambda));
+}
+
+TEST(EulerAnglesDeathTest, InvalidBasisIsUnreachable) {
+  EXPECT_DEATH(static_cast<void>(anglesFromUnitary(
+                   Matrix2x2::identity(), static_cast<EulerBasis>(99))),
+               "invalid Euler basis");
+}
+
+TEST(EulerAnglesCoverageTest, PhaseOnlyDecompositionSkipsRotationGates) {
+  TestFixture fx;
+  fx.setUp();
+  constexpr double scale = 1.0 + 1e-10;
+  const Matrix2x2 matrix = Matrix2x2::fromElements(scale, 0, 0, scale);
+  ASSERT_FALSE(matrix.isApprox(Matrix2x2::identity()));
+  const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
+  EXPECT_LE(std::abs(angles.theta), mlir::utils::TOLERANCE);
+  EXPECT_LE(std::abs(angles.phi), mlir::utils::TOLERANCE);
+  EXPECT_LE(std::abs(angles.lambda), mlir::utils::TOLERANCE);
+  const auto circuit = synthesizeMatrix(fx.ctx(), matrix, ZYZ);
+  ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
+  EXPECT_EQ(countZYZGates(circuit.func), 0U);
+}
+
+TEST(EulerAnglesCoverageTest, UBasisZeroThetaEmitsSingleUGate) {
+  TestFixture fx;
+  fx.setUp();
+  const Matrix2x2 matrix = rzMatrix(0.7);
+  expectSynthesizedMatrix(fx.ctx(), matrix, U,
+                          [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
+                            EXPECT_EQ(countOps<UOp>(funcOp), 1U);
+                            EXPECT_EQ(countZYZGates(funcOp), 0U);
+                          });
+}
+
+TEST(EulerAnglesCoverageTest, UBasisNonzeroThetaEmitsSingleUGate) {
+  TestFixture fx;
+  fx.setUp();
+  const Matrix2x2 matrix = ryMatrix(1.2);
+  expectSynthesizedMatrix(fx.ctx(), matrix, U,
+                          [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
+                            EXPECT_EQ(countOps<UOp>(funcOp), 1U);
+                            EXPECT_EQ(countZYZGates(funcOp), 0U);
+                          });
+}
+
+TEST(EulerAnglesCoverageTest, Mod2PiMapsPiBoundaryThroughSynthesis) {
+  TestFixture fx;
+  fx.setUp();
+  constexpr double eps = 0.5 * mlir::utils::TOLERANCE;
+  const Complex global = std::polar(1.0, std::numbers::pi - eps);
+  const Matrix2x2 matrix = Matrix2x2::fromElements(global, 0, 0, global);
+  expectSynthesizedMatrix(fx.ctx(), matrix, U,
+                          [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
+                            EXPECT_EQ(countOps<UOp>(funcOp), 1U);
+                            EXPECT_EQ(countOps<GPhaseOp>(funcOp), 1U);
+                          });
+}
+
+TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
+  TestFixture fx;
+  fx.setUp();
+  const Matrix2x2 matrix = Matrix2x2::fromElements(
+      Complex{std::numeric_limits<double>::quiet_NaN(), 0}, 0, 0, 1);
+  EXPECT_NO_FATAL_FAILURE(synthesizeMatrix(fx.ctx(), matrix, ZYZ));
 }
 
 //===----------------------------------------------------------------------===//
