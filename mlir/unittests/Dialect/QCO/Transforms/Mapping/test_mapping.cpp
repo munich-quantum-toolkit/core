@@ -70,7 +70,8 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
             const auto hwA = m.at(op.getInputQubit(0));
             const auto hwB = m.at(op.getInputQubit(1));
             if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
-              llvm::dbgs() << "not executable: \n";
+              llvm::dbgs() << "(" << hwA << ", " << hwB << ") "
+                           << "not executable: \n";
               op->dump();
               executable = false;
             }
@@ -333,9 +334,7 @@ TEST_P(MappingPassTest, GroverLike) {
   const auto& device = GetParam();
 
   PassManager pm(context.get());
-  pm.addPass(createMappingPass(
-      device.couplingSet,
-      MappingPassOptions{.ntrials = 1, .niterations = 1, .nlookahead = 2}));
+  pm.addPass(createMappingPass(device.couplingSet, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -414,7 +413,86 @@ TEST_P(MappingPassTest, GroverLike) {
   auto res = pm.run(m.get());
   auto entry = getEntryPoint(m.get());
 
-  m->dump();
+  ASSERT_TRUE(res.succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+}
+
+TEST_P(MappingPassTest, ParallelLoops) {
+  constexpr int64_t nqubits = 6;
+  const auto& device = GetParam();
+
+  PassManager pm(context.get());
+  pm.addPass(
+      createMappingPass(device.couplingSet, MappingPassOptions{.ntrials = 1, .niterations=1}));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value tensor = builder.qtensorAlloc(nqubits);
+  SmallVector<Value> creg(nqubits);
+  SmallVector<Value> qreg(nqubits);
+
+  for (int64_t i = 0; i < nqubits; ++i) {
+    std::tie(tensor, qreg[i]) = builder.qtensorExtract(tensor, i);
+    qreg[i] = builder.h(qreg[i]);
+  }
+
+  const auto upForResults =
+      builder.scfFor(1, 3, 1, {qreg[0], qreg[1], qreg[2]},
+                     [&builder](Value, ValueRange iterArgs) {
+                       Value iterQ0 = iterArgs[0];
+                       Value iterQ1 = iterArgs[1];
+                       Value iterQ2 = iterArgs[2];
+
+                       std::tie(iterQ0, iterQ1) = builder.cx(iterQ0, iterQ1);
+                       iterQ0 = builder.h(iterQ0);
+                       std::tie(iterQ0, iterQ1) = builder.cz(iterQ0, iterQ1);
+                       std::tie(iterQ1, iterQ2) = builder.cz(iterQ1, iterQ2);
+                       std::tie(iterQ0, iterQ2) = builder.cx(iterQ0, iterQ2);
+
+                       return SmallVector{iterQ0, iterQ1, iterQ2};
+                     });
+
+  qreg[0] = upForResults[0];
+  qreg[1] = upForResults[1];
+  qreg[2] = upForResults[2];
+
+  const auto downForResults =
+      builder.scfFor(1, 3, 1, {qreg[3], qreg[4], qreg[5]},
+                     [&builder](Value, ValueRange iterArgs) {
+                       Value iterQ0 = iterArgs[0];
+                       Value iterQ1 = iterArgs[1];
+                       Value iterQ2 = iterArgs[2];
+
+                       std::tie(iterQ0, iterQ1) = builder.cx(iterQ0, iterQ1);
+                       iterQ0 = builder.h(iterQ0);
+                       std::tie(iterQ1, iterQ2) = builder.cz(iterQ1, iterQ2);
+                       std::tie(iterQ0, iterQ1) = builder.cz(iterQ0, iterQ1);
+                       std::tie(iterQ0, iterQ2) = builder.cx(iterQ0, iterQ2);
+
+                       return SmallVector{iterQ0, iterQ1, iterQ2};
+                     });
+
+  qreg[3] = downForResults[0];
+  qreg[4] = downForResults[1];
+  qreg[5] = downForResults[2];
+
+  qreg = builder.barrier(qreg);
+
+  for (int64_t i = 0; i < nqubits; ++i) {
+    std::tie(qreg[i], creg[i]) = builder.measure(qreg[i]);
+    qreg[i] = builder.h(qreg[i]);
+  }
+
+  for (int64_t i = 0; i < nqubits; ++i) {
+    tensor = builder.qtensorInsert(qreg[i], tensor, i);
+  }
+
+  builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
+  auto res = pm.run(m.get());
+  auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));

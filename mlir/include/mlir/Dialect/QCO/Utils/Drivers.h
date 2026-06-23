@@ -33,7 +33,7 @@
 namespace mlir::qco {
 
 using ReleasedOps = SmallVector<Operation*, 8>;
-using PendingWiresMap = DenseMap<Operation*, SmallVector<size_t, 2>>;
+using PendingWiresMap = DenseMap<Operation*, SmallVector<size_t>>;
 
 struct IsReady {
   bool operator()(PendingWiresMap::value_type& kv) const {
