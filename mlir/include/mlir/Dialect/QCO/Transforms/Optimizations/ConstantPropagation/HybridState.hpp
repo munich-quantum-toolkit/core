@@ -294,9 +294,8 @@ public:
    * The values for the classical values are not the numeric ones, but whether
    * they are zero (false) or non-zero (true).
    *
-   * @param qubits The qubits which are being checked.
-   * @param qubitValue The value for which is tested whether there is a nonzero
-   * amplitude.
+   * @param qubitValues Pairs of the qubits that are being checked and the
+   * values that they are being checked for.
    * @param classicalIntegerValues The integer values to check.
    * @param classicalDoubleValues The double values to check.
    * @throws domain_error If a classical value cannot be found.
@@ -304,9 +303,9 @@ public:
    */
   [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
   hasAlwaysZeroProbability(
-      std::span<unsigned int> qubits, unsigned int qubitValue,
-      std::span<std::pair<Value, int64_t>> classicalIntegerValues = {},
-      std::span<std::pair<Value, double>> classicalDoubleValues = {}) const;
+      const std::unordered_map<unsigned int, bool>& qubitValues,
+      const llvm::DenseMap<Value, int64_t>& classicalIntegerValues,
+      const llvm::DenseMap<Value, double>& classicalDoubleValues) const;
 
   /**
    * @brief Returns a classical value that is equivalent to qubit.
@@ -317,14 +316,13 @@ public:
    * is false.
    *
    * @param qubit Index of qubit.
-   * @returns Classical value that is equivalent or inverse to qubit if it
-   * exists and true, if the qubit is equivalent to the value. False, if the
-   * qubit is the inverse of the value.
+   * @returns A map of classical values that are equivalent or inverse to qubit.
+   * Th emaps value is true, if the qubit is equivalent to the value. False, if
+   * the qubit is the inverse of the value.
    */
-  [[nodiscard(
-      "HybridState::getValueThatIsEquivalentToQubit called but ignored")]] std::
-      pair<std::optional<Value>, bool>
-      getValueThatIsEquivalentToQubit(unsigned int qubit) const;
+  [[nodiscard("HybridState::getValueThatIsEquivalentToQubit called but "
+              "ignored")]] llvm::DenseMap<Value, bool>
+  getValueThatIsEquivalentToQubit(unsigned int qubit) const;
 };
 } // namespace mlir::qco
 

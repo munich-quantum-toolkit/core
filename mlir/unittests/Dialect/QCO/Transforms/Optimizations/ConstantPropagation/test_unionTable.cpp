@@ -21,6 +21,8 @@
 
 using namespace mlir::qco;
 
+// TODO: Tests for hasAlwaysZeroProbability
+
 class UnionTableTest : public testing::Test {
 protected:
   mlir::MLIRContext context;
