@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
 
 #include <cstdint>
 #include <iterator>
@@ -32,9 +33,11 @@ public:
   using difference_type = std::ptrdiff_t;
   using value_type = Operation*;
 
-  WireIterator() : op_(nullptr), qubit_(nullptr), isSentinel_(false) {}
+  WireIterator()
+      : op_(nullptr), qubit_(nullptr), isFinal_(false), isSentinel_(false) {}
   explicit WireIterator(Value qubit)
-      : op_(qubit.getDefiningOp()), qubit_(qubit), isSentinel_(false) {}
+      : op_(qubit.getDefiningOp()), qubit_(qubit), isFinal_(false),
+        isSentinel_(false) {}
 
   /// @returns the operation the iterator points to.
   [[nodiscard]] Operation* operation() const { return op_; }
@@ -77,14 +80,18 @@ public:
   }
 
 private:
-  /// @brief Move to the next operation on the qubit wire.
+  /// Return true, if an op doesn't return, but only consumes, a qubit value.
+  static bool isSinkLikeOperation(Operation* op);
+
+  /// Move to the next operation on the qubit wire.
   void forward();
 
-  /// @brief Move to the previous operation on the qubit wire.
+  /// Move to the previous operation on the qubit wire.
   void backward();
 
   Operation* op_;
   Value qubit_;
+  bool isFinal_;
   bool isSentinel_;
 };
 

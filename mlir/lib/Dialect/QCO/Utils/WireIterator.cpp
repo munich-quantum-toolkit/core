@@ -25,13 +25,16 @@
 #include <iterator>
 
 namespace mlir::qco {
+
+bool WireIterator::isSinkLikeOperation(Operation* op) {
+  return isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op);
+}
+
 Value WireIterator::qubit() const {
-  // Boundary ops (sink/deallocation/insert/yield) consume the wire via an
-  // operand and have no OpResult, matching the boundaries in forward/backward.
-  if (op_ != nullptr &&
-      (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp>(op_))) {
+  if (op_ != nullptr && isSinkLikeOperation(op_)) {
     return nullptr;
   }
+
   return qubit_;
 }
 
@@ -41,14 +44,18 @@ void WireIterator::forward() {
     return;
   }
 
+  // After the final operation comes the sentinel.
+  if (isFinal_) {
+    isSentinel_ = true;
+    return;
+  }
+
   // Find the user-operation of the qubit SSA value.
   assert(qubit_.hasOneUse() && "expected linear typing");
   op_ = *(qubit_.user_begin());
 
-  // A sink/insert/yield or region entry defines the end of the qubit wire.
-  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp, scf::ForOp,
-          scf::IfOp, scf::WhileOp>(op_)) {
-    isSentinel_ = true;
+  if (isSinkLikeOperation(op_)) {
+    isFinal_ = true;
     return;
   }
 
@@ -60,6 +67,15 @@ void WireIterator::forward() {
         })
         .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
         .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
+        .Case<scf::ForOp>([&](scf::ForOp op) {
+          qubit_ = op.getTiedLoopResult(&*(qubit_.use_begin()));
+        })
+        .Case<qco::IfOp>([&](qco::IfOp op) {
+          auto it = llvm::find(op.getQubits(), qubit_);
+          assert(it != op.getQubits().end());
+          const auto idx = std::distance(op.getQubits().begin(), it);
+          qubit_ = op.getResults()[idx];
+        })
         .Default([&](Operation* op) {
           llvm::reportFatalInternalError("unknown op in def-use chain: " +
                                          op->getName().getStringRef());
@@ -71,14 +87,20 @@ void WireIterator::backward() {
   // If the iterator is a sentinel, reactivate the iterator.
   if (isSentinel_) {
     isSentinel_ = false;
+    isFinal_ = true;
     return;
   }
 
-  // For sinks/deallocations/inserts/yields, qubit_ is an OpOperand. Hence, only
-  // get the def-op.
-  if (isa<SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp, scf::ForOp,
-          scf::IfOp, scf::WhileOp>(op_)) {
+  // If the op is a nullptr, the qubit value is a block argument and thus the
+  // beginning of the qubit wire.
+  if (op_ == nullptr) {
+    return;
+  }
+
+  // For these operations, qubit_ is an OpOperand. Hence, only get the def-op.
+  if (isa<SinkOp, YieldOp, scf::YieldOp, qtensor::InsertOp>(op_)) {
     op_ = qubit_.getDefiningOp();
+    isFinal_ = false;
     return;
   }
 
@@ -94,6 +116,28 @@ void WireIterator::backward() {
           [&](UnitaryOpInterface op) { qubit_ = op.getInputForOutput(qubit_); })
       .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
       .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
+      .Case<scf::ForOp>([&](scf::ForOp op) {
+        if (auto res = dyn_cast<OpResult>(qubit_)) {
+          OpOperand* operand = op.getTiedLoopInit(res);
+          qubit_ = operand->get();
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected scf.for result for tied init lookup");
+      })
+      .Case<qco::IfOp>([&](qco::IfOp op) {
+        if (auto res = dyn_cast<OpResult>(qubit_)) {
+          auto it = llvm::find(op.getResults(), res);
+          assert(it != op->result_end());
+          const auto idx = std::distance(op.result_begin(), it);
+          qubit_ = op.getQubits()[idx];
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected scf.for result for tied init lookup");
+      })
       .Default([&](Operation* op) {
         llvm::reportFatalInternalError("unknown op in def-use chain: " +
                                        op->getName().getStringRef());
@@ -103,6 +147,7 @@ void WireIterator::backward() {
   // If the current qubit SSA value is a BlockArgument (no defining op), the
   // operation will be a nullptr.
   op_ = qubit_.getDefiningOp();
+  isFinal_ = false;
 }
 
 static_assert(std::bidirectional_iterator<WireIterator>);
