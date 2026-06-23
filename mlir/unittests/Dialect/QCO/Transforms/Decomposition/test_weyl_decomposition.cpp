@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <random>
 #include <tuple>
@@ -293,6 +294,80 @@ TEST(BasisDecomposerNumBasisTest, ForcesZeroBasisUsesForIdentityTarget) {
   EXPECT_EQ(decomposed->numBasisUses, 0);
   EXPECT_TRUE(
       restoreBasis(*decomposed, basis).isApprox(target, WEYL_TOLERANCE));
+}
+
+TEST(BasisDecomposerTest, DecomposeTwoQubitWithBasisReconstructsTarget) {
+  const Matrix4x4 basis = twoQubitControlledX01();
+  const Matrix4x4 target =
+      Matrix4x4::kron(rxMatrix(0.4), ryMatrix(0.6)) *
+      TwoQubitWeylDecomposition::getCanonicalMatrix(0.3, 0.2, 0.1) *
+      Matrix4x4::kron(rzMatrix(0.2), Matrix2x2::identity());
+  const auto decomposed = decomposeTwoQubitWithBasis(target, basis);
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_TRUE(
+      restoreBasis(*decomposed, basis).isApprox(target, WEYL_TOLERANCE));
+}
+
+TEST(BasisDecomposerTest, RejectsMultipleBasisUsesForNonSuperControlledBasis) {
+  const Matrix4x4 basis = rzzMatrix(1.0);
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(Matrix4x4::identity(), 1.0);
+  EXPECT_FALSE(decomposer.twoQubitDecompose(weyl, std::uint8_t{2}).has_value());
+}
+
+TEST(BasisDecomposerForcedCountTest, OneBasisUseProducesFactors) {
+  const Matrix4x4 basis = twoQubitControlledX01();
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(twoQubitControlledX01(), 1.0);
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{1});
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_EQ(decomposed->numBasisUses, 1);
+  EXPECT_EQ(decomposed->singleQubitFactors.size(), 4U);
+}
+
+TEST(BasisDecomposerForcedCountTest, TwoBasisUsesProducesFactors) {
+  const Matrix4x4 basis = twoQubitControlledX01();
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(twoQubitControlledX01(), 1.0);
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{2});
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_EQ(decomposed->numBasisUses, 2);
+  EXPECT_EQ(decomposed->singleQubitFactors.size(), 6U);
+}
+
+TEST(BasisDecomposerForcedCountTest, ThreeBasisUsesProducesFactors) {
+  const Matrix4x4 basis = twoQubitControlledX01();
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(twoQubitControlledX01(), 1.0);
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{3});
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_EQ(decomposed->numBasisUses, 3);
+  EXPECT_EQ(decomposed->singleQubitFactors.size(), 8U);
+}
+
+TEST(WeylDecompositionStandalone, SwapNegativeCSpecializationReconstructs) {
+  constexpr double piOver4 = std::numbers::pi / 4.0;
+  const Matrix4x4 swapNegativeC =
+      TwoQubitWeylDecomposition::getCanonicalMatrix(piOver4, piOver4, -piOver4);
+  const auto decomposition =
+      TwoQubitWeylDecomposition::create(swapNegativeC, 1.0);
+  EXPECT_TRUE(
+      restoreWeyl(decomposition).isApprox(swapNegativeC, WEYL_TOLERANCE));
+}
+
+TEST(WeylDecompositionStandalone, ControlledSpecializationReconstructs) {
+  const Matrix4x4 controlledLike =
+      Matrix4x4::kron(rxMatrix(0.3), ryMatrix(0.4)) *
+      TwoQubitWeylDecomposition::getCanonicalMatrix(0.6, 0.0, 0.0) *
+      Matrix4x4::kron(Matrix2x2::identity(), rzMatrix(0.2));
+  const auto decomposition =
+      TwoQubitWeylDecomposition::create(controlledLike, 1.0);
+  EXPECT_TRUE(
+      restoreWeyl(decomposition).isApprox(controlledLike, WEYL_TOLERANCE));
 }
 
 INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, BasisDecomposerTest,
