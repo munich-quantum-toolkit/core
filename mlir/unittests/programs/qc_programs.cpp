@@ -1844,9 +1844,8 @@ void ctrlPowRx(QCProgramBuilder& b) {
 
 void negPowInvIswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  SmallVector<Value> qubits{q[0], q[1]};
   b.pow(-2.0, [&] {
-    b.inv(qubits, [&](ValueRange args) { b.iswap(args[0], args[1]); });
+    b.inv({q[0], q[1]}, [&](ValueRange args) { b.iswap(args[0], args[1]); });
   });
 }
 

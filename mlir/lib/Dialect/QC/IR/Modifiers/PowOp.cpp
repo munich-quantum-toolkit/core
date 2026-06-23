@@ -8,10 +8,13 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -24,6 +27,7 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
+#include <cstddef>
 #include <numbers>
 #include <variant>
 
@@ -170,7 +174,7 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
     }
     auto qubits = llvm::to_vector(inner.getQubits());
     rewriter.replaceOpWithNewOp<PowOp>(op, -exp, [&] {
-      InvOp::create(rewriter, op.getLoc(), qubits, [&](ValueRange invArgs) {
+      InvOp::create(rewriter, op.getLoc(), qubits, [&](ValueRange) {
         auto* invBody = rewriter.getInsertionBlock();
         rewriter.inlineBlockBefore(op.getBody(), invBody, invBody->begin());
         rewriter.eraseOp(&invBody->back()); // erase the inlined YieldOp
