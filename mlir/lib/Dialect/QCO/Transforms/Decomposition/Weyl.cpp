@@ -49,9 +49,23 @@ enum class Specialization : std::uint8_t {
   FSimabmbEquiv,
 };
 
-static constexpr double kDiagonalizationPrecision = 1e-13;
-static constexpr double kPi = std::numbers::pi;
-static constexpr double kPiOver4 = kPi / 4.0;
+struct ChamberState {
+  std::array<double, 3> cs{};
+  Matrix2x2 k1l;
+  Matrix2x2 k1r;
+  Matrix2x2 k2l;
+  Matrix2x2 k2r;
+  double globalPhase{};
+  double a{};
+  double b{};
+  double c{};
+};
+
+} // namespace
+
+static constexpr double DIAGONALIZATION_PRECISION = 1e-13;
+static constexpr double PI = std::numbers::pi;
+static constexpr double PI_OVER_4 = PI / 4.0;
 
 static double remEuclid(const double a, const double b) {
   if (b == 0.0) {
@@ -67,12 +81,12 @@ static double traceToFidelity(const Complex& trace) {
   return (4.0 + (traceAbs * traceAbs)) / 20.0;
 }
 
-static const Matrix4x4 kMagicBasisNonNormalized = Matrix4x4::fromElements( //
-    1, 1i, 0, 0,                                                           //
-    0, 0, 1i, 1,                                                           //
-    0, 0, 1i, -1,                                                          //
+static const Matrix4x4 MAGIC_BASIS_NON_NORMALIZED = Matrix4x4::fromElements( //
+    1, 1i, 0, 0,                                                             //
+    0, 0, 1i, 1,                                                             //
+    0, 0, 1i, -1,                                                            //
     1, -1i, 0, 0);
-static const Matrix4x4 kMagicBasisNonNormalizedDagger =
+static const Matrix4x4 MAGIC_BASIS_NON_NORMALIZED_DAGGER =
     Matrix4x4::fromElements(                          //
         0.5, 0, 0, 0.5,                               //
         Complex{0.0, -0.5}, 0, 0, Complex{0.0, 0.5},  //
@@ -82,9 +96,11 @@ static const Matrix4x4 kMagicBasisNonNormalizedDagger =
 static Matrix4x4 magicBasisTransform(const Matrix4x4& unitary,
                                      bool outOfMagicBasis) {
   if (outOfMagicBasis) {
-    return kMagicBasisNonNormalizedDagger * unitary * kMagicBasisNonNormalized;
+    return MAGIC_BASIS_NON_NORMALIZED_DAGGER * unitary *
+           MAGIC_BASIS_NON_NORMALIZED;
   }
-  return kMagicBasisNonNormalized * unitary * kMagicBasisNonNormalizedDagger;
+  return MAGIC_BASIS_NON_NORMALIZED * unitary *
+         MAGIC_BASIS_NON_NORMALIZED_DAGGER;
 }
 
 static double closestPartialSwap(double a, double b, double c) {
@@ -212,8 +228,8 @@ bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
   if (isClose(0., 0., 0.)) {
     return Specialization::IdEquiv;
   }
-  if (isClose(kPiOver4, kPiOver4, kPiOver4) ||
-      isClose(kPiOver4, kPiOver4, -kPiOver4)) {
+  if (isClose(PI_OVER_4, PI_OVER_4, PI_OVER_4) ||
+      isClose(PI_OVER_4, PI_OVER_4, -PI_OVER_4)) {
     return Specialization::SWAPEquiv;
   }
   if (isClose(closestAbc, closestAbc, closestAbc)) {
@@ -225,7 +241,7 @@ bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
   if (isClose(decomposition.a(), 0., 0.)) {
     return Specialization::ControlledEquiv;
   }
-  if (isClose(kPiOver4, kPiOver4, decomposition.c())) {
+  if (isClose(PI_OVER_4, PI_OVER_4, decomposition.c())) {
     return Specialization::MirrorControlledEquiv;
   }
   if (isClose((decomposition.a() + decomposition.b()) / 2.,
@@ -244,18 +260,6 @@ bestSpecialization(const TwoQubitWeylDecomposition& decomposition,
   return Specialization::General;
 }
 
-struct ChamberState {
-  std::array<double, 3> cs{};
-  Matrix2x2 k1l;
-  Matrix2x2 k1r;
-  Matrix2x2 k2l;
-  Matrix2x2 k2r;
-  double globalPhase{};
-  double a{};
-  double b{};
-  double c{};
-};
-
 static std::pair<Matrix4x4, double> projectToSU4(const Matrix4x4& unitary) {
   auto u = unitary;
   const auto detU = u.determinant();
@@ -268,7 +272,7 @@ static std::tuple<Matrix4x4, Matrix4x4, std::array<double, 3>,
 computeOrderedWeylCoordinates(const Matrix4x4& u) {
   const auto uP = magicBasisTransform(u, /*outOfMagicBasis=*/true);
   const Matrix4x4 m2 = uP.transpose() * uP;
-  auto [p, d] = diagonalizeComplexSymmetric(m2, kDiagonalizationPrecision);
+  auto [p, d] = diagonalizeComplexSymmetric(m2, DIAGONALIZATION_PRECISION);
 
   std::array<double, 4> dReal{};
   for (std::size_t i = 0; i < d.size(); ++i) {
@@ -278,14 +282,14 @@ computeOrderedWeylCoordinates(const Matrix4x4& u) {
 
   std::array<double, 3> cs{};
   for (std::size_t i = 0; i < cs.size(); ++i) {
-    cs[i] = remEuclid((dReal[i] + dReal[3]) / 2.0, 2.0 * kPi);
+    cs[i] = remEuclid((dReal[i] + dReal[3]) / 2.0, 2.0 * PI);
   }
 
   // Sort coordinates by min(x mod pi/2, pi/2 - x mod pi/2).
   std::array<double, 3> cstemp{};
   for (std::size_t i = 0; i < cs.size(); ++i) {
-    const auto tmp = remEuclid(cs[i], kPi / 2.0);
-    cstemp[i] = std::min(tmp, (kPi / 2.0) - tmp);
+    const auto tmp = remEuclid(cs[i], PI / 2.0);
+    cstemp[i] = std::min(tmp, (PI / 2.0) - tmp);
   }
   std::array<std::size_t, 3> order{0, 1, 2};
   std::ranges::stable_sort(
@@ -353,56 +357,56 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
   assert(Matrix4x4::kron(k2l, k2r).isApprox(k2, WEYL_TOLERANCE));
   globalPhase += phaseL + phaseR;
 
-  if (cs[0] > (kPi / 2.0)) {
-    cs[0] -= 3.0 * (kPi / 2.0);
+  if (cs[0] > (PI / 2.0)) {
+    cs[0] -= 3.0 * (PI / 2.0);
     k1l = k1l * iPauliY();
     k1r = k1r * iPauliY();
-    globalPhase += (kPi / 2.0);
+    globalPhase += (PI / 2.0);
   }
-  if (cs[1] > (kPi / 2.0)) {
-    cs[1] -= 3.0 * (kPi / 2.0);
+  if (cs[1] > (PI / 2.0)) {
+    cs[1] -= 3.0 * (PI / 2.0);
     k1l = k1l * iPauliX();
     k1r = k1r * iPauliX();
-    globalPhase += (kPi / 2.0);
+    globalPhase += (PI / 2.0);
   }
   auto conjs = 0;
-  if (cs[0] > kPiOver4) {
-    cs[0] = (kPi / 2.0) - cs[0];
+  if (cs[0] > PI_OVER_4) {
+    cs[0] = (PI / 2.0) - cs[0];
     k1l = k1l * iPauliY();
     k2r = iPauliY() * k2r;
     conjs += 1;
-    globalPhase -= (kPi / 2.0);
+    globalPhase -= (PI / 2.0);
   }
-  if (cs[1] > kPiOver4) {
-    cs[1] = (kPi / 2.0) - cs[1];
+  if (cs[1] > PI_OVER_4) {
+    cs[1] = (PI / 2.0) - cs[1];
     k1l = k1l * iPauliX();
     k2r = iPauliX() * k2r;
     conjs += 1;
-    globalPhase += (kPi / 2.0);
+    globalPhase += (PI / 2.0);
     if (conjs == 1) {
-      globalPhase -= kPi;
+      globalPhase -= PI;
     }
   }
-  if (cs[2] > (kPi / 2.0)) {
-    cs[2] -= 3.0 * (kPi / 2.0);
+  if (cs[2] > (PI / 2.0)) {
+    cs[2] -= 3.0 * (PI / 2.0);
     k1l = k1l * iPauliZ();
     k1r = k1r * iPauliZ();
-    globalPhase += (kPi / 2.0);
+    globalPhase += (PI / 2.0);
     if (conjs == 1) {
-      globalPhase -= kPi;
+      globalPhase -= PI;
     }
   }
   if (conjs == 1) {
-    cs[2] = (kPi / 2.0) - cs[2];
+    cs[2] = (PI / 2.0) - cs[2];
     k1l = k1l * iPauliZ();
     k2r = iPauliZ() * k2r;
-    globalPhase += (kPi / 2.0);
+    globalPhase += (PI / 2.0);
   }
-  if (cs[2] > kPiOver4) {
-    cs[2] -= (kPi / 2.0);
+  if (cs[2] > PI_OVER_4) {
+    cs[2] -= (PI / 2.0);
     k1l = k1l * iPauliZ();
     k1r = k1r * iPauliZ();
-    globalPhase -= (kPi / 2.0);
+    globalPhase -= (PI / 2.0);
   }
 
   ChamberState chamber;
@@ -418,8 +422,6 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
   return chamber;
 }
 
-} // namespace
-
 //===----------------------------------------------------------------------===//
 // TwoQubitWeylDecomposition
 //===----------------------------------------------------------------------===//
@@ -430,7 +432,7 @@ void TwoQubitWeylDecomposition::finalizeSpecializationPhase(
     const std::optional<double>& fidelity) {
   const auto trace =
       flippedFromOriginal
-          ? getTrace((kPi / 2.0) - preSpecializationA, preSpecializationB,
+          ? getTrace((PI / 2.0) - preSpecializationA, preSpecializationB,
                      -preSpecializationC, a_, b_, c_)
           : getTrace(preSpecializationA, preSpecializationB, preSpecializationC,
                      a_, b_, c_);
@@ -510,15 +512,15 @@ bool TwoQubitWeylDecomposition::applySpecialization(
       k2r_ = Matrix2x2::identity();
     } else {
       flippedFromOriginal = true;
-      globalPhase_ += (kPi / 2.0);
+      globalPhase_ += (PI / 2.0);
       k1l_ = k1l_ * iPauliZ() * k2r_;
       k1r_ = k1r_ * iPauliZ() * k2l_;
       k2l_ = Matrix2x2::identity();
       k2r_ = Matrix2x2::identity();
     }
-    a_ = kPiOver4;
-    b_ = kPiOver4;
-    c_ = kPiOver4;
+    a_ = PI_OVER_4;
+    b_ = PI_OVER_4;
+    c_ = PI_OVER_4;
     break;
   case Specialization::PartialSWAPEquiv: {
     const auto closest = closestPartialSwap(a_, b_, c_);
@@ -563,8 +565,8 @@ bool TwoQubitWeylDecomposition::applySpecialization(
         anglesFromUnitary(k2l_, EulerBasis::ZYZ);
     const auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
         anglesFromUnitary(k2r_, EulerBasis::ZYZ);
-    a_ = kPiOver4;
-    b_ = kPiOver4;
+    a_ = PI_OVER_4;
+    b_ = PI_OVER_4;
     globalPhase_ = globalPhase_ + k2lphase + k2rphase;
     k1l_ = k1l_ * rzMatrix(k2rphi);
     k2l_ = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
