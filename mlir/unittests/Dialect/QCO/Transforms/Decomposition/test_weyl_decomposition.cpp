@@ -339,6 +339,14 @@ TEST(BasisDecomposerTest, RejectsMultipleBasisUsesForNonSuperControlledBasis) {
   EXPECT_FALSE(decomposer.twoQubitDecompose(weyl, std::uint8_t{2}).has_value());
 }
 
+TEST(BasisDecomposerTest, RejectsInvalidBasisGateUseCount) {
+  const Matrix4x4 basis = twoQubitControlledX01();
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(twoQubitControlledX01(), 1.0);
+  EXPECT_FALSE(decomposer.twoQubitDecompose(weyl, std::uint8_t{4}).has_value());
+}
+
 TEST(BasisDecomposerForcedCountTest, OneBasisUseProducesFactors) {
   const Matrix4x4 basis = twoQubitControlledX01();
   const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);

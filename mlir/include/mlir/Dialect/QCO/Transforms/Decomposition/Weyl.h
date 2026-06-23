@@ -129,6 +129,19 @@ public:
   [[nodiscard]] static TwoQubitBasisDecomposer
   create(const Matrix4x4& basisMatrix, double basisFidelity);
 
+  /**
+   * @brief Decomposes a target Weyl decomposition into single-qubit factors and
+   *        basis-gate uses.
+   *
+   * @param targetDecomposition Weyl decomposition of the target unitary.
+   * @param numBasisGateUses Requested number of basis-gate applications in
+   *        `{0, 1, 2, 3}`. Pass `std::nullopt` to pick the count that
+   *        maximizes `traceToFidelity(trace[i]) * basisFidelity^i` over
+   *        `i ∈ {0, 1, 2, 3}`.
+   * @return A native decomposition on success, or `std::nullopt` when the
+   *         requested count is unsupported (e.g. more than one basis gate for a
+   *         non-super-controlled basis, or a value outside `{0, 1, 2, 3}`).
+   */
   [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
   twoQubitDecompose(const TwoQubitWeylDecomposition& targetDecomposition,
                     std::optional<std::uint8_t> numBasisGateUses) const;
@@ -176,6 +189,8 @@ private:
   decomp3Supercontrolled(const TwoQubitWeylDecomposition& target) const;
   [[nodiscard]] std::array<std::complex<double>, 4>
   traces(const TwoQubitWeylDecomposition& target) const;
+
+  TwoQubitBasisDecomposer() = default;
 
   double basisFidelity{};
   TwoQubitWeylDecomposition basisWeyl;

@@ -449,6 +449,14 @@ void TwoQubitWeylDecomposition::finalizeSpecializationPhase(
 TwoQubitWeylDecomposition
 TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
                                   std::optional<double> fidelity) {
+  if (fidelity &&
+      (!std::isfinite(*fidelity) || *fidelity < 0.0 || *fidelity > 1.0)) {
+    llvm::reportFatalInternalError(llvm::formatv(
+        "TwoQubitWeylDecomposition: fidelity must be finite and in [0, 1] "
+        "(got {0})",
+        *fidelity));
+  }
+
   const auto [u, globalPhase0] = projectToSU4(unitaryMatrix);
   auto [uP, p, cs, dReal] = computeOrderedWeylCoordinates(u);
   const auto chamber = buildChamberState(u, uP, p, cs, dReal, globalPhase0);
@@ -472,11 +480,16 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   decomposition.finalizeSpecializationPhase(flippedFromOriginal, chamber.a,
                                             chamber.b, chamber.c, fidelity);
 
-  assert((Matrix4x4::kron(decomposition.k1l_, decomposition.k1r_) *
-          decomposition.getCanonicalMatrix() *
-          Matrix4x4::kron(decomposition.k2l_, decomposition.k2r_) *
-          std::exp(Complex{0.0, 1.0} * decomposition.globalPhase_))
-             .isApprox(unitaryMatrix, WEYL_TOLERANCE));
+  const auto reconstructed =
+      Matrix4x4::kron(decomposition.k1l_, decomposition.k1r_) *
+      decomposition.getCanonicalMatrix() *
+      Matrix4x4::kron(decomposition.k2l_, decomposition.k2r_) *
+      std::exp(Complex{0.0, 1.0} * decomposition.globalPhase_);
+  if (!reconstructed.isApprox(unitaryMatrix, WEYL_TOLERANCE)) {
+    llvm::reportFatalInternalError(
+        "TwoQubitWeylDecomposition: failed to reconstruct unitary after "
+        "specialization");
+  }
 
   return decomposition;
 }

@@ -82,6 +82,14 @@ static double traceToFidelity(const Complex& trace) {
 TwoQubitBasisDecomposer
 TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
                                 double basisFidelity) {
+  if (!std::isfinite(basisFidelity) || basisFidelity < 0.0 ||
+      basisFidelity > 1.0) {
+    llvm::reportFatalInternalError(llvm::formatv(
+        "TwoQubitBasisDecomposer: basisFidelity must be finite and in [0, 1] "
+        "(got {0})",
+        basisFidelity));
+  }
+
   const auto basisWeyl =
       TwoQubitWeylDecomposition::create(basisMatrix, DEFAULT_WEYL_FIDELITY);
   const auto isSuperControlled =
@@ -202,10 +210,7 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
     factors = decomp3Supercontrolled(targetDecomposition);
     break;
   default:
-    llvm::reportFatalInternalError(llvm::formatv(
-        "Invalid number of basis gates to use in basis decomposition ({0})!",
-        bestNbasis));
-    llvm_unreachable("");
+    return std::nullopt;
   }
 
   double globalPhase = targetDecomposition.globalPhase();
