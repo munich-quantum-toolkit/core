@@ -19,11 +19,11 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 
-#include <cmath>
-#include <numbers>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <iterator>
+#include <numbers>
 #include <variant>
 
 namespace mlir::utils {

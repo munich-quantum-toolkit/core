@@ -1825,23 +1825,29 @@ void powHFracNeg(QCProgramBuilder& b) {
 
 void invPowRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange args) { b.pow(2.0, [&] { b.rx(0.123, args[0]); }); });
+  b.inv(q[0],
+        [&](ValueRange args) { b.pow(2.0, [&] { b.rx(0.123, args[0]); }); });
 }
 
 void powCtrlRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow(2.0, [&] { b.ctrl(q[0], q[1], [&](ValueRange args) { b.rx(0.123, args[0]); }); });
+  b.pow(2.0, [&] {
+    b.ctrl(q[0], q[1], [&](ValueRange args) { b.rx(0.123, args[0]); });
+  });
 }
 
 void ctrlPowRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange args) { b.pow(2.0, [&] { b.rx(0.123, args[0]); }); });
+  b.ctrl(q[0], q[1],
+         [&](ValueRange args) { b.pow(2.0, [&] { b.rx(0.123, args[0]); }); });
 }
 
 void negPowInvIswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   SmallVector<Value> qubits{q[0], q[1]};
-  b.pow(-2.0, [&] { b.inv(qubits, [&](ValueRange args) { b.iswap(args[0], args[1]); }); });
+  b.pow(-2.0, [&] {
+    b.inv(qubits, [&](ValueRange args) { b.iswap(args[0], args[1]); });
+  });
 }
 
 void negPowInvIswapRef(QCProgramBuilder& b) {
@@ -1851,12 +1857,14 @@ void negPowInvIswapRef(QCProgramBuilder& b) {
 
 void ctrlPowSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange args) { b.pow(1.0 / 3.0, [&] { b.sx(args[0]); }); });
+  b.ctrl(q[0], q[1],
+         [&](ValueRange args) { b.pow(1.0 / 3.0, [&] { b.sx(args[0]); }); });
 }
 
 void ctrlPowSxRef(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange args) { b.pow(1.0 / 3.0, [&] { b.sx(args[0]); }); });
+  b.ctrl(q[0], q[1],
+         [&](ValueRange args) { b.pow(1.0 / 3.0, [&] { b.sx(args[0]); }); });
 }
 
 void simpleIf(QCProgramBuilder& b) {

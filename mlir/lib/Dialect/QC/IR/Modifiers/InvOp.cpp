@@ -89,7 +89,8 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp invOp,
                                 PatternRewriter& rewriter) const override {
-    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
+    auto inner =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
     if (!inner) {
       return failure();
     }

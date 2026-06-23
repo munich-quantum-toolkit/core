@@ -155,13 +155,12 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"NegPowInvIswap",
                                MQT_NAMED_BUILDER(negPowInvIswap),
                                MQT_NAMED_BUILDER(negPowInvIswapRef)},
-                    QCTestCase{"InvPowHFrac",
-                               MQT_NAMED_BUILDER(invPowHFrac),
+                    QCTestCase{"InvPowHFrac", MQT_NAMED_BUILDER(invPowHFrac),
                                MQT_NAMED_BUILDER(powHFracNeg)}));
 /// @}
 
-/// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} => rxx(2θ).
-/// Verify that PowOp is folded away by the cleanup pipeline.
+/// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
+/// rxx(2θ). Verify that PowOp is folded away by the cleanup pipeline.
 TEST_F(QCTest, PowRxxFold) {
   auto program =
       QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(powRxx).fn);
