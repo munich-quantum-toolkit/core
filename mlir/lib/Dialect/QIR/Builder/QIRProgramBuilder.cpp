@@ -48,12 +48,14 @@ QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
   getContext()->loadDialect<LLVM::LLVMDialect>();
 }
 
-void QIRProgramBuilder::initialize() {
+void QIRProgramBuilder::initialize() { initialize(getI64Type()); }
+
+void QIRProgramBuilder::initialize(Type returnType) {
   // Set insertion point to the module body
   setInsertionPointToStart(cast<ModuleOp>(module).getBody());
 
   // Create main function: () -> i64
-  auto funcType = LLVM::LLVMFunctionType::get(getI64Type(), {});
+  auto funcType = LLVM::LLVMFunctionType::get(returnType, {});
   auto mainFuncOp = LLVM::LLVMFuncOp::create(*this, "main", funcType);
   mainFunc = mainFuncOp.getOperation();
 
@@ -84,7 +86,6 @@ void QIRProgramBuilder::initialize() {
 
   // Create exit code constant in entry block
   setInsertionPointToStart(entryBlock);
-  exitCode = intConstant(0);
 
   // Add initialize call
   auto initSig = LLVM::LLVMFunctionType::get(voidType, ptrType);
@@ -96,12 +97,17 @@ void QIRProgramBuilder::initialize() {
   setInsertionPointToEnd(entryBlock);
   LLVM::BrOp::create(*this, bodyBlock);
 
-  // Return the exit code (success) in output block
-  setInsertionPointToEnd(outputBlock);
-  LLVM::ReturnOp::create(*this, exitCode);
-
   // Set insertion point to body block for user operations
   setInsertionPointToStart(bodyBlock);
+}
+
+void QIRProgramBuilder::retype(Type returnType) {
+  auto mainFn = dyn_cast<LLVM::LLVMFuncOp>(mainFunc);
+  if (!mainFn) {
+    llvm::reportFatalUsageError("Main function not found for retyping");
+  }
+  auto funcType = LLVM::LLVMFunctionType::get(returnType, {});
+  mainFn.setType(funcType);
 }
 
 Value QIRProgramBuilder::resolveIntVariant(
@@ -421,6 +427,17 @@ QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
   LLVM::CallOp::create(*this, fnDecl, ValueRange{qubit});
 
   return *this;
+}
+
+Value QIRProgramBuilder::readResult(mlir::Value result) {
+  checkFinalized();
+
+  const auto fnSig = LLVM::LLVMFunctionType::get(getI1Type(), {ptrType});
+  auto fnDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_READ_RESULT, fnSig);
+  auto readOp = LLVM::CallOp::create(*this, fnDec, result);
+
+  return readOp.getResult();
 }
 
 //===----------------------------------------------------------------------===//
@@ -983,8 +1000,19 @@ void QIRProgramBuilder::generateOutputRecording() {
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   checkFinalized();
 
+  auto exitCode = intConstant(0);
+  return finalize(exitCode);
+}
+
+OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
+  checkFinalized();
+
   // Save current insertion point
   const InsertionGuard guard(*this);
+
+  // Add return statement with the given return values to the main function
+  setInsertionPointToEnd(outputBlock);
+  LLVM::ReturnOp::create(*this, returnValue);
 
   // Release resources in output block
   setInsertionPoint(outputBlock->getTerminator());
@@ -1037,12 +1065,14 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<void(QIRProgramBuilder&)>& buildFunc, Profile profile) {
+    const function_ref<std::pair<Value, Type>(QIRProgramBuilder&)>& buildFunc,
+    Profile profile) {
   QIRProgramBuilder builder(context);
   builder.profile = profile;
   builder.initialize();
-  buildFunc(builder);
-  return builder.finalize();
+  auto [result, resultType] = buildFunc(builder);
+  builder.retype(resultType);
+  return builder.finalize(result);
 }
 
 } // namespace mlir::qir

@@ -1131,7 +1131,6 @@ public:
   /**
    * @brief Convenience method for building quantum programs.
    * @param context The MLIR context to use for building the program
-   * @param returnTypes The types of the values to be returned by the program.
    * @param buildFunc A function that takes a reference to a QCProgramBuilder
    * and uses it to build the desired quantum program. The builder will be
    * properly initialized before calling this function, and the resulting module

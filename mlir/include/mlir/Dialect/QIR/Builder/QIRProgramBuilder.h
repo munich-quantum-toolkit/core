@@ -102,6 +102,23 @@ public:
    */
   void initialize();
 
+  /**
+   * @brief Initialize the builder and prepare for program construction
+   * with specified return types.
+   * @param returnType The return type for the main function
+   *
+   * @details
+   * Creates a main function with an entry_point attribute. Must be called
+   * before adding operations.
+   */
+  void initialize(Type returnType);
+
+  /**
+   * @brief Modify the return type of the main function after initialization.
+   * @param returnType The new return type for the main function
+   */
+  void retype(Type returnType);
+
   //===--------------------------------------------------------------------===//
   // Constants
   //===--------------------------------------------------------------------===//
@@ -382,6 +399,24 @@ public:
    * ```
    */
   QIRProgramBuilder& reset(Value qubit);
+
+  /**
+   * @brief Read the value of the given measurement result.
+   *
+   * @details
+   * The value is read via `__quantum__rt__read_result`.
+   *
+   * @param result The value representing the measurement result
+   * @return An LLVM pointer to the measurement result
+   *
+   * @par Example:
+   * ```c++
+   * auto result = builder.measure(q0, 0);
+   * auto value = builder.readResult(result);
+   *
+   * ```
+   */
+  Value readResult(Value result);
 
   //===--------------------------------------------------------------------===//
   // Unitary Operations
@@ -1027,6 +1062,25 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   /**
+   * @brief Finalize the program with a given exit code and return the
+   * constructed module
+   * @param returnValue The value representing the exit code to return
+   *
+   * @details
+   * Automatically deallocates all remaining valid qubits and tensors of qubits,
+   * adds a return statement with a given exit code,
+   * and transfers ownership of the module to the caller. The builder should not
+   * be used after calling this method.
+   *
+   * The return value must have the type indicated by the function signature
+   * of the main function, which returns an `i64` by default and can be
+   * modified by passing different arguments to the `initialize()` method.
+   *
+   * @return OwningOpRef containing the constructed quantum program module
+   */
+  OwningOpRef<ModuleOp> finalize(Value returnValue);
+
+  /**
    * @brief Convenience method for building quantum programs
    * @param context The MLIR context to use for building the program
    * @param buildFunc A function that takes a reference to a QIRProgramBuilder
@@ -1037,7 +1091,8 @@ public:
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const function_ref<void(QIRProgramBuilder&)>& buildFunc,
+        const function_ref<
+            std::pair<mlir::Value, mlir::Type>(QIRProgramBuilder&)>& buildFunc,
         Profile profile = Profile::Adaptive);
 
 private:

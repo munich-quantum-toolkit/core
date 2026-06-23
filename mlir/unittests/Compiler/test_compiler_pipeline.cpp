@@ -44,8 +44,11 @@
 
 namespace mqt::test::compiler {
 
-using QCProgramBuilderFn = NamedBuilder<mlir::qc::QCProgramBuilder>;
-using QIRProgramBuilderFn = NamedBuilder<mlir::qir::QIRProgramBuilder>;
+using QCProgramBuilderFn = NamedBuilder<
+    mlir::qc::QCProgramBuilder,
+    std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>>;
+using QIRProgramBuilderFn = NamedBuilder<mlir::qir::QIRProgramBuilder,
+                                         std::pair<mlir::Value, mlir::Type>>;
 using QuantumComputationBuilderFn = NamedBuilder<::qc::QuantumComputation>;
 
 namespace {
