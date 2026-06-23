@@ -67,7 +67,7 @@ void WireIterator::forward() {
         })
         .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
         .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
-        .Case<scf::ForOp>([&](scf::ForOp op) {
+        .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
           qubit_ = op.getTiedLoopResult(&*(qubit_.use_begin()));
         })
         .Case<qco::IfOp>([&](qco::IfOp op) {
@@ -116,7 +116,7 @@ void WireIterator::backward() {
           [&](UnitaryOpInterface op) { qubit_ = op.getInputForOutput(qubit_); })
       .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
       .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
-      .Case<scf::ForOp>([&](scf::ForOp op) {
+      .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
         if (auto res = dyn_cast<OpResult>(qubit_)) {
           OpOperand* operand = op.getTiedLoopInit(res);
           qubit_ = operand->get();
