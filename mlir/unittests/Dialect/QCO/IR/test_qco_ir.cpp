@@ -280,9 +280,9 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(powHFracNeg)}));
 /// @}
 
-/// Regression: pow(rxx) cannot fold the exponent into a multi-qubit gate.
-/// Verify that a PowOp survives the cleanup pipeline.
-TEST_F(QCOTest, PowRxxNoFold) {
+/// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} => rxx(2θ).
+/// Verify that PowOp is folded away by the cleanup pipeline.
+TEST_F(QCOTest, PowRxxFold) {
   auto program =
       QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(powRxx).fn);
   ASSERT_TRUE(program);
@@ -292,7 +292,7 @@ TEST_F(QCOTest, PowRxxNoFold) {
 
   int powCount = 0;
   program->walk([&](PowOp) { ++powCount; });
-  EXPECT_EQ(powCount, 1) << "PowOp around rxx must survive the pipeline";
+  EXPECT_EQ(powCount, 0) << "PowOp around rxx should be folded away";
 }
 
 /// Regression: pow(-0.5) { h } cannot fold a negative fractional exponent

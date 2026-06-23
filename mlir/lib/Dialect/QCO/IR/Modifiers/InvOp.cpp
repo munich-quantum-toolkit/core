@@ -105,7 +105,11 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp invOp,
                                 PatternRewriter& rewriter) const override {
-    auto innerPow = dyn_cast<PowOp>(invOp.getBodyUnitary().getOperation());
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerPow = dyn_cast<PowOp>(inner.getOperation());
     if (!innerPow) {
       return failure();
     }

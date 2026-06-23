@@ -130,10 +130,7 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
       return failure();
     }
 
-    auto* innerOp = op.getBodyUnitary().getOperation();
-    rewriter.inlineBlockBefore(op.getBody(), op, op.getInputQubits());
-    rewriter.eraseOp(op->getPrevNode()); // erase the now-inlined YieldOp
-    rewriter.replaceOp(op, innerOp->getResults());
+    utils::inlineModifierBody(op, *op.getBody(), op.getInputQubits(), rewriter);
     return success();
   }
 };

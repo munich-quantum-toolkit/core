@@ -1267,10 +1267,10 @@ def PowOp
         Value getOutputForInput(Value input);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        OperandRange getParameters() { return getBodyUnitary().getParameters(); }
         double getExponentValue();
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
-        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits,

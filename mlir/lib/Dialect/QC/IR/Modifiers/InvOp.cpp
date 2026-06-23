@@ -89,11 +89,21 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp invOp,
                                 PatternRewriter& rewriter) const override {
-    auto innerPow = dyn_cast<PowOp>(invOp.getBodyUnitary().getOperation());
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerPow = dyn_cast<PowOp>(inner.getOperation());
     if (!innerPow) {
       return failure();
     }
     const double exponent = innerPow.getExponentValue();
+    // Remap InvOp's block arguments to the outer qubits they alias,
+    // since the inlined ops may reference them and InvOp is about to be erased.
+    for (auto [blockArg, outerQubit] :
+         llvm::zip_equal(invOp.getBody()->getArguments(), invOp.getQubits())) {
+      rewriter.replaceAllUsesWith(blockArg, outerQubit);
+    }
     rewriter.replaceOpWithNewOp<PowOp>(invOp, -exponent, [&] {
       auto* powBody = rewriter.getInsertionBlock();
       rewriter.inlineBlockBefore(innerPow.getBody(), powBody, powBody->begin());

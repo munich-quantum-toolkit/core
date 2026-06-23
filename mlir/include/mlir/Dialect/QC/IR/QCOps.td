@@ -1053,18 +1053,20 @@ def PowOp : QCOp<"pow",
   let assemblyFormat = "`(` $exponent `)` $region attr-dict";
 
   let extraClassDeclaration = [{
-          [[nodiscard]] UnitaryOpInterface getBodyUnitary();
-          size_t getNumQubits() { return getBodyUnitary().getNumQubits(); }
-          size_t getNumTargets() { return getBodyUnitary().getNumTargets(); }
-          size_t getNumControls() { return getBodyUnitary().getNumControls(); }
-          Value getQubit(size_t i) { return getBodyUnitary().getQubit(i); }
-          Value getTarget(size_t i) { return getBodyUnitary().getTarget(i); }
-          ValueRange getTargets() { return getBodyUnitary().getTargets(); }
-          Value getControl(size_t i) { return getBodyUnitary().getControl(i); }
-          ValueRange getControls() { return getBodyUnitary().getControls(); }
-          size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-          Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-          ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+          size_t getNumBodyUnitaries();
+          [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
+          size_t getNumQubits() { return getBodyUnitary(0).getNumQubits(); }
+          size_t getNumTargets() { return getBodyUnitary(0).getNumTargets(); }
+          size_t getNumControls() { return getBodyUnitary(0).getNumControls(); }
+          OperandRange getQubits() { return getBodyUnitary(0).getQubits(); }
+          Value getQubit(size_t i) { return getBodyUnitary(0).getQubit(i); }
+          Value getTarget(size_t i) { return getBodyUnitary(0).getTarget(i); }
+          OperandRange getTargets() { return getBodyUnitary(0).getTargets(); }
+          Value getControl(size_t i) { return getBodyUnitary(0).getControl(i); }
+          OperandRange getControls() { return getBodyUnitary(0).getControls(); }
+          size_t getNumParams() { return getBodyUnitary(0).getNumParams(); }
+          Value getParameter(size_t i) { return getBodyUnitary(0).getParameter(i); }
+          OperandRange getParameters() { return getBodyUnitary(0).getParameters(); }
           double getExponentValue();
           static StringRef getBaseSymbol() { return "pow"; }
       }];

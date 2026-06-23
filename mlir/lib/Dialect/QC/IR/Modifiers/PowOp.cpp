@@ -123,10 +123,11 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
     if (std::abs(op.getExponentValue() - 1.0) > TOLERANCE) {
       return failure();
     }
-    auto* innerOp = op.getBodyUnitary().getOperation();
-    rewriter.inlineBlockBefore(op.getBody(), op, {});
-    rewriter.eraseOp(op->getPrevNode()); // erase the now-inlined YieldOp
-    rewriter.replaceOp(op, innerOp->getResults());
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    utils::inlineModifierBody(op, *op.getBody(), {}, rewriter);
     return success();
   }
 };
@@ -152,20 +153,27 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
   }
 };
 
-/// pow(p) where p < 0  =>  pow(-p) { inv { g } }
+/// pow(p) where p < 0  =>  pow(-p) { inv(q) { g } }
 struct NegPowToInvPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
     const double exp = op.getExponentValue();
     // U^{-r} = (U^{-1})^r only when r is an integer: for fractional r,
     // eigenvalue -1 yields (-1)^{-r} ≠ (-1)^r (conjugated phase factors).
     if (exp >= 0.0 || !utils::isIntegerExponent(-exp)) {
       return failure();
     }
+    auto qubits = llvm::to_vector(inner.getQubits());
     rewriter.replaceOpWithNewOp<PowOp>(op, -exp, [&] {
-      InvOp::create(rewriter, op.getLoc(), [&] {
-        rewriter.clone(*op.getBodyUnitary().getOperation());
+      InvOp::create(rewriter, op.getLoc(), qubits, [&](ValueRange invArgs) {
+        auto* invBody = rewriter.getInsertionBlock();
+        rewriter.inlineBlockBefore(op.getBody(), invBody, invBody->begin());
+        rewriter.eraseOp(&invBody->back()); // erase the inlined YieldOp
       });
     });
     return success();
@@ -177,31 +185,56 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto innerPow = dyn_cast<PowOp>(op.getBodyUnitary().getOperation());
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerPow = dyn_cast<PowOp>(inner.getOperation());
     if (!innerPow) {
       return failure();
     }
     rewriter.replaceOpWithNewOp<PowOp>(
-        op, op.getExponentValue() * innerPow.getExponentValue(),
-        [&] { rewriter.clone(*innerPow.getBodyUnitary().getOperation()); });
+        op, op.getExponentValue() * innerPow.getExponentValue(), [&] {
+          auto* newBody = rewriter.getInsertionBlock();
+          rewriter.inlineBlockBefore(innerPow.getBody(), newBody,
+                                     newBody->begin());
+          rewriter.eraseOp(&newBody->back()); // erase the inlined YieldOp
+        });
     return success();
   }
 };
 
-/// pow(p) { ctrl(q, g) }  =>  ctrl(q, pow(p, g))
+/// pow(p) { ctrl(c, t) { g } }  =>  ctrl(c, t) { pow(p) { g } }
 struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto innerCtrl = dyn_cast<CtrlOp>(op.getBodyUnitary().getOperation());
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerCtrl = dyn_cast<CtrlOp>(inner.getOperation());
     if (!innerCtrl) {
       return failure();
     }
-    rewriter.replaceOpWithNewOp<CtrlOp>(op, innerCtrl.getControls(), [&] {
-      PowOp::create(rewriter, op.getLoc(), op.getExponentValue(), [&] {
-        rewriter.clone(*innerCtrl.getBodyUnitary().getOperation());
-      });
-    });
+    auto controls = llvm::to_vector(innerCtrl.getControls());
+    auto targets = llvm::to_vector(innerCtrl.getTargets());
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        op, controls, targets, [&](ValueRange ctrlArgs) {
+          // Remap old CtrlOp's block arguments to the new CtrlOp's block
+          // arguments, since the inlined ops reference them and the old
+          // CtrlOp is about to be erased with the old PowOp.
+          for (auto [oldArg, newArg] :
+               llvm::zip_equal(innerCtrl.getBody()->getArguments(), ctrlArgs)) {
+            rewriter.replaceAllUsesWith(oldArg, newArg);
+          }
+          PowOp::create(rewriter, op.getLoc(), op.getExponentValue(), [&] {
+            auto* powBody = rewriter.getInsertionBlock();
+            rewriter.inlineBlockBefore(innerCtrl.getBody(), powBody,
+                                       powBody->begin());
+            rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
+          });
+        });
     return success();
   }
 };
@@ -222,7 +255,11 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto* innerOp = op.getBodyUnitary().getOperation();
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto* innerOp = inner.getOperation();
     const double r = op.getExponentValue();
     auto loc = op.getLoc();
     const bool insideModifier = isa<CtrlOp, InvOp, PowOp>(op->getParentOp());
@@ -494,8 +531,12 @@ double PowOp::getExponentValue() {
   return attr.getValueAsDouble();
 }
 
-UnitaryOpInterface PowOp::getBodyUnitary() {
-  return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+size_t PowOp::getNumBodyUnitaries() {
+  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
+}
+
+UnitaryOpInterface PowOp::getBodyUnitary(const size_t i) {
+  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,

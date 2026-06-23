@@ -1208,16 +1208,21 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
 
     assignMappedQubits(state, operation, qcTargets, qcoOp.getQubitsOut());
 
-    // Clone body region from QC to QCO
-    auto& dstRegion = qcoOp.getRegion();
-    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+    // Move body region from QC to QCO (QC PowOp has no block args).
+    if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
 
-    // Create block arguments for target qubits and seed the nested frame.
-    auto& entryBlock = dstRegion.front();
-    assert(entryBlock.getNumArguments() == 0 &&
-           "QC pow region unexpectedly has entry block arguments");
-    pushModifierFrame(state, qcTargets,
-                      addModifierAliases(qcoOp, numTargets, rewriter));
+    // QC PowOp has no block arguments, but QCO PowOp needs them for
+    // qubit threading. Add them to the entry block.
+    auto& entryBlock = qcoOp.getRegion().front();
+    auto qubitType = qco::QubitType::get(rewriter.getContext());
+    SmallVector<Value> blockArgs;
+    for (size_t i = 0; i < numTargets; ++i) {
+      blockArgs.push_back(entryBlock.addArgument(qubitType, op.getLoc()));
+    }
+    pushModifierFrame(state, qcTargets, blockArgs);
 
     rewriter.eraseOp(op);
     return success();
