@@ -123,6 +123,21 @@ public:
    */
   Value intConstant(int64_t value);
 
+  /**
+   * @brief Create a constant float value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.floatConstant(0.123);
+   * ```
+   * ```mlir
+   * %c = arith.constant 0.123 : f64
+   * ```
+   */
+  Value floatConstant(double value);
+
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//

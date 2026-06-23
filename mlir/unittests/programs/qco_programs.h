@@ -230,8 +230,17 @@ std::pair<SmallVector<Value>, SmallVector<Type>> inverseX(QCOProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 inverseMultipleControlledX(QCOProgramBuilder& b);
 
-/// Creates a circuit with two X gates in a row.
+/// Creates a circuit with two subsequent X gates.
 std::pair<SmallVector<Value>, SmallVector<Type>> twoX(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to two subsequent X gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+controlledTwoX(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two subsequent X
+/// gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseTwoX(QCOProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
@@ -1213,6 +1222,10 @@ twoBarrier(QCOProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 trivialCtrl(QCOProgramBuilder& b);
 
+/// Creates a circuit with an empty ctrl modifier.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+emptyCtrl(QCOProgramBuilder& b);
+
 /// Creates a circuit with nested ctrl modifiers.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 nestedCtrl(QCOProgramBuilder& b);
@@ -1229,7 +1242,27 @@ doubleNestedCtrlTwoQubits(QCOProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 ctrlInvSandwich(QCOProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>> ctrlTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to a controlled and a
+/// non-controlled gate.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+ctrlTwoMixed(QCOProgramBuilder& b);
+
+/// Creates a circuit with nested control modifiers applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+nestedCtrlTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to an inverse modifier
+/// applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+ctrlInvTwo(QCOProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with an empty inverse modifier.
+std::pair<SmallVector<Value>, SmallVector<Type>> emptyInv(QCOProgramBuilder& b);
 
 /// Creates a circuit with nested inverse modifiers.
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -1243,10 +1276,22 @@ tripleNestedInv(QCOProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 invCtrlSandwich(QCOProgramBuilder& b);
 
+/// Creates a circuit with an inverse modifier applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>> invTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a control modifier
+/// applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+invCtrlTwo(QCOProgramBuilder& b);
+
 // --- IfOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
 std::pair<SmallVector<Value>, SmallVector<Type>> simpleIf(QCOProgramBuilder& b);
+
+/// Creates a circuit with an if operation with a parameterized gate.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+ifWithAngle(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with two qubits.
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -1284,6 +1329,11 @@ nestedFalseIf(QCOProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 nestedIfOpForLoop(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with a nested for operation and
+/// parameterized gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+nestedIfOpForLoopWithAngle(QCOProgramBuilder& b);
+
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
@@ -1299,6 +1349,10 @@ simpleDoWhileReset(QCOProgramBuilder& b);
 /// Creates a circuit with a simple for operation with a register.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 simpleForLoop(QCOProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a parameterized gate.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+forLoopWithAngle(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.
@@ -1360,5 +1414,16 @@ qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
+
+/// Extracts three qubits with ascending index (0, 1, 2), performs a
+/// computation, and finally inserts the qubits in ascending order (0, 1, 2).
+std::pair<SmallVector<Value>, SmallVector<Type>>
+qtensorChain(QCOProgramBuilder& b);
+
+/// Performs the same computation as the `qtensorChain` function, but uses
+/// qubits immediately after the extract and inserts the qubits in descending
+/// order (2, 1, 0).
+std::pair<SmallVector<Value>, SmallVector<Type>>
+qtensorAlternativeChain(QCOProgramBuilder& b);
 
 } // namespace mlir::qco

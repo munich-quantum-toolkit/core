@@ -16,6 +16,7 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
+#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -31,6 +32,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <variant>
@@ -60,31 +62,39 @@ void QIRProgramBuilder::initialize() {
   mainFuncOp->setAttr("passthrough",
                       ArrayAttr::get(getContext(), {entryPointAttr}));
 
-  // Create the 4-block structure for QIR Base Profile
+  // Create the base block structure for the QIR Profiles
   entryBlock = mainFuncOp.addEntryBlock(*this);
   bodyBlock = mainFuncOp.addBlock();
-  measurementsBlock = mainFuncOp.addBlock();
   outputBlock = mainFuncOp.addBlock();
+
+  // Only create the measurement block if the Base Profile is used
+  if (profile == Profile::Base) {
+    measurementsBlock = createBlock(&mainFuncOp.getBody());
+    mainFuncOp.getBlocks().splice(Region::iterator(outputBlock),
+                                  mainFuncOp.getBlocks(), measurementsBlock);
+    setInsertionPointToEnd(bodyBlock);
+    LLVM::BrOp::create(*this, measurementsBlock);
+
+    setInsertionPointToEnd(measurementsBlock);
+    LLVM::BrOp::create(*this, outputBlock);
+  } else {
+    setInsertionPointToEnd(bodyBlock);
+    LLVM::BrOp::create(*this, outputBlock);
+  }
 
   // Create exit code constant in entry block
   setInsertionPointToStart(entryBlock);
   exitCode = intConstant(0);
 
+  // Add initialize call
   auto initSig = LLVM::LLVMFunctionType::get(voidType, ptrType);
   auto initDec =
       getOrCreateFunctionDeclaration(*this, module, QIR_INITIALIZE, initSig);
   auto zero = LLVM::ZeroOp::create(*this, ptrType);
   LLVM::CallOp::create(*this, initDec, zero.getResult());
 
-  // Add unconditional branches between blocks
   setInsertionPointToEnd(entryBlock);
   LLVM::BrOp::create(*this, bodyBlock);
-
-  setInsertionPointToEnd(bodyBlock);
-  LLVM::BrOp::create(*this, measurementsBlock);
-
-  setInsertionPointToEnd(measurementsBlock);
-  LLVM::BrOp::create(*this, outputBlock);
 
   // Return the exit code (success) in output block
   setInsertionPointToEnd(outputBlock);
@@ -92,6 +102,16 @@ void QIRProgramBuilder::initialize() {
 
   // Set insertion point to body block for user operations
   setInsertionPointToStart(bodyBlock);
+}
+
+Value QIRProgramBuilder::resolveIntVariant(
+    const std::variant<int64_t, Value>& variant) {
+  if (std::holds_alternative<int64_t>(variant)) {
+    return LLVM::ConstantOp::create(*this, getI64Type(),
+                                    getIndexAttr(std::get<int64_t>(variant)))
+        .getResult();
+  }
+  return std::get<Value>(variant);
 }
 
 Value QIRProgramBuilder::intConstant(const int64_t value) {
@@ -106,22 +126,21 @@ Value QIRProgramBuilder::doubleConstant(double value) {
 
 Value QIRProgramBuilder::allocQubit() {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic);
 
-  metadata_.useDynamicQubit = true;
+  Value qubit;
+  if (profile == Profile::Adaptive) {
+    ensureAllocationMode(AllocationMode::Dynamic);
+    metadata_.useDynamicQubit = true;
 
-  // Save current insertion point
-  const InsertionGuard guard(*this);
+    auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_ALLOC, fnSig);
 
-  // Insert allocations and constants in entry block
-  setInsertionPoint(entryBlock->getTerminator());
-
-  auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
-  auto fnDec =
-      getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_ALLOC, fnSig);
-
-  auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  auto qubit = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
+    auto zero = LLVM::ZeroOp::create(*this, ptrType);
+    qubit = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
+  } else {
+    qubit = staticQubit(static_cast<int64_t>(metadata_.numQubits));
+  }
 
   qubits.insert(qubit);
 
@@ -131,6 +150,10 @@ Value QIRProgramBuilder::allocQubit() {
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Static);
+  const InsertionGuard guard(*this);
+
+  // Insert allocations and constants in entry block
+  setInsertionPoint(entryBlock->getTerminator());
 
   if (index < 0) {
     llvm::reportFatalUsageError("Index must be non-negative");
@@ -153,47 +176,110 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+Value QIRProgramBuilder::staticResult(const int64_t index) {
   checkFinalized();
-  ensureAllocationMode(AllocationMode::Dynamic);
 
-  if (size <= 0) {
-    llvm::reportFatalUsageError("Size must be positive");
-  }
-
-  metadata_.useDynamicQubit = true;
-
-  // Save current insertion point
   const InsertionGuard guard(*this);
 
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  SmallVector<Value> qubits;
-  qubits.reserve(size);
-
-  auto allocFnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(getContext()), {getI64Type(), ptrType, ptrType});
-  auto allocFnDecl = getOrCreateFunctionDeclaration(
-      *this, module, QIR_QUBIT_ARRAY_ALLOC, allocFnSignature);
-
-  auto array =
-      LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
-  auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  LLVM::CallOp::create(
-      *this, allocFnDecl,
-      ValueRange{intConstant(size), array.getResult(), zero.getResult()});
-
-  qubitArrays.insert(array.getResult());
-
-  for (int64_t i = 0; i < size; ++i) {
-    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
-                                   ValueRange{intConstant(i)});
-    auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
-    qubits.push_back(load.getResult());
+  if (index < 0) {
+    llvm::reportFatalUsageError("Index must be non-negative");
   }
 
-  return qubits;
+  Value result;
+  if (const auto it = resultPtrs.find(index); it != resultPtrs.end()) {
+    result = it->second;
+  } else {
+    result = createPointerFromIndex(*this, getLoc(), index);
+    // Cache for reuse
+    resultPtrs[index] = result;
+  }
+
+  // Update result count
+  if (std::cmp_greater_equal(index, metadata_.numResults)) {
+    metadata_.numResults = static_cast<size_t>(index) + 1;
+  }
+
+  return result;
+}
+
+Value QIRProgramBuilder::QubitRegister::operator[](const size_t index) const {
+  if (index >= qubits.size()) {
+    llvm::reportFatalUsageError("Qubit index out of bounds");
+  }
+  return qubits[index];
+}
+
+QIRProgramBuilder::QubitRegister
+QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+  checkFinalized();
+
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
+  Value array;
+  SmallVector<Value> qubits;
+
+  qubits.reserve(size);
+
+  if (profile == Profile::Adaptive) {
+    // Create a dynamic qubit array and load the qubits in the Adaptive Profile
+    ensureAllocationMode(AllocationMode::Dynamic);
+    metadata_.useArrays = true;
+    metadata_.useDynamicQubit = true;
+
+    auto allocFnSignature =
+        LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(getContext()),
+                                    {getI64Type(), ptrType, ptrType});
+    auto allocFnDecl = getOrCreateFunctionDeclaration(
+        *this, module, QIR_QUBIT_ARRAY_ALLOC, allocFnSignature);
+
+    array = LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size))
+                .getResult();
+    auto zero = LLVM::ZeroOp::create(*this, ptrType);
+    LLVM::CallOp::create(
+        *this, allocFnDecl,
+        ValueRange{intConstant(size), array, zero.getResult()});
+
+    qubitArrays.insert(array);
+
+    for (int64_t i = 0; i < size; ++i) {
+      auto index = intConstant(i);
+      auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array,
+                                     ValueRange{index});
+      auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+      qubits.push_back(load.getResult());
+      loadedQubits[array].insert(index);
+    }
+  } else {
+    // Create static qubits in the Base Profile
+    for (int64_t i = 0; i < size; ++i) {
+      auto qubit = staticQubit(static_cast<int64_t>(metadata_.numQubits));
+      qubits.push_back(qubit);
+    }
+  }
+
+  return {.value = array, .qubits = std::move(qubits)};
+}
+
+Value QIRProgramBuilder::load(Value reg, Value index) {
+  if (profile == Profile::Base) {
+    llvm::reportFatalUsageError("Arrays can only be used if the "
+                                "Adaptive Profile is selected.");
+  }
+  if (loadedQubits[reg].contains(index)) {
+    llvm::reportFatalUsageError(
+        "Qubit was already extracted from the register at this index");
+  }
+
+  auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, reg, index);
+  auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+  loadedQubits[reg].insert(index);
+
+  return load.getResult();
 }
 
 QIRProgramBuilder::Bit
@@ -223,34 +309,43 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   if (resultArrays.contains(name)) {
     llvm::reportFatalUsageError("Classical register already exists");
   }
-
-  metadata_.useDynamicResult = true;
-
   // Save current insertion point
   const InsertionGuard guard(*this);
 
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  auto fnSig =
-      LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
-  auto fnDec = getOrCreateFunctionDeclaration(*this, module,
-                                              QIR_RESULT_ARRAY_ALLOC, fnSig);
+  if (profile == Profile::Adaptive) {
+    // Create a dynamic result array for the Adaptive Profile
+    metadata_.useDynamicResult = true;
+    metadata_.useArrays = true;
 
-  auto array =
-      LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
-  auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  LLVM::CallOp::create(
-      *this, fnDec,
-      ValueRange{intConstant(size), array.getResult(), zero.getResult()});
+    auto fnSig =
+        LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
+    auto fnDec = getOrCreateFunctionDeclaration(*this, module,
+                                                QIR_RESULT_ARRAY_ALLOC, fnSig);
 
-  resultArrays.try_emplace(name, array.getResult());
+    auto array =
+        LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
+    auto zero = LLVM::ZeroOp::create(*this, ptrType);
+    LLVM::CallOp::create(
+        *this, fnDec,
+        ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
-  for (int64_t i = 0; i < size; ++i) {
-    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
-                                   ValueRange{intConstant(i)});
-    auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
-    loadedResults.try_emplace({stringSaver.save(name), i}, load.getResult());
+    resultArrays.try_emplace(name, array.getResult());
+
+    for (int64_t i = 0; i < size; ++i) {
+      auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
+                                     ValueRange{intConstant(i)});
+      auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+      loadedResults.try_emplace({stringSaver.save(name), i}, load.getResult());
+    }
+  } else {
+    // Use static results in the Base Profile
+    for (int64_t i = 0; i < size; ++i) {
+      auto result = staticResult(static_cast<int64_t>(metadata_.numResults));
+      loadedResults.try_emplace({stringSaver.save(name), i}, result);
+    }
   }
 
   return {.name = name, .size = size};
@@ -263,29 +358,21 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
     llvm::reportFatalUsageError("Result index must be non-negative");
   }
 
-  metadata_.useDynamicResult = true;
-
   // Save current insertion point
   const InsertionGuard guard(*this);
-
+  auto insertionPoint = saveInsertionPoint();
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
   // Get or create result pointer
-  Value result;
-  if (const auto it = resultPtrs.find(resultIndex); it != resultPtrs.end()) {
-    result = it->second;
-  } else {
-    auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
-    auto fnDec =
-        getOrCreateFunctionDeclaration(*this, module, QIR_RESULT_ALLOC, fnSig);
-    auto zero = LLVM::ZeroOp::create(*this, ptrType);
-    result = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
-    resultPtrs.try_emplace(resultIndex, result);
-  }
+  auto result = staticResult(resultIndex);
 
-  // Switch to measurements block
-  setInsertionPoint(measurementsBlock->getTerminator());
+  // Only set the insertionpoint if the Base Profile is used
+  if (profile == Profile::Base) {
+    setInsertionPoint(measurementsBlock->getTerminator());
+  } else {
+    restoreInsertionPoint(insertionPoint);
+  }
 
   // Create measure call
   const auto mzSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
@@ -296,21 +383,20 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   return result;
 }
 
-QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
+  const InsertionGuard guard(*this);
 
   auto it = loadedResults.find({bit.registerName, bit.registerIndex});
   if (it == loadedResults.end()) {
-    llvm::reportFatalUsageError(
-        "Bit does not belong to an allocated classical register");
+    llvm::reportFatalUsageError("Bit does not belong to a result pointer");
   }
   auto result = it->second;
-
-  // Save current insertion point
-  const InsertionGuard guard(*this);
-
-  // Switch to measurements block
-  setInsertionPoint(measurementsBlock->getTerminator());
+  if (profile == Profile::Adaptive) {
+    metadata_.useDynamicResult = true;
+  } else {
+    setInsertionPoint(measurementsBlock->getTerminator());
+  }
 
   // Create measure call
   const auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
@@ -318,17 +404,15 @@ QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
       getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, fnSig);
   LLVM::CallOp::create(*this, fnDec, ValueRange{qubit, result});
 
-  return *this;
+  return result;
 }
 
 QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
   checkFinalized();
-
-  // Save current insertion point
-  const InsertionGuard guard(*this);
-
-  // Switch to measurements block
-  setInsertionPoint(measurementsBlock->getTerminator());
+  if (profile == Profile::Base) {
+    llvm::reportFatalUsageError("Reset operation can only be used if the "
+                                "Adaptive Profile is selected.");
+  }
 
   // Create reset call
   const auto qirSignature = LLVM::LLVMFunctionType::get(voidType, ptrType);
@@ -350,6 +434,7 @@ void QIRProgramBuilder::createCallOp(
 
   // Save current insertion point
   const InsertionGuard guard(*this);
+  auto insertionPoint = saveInsertionPoint();
 
   // Insert constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
@@ -365,9 +450,8 @@ void QIRProgramBuilder::createCallOp(
     }
     parameterOperands.push_back(parameterOperand);
   }
-
-  // Insert in body block (before branch)
-  setInsertionPoint(bodyBlock->getTerminator());
+  // Restore insertion point
+  restoreInsertionPoint(insertionPoint);
 
   // Define argument types
   SmallVector<Type> argumentTypes;
@@ -629,6 +713,202 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMINUSYY, xx_minus_yy, theta, beta)
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
 //===----------------------------------------------------------------------===//
+// SCF Operations
+//===----------------------------------------------------------------------===//
+QIRProgramBuilder&
+QIRProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
+                          const std::variant<int64_t, Value>& upperbound,
+                          const std::variant<int64_t, Value>& step,
+                          const function_ref<void(Value)>& body) {
+  checkFinalized();
+  if (profile == Profile::Base) {
+    llvm::reportFatalUsageError("For operation can only be used if the "
+                                "Adaptive Profile is selected.");
+  }
+
+  int& backwardsBranchingFlag = metadata_.backwardsBranching;
+  if (backwardsBranchingFlag != 1 && backwardsBranchingFlag != 3) {
+    backwardsBranchingFlag += 1;
+  }
+
+  auto loc = getLoc();
+  auto lb = resolveIntVariant(lowerbound);
+  auto ub = resolveIntVariant(upperbound);
+  auto stepSize = resolveIntVariant(step);
+  auto i64Type = getI64Type();
+  auto* currentBlock = getInsertionBlock();
+
+  // Create the blocks
+  auto* conditionBlock =
+      createBlock(currentBlock->getParent(),
+                  std::next(Region::iterator(currentBlock)), {i64Type}, {loc});
+  auto* loopBlock = createBlock(conditionBlock->getParent(),
+                                std::next(Region::iterator(conditionBlock)));
+  auto* nextBlock = createBlock(loopBlock->getParent(),
+                                std::next(Region::iterator(loopBlock)));
+
+  // Move the current terminator to the next block if it exists
+  if (currentBlock->mightHaveTerminator()) {
+    auto* currentTerminator = currentBlock->getTerminator();
+    currentTerminator->moveBefore(nextBlock, nextBlock->end());
+  }
+
+  // Add jump to condition block
+  setInsertionPointToEnd(currentBlock);
+  LLVM::BrOp::create(*this, lb, conditionBlock);
+
+  // Add conditional jump to loop block or next block
+  setInsertionPointToEnd(conditionBlock);
+  auto cmp = LLVM::ICmpOp::create(*this, LLVM::ICmpPredicate::slt,
+                                  conditionBlock->getArgument(0), ub);
+  LLVM::CondBrOp::create(*this, cmp.getResult(), loopBlock, nextBlock);
+
+  // Build loop body
+  setInsertionPointToStart(loopBlock);
+  body(conditionBlock->getArgument(0));
+
+  // Update loop condition and jump back to the condition block
+  auto addOp = LLVM::AddOp::create(*this, i64Type,
+                                   conditionBlock->getArgument(0), stepSize);
+  LLVM::BrOp::create(*this, addOp.getResult(), conditionBlock);
+
+  // Set insertionpoint to next block
+  setInsertionPointToStart(nextBlock);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
+                         const function_ref<void()>& thenBody,
+                         const function_ref<void()>& elseBody) {
+  checkFinalized();
+  if (profile == Profile::Base) {
+    llvm::reportFatalUsageError("If operation can only be used if the "
+                                "Adaptive Profile is selected.");
+  }
+
+  auto* currentBlock = getInsertionBlock();
+
+  // Create the blocks
+  auto* thenBlock = createBlock(currentBlock->getParent(),
+                                std::next(Region::iterator(currentBlock)));
+  auto* nextBlock = createBlock(thenBlock->getParent(),
+                                std::next(Region::iterator(thenBlock)));
+
+  // Move the current terminator to the next block if it exists
+  if (currentBlock->mightHaveTerminator()) {
+    auto* currentTerminator = currentBlock->getTerminator();
+    currentTerminator->moveBefore(nextBlock, nextBlock->end());
+  }
+  // Build the then body
+  setInsertionPointToStart(thenBlock);
+  thenBody();
+  LLVM::BrOp::create(*this, nextBlock);
+
+  // Optionally build the else body
+  Block* elseBlock = nullptr;
+  if (elseBody) {
+    elseBlock = createBlock(thenBlock->getParent(),
+                            std::next(Region::iterator(thenBlock)));
+    setInsertionPointToStart(elseBlock);
+    elseBody();
+    LLVM::BrOp::create(*this, nextBlock);
+  }
+
+  // Add read result operation to the current block and add conditional jump
+  setInsertionPointToEnd(currentBlock);
+
+  Value branchCondition;
+  if (std::holds_alternative<bool>(cond)) {
+    branchCondition = LLVM::ConstantOp::create(*this, getI1Type(),
+                                               std::get<bool>(cond) ? 1 : 0)
+                          .getResult();
+  } else {
+    if (auto conditionValue = std::get<Value>(cond);
+        conditionValue.getType() != ptrType) {
+      llvm::reportFatalUsageError("Condition value must be llvm.ptr type");
+    }
+
+    const auto fnSig = LLVM::LLVMFunctionType::get(getI1Type(), {ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_READ_RESULT, fnSig);
+    auto readOp = LLVM::CallOp::create(*this, fnDec, std::get<Value>(cond));
+    branchCondition = readOp.getResult();
+  }
+
+  LLVM::CondBrOp::create(*this, branchCondition, thenBlock,
+                         elseBody ? elseBlock : nextBlock);
+
+  // Set insertionpoint to next block
+  setInsertionPointToStart(nextBlock);
+
+  return *this;
+}
+QIRProgramBuilder&
+QIRProgramBuilder::scfWhile(const function_ref<Value()>& beforeBody,
+                            const function_ref<void()>& afterBody) {
+  checkFinalized();
+  if (profile == Profile::Base) {
+    llvm::reportFatalUsageError("While operation can only be used if the "
+                                "Adaptive Profile is selected.");
+  }
+
+  int& backwardsBranchingFlag = metadata_.backwardsBranching;
+  if (backwardsBranchingFlag != 2 && backwardsBranchingFlag != 3) {
+    backwardsBranchingFlag += 2;
+  }
+
+  auto* currentBlock = getInsertionBlock();
+  // Build the blocks
+  auto* beforeBlock = createBlock(currentBlock->getParent(),
+                                  std::next(Region::iterator(currentBlock)));
+  // Only create afterBlock if afterBody is provided
+  Block* afterBlock =
+      afterBody ? createBlock(beforeBlock->getParent(),
+                              std::next(Region::iterator(beforeBlock)))
+                : nullptr;
+  auto* nextBlock = (afterBlock != nullptr)
+                        ? createBlock(afterBlock->getParent(),
+                                      std::next(Region::iterator(afterBlock)))
+                        : createBlock(beforeBlock->getParent(),
+                                      std::next(Region::iterator(beforeBlock)));
+  // Move the current terminator to the next block if it exists
+  if (currentBlock->mightHaveTerminator()) {
+    auto* currentTerminator = currentBlock->getTerminator();
+    currentTerminator->moveBefore(nextBlock, nextBlock->end());
+  }
+
+  setInsertionPointToEnd(currentBlock);
+  LLVM::BrOp::create(*this, beforeBlock);
+
+  // Build the before body and the conditional jump
+  setInsertionPointToStart(beforeBlock);
+  auto condition = beforeBody();
+
+  if (condition.getType() != ptrType) {
+    llvm::reportFatalUsageError("Before region must return a llvm.ptr type");
+  }
+  const auto fnSig = LLVM::LLVMFunctionType::get(getI1Type(), {ptrType});
+  auto fnDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_READ_RESULT, fnSig);
+  auto readOp = LLVM::CallOp::create(*this, fnDec, condition);
+
+  // Build the after body if it exists
+  if (afterBody) {
+    LLVM::CondBrOp::create(*this, readOp.getResult(), afterBlock, nextBlock);
+    setInsertionPointToStart(afterBlock);
+    afterBody();
+    LLVM::BrOp::create(*this, beforeBlock);
+  } else {
+    LLVM::CondBrOp::create(*this, readOp.getResult(), beforeBlock, nextBlock);
+  }
+
+  // Set the insertion point to the next block
+  setInsertionPointToStart(nextBlock);
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 
@@ -709,40 +989,45 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   // Release resources in output block
   setInsertionPoint(outputBlock->getTerminator());
 
-  for (auto qubit : qubits) {
-    auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
-    auto dec =
-        getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_RELEASE, sig);
-    LLVM::CallOp::create(*this, dec, ValueRange{qubit});
-  }
+  if (profile == Profile::Adaptive) {
+    for (auto qubit : qubits) {
+      auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
+      auto dec =
+          getOrCreateFunctionDeclaration(*this, module, QIR_QUBIT_RELEASE, sig);
+      LLVM::CallOp::create(*this, dec, ValueRange{qubit});
+    }
 
-  for (auto array : qubitArrays) {
-    auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
-    auto dec = getOrCreateFunctionDeclaration(*this, module,
-                                              QIR_QUBIT_ARRAY_RELEASE, sig);
-    auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-    LLVM::CallOp::create(*this, dec, ValueRange{size, array});
+    for (auto array : qubitArrays) {
+      auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
+      auto dec = getOrCreateFunctionDeclaration(*this, module,
+                                                QIR_QUBIT_ARRAY_RELEASE, sig);
+      auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+      LLVM::CallOp::create(*this, dec, ValueRange{size, array});
+    }
   }
 
   // Generate output recording in output block
   generateOutputRecording();
 
-  for (auto& [_, ptr] : resultPtrs) {
-    auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
-    auto dec =
-        getOrCreateFunctionDeclaration(*this, module, QIR_RESULT_RELEASE, sig);
-    LLVM::CallOp::create(*this, dec, ptr);
-  }
+  if (profile == Profile::Adaptive) {
+    for (auto& [_, ptr] : resultPtrs) {
+      auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
+      auto dec = getOrCreateFunctionDeclaration(*this, module,
+                                                QIR_RESULT_RELEASE, sig);
+      LLVM::CallOp::create(*this, dec, ptr);
+    }
 
-  for (auto& [_, array] : resultArrays) {
-    auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
-    auto dec = getOrCreateFunctionDeclaration(*this, module,
-                                              QIR_RESULT_ARRAY_RELEASE, sig);
-    auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-    LLVM::CallOp::create(*this, dec, ValueRange{size, array});
+    for (auto& [_, array] : resultArrays) {
+      auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
+      auto dec = getOrCreateFunctionDeclaration(*this, module,
+                                                QIR_RESULT_ARRAY_RELEASE, sig);
+      auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+      LLVM::CallOp::create(*this, dec, ValueRange{size, array});
+    }
   }
 
   auto mainFuncOp = cast<LLVM::LLVMFuncOp>(mainFunc);
+  metadata_.useAdaptive = profile == Profile::Adaptive;
   setQIRAttributes(mainFuncOp, metadata_);
 
   isFinalized = true;
@@ -752,8 +1037,9 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<void(QIRProgramBuilder&)>& buildFunc) {
+    const function_ref<void(QIRProgramBuilder&)>& buildFunc, Profile profile) {
   QIRProgramBuilder builder(context);
+  builder.profile = profile;
   builder.initialize();
   buildFunc(builder);
   return builder.finalize();

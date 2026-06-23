@@ -41,8 +41,12 @@ namespace {
 
 struct QCOToQCTestCase {
   std::string name;
-  mqt::test::NamedBuilder<qco::QCOProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<qc::QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedBuilder<qco::QCOProgramBuilder,
+                          std::pair<SmallVector<Value>, SmallVector<Type>>>
+      programBuilder;
+  mqt::test::NamedBuilder<qc::QCProgramBuilder,
+                          std::pair<SmallVector<Value>, SmallVector<Type>>>
+      referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCOToQCTestCase& info);
@@ -144,6 +148,20 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::allocDeallocPair)}));
 /// @}
 
+/// \name QCOToQC/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOCtrlOpTest, QCOToQCTest,
+    testing::Values(QCOToQCTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qco::ctrlTwo),
+                                    MQT_NAMED_BUILDER(qc::ctrlTwo)},
+                    QCOToQCTestCase{"CtrlTwoMixed",
+                                    MQT_NAMED_BUILDER(qco::ctrlTwoMixed),
+                                    MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
+                    QCOToQCTestCase{"CtrlInvTwo",
+                                    MQT_NAMED_BUILDER(qco::ctrlInvTwo),
+                                    MQT_NAMED_BUILDER(qc::ctrlInvTwo)}));
+/// @}
+
 /// \name QCOToQC/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -160,7 +178,9 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::dcx)},
         QCOToQCTestCase{"InverseMultipleControlledDCX",
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledDcx)}));
+                        MQT_NAMED_BUILDER(qc::multipleControlledDcx)},
+        QCOToQCTestCase{"InvTwo", MQT_NAMED_BUILDER(qco::invTwo),
+                        MQT_NAMED_BUILDER(qc::invTwo)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/BarrierOp.cpp

@@ -36,6 +36,10 @@ allocQubitRegister(QCProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocMultipleQubitRegisters(QCProgramBuilder& b);
 
+/// Allocates two qubit registers of size `2` and `3` and applies operations.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+allocMultipleQubitRegistersWithOps(QCProgramBuilder& b);
+
 /// Allocates a large qubit register.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocLargeRegister(QCProgramBuilder& b);
@@ -1017,6 +1021,9 @@ inverseBarrier(QCProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 trivialCtrl(QCProgramBuilder& b);
 
+/// Creates a circuit with an empty ctrl modifier.
+std::pair<SmallVector<Value>, SmallVector<Type>> emptyCtrl(QCProgramBuilder& b);
+
 /// Creates a circuit with nested ctrl modifiers.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 nestedCtrl(QCProgramBuilder& b);
@@ -1033,7 +1040,27 @@ doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 ctrlInvSandwich(QCProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>> ctrlTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to a controlled and a
+/// non-controlled gate.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+ctrlTwoMixed(QCProgramBuilder& b);
+
+/// Creates a circuit with nested control modifiers applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+nestedCtrlTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to a inverse modifier
+/// applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+ctrlInvTwo(QCProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with an empty inverse modifier.
+std::pair<SmallVector<Value>, SmallVector<Type>> emptyInv(QCProgramBuilder& b);
 
 /// Creates a circuit with nested inverse modifiers.
 std::pair<SmallVector<Value>, SmallVector<Type>> nestedInv(QCProgramBuilder& b);
@@ -1045,6 +1072,14 @@ tripleNestedInv(QCProgramBuilder& b);
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 invCtrlSandwich(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>> invTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a control modifier
+/// applied to two gates.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+invCtrlTwo(QCProgramBuilder& b);
 
 // --- IfOp ----------------------------------------------------------------- //
 

@@ -424,8 +424,8 @@ public:
    * builder.c##OP_NAME(q0, q1);                                               \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) {                                                            \
-   *   qc.OP_NAME %q1 : !qc.qubit                                              \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
+   *   qc.OP_NAME %a0 : !qc.qubit                                              \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
@@ -442,8 +442,8 @@ public:
    * builder.mc##OP_NAME({q0, q1}, q2);                                        \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) {                                                       \
-   *   qc.OP_NAME %q2 : !qc.qubit                                              \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
+   *   qc.OP_NAME %a0 : !qc.qubit                                              \
    * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
@@ -496,8 +496,8 @@ public:
    * builder.c##OP_NAME(PARAM, q0, q1);                                        \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) {                                                            \
-   *   qc.OP_NAME(%PARAM) %q1 : !qc.qubit                                      \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
+   *   qc.OP_NAME(%PARAM) %a0 : !qc.qubit                                      \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
@@ -516,8 +516,8 @@ public:
    * builder.mc##OP_NAME(PARAM, {q0, q1}, q2);                                 \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) {                                                       \
-   *   qc.OP_NAME(%PARAM) %q2 : !qc.qubit                                      \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
+   *   qc.OP_NAME(%PARAM) %a0 : !qc.qubit                                      \
    * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
@@ -567,8 +567,8 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) {                                                            \
-   *   qc.OP_NAME(%PARAM1, %PARAM2) %q1 : !qc.qubit                            \
+   * qc.ctrl(%q0) (%a0 = %q1) {                                                \
+   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
@@ -589,8 +589,8 @@ public:
    * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2);                        \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) {                                                       \
-   *   qc.OP_NAME(%PARAM1, %PARAM2) %q2 : !qc.qubit                            \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
+   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
    * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
@@ -643,8 +643,8 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, PARAM3, q0, q1);                       \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) {                                                            \
-   *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q1 : !qc.qubit                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
+   *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %a0 : !qc.qubit                   \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
@@ -667,8 +667,8 @@ public:
    * builder.mc##OP_NAME(PARAM1, PARAM2, PARAM3, {q0, q1}, q2);                \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) {                                                       \
-   *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q2 : !qc.qubit                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
+   *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %a0 : !qc.qubit                   \
    * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
@@ -713,8 +713,8 @@ public:
    * builder.c##OP_NAME(q0, q1, q2);                                           \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) {                                                            \
-   *   qc.OP_NAME %q1, %q2 : !qc.qubit, !qc.qubit                              \
+   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
+   *   qc.OP_NAME %a0, %a1 : !qc.qubit, !qc.qubit                              \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
@@ -732,8 +732,8 @@ public:
    * builder.mc##OP_NAME({q0, q1}, q2, q3);                                    \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) {                                                       \
-   *   qc.OP_NAME %q2, %q3 : !qc.qubit, !qc.qubit                              \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
+   *   qc.OP_NAME %a0, %a1 : !qc.qubit, !qc.qubit                              \
    * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
@@ -782,8 +782,8 @@ public:
    * builder.c##OP_NAME(PARAM, q0, q1, q2);                                    \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) {                                                            \
-   *   qc.OP_NAME(%PARAM) %q1, %q2 : !qc.qubit, !qc.qubit                      \
+   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
+   *   qc.OP_NAME(%PARAM) %a0, %a1 : !qc.qubit, !qc.qubit                      \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
@@ -803,8 +803,8 @@ public:
    * builder.mc##OP_NAME(PARAM, {q0, q1}, q2, q3);                             \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) {                                                       \
-   *   qc.OP_NAME(%PARAM) %q2, %q3 : !qc.qubit, !qc.qubit                      \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
+   *   qc.OP_NAME(%PARAM) %a0, %a1 : !qc.qubit, !qc.qubit                      \
    * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
@@ -857,8 +857,8 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1, q2);                           \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) {                                                            \
-   *   qc.OP_NAME(%PARAM1, %PARAM2) %q1, %q2 : !qc.qubit,                      \
+   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
+   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0, %a1 : !qc.qubit,                      \
    * !qc.qubit                                                                 \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
@@ -881,8 +881,8 @@ public:
    * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2, q3);                    \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) {                                                       \
-   *  qc.OP_NAME(%PARAM1, %PARAM2) %q2, %q3 : !qc.qubit, !qc.qubit             \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
+   *  qc.OP_NAME(%PARAM1, %PARAM2) %a0, %a1 : !qc.qubit, !qc.qubit             \
    * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
@@ -927,15 +927,18 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.ctrl(q0, [&] { builder.x(q1); });
+   * builder.ctrl(q0, q1, [&](ValueRange targets) {
+   *   builder.x(targets[0]);
+   * });
    * ```
    * ```mlir
-   * qc.ctrl(%q0) {
-   *   qc.x %q1 : !qc.qubit
+   * qc.ctrl(%q0) targets(%a0 = %q1) {
+   *   qc.x %a0 : !qc.qubit
    * } : !qc.qubit
    * ```
    */
-  QCProgramBuilder& ctrl(ValueRange controls, const function_ref<void()>& body);
+  QCProgramBuilder& ctrl(ValueRange controls, ValueRange targets,
+                         const function_ref<void(ValueRange)>& body);
 
   /**
    * @brief Apply an inverse (i.e., adjoint) operation.
@@ -946,7 +949,9 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.inv([&] { builder.s(q0); });
+   * builder.inv(q0, [&](ValueRange qubits) {
+   *   builder.h(qubits[0]);
+   * });
    * ```
    * ```mlir
    * qc.inv {
@@ -954,7 +959,8 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& inv(const function_ref<void()>& body);
+  QCProgramBuilder& inv(ValueRange qubits,
+                        const function_ref<void(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

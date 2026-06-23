@@ -10,405 +10,250 @@
 
 #include "mlir/Support/IRVerification.h"
 
-#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseMapInfo.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/Hashing.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <llvm/Support/Casting.h>
+#include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/IRMapping.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
-#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cmath>
 #include <cstddef>
-#include <utility>
+#include <iterator>
+#include <numeric>
 
 using namespace mlir;
 
 namespace {
+struct TensorMapping {
+  /// Maps all tensor values of the lhs to its equiv group.
+  DenseMap<Value, size_t> lhsEquivGroups;
+  /// Maps all tensor values of the rhs to its equiv group.
+  DenseMap<Value, size_t> rhsEquivGroups;
+  /// Maps the i-th group of lhs to the j-th group of rhs.
+  DenseMap<size_t, size_t> equivGroupMapping;
 
-/// Compute a structural hash for an operation (excluding SSA value identities).
-/// This hash is based on operation name, types, and attributes only.
-struct OperationStructuralHash {
-  size_t operator()(Operation* op) const {
-    size_t hash = llvm::hash_value(op->getName().getStringRef());
-
-    // Hash result types
-    for (auto type : op->getResultTypes()) {
-      hash = llvm::hash_combine(hash, type.getAsOpaquePointer());
-    }
-
-    // Hash operand types (not values)
-    for (auto operand : op->getOperands()) {
-      hash = llvm::hash_combine(hash, operand.getType().getAsOpaquePointer());
-    }
-
-    // Hash attributes
-    // for (const auto& attr : op->getAttrDictionary()) {
-    //   hash = llvm::hash_combine(hash, attr.getName().str());
-    //   hash = llvm::hash_combine(hash, attr.getValue().getAsOpaquePointer());
-    // }
-
-    return hash;
-  }
-};
-
-/// Check if two operations are structurally equivalent (excluding SSA value
-/// identities).
-struct OperationStructuralEquality {
-  bool operator()(Operation* lhs, Operation* rhs) const {
-    // Check operation name
-    if (lhs->getName() != rhs->getName()) {
-      return false;
-    }
-
-    // Check result types
-    if (lhs->getResultTypes() != rhs->getResultTypes()) {
-      return false;
-    }
-
-    // Check operand types (not values)
-    auto lhsOperandTypes = lhs->getOperandTypes();
-    auto rhsOperandTypes = rhs->getOperandTypes();
-    return llvm::equal(lhsOperandTypes, rhsOperandTypes);
-
-    // Note: Attributes are intentionally not checked here to allow relaxed
-    // comparison. Attributes like function names, parameter names, etc. may
-    // differ while operations are still structurally equivalent.
-  }
-};
-
-/// Wrapper for Operation* with structural comparison semantics
-struct StructuralOperationKey {
-  Operation* op;
-
-  explicit StructuralOperationKey(Operation* operation = nullptr)
-      : op(operation) {}
-
-  bool operator==(const StructuralOperationKey& other) const {
-    if (op == other.op) {
-      return true;
-    }
-    if (op == nullptr || other.op == nullptr) {
-      return false;
-    }
-    return OperationStructuralEquality{}(op, other.op);
+  /// Map equivalence group identifiers of two tensors.
+  void map(Value lhs, Value rhs) {
+    equivGroupMapping[lhsEquivGroups[lhs]] = rhsEquivGroups[rhs];
   }
 
-  bool operator!=(const StructuralOperationKey& other) const {
-    return !(*this == other);
+  /// Return true if the given tensor values have the same equiv group.
+  [[nodiscard]] bool equals(Value lhs, Value rhs) const {
+    const auto i = lhsEquivGroups.at(lhs);
+    return equivGroupMapping.at(i) == rhsEquivGroups.at(rhs);
   }
 };
-
-/// Map to track value equivalence between two modules.
-using ValueEquivalenceMap = DenseMap<mlir::Value, mlir::Value>;
-
-using OperationSet = DenseSet<Operation*>;
-
-struct InsertWrite {
-  Value scalar;
-  Value index;
-};
-
-struct InsertChainSummary {
-  Value baseTensor;
-  Value finalTensor;
-  SmallVector<InsertWrite> writes;
-};
-
 } // namespace
 
-static bool areValuesEquivalent(Value lhs, Value rhs,
-                                ValueEquivalenceMap& valueMap) {
-  if (auto it = valueMap.find(lhs); it != valueMap.end()) {
-    return it->second == rhs;
-  }
-  valueMap[lhs] = rhs;
-  return true;
-}
+static bool compareRegions(Region& lhs, Region& rhs,
+                           SetVector<Operation*>& lhsClosed,
+                           SetVector<Operation*>& rhsClosed, IRMapping& m,
+                           TensorMapping& tm);
 
-static bool areIndexValuesEquivalent(Value lhs, Value rhs,
-                                     ValueEquivalenceMap& valueMap) {
-  if (qtensor::areEquivalentIndices(lhs, rhs)) {
-    return true;
-  }
-  return areValuesEquivalent(lhs, rhs, valueMap);
-}
-
-static bool isQTensorInsertOp(Operation* op) {
-  return isa<qtensor::InsertOp>(op);
-}
-
-static bool isCommutableQTensorInsertDependency(Operation* dependent,
-                                                Operation* dependency) {
-  auto dependentInsert = dyn_cast<qtensor::InsertOp>(dependent);
-  auto dependencyInsert = dyn_cast<qtensor::InsertOp>(dependency);
-  if (!dependentInsert || !dependencyInsert) {
+/// Return true, if the given value has the type `tensor<qco.qubit>`.
+static bool hasTypeQubitTensor(Value v) {
+  auto tensor = dyn_cast<RankedTensorType>(v.getType());
+  if (!tensor) {
     return false;
   }
-  if (dependentInsert.getDest() != dependencyInsert.getResult()) {
-    return false;
-  }
-  auto dependentIndex = dependentInsert.getIndex();
-  auto dependencyIndex = dependencyInsert.getIndex();
-  if (!getConstantIntValue(dependentIndex) ||
-      !getConstantIntValue(dependencyIndex)) {
-    return false;
-  }
-  return !qtensor::areEquivalentIndices(dependentIndex, dependencyIndex);
+
+  return isa<qco::QubitType>(tensor.getElementType());
 }
 
-static Value getInsertChainBaseTensor(Value tensor, const OperationSet& group) {
-  auto current = tensor;
-  while (auto insertOp = current.getDefiningOp<qtensor::InsertOp>()) {
-    if (!group.contains(insertOp.getOperation())) {
-      break;
+/// Recursively initialize the equivalence group for a tensor value.
+static void initEquivGroup(TypedValue<RankedTensorType> v, size_t id,
+                           DenseMap<Value, size_t>& group) {
+  for (qtensor::TensorIterator it(v); it != std::default_sentinel; ++it) {
+    if (it.tensor() == nullptr) {
+      continue;
     }
-    current = insertOp.getDest();
+
+    group[it.tensor()] = id;
+
+    if (isa<BlockArgument>(it.tensor())) {
+      continue;
+    }
+
+    if (auto op = dyn_cast<qco::IfOp>(it.operation())) {
+      const auto prev = std::prev(it);
+      const auto qIt = llvm::find(op.getQubits(), prev.tensor());
+      assert(qIt != op.getQubits().end());
+      const auto idx = std::distance(op.getQubits().begin(), qIt);
+
+      auto& thenRegion = op.getThenRegion();
+      auto& elseRegion = op.getElseRegion();
+
+      const auto& thenArg = thenRegion.getArgument(idx);
+      const auto& elseArg = elseRegion.getArgument(idx);
+
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(thenArg), id, group);
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(elseArg), id, group);
+    } else if (auto forOp = dyn_cast<scf::ForOp>(it.operation())) {
+      const auto& arg =
+          forOp.getTiedLoopRegionIterArg(cast<OpResult>(it.tensor()));
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(arg), id, group);
+    }
   }
-  return current;
 }
 
-static bool summarizeInsertGroup(ArrayRef<Operation*> ops,
-                                 SmallVectorImpl<InsertChainSummary>& chains) {
-  OperationSet groupOps;
-  for (Operation* op : ops) {
-    groupOps.insert(op);
-  }
+/// Generate equivalence group for all allocated and created tensors.
+static DenseMap<Value, size_t> getEquivGroup(ModuleOp mod) {
+  size_t id = 0;
+  DenseMap<Value, size_t> group;
 
-  DenseSet<Value> consumedInsertResults;
-  for (Operation* op : ops) {
-    auto insertOp = cast<qtensor::InsertOp>(op);
-    if (auto definingInsert =
-            insertOp.getDest().getDefiningOp<qtensor::InsertOp>()) {
-      if (groupOps.contains(definingInsert.getOperation())) {
-        consumedInsertResults.insert(insertOp.getDest());
-      }
+  mod->walk([&](Operation* op) {
+    if (auto alloc = dyn_cast<qtensor::AllocOp>(op)) {
+      initEquivGroup(alloc.getResult(), id, group);
+      ++id;
+    } else if (auto from = dyn_cast<qtensor::FromElementsOp>(op)) {
+      initEquivGroup(cast<TypedValue<RankedTensorType>>(from.getResult()), id,
+                     group);
+      ++id;
     }
+  });
+
+  return group;
+}
+
+/// Map all results from one op to another using the given permutation.
+/// Assumes that `lhs->getNumResults() == rhs->getNumResults()`.
+/// Assumes that the two operations are equivalent to each other.
+static void mapResults(Operation* lhs, Operation* rhs,
+                       ArrayRef<size_t> permutation, IRMapping& m) {
+  for (const auto& [i, lhsResult] : llvm::enumerate(lhs->getResults())) {
+    m.map(lhsResult, rhs->getResult(permutation[i]));
   }
+}
 
-  DenseMap<Value, size_t> chainByBaseTensor;
-  for (Operation* op : ops) {
-    auto insertOp = cast<qtensor::InsertOp>(op);
-    const Value baseTensor =
-        getInsertChainBaseTensor(insertOp.getDest(), groupOps);
-
-    size_t chainIdx = 0;
-    if (auto it = chainByBaseTensor.find(baseTensor);
-        it != chainByBaseTensor.end()) {
-      chainIdx = it->second;
-    } else {
-      chainIdx = chains.size();
-      chainByBaseTensor[baseTensor] = chainIdx;
-      InsertChainSummary summary;
-      summary.baseTensor = baseTensor;
-      chains.emplace_back(std::move(summary));
-    }
-
-    auto& chain = chains[chainIdx];
-    chain.writes.push_back(InsertWrite{.scalar = insertOp.getScalar(),
-                                       .index = insertOp.getIndex()});
-
-    if (!consumedInsertResults.contains(insertOp.getResult())) {
-      if (chain.finalTensor) {
-        return false;
-      }
-      chain.finalTensor = insertOp.getResult();
-    }
+/// Map arguments from one block to another using the given permutation.
+/// Assumes that `lhs.getNumArguments() == rhs.getNumArguments()`.
+/// Assumes that `permutation.size() == lhs.getNumArguments()`.
+static void mapArguments(Block& lhs, Block& rhs, ArrayRef<size_t> permutation,
+                         IRMapping& m) {
+  for (const auto& [i, lhsArg] : enumerate(lhs.getArguments())) {
+    m.map(lhsArg, rhs.getArgument(permutation[i]));
   }
+}
 
-  for (const auto& chain : chains) {
-    if (!chain.finalTensor) {
+/// Return a permutation vector, where permutation[i] maps the i-th target of
+/// the lhs to the j-th target of the rhs.
+static SmallVector<size_t> getTargetPermutation(qc::CtrlOp lhs, qc::CtrlOp rhs,
+                                                const IRMapping& m) {
+  SmallVector<size_t> permutation(lhs.getNumTargets());
+  for (const auto& [i, trgt] : llvm::enumerate(lhs.getTargets())) {
+    const auto it = llvm::find(rhs.getTargets(), m.lookup(trgt));
+    const auto j = std::distance(rhs.getTargets().begin(), it);
+    permutation[i] = j;
+  }
+  return permutation;
+}
+
+/// Return a permutation vector, where permutation[i] maps the i-th input
+/// target of the lhs to the j-th input target of the rhs.
+static SmallVector<size_t>
+getTargetPermutation(qco::CtrlOp lhs, qco::CtrlOp rhs, const IRMapping& m) {
+  SmallVector<size_t> permutation(lhs.getNumTargets());
+  for (const auto& [i, trgt] : llvm::enumerate(lhs.getInputTargets())) {
+    const auto it = llvm::find(rhs.getInputTargets(), m.lookup(trgt));
+    const auto j = std::distance(rhs.getInputTargets().begin(), it);
+    permutation[i] = j;
+  }
+  return permutation;
+}
+
+/// Return a permutation vector, where permutation[i] maps the i-th input
+/// target of the lhs to the j-th input target of the rhs.
+static SmallVector<size_t>
+getControlPermutation(qco::CtrlOp lhs, qco::CtrlOp rhs, const IRMapping& m) {
+  SmallVector<size_t> permutation(lhs.getNumControls());
+  for (const auto& [i, trgt] : llvm::enumerate(lhs.getInputControls())) {
+    const auto it = llvm::find(rhs.getInputControls(), m.lookup(trgt));
+    const auto j = std::distance(rhs.getInputControls().begin(), it);
+    permutation[i] = j;
+  }
+  return permutation;
+}
+
+/// Compare two ctrl operations, allowing permutations of control and target
+/// qubits.
+static bool compareCtrlOps(qc::CtrlOp lhs, qc::CtrlOp rhs, const IRMapping& m) {
+  DenseSet<Value> workset;
+  workset.insert_range(rhs.getControls());
+  for (const auto& ctrl : lhs.getControls()) {
+    const auto& v = m.lookup(ctrl);
+    if (!workset.contains(v)) {
       return false;
     }
-
-    // Reordering writes to the same index is not semantics-preserving.
-    SmallVector<Value> seenIndices;
-    for (const auto& write : chain.writes) {
-      if (llvm::any_of(seenIndices, [&](Value seenIndex) {
-            return qtensor::areEquivalentIndices(seenIndex, write.index);
-          })) {
-        return false;
-      }
-      seenIndices.push_back(write.index);
-    }
+    workset.erase(v);
   }
 
-  return true;
-}
-
-static bool areInsertWritesEquivalentRec(const size_t lhsIdx,
-                                         ArrayRef<InsertWrite> lhsWrites,
-                                         ArrayRef<InsertWrite> rhsWrites,
-                                         SmallVectorImpl<char>& rhsUsed,
-                                         ValueEquivalenceMap& valueMap) {
-  if (lhsIdx == lhsWrites.size()) {
-    return true;
-  }
-
-  for (size_t rhsIdx = 0; rhsIdx < rhsWrites.size(); ++rhsIdx) {
-    if (rhsUsed[rhsIdx] != 0) {
-      continue;
-    }
-
-    ValueEquivalenceMap tempMap = valueMap;
-    if (!areValuesEquivalent(lhsWrites[lhsIdx].scalar, rhsWrites[rhsIdx].scalar,
-                             tempMap) ||
-        !areIndexValuesEquivalent(lhsWrites[lhsIdx].index,
-                                  rhsWrites[rhsIdx].index, tempMap)) {
-      continue;
-    }
-
-    rhsUsed[rhsIdx] = 1;
-    if (areInsertWritesEquivalentRec(lhsIdx + 1, lhsWrites, rhsWrites, rhsUsed,
-                                     tempMap)) {
-      valueMap = std::move(tempMap);
-      return true;
-    }
-    rhsUsed[rhsIdx] = 0;
-  }
-
-  return false;
-}
-
-static bool areInsertWritesEquivalent(ArrayRef<InsertWrite> lhsWrites,
-                                      ArrayRef<InsertWrite> rhsWrites,
-                                      ValueEquivalenceMap& valueMap) {
-  if (lhsWrites.size() != rhsWrites.size()) {
-    return false;
-  }
-  SmallVector<char> rhsUsed(rhsWrites.size(), 0);
-  return areInsertWritesEquivalentRec(0, lhsWrites, rhsWrites, rhsUsed,
-                                      valueMap);
-}
-
-static bool areInsertChainsEquivalent(const InsertChainSummary& lhsChain,
-                                      const InsertChainSummary& rhsChain,
-                                      ValueEquivalenceMap& valueMap) {
-  ValueEquivalenceMap tempMap = valueMap;
-  if (!areValuesEquivalent(lhsChain.baseTensor, rhsChain.baseTensor, tempMap)) {
+  if (!workset.empty()) {
     return false;
   }
 
-  if (!areInsertWritesEquivalent(lhsChain.writes, rhsChain.writes, tempMap)) {
-    return false;
-  }
-
-  if (!areValuesEquivalent(lhsChain.finalTensor, rhsChain.finalTensor,
-                           tempMap)) {
-    return false;
-  }
-
-  valueMap = std::move(tempMap);
-  return true;
-}
-
-static bool areInsertGroupsEquivalentRec(const size_t lhsChainIdx,
-                                         ArrayRef<InsertChainSummary> lhsChains,
-                                         ArrayRef<InsertChainSummary> rhsChains,
-                                         SmallVectorImpl<char>& rhsChainUsed,
-                                         ValueEquivalenceMap& valueMap) {
-  if (lhsChainIdx == lhsChains.size()) {
-    return true;
-  }
-
-  for (size_t rhsChainIdx = 0; rhsChainIdx < rhsChains.size(); ++rhsChainIdx) {
-    if (rhsChainUsed[rhsChainIdx] != 0) {
-      continue;
-    }
-
-    ValueEquivalenceMap tempMap = valueMap;
-    if (!areInsertChainsEquivalent(lhsChains[lhsChainIdx],
-                                   rhsChains[rhsChainIdx], tempMap)) {
-      continue;
-    }
-
-    rhsChainUsed[rhsChainIdx] = 1;
-    if (areInsertGroupsEquivalentRec(lhsChainIdx + 1, lhsChains, rhsChains,
-                                     rhsChainUsed, tempMap)) {
-      valueMap = std::move(tempMap);
-      return true;
-    }
-    rhsChainUsed[rhsChainIdx] = 0;
-  }
-
-  return false;
-}
-
-static bool areInsertGroupsEquivalent(ArrayRef<Operation*> lhsOps,
-                                      ArrayRef<Operation*> rhsOps,
-                                      ValueEquivalenceMap& valueMap) {
-  if (lhsOps.size() != rhsOps.size()) {
-    return false;
-  }
-
-  SmallVector<InsertChainSummary> lhsChains;
-  SmallVector<InsertChainSummary> rhsChains;
-  if (!summarizeInsertGroup(lhsOps, lhsChains) ||
-      !summarizeInsertGroup(rhsOps, rhsChains)) {
-    return false;
-  }
-  if (lhsChains.size() != rhsChains.size()) {
-    return false;
-  }
-
-  SmallVector<char> rhsChainUsed(rhsChains.size(), 0);
-  return areInsertGroupsEquivalentRec(0, lhsChains, rhsChains, rhsChainUsed,
-                                      valueMap);
-}
-
-/// DenseMapInfo specialization for StructuralOperationKey
-template <> struct llvm::DenseMapInfo<StructuralOperationKey> {
-  static StructuralOperationKey getEmptyKey() {
-    return StructuralOperationKey(DenseMapInfo<Operation*>::getEmptyKey());
-  }
-
-  static StructuralOperationKey getTombstoneKey() {
-    return StructuralOperationKey(DenseMapInfo<Operation*>::getTombstoneKey());
-  }
-
-  static unsigned getHashValue(const StructuralOperationKey& key) {
-    if (key.op == getEmptyKey().op || key.op == getTombstoneKey().op) {
-      return DenseMapInfo<Operation*>::getHashValue(key.op);
-    }
-    return OperationStructuralHash{}(key.op);
-  }
-
-  static bool isEqual(const StructuralOperationKey& lhs,
-                      const StructuralOperationKey& rhs) {
-    // Handle special keys
-    if (lhs.op == getEmptyKey().op) {
-      return rhs.op == getEmptyKey().op;
-    }
-    if (lhs.op == getTombstoneKey().op) {
-      return rhs.op == getTombstoneKey().op;
-    }
-    if (rhs.op == getEmptyKey().op || rhs.op == getTombstoneKey().op) {
+  workset.insert_range(rhs.getTargets());
+  for (const auto& trgt : lhs.getTargets()) {
+    const auto& v = m.lookup(trgt);
+    if (!workset.contains(v)) {
       return false;
     }
-    return lhs == rhs;
+    workset.erase(v);
   }
-};
 
-static bool areFloatValuesNear(const APFloat& lhs, const APFloat& rhs,
-                               const unsigned width) {
+  return workset.empty();
+}
+
+/// Compare two ctrl operations, allowing permutations of input control and
+/// input target qubits.
+static bool compareCtrlOps(qco::CtrlOp lhs, qco::CtrlOp rhs,
+                           const IRMapping& m) {
+  DenseSet<Value> workset;
+  workset.insert_range(rhs.getInputControls());
+  for (const auto& ctrl : lhs.getInputControls()) {
+    const auto& v = m.lookup(ctrl);
+    if (!workset.contains(v)) {
+      return false;
+    }
+    workset.erase(v);
+  }
+
+  if (!workset.empty()) {
+    return false;
+  }
+
+  workset.insert_range(rhs.getInputTargets());
+  for (const auto& trgt : lhs.getInputTargets()) {
+    const auto& v = m.lookup(trgt);
+    if (!workset.contains(v)) {
+      return false;
+    }
+    workset.erase(v);
+  }
+
+  return workset.empty();
+}
+
+/// Compare two floating point numbers for approximate equivalence.
+static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
+                                const unsigned width) {
   if (lhs.isNaN() || rhs.isNaN()) {
     return lhs.isNaN() && rhs.isNaN();
   }
@@ -436,385 +281,381 @@ static bool areFloatValuesNear(const APFloat& lhs, const APFloat& rhs,
   return absDiff <= absTol + (relTol * scale);
 }
 
-static bool areConstantAttributesEquivalent(const Attribute& lhs,
-                                            const Attribute& rhs) {
-  if (lhs == rhs) {
-    return true;
-  }
-
-  if (auto lhsFloat = dyn_cast<FloatAttr>(lhs)) {
-    auto rhsFloat = dyn_cast<FloatAttr>(rhs);
-    if (!rhsFloat) {
+/// Compare two attributes for equivality.
+/// Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`,
+/// and `FlatSymbolRefAttr`. For any other type, the function simply returns
+/// true.
+static bool compareAttributes(Attribute lhs, Attribute rhs) {
+  if (dyn_cast<UnitAttr>(lhs)) {
+    if (!dyn_cast<UnitAttr>(rhs)) {
       return false;
     }
-    return areFloatValuesNear(lhsFloat.getValue(), rhsFloat.getValue(),
-                              lhsFloat.getType().getIntOrFloatBitWidth());
+  } else if (auto intAttrA = dyn_cast<IntegerAttr>(lhs)) {
+    if (auto intAttrB = dyn_cast<IntegerAttr>(rhs);
+        !intAttrB || intAttrA.getValue() != intAttrB.getValue() ||
+        (intAttrA.getType().isInteger() && !intAttrB.getType().isInteger())) {
+      return false;
+    }
+  } else if (auto floatAttrA = dyn_cast<FloatAttr>(lhs)) {
+    if (auto floatAttrB = dyn_cast<FloatAttr>(rhs);
+        !floatAttrB ||
+        !approxCompareFloats(floatAttrA.getValue(), floatAttrB.getValue(),
+                             floatAttrA.getType().getIntOrFloatBitWidth())) {
+      return false;
+    }
+  } else if (auto strAttrA = dyn_cast<StringAttr>(lhs)) {
+    if (auto strAttrB = dyn_cast<StringAttr>(rhs);
+        !strAttrB || strAttrA.getValue() != strAttrB.getValue()) {
+      return false;
+    }
+  } else if (auto symbolRefAttrA =
+                 llvm::dyn_cast<mlir::FlatSymbolRefAttr>(lhs)) {
+    auto symbolRefAttrB = llvm::dyn_cast<mlir::FlatSymbolRefAttr>(rhs);
+    if (!symbolRefAttrB) {
+      return false;
+    }
+
+    if (symbolRefAttrA.getValue() != symbolRefAttrB.getValue()) {
+      return false;
+    }
   }
 
-  return false;
+  return true;
 }
 
-/// Compare two operations for structural equivalence.
-/// Updates valueMap to track corresponding SSA values.
-static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
-                                    ValueEquivalenceMap& valueMap) {
-  // Check operation name
-  if (lhs->getName() != rhs->getName()) {
-    return false;
-  }
+/// Compare two operations for structural equivalence, applying special
+/// rules for `CtrlOp` s and `qtensor` s.
+static bool compareOperations(Operation* lhs, Operation* rhs,
+                              const IRMapping& m, const TensorMapping& tm) {
 
-  // Check arith::ConstantOp
-  if (auto lhsConst = dyn_cast<arith::ConstantOp>(lhs)) {
-    auto rhsConst = dyn_cast<arith::ConstantOp>(rhs);
-    if (!rhsConst) {
-      return false;
-    }
+  // Compare top-level signature-like characteristics.
 
-    if (!areConstantAttributesEquivalent(lhsConst.getValue(),
-                                         rhsConst.getValue())) {
-      return false;
-    }
-  }
-
-  // Check LLVM::ConstantOp
-  if (auto lhsConst = dyn_cast<LLVM::ConstantOp>(lhs)) {
-    auto rhsConst = dyn_cast<LLVM::ConstantOp>(rhs);
-    if (!rhsConst) {
-      return false;
-    }
-    if (!areConstantAttributesEquivalent(lhsConst.getValue(),
-                                         rhsConst.getValue())) {
-      return false;
-    }
-  }
-
-  // Check LLVM::CallOp
-  if (auto lhsCall = dyn_cast<LLVM::CallOp>(lhs)) {
-    auto rhsCall = dyn_cast<LLVM::CallOp>(rhs);
-    if (!rhsCall) {
-      return false;
-    }
-    if (lhsCall.getCallee() != rhsCall.getCallee()) {
-      return false;
-    }
-  }
-
-  // Check number of operands and results
-  if (lhs->getNumOperands() != rhs->getNumOperands() ||
+  if (lhs->getName() != rhs->getName() ||
+      lhs->getNumOperands() != rhs->getNumOperands() ||
+      lhs->getOperandTypes() != rhs->getOperandTypes() ||
       lhs->getNumResults() != rhs->getNumResults() ||
+      lhs->getResultTypes() != rhs->getResultTypes() ||
       lhs->getNumRegions() != rhs->getNumRegions()) {
     return false;
   }
 
-  // Note: Attributes are intentionally not checked to allow relaxed comparison
+  // Compare attributes with specific types.
+  // Silently ignore missing ones.
 
-  // Check result types
-  if (lhs->getResultTypes() != rhs->getResultTypes()) {
-    return false;
-  }
-
-  // Check operands according to value mapping
-  for (auto [lhsOperand, rhsOperand] :
-       llvm::zip(lhs->getOperands(), rhs->getOperands())) {
-    if (auto it = valueMap.find(lhsOperand); it != valueMap.end()) {
-      // Value already mapped, must match
-      if (it->second != rhsOperand) {
-        return false;
-      }
-    } else {
-      // Establish new mapping
-      valueMap[lhsOperand] = rhsOperand;
+  for (const auto& namedAttrLhs : lhs->getAttrs()) {
+    const StringRef keyLhs = namedAttrLhs.getName().strref();
+    if (!rhs->hasAttr(keyLhs)) {
+      continue;
     }
-  }
 
-  // Update value mapping for results
-  for (auto [lhsResult, rhsResult] :
-       llvm::zip(lhs->getResults(), rhs->getResults())) {
-    valueMap[lhsResult] = rhsResult;
-  }
-
-  return true;
-}
-
-/// Forward declaration for mutual recursion.
-static bool areBlocksEquivalent(Block& lhs, Block& rhs,
-                                ValueEquivalenceMap& valueMap);
-
-/// Compare two regions for structural equivalence.
-static bool areRegionsEquivalent(Region& lhs, Region& rhs,
-                                 ValueEquivalenceMap& valueMap) {
-  if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
-    return false;
-  }
-
-  for (auto [lhsBlock, rhsBlock] : llvm::zip(lhs, rhs)) {
-    if (!areBlocksEquivalent(lhsBlock, rhsBlock, valueMap)) {
+    if (!compareAttributes(namedAttrLhs.getValue(), rhs->getAttr(keyLhs))) {
       return false;
     }
   }
 
+  // Compare operands.
+  // Because the order of target (control) qubits of CtrlOps doesn't matter,
+  // explicitly handle them here.
+
+  if (isa<qc::CtrlOp>(lhs)) {
+    assert(isa<qc::CtrlOp>(rhs));
+    if (!compareCtrlOps(cast<qc::CtrlOp>(lhs), cast<qc::CtrlOp>(rhs), m)) {
+      return false;
+    }
+  } else if (isa<qco::CtrlOp>(lhs)) {
+    assert(isa<qco::CtrlOp>(rhs));
+    if (!compareCtrlOps(cast<qco::CtrlOp>(lhs), cast<qco::CtrlOp>(rhs), m)) {
+      return false;
+    }
+  } else {
+    for (const auto& [lhsOperand, rhsOperand] :
+         llvm::zip_equal(lhs->getOperands(), rhs->getOperands())) {
+      if (hasTypeQubitTensor(lhsOperand)) {
+        assert(hasTypeQubitTensor(rhsOperand));
+
+        if (!tm.equals(lhsOperand, rhsOperand)) {
+          return false;
+        }
+      } else {
+        const auto& v = m.lookup(lhsOperand);
+        if (v != rhsOperand) {
+          return false;
+        }
+      }
+    }
+  }
+
   return true;
 }
 
-/// Check if an operation has memory effects or control flow side effects
-/// that would prevent reordering.
-static bool hasOrderingConstraints(Operation* op) {
-  // Terminators must maintain their position
-  if (op->hasTrait<OpTrait::IsTerminator>()) {
-    return true;
-  }
-
-  // Symbol-defining operations (like function declarations) can be reordered
-  if (op->hasTrait<OpTrait::SymbolTable>() ||
-      isa<LLVM::LLVMFuncOp, func::FuncOp>(op)) {
-    return false;
-  }
-
-  // Check for memory effects that enforce ordering
-  if (auto memInterface = dyn_cast<MemoryEffectOpInterface>(op)) {
-    SmallVector<MemoryEffects::EffectInstance> effects;
-    memInterface.getEffects(effects);
-
-    bool hasNonAllocFreeEffects = false;
-    for (const auto& effect : effects) {
-      // Allow operations with no effects or pure allocation/free effects
-      if (!isa<MemoryEffects::Allocate, MemoryEffects::Free>(
-              effect.getEffect())) {
-        hasNonAllocFreeEffects = true;
-        break;
-      }
-    }
-
-    if (hasNonAllocFreeEffects) {
+/// Extract and return "ready" operations.
+/// These are operations that are independent from each other.
+static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
+                                         const SetVector<Operation*>& closed) {
+  const auto isReady = [&closed](Value v) {
+    if (isa<BlockArgument>(v)) {
       return true;
     }
-  }
+    return closed.contains(v.getDefiningOp());
+  };
 
-  return false;
-}
+  SetVector<Operation*> ready;
+  for (Operation* op : open) {
+    if (ready.contains(op)) {
+      continue;
+    }
 
-/// Build a dependence graph for operations.
-/// Returns a map from each operation to the set of operations it depends on.
-DenseMap<Operation*, DenseSet<Operation*>> static buildDependenceGraph(
-    ArrayRef<Operation*> ops) {
-  DenseMap<Operation*, DenseSet<Operation*>> dependsOn;
-  DenseMap<Value, Operation*> valueProducers;
+    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
 
-  // Build value-to-producer map and dependence relationships
-  for (Operation* op : ops) {
-    dependsOn[op] = DenseSet<Operation*>();
+      // If any of the inserts on the chain are ready, we consider the entire
+      // chain ready because the ready operations could be moved to the front
+      // of the chain. The analogous logic is applied to extracts.
 
-    // This operation depends on the producers of its operands
-    for (const auto operand : op->getOperands()) {
-      if (auto it = valueProducers.find(operand); it != valueProducers.end()) {
-        dependsOn[op].insert(it->second);
+      SmallVector<Operation*> chain;
+      for (qtensor::TensorIterator it(insert.getResult());
+           it != std::default_sentinel; ++it) {
+        auto chainInsert = dyn_cast<qtensor::InsertOp>(it.operation());
+        if (!chainInsert) {
+          break;
+        }
+        if (isReady(chainInsert.getScalar()) &&
+            isReady(chainInsert.getIndex()) && !closed.contains(chainInsert)) {
+          chain.emplace_back(chainInsert);
+        }
+      }
+
+      if (!chain.empty()) {
+        ready.insert_range(chain);
+      }
+
+    } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+      SmallVector<Operation*> chain;
+      for (qtensor::TensorIterator it(extract.getOutTensor());
+           it != std::default_sentinel; ++it) {
+        auto chainExtract = dyn_cast<qtensor::ExtractOp>(it.operation());
+        if (!chainExtract) {
+          break;
+        }
+
+        if (isReady(chainExtract.getIndex()) &&
+            !closed.contains(chainExtract)) {
+          chain.emplace_back(chainExtract);
+        }
+      }
+
+      if (!chain.empty()) {
+        ready.insert_range(chain);
+      }
+    } else if (auto dealloc = dyn_cast<qtensor::DeallocOp>(op)) {
+
+      // Deallocations are ready whenever we've visited each op on the tensor
+      // chain. Because we initialize the iterator with its input tensor, the
+      // iterator already points at the previous operation. Thus use a
+      // do-while loop instead of a regular while.
+
+      bool fullChain{true};
+      qtensor::TensorIterator it(dealloc.getTensor());
+
+      do {
+        if (!closed.contains(it.operation())) {
+          fullChain = false;
+          break;
+        }
+
+        --it;
+      } while (std::prev(it) != it);
+
+      if (fullChain) {
+        ready.insert(dealloc);
+      }
+
+    } else {
+
+      // Otherwise, simply check if all operands are ready.
+
+      if (llvm::all_of(op->getOperands(), isReady)) {
+        ready.insert(op);
       }
     }
-
-    // Register this operation as the producer of its results
-    for (auto result : op->getResults()) {
-      valueProducers[result] = op;
-    }
   }
 
-  return dependsOn;
+  return ready;
 }
 
-/// Partition operations into groups that can be compared as multisets.
-/// Operations in the same group are independent and can be reordered.
-SmallVector<SmallVector<Operation*>> static partitionIndependentGroups(
-    ArrayRef<Operation*> ops) {
-  SmallVector<SmallVector<Operation*>> groups;
-  if (ops.empty()) {
-    return groups;
-  }
-
-  auto dependsOn = buildDependenceGraph(ops);
-  SmallVector<Operation*> currentGroup;
-
-  for (auto* op : ops) {
-    bool dependsOnCurrent = false;
-
-    // Check if this operation depends on any operation in the current group
-    for (auto* groupOp : currentGroup) {
-      if (!dependsOn[op].contains(groupOp)) {
-        continue;
-      }
-      if (isCommutableQTensorInsertDependency(op, groupOp)) {
-        continue;
-      }
-      dependsOnCurrent = true;
-      break;
-    }
-
-    // Check if this operation has ordering constraints
-    const auto hasConstraints = hasOrderingConstraints(op);
-
-    // If it depends on current group or has ordering constraints,
-    // finalize the current group and start a new one
-    if (dependsOnCurrent || (hasConstraints && !currentGroup.empty())) {
-      if (!currentGroup.empty()) {
-        groups.push_back(std::move(currentGroup));
-        currentGroup = {};
-      }
-    }
-
-    currentGroup.push_back(op);
-
-    // If this operation has ordering constraints, finalize the group
-    if (hasConstraints) {
-      groups.push_back(std::move(currentGroup));
-      currentGroup = {};
-    }
-  }
-
-  // Add any remaining operations
-  if (!currentGroup.empty()) {
-    groups.push_back(std::move(currentGroup));
-  }
-
-  return groups;
-}
-
-/// Compare two groups of independent operations using multiset equivalence.
-static bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
-                                           ArrayRef<Operation*> rhsOps) {
-  if (lhsOps.size() != rhsOps.size()) {
-    return false;
-  }
-
-  // Build frequency maps for both groups
-  DenseMap<StructuralOperationKey, size_t> lhsFrequencyMap;
-  DenseMap<StructuralOperationKey, size_t> rhsFrequencyMap;
-
-  for (auto* op : lhsOps) {
-    lhsFrequencyMap[StructuralOperationKey(op)]++;
-  }
-
-  for (auto* op : rhsOps) {
-    rhsFrequencyMap[StructuralOperationKey(op)]++;
-  }
-
-  // Check structural equivalence
-  if (lhsFrequencyMap.size() != rhsFrequencyMap.size()) {
-    return false;
-  }
-
-  // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
-  for (const auto& [lhsKey, lhsCount] : lhsFrequencyMap) {
-    auto it = rhsFrequencyMap.find(lhsKey);
-    if (it == rhsFrequencyMap.end() || it->second != lhsCount) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-/// Compare two blocks for structural equivalence, allowing permutations
-/// of independent operations.
-static bool areBlocksEquivalent(Block& lhs, Block& rhs,
-                                ValueEquivalenceMap& valueMap) {
-  // Check block arguments
+static bool compareBlocks(Block& lhs, Block& rhs,
+                          SetVector<Operation*>& lhsClosed,
+                          SetVector<Operation*>& rhsClosed, IRMapping& m,
+                          TensorMapping& tm) {
   if (lhs.getNumArguments() != rhs.getNumArguments()) {
     return false;
   }
 
-  for (auto [lhsArg, rhsArg] :
-       llvm::zip(lhs.getArguments(), rhs.getArguments())) {
-    if (lhsArg.getType() != rhsArg.getType()) {
-      return false;
-    }
-    valueMap[lhsArg] = rhsArg;
+  // Map block arguments while allowing commutation of operands for `CtrlOp`s.
+
+  if (isa<qc::CtrlOp>(lhs.getParentOp())) {
+    assert(isa<qc::CtrlOp>(rhs.getParentOp()));
+    auto lhsCtrl = cast<qc::CtrlOp>(lhs.getParentOp());
+    auto rhsCtrl = cast<qc::CtrlOp>(rhs.getParentOp());
+    mapArguments(lhs, rhs, getTargetPermutation(lhsCtrl, rhsCtrl, m), m);
+  } else if (isa<qco::CtrlOp>(lhs.getParentOp())) {
+    assert(isa<qco::CtrlOp>(rhs.getParentOp()));
+    auto lhsCtrl = cast<qco::CtrlOp>(lhs.getParentOp());
+    auto rhsCtrl = cast<qco::CtrlOp>(rhs.getParentOp());
+    mapArguments(lhs, rhs, getTargetPermutation(lhsCtrl, rhsCtrl, m), m);
+  } else {
+    SmallVector<size_t> permutation(lhs.getNumArguments());
+    std::iota(permutation.begin(), permutation.end(), 0);
+    mapArguments(lhs, rhs, permutation, m);
   }
 
-  // Collect all operations
-  SmallVector<Operation*> lhsOps;
-  SmallVector<Operation*> rhsOps;
+  SetVector<Operation*> lhsOpen;
+  SetVector<Operation*> rhsOpen;
 
-  for (Operation& op : lhs) {
-    lhsOps.push_back(&op);
-  }
+  for_each(lhs.getOperations(), [&](auto& op) { lhsOpen.insert(&op); });
+  for_each(rhs.getOperations(), [&](auto& op) { rhsOpen.insert(&op); });
 
-  for (Operation& op : rhs) {
-    rhsOps.push_back(&op);
-  }
+  // Compare block operations topologically.
 
-  if (lhsOps.size() != rhsOps.size()) {
-    return false;
-  }
+  while (true) {
+    const auto lhsReady = getReadyOps(lhsOpen, lhsClosed);
+    const auto rhsReady = getReadyOps(rhsOpen, rhsClosed);
 
-  // Partition operations into independent groups
-  auto lhsGroups = partitionIndependentGroups(lhsOps);
-  auto rhsGroups = partitionIndependentGroups(rhsOps);
-
-  if (lhsGroups.size() != rhsGroups.size()) {
-    return false;
-  }
-
-  // Compare each group
-  for (size_t groupIdx = 0; groupIdx < lhsGroups.size(); ++groupIdx) {
-    auto& lhsGroup = lhsGroups[groupIdx];
-    auto& rhsGroup = rhsGroups[groupIdx];
-
-    const bool lhsInsertGroup = llvm::all_of(lhsGroup, isQTensorInsertOp);
-    const bool rhsInsertGroup = llvm::all_of(rhsGroup, isQTensorInsertOp);
-    if (lhsInsertGroup || rhsInsertGroup) {
-      if (!lhsInsertGroup || !rhsInsertGroup) {
-        return false;
-      }
-      if (!areInsertGroupsEquivalent(lhsGroup, rhsGroup, valueMap)) {
-        return false;
-      }
-      continue;
+    if (lhsReady.empty() && rhsReady.empty()) {
+      break;
     }
 
-    if (!areIndependentGroupsEquivalent(lhsGroup, rhsGroup)) {
+    if (lhsReady.size() != rhsReady.size()) {
       return false;
     }
 
-    // Update value mappings for operations in this group
-    // We need to match operations and update the value map
-    // Since they are structurally equivalent, we can match them
-    // by trying all permutations (for small groups) or use a greedy approach
+    // Because there may be multiple structural equivalent operations (think
+    // arith.constant, for example), we apply the assumption that the first
+    // occurrence on the lhs corresponds to the first one on the rhs, etc.
 
-    // Use a simple greedy matching
-    DenseSet<Operation*> matchedRhs;
-    for (Operation* lhsOp : lhsGroup) {
-      bool matched = false;
-      for (Operation* rhsOp : rhsGroup) {
-        if (matchedRhs.contains(rhsOp)) {
+    DenseSet<Operation*> matched;
+    matched.reserve(rhsReady.size());
+
+    for (Operation* lhsOp : lhsReady) {
+      SetVector<Operation*>::iterator it = rhsReady.begin();
+      for (; it != rhsReady.end(); it = std::next(it)) {
+        Operation* rhsOp = *it;
+
+        if (matched.contains(rhsOp)) {
           continue;
         }
 
-        ValueEquivalenceMap tempMap = valueMap;
-        if (areOperationsEquivalent(lhsOp, rhsOp, tempMap)) {
-          valueMap = std::move(tempMap);
-          matchedRhs.insert(rhsOp);
-          matched = true;
+        if (compareOperations(lhsOp, rhsOp, m, tm)) {
+          matched.insert(rhsOp);
 
-          // Recursively compare regions
-          for (auto [lhsRegion, rhsRegion] :
-               llvm::zip(lhsOp->getRegions(), rhsOp->getRegions())) {
-            if (!areRegionsEquivalent(lhsRegion, rhsRegion, valueMap)) {
-              return false;
+          if (isa<qco::CtrlOp>(lhsOp)) {
+            assert(isa<qco::CtrlOp>(rhsOp));
+            auto lhsCtrl = cast<qco::CtrlOp>(lhsOp);
+            auto rhsCtrl = cast<qco::CtrlOp>(rhsOp);
+
+            SmallVector<size_t> permutation;
+            permutation.reserve(lhsCtrl.getNumQubits());
+            permutation.append(getControlPermutation(lhsCtrl, rhsCtrl, m));
+            for (const auto i : getTargetPermutation(lhsCtrl, rhsCtrl, m)) {
+              permutation.emplace_back(lhsCtrl.getNumControls() + i);
             }
+            mapResults(lhsCtrl, rhsCtrl, permutation, m);
+          } else if (isa<qtensor::AllocOp>(lhsOp)) {
+            assert(isa<qtensor::AllocOp>(rhsOp));
+            auto lhsAlloc = cast<qtensor::AllocOp>(lhsOp);
+            auto rhsAlloc = cast<qtensor::AllocOp>(rhsOp);
+            tm.map(lhsAlloc.getResult(), rhsAlloc.getResult());
+          } else if (isa<qtensor::FromElementsOp>(lhsOp)) {
+            assert(isa<qtensor::FromElementsOp>(rhsOp));
+            auto lhsFrom = cast<qtensor::FromElementsOp>(lhsOp);
+            auto rhsFrom = cast<qtensor::FromElementsOp>(rhsOp);
+            tm.map(lhsFrom.getResult(), rhsFrom.getResult());
+          } else if (isa<qtensor::ExtractOp>(lhsOp)) {
+            assert(isa<qtensor::ExtractOp>(rhsOp));
+            auto lhsExtract = cast<qtensor::ExtractOp>(lhsOp);
+            auto rhsExtract = cast<qtensor::ExtractOp>(rhsOp);
+            m.map(lhsExtract.getResult(), rhsExtract.getResult());
+          } else {
+            SmallVector<size_t> permutation(lhsOp->getNumResults());
+            std::iota(permutation.begin(), permutation.end(), 0);
+            mapResults(lhsOp, rhsOp, permutation, m);
           }
+
+          m.map(lhsOp, rhsOp);
           break;
         }
       }
 
-      if (!matched) {
+      if (it == rhsReady.end()) {
         return false;
       }
     }
+
+    // At this point, we've successfully matched each operation on the lhs
+    // with one on the rhs. Subsequently, update the open and closed sets and
+    // recursively compare the nested regions of each operation pair.
+
+    lhsOpen.set_subtract(lhsReady);
+    lhsClosed.set_union(lhsReady);
+
+    rhsOpen.set_subtract(rhsReady);
+    rhsClosed.set_union(rhsReady);
+
+    SetVector<Operation*>::iterator it = lhsReady.begin();
+    for (; it != lhsReady.end(); it = std::next(it)) {
+      Operation* opLhs = *it;
+
+      if (opLhs->getNumRegions() > 0) {
+        Operation* opRhs = m.lookup(opLhs);
+        assert(opLhs->getNumRegions() == opRhs->getNumRegions());
+        const auto nequiv = range_size(make_filter_range(
+            llvm::zip_equal(opLhs->getRegions(), opRhs->getRegions()),
+            [&](const auto& zip) {
+              const auto& [lhsRegion, rhsRegion] = zip;
+              return compareRegions(lhsRegion, rhsRegion, lhsClosed, rhsClosed,
+                                    m, tm);
+            }));
+        if (nequiv != opLhs->getNumRegions()) {
+          break;
+        }
+      }
+    }
+
+    if (it != lhsReady.end()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/// Compare two regions for structural equivalence.
+static bool compareRegions(Region& lhs, Region& rhs,
+                           SetVector<Operation*>& lhsClosed,
+                           SetVector<Operation*>& rhsClosed, IRMapping& m,
+                           TensorMapping& tm) {
+  if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
+    return false;
+  }
+
+  for (const auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
+    if (!compareBlocks(lhsBlock, rhsBlock, lhsClosed, rhsClosed, m, tm)) {
+      return false;
+    }
+
+    m.map(&lhsBlock, &rhsBlock);
   }
 
   return true;
 }
 
 bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
-  ValueEquivalenceMap valueMap;
-  return areRegionsEquivalent(lhs.getBodyRegion(), rhs.getBodyRegion(),
-                              valueMap);
+  IRMapping m;
+  SetVector<Operation*> lhsClosed;
+  SetVector<Operation*> rhsClosed;
+  TensorMapping tm{.lhsEquivGroups = getEquivGroup(lhs),
+                   .rhsEquivGroups = getEquivGroup(rhs),
+                   .equivGroupMapping = DenseMap<size_t, size_t>{}};
+
+  return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), lhsClosed,
+                        rhsClosed, m, tm);
 }

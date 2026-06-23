@@ -26,15 +26,11 @@
 
 namespace mqt::test {
 
-template <typename BuilderT> struct NamedBuilder {
+template <typename BuilderT, typename RetT = void> struct NamedBuilder {
   const char* name = nullptr;
-  std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>> (
-      *fn)(BuilderT&) = nullptr;
+  RetT (*fn)(BuilderT&) = nullptr;
 
-  constexpr NamedBuilder(
-      const char* nameIn,
-      std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>> (
-          *fnIn)(BuilderT&)) noexcept
+  constexpr NamedBuilder(const char* nameIn, RetT (*fnIn)(BuilderT&)) noexcept
       : name(nameIn), fn(fnIn) {}
 
   // NOLINTNEXTLINE(*-explicit-constructor)
@@ -45,12 +41,10 @@ template <typename BuilderT> struct NamedBuilder {
   }
 };
 
-template <typename BuilderT>
-[[nodiscard]] constexpr NamedBuilder<BuilderT> namedBuilder(
-    const char* name,
-    std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>> (
-        *fn)(BuilderT&)) noexcept {
-  return NamedBuilder<BuilderT>{name, fn};
+template <typename BuilderT, typename RetT>
+[[nodiscard]] constexpr NamedBuilder<BuilderT, RetT>
+namedBuilder(const char* name, RetT (*fn)(BuilderT&)) noexcept {
+  return NamedBuilder<BuilderT, RetT>{name, fn};
 }
 
 [[nodiscard]] constexpr const char* displayName(const char* name) noexcept {

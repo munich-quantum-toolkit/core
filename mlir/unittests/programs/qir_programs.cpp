@@ -16,56 +16,98 @@
 
 namespace mlir::qir {
 
-void emptyQIR([[maybe_unused]] QIRProgramBuilder& builder) {}
+std::pair<SmallVector<Value>, SmallVector<Type>>
+emptyQIR([[maybe_unused]] QIRProgramBuilder& builder) {
+  return {{builder.intConstant(0)}, {builder.getI64Type()}};
+}
 
-void allocQubit(QIRProgramBuilder& b) { b.allocQubitRegister(1); }
+std::pair<SmallVector<Value>, SmallVector<Type>>
+allocQubit(QIRProgramBuilder& b) {
+  b.allocQubitRegister(1);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
 
-void allocQubitRegister(QIRProgramBuilder& b) { b.allocQubitRegister(2); }
+std::pair<SmallVector<Value>, SmallVector<Type>>
+allocQubitRegister(QIRProgramBuilder& b) {
+  b.allocQubitRegister(2);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
 
-void allocMultipleQubitRegisters(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+allocMultipleQubitRegisters(QIRProgramBuilder& b) {
   b.allocQubitRegister(2);
   b.allocQubitRegister(3);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void allocLargeRegister(QIRProgramBuilder& b) { b.allocQubitRegister(100); }
+std::pair<SmallVector<Value>, SmallVector<Type>>
+allocMultipleQubitRegistersWithOps(QIRProgramBuilder& b) {
+  auto q0 = b.allocQubitRegister(2);
+  auto q1 = b.allocQubitRegister(3);
+  b.h(q0[0]);
+  b.h(q0[1]);
+  b.h(q1[0]);
+  b.h(q1[1]);
+  b.h(q1[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
 
-void staticQubits(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+allocLargeRegister(QIRProgramBuilder& b) {
+  b.allocQubitRegister(100);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubits(QIRProgramBuilder& b) {
   b.staticQubit(0);
   b.staticQubit(1);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void staticQubitsWithOps(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsWithOps(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.h(q0);
   b.h(q1);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void staticQubitsWithParametricOps(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsWithParametricOps(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.rx(std::numbers::pi / 4., q0);
   b.p(std::numbers::pi / 2., q1);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void staticQubitsWithTwoTargetOps(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsWithTwoTargetOps(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.rzz(0.123, q0, q1);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void staticQubitsWithCtrl(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsWithCtrl(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void staticQubitsWithInv(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsWithInv(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   b.tdg(q0);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void staticQubitsWithDuplicates(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsWithDuplicates(QIRProgramBuilder& b) {
   auto q0a = b.staticQubit(0);
   auto q1a = b.staticQubit(1);
   auto q0b = b.staticQubit(0);
@@ -75,9 +117,11 @@ void staticQubitsWithDuplicates(QIRProgramBuilder& b) {
   b.rzz(0.123, q0b, q1b);
   b.cx(q0b, q1b);
   b.tdg(q0a);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void staticQubitsCanonical(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsCanonical(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.rx(std::numbers::pi / 4., q0);
@@ -85,524 +129,848 @@ void staticQubitsCanonical(QIRProgramBuilder& b) {
   b.rzz(0.123, q0, q1);
   b.cx(q0, q1);
   b.tdg(q0);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void mixedStaticThenDynamicQubit(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+mixedStaticThenDynamicQubit(QIRProgramBuilder& b) {
   b.staticQubit(0);
   b.allocQubit();
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b) {
   b.allocQubitRegister(2);
   b.staticQubit(0);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleMeasurementToSingleBit(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
   b.measure(q[0], c[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void repeatedMeasurementToSameBit(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+repeatedMeasurementToSameBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
   b.measure(q[0], c[0]);
   b.measure(q[0], c[0]);
   b.measure(q[0], c[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(3);
   b.measure(q[0], c[0]);
   b.measure(q[0], c[1]);
   b.measure(q[0], c[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto& c0 = b.allocClassicalBitRegister(1, "c0");
   const auto& c1 = b.allocClassicalBitRegister(2, "c1");
   b.measure(q[0], c0[0]);
   b.measure(q[1], c1[0]);
   b.measure(q[2], c1[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void measurementWithoutRegisters(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+measurementWithoutRegisters(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.measure(q, 0);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void resetQubitWithoutOp(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+resetQubitWithoutOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void resetMultipleQubitsWithoutOp(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+resetMultipleQubitsWithoutOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.reset(q[0]);
   b.reset(q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void repeatedResetWithoutOp(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+repeatedResetWithoutOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
   b.reset(q[0]);
   b.reset(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void resetQubitAfterSingleOp(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+resetQubitAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   b.reset(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void resetMultipleQubitsAfterSingleOp(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+resetMultipleQubitsAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.h(q[0]);
   b.reset(q[0]);
   b.h(q[1]);
   b.reset(q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void repeatedResetAfterSingleOp(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+repeatedResetAfterSingleOp(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   b.reset(q[0]);
   b.reset(q[0]);
   b.reset(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void globalPhase(QIRProgramBuilder& b) { b.gphase(0.123); }
+std::pair<SmallVector<Value>, SmallVector<Type>>
+globalPhase(QIRProgramBuilder& b) {
+  b.gphase(0.123);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
 
-void identity(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+identity(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.id(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledIdentity(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledIdentity(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cid(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledIdentity(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledIdentity(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcid({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void x(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> x(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.x(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledX(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledX(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cx(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledX(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledX(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcx({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void y(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> y(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.y(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledY(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cy(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledY(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcy({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void z(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> z(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.z(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledZ(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledZ(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cz(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledZ(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledZ(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcz({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void h(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> h(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledH(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledH(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ch(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledH(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledH(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mch({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void hWithoutRegister(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+hWithoutRegister(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void s(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> s(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.s(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledS(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledS(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cs(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledS(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledS(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcs({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void sdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> sdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sdg(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledSdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledSdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.csdg(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledSdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledSdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcsdg({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void t_(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> t_(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.t(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledT(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledT(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ct(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledT(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledT(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mct({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void tdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> tdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.tdg(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledTdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledTdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctdg(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledTdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledTdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mctdg({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void sx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> sx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sx(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledSx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledSx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.csx(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledSx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledSx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcsx({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void sxdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> sxdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sxdg(q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledSxdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledSxdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.csxdg(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledSxdg(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledSxdg(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcsxdg({q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void rx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> rx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.rx(0.123, q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledRx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledRx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.crx(0.123, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledRx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledRx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcrx(0.123, {q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void ry(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> ry(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.ry(0.456, q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledRy(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledRy(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cry(0.456, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledRy(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledRy(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcry(0.456, {q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void rz(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> rz(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.rz(0.789, q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledRz(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledRz(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.crz(0.789, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledRz(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledRz(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcrz(0.789, {q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void p(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> p(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.p(0.123, q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledP(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledP(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cp(0.123, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledP(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledP(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcp(0.123, {q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void r(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> r(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.r(0.123, 0.456, q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledR(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledR(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cr(0.123, 0.456, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledR(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledR(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcr(0.123, 0.456, {q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void u2(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> u2(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u2(0.234, 0.567, q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledU2(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledU2(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cu2(0.234, 0.567, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledU2(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledU2(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcu2(0.234, 0.567, {q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void u(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> u(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u(0.1, 0.2, 0.3, q[0]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledU(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledU(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cu(0.1, 0.2, 0.3, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledU(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledU(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcu(0.1, 0.2, 0.3, {q[0], q[1]}, q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void swap(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> swap(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.swap(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledSwap(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledSwap(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cswap(q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledSwap(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledSwap(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcswap({q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void iswap(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> iswap(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.iswap(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledIswap(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledIswap(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ciswap(q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledIswap(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledIswap(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mciswap({q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void dcx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> dcx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.dcx(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledDcx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledDcx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cdcx(q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledDcx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledDcx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcdcx({q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void ecr(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> ecr(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ecr(q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledEcr(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledEcr(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cecr(q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledEcr(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledEcr(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcecr({q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void rxx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> rxx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledRxx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledRxx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.crxx(0.123, q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledRxx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledRxx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcrxx(0.123, {q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void tripleControlledRxx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+tripleControlledRxx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
   b.mcrxx(0.123, {q[0], q[1], q[2]}, q[3], q[4]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void ryy(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> ryy(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ryy(0.123, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledRyy(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledRyy(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cryy(0.123, q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledRyy(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledRyy(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcryy(0.123, {q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void rzx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> rzx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rzx(0.123, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledRzx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledRzx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.crzx(0.123, q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledRzx(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledRzx(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcrzx(0.123, {q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void rzz(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> rzz(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rzz(0.123, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledRzz(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledRzz(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.crzz(0.123, q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledRzz(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledRzz(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcrzz(0.123, {q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void xxPlusYY(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+xxPlusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.xx_plus_yy(0.123, 0.456, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledXxPlusYY(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledXxPlusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cxx_plus_yy(0.123, 0.456, q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledXxPlusYY(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledXxPlusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcxx_plus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void xxMinusYY(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+xxMinusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void singleControlledXxMinusYY(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+singleControlledXxMinusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cxx_minus_yy(0.123, 0.456, q[0], q[1], q[2]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
-void multipleControlledXxMinusYY(QIRProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+multipleControlledXxMinusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcxx_minus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+simpleIf(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0], 0);
+  b.scfIf(cond, [&] { b.x(q[0]); });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>> ifElse(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  auto cond = b.measure(q[0], 0);
+  b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+ifTwoQubits(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  auto cond = b.measure(q[0], 0);
+  b.scfIf(cond, [&] {
+    b.x(q[0]);
+    b.x(q[1]);
+  });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+nestedIfOpForLoop(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  b.h(q0);
+  auto cond = b.measure(q0, 0);
+  b.scfIf(
+      cond, [&] { b.h(q0); },
+      [&] {
+        b.scfFor(0, 3, 1, [&](Value iv) {
+          auto q1 = b.load(reg.value, iv);
+          b.h(q1);
+        });
+      });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+simpleWhileReset(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+  b.scfWhile(
+      [&] {
+        auto measureResult = b.measure(q, 0);
+        return measureResult;
+      },
+      [&] { b.h(q); });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+simpleDoWhileReset(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.scfWhile([&] {
+    b.h(q);
+    auto measureResult = b.measure(q, 0);
+    return measureResult;
+  });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+simpleForLoop(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.load(reg.value, iv);
+    b.h(q);
+  });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+};
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+nestedForLoopIfOp(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto qCond = b.allocQubit();
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    b.h(qCond);
+    auto cond = b.measure(qCond, 0);
+    b.scfIf(cond, [&] {
+      auto q = b.load(reg.value, iv);
+      b.h(q);
+    });
+  });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+nestedForLoopWhileOp(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.load(reg.value, iv);
+    b.h(q);
+  });
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.load(reg.value, iv);
+    b.scfWhile(
+        [&] {
+          auto measureResult = b.measure(q, 0);
+          return measureResult;
+        },
+        [&] { b.h(q); });
+  });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+nestedForLoopCtrlOpWithSeparateQubit(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto control = b.allocQubit();
+  b.h(control);
+  b.scfFor(0, 3, 1, [&](Value iv) {
+    auto q0 = b.load(reg.value, iv);
+    b.h(q0);
+    b.cx(control, q0);
+  });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+nestedForLoopCtrlOpWithExtractedQubit(QIRProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(4);
+  b.h(reg[0]);
+  b.scfFor(1, 4, 1, [&](Value iv) {
+    auto q0 = b.load(reg.value, iv);
+    b.h(q0);
+    b.cx(reg[0], q0);
+  });
+  return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>> ctrlTwo(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.mcx({q[0], q[1]}, q[2]);
+  b.mcrxx(0.123, {q[0], q[1]}, q[2], q[3]);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 } // namespace mlir::qir

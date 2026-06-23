@@ -416,8 +416,12 @@ TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
 
 struct QTensorIntegrationTestCase {
   std::string name;
-  mqt::test::NamedBuilder<QCOProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<QCOProgramBuilder> referenceBuilder;
+  mqt::test::NamedBuilder<QCOProgramBuilder,
+                          std::pair<SmallVector<Value>, SmallVector<Type>>>
+      programBuilder;
+  mqt::test::NamedBuilder<QCOProgramBuilder,
+                          std::pair<SmallVector<Value>, SmallVector<Type>>>
+      referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QTensorIntegrationTestCase& info);
@@ -506,7 +510,10 @@ INSTANTIATE_TEST_SUITE_P(
         QTensorIntegrationTestCase{
             "QTensorInsertExtractIndexMismatch",
             MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch),
-            MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch)}));
+            MQT_NAMED_BUILDER(qtensorInsertExtractIndexMismatch)},
+        QTensorIntegrationTestCase{"QTensorAlternativeInsertChain",
+                                   MQT_NAMED_BUILDER(qtensorAlternativeChain),
+                                   MQT_NAMED_BUILDER(qtensorChain)}));
 /// @}
 
 } // namespace

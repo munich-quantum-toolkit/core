@@ -9,9 +9,9 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -125,9 +125,7 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
       context);
 }
 
-std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
+std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
   const auto theta = valueToDouble(getTheta());
   const auto phi = valueToDouble(getPhi());
   const auto lambda = valueToDouble(getLambda());
@@ -135,11 +133,12 @@ std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  const auto c = std::cos(*theta / 2.0);
-  const auto s = std::sin(*theta / 2.0);
-  const auto m00 = c + 0i;
+  const auto c = std::cos(*theta / 2);
+  const auto s = std::sin(*theta / 2);
+
   const auto m01 = std::polar(s, *lambda + std::numbers::pi);
   const auto m10 = std::polar(s, *phi);
   const auto m11 = std::polar(c, *phi + *lambda);
-  return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
+  return Matrix2x2::fromElements(c, m01,    // row 0
+                                 m10, m11); // row 1
 }

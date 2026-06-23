@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -65,14 +65,12 @@ void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRZ>(context);
 }
 
-std::optional<Eigen::Matrix2cd> RZOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
+std::optional<Matrix2x2> RZOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m00 = std::polar(1.0, -*theta / 2.0);
-    const auto m01 = 0i;
-    const auto m11 = std::polar(1.0, *theta / 2.0);
-    return Eigen::Matrix2cd{{m00, m01}, {m01, m11}};
+    const auto m00 = std::polar(1.0, -*theta / 2);
+    const auto m11 = std::polar(1.0, *theta / 2);
+    return Matrix2x2::fromElements(m00, 0,  // row 0
+                                   0, m11); // row 1
   }
   return std::nullopt;
 }

@@ -1,0 +1,291 @@
+{
+  "tests": 51,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "NaQDMISpecificationTest",
+      "tests": 23,
+      "testsuite": [
+        {
+          "name": "SessionAlloc",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 148
+        },
+        {
+          "name": "SessionInit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 153
+        },
+        {
+          "name": "SessionSetParameter",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 159
+        },
+        {
+          "name": "JobCreate",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 177
+        },
+        {
+          "name": "JobSetParameter",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 194
+        },
+        {
+          "name": "JobQueryProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 211
+        },
+        {
+          "name": "JobSubmit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 241
+        },
+        {
+          "name": "JobCancel",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 250
+        },
+        {
+          "name": "JobCheck",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 260
+        },
+        {
+          "name": "JobWait",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 271
+        },
+        {
+          "name": "JobGetResults",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 282
+        },
+        {
+          "name": "QueryDeviceProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 297
+        },
+        {
+          "name": "QuerySiteProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 317
+        },
+        {
+          "name": "QueryOperationProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 334
+        },
+        {
+          "name": "QueryDeviceName",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 350
+        },
+        {
+          "name": "QueryDeviceVersion",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 365
+        },
+        {
+          "name": "QueryDeviceLibraryVersion",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 380
+        },
+        {
+          "name": "QueryDeviceLengthUnit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 396
+        },
+        {
+          "name": "QueryDeviceDurationUnit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 417
+        },
+        {
+          "name": "QueryDeviceMinAtomDistance",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 438
+        },
+        {
+          "name": "QuerySiteIndex",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 446
+        },
+        {
+          "name": "QueryOperationName",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 457
+        },
+        {
+          "name": "QueryDeviceQubitNum",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 474
+        }
+      ]
+    },
+    {
+      "name": "NaQDMIJobSpecificationTest",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "JobSetParameter",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 200
+        },
+        {
+          "name": "JobQueryProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 217
+        },
+        {
+          "name": "QueryJobId",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 226
+        },
+        {
+          "name": "JobSubmit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 245
+        },
+        {
+          "name": "JobCancel",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 254
+        },
+        {
+          "name": "JobCheck",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 265
+        },
+        {
+          "name": "JobWait",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 276
+        },
+        {
+          "name": "JobGetResults",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 288
+        }
+      ]
+    },
+    {
+      "name": "NADeviceTest",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "QuerySiteData",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 510
+        },
+        {
+          "name": "QueryOperationData",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_device.cpp",
+          "line": 589
+        }
+      ]
+    },
+    {
+      "name": "NaExecutableTest",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "Version",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 31
+        },
+        {
+          "name": "MissingSubcommand",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 59
+        },
+        {
+          "name": "UnknownSubcommand",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 81
+        },
+        {
+          "name": "SchemaUnknownOption",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 103
+        },
+        {
+          "name": "SchemaMissingFile",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 125
+        },
+        {
+          "name": "ValidateInvalidJson",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 147
+        },
+        {
+          "name": "GenerateMissingFile",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 162
+        },
+        {
+          "name": "Usage",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 184
+        },
+        {
+          "name": "SchemaUsage",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 208
+        },
+        {
+          "name": "ValidateUsage",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 232
+        },
+        {
+          "name": "GenerateUsage",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 256
+        },
+        {
+          "name": "RoundTrip",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 280
+        },
+        {
+          "name": "RoundTripFile",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_app.cpp",
+          "line": 323
+        }
+      ]
+    },
+    {
+      "name": "NaGeneratorTest",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "WriteJSONSchema",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_generator.cpp",
+          "line": 43
+        },
+        {
+          "name": "DurationUnitNanosecond",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_generator.cpp",
+          "line": 55
+        },
+        {
+          "name": "DurationUnitInvalid",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_generator.cpp",
+          "line": 68
+        },
+        {
+          "name": "LengthUnitNanometer",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_generator.cpp",
+          "line": 78
+        },
+        {
+          "name": "LengthUnitInvalid",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/na\/test_generator.cpp",
+          "line": 91
+        }
+      ]
+    }
+  ]
+}

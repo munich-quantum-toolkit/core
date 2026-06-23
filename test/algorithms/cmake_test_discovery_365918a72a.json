@@ -1,0 +1,1754 @@
+{
+  "tests": 278,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "StatePreparation",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "StatePreparationAmplitudesNotNormalized",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_statepreparation.cpp",
+          "line": 87
+        },
+        {
+          "name": "StatePreparationsAmplitudesNotPowerOf2",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_statepreparation.cpp",
+          "line": 95
+        }
+      ]
+    },
+    {
+      "name": "BernsteinVazirani",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "LargeCircuit",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 90
+        },
+        {
+          "name": "DynamicCircuit",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 105
+        }
+      ]
+    },
+    {
+      "name": "WState\/WState",
+      "tests": 19,
+      "testsuite": [
+        {
+          "name": "FunctionTest\/1_qubits",
+          "value_param": "1",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/8_qubits",
+          "value_param": "8",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/15_qubits",
+          "value_param": "15",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/22_qubits",
+          "value_param": "22",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/29_qubits",
+          "value_param": "29",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/36_qubits",
+          "value_param": "36",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/43_qubits",
+          "value_param": "43",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/50_qubits",
+          "value_param": "50",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/57_qubits",
+          "value_param": "57",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/64_qubits",
+          "value_param": "64",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/71_qubits",
+          "value_param": "71",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/78_qubits",
+          "value_param": "78",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/85_qubits",
+          "value_param": "85",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/92_qubits",
+          "value_param": "92",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/99_qubits",
+          "value_param": "99",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/106_qubits",
+          "value_param": "106",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/113_qubits",
+          "value_param": "113",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/120_qubits",
+          "value_param": "120",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/127_qubits",
+          "value_param": "127",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_wstate.cpp",
+          "line": 51
+        }
+      ]
+    },
+    {
+      "name": "StatePreparation\/StatePreparation",
+      "tests": 6,
+      "testsuite": [
+        {
+          "name": "StatePreparationCircuitSimulation\/0",
+          "value_param": "{ (0.707107,0), (-0.707107,0) }",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_statepreparation.cpp",
+          "line": 72
+        },
+        {
+          "name": "StatePreparationCircuitSimulation\/1",
+          "value_param": "{ (0.707107,0), (0,-0.707107) }",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_statepreparation.cpp",
+          "line": 72
+        },
+        {
+          "name": "StatePreparationCircuitSimulation\/2",
+          "value_param": "{ (0,0), (0.707107,0), (-0.707107,0), (0,0) }",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_statepreparation.cpp",
+          "line": 72
+        },
+        {
+          "name": "StatePreparationCircuitSimulation\/3",
+          "value_param": "{ (0.27735,0), (-0.27735,0), (0.27735,-0.27735), (0,0.83205) }",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_statepreparation.cpp",
+          "line": 72
+        },
+        {
+          "name": "StatePreparationCircuitSimulation\/4",
+          "value_param": "{ (0.25,0), (0.25,0), (0.25,0), (0.25,0), (0.25,0), (0.25,0), (0.25,0), (0.75,0) }",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_statepreparation.cpp",
+          "line": 72
+        },
+        {
+          "name": "StatePreparationCircuitSimulation\/5",
+          "value_param": "{ (0.25,0), (0,0.25), (0.25,0), (0,0.25), (0,0.25), (0.25,0), (0.25,0), (0.75,0) }",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_statepreparation.cpp",
+          "line": 72
+        }
+      ]
+    },
+    {
+      "name": "RandomClifford\/RandomClifford",
+      "tests": 16,
+      "testsuite": [
+        {
+          "name": "simulate\/1_qubits",
+          "value_param": "1",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 46
+        },
+        {
+          "name": "simulate\/2_qubits",
+          "value_param": "2",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 46
+        },
+        {
+          "name": "simulate\/3_qubits",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 46
+        },
+        {
+          "name": "simulate\/4_qubits",
+          "value_param": "4",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 46
+        },
+        {
+          "name": "simulate\/5_qubits",
+          "value_param": "5",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 46
+        },
+        {
+          "name": "simulate\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 46
+        },
+        {
+          "name": "simulate\/7_qubits",
+          "value_param": "7",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 46
+        },
+        {
+          "name": "simulate\/8_qubits",
+          "value_param": "8",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 46
+        },
+        {
+          "name": "buildFunctionality\/1_qubits",
+          "value_param": "1",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 60
+        },
+        {
+          "name": "buildFunctionality\/2_qubits",
+          "value_param": "2",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 60
+        },
+        {
+          "name": "buildFunctionality\/3_qubits",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 60
+        },
+        {
+          "name": "buildFunctionality\/4_qubits",
+          "value_param": "4",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 60
+        },
+        {
+          "name": "buildFunctionality\/5_qubits",
+          "value_param": "5",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 60
+        },
+        {
+          "name": "buildFunctionality\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 60
+        },
+        {
+          "name": "buildFunctionality\/7_qubits",
+          "value_param": "7",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 60
+        },
+        {
+          "name": "buildFunctionality\/8_qubits",
+          "value_param": "8",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_random_clifford.cpp",
+          "line": 60
+        }
+      ]
+    },
+    {
+      "name": "QPE\/QPE",
+      "tests": 28,
+      "testsuite": [
+        {
+          "name": "QPETest\/100_pi_1",
+          "value_param": "(1, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 137
+        },
+        {
+          "name": "QPETest\/50_pi_2",
+          "value_param": "(0.5, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 137
+        },
+        {
+          "name": "QPETest\/25_pi_3",
+          "value_param": "(0.25, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 137
+        },
+        {
+          "name": "QPETest\/37_pi_3",
+          "value_param": "(0.375, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 137
+        },
+        {
+          "name": "QPETest\/37_pi_4",
+          "value_param": "(0.375, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 137
+        },
+        {
+          "name": "QPETest\/9_pi_5",
+          "value_param": "(0.09375, 5)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 137
+        },
+        {
+          "name": "QPETest\/9_pi_6",
+          "value_param": "(0.09375, 6)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 137
+        },
+        {
+          "name": "IQPETest\/100_pi_1",
+          "value_param": "(1, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 173
+        },
+        {
+          "name": "IQPETest\/50_pi_2",
+          "value_param": "(0.5, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 173
+        },
+        {
+          "name": "IQPETest\/25_pi_3",
+          "value_param": "(0.25, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 173
+        },
+        {
+          "name": "IQPETest\/37_pi_3",
+          "value_param": "(0.375, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 173
+        },
+        {
+          "name": "IQPETest\/37_pi_4",
+          "value_param": "(0.375, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 173
+        },
+        {
+          "name": "IQPETest\/9_pi_5",
+          "value_param": "(0.09375, 5)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 173
+        },
+        {
+          "name": "IQPETest\/9_pi_6",
+          "value_param": "(0.09375, 6)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 173
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/100_pi_1",
+          "value_param": "(1, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 218
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/50_pi_2",
+          "value_param": "(0.5, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 218
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/25_pi_3",
+          "value_param": "(0.25, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 218
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/37_pi_3",
+          "value_param": "(0.375, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 218
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/37_pi_4",
+          "value_param": "(0.375, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 218
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/9_pi_5",
+          "value_param": "(0.09375, 5)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 218
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/9_pi_6",
+          "value_param": "(0.09375, 6)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 218
+        },
+        {
+          "name": "DynamicEquivalenceFunctionality\/100_pi_1",
+          "value_param": "(1, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 251
+        },
+        {
+          "name": "DynamicEquivalenceFunctionality\/50_pi_2",
+          "value_param": "(0.5, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 251
+        },
+        {
+          "name": "DynamicEquivalenceFunctionality\/25_pi_3",
+          "value_param": "(0.25, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 251
+        },
+        {
+          "name": "DynamicEquivalenceFunctionality\/37_pi_3",
+          "value_param": "(0.375, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 251
+        },
+        {
+          "name": "DynamicEquivalenceFunctionality\/37_pi_4",
+          "value_param": "(0.375, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 251
+        },
+        {
+          "name": "DynamicEquivalenceFunctionality\/9_pi_5",
+          "value_param": "(0.09375, 5)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 251
+        },
+        {
+          "name": "DynamicEquivalenceFunctionality\/9_pi_6",
+          "value_param": "(0.09375, 6)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qpe.cpp",
+          "line": 251
+        }
+      ]
+    },
+    {
+      "name": "QFT\/QFT",
+      "tests": 30,
+      "testsuite": [
+        {
+          "name": "Functionality\/0_qubits",
+          "value_param": "0",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 83
+        },
+        {
+          "name": "Functionality\/3_qubits",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 83
+        },
+        {
+          "name": "Functionality\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 83
+        },
+        {
+          "name": "Functionality\/9_qubits",
+          "value_param": "9",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 83
+        },
+        {
+          "name": "Functionality\/12_qubits",
+          "value_param": "12",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 83
+        },
+        {
+          "name": "Functionality\/15_qubits",
+          "value_param": "15",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 83
+        },
+        {
+          "name": "FunctionalityRecursive\/0_qubits",
+          "value_param": "0",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 126
+        },
+        {
+          "name": "FunctionalityRecursive\/3_qubits",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 126
+        },
+        {
+          "name": "FunctionalityRecursive\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 126
+        },
+        {
+          "name": "FunctionalityRecursive\/9_qubits",
+          "value_param": "9",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 126
+        },
+        {
+          "name": "FunctionalityRecursive\/12_qubits",
+          "value_param": "12",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 126
+        },
+        {
+          "name": "FunctionalityRecursive\/15_qubits",
+          "value_param": "15",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 126
+        },
+        {
+          "name": "Simulation\/0_qubits",
+          "value_param": "0",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 169
+        },
+        {
+          "name": "Simulation\/3_qubits",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 169
+        },
+        {
+          "name": "Simulation\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 169
+        },
+        {
+          "name": "Simulation\/9_qubits",
+          "value_param": "9",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 169
+        },
+        {
+          "name": "Simulation\/12_qubits",
+          "value_param": "12",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 169
+        },
+        {
+          "name": "Simulation\/15_qubits",
+          "value_param": "15",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 169
+        },
+        {
+          "name": "FunctionalityRecursiveEquality\/0_qubits",
+          "value_param": "0",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 206
+        },
+        {
+          "name": "FunctionalityRecursiveEquality\/3_qubits",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 206
+        },
+        {
+          "name": "FunctionalityRecursiveEquality\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 206
+        },
+        {
+          "name": "FunctionalityRecursiveEquality\/9_qubits",
+          "value_param": "9",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 206
+        },
+        {
+          "name": "FunctionalityRecursiveEquality\/12_qubits",
+          "value_param": "12",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 206
+        },
+        {
+          "name": "FunctionalityRecursiveEquality\/15_qubits",
+          "value_param": "15",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 206
+        },
+        {
+          "name": "SimulationSampling\/0_qubits",
+          "value_param": "0",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 226
+        },
+        {
+          "name": "SimulationSampling\/3_qubits",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 226
+        },
+        {
+          "name": "SimulationSampling\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 226
+        },
+        {
+          "name": "SimulationSampling\/9_qubits",
+          "value_param": "9",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 226
+        },
+        {
+          "name": "SimulationSampling\/12_qubits",
+          "value_param": "12",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 226
+        },
+        {
+          "name": "SimulationSampling\/15_qubits",
+          "value_param": "15",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_qft.cpp",
+          "line": 226
+        }
+      ]
+    },
+    {
+      "name": "Grover\/Grover",
+      "tests": 75,
+      "testsuite": [
+        {
+          "name": "Functionality\/3_qubits_0",
+          "value_param": "(2, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/3_qubits_1",
+          "value_param": "(2, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/3_qubits_2",
+          "value_param": "(2, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/3_qubits_3",
+          "value_param": "(2, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/3_qubits_4",
+          "value_param": "(2, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/6_qubits_0",
+          "value_param": "(5, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/6_qubits_1",
+          "value_param": "(5, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/6_qubits_2",
+          "value_param": "(5, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/6_qubits_3",
+          "value_param": "(5, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/6_qubits_4",
+          "value_param": "(5, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/9_qubits_0",
+          "value_param": "(8, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/9_qubits_1",
+          "value_param": "(8, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/9_qubits_2",
+          "value_param": "(8, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/9_qubits_3",
+          "value_param": "(8, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/9_qubits_4",
+          "value_param": "(8, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/12_qubits_0",
+          "value_param": "(11, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/12_qubits_1",
+          "value_param": "(11, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/12_qubits_2",
+          "value_param": "(11, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/12_qubits_3",
+          "value_param": "(11, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/12_qubits_4",
+          "value_param": "(11, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/15_qubits_0",
+          "value_param": "(14, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/15_qubits_1",
+          "value_param": "(14, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/15_qubits_2",
+          "value_param": "(14, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/15_qubits_3",
+          "value_param": "(14, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "Functionality\/15_qubits_4",
+          "value_param": "(14, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 89
+        },
+        {
+          "name": "FunctionalityRecursive\/3_qubits_0",
+          "value_param": "(2, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/3_qubits_1",
+          "value_param": "(2, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/3_qubits_2",
+          "value_param": "(2, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/3_qubits_3",
+          "value_param": "(2, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/3_qubits_4",
+          "value_param": "(2, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/6_qubits_0",
+          "value_param": "(5, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/6_qubits_1",
+          "value_param": "(5, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/6_qubits_2",
+          "value_param": "(5, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/6_qubits_3",
+          "value_param": "(5, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/6_qubits_4",
+          "value_param": "(5, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/9_qubits_0",
+          "value_param": "(8, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/9_qubits_1",
+          "value_param": "(8, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/9_qubits_2",
+          "value_param": "(8, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/9_qubits_3",
+          "value_param": "(8, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/9_qubits_4",
+          "value_param": "(8, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/12_qubits_0",
+          "value_param": "(11, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/12_qubits_1",
+          "value_param": "(11, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/12_qubits_2",
+          "value_param": "(11, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/12_qubits_3",
+          "value_param": "(11, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/12_qubits_4",
+          "value_param": "(11, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/15_qubits_0",
+          "value_param": "(14, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/15_qubits_1",
+          "value_param": "(14, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/15_qubits_2",
+          "value_param": "(14, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/15_qubits_3",
+          "value_param": "(14, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "FunctionalityRecursive\/15_qubits_4",
+          "value_param": "(14, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 128
+        },
+        {
+          "name": "Simulation\/3_qubits_0",
+          "value_param": "(2, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/3_qubits_1",
+          "value_param": "(2, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/3_qubits_2",
+          "value_param": "(2, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/3_qubits_3",
+          "value_param": "(2, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/3_qubits_4",
+          "value_param": "(2, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/6_qubits_0",
+          "value_param": "(5, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/6_qubits_1",
+          "value_param": "(5, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/6_qubits_2",
+          "value_param": "(5, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/6_qubits_3",
+          "value_param": "(5, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/6_qubits_4",
+          "value_param": "(5, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/9_qubits_0",
+          "value_param": "(8, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/9_qubits_1",
+          "value_param": "(8, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/9_qubits_2",
+          "value_param": "(8, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/9_qubits_3",
+          "value_param": "(8, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/9_qubits_4",
+          "value_param": "(8, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/12_qubits_0",
+          "value_param": "(11, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/12_qubits_1",
+          "value_param": "(11, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/12_qubits_2",
+          "value_param": "(11, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/12_qubits_3",
+          "value_param": "(11, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/12_qubits_4",
+          "value_param": "(11, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/15_qubits_0",
+          "value_param": "(14, 0)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/15_qubits_1",
+          "value_param": "(14, 1)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/15_qubits_2",
+          "value_param": "(14, 2)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/15_qubits_3",
+          "value_param": "(14, 3)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        },
+        {
+          "name": "Simulation\/15_qubits_4",
+          "value_param": "(14, 4)",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_grover.cpp",
+          "line": 182
+        }
+      ]
+    },
+    {
+      "name": "Entanglement\/Entanglement",
+      "tests": 26,
+      "testsuite": [
+        {
+          "name": "FunctionTest\/2_qubits",
+          "value_param": "2",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/9_qubits",
+          "value_param": "9",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/16_qubits",
+          "value_param": "16",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/23_qubits",
+          "value_param": "23",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/30_qubits",
+          "value_param": "30",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/37_qubits",
+          "value_param": "37",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/44_qubits",
+          "value_param": "44",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/51_qubits",
+          "value_param": "51",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/58_qubits",
+          "value_param": "58",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/65_qubits",
+          "value_param": "65",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/72_qubits",
+          "value_param": "72",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/79_qubits",
+          "value_param": "79",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "FunctionTest\/86_qubits",
+          "value_param": "86",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 51
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/2_qubits",
+          "value_param": "2",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/9_qubits",
+          "value_param": "9",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/16_qubits",
+          "value_param": "16",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/23_qubits",
+          "value_param": "23",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/30_qubits",
+          "value_param": "30",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/37_qubits",
+          "value_param": "37",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/44_qubits",
+          "value_param": "44",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/51_qubits",
+          "value_param": "51",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/58_qubits",
+          "value_param": "58",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/65_qubits",
+          "value_param": "65",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/72_qubits",
+          "value_param": "72",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/79_qubits",
+          "value_param": "79",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        },
+        {
+          "name": "GHZRoutineFunctionTest\/86_qubits",
+          "value_param": "86",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_entanglement.cpp",
+          "line": 60
+        }
+      ]
+    },
+    {
+      "name": "BernsteinVazirani\/BernsteinVazirani",
+      "tests": 30,
+      "testsuite": [
+        {
+          "name": "FunctionTest\/bv_0",
+          "value_param": "0",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_3",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_63",
+          "value_param": "63",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_170",
+          "value_param": "170",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_819",
+          "value_param": "819",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_4032",
+          "value_param": "4032",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_33153",
+          "value_param": "33153",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_87381",
+          "value_param": "87381",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_16777215",
+          "value_param": "16777215",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTest\/bv_1234567891011",
+          "value_param": "1234567891011",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 52
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_0",
+          "value_param": "0",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_3",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_63",
+          "value_param": "63",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_170",
+          "value_param": "170",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_819",
+          "value_param": "819",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_4032",
+          "value_param": "4032",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_33153",
+          "value_param": "33153",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_87381",
+          "value_param": "87381",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_16777215",
+          "value_param": "16777215",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "FunctionTestDynamic\/bv_1234567891011",
+          "value_param": "1234567891011",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 71
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_0",
+          "value_param": "0",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_3",
+          "value_param": "3",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_63",
+          "value_param": "63",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_170",
+          "value_param": "170",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_819",
+          "value_param": "819",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_4032",
+          "value_param": "4032",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_33153",
+          "value_param": "33153",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_87381",
+          "value_param": "87381",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_16777215",
+          "value_param": "16777215",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        },
+        {
+          "name": "DynamicEquivalenceSimulation\/bv_1234567891011",
+          "value_param": "1234567891011",
+          "file": "\/workspaces\/core\/test\/algorithms\/test_bernsteinvazirani.cpp",
+          "line": 120
+        }
+      ]
+    },
+    {
+      "name": "Eval\/DynamicCircuitEvalExactQPE",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "UnitaryTransformation\/1_qubit",
+          "value_param": "1",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/11_qubits",
+          "value_param": "11",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/16_qubits",
+          "value_param": "16",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/21_qubits",
+          "value_param": "21",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/26_qubits",
+          "value_param": "26",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/31_qubits",
+          "value_param": "31",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/36_qubits",
+          "value_param": "36",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/41_qubits",
+          "value_param": "41",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/46_qubits",
+          "value_param": "46",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/51_qubits",
+          "value_param": "51",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/56_qubits",
+          "value_param": "56",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        },
+        {
+          "name": "UnitaryTransformation\/61_qubits",
+          "value_param": "61",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 122
+        }
+      ]
+    },
+    {
+      "name": "Eval\/DynamicCircuitEvalInexactQPE",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "UnitaryTransformation\/1_qubit",
+          "value_param": "1",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 295
+        },
+        {
+          "name": "UnitaryTransformation\/4_qubits",
+          "value_param": "4",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 295
+        },
+        {
+          "name": "UnitaryTransformation\/7_qubits",
+          "value_param": "7",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 295
+        },
+        {
+          "name": "UnitaryTransformation\/10_qubits",
+          "value_param": "10",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 295
+        },
+        {
+          "name": "UnitaryTransformation\/13_qubits",
+          "value_param": "13",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 295
+        }
+      ]
+    },
+    {
+      "name": "Eval\/DynamicCircuitEvalBV",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "UnitaryTransformation\/1_qubit",
+          "value_param": "1",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/11_qubits",
+          "value_param": "11",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/16_qubits",
+          "value_param": "16",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/21_qubits",
+          "value_param": "21",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/26_qubits",
+          "value_param": "26",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/31_qubits",
+          "value_param": "31",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/36_qubits",
+          "value_param": "36",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/41_qubits",
+          "value_param": "41",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/46_qubits",
+          "value_param": "46",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/51_qubits",
+          "value_param": "51",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/56_qubits",
+          "value_param": "56",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        },
+        {
+          "name": "UnitaryTransformation\/61_qubits",
+          "value_param": "61",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 412
+        }
+      ]
+    },
+    {
+      "name": "Eval\/DynamicCircuitEvalQFT",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "UnitaryTransformation\/1_qubit",
+          "value_param": "1",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/6_qubits",
+          "value_param": "6",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/11_qubits",
+          "value_param": "11",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/16_qubits",
+          "value_param": "16",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/21_qubits",
+          "value_param": "21",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/26_qubits",
+          "value_param": "26",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/31_qubits",
+          "value_param": "31",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/36_qubits",
+          "value_param": "36",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/41_qubits",
+          "value_param": "41",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/46_qubits",
+          "value_param": "46",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/51_qubits",
+          "value_param": "51",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/56_qubits",
+          "value_param": "56",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        },
+        {
+          "name": "UnitaryTransformation\/61_qubits",
+          "value_param": "61",
+          "file": "\/workspaces\/core\/test\/algorithms\/eval_dynamic_circuits.cpp",
+          "line": 525
+        }
+      ]
+    }
+  ]
+}

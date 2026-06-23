@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/Block.h>
@@ -68,57 +69,12 @@ struct DeadGateElimination final
 static ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
-  // 1. Parse the opening parenthesis
-  if (parser.parseLParen()) {
-    return failure();
-  }
+  return utils::parseTargetAliasing<QubitType>(parser, region, operands);
+}
 
-  // Temporary storage for block arguments we are about to create
-  SmallVector<OpAsmParser::Argument> blockArgs;
-
-  // 2. Prepare to parse the list
-  if (failed(parser.parseOptionalRParen())) {
-    do {
-      OpAsmParser::Argument newArg;              // The "new" variable name
-      OpAsmParser::UnresolvedOperand oldOperand; // The "old" input variable
-
-      // Parse "%new"
-      if (parser.parseArgument(newArg)) {
-        return failure();
-      }
-
-      // Parse "="
-      if (parser.parseEqual()) {
-        return failure();
-      }
-
-      // Parse "%old"
-      if (parser.parseOperand(oldOperand)) {
-        return failure();
-      }
-      operands.push_back(oldOperand);
-
-      // Hard-code QubitType since targets in qco.ctrl are always qubits.
-      // This avoids double-binding type($targets_in) in the assembly format
-      // while keeping the parser simple and the assembly format clean.
-      newArg.type = QubitType::get(parser.getBuilder().getContext());
-      blockArgs.push_back(newArg);
-
-    } while (succeeded(parser.parseOptionalComma()));
-
-    if (parser.parseRParen()) {
-      return failure();
-    }
-  }
-
-  // 4. Parse the Region
-  // We explicitly pass the blockArgs we just parsed so they become the entry
-  // block!
-  if (parser.parseRegion(region, blockArgs)) {
-    return failure();
-  }
-
-  return success();
+static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
+                                Region& region, OperandRange targetsIn) {
+  utils::printTargetAliasing(printer, region, targetsIn);
 }
 
 ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
@@ -242,30 +198,6 @@ void IfOp::print(OpAsmPrinter& p) {
   p.printRegion(getElseRegion(), /*printEntryBlockArgs=*/false);
 
   p.printOptionalAttrDict((*this)->getAttrs());
-}
-
-static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
-                                Region& region, OperandRange targetsIn) {
-  printer << "(";
-  if (region.empty()) {
-    printer << ") ";
-    printer.printRegion(region, false);
-    return;
-  }
-  Block& entryBlock = region.front();
-
-  const auto numTargets = targetsIn.size();
-  for (unsigned i = 0; i < numTargets; ++i) {
-    if (i > 0) {
-      printer << ", ";
-    }
-    printer.printOperand(entryBlock.getArgument(i));
-    printer << " = ";
-    printer.printOperand(targetsIn[i]);
-  }
-  printer << ") ";
-
-  printer.printRegion(region, false);
 }
 
 //===----------------------------------------------------------------------===//

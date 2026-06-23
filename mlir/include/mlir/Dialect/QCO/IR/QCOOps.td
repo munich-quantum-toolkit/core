@@ -199,7 +199,7 @@ def GPhaseOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "gphase"; }
-        [[nodiscard]] std::optional<Eigen::Matrix<std::complex<double>, 1, 1>> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix1x1> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$theta)>];
@@ -226,7 +226,7 @@ def IdOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "id"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -251,7 +251,7 @@ def XOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "x"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -276,7 +276,7 @@ def YOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "y"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -301,7 +301,7 @@ def ZOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "z"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -326,7 +326,7 @@ def HOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "h"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -351,7 +351,7 @@ def SOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "s"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -376,7 +376,7 @@ def SdgOp : QCOOp<"sdg",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -401,7 +401,7 @@ def TOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "t"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -426,7 +426,7 @@ def TdgOp : QCOOp<"tdg",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "tdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -451,7 +451,7 @@ def SXOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sx"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -476,7 +476,7 @@ def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "sxdg"; }
-        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -502,7 +502,7 @@ def RXOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -532,7 +532,7 @@ def RYOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ry"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -562,7 +562,7 @@ def RZOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rz"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -592,7 +592,7 @@ def POp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "p"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -623,7 +623,7 @@ def ROp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "r"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -654,7 +654,7 @@ def U2Op
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "u2"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -686,7 +686,7 @@ def UOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "u"; }
-        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -718,7 +718,7 @@ def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "swap"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -745,7 +745,7 @@ def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "iswap"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
 }
 
@@ -770,7 +770,7 @@ def DCXOp : QCOOp<"dcx",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "dcx"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -797,7 +797,7 @@ def ECROp : QCOOp<"ecr",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ecr"; }
-        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
+        [[nodiscard]] static Matrix4x4 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -825,7 +825,7 @@ def RXXOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rxx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -857,7 +857,7 @@ def RYYOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ryy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -889,7 +889,7 @@ def RZXOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzx"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -921,7 +921,7 @@ def RZZOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzz"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -954,7 +954,7 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_plus_yy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -988,7 +988,7 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_minus_yy"; }
-        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -1025,8 +1025,8 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
         OperandRange getInputTargets() { return getInputQubits(); }
         Value getOutputQubit(size_t i) { return getOutputTarget(i); }
         ResultRange getOutputQubits() { return getQubitsOut(); }
-        Value getInputTarget(size_t i);
-        Value getOutputTarget(size_t i);
+        Value getInputTarget(size_t i) { return getQubitsIn()[i]; }
+        Value getOutputTarget(size_t i) { return getQubitsOut()[i]; }
         static Value getInputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
         static OperandRange getInputControls() { return {nullptr, 0}; }
         static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
@@ -1036,7 +1036,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
         Value getOutputForInput(Value input);
         static size_t getNumParams() { return 0; }
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
-        static ValueRange getParameters() { return {}; }
+        static OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
@@ -1068,21 +1068,22 @@ def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike, Pure]> {
   let assemblyFormat = "attr-dict ($targets^ `:` type($targets))?";
 }
 
-def CtrlOp
-    : QCOOp<"ctrl",
-            traits = [UnitaryOpInterface, AttrSizedOperandSegments,
-                      AttrSizedResultSegments, SameOperandsAndResultType,
-                      SameOperandsAndResultShape,
-                      SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
-                      Pure, RecursiveMemoryEffects]> {
+def CtrlOp : QCOOp<"ctrl",
+                   traits = [UnitaryOpInterface, AttrSizedOperandSegments,
+                             AttrSizedResultSegments, SameOperandsAndResultType,
+                             SameOperandsAndResultShape,
+                             SingleBlockImplicitTerminator<"YieldOp">, Pure,
+                             RecursiveMemoryEffects]> {
   let summary = "Add control qubits to a unitary operation";
   let description = [{
-        A modifier operation that adds control qubits to the unitary operation
-        defined in its body region. The controlled operation applies the
-        underlying unitary only when all control qubits are in the |1⟩ state.
-        The operation takes a variadic number of control and target qubits as
-        inputs and produces corresponding output qubits. Control qubits are not
-        modified by the operation and simply pass through to the outputs.
+        A modifier operation that adds control qubits to the unitary operation defined in its body region.
+        The controlled operation applies the underlying unitary only when all control qubits are in the $|1\rangle$ state.
+
+        The operation takes a variadic number of control and target qubits as inputs and produces corresponding output qubits.
+        Control qubits are not modified by the operation and simply pass through to the outputs.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir
@@ -1110,29 +1111,30 @@ def CtrlOp
     }];
 
   let extraClassDeclaration = [{
-        UnitaryOpInterface getBodyUnitary();
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumControls() + getNumTargets(); }
         size_t getNumTargets() { return getTargetsIn().size(); }
         size_t getNumControls() { return getControlsIn().size(); }
-        Value getInputQubit(size_t i);
         OperandRange getInputQubits() { return getOperands(); }
+        Value getInputQubit(size_t i) { return getInputQubits()[i]; }
         OperandRange getInputTargets() { return getTargetsIn(); }
-        Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getResults(); }
-        Value getInputTarget(size_t i);
-        Value getOutputTarget(size_t i);
-        Value getInputControl(size_t i);
+        Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
+        Value getInputTarget(size_t i) { return getInputTargets()[i]; }
+        Value getOutputTarget(size_t i) { return getOutputTargets()[i]; }
+        Value getInputControl(size_t i) { return getInputControls()[i]; }
         OperandRange getInputControls() { return getControlsIn(); }
-        Value getOutputControl(size_t i);
+        Value getOutputControl(size_t i) { return getOutputControls()[i]; }
         ResultRange getOutputTargets() { return getTargetsOut(); }
         ResultRange getOutputControls() { return getControlsOut(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
+        OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
-        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets),
@@ -1147,16 +1149,17 @@ def CtrlOp
   let hasVerifier = 1;
 }
 
-def InvOp
-    : QCOOp<"inv",
-            traits = [UnitaryOpInterface,
-                      SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
-                      Pure, RecursiveMemoryEffects]> {
+def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
+                                   SingleBlockImplicitTerminator<"YieldOp">,
+                                   Pure, RecursiveMemoryEffects]> {
   let summary = "Invert a unitary operation";
   let description = [{
-        A modifier operation that inverts the unitary operation defined in its body
-        region. The operation takes a variadic number of qubits as inputs and
-        produces corresponding output qubits.
+        A modifier operation that inverts the unitary operation defined in its body region.
+
+        The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir
@@ -1180,29 +1183,30 @@ def InvOp
     }];
 
   let extraClassDeclaration = [{
-        UnitaryOpInterface getBodyUnitary();
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets(); }
         size_t getNumTargets() { return getQubitsIn().size(); }
         static size_t getNumControls() { return 0; }
-        Value getInputQubit(size_t i);
         OperandRange getInputQubits() { return getQubitsIn(); }
+        Value getInputQubit(size_t i) { return getQubitsIn()[i]; }
         OperandRange getInputTargets() { return getInputQubits(); }
-        Value getOutputQubit(size_t i);
         ResultRange getOutputQubits() { return getQubitsOut(); }
+        Value getOutputQubit(size_t i) { return getQubitsOut()[i]; }
         Value getInputTarget(size_t i) { return getInputQubit(i); }
         Value getOutputTarget(size_t i) { return getOutputQubit(i); }
-        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
         static OperandRange getInputControls() { return {nullptr, 0}; }
-        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
         static ResultRange getOutputControls() { return {nullptr, 0}; }
         ResultRange getOutputTargets() { return getOutputQubits(); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
+        OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
-        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+        [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits), [{
@@ -1227,8 +1231,7 @@ def IfOp
                         RegionBranchOpInterface, ["getNumRegionInvocations",
                                                   "getRegionInvocationBounds",
                                                   "getEntrySuccessorRegions"]>,
-                    SingleBlock,
-                    SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">, Pure,
+                    SingleBlock, SingleBlockImplicitTerminator<"YieldOp">, Pure,
                     RecursiveMemoryEffects]> {
 
   let summary = "If-then-else operation for linear (qubit) types";

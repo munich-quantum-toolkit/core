@@ -1,0 +1,646 @@
+{
+  "tests": 110,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "SwapReconstruction",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "fuseCxToSwap",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_swap_reconstruction.cpp",
+          "line": 20
+        },
+        {
+          "name": "replaceCxToSwapAtEnd",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_swap_reconstruction.cpp",
+          "line": 34
+        },
+        {
+          "name": "replaceCxToSwap",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_swap_reconstruction.cpp",
+          "line": 55
+        }
+      ]
+    },
+    {
+      "name": "SingleQubitGateFusion",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "CollapseCompoundOperationToStandard",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_single_qubit_gate_fusion.cpp",
+          "line": 21
+        },
+        {
+          "name": "eliminateCompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_single_qubit_gate_fusion.cpp",
+          "line": 35
+        },
+        {
+          "name": "eliminateInverseInCompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_single_qubit_gate_fusion.cpp",
+          "line": 49
+        },
+        {
+          "name": "unknownInverseInCompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_single_qubit_gate_fusion.cpp",
+          "line": 63
+        },
+        {
+          "name": "repeatedCancellationInSingleQubitGateFusion",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_single_qubit_gate_fusion.cpp",
+          "line": 76
+        },
+        {
+          "name": "emptyCompoundGatesRemovedInSingleQubitGateFusion",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_single_qubit_gate_fusion.cpp",
+          "line": 92
+        },
+        {
+          "name": "SingleQubitGateCount",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_single_qubit_gate_fusion.cpp",
+          "line": 107
+        }
+      ]
+    },
+    {
+      "name": "ReplaceMCXwithMCZ",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "replaceCXwithCZ",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_replace_mcx_with_mcz.cpp",
+          "line": 23
+        },
+        {
+          "name": "replaceCCXwithCCZ",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_replace_mcx_with_mcz.cpp",
+          "line": 38
+        },
+        {
+          "name": "replaceCXwithCZinCompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_replace_mcx_with_mcz.cpp",
+          "line": 56
+        },
+        {
+          "name": "testToffoliSequenceSimplification",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_replace_mcx_with_mcz.cpp",
+          "line": 79
+        }
+      ]
+    },
+    {
+      "name": "RemoveOperation",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "removeIdentities",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_operation.cpp",
+          "line": 22
+        },
+        {
+          "name": "removeSingleQubitGates",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_operation.cpp",
+          "line": 38
+        },
+        {
+          "name": "removeMultiQubitGates",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_operation.cpp",
+          "line": 53
+        },
+        {
+          "name": "removeMoves",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_operation.cpp",
+          "line": 68
+        },
+        {
+          "name": "removeGateInCompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_operation.cpp",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "name": "RemoveFinalMeasurements",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "removeFinalMeasurements",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_final_measurements.cpp",
+          "line": 25
+        },
+        {
+          "name": "removeFinalMeasurementsTwoQubitMeasurement",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_final_measurements.cpp",
+          "line": 51
+        },
+        {
+          "name": "removeFinalMeasurementsCompound",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_final_measurements.cpp",
+          "line": 76
+        },
+        {
+          "name": "removeFinalMeasurementsCompoundDegraded",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_final_measurements.cpp",
+          "line": 104
+        },
+        {
+          "name": "removeFinalMeasurementsCompoundEmpty",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_final_measurements.cpp",
+          "line": 129
+        },
+        {
+          "name": "removeFinalMeasurementsWithOperationsInFront",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_final_measurements.cpp",
+          "line": 148
+        },
+        {
+          "name": "removeFinalMeasurementsWithBarrier",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_final_measurements.cpp",
+          "line": 162
+        }
+      ]
+    },
+    {
+      "name": "RemoveDiagonalGateBeforeMeasure",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "removeDiagonalSingleQubitBeforeMeasure",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_diagonal_gates_before_measure.cpp",
+          "line": 21
+        },
+        {
+          "name": "removeDiagonalCompoundOpBeforeMeasure",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_diagonal_gates_before_measure.cpp",
+          "line": 35
+        },
+        {
+          "name": "removeDiagonalTwoQubitGateBeforeMeasure",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_diagonal_gates_before_measure.cpp",
+          "line": 51
+        },
+        {
+          "name": "leaveGateBeforeMeasure",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_diagonal_gates_before_measure.cpp",
+          "line": 65
+        },
+        {
+          "name": "removeComplexGateBeforeMeasure",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_diagonal_gates_before_measure.cpp",
+          "line": 79
+        },
+        {
+          "name": "removeSimpleCompoundOpBeforeMeasure",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_diagonal_gates_before_measure.cpp",
+          "line": 100
+        },
+        {
+          "name": "removePartOfCompoundOpBeforeMeasure",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_remove_diagonal_gates_before_measure.cpp",
+          "line": 115
+        }
+      ]
+    },
+    {
+      "name": "FlattenOperations",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "FlattenRandomClifford",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_flatten_operations.cpp",
+          "line": 27
+        },
+        {
+          "name": "FlattenRecursive",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_flatten_operations.cpp",
+          "line": 41
+        },
+        {
+          "name": "FlattenCustomOnly",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_flatten_operations.cpp",
+          "line": 72
+        }
+      ]
+    },
+    {
+      "name": "EliminateResets",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "basicTest",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_eliminate_resets.cpp",
+          "line": 26
+        },
+        {
+          "name": "testIf",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_eliminate_resets.cpp",
+          "line": 84
+        },
+        {
+          "name": "testIfElse",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_eliminate_resets.cpp",
+          "line": 134
+        },
+        {
+          "name": "testMultipleTargetReset",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_eliminate_resets.cpp",
+          "line": 191
+        },
+        {
+          "name": "testCompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_eliminate_resets.cpp",
+          "line": 234
+        }
+      ]
+    },
+    {
+      "name": "ElidePermutations",
+      "tests": 9,
+      "testsuite": [
+        {
+          "name": "emptyCircuit",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 22
+        },
+        {
+          "name": "simpleSwap",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 28
+        },
+        {
+          "name": "simpleInitialLayout",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 46
+        },
+        {
+          "name": "applyPermutationCompound",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 66
+        },
+        {
+          "name": "compoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 85
+        },
+        {
+          "name": "compoundOperation2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 111
+        },
+        {
+          "name": "compoundOperation3",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 133
+        },
+        {
+          "name": "compoundOperation4",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 152
+        },
+        {
+          "name": "nonUnitaryOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_elide_permutations.cpp",
+          "line": 175
+        }
+      ]
+    },
+    {
+      "name": "DeferMeasurements",
+      "tests": 10,
+      "testsuite": [
+        {
+          "name": "basicTestIf",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 26
+        },
+        {
+          "name": "basicTestIfElse",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 88
+        },
+        {
+          "name": "measurementBetweenMeasurementAndIfElse",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 164
+        },
+        {
+          "name": "twoIfElse",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 236
+        },
+        {
+          "name": "correctOrder",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 321
+        },
+        {
+          "name": "twoIfElseCorrectOrder",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 393
+        },
+        {
+          "name": "errorOnImplicitReset",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 477
+        },
+        {
+          "name": "errorOnMultiQubitRegister",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 500
+        },
+        {
+          "name": "preserveOutputPermutationWithoutMeasurements",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 529
+        },
+        {
+          "name": "isDynamicOnRepeatedMeasurements",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_defer_measurements.cpp",
+          "line": 545
+        }
+      ]
+    },
+    {
+      "name": "DecomposeSwap",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "decomposeSWAPsUndirectedArchitecture",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_decompose_swap.cpp",
+          "line": 22
+        },
+        {
+          "name": "decomposeSWAPsDirectedArchitecture",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_decompose_swap.cpp",
+          "line": 50
+        },
+        {
+          "name": "decomposeSWAPsCompound",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_decompose_swap.cpp",
+          "line": 105
+        },
+        {
+          "name": "decomposeSWAPsCompoundDirected",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_decompose_swap.cpp",
+          "line": 127
+        }
+      ]
+    },
+    {
+      "name": "CliffordBlocks",
+      "tests": 16,
+      "testsuite": [
+        {
+          "name": "emptyCircuit",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 20
+        },
+        {
+          "name": "singleGate",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 26
+        },
+        {
+          "name": "largerGatethenBlock",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 36
+        },
+        {
+          "name": "CliffordBlockDepth",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 53
+        },
+        {
+          "name": "CliffordBlockWidth",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 72
+        },
+        {
+          "name": "keepOrder",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 89
+        },
+        {
+          "name": "twoCliffordBlocks",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 112
+        },
+        {
+          "name": "nonCliffordSingleQubit",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 136
+        },
+        {
+          "name": "SingleNonClifford3Qubit",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 152
+        },
+        {
+          "name": "TwoCliffordBlocks3Qubit",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 178
+        },
+        {
+          "name": "shiftedNonClifford",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 208
+        },
+        {
+          "name": "nonCliffordBeginning",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 237
+        },
+        {
+          "name": "threeQubitnonClifford",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 259
+        },
+        {
+          "name": "handleCompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 288
+        },
+        {
+          "name": "handleCompoundOperation2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 312
+        },
+        {
+          "name": "barrierNotinBlock",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_clifford_blocks.cpp",
+          "line": 335
+        }
+      ]
+    },
+    {
+      "name": "CollectBlocks",
+      "tests": 15,
+      "testsuite": [
+        {
+          "name": "emptyCircuit",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 19
+        },
+        {
+          "name": "singleGate",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 25
+        },
+        {
+          "name": "collectMultipleSingleQubitGates",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 35
+        },
+        {
+          "name": "mergeBlocks",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 49
+        },
+        {
+          "name": "mergeBlocks2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 62
+        },
+        {
+          "name": "addToMultiQubitBlock",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 77
+        },
+        {
+          "name": "gateTooBig",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 89
+        },
+        {
+          "name": "gateTooBig2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 102
+        },
+        {
+          "name": "gateTooBig3",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 115
+        },
+        {
+          "name": "endingBlocks",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 128
+        },
+        {
+          "name": "endingBlocks2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 141
+        },
+        {
+          "name": "interruptBlock",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 154
+        },
+        {
+          "name": "unprocessableAtBegin",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 167
+        },
+        {
+          "name": "handleCompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 179
+        },
+        {
+          "name": "handleCompoundOperation2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_collect_blocks.cpp",
+          "line": 193
+        }
+      ]
+    },
+    {
+      "name": "CancelCNOTs",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "CNOTCancellation1",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_cancel_cnots.cpp",
+          "line": 18
+        },
+        {
+          "name": "CNOTCancellation2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_cancel_cnots.cpp",
+          "line": 27
+        },
+        {
+          "name": "CNOTCancellation3",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_cancel_cnots.cpp",
+          "line": 36
+        },
+        {
+          "name": "CNOTCancellation4",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_cancel_cnots.cpp",
+          "line": 54
+        },
+        {
+          "name": "CNOTCancellation5",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_cancel_cnots.cpp",
+          "line": 72
+        }
+      ]
+    },
+    {
+      "name": "BackpropagateOutputPermutation",
+      "tests": 10,
+      "testsuite": [
+        {
+          "name": "FullySpecified",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 17
+        },
+        {
+          "name": "PartiallySpecifiedQubitAvailable",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 30
+        },
+        {
+          "name": "FullySpecifiedWithSWAP",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 43
+        },
+        {
+          "name": "PartiallySpecifiedWithSWAP",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 58
+        },
+        {
+          "name": "PartiallySpecifiedWithSWAP2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 72
+        },
+        {
+          "name": "PartiallySpecifiedWithSWAP3",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 86
+        },
+        {
+          "name": "CompoundOperation",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 99
+        },
+        {
+          "name": "PartiallySpecifiedNotAMissingQubit",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 118
+        },
+        {
+          "name": "PartiallySpecifiedNotAMissingQubit2",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 134
+        },
+        {
+          "name": "PartiallySpecifiedNotAMissingQubit3",
+          "file": "\/workspaces\/core\/test\/circuit_optimizer\/test_backpropagate_output_permutation.cpp",
+          "line": 150
+        }
+      ]
+    }
+  ]
+}
