@@ -52,7 +52,11 @@ enum class Specialization : std::uint8_t {
 
 } // namespace
 
-static constexpr auto DIAGONALIZATION_PRECISION = WEYL_TOLERANCE / 10;
+/** Default fidelity for Weyl specialization. */
+static constexpr double DEFAULT_FIDELITY = 1.0 - 1e-12;
+
+/** M2 diagonalization tolerance. */
+static constexpr double DIAGONALIZATION_PRECISION = 1e-13;
 
 /** Non-negative remainder of @p a modulo @p b (always in `[0, |b|)`). */
 static double remEuclid(const double a, const double b) {
@@ -278,12 +282,6 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   auto detPow = std::pow(detU, -0.25);
   u *= detPow;
   auto globalPhase = std::arg(detU) / 4.;
-
-  auto detNormalized = u.determinant();
-  if (std::abs(detNormalized - Complex{1.0, 0.0}) > WEYL_TOLERANCE &&
-      std::abs(detNormalized) > WEYL_TOLERANCE) {
-    u *= std::pow(detNormalized, -0.25);
-  }
 
   auto uP = magicBasisTransform(u, /*outOfMagicBasis=*/true);
   const Matrix4x4 m2 = uP.transpose() * uP;
@@ -612,7 +610,7 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
                               Complex{-0.5, 0.5}, Complex{0.5, -0.5});
 
   const auto basisDecomposer =
-      TwoQubitWeylDecomposition::create(basisMatrix, basisFidelity);
+      TwoQubitWeylDecomposition::create(basisMatrix, DEFAULT_FIDELITY);
   const auto isSuperControlled =
       relativeEq(basisDecomposer.a(), std::numbers::pi / 4.0, 1e-13, 1e-09) &&
       relativeEq(basisDecomposer.c(), 0.0, 1e-13, 1e-09);
@@ -842,7 +840,7 @@ decomposeTwoQubitWithBasis(const Matrix4x4& target,
                            const std::optional<std::uint8_t> numBasisUses) {
   const auto decomposer =
       TwoQubitBasisDecomposer::create(basisMatrix, basisFidelity);
-  const auto weyl = TwoQubitWeylDecomposition::create(target, std::nullopt);
+  const auto weyl = TwoQubitWeylDecomposition::create(target, DEFAULT_FIDELITY);
   return decomposer.twoQubitDecompose(weyl, numBasisUses);
 }
 
