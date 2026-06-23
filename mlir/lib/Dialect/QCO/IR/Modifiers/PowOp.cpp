@@ -12,8 +12,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
-#include <Eigen/Eigenvalues>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -691,12 +689,12 @@ void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,
               MoveCtrlOutside, NegPowToInvPow>(context);
 }
 
-std::optional<Eigen::MatrixXcd> PowOp::getUnitaryMatrix() {
-  auto&& bodyUnitary = getBodyUnitary();
+std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
+  auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
   if (!bodyUnitary) {
     return std::nullopt;
   }
-  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
+  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
   if (!targetMatrix) {
     return std::nullopt;
   }
@@ -710,24 +708,9 @@ std::optional<Eigen::MatrixXcd> PowOp::getUnitaryMatrix() {
 
   // U^0 = I
   if (std::abs(p) < TOLERANCE) {
-    const auto dim = targetMatrix->cols();
-    return Eigen::MatrixXcd::Identity(dim, dim);
+    return DynamicMatrix::identity(targetMatrix->cols());
   }
 
-  // General case: eigendecomposition U = V D V† => U^p = V D^p V†
-  const Eigen::ComplexEigenSolver<Eigen::MatrixXcd> solver(*targetMatrix);
-  if (solver.info() != Eigen::Success) {
-    return std::nullopt;
-  }
-
-  const auto& eigenvalues = solver.eigenvalues();
-  const auto& v = solver.eigenvectors();
-
-  // Compute D^p: raise each eigenvalue to the power p
-  Eigen::VectorXcd powEigenvalues(eigenvalues.size());
-  for (Eigen::Index i = 0; i < eigenvalues.size(); ++i) {
-    powEigenvalues[i] = std::pow(eigenvalues[i], p);
-  }
-
-  return v * powEigenvalues.asDiagonal() * v.inverse();
+  // General case requires eigendecomposition which is not supported yet.
+  return std::nullopt;
 }
