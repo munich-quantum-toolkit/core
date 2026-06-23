@@ -1030,6 +1030,8 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
         static OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix() const { return true; }
+        [[nodiscard]] DynamicMatrix getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits)>];
@@ -1126,6 +1128,7 @@ def CtrlOp : QCOOp<"ctrl",
         Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
         OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
@@ -1199,6 +1202,7 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
         Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
         OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 

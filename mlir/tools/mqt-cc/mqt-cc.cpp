@@ -8,14 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
+#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "qasm3/Exception.hpp"
-#include "qasm3/Importer.hpp"
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/InitLLVM.h>
@@ -33,9 +30,9 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/FileUtilities.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <exception>
 #include <string>
 #include <utility>
 
@@ -52,8 +49,14 @@ static llvm::cl::opt<std::string>
                    llvm::cl::value_desc("filename"), llvm::cl::init("-"));
 
 static llvm::cl::opt<bool>
-    convertToQIR("emit-qir", llvm::cl::desc("Convert to QIR at the end"),
-                 llvm::cl::init(false));
+    convertToQIRBase("emit-qir-base",
+                     llvm::cl::desc("Convert to QIR Base Profile at the end"),
+                     llvm::cl::init(false));
+
+static llvm::cl::opt<bool> convertToQIRAdaptive(
+    "emit-qir-adaptive",
+    llvm::cl::desc("Convert to QIR Adaptive Profile at the end"),
+    llvm::cl::init(false));
 
 static llvm::cl::opt<bool> recordIntermediates(
     "record-intermediates",
@@ -88,30 +91,8 @@ static llvm::cl::opt<bool> enableHadamardLifting(
 /**
  * @brief Load and parse a .qasm file
  */
-static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
+static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
                                           MLIRContext* context) {
-  try {
-    // Parse the input QASM file
-    const ::qc::QuantumComputation qc =
-        qasm3::Importer::importf(filename.str());
-    // Translate to MLIR dialect QC
-    return translateQuantumComputationToQC(context, qc);
-  } catch (const qasm3::CompilerError& exception) {
-    llvm::errs() << "Failed to parse QASM file '" << filename << "': '"
-                 << exception.what() << "'\n";
-  } catch (const std::exception& exception) {
-    llvm::errs() << "Failed to load QASM file '" << filename << "': '"
-                 << exception.what() << "'\n";
-  }
-  return nullptr;
-}
-
-/**
- * @brief Load and parse a .mlir file
- */
-static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
-                                          MLIRContext* context) {
-  // Set up the input file
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
@@ -120,7 +101,24 @@ static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
     return nullptr;
   }
 
-  // Parse the input MLIR
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
+  return qc::translateQASM3ToQC(sourceMgr, context);
+}
+
+/**
+ * @brief Load and parse a .mlir file
+ */
+static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
+                                          MLIRContext* context) {
+  std::string errorMessage;
+  auto file = openInputFile(filename, &errorMessage);
+  if (!file) {
+    llvm::errs() << "Failed to load file '" << filename << "': '"
+                 << errorMessage << "'\n";
+    return nullptr;
+  }
+
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
   return parseSourceFile<ModuleOp>(sourceMgr, context);
@@ -129,8 +127,7 @@ static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
 /**
  * @brief Write the module to the output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module,
-                                       llvm::StringRef filename) {
+static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -147,13 +144,14 @@ int main(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   // Parse command-line options; exit on error and print to stderr
-  llvm::cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
+  llvm::cl::ParseCommandLineOptions(argc, argv,
+                                    "MQT Compiler Collection Driver\n");
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
   registry
       .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
-              LLVM::LLVMDialect, memref::MemRefDialect, mlir::qc::QCDialect,
+              LLVM::LLVMDialect, memref::MemRefDialect, qc::QCDialect,
               qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
 
   MLIRContext context(registry);
@@ -172,7 +170,8 @@ int main(int argc, char** argv) {
 
   // Configure the compiler pipeline
   QuantumCompilerConfig config;
-  config.convertToQIR = convertToQIR;
+  config.convertToQIRBase = convertToQIRBase;
+  config.convertToQIRAdaptive = convertToQIRAdaptive;
   config.recordIntermediates = recordIntermediates;
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;

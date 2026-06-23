@@ -280,8 +280,8 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(powHFracNeg)}));
 /// @}
 
-/// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} => rxx(2θ).
-/// Verify that PowOp is folded away by the cleanup pipeline.
+/// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
+/// rxx(2θ). Verify that PowOp is folded away by the cleanup pipeline.
 TEST_F(QCOTest, PowRxxFold) {
   auto program =
       QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(powRxx).fn);
@@ -570,6 +570,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeRToRy", MQT_NAMED_BUILDER(canonicalizeRToRy),
                     MQT_NAMED_BUILDER(ry)},
+        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)},
         QCOTestCase{"PowRScaled", MQT_NAMED_BUILDER(powRScaled),
                     MQT_NAMED_BUILDER(powRScaledRef)}));
 /// @}
@@ -1133,6 +1134,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"TwoXXMinusYYOppositePhase",
                     MQT_NAMED_BUILDER(twoXxMinusYYOppositePhase),
                     MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoXXMinusYYSwappedTargets",
+                    MQT_NAMED_BUILDER(twoXxMinusYYSwappedTargets),
+                    MQT_NAMED_BUILDER(xxMinusYY)},
         QCOTestCase{"PowXxMinusYYScaled", MQT_NAMED_BUILDER(powXxMinusYYScaled),
                     MQT_NAMED_BUILDER(powXxMinusYYScaledRef)}));
 /// @}
@@ -1164,6 +1168,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"TwoXXPlusYYOppositePhase",
                     MQT_NAMED_BUILDER(twoXxPlusYYOppositePhase),
                     MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoXXPlusYYSwappedTargets",
+                    MQT_NAMED_BUILDER(twoXxPlusYYSwappedTargets),
+                    MQT_NAMED_BUILDER(xxPlusYY)},
         QCOTestCase{"PowXxPlusYYScaled", MQT_NAMED_BUILDER(powXxPlusYYScaled),
                     MQT_NAMED_BUILDER(powXxPlusYYScaledRef)}));
 /// @}

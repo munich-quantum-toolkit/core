@@ -26,6 +26,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/Parser/Parser.h>
 
 #include <complex>
 #include <memory>
@@ -154,6 +155,120 @@ TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {
   const Matrix4x4 expected = matrix4FromDefinition(definition);
 
   ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseTwoXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseTwoX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix expected;
+  expected.assignFrom(Matrix2x2::identity());
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix expected;
+  expected.assignFrom(XOp::getUnitaryMatrix());
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseSxOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseSx);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix expected;
+  expected.assignFrom(SXdgOp::getUnitaryMatrix());
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseGphaseXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseGphaseX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  const auto composeGlobal = std::polar(1.0, -0.123);
+  const Matrix2x2 body = XOp::getUnitaryMatrix() * composeGlobal;
+
+  ASSERT_TRUE(matrix->isApprox(DynamicMatrix::fromAdjoint(body)));
+}
+
+TEST_F(QCOMatrixTest, InverseGphaseBarrierOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseGphaseBarrier);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  const auto matrix = invOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  const auto global = std::conj(std::polar(1.0, 0.123));
+  DynamicMatrix expected;
+  expected.assignFrom(Matrix2x2::fromElements(global, 0, 0, global));
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, InverseTwoBarriersInInvOpMatrix) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), inverseTwoBarriersInInv);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  EXPECT_FALSE(invOp.getUnitaryMatrix());
+}
+
+TEST_F(QCOMatrixTest, InvTwoOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), invTwo);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  EXPECT_FALSE(invOp.getUnitaryMatrix());
+}
+
+TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
+  constexpr auto mlirCode = R"(
+    module {
+      func.func @test(%theta: f64) -> !qco.qubit {
+        %q_in = qco.alloc : !qco.qubit
+        %q_out = qco.inv (%q = %q_in) {
+          %q_1 = qco.rz(%theta) %q : !qco.qubit -> !qco.qubit
+          %q_2 = qco.x %q_1 : !qco.qubit -> !qco.qubit
+          qco.yield %q_2 : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %q_out : !qco.qubit
+      }
+    }
+  )";
+
+  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
+  EXPECT_FALSE(invOp.getUnitaryMatrix());
 }
 /// @}
 

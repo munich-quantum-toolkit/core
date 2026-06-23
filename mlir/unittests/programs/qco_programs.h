@@ -192,6 +192,18 @@ void controlledTwoX(QCOProgramBuilder& b);
 /// gates.
 void inverseTwoX(QCOProgramBuilder& b);
 
+/// Creates a circuit with an inverse modifier applied to a global phase and an
+/// X gate.
+void inverseGphaseX(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a global phase and a
+/// barrier.
+void inverseGphaseBarrier(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two consecutive
+/// barriers.
+void inverseTwoBarriersInInv(QCOProgramBuilder& b);
+
 /// Creates a circuit with pow(0.5) wrapping an X gate (folds to gphase + RX).
 void powHalfX(QCOProgramBuilder& b);
 
@@ -712,6 +724,9 @@ void canonicalizeRToRx(QCOProgramBuilder& b);
 /// Creates a circuit with an R gate that can be canonicalized to an RY gate.
 void canonicalizeRToRy(QCOProgramBuilder& b);
 
+/// Creates a circuit with two R gates in a row with the same `phi`.
+void twoR(QCOProgramBuilder& b);
+
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.
@@ -1080,6 +1095,9 @@ void powXxPlusYYScaledRef(QCOProgramBuilder& b);
 /// Creates a circuit with two XXPlusYY gates in a row with opposite phases.
 void twoXxPlusYYOppositePhase(QCOProgramBuilder& b);
 
+/// Creates a circuit with two XXPlusYY gates in a row with swapped targets.
+void twoXxPlusYYSwappedTargets(QCOProgramBuilder& b);
+
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
@@ -1112,6 +1130,9 @@ void powXxMinusYYScaledRef(QCOProgramBuilder& b);
 
 /// Creates a circuit with two XXMinusYY gates in a row with opposite phases.
 void twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
+
+/// Creates a circuit with two XXMinusYY gates in a row with swapped targets.
+void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 
@@ -1359,5 +1380,14 @@ void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
 void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
+
+/// Extracts three qubits with ascending index (0, 1, 2), performs a
+/// computation, and finally inserts the qubits in ascending order (0, 1, 2).
+void qtensorChain(QCOProgramBuilder& b);
+
+/// Performs the same computation as the `qtensorChain` function, but uses
+/// qubits immediately after the extract and inserts the qubits in descending
+/// order (2, 1, 0).
+void qtensorAlternativeChain(QCOProgramBuilder& b);
 
 } // namespace mlir::qco

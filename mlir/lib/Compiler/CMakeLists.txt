@@ -19,7 +19,8 @@ add_mlir_library(
   MLIRTransformUtils
   MLIRQCToQCO
   MLIRQCOToQC
-  MLIRQCToQIR
+  MLIRQCToQIRBase
+  MLIRQCToQIRAdaptive
   MLIRQCOTransforms
   MQT::MLIRSupport)
 

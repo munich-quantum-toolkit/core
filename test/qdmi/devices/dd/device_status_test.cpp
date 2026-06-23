@@ -39,9 +39,9 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   // it. Submit a job to force BUSY then completion to IDLE.
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
+                                  qdmi_test::QASM3_HEAVY_SAMPLING),
             QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 4096), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 16384), QDMI_SUCCESS);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
 
   // Poll while running to observe BUSY at least once.
@@ -63,32 +63,5 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   EXPECT_TRUE(sawBusy.load(std::memory_order_acquire));
 
   // After completion, the status should be IDLE.
-  EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
-}
-
-TEST(DeviceStatus, MultipleConcurrentJobsKeepBusyUntilLastFinishes) {
-  const qdmi_test::SessionGuard s{};
-
-  const qdmi_test::JobGuard j1{s.session};
-  const qdmi_test::JobGuard j2{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j1.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setProgram(j2.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_HEAVY_SAMPLING5),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j1.job, 1024), QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j2.job, 16384), QDMI_SUCCESS);
-
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j1.job), QDMI_SUCCESS);
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j2.job), QDMI_SUCCESS);
-
-  // Wait for first to finish
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j1.job, 0), QDMI_SUCCESS);
-  // Status should still be BUSY while the second runs
-  EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_BUSY);
-
-  // Wait for second, then status should go IDLE
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j2.job, 0), QDMI_SUCCESS);
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
 }

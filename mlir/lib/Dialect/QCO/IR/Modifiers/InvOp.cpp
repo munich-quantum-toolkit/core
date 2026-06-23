@@ -30,6 +30,8 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
+#include <complex>
 #include <cstddef>
 #include <numbers>
 #include <optional>
@@ -442,15 +444,74 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
               ReplaceWithKnownGates, CancelNestedInv, EraseEmptyInv>(context);
 }
 
-std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
-  auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
-  if (!bodyUnitary) {
+bool InvOp::hasCompileTimeKnownUnitaryMatrix() {
+  return all_of(getBody()->getOps<UnitaryOpInterface>(),
+                [](UnitaryOpInterface op) {
+                  return op.hasCompileTimeKnownUnitaryMatrix();
+                });
+}
+
+/**
+ * @brief Composes compile-time single-qubit unitaries and returns the inverse.
+ */
+[[nodiscard]] static std::optional<DynamicMatrix>
+composeInvertedSingleQubitBodyMatrix(Block& block) {
+  Matrix2x2 acc = Matrix2x2::identity();
+  Complex global{1.0, 0.0};
+  bool found = false;
+  for (Operation& op : block.without_terminator()) {
+    if (!TypeSwitch<Operation*, bool>(&op)
+             .Case<BarrierOp>([](auto) { return true; })
+             .Case<GPhaseOp>([&](GPhaseOp gphase) {
+               const auto matrix = gphase.getUnitaryMatrix();
+               if (!matrix) {
+                 return false;
+               }
+               global *= (*matrix)(0, 0);
+               return true;
+             })
+             .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+               Matrix2x2 matrix;
+               if (!unitary.getUnitaryMatrix2x2(matrix)) {
+                 return false;
+               }
+               acc.premultiplyBy(matrix);
+               found = true;
+               return true;
+             })
+             .Default([](Operation* operation) {
+               const auto usesQubit = [](Value value) {
+                 return isa<QubitType>(value.getType());
+               };
+               return !llvm::any_of(operation->getOperands(), usesQubit) &&
+                      !llvm::any_of(operation->getResults(), usesQubit);
+             })) {
+      return std::nullopt;
+    }
+  }
+  if (!found && std::abs(global - Complex{1.0, 0.0}) <= utils::TOLERANCE) {
     return std::nullopt;
   }
-  const auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
-  if (!targetMatrix) {
+  acc *= global;
+  return DynamicMatrix::fromAdjoint(acc);
+}
+
+std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
+  if (getNumBodyUnitaries() == 0) {
+    return DynamicMatrix::identity(1LL << getNumTargets());
+  }
+
+  if (auto bodyUnitary =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
+    if (const auto targetMatrix =
+            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
+      return targetMatrix->adjoint();
+    }
     return std::nullopt;
   }
 
-  return targetMatrix->adjoint();
+  if (getNumTargets() != 1) {
+    return std::nullopt;
+  }
+  return composeInvertedSingleQubitBodyMatrix(*getBody());
 }

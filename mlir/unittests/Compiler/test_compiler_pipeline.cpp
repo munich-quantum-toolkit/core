@@ -105,9 +105,10 @@ protected:
 
   [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
   buildQIRReference(const QIRProgramBuilderFn builder) const {
-    auto module =
-        mlir::qir::QIRProgramBuilder::build(context.get(), builder.fn);
-    EXPECT_TRUE(runQIRCleanupPipeline(module.get()).succeeded());
+    auto module = mlir::qir::QIRProgramBuilder::build(
+        context.get(), builder.fn,
+        mlir::qir::QIRProgramBuilder::Profile::Adaptive);
+    EXPECT_TRUE(runQIRCleanupPipeline(module.get(), true).succeeded());
     return module;
   }
 
@@ -121,7 +122,7 @@ protected:
                           const bool enableHadamardLifting,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
-    config.convertToQIR = convertToQIR;
+    config.convertToQIRAdaptive = convertToQIR;
     config.disableMergeSingleQubitRotationGates =
         disableMergeSingleQubitRotationGates;
     config.enableHadamardLifting = enableHadamardLifting;
