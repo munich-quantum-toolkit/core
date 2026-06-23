@@ -72,6 +72,12 @@ public:
 private:
   bool applySpecialization(const std::optional<double>& requestedFidelity);
 
+  void finalizeSpecializationPhase(bool flippedFromOriginal,
+                                   double preSpecializationA,
+                                   double preSpecializationB,
+                                   double preSpecializationC,
+                                   const std::optional<double>& fidelity);
+
   double a_{};
   double b_{};
   double c_{};
@@ -172,7 +178,7 @@ private:
   traces(const TwoQubitWeylDecomposition& target) const;
 
   double basisFidelity{};
-  TwoQubitWeylDecomposition basisDecomposer;
+  TwoQubitWeylDecomposition basisWeyl;
   bool isSuperControlled{};
   SmbPrecomputed smb{};
 };
