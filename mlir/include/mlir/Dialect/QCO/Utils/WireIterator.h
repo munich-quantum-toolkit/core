@@ -117,4 +117,25 @@ template <> struct WireTraversalTraits<WireDirection::Backward> {
                : !isa<AllocOp, StaticOp, qtensor::ExtractOp>(it.operation());
   }
 };
+
+/**
+ * @brief A range over the def-use chain of a qubit wire, usable in range-based
+ * for-loops.
+ *
+ * Example:
+ * @code
+ * for (auto* op : WireRange(qubit)) { ... }
+ * @endcode
+ */
+struct WireRange {
+  explicit WireRange(Value qubit) : begin_(qubit) {}
+
+  [[nodiscard]] WireIterator begin() const { return begin_; }
+  [[nodiscard]] static std::default_sentinel_t end() {
+    return std::default_sentinel;
+  }
+
+private:
+  WireIterator begin_;
+};
 } // namespace mlir::qco

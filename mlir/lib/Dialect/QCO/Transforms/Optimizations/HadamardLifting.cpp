@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -162,7 +163,9 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     if (!cnotGate) {
       return failure();
     }
-    if (!isa<XOp>(cnotGate.getBodyUnitary()) ||
+    if (auto innerUnitary =
+            utils::getSoleBodyUnitary<UnitaryOpInterface>(*cnotGate.getBody());
+        !innerUnitary || !isa<XOp>(innerUnitary.getOperation()) ||
         cnotGate.getOutputTarget(0) != inQubitHadamard) {
       return failure();
     }

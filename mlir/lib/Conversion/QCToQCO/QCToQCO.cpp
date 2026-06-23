@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 
+#include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Conversion/GateTable.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -391,22 +392,6 @@ static void popModifierFrame(LoweringState& state) {
   state.modifierFrames.pop_back();
 }
 
-/** @brief Adds entry block aliases for modifier target values. */
-template <typename OpType>
-[[nodiscard]] static ValueRange addModifierAliases(OpType op,
-                                                   const size_t numTargets,
-                                                   PatternRewriter& rewriter) {
-  auto& entryBlock = op.getRegion().front();
-  const auto opLoc = op.getLoc();
-  const auto qubitType = qco::QubitType::get(op.getContext());
-  rewriter.modifyOpInPlace(op, [&] {
-    for (size_t i = 0; i < numTargets; ++i) {
-      entryBlock.addArgument(qubitType, opLoc);
-    }
-  });
-  return entryBlock.getArguments().take_back(numTargets);
-}
-
 /**
  * @brief Inserts extracted qubits that are not required by @p target back into
  * their tensors.
@@ -515,13 +500,7 @@ static void extractQubitsAfterOp(LoweringState& state, Operation* target,
  */
 static std::pair<SetVector<Value>, SetVector<Value>>
 collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
-  // Get the regions of the current operation
-  const auto& regions = op->getRegions();
-  auto& regionQubitMap = state->regionQubitMap[op];
-  auto& regionRegisterMap = state->regionRegisterMap[op];
-
-  for (auto& region : regions) {
-    auto& qubitInfoMap = state->qubitInfoMap[&region];
+  for (auto& region : op->getRegions()) {
     // Skip empty regions e.g. empty else region of an If operation
     if (region.empty()) {
       continue;
@@ -531,15 +510,20 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
     // Iterate through all operations of the current region
     for (auto& operation : region.front().getOperations()) {
       // Recursively walk through nested regions
-      if (operation.getNumRegions() > 0) {
+      if (operation.getNumRegions() > 0 &&
+          !isa<qc::CtrlOp, qc::InvOp>(operation)) {
         auto [qubits, registers] =
             collectQubitValuesInsideSCFOps(&operation, state);
+        auto& regionQubitMap = state->regionQubitMap[op];
+        auto& qubitInfoMap = state->qubitInfoMap[&region];
         regionQubitMap.set_union(qubits);
         // Remove duplicate qubits
         regionQubitMap.remove_if(
             [&](Value qubit) { return qubitInfoMap.contains(qubit); });
-        regionRegisterMap.set_union(registers);
+        state->regionRegisterMap[op].set_union(registers);
       }
+      auto& qubitInfoMap = state->qubitInfoMap[&region];
+      auto& regionRegisterMap = state->regionRegisterMap[op];
       // Track qubits from loadOp
       if (auto loadOp = dyn_cast<memref::LoadOp>(operation)) {
         QubitInfo info{.reg = loadOp.getMemRef(),
@@ -548,6 +532,7 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
         regionRegisterMap.insert(loadOp.getMemRef());
         continue;
       }
+      auto& regionQubitMap = state->regionQubitMap[op];
       // Add the QC qubit and memref operands to the maps
       for (const auto& operand : operation.getOperands()) {
         if (isa<qc::QubitType>(operand.getType())) {
@@ -564,7 +549,7 @@ collectQubitValuesInsideSCFOps(Operation* op, LoweringState* state) {
     }
   }
 
-  return {regionQubitMap, regionRegisterMap};
+  return {state->regionQubitMap[op], state->regionRegisterMap[op]};
 }
 
 namespace {
@@ -1092,8 +1077,8 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
  *
  * @par Example:
  * ```mlir
- * qc.ctrl(%q0) {
- *   qc.x %q1 : !qc.qubit
+ * qc.ctrl(%q0) targets(%a0 = %q1) {
+ *   qc.x %a0 : !qc.qubit
  * } : !qc.qubit
  * ```
  * is converted to
@@ -1112,7 +1097,6 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto numTargets = op.getNumTargets();
     const auto qcControls = op.getControls();
     const auto qcTargets = op.getTargets();
     auto qcoControls = resolveMappedQubits(state, operation, qcControls);
@@ -1125,16 +1109,15 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     assignMappedQubits(state, operation, qcControls, qcoOp.getControlsOut());
     assignMappedQubits(state, operation, qcTargets, qcoOp.getTargetsOut());
 
-    // Clone body region from QC to QCO
-    auto& dstRegion = qcoOp.getRegion();
-    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+    auto qcArgs = op.getRegion().front().getArguments();
 
-    // Create block arguments for QCO targets
-    auto& entryBlock = dstRegion.front();
-    assert(entryBlock.getNumArguments() == 0 &&
-           "QC ctrl region unexpectedly has entry block arguments");
-    pushModifierFrame(state, qcTargets,
-                      addModifierAliases(qcoOp, numTargets, rewriter));
+    // Inline region and convert the block signature to QCO types.
+    if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
+
+    pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
 
     rewriter.eraseOp(op);
     return success();
@@ -1166,7 +1149,6 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto numTargets = op.getNumTargets();
     const auto qcTargets = op.getTargets();
     auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
 
@@ -1175,16 +1157,15 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
 
     assignMappedQubits(state, operation, qcTargets, qcoOp.getOutputTargets());
 
-    // Clone body region from QC to QCO
-    auto& dstRegion = qcoOp.getRegion();
-    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+    auto qcArgs = op.getRegion().front().getArguments();
 
-    // Create block arguments for target qubits and seed the nested frame.
-    auto& entryBlock = dstRegion.front();
-    assert(entryBlock.getNumArguments() == 0 &&
-           "QC inv region unexpectedly has entry block arguments");
-    pushModifierFrame(state, qcTargets,
-                      addModifierAliases(qcoOp, numTargets, rewriter));
+    // Inline region and convert the block signature to QCO types.
+    if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
+      return failure();
+    }
+
+    pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
 
     rewriter.eraseOp(op);
     return success();

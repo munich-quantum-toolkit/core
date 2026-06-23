@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -30,21 +30,7 @@ struct RemoveSubsequentSWAP final : OpRewritePattern<SWAPOp> {
 
   LogicalResult matchAndRewrite(SWAPOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter);
-  }
-};
-
-/**
- * @brief Remove a SWAP operation followed by a SWAP operation with swapped
- *        targets.
- */
-struct RemoveSwappedTargetsSWAP final : OpRewritePattern<SWAPOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(SWAPOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeTwoTargetZeroParameterPairWithSwappedTargets<SWAPOp>(op,
-                                                                      rewriter);
+    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
   }
 };
 
@@ -52,12 +38,12 @@ struct RemoveSwappedTargetsSWAP final : OpRewritePattern<SWAPOp> {
 
 void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<RemoveSubsequentSWAP, RemoveSwappedTargetsSWAP>(context);
+  results.add<RemoveSubsequentSWAP>(context);
 }
 
-Eigen::Matrix4cd SWAPOp::getUnitaryMatrix() {
-  return Eigen::Matrix4cd{{1, 0, 0, 0},  // row 0
-                          {0, 0, 1, 0},  // row 1
-                          {0, 1, 0, 0},  // row 2
-                          {0, 0, 0, 1}}; // row 3
+Matrix4x4 SWAPOp::getUnitaryMatrix() {
+  return Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
+                                 0, 0, 1, 0,  // row 1
+                                 0, 1, 0, 0,  // row 2
+                                 0, 0, 0, 1); // row 3
 }

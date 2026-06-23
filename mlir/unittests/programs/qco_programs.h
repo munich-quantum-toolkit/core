@@ -158,14 +158,36 @@ void nestedControlledX(QCOProgramBuilder& b);
 /// Creates a circuit with a trivial controlled X gate.
 void trivialControlledX(QCOProgramBuilder& b);
 
+/// Creates a circuit with repeated controlled X gates.
+void repeatedControlledX(QCOProgramBuilder& b);
+
 /// Creates a circuit with an inverse modifier applied to an X gate.
 void inverseX(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
 void inverseMultipleControlledX(QCOProgramBuilder& b);
 
-/// Creates a circuit with two X gates in a row.
+/// Creates a circuit with two subsequent X gates.
 void twoX(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to two subsequent X gates.
+void controlledTwoX(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two subsequent X
+/// gates.
+void inverseTwoX(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a global phase and an
+/// X gate.
+void inverseGphaseX(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a global phase and a
+/// barrier.
+void inverseGphaseBarrier(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to two consecutive
+/// barriers.
+void inverseTwoBarriersInInv(QCOProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
@@ -562,6 +584,9 @@ void canonicalizeRToRx(QCOProgramBuilder& b);
 /// Creates a circuit with an R gate that can be canonicalized to an RY gate.
 void canonicalizeRToRy(QCOProgramBuilder& b);
 
+/// Creates a circuit with two R gates in a row with the same `phi`.
+void twoR(QCOProgramBuilder& b);
+
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.
@@ -905,6 +930,9 @@ void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b);
 /// Creates a circuit with two XXPlusYY gates in a row with opposite phases.
 void twoXxPlusYYOppositePhase(QCOProgramBuilder& b);
 
+/// Creates a circuit with two XXPlusYY gates in a row with swapped targets.
+void twoXxPlusYYSwappedTargets(QCOProgramBuilder& b);
+
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
@@ -932,6 +960,9 @@ void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b);
 /// Creates a circuit with two XXMinusYY gates in a row with opposite phases.
 void twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
 
+/// Creates a circuit with two XXMinusYY gates in a row with swapped targets.
+void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
+
 // --- BarrierOp ------------------------------------------------------------ //
 
 /// Creates a circuit with a barrier.
@@ -957,6 +988,9 @@ void twoBarrier(QCOProgramBuilder& b);
 /// Creates a circuit with a trivial ctrl modifier.
 void trivialCtrl(QCOProgramBuilder& b);
 
+/// Creates a circuit with an empty ctrl modifier.
+void emptyCtrl(QCOProgramBuilder& b);
+
 /// Creates a circuit with nested ctrl modifiers.
 void nestedCtrl(QCOProgramBuilder& b);
 
@@ -969,7 +1003,24 @@ void doubleNestedCtrlTwoQubits(QCOProgramBuilder& b);
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
 void ctrlInvSandwich(QCOProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to two gates.
+void ctrlTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to a controlled and a
+/// non-controlled gate.
+void ctrlTwoMixed(QCOProgramBuilder& b);
+
+/// Creates a circuit with nested control modifiers applied to two gates.
+void nestedCtrlTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to an inverse modifier
+/// applied to two gates.
+void ctrlInvTwo(QCOProgramBuilder& b);
+
 // --- InvOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with an empty inverse modifier.
+void emptyInv(QCOProgramBuilder& b);
 
 /// Creates a circuit with nested inverse modifiers.
 void nestedInv(QCOProgramBuilder& b);
@@ -980,10 +1031,20 @@ void tripleNestedInv(QCOProgramBuilder& b);
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCOProgramBuilder& b);
 
+/// Creates a circuit with an inverse modifier applied to two gates.
+void invTwo(QCOProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a control modifier
+/// applied to two gates.
+void invCtrlTwo(QCOProgramBuilder& b);
+
 // --- IfOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
 void simpleIf(QCOProgramBuilder& b);
+
+/// Creates a circuit with an if operation with a parameterized gate.
+void ifWithAngle(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with two qubits.
 void ifTwoQubits(QCOProgramBuilder& b);
@@ -1014,6 +1075,10 @@ void nestedFalseIf(QCOProgramBuilder& b);
 /// a register.
 void nestedIfOpForLoop(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with a nested for operation and
+/// parameterized gates.
+void nestedIfOpForLoopWithAngle(QCOProgramBuilder& b);
+
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
@@ -1026,6 +1091,9 @@ void simpleDoWhileReset(QCOProgramBuilder& b);
 
 /// Creates a circuit with a simple for operation with a register.
 void simpleForLoop(QCOProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a parameterized gate.
+void forLoopWithAngle(QCOProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.
@@ -1074,5 +1142,14 @@ void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 
 /// Inserts a qubit into a tensor and extracts it immediately at the same index.
 void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
+
+/// Extracts three qubits with ascending index (0, 1, 2), performs a
+/// computation, and finally inserts the qubits in ascending order (0, 1, 2).
+void qtensorChain(QCOProgramBuilder& b);
+
+/// Performs the same computation as the `qtensorChain` function, but uses
+/// qubits immediately after the extract and inserts the qubits in descending
+/// order (2, 1, 0).
+void qtensorAlternativeChain(QCOProgramBuilder& b);
 
 } // namespace mlir::qco

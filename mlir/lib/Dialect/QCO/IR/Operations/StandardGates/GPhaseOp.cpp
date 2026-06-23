@@ -9,9 +9,9 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -61,10 +61,9 @@ void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveTrivialGPhase>(context);
 }
 
-std::optional<Eigen::Matrix<std::complex<double>, 1, 1>>
-GPhaseOp::getUnitaryMatrix() {
+std::optional<Matrix1x1> GPhaseOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    return Eigen::Matrix<std::complex<double>, 1, 1>{std::polar(1.0, *theta)};
+    return Matrix1x1::fromElements(std::polar(1.0, *theta));
   }
   return std::nullopt;
 }

@@ -13,9 +13,9 @@ add_subdirectory(dd)
 add_subdirectory(ir)
 add_subdirectory(na)
 add_subdirectory(zx)
+add_subdirectory(qir)
 add_subdirectory(qdmi)
 add_subdirectory(fomac)
-add_subdirectory(qir)
 
 # copy test circuits to build directory
 file(COPY ${PROJECT_SOURCE_DIR}/test/circuits DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
