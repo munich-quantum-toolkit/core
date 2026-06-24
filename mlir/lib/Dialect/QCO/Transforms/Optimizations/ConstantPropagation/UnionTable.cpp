@@ -414,12 +414,16 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
   if (alwaysZero) {
     return std::optional(std::complex<double>(1.0, 0.0));
   }
+  if (!alwaysOne && ctrlsQuantum.empty() && posCtrlsClassical.empty() &&
+      negCtrlsClassical.empty()) {
+    return std::optional<std::complex<double>>();
+  }
 
   const auto participatingEntries = collectParticipatingEntries(
       {}, ctrlsQuantum, posCtrlsClassical, negCtrlsClassical, {});
 
   // Check if state |11...11> can be reached
-  bool highestStateReachable = false;
+  bool highestStateReachable = alwaysOne;
   bool highestStateAlwaysReached = alwaysOne;
   for (const auto& ute : participatingEntries) {
     std::unordered_map<unsigned int, bool> qubitCtrlThisEntry;
@@ -442,8 +446,8 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
     for (const auto& hs : ute.states) {
       const auto ctrlsZeroProbability = hs.hasAlwaysZeroProbability(
           qubitCtrlThisEntry, classicalCtrlThisEntry);
-      highestStateReachable |= ctrlsZeroProbability;
-      highestStateAlwaysReached &= ctrlsZeroProbability;
+      highestStateReachable |= !ctrlsZeroProbability;
+      highestStateAlwaysReached &= !ctrlsZeroProbability;
     }
     if (highestStateReachable && !highestStateAlwaysReached) {
       return std::optional<std::complex<double>>();
@@ -482,15 +486,19 @@ UnionTable::getSuperfluousControls(const std::span<Value> qubitCtrls,
   for (const auto& qCtrl : qubitCtrls) {
     const auto qIndex = qubitsToGlobalIndices.at(qCtrl);
     bool alwaysOne = true;
+    bool alwaysZero = true;
     for (const auto& hs : valuesToEntries.at(qCtrl)->states) {
       if (!alwaysOne) {
         break;
       }
-      if (hs.isQubitAlwaysZero(qIndex)) {
-        res.completelySuperfluous = true;
-        return res;
+      if (alwaysZero && !hs.isQubitAlwaysZero(qIndex)) {
+        alwaysZero = false;
       }
-      alwaysOne &= hs.isQubitAlwaysOne(qIndex);
+      alwaysOne &= !alwaysZero && hs.isQubitAlwaysOne(qIndex);
+    }
+    if (alwaysZero) {
+      res.completelySuperfluous = true;
+      return res;
     }
     if (alwaysOne) {
       res.superfluousQubits.insert(qCtrl);
@@ -500,7 +508,7 @@ UnionTable::getSuperfluousControls(const std::span<Value> qubitCtrls,
     bool alwaysTrue = true;
     bool alwaysFalse = true;
     for (const auto& hs : valuesToEntries.at(posCtrl)->states) {
-      if (!alwaysTrue) {
+      if (!alwaysTrue && !alwaysFalse) {
         break;
       }
       const bool valueTrue = hs.isValueTrue(posCtrl);
@@ -519,7 +527,7 @@ UnionTable::getSuperfluousControls(const std::span<Value> qubitCtrls,
     bool alwaysTrue = true;
     bool alwaysFalse = true;
     for (const auto& hs : valuesToEntries.at(negCtrl)->states) {
-      if (!alwaysTrue) {
+      if (!alwaysTrue && !alwaysFalse) {
         break;
       }
       const bool valueTrue = hs.isValueTrue(negCtrl);

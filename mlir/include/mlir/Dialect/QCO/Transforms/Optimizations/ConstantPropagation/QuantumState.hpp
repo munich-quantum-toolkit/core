@@ -164,7 +164,7 @@ class QuantumState {
    */
   MeasurementResult measureOrResetQubit(const unsigned int target,
                                         const bool reset) {
-    const auto qubitMask = 1U << target;
+    const auto qubitMask = 1U << globalToLocalQubitNumber.at(target);
 
     double probabilityZero = 0.0;
     double probabilityOne = 0.0;
