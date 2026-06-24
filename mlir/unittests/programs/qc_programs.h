@@ -1025,6 +1025,9 @@ void ctrlInvTwo(QCProgramBuilder& b);
 /// Creates a circuit with an empty inverse modifier.
 void emptyInv(QCProgramBuilder& b);
 
+/// Creates a circuit with an empty power modifier.
+void emptyPow(QCProgramBuilder& b);
+
 /// Creates a circuit with nested inverse modifiers.
 void nestedInv(QCProgramBuilder& b);
 
@@ -1076,6 +1079,20 @@ void invPowHFrac(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(-0.5) wrapping H (reference for invPowHFrac).
 void powHFracNeg(QCProgramBuilder& b);
+
+/// Creates inv wrapping pow(2){H}. The even power folds to the identity inside
+/// the modifier, leaving the inv body empty so it is erased (reference:
+/// emptyQC).
+void invPowEvenH(QCProgramBuilder& b);
+
+/// Creates inv wrapping pow(2){SWAP}. The even power folds to the identity
+/// inside the modifier, leaving the inv body empty so it is erased (reference:
+/// emptyQC).
+void invPowEvenSwap(QCProgramBuilder& b);
+
+/// Creates inv wrapping pow(2){Z}. Z^2 folds to the identity inside the
+/// modifier, leaving the inv body empty so it is erased (reference: emptyQC).
+void invPowSquaredZ(QCProgramBuilder& b);
 
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
 /// inv).

@@ -265,6 +265,8 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(rx)},
                     QCOTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
                                 MQT_NAMED_BUILDER(emptyQCO)},
+                    QCOTestCase{"EmptyPow", MQT_NAMED_BUILDER(emptyPow),
+                                MQT_NAMED_BUILDER(rxx)},
                     QCOTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
                                 MQT_NAMED_BUILDER(powSingleExponent)},
                     QCOTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
@@ -277,7 +279,15 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(negPowInvIswap),
                                 MQT_NAMED_BUILDER(negPowInvIswapRef)},
                     QCOTestCase{"InvPowHFrac", MQT_NAMED_BUILDER(invPowHFrac),
-                                MQT_NAMED_BUILDER(powHFracNeg)}));
+                                MQT_NAMED_BUILDER(powHFracNeg)},
+                    QCOTestCase{"InvPowEvenH", MQT_NAMED_BUILDER(invPowEvenH),
+                                MQT_NAMED_BUILDER(emptyQCO)},
+                    QCOTestCase{"InvPowEvenSwap",
+                                MQT_NAMED_BUILDER(invPowEvenSwap),
+                                MQT_NAMED_BUILDER(emptyQCO)},
+                    QCOTestCase{"InvPowSquaredZ",
+                                MQT_NAMED_BUILDER(invPowSquaredZ),
+                                MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 
 /// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
@@ -310,8 +320,9 @@ TEST_F(QCOTest, NegPowHNoFold) {
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
 }
 
-/// Regression: pow(sx) must not expand inside a ctrl modifier, because sx
-/// lowers to gphase + rx (two ops), which is not allowed in a modifier body.
+/// Regression: pow(sx) must not expand inside a ctrl modifier. The fold emits a
+/// separate GPhase, which under a control becomes an observable controlled
+/// phase, resolvable only when the GPhase is the ctrl body's sole op.
 /// Verify that both CtrlOp and its nested PowOp survive.
 TEST_F(QCOTest, CtrlPowSxNoExpansion) {
   auto program =

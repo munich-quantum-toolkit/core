@@ -1196,6 +1196,9 @@ void ctrlInvTwo(QCOProgramBuilder& b);
 /// Creates a circuit with an empty inverse modifier.
 void emptyInv(QCOProgramBuilder& b);
 
+/// Creates a circuit with an empty power modifier.
+void emptyPow(QCOProgramBuilder& b);
+
 /// Creates a circuit with nested inverse modifiers.
 void nestedInv(QCOProgramBuilder& b);
 
@@ -1251,6 +1254,20 @@ void invPowHFrac(QCOProgramBuilder& b);
 /// Creates a circuit with pow(-0.5) wrapping H (reference for invPowHFrac).
 void powHFracNeg(QCOProgramBuilder& b);
 
+/// Creates inv wrapping pow(2){H}. The even power folds to the identity inside
+/// the modifier, leaving the inv body empty so it is erased (reference:
+/// emptyQCO).
+void invPowEvenH(QCOProgramBuilder& b);
+
+/// Creates inv wrapping pow(2){SWAP}. The even power folds to the identity
+/// inside the modifier, leaving the inv body empty so it is erased (reference:
+/// emptyQCO).
+void invPowEvenSwap(QCOProgramBuilder& b);
+
+/// Creates inv wrapping pow(2){Z}. Z^2 folds to the identity inside the
+/// modifier, leaving the inv body empty so it is erased (reference: emptyQCO).
+void invPowSquaredZ(QCOProgramBuilder& b);
+
 /// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
 /// inv).
 void invPowRx(QCOProgramBuilder& b);
@@ -1276,8 +1293,6 @@ void negPowInvIswapRef(QCOProgramBuilder& b);
 /// so the pow survives canonicalization and reaches ConvertQCOPowOp.
 void ctrlPowSx(QCOProgramBuilder& b);
 
-/// Reference for ctrlPowSx: identical circuit (pow is blocked inside ctrl).
-void ctrlPowSxRef(QCOProgramBuilder& b);
 
 // --- IfOp ---------------------------------------------------------------- //
 
