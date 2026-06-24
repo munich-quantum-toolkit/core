@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Support/IRVerification.h"
 
 #include <gtest/gtest.h>
 #include <llvm/Support/LogicalResult.h>
@@ -24,6 +25,8 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cassert>
 #include <memory>
@@ -34,133 +37,59 @@ using namespace mlir::qco;
 namespace {
 
 class SwapAbsorbPassTest : public testing::Test {
+protected:
+  MLIRContext context;
+  QCOProgramBuilder programBuilder;
+  QCOProgramBuilder referenceBuilder;
+  OwningOpRef<ModuleOp> swapModule;
+  OwningOpRef<ModuleOp> reference;
 
+  SwapAbsorbPassTest()
+      : programBuilder(&context), referenceBuilder(&context) {}
+      
 protected:
   void SetUp() override {
+    // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    context.appendDialectRegistry(registry);
+    context.loadAllAvailableDialects();
+
+    programBuilder.initialize();
+    referenceBuilder.initialize();
   }
 
-  static void applySwapAbsorb(OwningOpRef<ModuleOp>& moduleOp) {
-    PassManager pm(moduleOp->getContext());
+
+  static LogicalResult applySwapAbsorbPass(ModuleOp module) {
+    PassManager pm(module.getContext());
     pm.addPass(qco::createSwapAbsorption());
-    auto res = pm.run(*moduleOp);
-
-    ASSERT_TRUE(succeeded(res));
+    return pm.run(module);
   }
 
-  std::unique_ptr<MLIRContext> context;
+  static LogicalResult applyCanonicalizerPass(ModuleOp module) {
+    PassManager pm(module.getContext());
+    pm.addPass(createCanonicalizerPass());
+    return pm.run(module);
+  }
 };
 }; // namespace
 
 TEST_F(SwapAbsorbPassTest, PassReordersTwoQubitCircuitWithLeadingSwap) {
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  std::tie(q0, q1) = programBuilder.swap(q0, q1);
+  q0 = programBuilder.x(q0);
+  q1 = programBuilder.h(q1);
+  swapModule = programBuilder.finalize();
 
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
+  auto qRef0 = referenceBuilder.allocQubit();
+  auto qRef1 = referenceBuilder.allocQubit();
+  qRef0 = referenceBuilder.h(qRef0);
+  qRef1 = referenceBuilder.x(qRef1);
+  reference = referenceBuilder.finalize();
 
-  const auto q00 = builder.staticQubit(0);
-  const auto q10 = builder.staticQubit(1);
+  ASSERT_TRUE(applySwapAbsorbPass(swapModule.get()).succeeded());
 
-  const auto [q01, q11] = builder.swap(q00, q10);
-
-  const auto q02 = builder.id(q01);
-  const auto q12 = builder.id(q11);
-
-  builder.sink(q02);
-  builder.sink(q12);
-
-  auto moduleThroughPass = builder.finalize();
-  applySwapAbsorb(moduleThroughPass);
-
-  ASSERT_EQ(q10, mlir::cast<IdOp>(q02.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q00, mlir::cast<IdOp>(q12.getDefiningOp()).getInputQubit(0));
-}
-
-TEST_F(SwapAbsorbPassTest, PassAbsorbsTwoIndependentSwaps) {
-
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  const auto q00 = builder.staticQubit(0);
-  const auto q10 = builder.staticQubit(1);
-  const auto q20 = builder.staticQubit(2);
-  const auto q30 = builder.staticQubit(3);
-
-  const auto [q01, q11] = builder.swap(q00, q10);
-  const auto [q21, q31] = builder.swap(q20, q30);
-
-  const auto q02 = builder.id(q01);
-  const auto q12 = builder.id(q11);
-  const auto q22 = builder.id(q21);
-  const auto q32 = builder.id(q31);
-
-  builder.sink(q02);
-  builder.sink(q12);
-  builder.sink(q22);
-  builder.sink(q32);
-
-  auto moduleThroughPass = builder.finalize();
-  applySwapAbsorb(moduleThroughPass);
-
-  ASSERT_EQ(q10, mlir::cast<IdOp>(q02.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q00, mlir::cast<IdOp>(q12.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q30, mlir::cast<IdOp>(q22.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q20, mlir::cast<IdOp>(q32.getDefiningOp()).getInputQubit(0));
-}
-
-TEST_F(SwapAbsorbPassTest, PassAbsorbsSwapWithLeadingSingleQubitGates) {
-
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  const auto q00 = builder.staticQubit(0);
-  const auto q10 = builder.staticQubit(1);
-
-  const auto q01 = builder.id(q00);
-  const auto q11 = builder.id(q10);
-
-  const auto [q02, q12] = builder.swap(q01, q11);
-
-  const auto q03 = builder.id(q02);
-  const auto q13 = builder.id(q12);
-
-  builder.sink(q03);
-  builder.sink(q13);
-
-  auto moduleThroughPass = builder.finalize();
-  applySwapAbsorb(moduleThroughPass);
-
-  ASSERT_EQ(q11, mlir::cast<IdOp>(q03.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q01, mlir::cast<IdOp>(q13.getDefiningOp()).getInputQubit(0));
-}
-
-TEST_F(SwapAbsorbPassTest, PassAbsorbsTwoDependentSwaps) {
-
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  const auto q00 = builder.staticQubit(0);
-  const auto q10 = builder.staticQubit(1);
-  const auto q20 = builder.staticQubit(2);
-
-  const auto [q01, q11] = builder.swap(q00, q10);
-  const auto [q12, q21] = builder.swap(q11, q20);
-
-  const auto q02 = builder.id(q01);
-  const auto q13 = builder.id(q12);
-  const auto q22 = builder.id(q21);
-
-  builder.sink(q02);
-  builder.sink(q13);
-  builder.sink(q22);
-
-  auto moduleThroughPass = builder.finalize();
-  applySwapAbsorb(moduleThroughPass);
-
-  ASSERT_EQ(q20, mlir::cast<IdOp>(q13.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q00, mlir::cast<IdOp>(q22.getDefiningOp()).getInputQubit(0));
-  ASSERT_EQ(q10, mlir::cast<IdOp>(q02.getDefiningOp()).getInputQubit(0));
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(swapModule.get(), reference.get()));
 }

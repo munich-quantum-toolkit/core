@@ -32,42 +32,13 @@ protected:
     ModuleOp anchor = getOperation();
     IRRewriter rewriter(&getContext());
 
-    for (auto func : anchor.getOps<func::FuncOp>()) {
-      SmallVector<SWAPOp> readyToAbsorb;
-      SmallVector<WireIterator> wires;
-      do {
-        wires.clear();
-        for (auto op : func.getOps<StaticOp>()) {
-          wires.emplace_back(op.getQubit());
-        }
-        if (wires.empty()) {
-          return;
-        }
-
-        readyToAbsorb.clear();
-        findSwapsReadyForAbsorption(wires, readyToAbsorb);
-
-        for (auto swapOp : readyToAbsorb) {
-          rewriter.replaceOp(swapOp,
-                             {swapOp.getQubit1In(), swapOp.getQubit0In()});
-        }
-      } while (!readyToAbsorb.empty());
-    }
-  }
-
-private:
-  static void findSwapsReadyForAbsorption(MutableArrayRef<WireIterator> wires,
-                                          SmallVector<SWAPOp>& readyToAbsorb) {
-    std::ignore = walkProgramGraph<WireDirection::Forward>(
-        wires, [&](const ReadyRange& ready, ReleasedOps& released) {
-          for (const auto& [op, indices] : ready) {
-            if (isa<SWAPOp>(op)) {
-              readyToAbsorb.emplace_back(op);
-            }
-            released.emplace_back(op);
-          }
-          return WalkResult::interrupt();
-        });
+    anchor.walk([&rewriter](mlir::Operation *op) {
+      if(auto swap = mlir::dyn_cast<SWAPOp>(op))
+      {
+          rewriter.replaceOp(swap,
+                             {swap.getQubit1In(), swap.getQubit0In()});
+      }
+    });
   }
 };
 } // namespace
