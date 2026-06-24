@@ -27,6 +27,9 @@ std::pair<Value, Type> emptyQIR(QIRProgramBuilder& builder);
 /// Allocates a single qubit.
 std::pair<Value, Type> allocQubit(QIRProgramBuilder& b);
 
+/// Allocates a qubit register of size `1`.
+std::pair<Value, Type> alloc1QubitRegister(QIRProgramBuilder& b);
+
 /// Allocates a qubit register of size `2`.
 std::pair<Value, Type> allocQubitRegister(QIRProgramBuilder& b);
 

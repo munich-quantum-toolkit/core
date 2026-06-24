@@ -60,6 +60,12 @@ allocMultipleQubitRegistersWithOps(QCProgramBuilder& b) {
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
+alloc1QubitRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  return measureAndReturn(b, {q[0]});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubitRegister(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   return measureAndReturn(b, {q[0], q[1]});
@@ -179,8 +185,8 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 singleMeasurementToSingleBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
-  return measureAndReturn(b, {q[0]});
+  const auto outcome = b.measure(q[0], c[0]);
+  return {{outcome}, {b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -189,18 +195,18 @@ repeatedMeasurementToSameBit(QCProgramBuilder& b) {
   const auto& c = b.allocClassicalBitRegister(1);
   b.measure(q[0], c[0]);
   b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
-  return measureAndReturn(b, {q[0]});
+  auto c3 = b.measure(q[0], c[0]);
+  return {{c3}, {b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 repeatedMeasurementToDifferentBits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(3);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[1]);
-  b.measure(q[0], c[2]);
-  return measureAndReturn(b, {q[0]});
+  auto c1 = b.measure(q[0], c[0]);
+  auto c2 = b.measure(q[0], c[1]);
+  auto c3 = b.measure(q[0], c[2]);
+  return {{c1, c2, c3}, {b.getI1Type(), b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -208,17 +214,17 @@ multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto& c0 = b.allocClassicalBitRegister(1, "c0");
   const auto& c1 = b.allocClassicalBitRegister(2, "c1");
-  b.measure(q[0], c0[0]);
-  b.measure(q[1], c1[0]);
-  b.measure(q[2], c1[1]);
-  return measureAndReturn(b, {q[0], q[1], q[2]});
+  const auto b1 = b.measure(q[0], c0[0]);
+  const auto b2 = b.measure(q[1], c1[0]);
+  const auto b3 = b.measure(q[2], c1[1]);
+  return {{b1, b2, b3}, {b.getI1Type(), b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 measurementWithoutRegisters(QCProgramBuilder& b) {
   auto q = b.allocQubit();
-  b.measure(q);
-  return measureAndReturn(b, {q});
+  auto c = b.measure(q);
+  return {{c}, {b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -276,7 +282,7 @@ repeatedResetAfterSingleOp(QCProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 globalPhase(QCProgramBuilder& b) {
   b.gphase(0.123);
-  return measureAndReturn(b, {});
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>

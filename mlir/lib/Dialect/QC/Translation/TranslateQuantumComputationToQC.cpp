@@ -849,7 +849,15 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
     MLIRContext* context, const ::qc::QuantumComputation& quantumComputation) {
   // Create and initialize the builder (creates module and main function)
   QCProgramBuilder builder(context);
-  builder.initialize();
+  SmallVector<Type> resultTypes(quantumComputation.getNcbits());
+  for (auto i = 0; i < quantumComputation.getNcbits(); ++i) {
+    resultTypes[i] = builder.getI1Type();
+  }
+  if (quantumComputation.getNcbits() == 0) {
+    // Without classical bits, we instead return an exit code 0.
+    resultTypes.push_back(builder.getI64Type());
+  }
+  builder.initialize(resultTypes);
 
   // Allocate quantum registers using the builder
   const auto qregs = allocateQregs(builder, quantumComputation);
@@ -876,7 +884,9 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
 
   // Finalize and return the module (adds return statement and transfers
   // ownership)
-  return builder.finalize();
+  return quantumComputation.getNcbits() == 0
+             ? builder.finalize({builder.intConstant(0)})
+             : builder.finalize(state.results);
 }
 
 } // namespace mlir

@@ -28,6 +28,10 @@ emptyQC(QCProgramBuilder& builder);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubit(QCProgramBuilder& b);
 
+/// Allocates a qubit register of size `1`.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+alloc1QubitRegister(QCProgramBuilder& b);
+
 /// Allocates a qubit register of size `2`.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubitRegister(QCProgramBuilder& b);

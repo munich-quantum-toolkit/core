@@ -175,10 +175,10 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 repeatedMeasurementToSameBit(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto& c = b.allocClassicalBitRegister(1);
-  auto [q1, c1] = b.measure(q[0], c[0]);
-  auto [q2, c2] = b.measure(q1, c[0]);
+  auto [q1, _c1] = b.measure(q[0], c[0]);
+  auto [q2, _c2] = b.measure(q1, c[0]);
   auto [q3, c3] = b.measure(q2, c[0]);
-  return {{c1, c2, c3}, {b.getI1Type(), b.getI1Type(), b.getI1Type()}};
+  return {{c3}, {b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -264,7 +264,7 @@ repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 globalPhase(QCOProgramBuilder& b) {
   b.gphase(0.123);
-  return measureAndReturn(b, {});
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>

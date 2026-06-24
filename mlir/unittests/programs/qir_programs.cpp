@@ -23,32 +23,99 @@
 
 #include <numbers>
 
+/**
+ * @brief Creates a struct value using an `llvm.poison` operation with the given
+ * types.
+ * @param b The QIRProgramBuilder used to create the struct.
+ * @param types The types of the elements in the struct.
+ * @return The created struct value.
+ */
+mlir::Value createStruct(mlir::qir::QIRProgramBuilder& b,
+                         mlir::SmallVector<mlir::Type> types) {
+  auto structType =
+      mlir::LLVM::LLVMStructType::getLiteral(b.getContext(), types);
+  mlir::Value structValue = mlir::LLVM::PoisonOp::create(b, structType);
+  return structValue;
+}
+
+/**
+ * @brief Collects measurement outcomes into a struct value.
+ * @param b The QIRProgramBuilder used to create the struct.
+ * @param outcomes The measurement outcomes to be read and collected.
+ * @param structValue The struct value to insert the measurement outcomes into.
+ * @return The struct value with the measurement outcomes inserted.
+ */
+mlir::Value
+collectMeasurementOutcomesInStruct(mlir::qir::QIRProgramBuilder& b,
+                                   mlir::SmallVector<mlir::Value> outcomes,
+                                   mlir::Value structValue) {
+  int64_t index = 0;
+  for (auto bit : outcomes) {
+    auto c = b.readResult(bit);
+    auto insert = mlir::LLVM::InsertValueOp::create(
+        b, structValue, c, mlir::ArrayRef<int64_t>(index++));
+    structValue = insert.getResult();
+  }
+  return structValue;
+}
+
+/**
+ * @brief Measures the given qubits and returns the measurement outcomes as a
+ * struct value or a single `i1`.
+ * @param b The QIRProgramBuilder used to perform the measurements and create
+ * the struct.
+ * @param qubits The qubits to be measured.
+ * @param inRegister Whether to store the results in a classical result array or
+ * not.
+ * @return A pair containing the result value and its type.
+ */
 static std::pair<mlir::Value, mlir::Type>
 measureAndReturn(mlir::qir::QIRProgramBuilder& b,
-                 mlir::SmallVector<mlir::Value> qubits) {
+                 mlir::SmallVector<mlir::Value> qubits, bool inRegister) {
 
   if (qubits.empty()) {
     auto zeroConst = b.intConstant(0);
     return {zeroConst, b.getI64Type()};
   }
+  mlir::qir::QIRProgramBuilder::ClassicalRegister resultArray;
+  if (inRegister) {
+    resultArray = b.allocClassicalBitRegister(qubits.size(), "meas");
+  }
+
   if (qubits.size() == 1) {
-    auto outcome = b.measure(qubits[0], 0);
+    auto outcome = inRegister ? b.measure(qubits[0], resultArray[0])
+                              : b.measure(qubits[0], 0);
     auto result = b.readResult(outcome);
     return {result, b.getI1Type()};
   }
 
   llvm::SmallVector<mlir::Type> elementTypes(qubits.size(), b.getI1Type());
-  auto structType =
-      mlir::LLVM::LLVMStructType::getLiteral(b.getContext(), elementTypes);
-  mlir::Value structValue = mlir::LLVM::PoisonOp::create(b, structType);
+  mlir::Value structValue = createStruct(b, elementTypes);
 
   for (auto i = 0L; i < qubits.size(); ++i) {
-    auto outcome = b.measure(qubits[i], i);
+    auto outcome = inRegister ? b.measure(qubits[i], resultArray[i])
+                              : b.measure(qubits[i], i);
     auto result = b.readResult(outcome);
     auto insert = mlir::LLVM::InsertValueOp::create(b, structValue, result, i);
     structValue = insert.getResult();
   }
-  return {structValue, structType};
+  return {structValue, structValue.getType()};
+}
+
+/**
+ * @brief Measures the given qubits and returns the measurement outcomes as a
+ * struct value or a single `i1`.
+ *
+ * @detail The measurement outcomes are stored in a classical result array.
+ * @param b The QIRProgramBuilder used to perform the measurements and create
+ * the struct.
+ * @param qubits The qubits to be measured.
+ * @return The result value and its type as a pair.
+ */
+static std::pair<mlir::Value, mlir::Type>
+measureAndReturn(mlir::qir::QIRProgramBuilder& b,
+                 mlir::SmallVector<mlir::Value> qubits) {
+  return measureAndReturn(b, qubits, true);
 }
 
 namespace mlir::qir {
@@ -59,6 +126,11 @@ std::pair<Value, Type> emptyQIR(QIRProgramBuilder& b) {
 std::pair<Value, Type> allocQubit(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   return measureAndReturn(b, {q});
+}
+
+std::pair<Value, Type> alloc1QubitRegister(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  return measureAndReturn(b, {q[0]});
 }
 
 std::pair<Value, Type> allocQubitRegister(QIRProgramBuilder& b) {
@@ -92,7 +164,7 @@ std::pair<Value, Type> allocLargeRegister(QIRProgramBuilder& b) {
 std::pair<Value, Type> staticQubits(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
-  return measureAndReturn(b, {q0, q1});
+  return measureAndReturn(b, {q0, q1}, false);
 }
 
 std::pair<Value, Type> staticQubitsWithOps(QIRProgramBuilder& b) {
@@ -100,7 +172,7 @@ std::pair<Value, Type> staticQubitsWithOps(QIRProgramBuilder& b) {
   auto q1 = b.staticQubit(1);
   b.h(q0);
   b.h(q1);
-  return measureAndReturn(b, {q0, q1});
+  return measureAndReturn(b, {q0, q1}, false);
 }
 
 std::pair<Value, Type> staticQubitsWithParametricOps(QIRProgramBuilder& b) {
@@ -108,27 +180,27 @@ std::pair<Value, Type> staticQubitsWithParametricOps(QIRProgramBuilder& b) {
   auto q1 = b.staticQubit(1);
   b.rx(std::numbers::pi / 4., q0);
   b.p(std::numbers::pi / 2., q1);
-  return measureAndReturn(b, {q0, q1});
+  return measureAndReturn(b, {q0, q1}, false);
 }
 
 std::pair<Value, Type> staticQubitsWithTwoTargetOps(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.rzz(0.123, q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return measureAndReturn(b, {q0, q1}, false);
 }
 
 std::pair<Value, Type> staticQubitsWithCtrl(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
-  return measureAndReturn(b, {q0, q1});
+  return measureAndReturn(b, {q0, q1}, false);
 }
 
 std::pair<Value, Type> staticQubitsWithInv(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   b.tdg(q0);
-  return measureAndReturn(b, {q0});
+  return measureAndReturn(b, {q0}, false);
 }
 
 std::pair<Value, Type> staticQubitsWithDuplicates(QIRProgramBuilder& b) {
@@ -141,7 +213,7 @@ std::pair<Value, Type> staticQubitsWithDuplicates(QIRProgramBuilder& b) {
   b.rzz(0.123, q0b, q1b);
   b.cx(q0b, q1b);
   b.tdg(q0a);
-  return measureAndReturn(b, {q0b, q1b});
+  return measureAndReturn(b, {q0b, q1b}, false);
 }
 
 std::pair<Value, Type> staticQubitsCanonical(QIRProgramBuilder& b) {
@@ -152,27 +224,28 @@ std::pair<Value, Type> staticQubitsCanonical(QIRProgramBuilder& b) {
   b.rzz(0.123, q0, q1);
   b.cx(q0, q1);
   b.tdg(q0);
-  return measureAndReturn(b, {q0, q1});
+  return measureAndReturn(b, {q0, q1}, false);
 }
 
 std::pair<Value, Type> mixedStaticThenDynamicQubit(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.allocQubit();
-  return measureAndReturn(b, {q0, q1});
+  return measureAndReturn(b, {q0, q1}, false);
 }
 
 std::pair<Value, Type>
 mixedDynamicRegisterThenStaticQubit(QIRProgramBuilder& b) {
   auto q0 = b.allocQubitRegister(2);
   auto q1 = b.staticQubit(0);
-  return measureAndReturn(b, {q0[0], q0[1], q1});
+  return measureAndReturn(b, {q0[0], q0[1], q1}, false);
 }
 
 std::pair<Value, Type> singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
-  return measureAndReturn(b, {q[0]});
+  const auto v = b.measure(q[0], c[0]);
+  const auto read = b.readResult(v);
+  return {read, b.getI1Type()};
 }
 
 std::pair<Value, Type> repeatedMeasurementToSameBit(QIRProgramBuilder& b) {
@@ -180,18 +253,23 @@ std::pair<Value, Type> repeatedMeasurementToSameBit(QIRProgramBuilder& b) {
   const auto c = b.allocClassicalBitRegister(1);
   b.measure(q[0], c[0]);
   b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
-  return measureAndReturn(b, {q[0]});
+  auto b3 = b.measure(q[0], c[0]);
+  auto c3 = b.readResult(b3);
+  return {c3, b.getI1Type()};
 }
 
 std::pair<Value, Type>
 repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(3);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[1]);
-  b.measure(q[0], c[2]);
-  return measureAndReturn(b, {q[0]});
+  auto b1 = b.measure(q[0], c[0]);
+  auto b2 = b.measure(q[0], c[1]);
+  auto b3 = b.measure(q[0], c[2]);
+  auto structValue =
+      createStruct(b, {b.getI1Type(), b.getI1Type(), b.getI1Type()});
+  auto filledStruct =
+      collectMeasurementOutcomesInStruct(b, {b1, b2, b3}, structValue);
+  return {filledStruct, filledStruct.getType()};
 }
 
 std::pair<Value, Type>
@@ -199,16 +277,21 @@ multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto& c0 = b.allocClassicalBitRegister(1, "c0");
   const auto& c1 = b.allocClassicalBitRegister(2, "c1");
-  b.measure(q[0], c0[0]);
-  b.measure(q[1], c1[0]);
-  b.measure(q[2], c1[1]);
-  return measureAndReturn(b, {q[0], q[1], q[2]});
+  auto b1 = b.measure(q[0], c0[0]);
+  auto b2 = b.measure(q[1], c1[0]);
+  auto b3 = b.measure(q[2], c1[1]);
+  auto structValue =
+      createStruct(b, {b.getI1Type(), b.getI1Type(), b.getI1Type()});
+  auto filledStruct =
+      collectMeasurementOutcomesInStruct(b, {b1, b2, b3}, structValue);
+  return {filledStruct, filledStruct.getType()};
 }
 
 std::pair<Value, Type> measurementWithoutRegisters(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
-  b.measure(q, 0);
-  return measureAndReturn(b, {q});
+  auto bit = b.measure(q, 0);
+  auto c = b.readResult(bit);
+  return {c, b.getI1Type()};
 }
 
 std::pair<Value, Type> resetQubitWithoutOp(QIRProgramBuilder& b) {
@@ -355,7 +438,7 @@ std::pair<Value, Type> multipleControlledH(QIRProgramBuilder& b) {
 std::pair<Value, Type> hWithoutRegister(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
-  return measureAndReturn(b, {q});
+  return measureAndReturn(b, {q}, false);
 }
 
 std::pair<Value, Type> s(QIRProgramBuilder& b) {
