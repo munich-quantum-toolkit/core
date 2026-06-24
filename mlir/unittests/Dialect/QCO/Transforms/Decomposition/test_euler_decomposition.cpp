@@ -37,6 +37,7 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <array>
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <functional>

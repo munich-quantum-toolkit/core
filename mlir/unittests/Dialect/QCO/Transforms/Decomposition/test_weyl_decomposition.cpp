@@ -18,7 +18,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -30,6 +29,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cassert>
