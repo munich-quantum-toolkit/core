@@ -28,9 +28,8 @@ namespace mlir::qco::decomposition {
  * are `h`, `t`, `tdg`, `p`, and `cx`.
  *
  * @note Adapted from ``synth_mcx_noaux_hp24`` and ``synth_mcx_n_dirty_i15`` in
- *       the IBM Qiskit framework
- *       (``crates/synthesis/src/multi_controlled/mcx.rs``).
- *       (C) Copyright IBM 2024
+ *       the IBM Qiskit framework.
+ *       (C) Copyright IBM 2025
  *
  *       This code is licensed under the Apache License, Version 2.0. You may
  *       obtain a copy of this license in the LICENSE.txt file in the root
