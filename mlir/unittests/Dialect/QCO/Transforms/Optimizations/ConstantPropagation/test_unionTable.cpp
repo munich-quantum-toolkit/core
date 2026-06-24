@@ -677,7 +677,7 @@ TEST_F(UnionTablePropertiesTest, testAllTopHybridStates) {
   EXPECT_TRUE(ut.areStatesAllTop());
 }
 
-TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
+TEST_F(UnionTablePropertiesTest, testMinusOneGlobalPhase) {
   std::vector qCtrl = {v3, v4};
   ut.propagateGate(xOp, q0, q3);
   ut.propagateGate(xOp, q1, q4);
@@ -687,10 +687,10 @@ TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
   EXPECT_EQ(std::complex<double>(-1, 0), globalPhase.value());
 }
 
-TEST_F(UnionTablePropertiesTest, testMinusOneGlobalPhase) {
+TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
   std::vector qCtrl = {v4, v5};
   ut.propagateGate(xOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5);
+  ut.propagateGate(hOp, q1, q5);
   const auto emptyGlobalPhase = ut.globalPhaseThatIsAdded(zOp, v5, q4);
   const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, v2, qCtrl);
   EXPECT_FALSE(emptyGlobalPhase.has_value());
@@ -741,15 +741,15 @@ TEST_F(UnionTablePropertiesTest, ImpliedQubit) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
   ut.propagateGate(hOp, q1, q6, q5);
-  ASSERT_TRUE(ut.isQubitImplied(v6, q5, classicalIndexVec, {}));
-  ASSERT_FALSE(ut.isQubitImplied(v5, q6, classicalIndexVec, {}));
+  ASSERT_TRUE(ut.isQubitImplied(v5, q6, classicalIndexVec, {}));
+  ASSERT_FALSE(ut.isQubitImplied(v6, q5, classicalIndexVec, {}));
 }
 
 TEST_F(UnionTablePropertiesTest, ImpliedQubitOnlyQubits) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
   ut.propagateGate(hOp, q1, q6, q5);
-  ASSERT_TRUE(ut.isQubitImplied(v6, q5, {}, {}));
+  ASSERT_TRUE(ut.isQubitImplied(v5, q6, {}, {}));
 }
 
 TEST_F(UnionTablePropertiesTest, ImpliedQubitOnlyClassicalValues) {
@@ -801,6 +801,7 @@ TEST_F(UnionTablePropertiesTest, noGlobalPhaseTwoQubitsB) {
 }
 
 TEST_F(UnionTablePropertiesTest, globalPhaseTwoQubits) {
+  ut.propagateQubitAlloc(v3);
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q2, q5);
   ut.propagateGate(xOp, q3, q6);
@@ -832,6 +833,7 @@ TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsB) {
 }
 
 TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsC) {
+  ut.propagateIntAlloc(i1, 2);
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q1, q5, q4);
   ut.propagateMeasurement(v4, v6, i0);
