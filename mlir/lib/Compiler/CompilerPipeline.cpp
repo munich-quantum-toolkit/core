@@ -79,8 +79,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   if (config_.enableDecomposeMultiControlled &&
       config_.decomposeMultiControlledMinControls < 2) {
-    llvm::errs() << "decomposeMultiControlledMinControls must be at least 2 when "
-                    "enableDecomposeMultiControlled is enabled.\n";
+    llvm::errs()
+        << "decomposeMultiControlledMinControls must be at least 2 when "
+           "enableDecomposeMultiControlled is enabled.\n";
     return failure();
   }
 
