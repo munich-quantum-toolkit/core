@@ -118,7 +118,7 @@ class HybridState {
         reset ? qState->resetQubit(quantumTarget)
               : qState->measureQubit(quantumTarget);
 
-    for (const long i : {0, 1}) {
+    for (const int64_t i : {0, 1}) {
       if (!availableStates.contains(i) || !availableStates.at(i)) {
         continue;
       }
@@ -296,16 +296,14 @@ public:
    *
    * @param qubitValues Pairs of the qubits that are being checked and the
    * values that they are being checked for.
-   * @param classicalIntegerValues The integer values to check.
-   * @param classicalDoubleValues The double values to check.
+   * @param classicalValues The classical values to check.
    * @throws domain_error If a classical value cannot be found.
    * @returns True if the amplitude is always zero, false otherwise.
    */
   [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
   hasAlwaysZeroProbability(
       const std::unordered_map<unsigned int, bool>& qubitValues,
-      const llvm::DenseMap<Value, int64_t>& classicalIntegerValues,
-      const llvm::DenseMap<Value, double>& classicalDoubleValues) const;
+      const llvm::DenseMap<Value, bool>& classicalValues) const;
 
   /**
    * @brief Returns a classical value that is equivalent to qubit.

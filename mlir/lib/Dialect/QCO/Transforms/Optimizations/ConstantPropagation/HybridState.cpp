@@ -278,25 +278,20 @@ bool HybridState::isValueTrue(const Value v) const {
 
 bool HybridState::hasAlwaysZeroProbability(
     const std::unordered_map<unsigned int, bool>& qubitValues,
-    const llvm::DenseMap<Value, int64_t>& classicalIntegerValues,
-    const llvm::DenseMap<Value, double>& classicalDoubleValues) const {
-  for (const auto& [v, i] : classicalIntegerValues) {
-    if (!integerValues.contains(v)) {
+    const llvm::DenseMap<Value, bool>& classicalValues) const {
+  for (const auto& [v, i] : classicalValues) {
+    if (integerValues.contains(v)) {
+      if ((integerValues.at(v) == 0 && i) || (integerValues.at(v) != 0 && !i)) {
+        return true;
+      }
+    } else if (doubleValues.contains(v)) {
+      const bool zeroDouble = std::norm(doubleValues.at(v)) < 1e-4;
+      if ((zeroDouble && i) || (!zeroDouble && !i)) {
+        return true;
+      }
+    } else {
       throw std::domain_error("Value of a classical value is asked which does "
                               "not exist in the HybridState.");
-    }
-    if (integerValues.at(v) != i) {
-      return true;
-    }
-  }
-
-  for (const auto& [v, d] : classicalDoubleValues) {
-    if (!doubleValues.contains(v)) {
-      throw std::domain_error("Value of a classical value is asked which does "
-                              "not exist in the HybridState.");
-    }
-    if (std::norm(doubleValues.at(v) - d) > 1e-4) {
-      return true;
     }
   }
 

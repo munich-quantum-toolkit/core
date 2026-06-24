@@ -17,8 +17,8 @@
 #include <mlir/IR/Value.h>
 
 #include <algorithm>
+#include <complex>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <ostream>
@@ -436,8 +436,7 @@ public:
    *
    * @param qubitValues Pairs of the qubits that are being checked and the
    * values that they are being checked for.
-   * @param classicalIntegerValues The integer values to check.
-   * @param classicalDoubleValues The double values to check.
+   * @param classicalValues The classical values to check.
    * @throws invalid_argument if a value is given, but is not found in the
    * existing ones.
    * @returns True if the amplitude is always zero, false otherwise.
@@ -445,8 +444,7 @@ public:
   [[nodiscard("HybridState::hasAlwaysZeroAmplitude called but ignored")]] bool
   hasAlwaysZeroProbability(
       const llvm::DenseMap<Value, bool>& qubitValues,
-      const llvm::DenseMap<Value, int64_t>& classicalIntegerValues,
-      const llvm::DenseMap<Value, double>& classicalDoubleValues) const;
+      const llvm::DenseMap<Value, bool>& classicalValues) const;
 
   /**
    * @brief Returns a classical value that is equivalent to qubit.
@@ -472,10 +470,11 @@ public:
    *
    * This method receives a diagonal gate and checks, if only a global phase is
    * added to the circuit by it under the current configuration. If that is the
-   * case, the returned optional contains the global phase.
+   * case, the returned optional contains the global phase. Only works with
+   * 1-qubit gates without parameters.
    *
-   * @param diagonalOp The gate to be checked.
-   * @param targets An array of the Values of the target qubits.
+   * @param op The gate to be checked.
+   * @param target The Values of the target qubits.
    * @param ctrlsQuantum An array of the values of the ctrl qubits.
    * @param posCtrlsClassical An array of the values of the ctrl bits.
    * @param negCtrlsClassical An array of the values of the negative ctrl bits.
@@ -484,8 +483,8 @@ public:
    * @returns An optional containing the globally added value, if applicable.
    */
   [[nodiscard("UnionTable::globalPhaseThatIsAdded called but ignored")]]
-  std::optional<double>
-  globalPhaseThatIsAdded(Operation* diagonalOp, std::span<Value> targets,
+  std::optional<std::complex<double>>
+  globalPhaseThatIsAdded(Operation* op, Value target,
                          std::span<Value> ctrlsQuantum = {},
                          std::span<Value> posCtrlsClassical = {},
                          std::span<Value> negCtrlsClassical = {});
@@ -495,11 +494,11 @@ public:
    * given a controlled gate.
    *
    * This method checks which qubits and classical values are superfluous given
-   * a controlled gate. If the gate can never be executed, the target qubits are
-   * superfluous. Apart from that, all posCtrl (negCtrl) qubits/values that are
-   * always true (false) are superfluous.
+   * a controlled gate. If the gate can never be executed, the SuperfluousResult
+   * will indicate that the gate is completely superfluous. Apart from that, all
+   * posCtrl (negCtrl) qubits/values that are always true (false) are
+   * superfluous.
    *
-   * @param qubitTargets The values of the target qubits.
    * @param qubitCtrls The valuess of the positively controlling qubits.
    * @param posCtrlsClassical The values of the positively controlling classical
    * values.
@@ -509,8 +508,7 @@ public:
    * are superfluous and whether the whole operation is superfluous.
    */
   SuperfluousResult
-  getSuperfluousControls(std::span<Value> qubitTargets,
-                         std::span<Value> qubitCtrls,
+  getSuperfluousControls(std::span<Value> qubitCtrls,
                          std::span<Value> posCtrlsClassical = {},
                          std::span<Value> negCtrlsClassical = {});
 
@@ -525,16 +523,17 @@ public:
    * values.
    * @returns Whether there are satisfiable combinations or not.
    */
-  bool areThereSatisfiableCombinations(std::span<Value> qubitCtrls,
-                                       std::span<Value> posCtrlsClassical = {},
-                                       std::span<Value> negCtrlsClassical = {});
+  bool areThereSatisfiableCombinations(
+      std::span<Value> qubitCtrls, std::span<Value> posCtrlsClassical = {},
+      std::span<Value> negCtrlsClassical = {}) const;
 
   /**
-   * @brief Returns the qubits and classical values that imply the given qubit.
+   * @brief Returns whether the given qubits and classical values that imply the
+   * given qubit.
    *
    * This method checks whether in the given list are qubits or classical values
-   * that imply (are antecedents of) the given qubit. I.e. all qubits and
-   * classical values are returned for which holds: a -> q.
+   * that imply (are antecedents of) the given qubit. I.e. if there are
+   * qubits/values a for which holds: a -> q.
    *
    * @param q The qubit for which is checked whether it is implied.
    * @param qubits The qubits for which are checked if they imply q.
@@ -544,10 +543,9 @@ public:
    * @returns A pair of 1. qubits and 2. classical values that are antecedents
    * of q.
    */
-  static std::pair<std::set<Value>, std::set<Value>>
-  getAntecedentsOfQubit(Value q, std::span<Value> qubits,
-                        std::span<Value> classicalPositive,
-                        std::span<Value> classicalNegative);
+  bool isQubitImplied(Value q, std::span<Value> qubits,
+                      std::span<Value> classicalPositive,
+                      std::span<Value> classicalNegative) const;
 };
 } // namespace mlir::qco
 

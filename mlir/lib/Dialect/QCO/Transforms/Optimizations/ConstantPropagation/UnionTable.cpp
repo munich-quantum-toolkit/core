@@ -17,6 +17,8 @@
 
 #include <mlir/IR/Operation.h>
 
+#include <complex>
+#include <optional>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -25,8 +27,8 @@
 
 namespace mlir::qco {
 
-UnionTable::UnionTable(std::size_t maxNonzeroAmplitudes,
-                       std::size_t maximumHybridEntries)
+UnionTable::UnionTable(const std::size_t maxNonzeroAmplitudes,
+                       const std::size_t maximumHybridEntries)
     : maxNonzeroAmplitudes(maxNonzeroAmplitudes),
       maximumHybridEntries(maximumHybridEntries) {}
 
@@ -304,41 +306,31 @@ bool UnionTable::isClassicalValueAlwaysFalse(const Value c) const {
 
 bool UnionTable::hasAlwaysZeroProbability(
     const llvm::DenseMap<Value, bool>& qubitValues,
-    const llvm::DenseMap<Value, int64_t>& classicalIntegerValues,
-    const llvm::DenseMap<Value, double>& classicalDoubleValues) const {
+    const llvm::DenseMap<Value, bool>& classicalValues) const {
   std::set<UnionTableEntry> participatingEntries;
   for (auto& [qV, _] : qubitValues) {
     participatingEntries.insert(*valuesToEntries.at(qV));
   }
-  for (auto& [iV, _] : classicalIntegerValues) {
-    participatingEntries.insert(*valuesToEntries.at(iV));
-  }
-  for (auto& [dV, _] : classicalDoubleValues) {
-    participatingEntries.insert(*valuesToEntries.at(dV));
+  for (auto& [cV, _] : classicalValues) {
+    participatingEntries.insert(*valuesToEntries.at(cV));
   }
   for (const auto& ute : participatingEntries) {
     std::unordered_map<unsigned int, bool> qubitValuesThisEntry;
-    llvm::DenseMap<Value, int64_t> intValuesThisEntry;
-    llvm::DenseMap<Value, double> doubleValuesThisEntry;
+    llvm::DenseMap<Value, bool> classicalValuesThisEntry;
     for (const auto& [qV, qBool] : qubitValues) {
       if (ute.participatingQubits.contains(qV)) {
         qubitValuesThisEntry[qubitsToGlobalIndices.at(qV)] = qBool;
       }
     }
-    for (const auto& [iV, number] : classicalIntegerValues) {
-      if (ute.participatingClassicalValues.contains(iV)) {
-        intValuesThisEntry[iV] = number;
-      }
-    }
-    for (const auto& [dV, number] : classicalDoubleValues) {
-      if (ute.participatingClassicalValues.contains(dV)) {
-        doubleValuesThisEntry[dV] = number;
+    for (const auto& [v, vBool] : classicalValues) {
+      if (ute.participatingClassicalValues.contains(v)) {
+        classicalValuesThisEntry[v] = vBool;
       }
     }
     bool oneEntryIsNonzero = false;
     for (const auto& hs : ute.states) {
-      if (!hs.hasAlwaysZeroProbability(qubitValuesThisEntry, intValuesThisEntry,
-                                       doubleValuesThisEntry)) {
+      if (!hs.hasAlwaysZeroProbability(qubitValuesThisEntry,
+                                       classicalValuesThisEntry)) {
         oneEntryIsNonzero = true;
         break;
       }
@@ -351,7 +343,7 @@ bool UnionTable::hasAlwaysZeroProbability(
 }
 
 llvm::DenseMap<Value, bool>
-UnionTable::getValueThatIsEquivalentToQubit(Value qubit) const {
+UnionTable::getValueThatIsEquivalentToQubit(const Value qubit) const {
   const auto uteOfQubit = valuesToEntries.at(qubit);
   const auto indexOfQubit = qubitsToGlobalIndices.at(qubit);
   llvm::DenseMap<Value, bool> result;
@@ -393,23 +385,205 @@ UnionTable::getValueThatIsEquivalentToQubit(Value qubit) const {
   return result;
 }
 
-std::optional<double> UnionTable::globalPhaseThatIsAdded(
-    Operation* diagonalOp, std::span<Value> targets,
-    std::span<Value> ctrlsQuantum, std::span<Value> posCtrlsClassical,
-    std::span<Value> negCtrlsClassical) {}
+std::optional<std::complex<double>>
+UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
+                                   const std::span<Value> ctrlsQuantum,
+                                   const std::span<Value> posCtrlsClassical,
+                                   const std::span<Value> negCtrlsClassical) {
+  // Diagonal gates w/o parameters: IdOp, ZOp, SOp, SdgOp, TOp, TdgOp
+  if (isa<IdOp>(op)) {
+    return std::optional(std::complex<double>(1.0, 0.0));
+  }
+  if (!(isa<ZOp>(op) || isa<SOp>(op) || isa<SdgOp>(op) || isa<TOp>(op) ||
+        isa<TdgOp>(op))) {
+    return std::optional<std::complex<double>>();
+  }
+  const auto targetIndex = qubitsToGlobalIndices.at(target);
+  const auto targetUte = valuesToEntries.at(target);
+  bool alwaysOne = true;
+  bool alwaysZero = true;
 
-SuperfluousResult UnionTable::getSuperfluousControls(
-    std::span<Value> qubitTargets, std::span<Value> qubitCtrls,
-    std::span<Value> posCtrlsClassical, std::span<Value> negCtrlsClassical) {}
+  for (const auto& hs : targetUte->states) {
+    alwaysOne &= hs.isQubitAlwaysOne(targetIndex);
+    alwaysZero &= hs.isQubitAlwaysZero(targetIndex);
+    if (!alwaysOne && !alwaysZero) {
+      break;
+    }
+  }
+
+  if (alwaysZero) {
+    return std::optional(std::complex<double>(1.0, 0.0));
+  }
+
+  const auto participatingEntries = collectParticipatingEntries(
+      {}, ctrlsQuantum, posCtrlsClassical, negCtrlsClassical, {});
+
+  // Check if state |11...11> can be reached
+  bool highestStateReachable = false;
+  bool highestStateAlwaysReached = alwaysOne;
+  for (const auto& ute : participatingEntries) {
+    std::unordered_map<unsigned int, bool> qubitCtrlThisEntry;
+    llvm::DenseMap<Value, bool> classicalCtrlThisEntry;
+    for (const auto q : ctrlsQuantum) {
+      if (ute.participatingQubits.contains((q))) {
+        qubitCtrlThisEntry[qubitsToGlobalIndices.at(q)] = true;
+      }
+    }
+    for (const auto c : posCtrlsClassical) {
+      if (ute.participatingClassicalValues.contains((c))) {
+        classicalCtrlThisEntry[c] = true;
+      }
+    }
+    for (const auto c : negCtrlsClassical) {
+      if (ute.participatingClassicalValues.contains((c))) {
+        classicalCtrlThisEntry[c] = false;
+      }
+    }
+    for (const auto& hs : ute.states) {
+      const auto ctrlsZeroProbability = hs.hasAlwaysZeroProbability(
+          qubitCtrlThisEntry, classicalCtrlThisEntry);
+      highestStateReachable |= ctrlsZeroProbability;
+      highestStateAlwaysReached &= ctrlsZeroProbability;
+    }
+    if (highestStateReachable && !highestStateAlwaysReached) {
+      return std::optional<std::complex<double>>();
+    }
+  }
+  if (!highestStateReachable) {
+    return std::optional(std::complex<double>(1.0, 0.0));
+  }
+  if (!highestStateAlwaysReached) {
+    return std::optional<std::complex<double>>();
+  }
+
+  // Only highest state reachable, return respective phase
+  if (isa<ZOp>(op)) {
+    return std::optional(std::complex<double>(-1.0, 0.0));
+  }
+  if (isa<SOp>(op)) {
+    return std::optional(std::complex<double>(0.0, 1.0));
+  }
+  if (isa<SdgOp>(op)) {
+    return std::optional(std::complex<double>(0.0, -1.0));
+  }
+  constexpr auto inv_sqrt2 = 1.0 / std::numbers::sqrt2;
+  if (isa<TOp>(op)) {
+    return std::optional(std::complex<double>(inv_sqrt2, inv_sqrt2));
+  }
+  // Tdg Op
+  return std::optional(std::complex<double>(inv_sqrt2, -inv_sqrt2));
+}
+
+SuperfluousResult
+UnionTable::getSuperfluousControls(const std::span<Value> qubitCtrls,
+                                   const std::span<Value> posCtrlsClassical,
+                                   const std::span<Value> negCtrlsClassical) {
+  SuperfluousResult res;
+  for (const auto& qCtrl : qubitCtrls) {
+    const auto qIndex = qubitsToGlobalIndices.at(qCtrl);
+    bool alwaysOne = true;
+    for (const auto& hs : valuesToEntries.at(qCtrl)->states) {
+      if (!alwaysOne) {
+        break;
+      }
+      if (hs.isQubitAlwaysZero(qIndex)) {
+        res.completelySuperfluous = true;
+        return res;
+      }
+      alwaysOne &= hs.isQubitAlwaysOne(qIndex);
+    }
+    if (alwaysOne) {
+      res.superfluousQubits.insert(qCtrl);
+    }
+  }
+  for (const auto& posCtrl : posCtrlsClassical) {
+    bool alwaysTrue = true;
+    bool alwaysFalse = true;
+    for (const auto& hs : valuesToEntries.at(posCtrl)->states) {
+      if (!alwaysTrue) {
+        break;
+      }
+      const bool valueTrue = hs.isValueTrue(posCtrl);
+      alwaysTrue &= valueTrue;
+      alwaysFalse &= !valueTrue;
+    }
+    if (alwaysFalse) {
+      res.completelySuperfluous = true;
+      return res;
+    }
+    if (alwaysTrue) {
+      res.superfluousClassicalValues.insert(posCtrl);
+    }
+  }
+  for (const auto& negCtrl : negCtrlsClassical) {
+    bool alwaysTrue = true;
+    bool alwaysFalse = true;
+    for (const auto& hs : valuesToEntries.at(negCtrl)->states) {
+      if (!alwaysTrue) {
+        break;
+      }
+      const bool valueTrue = hs.isValueTrue(negCtrl);
+      alwaysTrue &= valueTrue;
+      alwaysFalse &= !valueTrue;
+    }
+    if (alwaysTrue) {
+      res.completelySuperfluous = true;
+      return res;
+    }
+    if (alwaysFalse) {
+      res.superfluousClassicalValues.insert(negCtrl);
+    }
+  }
+  return res;
+}
 
 bool UnionTable::areThereSatisfiableCombinations(
-    std::span<Value> qubitCtrls, std::span<Value> posCtrlsClassical,
-    std::span<Value> negCtrlsClassical) {}
-std::pair<std::set<Value>, std::set<Value>>
+    const std::span<Value> qubitCtrls, const std::span<Value> posCtrlsClassical,
+    const std::span<Value> negCtrlsClassical) const {
+  llvm::DenseMap<Value, bool> qubitValues;
+  llvm::DenseMap<Value, bool> classicalValues;
+  for (const auto& q : qubitCtrls) {
+    qubitValues[q] = true;
+  }
+  for (const auto& v : posCtrlsClassical) {
+    classicalValues[v] = true;
+  }
+  for (const auto& v : negCtrlsClassical) {
+    classicalValues[v] = false;
+  }
+  return !hasAlwaysZeroProbability(qubitValues, classicalValues);
+}
 
-UnionTable::getAntecedentsOfQubit(Value q, std::span<Value> qubits,
-                                  std::span<Value> classicalPositive,
-                                  std::span<Value> classicalNegative) {}
+bool UnionTable::isQubitImplied(
+    const Value q, const std::span<Value> qubits,
+    const std::span<Value> classicalPositive,
+    const std::span<Value> classicalNegative) const {
+  llvm::DenseMap<Value, bool> qMap;
+  llvm::DenseMap<Value, bool> cPMap;
+  qMap[q] = false;
+  for (const auto& qV : qubits) {
+    qMap[qV] = true;
+    if (hasAlwaysZeroProbability(qMap, cPMap)) {
+      return true;
+    }
+    qMap.erase(qV);
+  }
+  for (const auto& cP : classicalPositive) {
+    cPMap[cP] = true;
+    if (hasAlwaysZeroProbability(qMap, cPMap)) {
+      return true;
+    }
+    cPMap.erase(cP);
+  }
+  for (const auto& cP : classicalNegative) {
+    cPMap[cP] = false;
+    if (hasAlwaysZeroProbability(qMap, cPMap)) {
+      return true;
+    }
+    cPMap.erase(cP);
+  }
+  return false;
+}
 
 } // namespace mlir::qco
 
