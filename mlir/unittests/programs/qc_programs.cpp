@@ -1853,8 +1853,7 @@ void invPowEvenH(QCProgramBuilder& b) {
 void invPowEvenSwap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange args) {
-    b.pow(2.0, {args[0], args[1]},
-          [&](ValueRange p) { b.swap(p[0], p[1]); });
+    b.pow(2.0, {args[0], args[1]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
   });
 }
 

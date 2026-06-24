@@ -1293,7 +1293,6 @@ void negPowInvIswapRef(QCOProgramBuilder& b);
 /// so the pow survives canonicalization and reaches ConvertQCOPowOp.
 void ctrlPowSx(QCOProgramBuilder& b);
 
-
 // --- IfOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
