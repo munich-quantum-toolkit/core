@@ -26,7 +26,7 @@ struct RemoveThreeBackToBackTripleOps final : OpRewritePattern<TripleOp> {
   LogicalResult matchAndRewrite(TripleOp op,
                                 PatternRewriter& rewriter) const override {
     // TODO: Task 3
-    llvm::reportFatalInternalError("Not implemented yet");
+    return failure();
   }
 };
 
