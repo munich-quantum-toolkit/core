@@ -948,22 +948,25 @@ public:
    * @brief Apply a power operation.
    *
    * @param exponent The exponent to raise the operation to
+   * @param qubits The qubits the body operates on (aliased into the body via
+   * block arguments)
    * @param body Function that builds the body containing the operation to
    * exponentiate
    * @return Reference to this builder for method chaining
    *
    * @par Example:
    * ```c++
-   * builder.pow(2.0, [&] { builder.s(q0); });
+   * builder.pow(2.0, q0, [&](ValueRange qubits) { builder.s(qubits[0]); });
    * ```
    * ```mlir
-   * qc.pow(2.000000e+00) {
-   *   qc.s %q0 : !qc.qubit
-   * }
+   * qc.pow(2.000000e+00) (%a0 = %q0) {
+   *   qc.s %a0 : !qc.qubit
+   * } : !qc.qubit
    * ```
    */
   QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
-                        const function_ref<void()>& body);
+                        ValueRange qubits,
+                        const function_ref<void(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

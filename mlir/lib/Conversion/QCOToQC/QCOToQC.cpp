@@ -708,9 +708,9 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
  * ```
  * is converted to
  * ```mlir
- * qc.pow(2.000000e+00) {
- *   qc.s %q0 : !qc.qubit
- * }
+ * qc.pow(2.000000e+00) (%a0 = %q0) {
+ *   qc.s %a0 : !qc.qubit
+ * } : !qc.qubit
  * ```
  */
 struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
@@ -719,33 +719,14 @@ struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
   LogicalResult
   matchAndRewrite(qco::PowOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Create qc.pow operation with exponent
-    auto qcOp = qc::PowOp::create(rewriter, op.getLoc(), adaptor.getExponent());
+    // Create qc.pow operation with exponent and qubit operands
+    auto qcOp = qc::PowOp::create(rewriter, op.getLoc(), adaptor.getExponent(),
+                                  adaptor.getQubitsIn());
 
-    // Clone body region from QCO to QC
-    auto& dstRegion = qcOp.getRegion();
-    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
-
-    auto& entryBlock = dstRegion.front();
-    const auto numArgs = entryBlock.getNumArguments();
-    if (adaptor.getQubitsIn().size() != numArgs) {
-      return op.emitOpError() << "qco.pow: entry block args (" << numArgs
-                              << ") must match number of target operands ("
-                              << adaptor.getQubitsIn().size() << ")";
+    if (failed(moveRegion(op.getRegion(), qcOp.getRegion(), rewriter,
+                          getTypeConverter()))) {
+      return failure();
     }
-
-    // Remove all block arguments in the cloned region
-    rewriter.modifyOpInPlace(qcOp, [&] {
-      // 1. Replace uses (Must be done BEFORE erasing)
-      for (auto i = 0UL; i < numArgs; ++i) {
-        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getQubitsIn()[i]);
-      }
-
-      // 2. Erase all block arguments
-      if (numArgs > 0) {
-        entryBlock.eraseArguments(0, numArgs);
-      }
-    });
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getQubitsIn());

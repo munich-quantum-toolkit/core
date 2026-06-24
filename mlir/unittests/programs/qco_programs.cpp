@@ -2576,6 +2576,17 @@ void invTwo(QCOProgramBuilder& b) {
   });
 }
 
+void powTwo(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow({q[0], q[1]}, 2.0, [&](ValueRange qubits) {
+    auto i0 = qubits[0];
+    auto i1 = qubits[1];
+    i0 = b.x(i0);
+    std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+    return SmallVector{i0, i1};
+  });
+}
+
 void invCtrlTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {

@@ -1102,8 +1102,14 @@ void negPowInvIswapRef(QCProgramBuilder& b);
 /// so the pow survives canonicalization and reaches ConvertQCPowOp.
 void ctrlPowSx(QCProgramBuilder& b);
 
-/// Reference for ctrlPowSx: identical circuit (pow is blocked inside ctrl).
-void ctrlPowSxRef(QCProgramBuilder& b);
+/// pow(2) with a two-unitary body (x; rxx) — a multi-unitary pow body (newly
+/// legal). The optimizer leaves such bodies untouched; used to check
+/// verification and the QC↔QCO round-trip.
+void powTwo(QCProgramBuilder& b);
+
+/// pow(0) with a two-unitary body (x; rxx) — folds to identity (erased at top
+/// level).
+void pow0Two(QCProgramBuilder& b);
 
 // --- IfOp ----------------------------------------------------------------- //
 

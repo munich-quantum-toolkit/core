@@ -144,6 +144,8 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(rx)},
                     QCTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
                                MQT_NAMED_BUILDER(emptyQC)},
+                    QCTestCase{"Pow0Two", MQT_NAMED_BUILDER(pow0Two),
+                               MQT_NAMED_BUILDER(emptyQC)},
                     QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
                                MQT_NAMED_BUILDER(powSingleExponent)},
                     QCTestCase{"NegPowRx", MQT_NAMED_BUILDER(negPowRx),
@@ -206,6 +208,28 @@ TEST_F(QCTest, CtrlPowSxNoExpansion) {
   program->walk([&](PowOp) { ++powCount; });
   EXPECT_EQ(ctrlCount, 1) << "CtrlOp must survive the pipeline";
   EXPECT_EQ(powCount, 1) << "PowOp inside ctrl must not be expanded";
+}
+
+/// A multi-unitary pow body (pow(2){x; rxx}) is now legal and the optimizer
+/// leaves it untouched. Verify the pow and both body unitaries survive the
+/// cleanup pipeline. (Round-trip coverage lives in the QC↔QCO suites via
+/// powTwo.)
+TEST_F(QCTest, PowTwoSurvives) {
+  auto program =
+      QCProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(powTwo).fn);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+  EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  int powCount = 0;
+  size_t bodyUnitaries = 0;
+  program->walk([&](PowOp op) {
+    ++powCount;
+    bodyUnitaries = op.getNumBodyUnitaries();
+  });
+  EXPECT_EQ(powCount, 1) << "multi-unitary PowOp must survive the pipeline";
+  EXPECT_EQ(bodyUnitaries, 2U) << "both body unitaries must be preserved";
 }
 
 /// \name QC/Modifiers/InvOp.cpp

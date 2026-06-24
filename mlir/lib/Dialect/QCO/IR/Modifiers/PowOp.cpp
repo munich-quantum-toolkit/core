@@ -14,10 +14,12 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -198,7 +200,12 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto innerPow = dyn_cast<PowOp>(op.getBodyUnitary().getOperation());
+    auto bodyUnitary =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!bodyUnitary) {
+      return failure();
+    }
+    auto innerPow = dyn_cast<PowOp>(bodyUnitary.getOperation());
     if (!innerPow) {
       return failure();
     }
@@ -222,7 +229,11 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto bodyUnitary = op.getBodyUnitary();
+    auto bodyUnitary =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!bodyUnitary) {
+      return failure();
+    }
     auto innerCtrlOp = dyn_cast<CtrlOp>(bodyUnitary.getOperation());
     if (!innerCtrlOp) {
       return failure();
@@ -272,7 +283,12 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto* innerOp = op.getBodyUnitary().getOperation();
+    auto bodyUnitary =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!bodyUnitary) {
+      return failure();
+    }
+    auto* innerOp = bodyUnitary.getOperation();
     const double r = op.getExponentValue();
     auto loc = op.getLoc();
     const bool insideModifier = isa<CtrlOp, InvOp, PowOp>(op->getParentOp());
@@ -552,13 +568,12 @@ double PowOp::getExponentValue() {
   return attr.getValueAsDouble();
 }
 
-UnitaryOpInterface PowOp::getBodyUnitary() {
-  // In principle, the body region should only contain exactly two operations,
-  // the actual unitary operation and a yield operation. However, the region may
-  // also contain constants and arithmetic operations, e.g., created as part of
-  // canonicalization. Thus, the only safe way to access the unitary operation
-  // is to get the second operation from the back of the region.
-  return cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+size_t PowOp::getNumBodyUnitaries() {
+  return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
+}
+
+UnitaryOpInterface PowOp::getBodyUnitary(const size_t i) {
+  return utils::getBodyUnitary<UnitaryOpInterface>(*getBody(), i);
 }
 
 Value PowOp::getInputQubit(const size_t i) {
@@ -625,8 +640,18 @@ LogicalResult PowOp::verify() {
   }
 
   auto& block = *getBody();
-  if (block.getOperations().size() < 2) {
-    return emitOpError("body region must have at least two operations");
+  // The body may contain an arbitrary number of unitary (and classical) ops;
+  // only non-unitary quantum operations are disallowed.
+  if (llvm::any_of(block, [](Operation& op) {
+        return isa<AllocOp, SinkOp, MeasureOp, ResetOp, qtensor::ExtractOp,
+                   qtensor::InsertOp>(op);
+      })) {
+    return emitOpError("body must not contain non-unitary quantum operations "
+                       "or modify a quantum register");
+  }
+  if (getNumBodyUnitaries() < 1) {
+    return emitOpError(
+        "body region must contain at least one unitary operation");
   }
   const auto numTargets = getNumTargets();
   if (block.getArguments().size() != numTargets) {
@@ -649,36 +674,11 @@ LogicalResult PowOp::verify() {
     return emitOpError("yield operation must yield ")
            << numTargets << " values, but found " << numYieldOperands;
   }
-  auto iter = ++block.rbegin();
-  if (!isa<UnitaryOpInterface>(*iter)) {
-    return emitOpError(
-        "second to last operation in body region must be a unitary operation");
-  }
-  for (auto it = ++iter; it != block.rend(); ++it) {
-    if (isa<UnitaryOpInterface>(*it)) {
-      return emitOpError("body region may only contain a single unitary op");
-    }
-  }
 
-  auto bodyUnitary = getBodyUnitary();
-  if (bodyUnitary.getNumQubits() != numTargets) {
-    return emitOpError("body unitary must operate on exactly ")
-           << numTargets << " target qubits, but found "
-           << bodyUnitary.getNumQubits();
-  }
-  const auto numQubits = bodyUnitary.getNumQubits();
-  for (size_t i = 0; i < numQubits; i++) {
-    if (bodyUnitary.getInputQubit(i) != block.getArgument(i)) {
-      return emitOpError("body unitary must use target alias block argument ")
-             << i << " (and not the original target operand)";
-    }
-  }
-
-  // Also require yield to forward the unitary's outputs in-order.
-  for (size_t i = 0; i < numTargets; ++i) {
-    if (block.back().getOperand(i) != bodyUnitary.getOutputQubit(i)) {
-      return emitOpError("yield operand ")
-             << i << " must be the body unitary output qubit " << i;
+  SmallPtrSet<Value, 4> uniqueQubitsIn;
+  for (const auto& target : getQubitsIn()) {
+    if (!uniqueQubitsIn.insert(target).second) {
+      return emitOpError("duplicate qubit found");
     }
   }
 

@@ -145,10 +145,13 @@ INSTANTIATE_TEST_SUITE_P(
 
 /// \name QCToQCO/Modifiers/PowOp.cpp
 /// @{
-INSTANTIATE_TEST_SUITE_P(QCPowOpTest, QCToQCOTest,
-                         testing::Values(QCToQCOTestCase{
-                             "CtrlPowSx", MQT_NAMED_BUILDER(qc::ctrlPowSx),
-                             MQT_NAMED_BUILDER(qco::ctrlPowSx)}));
+INSTANTIATE_TEST_SUITE_P(
+    QCPowOpTest, QCToQCOTest,
+    testing::Values(QCToQCOTestCase{"CtrlPowSx",
+                                    MQT_NAMED_BUILDER(qc::ctrlPowSx),
+                                    MQT_NAMED_BUILDER(qco::ctrlPowSx)},
+                    QCToQCOTestCase{"PowTwo", MQT_NAMED_BUILDER(qc::powTwo),
+                                    MQT_NAMED_BUILDER(qco::powTwo)}));
 /// @}
 
 /// \name QCToQCO/Modifiers/CtrlOp.cpp

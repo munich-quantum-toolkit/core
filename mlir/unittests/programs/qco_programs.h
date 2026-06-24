@@ -1208,6 +1208,9 @@ void invCtrlSandwich(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to two gates.
 void invTwo(QCOProgramBuilder& b);
 
+/// Creates a circuit with a power modifier applied to two gates.
+void powTwo(QCOProgramBuilder& b);
+
 /// Creates a circuit with an inverse modifier applied to a control modifier
 /// applied to two gates.
 void invCtrlTwo(QCOProgramBuilder& b);

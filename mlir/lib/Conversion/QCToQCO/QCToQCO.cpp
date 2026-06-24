@@ -1177,9 +1177,9 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
  *
  * @par Example:
  * ```mlir
- * qc.pow(2.000000e+00) {
- *   qc.s %q0 : !qc.qubit
- * }
+ * qc.pow(2.000000e+00) (%a0 = %q0) {
+ *   qc.s %a0 : !qc.qubit
+ * } : !qc.qubit
  * ```
  * is converted to
  * ```mlir
@@ -1197,7 +1197,6 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto numTargets = op.getNumTargets();
     const auto qcTargets = op.getTargets();
     auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
 
@@ -1208,21 +1207,15 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
 
     assignMappedQubits(state, operation, qcTargets, qcoOp.getQubitsOut());
 
-    // Move body region from QC to QCO (QC PowOp has no block args).
+    auto qcArgs = op.getRegion().front().getArguments();
+
+    // Inline region and convert the block signature to QCO types.
     if (failed(moveRegion(op.getRegion(), qcoOp.getRegion(), rewriter,
                           getTypeConverter()))) {
       return failure();
     }
 
-    // QC PowOp has no block arguments, but QCO PowOp needs them for
-    // qubit threading. Add them to the entry block.
-    auto& entryBlock = qcoOp.getRegion().front();
-    auto qubitType = qco::QubitType::get(rewriter.getContext());
-    SmallVector<Value> blockArgs;
-    for (size_t i = 0; i < numTargets; ++i) {
-      blockArgs.push_back(entryBlock.addArgument(qubitType, op.getLoc()));
-    }
-    pushModifierFrame(state, qcTargets, blockArgs);
+    pushModifierFrame(state, qcArgs, qcoOp.getRegion().front().getArguments());
 
     rewriter.eraseOp(op);
     return success();

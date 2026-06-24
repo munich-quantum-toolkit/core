@@ -1040,39 +1040,48 @@ def PowOp : QCOp<"pow",
           - r = 0: identity (no-op).
           - r < 0: equivalent to inv @ pow(-r) @ g.
 
+          The body region may contain an arbitrary amount of unitary and classical operations.
+          Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+
           Example:
           ```mlir
-          qc.pow(2.000000e+00) {
-            qc.s %q0 : !qc.qubit
-          }
+          qc.pow(2.000000e+00) (%a0 = %q0) {
+            qc.s %a0 : !qc.qubit
+          } : !qc.qubit
           ```
       }];
 
-  let arguments = (ins F64:$exponent);
+  let arguments = (ins F64:$exponent,
+      Arg<Variadic<QubitType>,
+          "the qubits involved in the operation", [MemRead, MemWrite]>:$qubits);
   let regions = (region SizedRegion<1>:$region);
-  let assemblyFormat = "`(` $exponent `)` $region attr-dict";
+  let assemblyFormat = [{
+        `(` $exponent `)`
+        custom<TargetAliasing>($region, $qubits)
+        attr-dict ( `:` type($qubits)^ )?
+    }];
 
   let extraClassDeclaration = [{
           size_t getNumBodyUnitaries();
           [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
-          size_t getNumQubits() { return getBodyUnitary(0).getNumQubits(); }
-          size_t getNumTargets() { return getBodyUnitary(0).getNumTargets(); }
-          size_t getNumControls() { return getBodyUnitary(0).getNumControls(); }
-          OperandRange getQubits() { return getBodyUnitary(0).getQubits(); }
-          Value getQubit(size_t i) { return getBodyUnitary(0).getQubit(i); }
-          Value getTarget(size_t i) { return getBodyUnitary(0).getTarget(i); }
-          OperandRange getTargets() { return getBodyUnitary(0).getTargets(); }
-          Value getControl(size_t i) { return getBodyUnitary(0).getControl(i); }
-          OperandRange getControls() { return getBodyUnitary(0).getControls(); }
-          size_t getNumParams() { return getBodyUnitary(0).getNumParams(); }
-          Value getParameter(size_t i) { return getBodyUnitary(0).getParameter(i); }
-          OperandRange getParameters() { return getBodyUnitary(0).getParameters(); }
+          size_t getNumQubits() { return getNumTargets(); }
+          size_t getNumTargets() { return getQubits().size(); }
+          size_t getNumControls() { return 0; }
+          Value getQubit(size_t i) { return getQubits()[i]; }
+          Value getTarget(size_t i) { return getQubits()[i]; }
+          OperandRange getTargets() { return getQubits(); }
+          Value getControl(size_t i) { llvm::reportFatalUsageError("PowOp does not have controls"); }
+          OperandRange getControls() { return {nullptr, 0}; }
+          size_t getNumParams() { return 0; }
+          Value getParameter(size_t i) { llvm::reportFatalUsageError("PowOp does not have parameters"); }
+          OperandRange getParameters() { return {nullptr, 0}; }
           double getExponentValue();
           static StringRef getBaseSymbol() { return "pow"; }
       }];
 
   let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
-      "const llvm::function_ref<void()>&":$bodyBuilder)>];
+      "ValueRange":$qubits,
+      "const llvm::function_ref<void(mlir::ValueRange)>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

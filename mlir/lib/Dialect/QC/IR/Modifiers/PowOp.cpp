@@ -18,6 +18,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
@@ -131,7 +132,7 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
     if (!inner) {
       return failure();
     }
-    utils::inlineModifierBody(op, *op.getBody(), {}, rewriter);
+    utils::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
     return success();
   }
 };
@@ -144,15 +145,16 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
     if (std::abs(op.getExponentValue()) > TOLERANCE) {
       return failure();
     }
+    // Top-level pow(0) is the identity and can simply be removed. Inside a
+    // modifier the body must stay non-empty, so emit one IdOp per qubit
+    // (operands) before erasing.
     if (isa<CtrlOp, InvOp, PowOp>(op->getParentOp())) {
-      if (op.getNumTargets() == 1) {
-        rewriter.replaceOpWithNewOp<IdOp>(op, op.getTarget(0));
-      } else {
-        return failure();
+      rewriter.setInsertionPoint(op);
+      for (auto qubit : op.getQubits()) {
+        IdOp::create(rewriter, op.getLoc(), qubit);
       }
-    } else {
-      rewriter.eraseOp(op);
     }
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -172,14 +174,18 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
     if (exp >= 0.0 || !utils::isIntegerExponent(-exp)) {
       return failure();
     }
-    auto qubits = llvm::to_vector(inner.getQubits());
-    rewriter.replaceOpWithNewOp<PowOp>(op, -exp, [&] {
-      InvOp::create(rewriter, op.getLoc(), qubits, [&](ValueRange) {
-        auto* invBody = rewriter.getInsertionBlock();
-        rewriter.inlineBlockBefore(op.getBody(), invBody, invBody->begin());
-        rewriter.eraseOp(&invBody->back()); // erase the inlined YieldOp
-      });
-    });
+    auto qubits = llvm::to_vector(op.getQubits());
+    rewriter.replaceOpWithNewOp<PowOp>(
+        op, -exp, qubits, [&](ValueRange powArgs) {
+          InvOp::create(rewriter, op.getLoc(), powArgs, [&](ValueRange) {
+            auto* invBody = rewriter.getInsertionBlock();
+            // Inline the old pow body, remapping its block args to the new
+            // inv body's block args.
+            rewriter.inlineBlockBefore(op.getBody(), invBody, invBody->begin(),
+                                       invBody->getArguments());
+            rewriter.eraseOp(&invBody->back()); // erase the inlined YieldOp
+          });
+        });
     return success();
   }
 };
@@ -197,11 +203,22 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     if (!innerPow) {
       return failure();
     }
+    // The inner pow's operands alias the outer pow's block args, possibly in a
+    // different order / subset. Translate them back to the outer pow's operands
+    // so the merged pow's footprint matches the inner pow positionally.
+    SmallVector<Value> qubits;
+    for (Value v : innerPow.getQubits()) {
+      auto arg = cast<BlockArgument>(v);
+      assert(arg.getOwner() == op.getBody() && "inner qubit not an outer arg");
+      qubits.push_back(op.getQubits()[arg.getArgNumber()]);
+    }
     rewriter.replaceOpWithNewOp<PowOp>(
-        op, op.getExponentValue() * innerPow.getExponentValue(), [&] {
+        op, op.getExponentValue() * innerPow.getExponentValue(), qubits,
+        [&](ValueRange powArgs) {
           auto* newBody = rewriter.getInsertionBlock();
+          // Inner pow body args now match the new pow's args positionally.
           rewriter.inlineBlockBefore(innerPow.getBody(), newBody,
-                                     newBody->begin());
+                                     newBody->begin(), powArgs);
           rewriter.eraseOp(&newBody->back()); // erase the inlined YieldOp
         });
     return success();
@@ -221,18 +238,36 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
     if (!innerCtrl) {
       return failure();
     }
-    auto controls = llvm::to_vector(innerCtrl.getControls());
-    auto targets = llvm::to_vector(innerCtrl.getTargets());
+    // The inner ctrl's operands alias the outer pow's block args; translate
+    // them back to the outer pow's operands so the hoisted ctrl is valid in
+    // the pow's parent scope.
+    auto translate = [&](Value v) -> Value {
+      auto arg = cast<BlockArgument>(v);
+      assert(arg.getOwner() == op.getBody() && "ctrl qubit not an outer arg");
+      return op.getQubits()[arg.getArgNumber()];
+    };
+    SmallVector<Value> controls;
+    SmallVector<Value> targets;
+    for (Value c : innerCtrl.getControls()) {
+      controls.push_back(translate(c));
+    }
+    for (Value t : innerCtrl.getTargets()) {
+      targets.push_back(translate(t));
+    }
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange ctrlArgs) {
-          PowOp::create(rewriter, op.getLoc(), op.getExponentValue(), [&] {
-            auto* powBody = rewriter.getInsertionBlock();
-            // Inline the old CtrlOp's body, remapping its block arguments to
-            // the new CtrlOp's block arguments.
-            rewriter.inlineBlockBefore(innerCtrl.getBody(), powBody,
-                                       powBody->begin(), ctrlArgs);
-            rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
-          });
+          // ctrlArgs are the new ctrl's target block args; the pow wraps the
+          // body gate acting on those targets.
+          PowOp::create(
+              rewriter, op.getLoc(), op.getExponentValue(), ctrlArgs,
+              [&](ValueRange powArgs) {
+                auto* powBody = rewriter.getInsertionBlock();
+                // Inline the old CtrlOp's body, remapping its (target) block
+                // args to the new pow's block args.
+                rewriter.inlineBlockBefore(innerCtrl.getBody(), powBody,
+                                           powBody->begin(), powArgs);
+                rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
+              });
         });
     return success();
   }
@@ -463,7 +498,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         })
         // --- Hermitian gates (integer exponent): even => erase/id, odd => gate
         // --- pow(n) { h } => id (n even) | h (n odd)
-        .Case<HOp>([&](auto gate) {
+        .Case<HOp>([&](auto) {
           if (!utils::isIntegerExponent(r)) {
             return failure();
           }
@@ -474,13 +509,17 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               rewriter.eraseOp(op);
             }
           } else {
-            rewriter.moveOpBefore(gate, op);
-            rewriter.eraseOp(op);
+            // pow(odd) { h } => h. The body gate's operands alias the pow's
+            // block args; inline the body, remapping them to the outer qubit
+            // operands, instead of hoisting the gate out (which would leave it
+            // referencing the erased block args).
+            utils::inlineModifierBody(op, *op.getBody(), op.getQubits(),
+                                      rewriter);
           }
           return success();
         })
         // pow(n) { ecr/swap } => erase (n even) | ecr/swap (n odd)
-        .Case<ECROp, SWAPOp>([&](auto gate) {
+        .Case<ECROp, SWAPOp>([&](auto) {
           if (!utils::isIntegerExponent(r)) {
             return failure();
           }
@@ -490,8 +529,10 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             }
             rewriter.eraseOp(op);
           } else {
-            rewriter.moveOpBefore(gate, op);
-            rewriter.eraseOp(op);
+            // pow(odd) { ecr/swap } => ecr/swap. Inline the body, remapping its
+            // block args to the outer qubit operands (see HOp case above).
+            utils::inlineModifierBody(op, *op.getBody(), op.getQubits(),
+                                      rewriter);
           }
           return success();
         })
@@ -512,8 +553,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
           return success();
         })
         // pow(r) { barrier } => barrier
-        .Case<BarrierOp>([&](auto gate) {
-          rewriter.replaceOpWithNewOp<BarrierOp>(op, gate.getTargets());
+        .Case<BarrierOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<BarrierOp>(op, op.getTargets());
           return success();
         })
         .Default([&](auto) { return failure(); });
@@ -540,15 +581,20 @@ UnitaryOpInterface PowOp::getBodyUnitary(const size_t i) {
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   const std::variant<double, Value>& exponent,
-                  const function_ref<void()>& bodyBuilder) {
+                  ValueRange qubits,
+                  const function_ref<void(ValueRange)>& bodyBuilder) {
   auto expValue = variantToValue(odsBuilder, odsState.location, exponent);
-  odsState.addOperands(expValue);
-  auto* region = odsState.addRegion();
-  auto& block = region->emplaceBlock();
+  build(odsBuilder, odsState, expValue, qubits);
+  auto& block = odsState.regions.front()->emplaceBlock();
+
+  auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < qubits.size(); ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
 
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  bodyBuilder();
+  bodyBuilder(block.getArguments());
   YieldOp::create(odsBuilder, odsState.location);
 }
 
@@ -557,24 +603,16 @@ LogicalResult PowOp::verify() {
   if (!matchPattern(getExponent(), m_Constant(&attr))) {
     return emitOpError("exponent must be a constant");
   }
-
-  auto& block = *getBody();
-  if (block.getOperations().size() < 2) {
-    return emitOpError("body region must have at least two operations");
+  if (llvm::any_of(*getBody(), [](Operation& op) {
+        return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
+                   memref::StoreOp>(op);
+      })) {
+    return emitOpError("body must not contain non-unitary quantum operations "
+                       "or modify a quantum register");
   }
-  if (!isa<YieldOp>(block.back())) {
+  if (getNumBodyUnitaries() < 1) {
     return emitOpError(
-        "last operation in body region must be a yield operation");
-  }
-  auto iter = ++block.rbegin();
-  if (!isa<UnitaryOpInterface>(*iter)) {
-    return emitOpError(
-        "second to last operation in body region must be a unitary operation");
-  }
-  for (auto it = ++iter; it != block.rend(); ++it) {
-    if (isa<UnitaryOpInterface>(*it)) {
-      return emitOpError("body region may only contain a single unitary op");
-    }
+        "body region must contain at least one unitary operation");
   }
   return success();
 }

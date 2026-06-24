@@ -1251,7 +1251,8 @@ def PowOp
     }];
 
   let extraClassDeclaration = [{
-        UnitaryOpInterface getBodyUnitary();
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
         size_t getNumQubits() { return getNumTargets(); }
         size_t getNumTargets() { return getQubitsIn().size(); }
         static size_t getNumControls() { return 0; }
@@ -1269,9 +1270,9 @@ def PowOp
         static ResultRange getOutputControls() { return {nullptr, 0}; }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
-        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
-        OperandRange getParameters() { return getBodyUnitary().getParameters(); }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("PowOp does not have parameters"); }
+        OperandRange getParameters() { return {nullptr, 0}; }
         double getExponentValue();
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
         [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();

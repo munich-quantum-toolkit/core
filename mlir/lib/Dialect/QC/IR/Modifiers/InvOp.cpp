@@ -99,17 +99,23 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
       return failure();
     }
     const double exponent = innerPow.getExponentValue();
-    // Remap InvOp's block arguments to the outer qubits they alias,
-    // since the inlined ops may reference them and InvOp is about to be erased.
-    for (auto [blockArg, outerQubit] :
-         llvm::zip_equal(invOp.getBody()->getArguments(), invOp.getQubits())) {
-      rewriter.replaceAllUsesWith(blockArg, outerQubit);
+    // The inner pow's operands alias the inv's block args; translate them back
+    // to the outer qubits the inv aliases so the new pow is valid in the inv's
+    // parent scope.
+    SmallVector<Value> qubits;
+    for (Value v : innerPow.getQubits()) {
+      auto arg = cast<BlockArgument>(v);
+      assert(arg.getOwner() == invOp.getBody() && "inner qubit not an inv arg");
+      qubits.push_back(invOp.getQubits()[arg.getArgNumber()]);
     }
-    rewriter.replaceOpWithNewOp<PowOp>(invOp, -exponent, [&] {
-      auto* powBody = rewriter.getInsertionBlock();
-      rewriter.inlineBlockBefore(innerPow.getBody(), powBody, powBody->begin());
-      rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
-    });
+    rewriter.replaceOpWithNewOp<PowOp>(
+        invOp, -exponent, qubits, [&](ValueRange powArgs) {
+          auto* powBody = rewriter.getInsertionBlock();
+          // Inner pow body args now match the new pow's args positionally.
+          rewriter.inlineBlockBefore(innerPow.getBody(), powBody,
+                                     powBody->begin(), powArgs);
+          rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
+        });
     return success();
   }
 };
