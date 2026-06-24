@@ -149,6 +149,30 @@ static auto cxBasisCases() {
                            []() { return twoQubitControlledX10(); });
 }
 
+static auto specializedMatrixCases() {
+  return ::testing::Values(
+      []() {
+        return twoQubitControlledX01() * twoQubitControlledX10() *
+               twoQubitControlledX01();
+      },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.5);
+      },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, -0.5);
+      },
+      []() { return twoQubitControlledX01() * twoQubitControlledX10(); },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.1);
+      },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, 0.1);
+      },
+      []() {
+        return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, -0.1);
+      });
+}
+
 static bool extractSingleQubitMatrix(UnitaryOpInterface op, Matrix2x2& out) {
   if (op.getUnitaryMatrix2x2(out)) {
     return true;
@@ -366,8 +390,7 @@ TEST_P(WeylDecompositionTest, ReconstructsWithinRequestedFidelity) {
 
 TEST(WeylDecompositionStandalone,
      CnotProducesValidWeylParametersAndUnitaryLocals) {
-  const Matrix4x4 cnot =
-      Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0);
+  const Matrix4x4 cnot = twoQubitControlledX01();
   const auto decomp = TwoQubitWeylDecomposition::create(cnot, std::nullopt);
   constexpr double piOver4 = 0.7853981633974483;
   for (const double angle : {decomp.a(), decomp.b(), decomp.c()}) {
@@ -395,6 +418,8 @@ INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, WeylDecompositionTest,
                          productMatrixCases());
 INSTANTIATE_TEST_SUITE_P(TwoQubitMatrices, WeylDecompositionTest,
                          entangledMatrixCases());
+INSTANTIATE_TEST_SUITE_P(SpecializedMatrices, WeylDecompositionTest,
+                         specializedMatrixCases());
 
 TEST_P(BasisDecomposerTest, ReconstructsWithinRequestedFidelity) {
   for (const double fidelity : {1.0, 1.0 - 1e-12}) {
@@ -575,17 +600,25 @@ INSTANTIATE_TEST_SUITE_P(
                                                  Matrix2x2::identity()) *
                                  twoQubitControlledX01() *
                                  Matrix4x4::kron(rzMatrix(0.2), ryMatrix(0.1));
-                        }}),
+                        }},
+                    WeylSynthesisCase{"CzGeneric", "u,cz",
+                                      [] { return twoQubitControlledZ(); }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  const auto spec = parseNativeSpec("u,cx");
-  ASSERT_TRUE(spec);
-  const auto count = twoQubitEntanglerCount(Matrix4x4::identity(), *spec);
-  ASSERT_TRUE(count.has_value());
-  EXPECT_EQ(*count, 0U);
+  const auto cxSpec = parseNativeSpec("u,cx");
+  ASSERT_TRUE(cxSpec);
+  const auto cxCount = twoQubitEntanglerCount(Matrix4x4::identity(), *cxSpec);
+  ASSERT_TRUE(cxCount.has_value());
+  EXPECT_EQ(*cxCount, 0U);
+
+  const auto czSpec = parseNativeSpec("u,cz");
+  ASSERT_TRUE(czSpec);
+  const auto czCount = twoQubitEntanglerCount(Matrix4x4::identity(), *czSpec);
+  ASSERT_TRUE(czCount.has_value());
+  EXPECT_EQ(*czCount, 0U);
 }
 
 TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
@@ -638,4 +671,77 @@ TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   ASSERT_TRUE(generic);
   EXPECT_TRUE(generic->gates.contains(NativeGateKind::U));
   EXPECT_FALSE(generic->gates.contains(NativeGateKind::X));
+}
+
+TEST(NativeSpecTest, ResolvesEulerBasisFromMenu) {
+  const auto uMenu = parseNativeSpec("u,cx");
+  ASSERT_TRUE(uMenu);
+  EXPECT_EQ(uMenu->eulerBasis(), EulerBasis::U);
+
+  const auto zsxx = parseNativeSpec("x,sx,rz,cx");
+  ASSERT_TRUE(zsxx);
+  EXPECT_EQ(zsxx->eulerBasis(), EulerBasis::ZSXX);
+
+  const auto rMenu = parseNativeSpec("r,cz");
+  ASSERT_TRUE(rMenu);
+  EXPECT_EQ(rMenu->eulerBasis(), EulerBasis::R);
+
+  const auto xzx = parseNativeSpec("rx,rz,cz");
+  ASSERT_TRUE(xzx);
+  EXPECT_EQ(xzx->eulerBasis(), EulerBasis::XZX);
+
+  const auto xyx = parseNativeSpec("rx,ry,cz");
+  ASSERT_TRUE(xyx);
+  EXPECT_EQ(xyx->eulerBasis(), EulerBasis::XYX);
+
+  const auto zyz = parseNativeSpec("ry,rz,cz");
+  ASSERT_TRUE(zyz);
+  EXPECT_EQ(zyz->eulerBasis(), EulerBasis::ZYZ);
+}
+
+TEST(NativeSpecTest, AllowsOpMatchesMenu) {
+  MlirTestContext fx;
+  fx.setUp();
+  const auto spec = parseNativeSpec("u,cx,rzz");
+  ASSERT_TRUE(spec);
+
+  OpBuilder builder(fx.ctx());
+  const Location loc = UnknownLoc::get(fx.ctx());
+  const auto qubitTy = QubitType::get(fx.ctx());
+  const auto funcTy =
+      builder.getFunctionType({qubitTy, qubitTy}, {qubitTy, qubitTy});
+  auto func = func::FuncOp::create(builder, loc, "allows_op", funcTy);
+  auto* entry = func.addEntryBlock();
+  builder.setInsertionPointToStart(entry);
+  Value q0 = entry->getArgument(0);
+  Value q1 = entry->getArgument(1);
+
+  EXPECT_TRUE(allowsOp(
+      BarrierOp::create(builder, loc, ValueRange{q0, q1}).getOperation(),
+      *spec));
+  EXPECT_TRUE(
+      allowsOp(GPhaseOp::create(builder, loc, 0.1).getOperation(), *spec));
+  EXPECT_TRUE(allowsOp(
+      UOp::create(builder, loc, q0, 0.1, 0.2, 0.3).getOperation(), *spec));
+  EXPECT_TRUE(
+      allowsOp(RZZOp::create(builder, loc, q0, q1, 0.4).getOperation(), *spec));
+
+  auto cx = CtrlOp::create(
+      builder, loc, ValueRange{q0}, ValueRange{q1},
+      [&](ValueRange targets) -> SmallVector<Value> {
+        return {XOp::create(builder, loc, targets[0]).getOutputQubit(0)};
+      });
+  EXPECT_TRUE(allowsOp(cx.getOperation(), *spec));
+
+  EXPECT_FALSE(allowsOp(XOp::create(builder, loc, q0).getOperation(), *spec));
+
+  const auto czSpec = parseNativeSpec("u,cz");
+  ASSERT_TRUE(czSpec);
+  auto cz = CtrlOp::create(
+      builder, loc, ValueRange{q0}, ValueRange{q1},
+      [&](ValueRange targets) -> SmallVector<Value> {
+        return {ZOp::create(builder, loc, targets[0]).getOutputQubit(0)};
+      });
+  EXPECT_TRUE(allowsOp(cz.getOperation(), *czSpec));
+  EXPECT_FALSE(allowsOp(cx.getOperation(), *czSpec));
 }

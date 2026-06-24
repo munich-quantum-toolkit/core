@@ -466,6 +466,31 @@ static void fusionHRzzSRzz(mlir::qc::QCProgramBuilder& b) {
   b.rzz(0.17, q0, q1);
 }
 
+static void fusionOffMenuGateInWindow(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.h(q0);
+  b.cx(q0, q1);
+}
+
+static void fusionDualWireOneQBetweenCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.rz(0.11, q0);
+  b.ry(0.22, q1);
+  b.cx(q0, q1);
+}
+
+static void inverseTwoX(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  b.inv({q0}, [&](mlir::ValueRange qubits) {
+    b.x(qubits[0]);
+    b.x(qubits[0]);
+  });
+}
+
 static void broadOneQThenCz(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
@@ -634,6 +659,30 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.name;
     });
 
+TEST_F(FuseTwoQubitUnitaryRunsPassTest, EmptyNativeGatesSkipsPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(context.get(), fusionCxCx);
+  ASSERT_TRUE(module);
+  runQcToQco(module);
+  std::string before;
+  llvm::raw_string_ostream osBefore(before);
+  module->print(osBefore);
+
+  PassManager pm(module->getContext());
+  pm.addPass(createFuseTwoQubitUnitaryRuns(FuseTwoQubitUnitaryRunsOptions{
+      .nativeGates = "",
+  }));
+  ASSERT_TRUE(succeeded(pm.run(*module)));
+
+  std::string after;
+  llvm::raw_string_ostream osAfter(after);
+  module->print(osAfter);
+  EXPECT_EQ(before, after);
+}
+
+TEST_F(FuseTwoQubitUnitaryRunsPassTest, InverseWrappedOpsSynthesize) {
+  expectNativeAfterSynthesis(inverseTwoX, "x,sx,rz,cx", onlyIbmBasicCxOps);
+}
+
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, FailsForUnsupportedNativeGateMenu) {
   expectSynthesisFailure(mlir::qc::h, "not-a-gate");
 }
@@ -727,6 +776,11 @@ INSTANTIATE_TEST_SUITE_P(
                     FusionCase{"SwappedWireOrder", fusionSwapCxPattern, "u,cx",
                                std::nullopt, std::nullopt, true},
                     FusionCase{"RzzBlock", fusionHRzzSRzz, "x,sx,rz,rx,rzz,cz",
+                               std::nullopt, std::nullopt, true},
+                    FusionCase{"OffMenuGateInWindow", fusionOffMenuGateInWindow,
+                               "u,cx", std::nullopt, std::nullopt, true},
+                    FusionCase{"DualWireOneQBetweenCx",
+                               fusionDualWireOneQBetweenCx, "u,cx",
                                std::nullopt, std::nullopt, true}),
     [](const testing::TestParamInfo<FusionCase>& info) {
       return info.param.name;
