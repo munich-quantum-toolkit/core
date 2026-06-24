@@ -38,6 +38,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 using namespace mlir;
@@ -225,6 +226,22 @@ static void expectImplementsMcz(func::FuncOp funcOp, std::size_t numControls) {
   return count;
 }
 
+[[nodiscard]] static std::optional<CtrlOp>
+findSoleMultiControlledCtrlOp(ModuleOp moduleOp) {
+  CtrlOp found;
+  std::size_t count = 0;
+  moduleOp.walk([&](CtrlOp op) {
+    if (op.getNumControls() >= 2) {
+      found = op;
+      ++count;
+    }
+  });
+  if (count != 1) {
+    return std::nullopt;
+  }
+  return found;
+}
+
 static LogicalResult
 runDecomposePass(ModuleOp moduleOp,
                  const DecomposeMultiControlledOptions& options = {}) {
@@ -389,6 +406,15 @@ TEST_F(McxDecompositionTest, LeavesMultiOpCtrlUntouched) {
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+
+  const auto ctrlOpOpt = findSoleMultiControlledCtrlOp(moduleOp.get());
+  ASSERT_TRUE(ctrlOpOpt.has_value());
+  CtrlOp ctrlOp = *ctrlOpOpt;
+  EXPECT_EQ(ctrlOp.getNumControls(), 2U);
+  EXPECT_EQ(ctrlOp.getNumTargets(), 1U);
+  EXPECT_EQ(ctrlOp.getNumBodyUnitaries(), 2U);
+  EXPECT_TRUE(isa<XOp>(ctrlOp.getBodyUnitary(0).getOperation()));
+  EXPECT_TRUE(isa<YOp>(ctrlOp.getBodyUnitary(1).getOperation()));
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
 }
 
@@ -400,6 +426,14 @@ TEST_F(McxDecompositionTest, LeavesMultiControlledHUntouched) {
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+
+  const auto ctrlOpOpt = findSoleMultiControlledCtrlOp(moduleOp.get());
+  ASSERT_TRUE(ctrlOpOpt.has_value());
+  CtrlOp ctrlOp = *ctrlOpOpt;
+  EXPECT_EQ(ctrlOp.getNumControls(), 2U);
+  EXPECT_EQ(ctrlOp.getNumTargets(), 1U);
+  ASSERT_EQ(ctrlOp.getNumBodyUnitaries(), 1U);
+  EXPECT_TRUE(isa<HOp>(ctrlOp.getBodyUnitary(0).getOperation()));
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
 }
 

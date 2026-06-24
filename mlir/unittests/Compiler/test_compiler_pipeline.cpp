@@ -262,7 +262,7 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
   ASSERT_TRUE(module);
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), false, false, false, true, record);
+  runPipeline(module.get(), false, true, false, true, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
@@ -274,7 +274,7 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
   ASSERT_TRUE(module);
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), false, false, false, true, record);
+  runPipeline(module.get(), false, true, false, true, record);
 
   // The outputs must differ, proving the MCZ path ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
@@ -294,6 +294,7 @@ TEST_F(CompilerPipelineTest,
   mlir::QuantumCompilerPipeline pipeline(config);
   mlir::CompilationRecord record;
   EXPECT_FALSE(pipeline.runPipeline(module.get(), &record).succeeded());
+  EXPECT_TRUE(record.afterQCImport.empty());
 }
 
 INSTANTIATE_TEST_SUITE_P(
