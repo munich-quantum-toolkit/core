@@ -101,9 +101,23 @@ selectEntangler(const NativeProfileSpec& spec) {
   return std::nullopt;
 }
 
-static Matrix4x4 entanglerMatrix(NativeGateKind entangler) {
-  return entangler == NativeGateKind::Cz ? mlir::qco::twoQubitControlledZ()
-                                         : mlir::qco::twoQubitControlledX01();
+static const TwoQubitBasisDecomposer&
+cachedBasisDecomposer(NativeGateKind entangler) {
+  switch (entangler) {
+  case NativeGateKind::Cx: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(mlir::qco::twoQubitControlledX01(),
+                                        1.0);
+    return DECOMPOSER;
+  }
+  case NativeGateKind::Cz: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(mlir::qco::twoQubitControlledZ(), 1.0);
+    return DECOMPOSER;
+  }
+  default:
+    llvm_unreachable("only CX/CZ are valid entanglers");
+  }
 }
 
 static std::optional<TwoQubitNativeDecomposition>
@@ -112,7 +126,7 @@ decomposeForProfile(const Matrix4x4& target, const NativeProfileSpec& spec) {
   if (!entangler) {
     return std::nullopt;
   }
-  return decomposeTwoQubitWithBasis(target, entanglerMatrix(*entangler));
+  return cachedBasisDecomposer(*entangler).decomposeTarget(target);
 }
 
 static void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc,

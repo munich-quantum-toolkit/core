@@ -21,6 +21,9 @@
 
 namespace mlir::qco::decomposition {
 
+/** Numeric tolerance for Weyl internal matrix checks. */
+inline constexpr double WEYL_TOLERANCE = 100 * MATRIX_TOLERANCE;
+
 /**
  * @brief Weyl decomposition of a 2-qubit unitary.
  *
@@ -29,7 +32,7 @@ namespace mlir::qco::decomposition {
  * `U_canon(a,b,c) = RXX(-2a) · RYY(-2b) · RZZ(-2c)`.
  *
  * @note Adapted from TwoQubitWeylDecomposition in the IBM Qiskit framework.
- *       (C) Copyright IBM 2023
+ *       (C) Copyright IBM 2026
  *
  *       This code is licensed under the Apache License, Version 2.0. You may
  *       obtain a copy of this license in the LICENSE.txt file in the root
@@ -54,27 +57,13 @@ public:
   [[nodiscard]] double c() const { return c_; }
   [[nodiscard]] double globalPhase() const { return globalPhase_; }
 
-  /**
-   * @brief Left single-qubit factor after the canonical gate.
-   *
-   * ```
-   * q1 - k2r - C -  k1r  -
-   *            A
-   * q0 - k2l - N -  k1l  -
-   * ```
-   */
+  /** @brief Single-qubit factor on qubit 0 after the canonical gate. */
   [[nodiscard]] const Matrix2x2& k1l() const { return k1l_; }
-  /**
-   * @brief Left single-qubit factor before the canonical gate.
-   */
+  /** @brief Single-qubit factor on qubit 0 before the canonical gate. */
   [[nodiscard]] const Matrix2x2& k2l() const { return k2l_; }
-  /**
-   * @brief Right single-qubit factor after the canonical gate.
-   */
+  /** @brief Single-qubit factor on qubit 1 after the canonical gate. */
   [[nodiscard]] const Matrix2x2& k1r() const { return k1r_; }
-  /**
-   * @brief Right single-qubit factor before the canonical gate.
-   */
+  /** @brief Single-qubit factor on qubit 1 before the canonical gate. */
   [[nodiscard]] const Matrix2x2& k2r() const { return k2r_; }
 
   [[nodiscard]] static Matrix4x4 getCanonicalMatrix(double a, double b,
@@ -82,6 +71,12 @@ public:
 
 private:
   bool applySpecialization(const std::optional<double>& requestedFidelity);
+
+  void finalizeSpecializationPhase(bool flippedFromOriginal,
+                                   double preSpecializationA,
+                                   double preSpecializationB,
+                                   double preSpecializationC,
+                                   const std::optional<double>& fidelity);
 
   double a_{};
   double b_{};
@@ -94,13 +89,11 @@ private:
 };
 
 /**
- * @brief Single-qubit factors and entangler count for basis-gate synthesis.
+ * @brief Native two-qubit synthesis result.
  *
- * Factors are stored in emission order. For `i` in `[0, numBasisUses)` the
- * pair `(singleQubitFactors[2*i], singleQubitFactors[2*i + 1])` is applied to
- * qubits `1` and `0` respectively, followed by one entangler. The final pair
- * `(singleQubitFactors[2*numBasisUses], singleQubitFactors[2*numBasisUses+1])`
- * is applied after the last entangler.
+ * Emission order: for each `i`, apply `singleQubitFactors[2*i+1]` on q0 and
+ * `singleQubitFactors[2*i]` on q1, then the basis gate (except after the last
+ * pair).
  */
 struct TwoQubitNativeDecomposition {
   std::uint8_t numBasisUses = 0;
@@ -112,7 +105,7 @@ struct TwoQubitNativeDecomposition {
  * @brief Decomposer for a fixed two-qubit basis gate (e.g. CX/CZ).
  *
  * @note Adapted from TwoQubitBasisDecomposer in the IBM Qiskit framework.
- *       (C) Copyright IBM 2023
+ *       (C) Copyright IBM 2026
  *
  *       This code is licensed under the Apache License, Version 2.0. You may
  *       obtain a copy of this license in the LICENSE.txt file in the root
@@ -125,12 +118,43 @@ struct TwoQubitNativeDecomposition {
  */
 class TwoQubitBasisDecomposer {
 public:
+  /**
+   * @brief Precomputes basis-gate data for repeated target decompositions.
+   *
+   * Creation performs a full Weyl decomposition of @p basisMatrix and
+   * precomputes the single-qubit templates used by @ref twoQubitDecompose.
+   * Reuse one instance for many targets that share the same entangler
+   * (e.g. CX) via @ref decomposeTarget.
+   */
   [[nodiscard]] static TwoQubitBasisDecomposer
   create(const Matrix4x4& basisMatrix, double basisFidelity);
 
+  /**
+   * @brief Decomposes a target Weyl decomposition into single-qubit factors and
+   *        basis-gate uses.
+   *
+   * @param targetDecomposition Weyl decomposition of the target unitary.
+   * @param numBasisGateUses Requested number of basis-gate applications in
+   *        `{0, 1, 2, 3}`. Pass `std::nullopt` to pick the count that
+   *        maximizes `traceToFidelity(trace[i]) * basisFidelity^i` over
+   *        `i ∈ {0, 1, 2, 3}`.
+   * @return A native decomposition on success, or `std::nullopt` when the
+   *         requested count is unsupported (e.g. more than one basis gate for a
+   *         non-super-controlled basis, or a value outside `{0, 1, 2, 3}`).
+   */
   [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
   twoQubitDecompose(const TwoQubitWeylDecomposition& targetDecomposition,
                     std::optional<std::uint8_t> numBasisGateUses) const;
+
+  /**
+   * @brief Decomposes @p targetUnitary using this cached basis decomposer.
+   *
+   * Only the target undergoes Weyl decomposition; basis precomputation from
+   * @ref create is reused.
+   */
+  [[nodiscard]] std::optional<TwoQubitNativeDecomposition> decomposeTarget(
+      const Matrix4x4& targetUnitary,
+      std::optional<std::uint8_t> numBasisGateUses = std::nullopt) const;
 
 private:
   struct SmbPrecomputed {
@@ -166,14 +190,20 @@ private:
   [[nodiscard]] std::array<std::complex<double>, 4>
   traces(const TwoQubitWeylDecomposition& target) const;
 
+  TwoQubitBasisDecomposer() = default;
+
   double basisFidelity{};
-  TwoQubitWeylDecomposition basisDecomposer;
+  TwoQubitWeylDecomposition basisWeyl;
   bool isSuperControlled{};
   SmbPrecomputed smb{};
 };
 
 /**
- * @brief Decomposes @p target with respect to a two-qubit basis gate matrix.
+ * @brief Convenience wrapper that builds a fresh basis decomposer per call.
+ *
+ * For a fixed basis gate decomposed many times, prefer caching
+ * `TwoQubitBasisDecomposer::create(basisMatrix, basisFidelity)` and calling
+ * `TwoQubitBasisDecomposer::decomposeTarget` for each target.
  */
 [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeTwoQubitWithBasis(

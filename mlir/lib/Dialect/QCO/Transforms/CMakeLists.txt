@@ -22,6 +22,8 @@ add_mlir_library(
   DEPENDS
   MLIRQCOTransformsIncGen)
 
+mqt_mlir_target_use_project_options(MLIRQCOTransforms)
+
 # collect header files (subdirs: Decomposition/, …)
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE CONFIGURE_DEPENDS
      "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.h")
