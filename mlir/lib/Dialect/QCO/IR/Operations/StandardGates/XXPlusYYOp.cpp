@@ -79,10 +79,11 @@ std::optional<Matrix4x4> XXPlusYYOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
+  using namespace std::complex_literals;
   const auto mc = std::cos(*theta / 2);
   const auto s = std::sin(*theta / 2);
-  const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
-  const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
+  const auto msp = s * std::exp(1i * (*beta - (std::numbers::pi / 2)));
+  const auto msm = s * std::exp(1i * (-*beta - (std::numbers::pi / 2)));
   return Matrix4x4::fromElements(1, 0, 0, 0,    // row 0
                                  0, mc, msp, 0, // row 1
                                  0, msm, mc, 0, // row 2
