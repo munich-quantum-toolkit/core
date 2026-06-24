@@ -12,9 +12,8 @@ with the exception that minor releases may include breaking changes.
 
 ### Added
 
-- ✨ Add a `decompose-multi-controlled` pass
-  for decomposing multi-controlled X and Z gates into one- and two-qubit gates
-  ([**@simon1hofmann**])
+- ✨ Add a `decompose-multi-controlled` pass for decomposing multi-controlled X
+  and Z gates into one- and two-qubit gates ([#1810]) ([**@simon1hofmann**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
   for fusing compile-time single-qubit unitary runs via Euler resynthesis
   ([#1672]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -601,6 +600,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1810]: https://github.com/munich-quantum-toolkit/core/pull/1810
 [#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
 [#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
 [#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
