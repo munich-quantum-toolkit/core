@@ -115,10 +115,13 @@ std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  const auto thetaSin = std::sin(*theta / 2);
-  const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
-  const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
-  const auto thetaCos = std::cos(*theta / 2);
-  return Matrix2x2::fromElements(thetaCos, m01,  // row 0
-                                 m10, thetaCos); // row 1
+  using namespace std::complex_literals;
+  const auto halfTheta = *theta / 2;
+  const auto c = std::cos(halfTheta);
+  const auto s = std::sin(halfTheta);
+
+  const auto m01 = s * std::exp(1i * (-*phi - (std::numbers::pi / 2)));
+  const auto m10 = s * std::exp(1i * (*phi - (std::numbers::pi / 2)));
+  return Matrix2x2::fromElements(c, m01,  // row 0
+                                 m10, c); // row 1
 }
