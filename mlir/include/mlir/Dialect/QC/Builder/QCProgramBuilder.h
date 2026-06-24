@@ -549,7 +549,7 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) (%a0 = %q1) {                                                \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
    *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
