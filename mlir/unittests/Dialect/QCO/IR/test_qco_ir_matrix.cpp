@@ -101,6 +101,7 @@ TEST_F(QCOMatrixTest, ControlledHOpMatrix) {
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
   auto matrix = ctrlOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
 
   const auto ch = qc::StandardOperation(1, 0, qc::OpType::H);
   const auto dd = std::make_unique<dd::Package>(2);
