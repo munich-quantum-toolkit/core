@@ -363,8 +363,7 @@ void synthRelativeMcxNDirty(GateEmitter& builder, std::size_t numControls) {
   }
 }
 
-/// Increment gadget from Huang & Palsberg Fig. 6 (`numDirtyAncillae == 1`) or
-/// Fig. 8 (`numDirtyAncillae == 2`).
+/// Increment gadget with @p numDirtyAncillae dirty ancilla(e).
 void incrementDirty(GateEmitter& builder, std::size_t n,
                     std::size_t numDirtyAncillae, bool flagAdd) {
   if (numDirtyAncillae == 1 && n % 2 == 0) {
@@ -448,8 +447,7 @@ void incrementDirty(GateEmitter& builder, std::size_t n,
 
 } // namespace
 
-/// HP24 no-auxiliary MCX core (Fig. 6 / Fig. 8), without target Hadamard
-/// bookends.
+/// HP24 no-auxiliary MCX core, without target Hadamard bookends.
 /// @param n Total wire count (controls plus target).
 static void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
   const std::size_t lastControl = n - 1;
@@ -459,7 +457,7 @@ static void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
   SmallVector<std::size_t, 16> incrementQubits(n);
   std::iota(incrementQubits.begin(), incrementQubits.end(), 0U);
 
-  // Fig. 6 path for very large even widths (22+ controls); otherwise Fig. 8.
+  // One dirty ancilla for very large even widths (22+ controls); two otherwise.
   if ((n % 2 == 0) && (n >= 23)) {
     emitter.compose(incrementQubits, [&](GateEmitter& sub) {
       incrementDirty(sub, n - 1, 1, true);

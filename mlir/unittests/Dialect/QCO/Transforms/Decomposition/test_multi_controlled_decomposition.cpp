@@ -41,8 +41,8 @@ using namespace mlir::qco;
 /// that).
 constexpr std::array<std::size_t, 7> K_DD_CONTROL_COUNTS = {2, 3, 4, 5,
                                                             6, 7, 8};
-/// Pass-only checks above k = 8; spaced toward 30. Includes k = 22–24 for the
-/// Fig. 6 / Fig. 8 boundary at wire count n = k + 1 >= 23.
+/// Pass-only checks above k = 8; includes k = 22–24 for the one- vs
+/// two-ancilla boundary at wire count n = k + 1 >= 23.
 constexpr std::array<std::size_t, 11> K_SMOKE_CONTROL_COUNTS = {
     10, 12, 15, 18, 20, 22, 23, 24, 25, 28, 30,
 };
