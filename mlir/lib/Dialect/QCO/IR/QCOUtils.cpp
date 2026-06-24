@@ -17,10 +17,11 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Casting.h>
+#include <mlir/Dialect/QCO/IR/QCODialect.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cmath>
 #include <optional>
