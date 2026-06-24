@@ -173,6 +173,14 @@ void twoX(QCOProgramBuilder& b);
 /// Creates a circuit with a control modifier applied to two subsequent X gates.
 void controlledTwoX(QCOProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to an X-H sequence in the
+/// ctrl body.
+void controlledXH(QCOProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to an inverse H-T sequence
+/// in the ctrl body.
+void controlledInverseHT(QCOProgramBuilder& b);
+
 /// Creates a circuit with an inverse modifier applied to two subsequent X
 /// gates.
 void inverseTwoX(QCOProgramBuilder& b);

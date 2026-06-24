@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -301,11 +302,15 @@ bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {
 }
 
 std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
-  auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
-  if (!bodyUnitary) {
-    return std::nullopt;
+  std::optional<DynamicMatrix> targetMatrix;
+  if (auto bodyUnitary =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
+    targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
+  } else if (getNumTargets() == 1) {
+    if (const auto composed = composeSingleQubitBodyMatrix(*getBody())) {
+      targetMatrix = DynamicMatrix(*composed);
+    }
   }
-  const auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
   if (!targetMatrix) {
     return std::nullopt;
   }
