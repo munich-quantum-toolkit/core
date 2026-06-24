@@ -44,9 +44,8 @@ protected:
   OwningOpRef<ModuleOp> swapModule;
   OwningOpRef<ModuleOp> reference;
 
-  SwapAbsorbPassTest()
-      : programBuilder(&context), referenceBuilder(&context) {}
-      
+  SwapAbsorbPassTest() : programBuilder(&context), referenceBuilder(&context) {}
+
 protected:
   void SetUp() override {
     // Register all necessary dialects
@@ -58,7 +57,6 @@ protected:
     programBuilder.initialize();
     referenceBuilder.initialize();
   }
-
 
   static LogicalResult applySwapAbsorbPass(ModuleOp module) {
     PassManager pm(module.getContext());

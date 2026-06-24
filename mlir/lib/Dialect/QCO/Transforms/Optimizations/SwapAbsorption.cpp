@@ -32,11 +32,9 @@ protected:
     ModuleOp anchor = getOperation();
     IRRewriter rewriter(&getContext());
 
-    anchor.walk([&rewriter](mlir::Operation *op) {
-      if(auto swap = mlir::dyn_cast<SWAPOp>(op))
-      {
-          rewriter.replaceOp(swap,
-                             {swap.getQubit1In(), swap.getQubit0In()});
+    anchor.walk([&rewriter](mlir::Operation* op) {
+      if (auto swap = mlir::dyn_cast<SWAPOp>(op)) {
+        rewriter.replaceOp(swap, {swap.getQubit1In(), swap.getQubit0In()});
       }
     });
   }
