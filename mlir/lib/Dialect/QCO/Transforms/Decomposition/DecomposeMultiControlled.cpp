@@ -15,8 +15,14 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+
+#include <cstdint>
+#include <utility>
 
 namespace mlir::qco {
 
@@ -78,6 +84,7 @@ struct DecomposeMultiControlled final
     : impl::DecomposeMultiControlledBase<DecomposeMultiControlled> {
   using DecomposeMultiControlledBase::DecomposeMultiControlledBase;
 
+protected:
   void runOnOperation() override {
     if (minControls < 2) {
       getOperation().emitError()

@@ -10,7 +10,9 @@
 
 #include "dd/FunctionalityConstruction.hpp"
 #include "dd/Package.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/Control.hpp"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -25,14 +27,17 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
-
-namespace {
+#include <string>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -47,9 +52,42 @@ constexpr std::array<std::size_t, 11> K_SMOKE_CONTROL_COUNTS = {
     10, 12, 15, 18, 20, 22, 23, 24, 25, 28, 30,
 };
 
-enum class ControlledPauli { X, Z };
+enum class ControlledPauli : std::uint8_t { X, Z };
 
-[[nodiscard]] OwningOpRef<ModuleOp>
+namespace {
+
+class McxDecompositionTest : public testing::Test {
+protected:
+  void SetUp() override {
+    DialectRegistry registry;
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    context_ = std::make_unique<MLIRContext>();
+    context_->appendDialectRegistry(registry);
+    context_->loadAllAvailableDialects();
+  }
+
+public:
+  [[nodiscard]] MLIRContext* context() const { return context_.get(); }
+
+private:
+  std::unique_ptr<MLIRContext> context_;
+};
+
+class McxDdTest : public McxDecompositionTest,
+                  public testing::WithParamInterface<std::size_t> {};
+
+class MczDdTest : public McxDecompositionTest,
+                  public testing::WithParamInterface<std::size_t> {};
+
+class LargeMcxTest : public McxDecompositionTest,
+                     public testing::WithParamInterface<std::size_t> {};
+
+class LargeMczTest : public McxDecompositionTest,
+                     public testing::WithParamInterface<std::size_t> {};
+
+} // namespace
+
+[[nodiscard]] static OwningOpRef<ModuleOp>
 buildControlledPauliModule(MLIRContext* context, std::size_t numControls,
                            ControlledPauli pauli) {
   return QCOProgramBuilder::build(
@@ -69,18 +107,17 @@ buildControlledPauliModule(MLIRContext* context, std::size_t numControls,
       });
 }
 
-[[nodiscard]] OwningOpRef<ModuleOp> buildMcxModule(MLIRContext* context,
-                                                   std::size_t numControls) {
+[[nodiscard]] static OwningOpRef<ModuleOp>
+buildMcxModule(MLIRContext* context, std::size_t numControls) {
   return buildControlledPauliModule(context, numControls, ControlledPauli::X);
 }
 
-[[nodiscard]] OwningOpRef<ModuleOp> buildMczModule(MLIRContext* context,
-                                                   std::size_t numControls) {
+[[nodiscard]] static OwningOpRef<ModuleOp>
+buildMczModule(MLIRContext* context, std::size_t numControls) {
   return buildControlledPauliModule(context, numControls, ControlledPauli::Z);
 }
 
-/// Converts a decomposed QCO function into a `QuantumComputation`.
-[[nodiscard]] qc::QuantumComputation
+[[nodiscard]] static qc::QuantumComputation
 funcOpToQuantumComputation(func::FuncOp funcOp, std::size_t& numQubits) {
   DenseMap<Value, std::size_t> qubitIndex;
   numQubits = 0;
@@ -142,9 +179,9 @@ funcOpToQuantumComputation(func::FuncOp funcOp, std::size_t& numQubits) {
   return qc;
 }
 
-void expectImplementsControlledPauli(func::FuncOp funcOp,
-                                     std::size_t numControls,
-                                     ControlledPauli pauli) {
+static void expectImplementsControlledPauli(func::FuncOp funcOp,
+                                            std::size_t numControls,
+                                            ControlledPauli pauli) {
   std::size_t numQubits = 0;
   auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
   ASSERT_EQ(numQubits, numControls + 1);
@@ -169,15 +206,15 @@ void expectImplementsControlledPauli(func::FuncOp funcOp,
                   .isIdentity(/*upToGlobalPhase=*/false));
 }
 
-void expectImplementsMcx(func::FuncOp funcOp, std::size_t numControls) {
+static void expectImplementsMcx(func::FuncOp funcOp, std::size_t numControls) {
   expectImplementsControlledPauli(funcOp, numControls, ControlledPauli::X);
 }
 
-void expectImplementsMcz(func::FuncOp funcOp, std::size_t numControls) {
+static void expectImplementsMcz(func::FuncOp funcOp, std::size_t numControls) {
   expectImplementsControlledPauli(funcOp, numControls, ControlledPauli::Z);
 }
 
-[[nodiscard]] std::size_t countMultiControlledOps(ModuleOp moduleOp) {
+[[nodiscard]] static std::size_t countMultiControlledOps(ModuleOp moduleOp) {
   std::size_t count = 0;
   moduleOp.walk([&count](CtrlOp op) {
     if (op.getNumControls() >= 2) {
@@ -187,33 +224,13 @@ void expectImplementsMcz(func::FuncOp funcOp, std::size_t numControls) {
   return count;
 }
 
-LogicalResult
+static LogicalResult
 runDecomposePass(ModuleOp moduleOp,
                  const DecomposeMultiControlledOptions& options = {}) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createDecomposeMultiControlled(options));
   return pm.run(moduleOp);
 }
-
-class McxDecompositionTest : public testing::Test {
-protected:
-  void SetUp() override {
-    DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
-    context_ = std::make_unique<MLIRContext>();
-    context_->appendDialectRegistry(registry);
-    context_->loadAllAvailableDialects();
-  }
-
-public:
-  [[nodiscard]] MLIRContext* context() const { return context_.get(); }
-
-private:
-  std::unique_ptr<MLIRContext> context_;
-};
-
-class McxDdTest : public McxDecompositionTest,
-                  public testing::WithParamInterface<std::size_t> {};
 
 TEST_P(McxDdTest, ImplementsMcx) {
   const std::size_t numControls = GetParam();
@@ -231,9 +248,6 @@ INSTANTIATE_TEST_SUITE_P(McxDd, McxDdTest,
                            return "controls" + std::to_string(info.param);
                          });
 
-class MczDdTest : public McxDecompositionTest,
-                  public testing::WithParamInterface<std::size_t> {};
-
 TEST_P(MczDdTest, ImplementsMcz) {
   const std::size_t numControls = GetParam();
   auto moduleOp = buildMczModule(context(), numControls);
@@ -250,9 +264,6 @@ INSTANTIATE_TEST_SUITE_P(MczDd, MczDdTest,
                            return "controls" + std::to_string(info.param);
                          });
 
-class LargeMcxTest : public McxDecompositionTest,
-                     public testing::WithParamInterface<std::size_t> {};
-
 TEST_P(LargeMcxTest, DecomposesWithoutMultiControlledGates) {
   const std::size_t numControls = GetParam();
   auto moduleOp = buildMcxModule(context(), numControls);
@@ -266,9 +277,6 @@ INSTANTIATE_TEST_SUITE_P(LargeMcx, LargeMcxTest,
                          [](const testing::TestParamInfo<std::size_t>& info) {
                            return "controls" + std::to_string(info.param);
                          });
-
-class LargeMczTest : public McxDecompositionTest,
-                     public testing::WithParamInterface<std::size_t> {};
 
 TEST_P(LargeMczTest, DecomposesWithoutMultiControlledGates) {
   const std::size_t numControls = GetParam();
@@ -356,5 +364,3 @@ TEST_F(McxDecompositionTest, DecomposesMcxAndMcz) {
 
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 0U);
 }
-
-} // namespace

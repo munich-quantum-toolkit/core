@@ -13,6 +13,8 @@
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
@@ -183,12 +185,12 @@ private:
   ArrayRef<std::size_t> remap_;
 };
 
-void synthRelativeMcx(GateEmitter& builder, std::size_t numControls);
+} // namespace
 
-// Dirty-ancilla subcircuit after Iten et al., Phys. Rev. A 93, 032318 (2016).
+static void synthRelativeMcx(GateEmitter& builder, std::size_t numControls);
 
-void addActionGadget(GateEmitter& builder, std::size_t q0, std::size_t q1,
-                     std::size_t q2) {
+static void addActionGadget(GateEmitter& builder, std::size_t q0,
+                            std::size_t q1, std::size_t q2) {
   builder.h(q2);
   builder.t(q2);
   builder.cx(q0, q2);
@@ -196,8 +198,8 @@ void addActionGadget(GateEmitter& builder, std::size_t q0, std::size_t q1,
   builder.cx(q1, q2);
 }
 
-void addResetGadget(GateEmitter& builder, std::size_t q0, std::size_t q1,
-                    std::size_t q2) {
+static void addResetGadget(GateEmitter& builder, std::size_t q0, std::size_t q1,
+                           std::size_t q2) {
   builder.cx(q1, q2);
   builder.t(q2);
   builder.cx(q0, q2);
@@ -205,7 +207,7 @@ void addResetGadget(GateEmitter& builder, std::size_t q0, std::size_t q1,
   builder.h(q2);
 }
 
-void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
+static void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
   if (numControls == 1) {
     builder.cx(0, 1);
   } else if (numControls == 2) {
@@ -230,21 +232,21 @@ void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
   }
 }
 
-// No-auxiliary decomposition after Huang & Palsberg, PLDI 2024.
-
-void ux(GateEmitter& builder, std::size_t q1, std::size_t q2, std::size_t q3) {
+static void ux(GateEmitter& builder, std::size_t q1, std::size_t q2,
+               std::size_t q3) {
   builder.cx(q1, q3);
   builder.cx(q1, q2);
   builder.emitCcx(q2, q3, q1);
 }
 
-void uz(GateEmitter& builder, std::size_t q1, std::size_t q2, std::size_t q3) {
+static void uz(GateEmitter& builder, std::size_t q1, std::size_t q2,
+               std::size_t q3) {
   builder.emitCcx(q2, q3, q1);
   builder.cx(q1, q2);
   builder.cx(q2, q3);
 }
 
-void incrementNDirtyLarge(GateEmitter& builder, std::size_t n) {
+static void incrementNDirtyLarge(GateEmitter& builder, std::size_t n) {
   const std::size_t lastQubit = n - 1;
 
   builder.x(n);
@@ -285,7 +287,7 @@ void incrementNDirtyLarge(GateEmitter& builder, std::size_t n) {
   builder.x(n);
 }
 
-void incrementNDirtySmall(GateEmitter& builder, std::size_t n) {
+static void incrementNDirtySmall(GateEmitter& builder, std::size_t n) {
   SmallVector<std::size_t, 16> qubits;
   for (std::size_t k = n - 1; k >= 1; --k) {
     qubits.clear();
@@ -301,7 +303,7 @@ void incrementNDirtySmall(GateEmitter& builder, std::size_t n) {
   builder.x(0);
 }
 
-void incrementNDirty(GateEmitter& builder, std::size_t n) {
+static void incrementNDirty(GateEmitter& builder, std::size_t n) {
   if (n <= 10) {
     incrementNDirtySmall(builder, n);
   } else {
@@ -309,7 +311,7 @@ void incrementNDirty(GateEmitter& builder, std::size_t n) {
   }
 }
 
-void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
+static void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
   const std::size_t target = numControls;
 
   if (numControls == 0) {
@@ -355,7 +357,8 @@ void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
   builder.h(target);
 }
 
-void synthRelativeMcxNDirty(GateEmitter& builder, std::size_t numControls) {
+static void synthRelativeMcxNDirty(GateEmitter& builder,
+                                   std::size_t numControls) {
   if (numControls < 11) {
     synthRelativeMcx(builder, numControls);
   } else {
@@ -363,9 +366,8 @@ void synthRelativeMcxNDirty(GateEmitter& builder, std::size_t numControls) {
   }
 }
 
-/// Increment gadget with @p numDirtyAncillae dirty ancilla(e).
-void incrementDirty(GateEmitter& builder, std::size_t n,
-                    std::size_t numDirtyAncillae, bool flagAdd) {
+static void incrementDirty(GateEmitter& builder, std::size_t n,
+                           std::size_t numDirtyAncillae, bool flagAdd) {
   if (numDirtyAncillae == 1 && n % 2 == 0) {
     return;
   }
@@ -444,8 +446,6 @@ void incrementDirty(GateEmitter& builder, std::size_t n,
     }
   }
 }
-
-} // namespace
 
 /// HP24 no-auxiliary MCX core, without target Hadamard bookends.
 /// @param n Total wire count (controls plus target).
