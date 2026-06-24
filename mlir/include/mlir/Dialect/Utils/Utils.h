@@ -20,11 +20,37 @@
 #include <mlir/IR/Value.h>
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <iterator>
+#include <numbers>
 #include <variant>
 
 namespace mlir::utils {
+
+/// Check if a floating-point value is an integer.
+[[nodiscard]] inline bool isIntegerExponent(double r) {
+  return r == std::floor(r) && std::isfinite(r);
+}
+
+/// Check if a floating-point value is an even integer.
+/// Uses fmod to avoid UB from narrowing to int64_t for large values.
+[[nodiscard]] inline bool isEvenExponent(double r) {
+  return std::fmod(std::fabs(r), 2.0) == 0.0;
+}
+
+/// Normalize an angle to (-π, π].
+[[nodiscard]] inline double normalizeAngle(double theta) {
+  const double twoPi = 2.0 * std::numbers::pi;
+  theta = std::fmod(theta, twoPi);
+  if (theta > std::numbers::pi) {
+    theta -= twoPi;
+  }
+  if (theta <= -std::numbers::pi) {
+    theta += twoPi;
+  }
+  return theta;
+}
 
 /// Default absolute tolerance for MLIR dialect numerics (angle wrapping,
 /// phase-zero checks).

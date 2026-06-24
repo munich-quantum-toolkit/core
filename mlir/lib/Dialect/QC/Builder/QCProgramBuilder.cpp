@@ -484,6 +484,15 @@ QCProgramBuilder::inv(ValueRange qubits,
   return *this;
 }
 
+QCProgramBuilder&
+QCProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                      ValueRange qubits,
+                      const function_ref<void(ValueRange)>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, qubits, body);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // SCF operations
 //===----------------------------------------------------------------------===//

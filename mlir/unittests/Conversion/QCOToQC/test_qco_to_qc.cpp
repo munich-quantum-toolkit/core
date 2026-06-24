@@ -144,6 +144,18 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::allocDeallocPair)}));
 /// @}
 
+/// \name QCOToQC/Modifiers/PowOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOPowOpTest, QCOToQCTest,
+    testing::Values(QCOToQCTestCase{"CtrlPowSx",
+                                    MQT_NAMED_BUILDER(qco::ctrlPowSx),
+                                    MQT_NAMED_BUILDER(qc::ctrlPowSx)},
+                    QCOToQCTestCase{"PowTwo", MQT_NAMED_BUILDER(qco::powTwo),
+                                    MQT_NAMED_BUILDER(qc::powTwo)}));
+
+/// @}
+
 /// \name QCOToQC/Modifiers/CtrlOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

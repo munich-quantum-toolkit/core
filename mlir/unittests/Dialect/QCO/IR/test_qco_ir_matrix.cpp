@@ -95,6 +95,46 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
 }
 /// @}
 
+/// \name QCO/Modifiers/PowOp.cpp
+/// @{
+TEST_F(QCOMatrixTest, PowRxxOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powRxx);
+  ASSERT_TRUE(moduleOp);
+
+  // Get the PowOp from the module
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+
+  // RXX(0.123)^2 requires eigendecomposition (not yet supported).
+  ASSERT_FALSE(matrix.has_value());
+}
+
+TEST_F(QCOMatrixTest, PowHalfXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powHalfX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+
+  // X^0.5 requires eigendecomposition (not yet supported).
+  ASSERT_FALSE(matrix.has_value());
+}
+
+TEST_F(QCOMatrixTest, PowNegHalfXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powNegHalfX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+
+  // X^-0.5 requires eigendecomposition (not yet supported).
+  ASSERT_FALSE(matrix.has_value());
+}
+/// @}
+
 /// \name QCO/Modifiers/InvOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {

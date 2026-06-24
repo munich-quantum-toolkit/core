@@ -16,6 +16,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -89,6 +90,45 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
                        llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
                          return newCtrl.getOutputForInput(in);
                        }));
+    return success();
+  }
+};
+
+/**
+ * @brief Eliminate inv by negating the pow exponent, i.e.,
+ * `inv(pow(p){U}) => pow(-p){U}`.
+ *
+ * This is always valid for unitaries: `(U^p)† = U^{-p}`.
+ * Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
+ * `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
+ */
+struct InvPowToNegPow final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto inner =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerPow = dyn_cast<PowOp>(inner.getOperation());
+    if (!innerPow) {
+      return failure();
+    }
+
+    const double exponent = innerPow.getExponentValue();
+
+    rewriter.replaceOpWithNewOp<PowOp>(
+        invOp, invOp.getQubitsIn(), -exponent,
+        [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
+          auto* powBody = rewriter.getInsertionBlock();
+          rewriter.inlineBlockBefore(innerPow.getBody(), powBody,
+                                     powBody->begin(), powArgs);
+          auto yieldedValues = llvm::to_vector(powBody->back().getOperands());
+          rewriter.eraseOp(&powBody->back());
+          return yieldedValues;
+        });
     return success();
   }
 };
@@ -401,8 +441,8 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MoveCtrlOutside, InlineSelfAdjoint, ReplaceWithKnownGates,
-              CancelNestedInv, EraseEmptyInv>(context);
+  results.add<MoveCtrlOutside, InvPowToNegPow, InlineSelfAdjoint,
+              ReplaceWithKnownGates, CancelNestedInv, EraseEmptyInv>(context);
 }
 
 bool InvOp::hasCompileTimeKnownUnitaryMatrix() {

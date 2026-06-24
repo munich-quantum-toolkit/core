@@ -549,7 +549,7 @@ public:
    * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * qc.ctrl(%q0) (%a0 = %q1) {                                                \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
    *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
    * } : !qc.qubit                                                             \
    * ```                                                                       \
@@ -942,6 +942,30 @@ public:
    * ```
    */
   QCProgramBuilder& inv(ValueRange qubits,
+                        const function_ref<void(ValueRange)>& body);
+
+  /**
+   * @brief Apply a power operation.
+   *
+   * @param exponent The exponent to raise the operation to
+   * @param qubits The qubits the body operates on (aliased into the body via
+   * block arguments)
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.pow(2.0, q0, [&](ValueRange qubits) { builder.s(qubits[0]); });
+   * ```
+   * ```mlir
+   * qc.pow(2.000000e+00) (%a0 = %q0) {
+   *   qc.s %a0 : !qc.qubit
+   * } : !qc.qubit
+   * ```
+   */
+  QCProgramBuilder& pow(const std::variant<double, Value>& exponent,
+                        ValueRange qubits,
                         const function_ref<void(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//

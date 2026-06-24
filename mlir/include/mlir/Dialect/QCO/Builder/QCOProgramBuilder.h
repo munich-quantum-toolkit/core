@@ -1201,6 +1201,33 @@ public:
   ValueRange inv(ValueRange qubits,
                  function_ref<SmallVector<Value>(ValueRange)> body);
 
+  /**
+   * @brief Apply a power operation.
+   *
+   * @param qubits Input qubits
+   * @param exponent The exponent to raise the operation to
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * qubits_out = builder.pow(q0_in, 2.0,
+   *   [&](ValueRange qubits) -> SmallVector<Value> {
+   *     return {builder.s(qubits[0])};
+   *   }
+   * );
+   * ```
+   * ```mlir
+   * %q_out = qco.pow (2.000000e+00) (%q = %q_in) {
+   *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
+   *   qco.yield %q_res
+   * } : {!qco.qubit} -> {!qco.qubit}
+   * ```
+   */
+  ValueRange pow(ValueRange qubits, const std::variant<double, Value>& exponent,
+                 function_ref<SmallVector<Value>(ValueRange)> body);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

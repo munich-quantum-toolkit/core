@@ -16,7 +16,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -871,6 +870,43 @@ QCOProgramBuilder::inv(ValueRange qubits,
 
   // Update tracking
   const auto& targetsOut = invOp.getQubitsOut();
+  for (const auto& [target, targetOut] :
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
+ValueRange
+QCOProgramBuilder::pow(ValueRange qubits,
+                       const std::variant<double, Value>& exponent,
+                       function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+
+  auto powOp = PowOp::create(*this, qubits, exponent);
+
+  // Add block arguments for all qubits
+  auto& block = powOp.getBodyRegion().emplaceBlock();
+  const auto qubitType = QubitType::get(getContext());
+  for (const auto qubit : qubits) {
+    const auto arg = block.addArgument(qubitType, getLoc());
+    updateQubitTracking(qubit, arg);
+  }
+
+  // Create the final yield operation
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&block);
+  const auto innerTargetsOut = body(block.getArguments());
+  YieldOp::create(*this, innerTargetsOut);
+
+  if (innerTargetsOut.size() != qubits.size()) {
+    llvm::reportFatalUsageError(
+        "Pow body must return exactly one output qubit per target");
+  }
+
+  // Update tracking
+  const auto& targetsOut = powOp.getQubitsOut();
   for (const auto& [target, targetOut] :
        llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);

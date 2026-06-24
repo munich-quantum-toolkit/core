@@ -23,8 +23,10 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstddef>
 #include <numbers>
 
@@ -73,6 +75,47 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
                                       innerInv.getRegion().end());
         });
 
+    return success();
+  }
+};
+
+/**
+ * @brief Eliminate inv by negating the pow exponent, i.e.,
+ * `inv(pow(p){U}) => pow(-p){U}`.
+ *
+ * @details This is always valid for unitaries: `(U^p)† = U^{-p}`.
+ * Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
+ * `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
+ */
+struct InvPowToNegPow final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto inner =
+        utils::getSoleBodyUnitary<UnitaryOpInterface>(*invOp.getBody());
+    if (!inner) {
+      return failure();
+    }
+    auto innerPow = dyn_cast<PowOp>(inner.getOperation());
+    if (!innerPow) {
+      return failure();
+    }
+    const double exponent = innerPow.getExponentValue();
+    // The inner pow's operands alias the inv's block args; translate them back
+    // to the outer qubits the inv aliases so the new pow is valid in the inv's
+    // parent scope.
+    auto outerQubits = invOp.getQubits();
+    const auto qubits = llvm::map_to_vector(innerPow.getQubits(), [&](Value v) {
+      return utils::getValueFromBlockArgument(v, outerQubits);
+    });
+    rewriter.replaceOpWithNewOp<PowOp>(
+        invOp, -exponent, qubits, [&](ValueRange powArgs) {
+          auto* powBody = rewriter.getInsertionBlock();
+          // Inner pow body args now match the new pow's args positionally.
+          rewriter.inlineBlockBefore(innerPow.getBody(), powBody,
+                                     powBody->begin(), powArgs);
+          rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
+        });
     return success();
   }
 };
@@ -338,6 +381,6 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv, MoveCtrlOutside, InlineSelfAdjoint,
-              ReplaceWithKnownGates, EraseEmptyInv>(context);
+  results.add<CancelNestedInv, MoveCtrlOutside, InvPowToNegPow,
+              InlineSelfAdjoint, ReplaceWithKnownGates, EraseEmptyInv>(context);
 }
