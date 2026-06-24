@@ -46,8 +46,32 @@ namespace mlir::qco::decomposition {
  * @param controls Current SSA values of the control qubits.
  * @param target Current SSA value of the target qubit.
  * @return The updated SSA values, ordered as `[controls..., target]`.
+ *
+ * @pre @p controls must contain at least two qubits.
  */
 [[nodiscard]] SmallVector<Value> synthesizeMcx(OpBuilder& builder, Location loc,
+                                               ValueRange controls,
+                                               Value target);
+
+/**
+ * @brief Emits a decomposition of a multi-controlled Z gate.
+ *
+ * @details Emits the same gate set as @ref synthesizeMcx (`h`, `t`, `tdg`, `p`,
+ * and `cx`). For @f$k \ge 2@f$ controls, emits the HP24 MCX core directly,
+ * since @f$\mathrm{MCZ} =
+ * H_{\text{target}}\,(H_{\text{target}}\,\mathrm{CORE}\,
+ * H_{\text{target}})\,H_{\text{target}} = \mathrm{CORE}@f$ and the MCX
+ * Hadamard bookends cancel under this conjugation.
+ *
+ * @param builder Builder positioned at the desired insertion point.
+ * @param loc Location attached to the emitted operations.
+ * @param controls Current SSA values of the control qubits.
+ * @param target Current SSA value of the target qubit.
+ * @return The updated SSA values, ordered as `[controls..., target]`.
+ *
+ * @pre @p controls must contain at least two qubits.
+ */
+[[nodiscard]] SmallVector<Value> synthesizeMcz(OpBuilder& builder, Location loc,
                                                ValueRange controls,
                                                Value target);
 

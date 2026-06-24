@@ -13,7 +13,7 @@ with the exception that minor releases may include breaking changes.
 ### Added
 
 - ✨ Add a `decompose-multi-controlled` pass
-  for decomposing multi-controlled gates into one- and two-qubit gates
+  for decomposing multi-controlled X and Z gates into one- and two-qubit gates
   ([**@simon1hofmann**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
   for fusing compile-time single-qubit unitary runs via Euler resynthesis

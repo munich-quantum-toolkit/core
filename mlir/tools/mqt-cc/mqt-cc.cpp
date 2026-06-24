@@ -94,6 +94,12 @@ static llvm::cl::opt<bool> enableDecomposeMultiControlled(
                    "gates during optimization"),
     llvm::cl::init(false));
 
+static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
+    "decompose-multi-controlled-min-controls",
+    llvm::cl::desc("Minimum number of controls to decompose when "
+                   "--decompose-multi-controlled is enabled"),
+    llvm::cl::init(2));
+
 /**
  * @brief Load and parse a .qasm file
  */
@@ -186,6 +192,8 @@ int main(int argc, char** argv) {
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
   config.enableDecomposeMultiControlled = enableDecomposeMultiControlled;
+  config.decomposeMultiControlledMinControls =
+      decomposeMultiControlledMinControls.getValue();
 
   // Run the compilation pipeline
   CompilationRecord record;

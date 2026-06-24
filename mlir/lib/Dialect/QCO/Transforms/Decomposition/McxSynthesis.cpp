@@ -24,6 +24,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/MultiControlled.h"
 
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
@@ -459,29 +460,13 @@ void incrementDirty(GateEmitter& builder, std::size_t n,
 
 } // namespace
 
-SmallVector<Value> synthesizeMcx(OpBuilder& builder, Location loc,
-                                 ValueRange controls, Value target) {
-  SmallVector<Value> wires(controls.begin(), controls.end());
-  wires.push_back(target);
-
-  const std::size_t numControls = controls.size();
-  const std::size_t n = numControls + 1;
-  const std::size_t targetIdx = numControls;
+/// HP24 no-auxiliary MCX core (Fig. 6 / Fig. 8), without target Hadamard
+/// bookends.
+/// @param n Total wire count (controls plus target).
+static void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
   const std::size_t lastControl = n - 1;
   const std::size_t c0 = n - 2;
   const std::size_t c1 = n - 1;
-
-  GateEmitter emitter(builder, loc, wires);
-  if (n == 1) {
-    emitter.x(0);
-    return wires;
-  }
-  if (n == 2) {
-    emitter.cx(0, 1);
-    return wires;
-  }
-
-  emitter.h(targetIdx);
 
   SmallVector<std::size_t, 16> incrementQubits(n);
   std::iota(incrementQubits.begin(), incrementQubits.end(), 0U);
@@ -524,8 +509,43 @@ SmallVector<Value> synthesizeMcx(OpBuilder& builder, Location loc,
     }
     emitter.ccp(phi, 0, c0, c1);
   }
+}
 
+SmallVector<Value> synthesizeMcx(OpBuilder& builder, Location loc,
+                                 ValueRange controls, Value target) {
+  if (controls.size() < 2) {
+    llvm::reportFatalUsageError(
+        "synthesizeMcx requires at least 2 control qubits");
+  }
+
+  SmallVector<Value> wires(controls.begin(), controls.end());
+  wires.push_back(target);
+
+  const std::size_t n = controls.size() + 1;
+  const std::size_t targetIdx = controls.size();
+
+  GateEmitter emitter(builder, loc, wires);
   emitter.h(targetIdx);
+  emitMcxHp24Core(emitter, n);
+  emitter.h(targetIdx);
+  return wires;
+}
+
+SmallVector<Value> synthesizeMcz(OpBuilder& builder, Location loc,
+                                 ValueRange controls, Value target) {
+  if (controls.size() < 2) {
+    llvm::reportFatalUsageError(
+        "synthesizeMcz requires at least 2 control qubits");
+  }
+
+  SmallVector<Value> wires(controls.begin(), controls.end());
+  wires.push_back(target);
+
+  const std::size_t n = controls.size() + 1;
+
+  GateEmitter emitter(builder, loc, wires);
+  // Algebraically MCZ = H·(H·CORE·H)·H = CORE for k >= 2.
+  emitMcxHp24Core(emitter, n);
   return wires;
 }
 

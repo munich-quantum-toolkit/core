@@ -148,7 +148,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // Stage 5: Optimization passes
   if (failed(runStage([&](PassManager& pm) {
         if (config_.enableDecomposeMultiControlled) {
-          pm.addPass(qco::createDecomposeMultiControlled());
+          qco::DecomposeMultiControlledOptions options;
+          options.minControls = config_.decomposeMultiControlledMinControls;
+          pm.addPass(qco::createDecomposeMultiControlled(options));
         }
         if (!config_.disableMergeSingleQubitRotationGates) {
           pm.addPass(qco::createMergeSingleQubitRotationGates());
