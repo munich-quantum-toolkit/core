@@ -172,12 +172,10 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
 
       if (it.operation() == nullptr) { // isa<BlockArgument>
         std::ranges::advance(it, Traits::stride());
-        continue;
       }
 
       while (Traits::isActive(it)) {
         assert(it.operation() != nullptr);
-
         const auto nqubits = impl::getNumQubits(it.operation());
 
         assert(nqubits != 0);
