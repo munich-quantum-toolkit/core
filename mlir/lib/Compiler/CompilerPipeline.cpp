@@ -77,6 +77,12 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                     "enabled and the record pointer to be non-null.\n";
     return failure();
   }
+  if (config_.enableDecomposeMultiControlled &&
+      config_.decomposeMultiControlledMinControls < 2) {
+    llvm::errs() << "decomposeMultiControlledMinControls must be at least 2 when "
+                    "enableDecomposeMultiControlled is enabled.\n";
+    return failure();
+  }
 
   auto runStage = [&](auto&& populatePasses) -> LogicalResult {
     PassManager pm(module.getContext());

@@ -458,8 +458,13 @@ static void emitMcxHp24Core(GateEmitter& emitter, std::size_t n) {
   SmallVector<std::size_t, 16> incrementQubits(n);
   std::iota(incrementQubits.begin(), incrementQubits.end(), 0U);
 
-  // One dirty ancilla for very large even widths (22+ controls); two otherwise.
-  if ((n % 2 == 0) && (n >= 23)) {
+  const std::size_t numControls = n - 1;
+  // One dirty ancilla for odd control counts >= 23 (even total wire count n);
+  // two dirty ancillae otherwise.
+  constexpr std::size_t kOneDirtyAncillaMinControls = 23;
+  const bool useOneDirtyAncilla =
+      numControls >= kOneDirtyAncillaMinControls && (numControls % 2 == 1);
+  if (useOneDirtyAncilla) {
     emitter.compose(incrementQubits, [&](GateEmitter& sub) {
       incrementDirty(sub, n - 1, 1, true);
     });
