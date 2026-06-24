@@ -78,8 +78,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   mqt::test::DeferredPrinter printer;
 
-  auto program =
-      QCOProgramBuilder::buildWithReturn(context.get(), programBuilder.fn);
+  auto program = QCOProgramBuilder::build(context.get(), programBuilder.fn);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -88,8 +87,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      QCOProgramBuilder::buildWithReturn(context.get(), referenceBuilder.fn);
+  auto reference = QCOProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
@@ -261,8 +259,8 @@ TEST_F(QCOTest, DirectIfBuilder) {
   EXPECT_TRUE(runQCOCleanupPipeline(directBuilder.get()).succeeded());
   EXPECT_TRUE(verify(*directBuilder).succeeded());
 
-  auto refBuilder = QCOProgramBuilder::buildWithReturn(
-      context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
+  auto refBuilder =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(refBuilder.get()).succeeded());
@@ -306,7 +304,7 @@ TEST_F(QCOTest, IfOpParser) {
   EXPECT_TRUE(runQCOCleanupPipeline(parsedSourceModule.get()).succeeded());
   EXPECT_TRUE(verify(*parsedSourceModule).succeeded());
 
-  auto refBuilder = QCOProgramBuilder::buildWithReturn(
+  auto refBuilder = QCOProgramBuilder::build(
       context.get(), MQT_NAMED_BUILDER(ifOneQubitOneTensor).fn);
   ASSERT_TRUE(refBuilder);
   EXPECT_TRUE(verify(*refBuilder).succeeded());

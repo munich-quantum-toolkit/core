@@ -78,8 +78,7 @@ protected:
 /// \name QCO/Modifiers/CtrlOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, CXOpMatrix) {
-  auto moduleOp =
-      QCOProgramBuilder::buildWithReturn(context.get(), singleControlledX);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), singleControlledX);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -102,8 +101,7 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
 /// \name QCO/Modifiers/InvOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {
-  auto moduleOp =
-      QCOProgramBuilder::buildWithReturn(context.get(), inverseIswap);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseIswap);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -156,8 +154,7 @@ TEST_F(QCOMatrixTest, ECROpMatrix) {
 /// \name QCO/Operations/StandardGates/GphaseOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, GPhaseOpMatrix) {
-  auto moduleOp =
-      QCOProgramBuilder::buildWithReturn(context.get(), globalPhase);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), globalPhase);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -222,7 +219,7 @@ TEST_F(QCOMatrixTest, iSWAPOpMatrix) {
 /// \name QCO/Operations/StandardGates/POp.cpp
 /// @{
 TEST_F(QCOMatrixTest, POpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), p);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), p);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -242,7 +239,7 @@ TEST_F(QCOMatrixTest, POpMatrix) {
 /// \name QCO/Operations/StandardGates/ROp.cpp
 /// @{
 TEST_F(QCOMatrixTest, ROpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), r);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), r);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -262,7 +259,7 @@ TEST_F(QCOMatrixTest, ROpMatrix) {
 /// \name QCO/Operations/StandardGates/RxOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RXOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), rx);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), rx);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -283,7 +280,7 @@ TEST_F(QCOMatrixTest, RXOpMatrix) {
 /// \name QCO/Operations/StandardGates/RxxOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RXXOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), rxx);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), rxx);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -303,7 +300,7 @@ TEST_F(QCOMatrixTest, RXXOpMatrix) {
 /// \name QCO/Operations/StandardGates/RyOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RYOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), ry);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), ry);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -324,7 +321,7 @@ TEST_F(QCOMatrixTest, RYOpMatrix) {
 /// \name QCO/Operations/StandardGates/RyyOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RYYOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), ryy);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), ryy);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -344,7 +341,7 @@ TEST_F(QCOMatrixTest, RYYOpMatrix) {
 /// \name QCO/Operations/StandardGates/RzOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RZOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), rz);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), rz);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -365,7 +362,7 @@ TEST_F(QCOMatrixTest, RZOpMatrix) {
 /// \name QCO/Operations/StandardGates/RzxOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RZXOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), rzx);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), rzx);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -385,7 +382,7 @@ TEST_F(QCOMatrixTest, RZXOpMatrix) {
 /// \name QCO/Operations/StandardGates/RzzOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RZZOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), rzz);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), rzz);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -510,7 +507,7 @@ TEST_F(QCOMatrixTest, TdgOpMatrix) {
 /// \name QCO/Operations/StandardGates/U2Op.cpp
 /// @{
 TEST_F(QCOMatrixTest, U2OpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), u2);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), u2);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -531,7 +528,7 @@ TEST_F(QCOMatrixTest, U2OpMatrix) {
 /// \name QCO/Operations/StandardGates/UOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, UOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), u);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), u);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -567,7 +564,7 @@ TEST_F(QCOMatrixTest, XOpMatrix) {
 /// \name QCO/Operations/StandardGates/XxMinusYyOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, XXMinusYYOpMatrix) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), xxMinusYY);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), xxMinusYY);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
@@ -588,7 +585,7 @@ TEST_F(QCOMatrixTest, XXMinusYYOpMatrix) {
 /// \name QCO/Operations/StandardGates/XxPlusYyOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, XXPlusYYOp) {
-  auto moduleOp = QCOProgramBuilder::buildWithReturn(context.get(), xxPlusYY);
+  auto moduleOp = QCOProgramBuilder::build(context.get(), xxPlusYY);
   ASSERT_TRUE(moduleOp);
 
   // Get the operation from the module
