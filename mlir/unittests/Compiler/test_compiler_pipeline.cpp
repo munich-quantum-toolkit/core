@@ -120,12 +120,14 @@ protected:
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
                           const bool disableMergeSingleQubitRotationGates,
                           const bool enableHadamardLifting,
+                          const bool enableDecomposeMultiControlled,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
     config.convertToQIRAdaptive = convertToQIR;
     config.disableMergeSingleQubitRotationGates =
         disableMergeSingleQubitRotationGates;
     config.enableHadamardLifting = enableHadamardLifting;
+    config.enableDecomposeMultiControlled = enableDecomposeMultiControlled;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 
@@ -169,7 +171,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   EXPECT_TRUE(mlir::verify(*module).succeeded());
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), testCase.convertToQIR, false, false, record);
+  runPipeline(module.get(), testCase.convertToQIR, false, false, false, record);
 
   ASSERT_TRUE(testCase.qcReferenceBuilder);
   auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
@@ -216,7 +218,7 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
   ASSERT_TRUE(module);
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), false, false, false, record);
+  runPipeline(module.get(), false, false, false, false, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
@@ -239,7 +241,28 @@ TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
   ASSERT_TRUE(module);
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), false, true, true, record);
+  runPipeline(module.get(), false, true, true, false, record);
+
+  // The outputs must differ, proving the pass ran and transformed the IR
+  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
+}
+
+/**
+ * @brief Test: Multi-controlled decomposition pass is invoked during
+ * optimization
+ *
+ * @details
+ * We run the pipeline with multi-controlled decomposition enabled and check
+ * whether the QCO IR changes between initial and post-optimization cleanup.
+ * Correctness of the pass is tested in a dedicated test.
+ */
+TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledX);
+  ASSERT_TRUE(module);
+
+  mlir::CompilationRecord record;
+  runPipeline(module.get(), false, false, false, true, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
