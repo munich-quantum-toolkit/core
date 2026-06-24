@@ -24,6 +24,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
 
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>

@@ -24,9 +24,11 @@
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <numbers>

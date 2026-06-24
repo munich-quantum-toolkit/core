@@ -23,8 +23,10 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstddef>
 #include <numbers>
 
