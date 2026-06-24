@@ -280,6 +280,22 @@ TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
 }
 
+TEST_F(CompilerPipelineTest,
+       RejectsDecomposeMultiControlledMinControlsBelowTwo) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledX);
+  ASSERT_TRUE(module);
+
+  mlir::QuantumCompilerConfig config;
+  config.enableDecomposeMultiControlled = true;
+  config.decomposeMultiControlledMinControls = 1;
+  config.recordIntermediates = true;
+
+  mlir::QuantumCompilerPipeline pipeline(config);
+  mlir::CompilationRecord record;
+  EXPECT_FALSE(pipeline.runPipeline(module.get(), &record).succeeded());
+}
+
 INSTANTIATE_TEST_SUITE_P(
     QuantumComputationPipelineProgramsTest, CompilerPipelineTest,
     testing::Values(

@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/MultiControlled.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -363,4 +364,65 @@ TEST_F(McxDecompositionTest, DecomposesMcxAndMcz) {
   ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
 
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 0U);
+}
+
+TEST_F(McxDecompositionTest, PassFailsWhenMinControlsBelowTwo) {
+  auto moduleOp = buildMcxModule(context(), 3);
+  ASSERT_TRUE(moduleOp);
+
+  DecomposeMultiControlledOptions options;
+  options.minControls = 1;
+  EXPECT_FALSE(runDecomposePass(moduleOp.get(), options).succeeded());
+}
+
+TEST_F(McxDecompositionTest, LeavesMultiOpCtrlUntouched) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        const Value c0 = builder.staticQubit(0);
+        const Value c1 = builder.staticQubit(1);
+        const Value target = builder.staticQubit(2);
+        builder.ctrl({c0, c1}, {target},
+                     [&](ValueRange targets) -> SmallVector<Value> {
+                       const Value afterX = builder.x(targets[0]);
+                       return {builder.y(afterX)};
+                     });
+      });
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
+}
+
+TEST_F(McxDecompositionTest, LeavesMultiControlledHUntouched) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        builder.mch({builder.staticQubit(0), builder.staticQubit(1)},
+                    builder.staticQubit(2));
+      });
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
+}
+
+TEST_F(McxDecompositionTest, SynthesizeMcxRequiresTwoControls) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context());
+        builder.initialize();
+        const Value q0 = builder.staticQubit(0);
+        decomposition::synthesizeMcx(builder, builder.getLoc(), ValueRange{q0},
+                                     q0);
+      },
+      "synthesizeMcx requires at least 2 control qubits");
+}
+
+TEST_F(McxDecompositionTest, SynthesizeMczRequiresTwoControls) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context());
+        builder.initialize();
+        const Value q0 = builder.staticQubit(0);
+        decomposition::synthesizeMcz(builder, builder.getLoc(), ValueRange{q0},
+                                     q0);
+      },
+      "synthesizeMcz requires at least 2 control qubits");
 }

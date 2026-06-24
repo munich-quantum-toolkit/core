@@ -8,8 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/MultiControlled.h"
+
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -369,10 +370,6 @@ static void synthRelativeMcxNDirty(GateEmitter& builder,
 
 static void incrementDirty(GateEmitter& builder, std::size_t n,
                            std::size_t numDirtyAncillae, bool flagAdd) {
-  if (numDirtyAncillae == 1 && n % 2 == 0) {
-    return;
-  }
-
   const std::size_t k = numDirtyAncillae == 1 ? (n + 1) / 2 : (n + 2) / 2;
   const std::size_t ancilla1 = n;
   const std::size_t ancilla2 = n + 1;
