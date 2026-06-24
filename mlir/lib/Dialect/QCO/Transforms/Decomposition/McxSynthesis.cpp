@@ -14,6 +14,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 

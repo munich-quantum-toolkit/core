@@ -52,9 +52,9 @@ constexpr std::array<std::size_t, 11> K_SMOKE_CONTROL_COUNTS = {
     10, 12, 15, 18, 20, 22, 23, 24, 25, 28, 30,
 };
 
-enum class ControlledPauli : std::uint8_t { X, Z };
-
 namespace {
+
+enum class ControlledPauli : std::uint8_t { X, Z };
 
 class McxDecompositionTest : public testing::Test {
 protected:
