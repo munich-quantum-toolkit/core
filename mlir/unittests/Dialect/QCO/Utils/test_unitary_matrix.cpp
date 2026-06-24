@@ -596,8 +596,7 @@ TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
   EXPECT_TRUE((v.transpose() * v).isIdentity());
 }
 
-TEST(GateMatrixFactories, RemEuclidAndControlledGates) {
-  EXPECT_DOUBLE_EQ(remEuclid(-1.0, 3.0), 2.0);
+TEST(GateMatrixFactories, ControlledGates) {
   EXPECT_TRUE(twoQubitControlledX01().isApprox(
       Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0)));
   EXPECT_TRUE(twoQubitControlledX10().isApprox(

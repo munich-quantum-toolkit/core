@@ -42,14 +42,14 @@ static std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
   return llvm::StringSwitch<std::optional<NativeGateKind>>(name)
       .Case("u", NativeGateKind::U)
       .Case("x", NativeGateKind::X)
-      .Case("sx", NativeGateKind::Sx)
-      .Cases("rz", "p", NativeGateKind::Rz)
-      .Case("rx", NativeGateKind::Rx)
-      .Case("ry", NativeGateKind::Ry)
+      .Case("sx", NativeGateKind::SX)
+      .Cases("rz", "p", NativeGateKind::RZ)
+      .Case("rx", NativeGateKind::RX)
+      .Case("ry", NativeGateKind::RY)
       .Case("r", NativeGateKind::R)
-      .Case("cx", NativeGateKind::Cx)
-      .Case("cz", NativeGateKind::Cz)
-      .Case("rzz", NativeGateKind::Rzz)
+      .Case("cx", NativeGateKind::CX)
+      .Case("cz", NativeGateKind::CZ)
+      .Case("rzz", NativeGateKind::RZZ)
       .Default(std::nullopt);
 }
 
@@ -78,25 +78,25 @@ hasSingleQubitStrategy(const llvm::DenseSet<NativeGateKind>& gates) {
   if (has(NativeGateKind::U)) {
     return true;
   }
-  if (has(NativeGateKind::X) && has(NativeGateKind::Sx) &&
-      has(NativeGateKind::Rz)) {
+  if (has(NativeGateKind::X) && has(NativeGateKind::SX) &&
+      has(NativeGateKind::RZ)) {
     return true;
   }
   if (has(NativeGateKind::R)) {
     return true;
   }
-  return (has(NativeGateKind::Rx) && has(NativeGateKind::Rz)) ||
-         (has(NativeGateKind::Rx) && has(NativeGateKind::Ry)) ||
-         (has(NativeGateKind::Ry) && has(NativeGateKind::Rz));
+  return (has(NativeGateKind::RX) && has(NativeGateKind::RZ)) ||
+         (has(NativeGateKind::RX) && has(NativeGateKind::RY)) ||
+         (has(NativeGateKind::RY) && has(NativeGateKind::RZ));
 }
 
 static std::optional<NativeGateKind>
 selectEntangler(const NativeProfileSpec& spec) {
-  if (spec.gates.contains(NativeGateKind::Cx)) {
-    return NativeGateKind::Cx;
+  if (spec.gates.contains(NativeGateKind::CX)) {
+    return NativeGateKind::CX;
   }
-  if (spec.gates.contains(NativeGateKind::Cz)) {
-    return NativeGateKind::Cz;
+  if (spec.gates.contains(NativeGateKind::CZ)) {
+    return NativeGateKind::CZ;
   }
   return std::nullopt;
 }
@@ -104,13 +104,13 @@ selectEntangler(const NativeProfileSpec& spec) {
 static const TwoQubitBasisDecomposer&
 cachedBasisDecomposer(NativeGateKind entangler) {
   switch (entangler) {
-  case NativeGateKind::Cx: {
+  case NativeGateKind::CX: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
         TwoQubitBasisDecomposer::create(mlir::qco::twoQubitControlledX01(),
                                         1.0);
     return DECOMPOSER;
   }
-  case NativeGateKind::Cz: {
+  case NativeGateKind::CZ: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
         TwoQubitBasisDecomposer::create(mlir::qco::twoQubitControlledZ(), 1.0);
     return DECOMPOSER;
@@ -154,16 +154,16 @@ static std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
     return NativeGateKind::X;
   }
   if (llvm::isa<SXOp>(raw)) {
-    return NativeGateKind::Sx;
+    return NativeGateKind::SX;
   }
   if (llvm::isa<RZOp, POp>(raw)) {
-    return NativeGateKind::Rz;
+    return NativeGateKind::RZ;
   }
   if (llvm::isa<RXOp>(raw)) {
-    return NativeGateKind::Rx;
+    return NativeGateKind::RX;
   }
   if (llvm::isa<RYOp>(raw)) {
-    return NativeGateKind::Ry;
+    return NativeGateKind::RY;
   }
   if (llvm::isa<ROp>(raw)) {
     return NativeGateKind::R;
@@ -177,10 +177,10 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
   }
   Operation* body = ctrl.getBodyUnitary(0).getOperation();
   if (llvm::isa<XOp>(body)) {
-    return NativeGateKind::Cx;
+    return NativeGateKind::CX;
   }
   if (llvm::isa<ZOp>(body)) {
-    return NativeGateKind::Cz;
+    return NativeGateKind::CZ;
   }
   return std::nullopt;
 }
@@ -190,20 +190,20 @@ EulerBasis NativeProfileSpec::eulerBasis() const {
   if (has(NativeGateKind::U)) {
     return EulerBasis::U;
   }
-  if (has(NativeGateKind::X) && has(NativeGateKind::Sx) &&
-      has(NativeGateKind::Rz)) {
+  if (has(NativeGateKind::X) && has(NativeGateKind::SX) &&
+      has(NativeGateKind::RZ)) {
     return EulerBasis::ZSXX;
   }
   if (has(NativeGateKind::R)) {
     return EulerBasis::R;
   }
-  if (has(NativeGateKind::Rx) && has(NativeGateKind::Rz)) {
+  if (has(NativeGateKind::RX) && has(NativeGateKind::RZ)) {
     return EulerBasis::XZX;
   }
-  if (has(NativeGateKind::Rx) && has(NativeGateKind::Ry)) {
+  if (has(NativeGateKind::RX) && has(NativeGateKind::RY)) {
     return EulerBasis::XYX;
   }
-  if (has(NativeGateKind::Ry) && has(NativeGateKind::Rz)) {
+  if (has(NativeGateKind::RY) && has(NativeGateKind::RZ)) {
     return EulerBasis::ZYZ;
   }
   llvm_unreachable("parseNativeSpec guarantees a synthesizable basis");
@@ -245,7 +245,7 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
     auto ctrlOp = CtrlOp::create(
         builder, loc, ValueRange{wire0}, ValueRange{wire1},
         [&](ValueRange targetArgs) -> SmallVector<Value> {
-          if (*entangler == NativeGateKind::Cz) {
+          if (*entangler == NativeGateKind::CZ) {
             return {ZOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
           }
           return {XOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
@@ -285,7 +285,7 @@ bool allowsOp(Operation* op, const NativeProfileSpec& spec) {
     return kind && spec.gates.contains(*kind);
   }
   if (llvm::isa<RZZOp>(op)) {
-    return spec.gates.contains(NativeGateKind::Rzz);
+    return spec.gates.contains(NativeGateKind::RZZ);
   }
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
   if (!unitary || !unitary.isSingleQubit()) {

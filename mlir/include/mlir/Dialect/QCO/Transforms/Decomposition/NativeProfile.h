@@ -32,14 +32,14 @@ namespace mlir::qco::decomposition {
 enum class NativeGateKind : std::uint8_t {
   U,
   X,
-  Sx,
-  Rz,
-  Rx,
-  Ry,
+  SX,
+  RZ,
+  RX,
+  RY,
   R,
-  Cx,
-  Cz,
-  Rzz,
+  CX,
+  CZ,
+  RZZ,
 };
 
 /**

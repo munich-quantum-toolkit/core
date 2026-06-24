@@ -795,33 +795,6 @@ struct SymmetricEigen4 {
   Matrix4x4 eigenvectors{};
 };
 
-/// `SWAP` on two qubits.
-[[nodiscard]] const Matrix4x4& twoQubitSwapMatrix();
-
-inline constexpr double FRAC1_SQRT2 =
-    0.707106781186547524400844362104849039284835937688474036588;
-
-/**
- * @brief Non-negative remainder of @p a modulo @p b.
- *
- * Unlike `std::fmod`, the result is always in `[0, |b|)`.
- */
-[[nodiscard]] double remEuclid(double a, double b);
-
-/**
- * @brief Average two-qubit gate fidelity from a Hilbert-Schmidt trace.
- *
- * Maps `|tr(U^dag V)|` to fidelity via `(4 + |tr|^2) / 20`.
- */
-[[nodiscard]] double traceToFidelity(const Complex& trace);
-
-/** @brief Unit-modulus global phase factor `exp(i * phase)`. */
-[[nodiscard]] Complex globalPhaseFactor(double phase);
-
-/** @brief Returns true when @p matrix is unitary within @p tolerance. */
-[[nodiscard]] bool isUnitaryMatrix(const Matrix2x2& matrix,
-                                   double tolerance = MATRIX_TOLERANCE);
-
 [[nodiscard]] Matrix2x2 rxMatrix(double theta);
 [[nodiscard]] Matrix2x2 ryMatrix(double theta);
 [[nodiscard]] Matrix2x2 rzMatrix(double theta);

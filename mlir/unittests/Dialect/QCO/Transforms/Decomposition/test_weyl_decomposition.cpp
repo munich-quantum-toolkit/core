@@ -52,6 +52,8 @@ using namespace mqt::test;
 using QubitId = std::size_t;
 
 static constexpr double K_SANITY_CHECK_PRECISION = 1e-12;
+inline constexpr double FRAC1_SQRT2 =
+    0.707106781186547524400844362104849039284835937688474036588;
 
 static const Matrix2x2& hGate() {
   static const Matrix2x2 MATRIX = Matrix2x2::fromElements(
@@ -99,7 +101,7 @@ static Matrix4x4 restoreWeyl(const TwoQubitWeylDecomposition& decomposition) {
   return Matrix4x4::kron(decomposition.k1l(), decomposition.k1r()) *
          decomposition.getCanonicalMatrix() *
          Matrix4x4::kron(decomposition.k2l(), decomposition.k2r()) *
-         globalPhaseFactor(decomposition.globalPhase());
+         std::exp(Complex{0.0, 1.0} * decomposition.globalPhase());
 }
 
 static Matrix4x4 restoreBasis(const TwoQubitNativeDecomposition& decomposition,
@@ -113,7 +115,7 @@ static Matrix4x4 restoreBasis(const TwoQubitNativeDecomposition& decomposition,
     matrix = entangler * matrix;
     matrix = layer(static_cast<std::size_t>(i) + 1) * matrix;
   }
-  return matrix * globalPhaseFactor(decomposition.globalPhase);
+  return matrix * std::exp(Complex{0.0, 1.0} * decomposition.globalPhase);
 }
 
 static auto productMatrixCases() {
@@ -286,11 +288,12 @@ static void expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
   EXPECT_TRUE(isEquivalentUpToGlobalPhase(*actual, target));
 }
 
+static bool isUnitaryMatrix(const Matrix2x2& matrix) {
+  return (matrix.adjoint() * matrix).isIdentity(WEYL_TOLERANCE);
+}
+
 TEST(DecompositionHelpersTest, MatrixUtilitySanity) {
-  EXPECT_DOUBLE_EQ(remEuclid(-1.0, 3.0), 2.0);
-  EXPECT_DOUBLE_EQ(traceToFidelity(std::complex<double>{3.0, 4.0}),
-                   (4.0 + 25.0) / 20.0);
-  EXPECT_NEAR(std::abs(globalPhaseFactor(1.25)), 1.0, 1e-14);
+  EXPECT_NEAR(std::abs(std::exp(Complex{0.0, 1.0} * 1.25)), 1.0, 1e-14);
   EXPECT_FALSE(isUnitaryMatrix(Matrix2x2::fromElements(2.0, 0.0, 0.0, 2.0)));
   EXPECT_TRUE(isUnitaryMatrix(Matrix2x2::identity()));
 }
@@ -590,8 +593,8 @@ TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
   fx.setUp();
   const auto spec = parseNativeSpec("u");
   ASSERT_TRUE(spec);
-  EXPECT_FALSE(spec->gates.contains(NativeGateKind::Cx));
-  EXPECT_FALSE(spec->gates.contains(NativeGateKind::Cz));
+  EXPECT_FALSE(spec->gates.contains(NativeGateKind::CX));
+  EXPECT_FALSE(spec->gates.contains(NativeGateKind::CZ));
   OpBuilder builder(fx.ctx());
   const auto qubitTy = QubitType::get(fx.ctx());
   const auto funcTy =
@@ -610,9 +613,9 @@ TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
 TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   const auto ibm = parseNativeSpec("x,sx,rz,cx");
   ASSERT_TRUE(ibm);
-  EXPECT_TRUE(ibm->gates.contains(NativeGateKind::Cx));
+  EXPECT_TRUE(ibm->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::X));
-  EXPECT_FALSE(ibm->gates.contains(NativeGateKind::Rzz));
+  EXPECT_FALSE(ibm->gates.contains(NativeGateKind::RZZ));
   EXPECT_FALSE(parseNativeSpec("x,sx,rz,not-a-gate").has_value());
 
   const auto pMenu = parseNativeSpec("x,sx,p,cx");
@@ -623,13 +626,13 @@ TEST(NativeSpecTest, ParsesAndRejectsMenus) {
 
   const auto cxOnly = parseNativeSpec("u,cx");
   ASSERT_TRUE(cxOnly);
-  EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::Cx));
-  EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::Cz));
+  EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::CX));
+  EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::CZ));
 
   const auto both = parseNativeSpec("u,cx,cz");
   ASSERT_TRUE(both);
-  EXPECT_TRUE(both->gates.contains(NativeGateKind::Cx));
-  EXPECT_TRUE(both->gates.contains(NativeGateKind::Cz));
+  EXPECT_TRUE(both->gates.contains(NativeGateKind::CX));
+  EXPECT_TRUE(both->gates.contains(NativeGateKind::CZ));
 
   const auto generic = parseNativeSpec("u,cx");
   ASSERT_TRUE(generic);

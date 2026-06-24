@@ -1015,35 +1015,6 @@ DynamicMatrix operator*(const Complex& scalar, const DynamicMatrix& matrix) {
   return matrix * scalar;
 }
 
-const Matrix4x4& twoQubitSwapMatrix() {
-  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1, 0, 0, 0, //
-                                                          0, 0, 1, 0, //
-                                                          0, 1, 0, 0, //
-                                                          0, 0, 0, 1);
-  return MATRIX;
-}
-
-double remEuclid(double a, double b) {
-  if (b == 0.0) {
-    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
-  }
-  const auto r = std::fmod(a, b);
-  return (r < 0.0) ? r + std::abs(b) : r;
-}
-
-double traceToFidelity(const Complex& trace) {
-  const auto traceAbs = std::abs(trace);
-  return (4.0 + (traceAbs * traceAbs)) / 20.0;
-}
-
-Complex globalPhaseFactor(double phase) {
-  return std::exp(Complex{0.0, 1.0} * phase);
-}
-
-bool isUnitaryMatrix(const Matrix2x2& matrix, const double tolerance) {
-  return (matrix.adjoint() * matrix).isIdentity(tolerance);
-}
-
 Matrix2x2 rxMatrix(const double theta) {
   const auto halfTheta = theta / 2.0;
   const Complex cos{std::cos(halfTheta), 0.0};
