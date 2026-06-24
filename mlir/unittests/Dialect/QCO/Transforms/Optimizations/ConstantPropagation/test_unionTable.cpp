@@ -682,32 +682,30 @@ TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
   ut.propagateGate(xOp, q0, q3);
   ut.propagateGate(xOp, q1, q4);
   ut.propagateGate(xOp, q2, q5);
-  const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, q5, qCtrl);
+  const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, v5, qCtrl);
   EXPECT_TRUE(globalPhase.has_value());
-  EXPECT_EQ(-1, globalPhase.value());
+  EXPECT_EQ(std::complex<double>(-1, 0), globalPhase.value());
 }
 
 TEST_F(UnionTablePropertiesTest, testMinusOneGlobalPhase) {
   std::vector qCtrl = {v4, v5};
   ut.propagateGate(xOp, q0, q4);
   ut.propagateGate(xOp, q1, q5);
-  const auto emptyGlobalPhase = ut.globalPhaseThatIsAdded(zOp, q5, q4);
-  const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, q2, qCtrl);
+  const auto emptyGlobalPhase = ut.globalPhaseThatIsAdded(zOp, v5, q4);
+  const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, v2, qCtrl);
   EXPECT_FALSE(emptyGlobalPhase.has_value());
   EXPECT_TRUE(globalPhase.has_value());
-  EXPECT_EQ(1, globalPhase.value());
+  EXPECT_EQ(std::complex<double>(1, 0), globalPhase.value());
 }
 
 TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalValue) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q1, q5, q4);
   ut.propagateMeasurement(v5, v6, i0);
-  const std::optional<std::pair<mlir::Value, bool>> result =
+  const llvm::DenseMap<mlir::Value, bool> result =
       ut.getValueThatIsEquivalentToQubit(v6);
-  ASSERT_TRUE(result.has_value());
-  auto [classicalValue, bitValue] = result.value();
-  ASSERT_EQ(classicalValue, i0);
-  ASSERT_TRUE(bitValue);
+  ASSERT_FALSE(result.empty());
+  ASSERT_TRUE(result.at(i0));
 }
 
 TEST_F(UnionTablePropertiesTest, FindEquivalentReversedClassicalValue) {
@@ -715,12 +713,10 @@ TEST_F(UnionTablePropertiesTest, FindEquivalentReversedClassicalValue) {
   ut.propagateGate(xOp, q1, q5, q4);
   ut.propagateGate(xOp, q4, q6);
   ut.propagateMeasurement(v5, v7, i0);
-  const std::optional<std::pair<mlir::Value, bool>> result =
+  const llvm::DenseMap<mlir::Value, bool> result =
       ut.getValueThatIsEquivalentToQubit(v6);
-  ASSERT_TRUE(result.has_value());
-  auto [classicalValue, bitValue] = result.value();
-  ASSERT_EQ(classicalValue, i0);
-  ASSERT_FALSE(bitValue);
+  ASSERT_FALSE(result.empty());
+  ASSERT_FALSE(result.at(i0));
 }
 
 TEST_F(UnionTablePropertiesTest, FindNoEquivalentClassicalValue) {
@@ -728,21 +724,16 @@ TEST_F(UnionTablePropertiesTest, FindNoEquivalentClassicalValue) {
   ut.propagateGate(xOp, q1, q5, q4);
   ut.propagateGate(hOp, q4, q6);
   ut.propagateMeasurement(v5, v7, i0);
-  const std::optional<std::pair<mlir::Value, bool>> result =
+  const llvm::DenseMap<mlir::Value, bool> result =
       ut.getValueThatIsEquivalentToQubit(v6);
-  ASSERT_FALSE(result.has_value());
+  ASSERT_TRUE(result.empty());
 }
 
 TEST_F(UnionTablePropertiesTest, ZeroIsAlwaysAntecedent) {
   std::vector classicalIndexVec = {i0};
   ut.propagateMeasurement(v0, v4, i0);
   ut.propagateGate(hOp, q1, q5);
-  auto [antecedentQubits, antecedentClassical] =
-      ut.getAntecedentsOfQubit(v5, q4, classicalIndexVec, {});
-  ASSERT_EQ(antecedentQubits.size(), 1);
-  ASSERT_EQ(antecedentClassical.size(), 1);
-  ASSERT_EQ(*antecedentQubits.begin(), v4);
-  ASSERT_EQ(*antecedentClassical.begin(), i0);
+  ASSERT_TRUE(ut.isQubitImplied(v5, q4, classicalIndexVec, {}));
 }
 
 TEST_F(UnionTablePropertiesTest, ImpliedQubit) {
@@ -750,27 +741,15 @@ TEST_F(UnionTablePropertiesTest, ImpliedQubit) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
   ut.propagateGate(hOp, q1, q6, q5);
-  auto [antecedentQubits, antecedentClassical] =
-      ut.getAntecedentsOfQubit(v6, q5, classicalIndexVec, {});
-  auto [antecedentQubitsEmpty, antecedentClassicalEmpty] =
-      ut.getAntecedentsOfQubit(v5, q6, classicalIndexVec, {});
-  ASSERT_EQ(antecedentQubits.size(), 1);
-  ASSERT_EQ(antecedentClassical.size(), 1);
-  ASSERT_EQ(*antecedentQubits.begin(), v5);
-  ASSERT_EQ(*antecedentClassical.begin(), i0);
-  ASSERT_TRUE(antecedentQubitsEmpty.empty());
-  ASSERT_TRUE(antecedentClassicalEmpty.empty());
+  ASSERT_TRUE(ut.isQubitImplied(v6, q5, classicalIndexVec, {}));
+  ASSERT_FALSE(ut.isQubitImplied(v5, q6, classicalIndexVec, {}));
 }
 
 TEST_F(UnionTablePropertiesTest, ImpliedQubitOnlyQubits) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
   ut.propagateGate(hOp, q1, q6, q5);
-  auto [antecedentQubits, antecedentClassical] =
-      ut.getAntecedentsOfQubit(v6, q5, {}, {});
-  ASSERT_EQ(antecedentQubits.size(), 1);
-  ASSERT_TRUE(antecedentClassical.empty());
-  ASSERT_EQ(*antecedentQubits.begin(), v5);
+  ASSERT_TRUE(ut.isQubitImplied(v6, q5, {}, {}));
 }
 
 TEST_F(UnionTablePropertiesTest, ImpliedQubitOnlyClassicalValues) {
@@ -778,11 +757,7 @@ TEST_F(UnionTablePropertiesTest, ImpliedQubitOnlyClassicalValues) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
   ut.propagateGate(hOp, q1, q6, q5);
-  auto [antecedentQubits, antecedentClassical] =
-      ut.getAntecedentsOfQubit(v6, {}, classicalIndexVec, {});
-  ASSERT_TRUE(antecedentQubits.empty());
-  ASSERT_EQ(antecedentClassical.size(), 1);
-  ASSERT_EQ(*antecedentClassical.begin(), i0);
+  ASSERT_TRUE(ut.isQubitImplied(v6, {}, classicalIndexVec, {}));
 }
 
 TEST_F(UnionTablePropertiesTest, ImpliedQubitNegClassicalValues) {
@@ -791,30 +766,26 @@ TEST_F(UnionTablePropertiesTest, ImpliedQubitNegClassicalValues) {
   ut.propagateMeasurement(v4, v5, i0);
   ut.propagateGate(xOp, q5, q6);
   ut.propagateGate(hOp, q1, q7, q6);
-  auto [antecedentQubits, antecedentClassical] =
-      ut.getAntecedentsOfQubit(v7, {}, {}, classicalIndexVec);
-  ASSERT_TRUE(antecedentQubits.empty());
-  ASSERT_EQ(antecedentClassical.size(), 1);
-  ASSERT_EQ(*antecedentClassical.begin(), i0);
+  ASSERT_TRUE(ut.isQubitImplied(v7, {}, {}, classicalIndexVec));
 }
 
 TEST_F(UnionTablePropertiesTest, globalPhaseOneQubit) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q1, q5);
 
-  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, q4);
-  const auto globalPhase1 = ut.globalPhaseThatIsAdded(zOp, q5);
+  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, v4);
+  const auto globalPhase1 = ut.globalPhaseThatIsAdded(zOp, v5);
 
   ASSERT_FALSE(globalPhase0.has_value());
   ASSERT_TRUE(globalPhase1.has_value());
-  ASSERT_EQ(globalPhase1.value(), -1);
+  ASSERT_EQ(std::complex<double>(-1, 0), globalPhase1.value());
 }
 
 TEST_F(UnionTablePropertiesTest, noGlobalPhaseTwoQubitsA) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(hOp, q1, q5);
 
-  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, q4, q5);
+  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, v4, q5);
 
   ASSERT_FALSE(globalPhase0.has_value());
 }
@@ -824,7 +795,7 @@ TEST_F(UnionTablePropertiesTest, noGlobalPhaseTwoQubitsB) {
   ut.propagateGate(hOp, q1, q5, q4);
   ut.propagateMeasurement(v5, v6, i0);
 
-  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, q4, q6);
+  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, v4, q6);
 
   ASSERT_FALSE(globalPhase0.has_value());
 }
@@ -834,13 +805,13 @@ TEST_F(UnionTablePropertiesTest, globalPhaseTwoQubits) {
   ut.propagateGate(xOp, q2, q5);
   ut.propagateGate(xOp, q3, q6);
 
-  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, q1, q4);
-  const auto globalPhase1 = ut.globalPhaseThatIsAdded(zOp, q5, q6);
+  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, v1, q4);
+  const auto globalPhase1 = ut.globalPhaseThatIsAdded(zOp, v5, q6);
 
   ASSERT_TRUE(globalPhase0.has_value());
   ASSERT_TRUE(globalPhase1.has_value());
-  ASSERT_EQ(globalPhase0, 1);
-  ASSERT_EQ(globalPhase1, -1);
+  ASSERT_EQ(std::complex<double>(1, 0), globalPhase0);
+  ASSERT_EQ(std::complex<double>(-1, 0), globalPhase1);
 }
 
 TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsA) {
@@ -1124,7 +1095,7 @@ TEST_F(UnionTableSuperfluousTest, oneSuperfluousEach) {
   std::vector posClassicalCtrl = {i0, i3};
   std::vector negClassicalCtrl = {i1, i2};
   auto [completelySuperfluous, superfluousQubits, superfluousClassicalValues] =
-      ut.getSuperfluousControls(q8, quantumCtrl, posClassicalCtrl,
+      ut.getSuperfluousControls(quantumCtrl, posClassicalCtrl,
                                 negClassicalCtrl);
   ASSERT_EQ(superfluousQubits.size(), 1);
   ASSERT_EQ(superfluousClassicalValues.size(), 2);
@@ -1138,8 +1109,8 @@ TEST_F(UnionTableSuperfluousTest, completelySuperfluousDueToNegQuantumCtrl) {
   std::vector quantumCtrl = {v11, v12, v16};
   std::vector posClassicalCtrl = {i0, i3};
   std::vector negClassicalCtrl = {i1, i2};
-  const auto results = ut.getSuperfluousControls(
-      q8, quantumCtrl, posClassicalCtrl, negClassicalCtrl);
+  const auto results = ut.getSuperfluousControls(quantumCtrl, posClassicalCtrl,
+                                                 negClassicalCtrl);
   ASSERT_TRUE(results.completelySuperfluous);
 }
 
@@ -1147,8 +1118,8 @@ TEST_F(UnionTableSuperfluousTest, completelySuperfluousDueToNegClassicalCtrl) {
   std::vector quantumCtrl = {v12, v16};
   std::vector posClassicalCtrl = {i0, i2, i3};
   std::vector negClassicalCtrl = {i1};
-  const auto results = ut.getSuperfluousControls(
-      q8, quantumCtrl, posClassicalCtrl, negClassicalCtrl);
+  const auto results = ut.getSuperfluousControls(quantumCtrl, posClassicalCtrl,
+                                                 negClassicalCtrl);
   ASSERT_TRUE(results.completelySuperfluous);
 }
 
@@ -1156,7 +1127,7 @@ TEST_F(UnionTableSuperfluousTest, completelySuperfluousDueToPosClassicalCtrl) {
   std::vector quantumCtrl = {v12, v16};
   std::vector posClassicalCtrl = {i0};
   std::vector negClassicalCtrl = {i1, i2, i3};
-  const auto results = ut.getSuperfluousControls(
-      q8, quantumCtrl, posClassicalCtrl, negClassicalCtrl);
+  const auto results = ut.getSuperfluousControls(quantumCtrl, posClassicalCtrl,
+                                                 negClassicalCtrl);
   ASSERT_TRUE(results.completelySuperfluous);
 }
