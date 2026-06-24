@@ -599,8 +599,6 @@ TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
 TEST(GateMatrixFactories, ControlledGates) {
   EXPECT_TRUE(twoQubitControlledX01().isApprox(
       Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0)));
-  EXPECT_TRUE(twoQubitControlledX10().isApprox(
-      twoQubitControlledX01().reorderForQubits(1, 0)));
   EXPECT_TRUE(twoQubitControlledZ().isApprox(Matrix4x4::fromElements(
       1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1)));
   EXPECT_TRUE(rxMatrix(0.0).isIdentity());

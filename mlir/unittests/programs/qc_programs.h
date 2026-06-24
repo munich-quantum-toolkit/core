@@ -237,6 +237,10 @@ void h(QCProgramBuilder& b);
 /// Creates a circuit with a single controlled H gate.
 void singleControlledH(QCProgramBuilder& b);
 
+/// Creates a circuit with a control modifier applied to an X-H sequence in the
+/// ctrl body.
+void controlledXH(QCProgramBuilder& b);
+
 /// Creates a circuit with a multi-controlled H gate.
 void multipleControlledH(QCProgramBuilder& b);
 

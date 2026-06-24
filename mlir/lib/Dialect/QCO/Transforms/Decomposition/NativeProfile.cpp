@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
@@ -175,7 +176,12 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
   if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
     return std::nullopt;
   }
-  Operation* body = ctrl.getBodyUnitary(0).getOperation();
+  auto bodyUnitary =
+      utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrl.getBody());
+  if (!bodyUnitary) {
+    return std::nullopt;
+  }
+  Operation* body = bodyUnitary.getOperation();
   if (llvm::isa<XOp>(body)) {
     return NativeGateKind::CX;
   }

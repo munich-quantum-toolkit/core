@@ -80,16 +80,8 @@ static bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
-    Operation* body = ctrl.getBodyUnitary(0).getOperation();
-    if (llvm::isa<XOp>(body)) {
-      matrix = twoQubitControlledX01();
-      return true;
-    }
-    if (llvm::isa<ZOp>(body)) {
-      matrix = twoQubitControlledZ();
-      return true;
-    }
-    return false;
+    return llvm::cast<UnitaryOpInterface>(ctrl.getOperation())
+        .getUnitaryMatrix4x4(matrix);
   }
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
   if (!unitary || !unitary.isTwoQubit()) {

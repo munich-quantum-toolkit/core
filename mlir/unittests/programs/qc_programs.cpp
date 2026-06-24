@@ -389,6 +389,15 @@ void singleControlledH(QCProgramBuilder& b) {
   b.ch(q[0], q[1]);
 }
 
+void controlledXH(QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.ctrl(q0, {q1}, [&](ValueRange targets) {
+    b.x(targets[0]);
+    b.h(targets[0]);
+  });
+}
+
 void multipleControlledH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mch({q[0], q[1]}, q[2]);

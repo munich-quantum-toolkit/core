@@ -1090,14 +1090,6 @@ const Matrix4x4& twoQubitControlledX01() {
   return MATRIX;
 }
 
-const Matrix4x4& twoQubitControlledX10() {
-  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
-                                                          0.0, 0.0, 0.0, 1.0, //
-                                                          0.0, 0.0, 1.0, 0.0, //
-                                                          0.0, 1.0, 0.0, 0.0);
-  return MATRIX;
-}
-
 const Matrix4x4& twoQubitControlledZ() {
   static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
                                                           0.0, 1.0, 0.0, 0.0, //

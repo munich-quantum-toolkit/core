@@ -820,7 +820,6 @@ struct SymmetricEigen4 {
  * Same entangling content as @ref twoQubitControlledX01 but with wires
  * reversed; useful when parametrizing basis-decomposer tests.
  */
-[[nodiscard]] const Matrix4x4& twoQubitControlledX10();
 [[nodiscard]] const Matrix4x4& twoQubitControlledZ();
 
 } // namespace mlir::qco

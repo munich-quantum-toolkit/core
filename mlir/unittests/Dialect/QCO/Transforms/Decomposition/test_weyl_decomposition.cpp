@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -142,6 +143,14 @@ static auto entangledMatrixCases() {
         return Matrix4x4::kron(hGate(), iPauliZ()) * twoQubitControlledX01() *
                Matrix4x4::kron(iPauliX(), iPauliY());
       });
+}
+
+static const Matrix4x4& twoQubitControlledX10() {
+  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+                                                          0.0, 0.0, 0.0, 1.0, //
+                                                          0.0, 0.0, 1.0, 0.0, //
+                                                          0.0, 1.0, 0.0, 0.0);
+  return MATRIX;
 }
 
 static auto cxBasisCases() {
@@ -732,6 +741,14 @@ TEST(NativeSpecTest, AllowsOpMatchesMenu) {
         return {XOp::create(builder, loc, targets[0]).getOutputQubit(0)};
       });
   EXPECT_TRUE(allowsOp(cx.getOperation(), *spec));
+
+  auto cxWithInterleavedH = CtrlOp::create(
+      builder, loc, ValueRange{q0}, ValueRange{q1},
+      [&](ValueRange targets) -> SmallVector<Value> {
+        auto wire = XOp::create(builder, loc, targets[0]).getOutputQubit(0);
+        return {HOp::create(builder, loc, wire).getOutputQubit(0)};
+      });
+  EXPECT_FALSE(allowsOp(cxWithInterleavedH.getOperation(), *spec));
 
   EXPECT_FALSE(allowsOp(XOp::create(builder, loc, q0).getOperation(), *spec));
 

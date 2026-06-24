@@ -159,16 +159,7 @@ static bool extractTwoQubitMatrix(UnitaryOpInterface op, Matrix4x4& out) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
-    Operation* body = ctrl.getBodyUnitary(0).getOperation();
-    if (llvm::isa<XOp>(body)) {
-      out = twoQubitControlledX01();
-      return true;
-    }
-    if (llvm::isa<ZOp>(body)) {
-      out = twoQubitControlledZ();
-      return true;
-    }
-    return false;
+    return op.getUnitaryMatrix4x4(out);
   }
   return op.getUnitaryMatrix4x4(out);
 }
@@ -681,6 +672,11 @@ TEST_F(FuseTwoQubitUnitaryRunsPassTest, EmptyNativeGatesSkipsPass) {
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, InverseWrappedOpsSynthesize) {
   expectNativeAfterSynthesis(inverseTwoX, "x,sx,rz,cx", onlyIbmBasicCxOps);
+}
+
+TEST_F(FuseTwoQubitUnitaryRunsPassTest, ControlledXHSynthesizesToNativeMenu) {
+  expectEquivalentAndNativeAfterSynthesis(mlir::qc::controlledXH, "x,sx,rz,cx",
+                                          onlyIbmBasicCxOps);
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, FailsForUnsupportedNativeGateMenu) {

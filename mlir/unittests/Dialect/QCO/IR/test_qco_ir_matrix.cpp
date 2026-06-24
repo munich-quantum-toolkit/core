@@ -93,6 +93,40 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
+
+TEST_F(QCOMatrixTest, ControlledHOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), singleControlledH);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
+  auto matrix = ctrlOp.getUnitaryMatrix();
+
+  const auto ch = qc::StandardOperation(1, 0, qc::OpType::H);
+  const auto dd = std::make_unique<dd::Package>(2);
+  const auto chDD = dd::getDD(ch, *dd);
+  const auto definition = chDD.getMatrix(2);
+
+  const Matrix4x4 expected = matrix4FromDefinition(definition);
+
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, ControlledXHOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), controlledXH);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
+  auto matrix = ctrlOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix expected = DynamicMatrix::identity(4);
+  expected.setBottomRightCorner(HOp::getUnitaryMatrix() *
+                                XOp::getUnitaryMatrix());
+
+  ASSERT_TRUE(matrix->isApprox(expected));
+}
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp
