@@ -44,6 +44,10 @@ std::optional<Matrix2x2> composeSingleQubitBodyMatrix(Block& block) {
                return true;
              })
              .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+               if (!unitary.isSingleQubit() ||
+                   !unitary.hasCompileTimeKnownUnitaryMatrix()) {
+                 return false;
+               }
                Matrix2x2 matrix;
                if (!unitary.getUnitaryMatrix2x2(matrix)) {
                  return false;

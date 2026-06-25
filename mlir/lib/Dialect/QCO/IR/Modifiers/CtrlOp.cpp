@@ -302,37 +302,40 @@ bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {
 }
 
 std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
-  std::optional<DynamicMatrix> targetMatrix;
-  if (auto bodyUnitary =
-          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
-    targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
-  } else if (getNumTargets() == 1) {
-    if (const auto composed = composeSingleQubitBodyMatrix(*getBody())) {
-      targetMatrix = DynamicMatrix(*composed);
-    }
-  }
-  if (!targetMatrix) {
-    return std::nullopt;
-  }
-
-  // get dimensions of target matrix
-  const auto targetDim = targetMatrix->cols();
-  assert(targetMatrix->cols() == targetMatrix->rows());
-
   if (getNumControls() >= 32) {
     llvm::reportFatalUsageError(
         "Creating the unitary matrix for a CtrlOp with more than 31 controls "
         "is not supported due to memory constraints.");
   }
 
-  // define dimensions and type of output matrix
-  const auto dim = static_cast<int64_t>((1ULL << getNumControls()) * targetDim);
+  // Build `I_{2^controls} ⊗ U` by placing the target block in the bottom-right
+  // corner of a `2^controls * targetDim` identity.
+  const auto controlledMatrix =
+      [this](const std::int64_t targetDim,
+             const auto& targetBlock) -> std::optional<DynamicMatrix> {
+    auto matrix = DynamicMatrix::identity(static_cast<int64_t>(
+        (1ULL << getNumControls()) * static_cast<std::size_t>(targetDim)));
+    matrix.setBottomRightCorner(targetBlock);
+    return matrix;
+  };
 
-  // initialize result with identity
-  auto matrix = DynamicMatrix::identity(dim);
+  // Single inner unitary (e.g. `ctrl { h }`, `ctrl { cx }`).
+  if (auto bodyUnitary =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
+    if (const auto targetMatrix =
+            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
+      assert(targetMatrix->cols() == targetMatrix->rows());
+      return controlledMatrix(targetMatrix->cols(), *targetMatrix);
+    }
+    return std::nullopt;
+  }
 
-  // apply target matrix
-  matrix.setBottomRightCorner(*targetMatrix);
+  // Composed single-qubit body (e.g. `ctrl { h; x }`); embed the 2x2 directly.
+  if (getNumTargets() == 1) {
+    if (const auto composed = composeSingleQubitBodyMatrix(*getBody())) {
+      return controlledMatrix(2, *composed);
+    }
+  }
 
-  return matrix;
+  return std::nullopt;
 }

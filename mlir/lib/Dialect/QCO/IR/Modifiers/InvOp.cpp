@@ -417,6 +417,7 @@ std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
     return DynamicMatrix::identity(1LL << getNumTargets());
   }
 
+  // Single inner unitary (e.g. `inv { h }`, `inv { cx }`).
   if (auto bodyUnitary =
           utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
     if (const auto targetMatrix =
@@ -426,6 +427,7 @@ std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
+  // Composed single-qubit body (e.g. `inv { h; t }`).
   if (getNumTargets() != 1) {
     return std::nullopt;
   }

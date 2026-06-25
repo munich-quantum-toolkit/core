@@ -13,6 +13,7 @@
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
+#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -47,6 +48,27 @@ matrix4FromDefinition(const Definition& definition) {
       definition[1][0], definition[1][1], definition[1][2], definition[1][3],
       definition[2][0], definition[2][1], definition[2][2], definition[2][3],
       definition[3][0], definition[3][1], definition[3][2], definition[3][3]);
+}
+
+static void controlledXH(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](ValueRange targets) {
+    auto wire = b.x(targets[0]);
+    wire = b.h(wire);
+    return SmallVector{wire};
+  });
+}
+
+static void controlledInverseHT(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](ValueRange targets) {
+    auto wire = b.inv({targets[0]}, [&](ValueRange innerTargets) {
+      auto inner = b.h(innerTargets[0]);
+      inner = b.t(inner);
+      return SmallVector{inner};
+    })[0];
+    return SmallVector{wire};
+  });
 }
 
 namespace {
@@ -122,9 +144,13 @@ TEST_F(QCOMatrixTest, ControlledXHOpMatrix) {
   auto matrix = ctrlOp.getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
-  DynamicMatrix expected = DynamicMatrix::identity(4);
-  expected.setBottomRightCorner(HOp::getUnitaryMatrix() *
-                                XOp::getUnitaryMatrix());
+  qc::CompoundOperation body;
+  body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::X);
+  body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::H);
+
+  const auto dd = std::make_unique<dd::Package>(2);
+  const auto bodyDD = dd::getDD(body, *dd);
+  const Matrix4x4 expected = matrix4FromDefinition(bodyDD.getMatrix(2));
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
@@ -138,11 +164,13 @@ TEST_F(QCOMatrixTest, ControlledInverseHTOpMatrix) {
   auto matrix = ctrlOp.getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
-  // Program order in the inv body is H then T, so the target unitary is (T·H)†.
-  const Matrix2x2 target =
-      (TOp::getUnitaryMatrix() * HOp::getUnitaryMatrix()).adjoint();
-  DynamicMatrix expected = DynamicMatrix::identity(4);
-  expected.setBottomRightCorner(target);
+  qc::CompoundOperation body;
+  body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::H);
+  body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::T);
+
+  const auto dd = std::make_unique<dd::Package>(2);
+  const auto bodyDD = dd::getInverseDD(body, *dd);
+  const Matrix4x4 expected = matrix4FromDefinition(bodyDD.getMatrix(2));
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
