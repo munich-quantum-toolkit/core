@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -95,17 +96,21 @@ using ReleasedOps = SmallVector<Operation*, 8>;
 using PendingWiresMap = DenseMap<Operation*, SmallVector<size_t>>;
 
 namespace impl {
-/// Return the number of qubits a operation produces/consumes.
-inline size_t getNumQubits(Operation* op) {
+
+/// Return the number of qubit arguments of unitary-like operation.
+inline size_t getNumQubitArgs(Operation* op) {
   return TypeSwitch<Operation*, size_t>(op)
       .Case<UnitaryOpInterface>(
           [&](UnitaryOpInterface op) { return op.getNumQubits(); })
-      .Case<scf::ForOp>([&](scf::ForOp op) { return op.getInits().size(); })
-      .Case<scf::WhileOp>([&](scf::WhileOp op) { return op.getInits().size(); })
-      .Case<qco::IfOp>([&](qco::IfOp op) { return op.getQubits().size(); })
-      .Case<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp, YieldOp,
-            qtensor::ExtractOp, qtensor::InsertOp, scf::YieldOp>(
-          [&](auto) { return 1; })
+      .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
+        return llvm::count_if(
+            op.getInits(), [](Value v) { return isa<QubitType>(v.getType()); });
+      })
+      .Case<qco::IfOp>([&](qco::IfOp op) {
+        return llvm::count_if(op.getQubits(), [](Value v) {
+          return isa<QubitType>(v.getType());
+        });
+      })
       .Default([&](Operation* op) {
         const auto name = op->getName().getStringRef();
         reportFatalInternalError("unknown op: " + name);
@@ -117,7 +122,7 @@ inline size_t getNumQubits(Operation* op) {
 struct IsReady {
   bool operator()(PendingWiresMap::value_type& kv) const {
     const auto npending = kv.second.size();
-    return impl::getNumQubits(kv.first) == npending;
+    return impl::getNumQubitArgs(kv.first) == npending;
   }
 };
 
@@ -175,16 +180,27 @@ LogicalResult walkProgramGraph(MutableArrayRef<WireIterator> wires,
       }
 
       while (Traits::isActive(it)) {
-        assert(it.operation() != nullptr);
-        const auto nqubits = impl::getNumQubits(it.operation());
 
-        assert(nqubits != 0);
-        if (nqubits == 1) {
+        // For source-like (AllocOp, StaticOp, qtensor::ExtractOp),
+        // sink-like (SinkOp, YieldOp, qtensor::InsertOp, scf::YieldOp), and
+        // one-qubit non-unitary (ResetOp, MeasureOp) operations, simply advance
+        // the iterator.
+
+        if (isa<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp, YieldOp,
+                qtensor::ExtractOp, qtensor::InsertOp, scf::YieldOp>(
+                it.operation())) {
           std::ranges::advance(it, Traits::stride());
           continue;
         }
 
-        assert(nqubits >= 2);
+        const auto nqubits = impl::getNumQubitArgs(it.operation());
+
+        // Advance past one-qubit operations.
+
+        if (nqubits == 1) {
+          std::ranges::advance(it, Traits::stride());
+          continue;
+        }
 
         // If there are fewer wires than the operation requires inputs,
         // it's impossible to release the operation. Hence, fail.
