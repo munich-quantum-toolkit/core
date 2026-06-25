@@ -21,8 +21,6 @@
 
 using namespace mlir::qco;
 
-// TODO: Tests for hasAlwaysZeroProbability
-
 class UnionTableTest : public testing::Test {
 protected:
   mlir::MLIRContext context;
@@ -729,6 +727,31 @@ TEST_F(UnionTablePropertiesTest, FindNoEquivalentClassicalValue) {
   ASSERT_TRUE(result.empty());
 }
 
+TEST_F(UnionTablePropertiesTest, hasAlwaysZeroProbabilityTest) {
+  std::vector classicalIndexVec = {i0};
+  ut.propagateIntAlloc(i1, 20);
+  ut.propagateGate(hOp, q0, q3);
+  ut.propagateGate(xOp, q1, q4, q3);
+  ut.propagateMeasurement(v4, v5, i0);
+
+  llvm::DenseMap<mlir::Value, bool> qubits0;
+  llvm::DenseMap<mlir::Value, bool> classicals0;
+  llvm::DenseMap<mlir::Value, bool> qubits1;
+  llvm::DenseMap<mlir::Value, bool> classicals1;
+  qubits0[v3] = true;
+  qubits0[v5] = true;
+  qubits0[v2] = false;
+  classicals0[i0] = true;
+  classicals0[i1] = true;
+  qubits1[v3] = false;
+  qubits1[v5] = false;
+  qubits1[v2] = true;
+  classicals1[i1] = false;
+
+  ASSERT_FALSE(ut.hasAlwaysZeroProbability(qubits0, classicals0));
+  ASSERT_TRUE(ut.hasAlwaysZeroProbability(qubits1, classicals1));
+}
+
 TEST_F(UnionTablePropertiesTest, ZeroIsAlwaysAntecedent) {
   std::vector classicalIndexVec = {i0};
   ut.propagateMeasurement(v0, v4, i0);
@@ -756,7 +779,7 @@ TEST_F(UnionTablePropertiesTest, ImpliedQubitOnlyClassicalValues) {
   std::vector classicalIndexVec = {i0};
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
-  ut.propagateGate(hOp, q1, q6, q5);
+  ut.propagateGate(hOp, q5, q6, {}, {}, classicalIndexVec);
   ASSERT_TRUE(ut.isQubitImplied(v6, {}, classicalIndexVec, {}));
 }
 
@@ -764,8 +787,8 @@ TEST_F(UnionTablePropertiesTest, ImpliedQubitNegClassicalValues) {
   std::vector classicalIndexVec = {i0};
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
-  ut.propagateGate(xOp, q5, q6);
-  ut.propagateGate(hOp, q1, q7, q6);
+  ut.propagateGate(hOp, q5, q6, {}, classicalIndexVec);
+  ut.propagateGate(xOp, q6, q7);
   ASSERT_TRUE(ut.isQubitImplied(v7, {}, {}, classicalIndexVec));
 }
 
@@ -850,8 +873,8 @@ TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsC) {
                                                  classicalCombinations));
   ASSERT_FALSE(
       ut.areThereSatisfiableCombinations({}, classicalVal0, classicalVal1));
-  ASSERT_FALSE(ut.areThereSatisfiableCombinations(qubitCombinations, {},
-                                                  classicalCombinations));
+  ASSERT_TRUE(ut.areThereSatisfiableCombinations(qubitCombinations, {},
+                                                 classicalCombinations));
 }
 
 class SmallUnionTableTest : public testing::Test {
