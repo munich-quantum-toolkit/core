@@ -137,6 +137,7 @@ std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
   const auto halfTheta = *theta / 2;
   const auto c = std::cos(halfTheta);
   const auto s = std::sin(halfTheta);
+
   const auto m01 = s * std::exp(1i * (*lambda + std::numbers::pi));
   const auto m10 = s * std::exp(1i * (*phi));
   const auto m11 = c * std::exp(1i * (*phi + *lambda));
