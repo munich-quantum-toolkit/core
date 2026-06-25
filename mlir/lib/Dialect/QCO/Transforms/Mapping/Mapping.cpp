@@ -1064,9 +1064,7 @@ createMappingPass(const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
       return nullptr;
     }
 
-    // Check if the reverse edge exists
-    auto reverseEdge = std::make_pair(v, u);
-    if (!couplingSet.contains(reverseEdge)) {
+    if (!couplingSet.contains(std::make_pair(v, u))) {
       llvm::reportFatalUsageError("Expected symmetric coupling set: edge (" +
                                   Twine(u) + ", " + Twine(v) +
                                   ") exists but (" + Twine(v) + ", " +
