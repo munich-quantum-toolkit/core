@@ -21,6 +21,22 @@
 #include <tuple>
 
 static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
+measureAndReturnQTensor(mlir::qco::QCOProgramBuilder& b, mlir::Value qTensor,
+                        int64_t size) {
+  mlir::SmallVector<mlir::Value> bits;
+  mlir::SmallVector<mlir::Type> bitTypes;
+  auto i1Type = b.getI1Type();
+  for (auto i = 0; i < size; ++i) {
+    auto [qTensorOut, qubit] = b.qtensorExtract(qTensor, i);
+    auto [q2, bit] = b.measure(qubit);
+    bits.push_back(bit);
+    bitTypes.push_back(i1Type);
+    qTensor = b.qtensorInsert(q2, qTensorOut, i);
+  }
+  return {bits, bitTypes};
+}
+
+static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
 measureAndReturn(mlir::qco::QCOProgramBuilder& b,
                  mlir::SmallVector<mlir::Value> qubits) {
   mlir::SmallVector<mlir::Value> bits;
@@ -196,9 +212,9 @@ multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   const auto& c0 = b.allocClassicalBitRegister(1, "c0");
   const auto& c1 = b.allocClassicalBitRegister(2, "c1");
-  auto [q1, bit1] = b.measure(q[0], c0[0]);
-  auto [q2, bit2] = b.measure(q1, c1[0]);
-  auto [q3, bit3] = b.measure(q2, c1[1]);
+  auto [q0, bit1] = b.measure(q[0], c0[0]);
+  auto [q1, bit2] = b.measure(q[1], c1[0]);
+  auto [q2, bit3] = b.measure(q[2], c1[1]);
   return {{bit1, bit2, bit3}, {b.getI1Type(), b.getI1Type(), b.getI1Type()}};
 }
 
@@ -3570,7 +3586,7 @@ simpleForLoop(QCOProgramBuilder& b) {
         auto insert = b.qtensorInsert(q1, t0, iv);
         return SmallVector{insert};
       });
-  return measureAndReturn(b, {scfFor[0]});
+  return measureAndReturnQTensor(b, scfFor[0], 2);
 };
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3603,7 +3619,7 @@ nestedForLoopIfOp(QCOProgramBuilder& b) {
         });
         return SmallVector{ifOp[0], q2};
       });
-  return measureAndReturn(b, {scfFor[0], scfFor[1]});
+  return measureAndReturn(b, {scfFor[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3633,7 +3649,7 @@ nestedForLoopWhileOp(QCOProgramBuilder& b) {
         auto insert = b.qtensorInsert(whileResult[0], t0, iv);
         return SmallVector{insert};
       });
-  return measureAndReturn(b, {scfFor[0]});
+  return measureAndReturnQTensor(b, scfFor[0], 2);
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3653,7 +3669,7 @@ nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {
                            auto insert = b.qtensorInsert(targets[0], t0, iv);
                            return SmallVector{insert, controls[0]};
                          });
-  return measureAndReturn(b, {scfFor[0], scfFor[1]});
+  return measureAndReturn(b, {scfFor[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3672,7 +3688,7 @@ nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b) {
                            auto insert = b.qtensorInsert(targets[0], t0, iv);
                            return SmallVector{insert, controls[0]};
                          });
-  return measureAndReturn(b, {scfFor[0], scfFor[1]});
+  return measureAndReturn(b, {scfFor[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3697,7 +3713,7 @@ nestedIfOpForLoop(QCOProgramBuilder& b) {
             });
         return SmallVector{scfFor[0], args[1]};
       });
-  return measureAndReturn(b, {ifRes[0], ifRes[1]});
+  return measureAndReturn(b, {ifRes[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>

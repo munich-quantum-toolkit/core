@@ -32,8 +32,10 @@ namespace {
 
 struct QIRTestCase {
   std::string name;
-  mqt::test::NamedBuilder<QIRProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<QIRProgramBuilder> referenceBuilder;
+  mqt::test::NamedBuilder<QIRProgramBuilder, std::pair<Value, Type>>
+      programBuilder;
+  mqt::test::NamedBuilder<QIRProgramBuilder, std::pair<Value, Type>>
+      referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };

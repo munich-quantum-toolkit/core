@@ -164,7 +164,7 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 allocDeallocPair(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.dealloc(q);
-  return measureAndReturn(b, {});
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -417,12 +417,13 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 repeatedControlledX(QCProgramBuilder& b) {
   auto control = b.allocQubit();
   b.h(control);
-  mlir::SmallVector<mlir::Value> qubits = {control};
+  mlir::SmallVector<mlir::Value> qubits;
   for (auto i = 0; i < 50; i++) {
     auto qubit = b.allocQubit();
     b.cx(control, qubit);
     qubits.push_back(qubit);
   }
+  qubits.push_back(control);
   return measureAndReturn(b, qubits);
 }
 
@@ -2048,7 +2049,7 @@ nestedIfOpForLoop(QCProgramBuilder& b) {
           b.h(q1);
         });
       });
-  return measureAndReturn(b, {reg[0], reg[1], reg[2], q0});
+  return measureAndReturn(b, {q0});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -2099,7 +2100,7 @@ nestedForLoopIfOp(QCProgramBuilder& b) {
       b.h(q);
     });
   });
-  return measureAndReturn(b, {reg[0], reg[1], qCond});
+  return measureAndReturn(b, {qCond});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -2131,7 +2132,7 @@ nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b) {
     b.h(q0);
     b.cx(control, q0);
   });
-  return measureAndReturn(b, {reg[0], reg[1], reg[2], control});
+  return measureAndReturn(b, {control});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -2143,7 +2144,7 @@ nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
     b.h(q0);
     b.cx(reg[0], q0);
   });
-  return measureAndReturn(b, {reg[0], reg[1], reg[2], reg[3]});
+  return measureAndReturn(b, {reg[0]});
 }
 
 } // namespace mlir::qc

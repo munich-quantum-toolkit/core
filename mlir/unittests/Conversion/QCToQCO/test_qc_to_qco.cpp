@@ -144,7 +144,7 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::staticQubitsWithInv)},
         QCToQCOTestCase{"AllocDeallocPair",
                         MQT_NAMED_BUILDER(qc::allocDeallocPair),
-                        MQT_NAMED_BUILDER(qco::allocSinkPair)}));
+                        MQT_NAMED_BUILDER(qco::emptyQCO)}));
 /// @}
 
 /// \name QCToQCO/Modifiers/CtrlOp.cpp
@@ -252,7 +252,7 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(QCIDOpTest, QCToQCOTest,
                          testing::Values(QCToQCOTestCase{
                              "Identity", MQT_NAMED_BUILDER(qc::identity),
-                             MQT_NAMED_BUILDER(qco::emptyQCO)}));
+                             MQT_NAMED_BUILDER(qco::alloc1QubitRegister)}));
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/IswapOp.cpp
