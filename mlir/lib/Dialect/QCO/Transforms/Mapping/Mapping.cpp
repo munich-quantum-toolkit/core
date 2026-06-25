@@ -572,6 +572,7 @@ private:
         if (route<WireDirection::Forward>(t.bundle, t.stats).failed()) {
           return;
         }
+        t.stats.nswaps = 0;
         if (route<WireDirection::Backward>(t.bundle, t.stats).failed()) {
           return;
         }
