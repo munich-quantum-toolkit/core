@@ -754,49 +754,45 @@ private:
   /// Skip to the end of the two-qubit block for both wire iterators, where
   /// initially both must point at the same two-qubit operation.
   template <WireDirection Direction>
-  static void skipQubitPairBlock(WireIterator& w0, WireIterator& w1) {
+  static void skipQubitPairBlock(WireIterator& it0, WireIterator& it1) {
     using Traits = WireTraversalTraits<Direction>;
 
     // Traverses the pair of wire iterators in tandem until a two-qubit
     // operation is found. If the two-qubit operation is equivalent, continue.
     // Otherwise stop.
 
-    WireIterator curr0(w0);
-    WireIterator curr1(w1);
+    std::array<WireIterator, 2> block{it0, it1};
     while (true) {
-      while (Traits::isActive(curr0)) {
-        std::ranges::advance(curr0, Traits::stride());
-      }
+      for (auto& it : block) {
+        while (Traits::isActive(it)) {
+          std::ranges::advance(it, Traits::stride());
 
-      if (curr0 == std::default_sentinel) {
-        return;
-      }
+          if (it.operation() == nullptr) { // isa<Blockargument>
+            return;
+          }
 
-      while (Traits::isActive(curr1)) {
-        std::ranges::advance(curr1, Traits::stride());
-      }
+          if (auto u = dyn_cast<UnitaryOpInterface>(it.operation());
+              u && u.getNumQubits() > 1) {
+            // Handle two-qubit barrier edge case explicitly.
+            if (isa<BarrierOp>(u) && u.getNumQubits() != 2) {
+              return;
+            }
+            // Otherwise stop for subsequent two-qubit unitary comparison.
+            break;
+          }
+        }
 
-      if (curr1 == std::default_sentinel) {
-        return;
-      }
-
-      if (curr0.operation() != curr1.operation()) {
-        return;
-      }
-
-      if (curr0.operation() == nullptr) {
-        return;
-      }
-
-      // Handle two-qubit barrier edge case explicitly.
-      if (auto barrier = dyn_cast<BarrierOp>(curr0.operation())) {
-        if (barrier.getNumQubits() != 2) {
+        if (it == std::default_sentinel) {
           return;
         }
       }
 
-      w0 = curr0;
-      w1 = curr1;
+      if (block[0].operation() != block[1].operation()) {
+        return;
+      }
+
+      it0 = block[0];
+      it1 = block[1];
     }
   }
 
