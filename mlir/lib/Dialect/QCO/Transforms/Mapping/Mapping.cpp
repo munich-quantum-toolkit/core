@@ -741,7 +741,7 @@ private:
 
       for (const auto v : f.getNodes()) {
         if (f.getDegree(v) == 0) {
-          assert(!f.getEdges().empty());
+          assert(!f.getEdges(v).empty());
           const auto u = f.getEdges(v).front();
           llvm::dbgs() << v << ", " << u << '\n';
           curr.swap(u, v);
