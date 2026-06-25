@@ -63,7 +63,8 @@ protected:
 
   /// Build a module using the QCOProgramBuilder and run the cleanup pipeline.
   [[nodiscard]] OwningOpRef<ModuleOp>
-  buildAndCanonicalize(void (*buildFn)(QCOProgramBuilder&)) const {
+  buildAndCanonicalize(std::pair<SmallVector<Value>, SmallVector<Type>> (
+      *buildFn)(QCOProgramBuilder&)) const {
     auto module = QCOProgramBuilder::build(context.get(), buildFn);
     if (!module) {
       return {};
@@ -189,8 +190,12 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
 
 /// An alloc immediately followed by dealloc should be eliminated entirely.
 TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
-  auto canonicalized =
-      buildAndCanonicalize([](QCOProgramBuilder& b) { b.qtensorAlloc(3); });
+  auto canonicalized = buildAndCanonicalize(
+      [](QCOProgramBuilder& b)
+          -> std::pair<SmallVector<Value>, SmallVector<Type>> {
+        b.qtensorAlloc(3);
+        return {{b.intConstant(0)}, {b.getI64Type()}};
+      });
   ASSERT_TRUE(canonicalized);
   EXPECT_TRUE(verify(*canonicalized).succeeded());
   // Both AllocOp and DeallocOp should have been erased.

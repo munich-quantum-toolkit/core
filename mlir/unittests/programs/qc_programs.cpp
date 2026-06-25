@@ -2012,7 +2012,8 @@ std::pair<SmallVector<Value>, SmallVector<Type>> simpleIf(QCProgramBuilder& b) {
   b.h(q[0]);
   auto cond = b.measure(q[0]);
   b.scfIf(cond, [&] { b.x(q[0]); });
-  return measureAndReturn(b, {q[0]});
+  auto res = b.measure(q[0]);
+  return {{cond, res}, {b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>> ifElse(QCProgramBuilder& b) {
@@ -2020,7 +2021,8 @@ std::pair<SmallVector<Value>, SmallVector<Type>> ifElse(QCProgramBuilder& b) {
   b.h(q[0]);
   auto cond = b.measure(q[0]);
   b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
-  return measureAndReturn(b, {q[0]});
+  auto bit = b.measure(q[0]);
+  return {{cond, bit}, {b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -2032,7 +2034,9 @@ ifTwoQubits(QCProgramBuilder& b) {
     b.x(q[0]);
     b.x(q[1]);
   });
-  return measureAndReturn(b, {q[0], q[1]});
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  return {{cond, c0, c1}, {b.getI1Type(), b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>

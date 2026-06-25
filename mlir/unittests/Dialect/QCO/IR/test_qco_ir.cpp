@@ -235,7 +235,7 @@ TEST_F(QCOTest, CheckIfOpDeadGateElimination) {
 TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
   QCOProgramBuilder builder(context.get());
-  builder.initialize({builder.getI1Type()});
+  builder.initialize({builder.getI1Type(), builder.getI1Type()});
   auto c0 = arith::ConstantIndexOp::create(builder, 0);
   auto c1 = arith::ConstantIndexOp::create(builder, 1);
   auto r0 = qtensor::AllocOp::create(builder, c1);
@@ -253,7 +253,8 @@ TEST_F(QCOTest, DirectIfBuilder) {
                                       extractOp.getOutTensor(), c0);
   qtensor::DeallocOp::create(builder, r2);
 
-  auto directBuilder = builder.finalize({finalMeasureOp.getResult()});
+  auto directBuilder =
+      builder.finalize({measureOp.getResult(), finalMeasureOp.getResult()});
   ASSERT_TRUE(directBuilder);
   EXPECT_TRUE(verify(*directBuilder).succeeded());
   EXPECT_TRUE(runQCOCleanupPipeline(directBuilder.get()).succeeded());

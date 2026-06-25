@@ -3285,7 +3285,8 @@ simpleIf(QCOProgramBuilder& b) {
     return SmallVector{innerQubit};
   });
   q[0] = res[0];
-  return measureAndReturn(b, {q[0]});
+  auto [q1, bit] = b.measure(q[0]);
+  return {{measureResult, bit}, {b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3314,7 +3315,10 @@ ifTwoQubits(QCOProgramBuilder& b) {
       });
   q[0] = res[0];
   q[1] = res[1];
-  return measureAndReturn(b, {q[0], q[1]});
+  auto [q0_, c0] = b.measure(q[0]);
+  auto [q1, c1] = b.measure(q[1]);
+  return {{measureResult, c0, c1},
+          {b.getI1Type(), b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>> ifElse(QCOProgramBuilder& b) {
@@ -3332,7 +3336,8 @@ std::pair<SmallVector<Value>, SmallVector<Type>> ifElse(QCOProgramBuilder& b) {
         return SmallVector{innerQubit};
       });
   q[0] = res[0];
-  return measureAndReturn(b, {q[0]});
+  auto [q0_, c0] = b.measure(q[0]);
+  return {{measureResult, c0}, {b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3397,7 +3402,8 @@ nestedTrueIf(QCOProgramBuilder& b) {
         });
     return llvm::to_vector(innerResult);
   });
-  return measureAndReturn(b, {ifRes[0]});
+  auto [q1, c] = b.measure(ifRes[0]);
+  return {{measureResult, c}, {b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3421,13 +3427,14 @@ nestedFalseIf(QCOProgramBuilder& b) {
             });
         return llvm::to_vector(innerResult);
       });
-  return measureAndReturn(b, {ifRes[0]});
+  auto [q1, c] = b.measure(ifRes[0]);
+  return {{measureResult, c}, {b.getI1Type(), b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 qtensorAlloc(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
-  return measureAndReturn(b, {qtensor});
+  return measureAndReturn(b, {});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3443,14 +3450,14 @@ qtensorFromElements(QCOProgramBuilder& b) {
   auto q1 = b.allocQubit();
   auto q2 = b.allocQubit();
   auto t = b.qtensorFromElements({q0, q1, q2});
-  return measureAndReturn(b, {t});
+  return measureAndReturn(b, {});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 qtensorExtract(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [t, q] = b.qtensorExtract(qtensor, 0);
-  return measureAndReturn(b, {t, q});
+  return measureAndReturn(b, {q});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3459,7 +3466,7 @@ qtensorInsert(QCOProgramBuilder& b) {
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto q1 = b.h(q0);
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
-  return measureAndReturn(b, {insertOutTensor});
+  return measureAndReturn(b, {});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3467,7 +3474,7 @@ qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto insertOutTensor = b.qtensorInsert(q0, extractOutTensor, 1);
-  return measureAndReturn(b, {insertOutTensor});
+  return measureAndReturn(b, {});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3475,7 +3482,7 @@ qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto insertOutTensor = b.qtensorInsert(q0, extractOutTensor, 0);
-  return measureAndReturn(b, {insertOutTensor});
+  return measureAndReturn(b, {});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3486,7 +3493,7 @@ qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
   auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 1);
   auto insertOutTensor1 = b.qtensorInsert(q2, extractOutTensor1, 0);
-  return measureAndReturn(b, {insertOutTensor1});
+  return measureAndReturn(b, {});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3497,7 +3504,7 @@ qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
   auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 0);
   auto insertOutTensor1 = b.qtensorInsert(q2, extractOutTensor1, 0);
-  return measureAndReturn(b, {insertOutTensor1});
+  return measureAndReturn(b, {});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>

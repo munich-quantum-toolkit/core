@@ -36,7 +36,10 @@ namespace {
 struct QuantumComputationTranslationTestCase {
   std::string name;
   mqt::test::NamedBuilder<::qc::QuantumComputation> programBuilder;
-  mqt::test::NamedBuilder<mlir::qc::QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedBuilder<
+      mlir::qc::QCProgramBuilder,
+      std::pair<llvm::SmallVector<mlir::Value>, llvm::SmallVector<mlir::Type>>>
+      referenceBuilder;
 
   friend std::ostream&
   operator<<(std::ostream& os,
@@ -107,7 +110,7 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QuantumComputationTranslationTestCase{
             "AllocQubit", MQT_NAMED_BUILDER(qc::allocQubit),
-            MQT_NAMED_BUILDER(mlir::qc::allocQubit)},
+            MQT_NAMED_BUILDER(mlir::qc::alloc1QubitRegister)},
         QuantumComputationTranslationTestCase{
             "AllocQubitRegister", MQT_NAMED_BUILDER(qc::allocQubitRegister),
             MQT_NAMED_BUILDER(mlir::qc::allocQubitRegister)},
@@ -160,7 +163,7 @@ INSTANTIATE_TEST_SUITE_P(
         QuantumComputationTranslationTestCase{
             "MultipleControlledIdentity",
             MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-            MQT_NAMED_BUILDER(mlir::qc::multipleControlledIdentity)},
+            MQT_NAMED_BUILDER(mlir::qc::identity)},
         QuantumComputationTranslationTestCase{"X", MQT_NAMED_BUILDER(qc::x),
                                               MQT_NAMED_BUILDER(mlir::qc::x)},
         QuantumComputationTranslationTestCase{

@@ -674,7 +674,8 @@ void simpleIf(QuantumComputation& comp) {
   comp.h(q[0]);
   comp.measure(q[0], c[0]);
   comp.if_(X, q[0], c[0]);
-  comp.measureAll(true, false);
+  const auto& c2 = comp.addClassicalRegister(1, "meas");
+  comp.measure(q[0], c2[0]);
 }
 
 void ifTwoQubits(QuantumComputation& comp) {

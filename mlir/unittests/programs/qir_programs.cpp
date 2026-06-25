@@ -1172,8 +1172,7 @@ std::pair<Value, Type> ctrlTwo(QIRProgramBuilder& b) {
   return measureAndReturn(b, {q[0], q[1], q[2], q[3]}, IntoRegister);
 }
 
-// Instantiate the templates for both IntoRegister = true and IntoRegister =
-// false
+// Instantiate the templates for IntoRegister = false
 template std::pair<Value, Type> emptyQIR<false>(QIRProgramBuilder& builder);
 template std::pair<Value, Type> allocQubit<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type>
@@ -1357,4 +1356,168 @@ nestedForLoopCtrlOpWithSeparateQubit<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type>
 nestedForLoopCtrlOpWithExtractedQubit<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type> ctrlTwo<false>(QIRProgramBuilder& b);
+
+// Instantiate the templates for IntoRegister = true
+template std::pair<Value, Type> emptyQIR<true>(QIRProgramBuilder& builder);
+template std::pair<Value, Type> allocQubit<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> alloc1QubitRegister<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> allocQubitRegister<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> alloc3QubitRegister<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+allocMultipleQubitRegisters<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+allocMultipleQubitRegistersWithOps<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> allocLargeRegister<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+singleMeasurementToSingleBit<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+repeatedMeasurementToSameBit<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+repeatedMeasurementToDifferentBits<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleClassicalRegistersAndMeasurements<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+measurementWithoutRegisters<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> resetQubitWithoutOp<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+resetMultipleQubitsWithoutOp<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+repeatedResetWithoutOp<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+resetQubitAfterSingleOp<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+resetMultipleQubitsAfterSingleOp<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+repeatedResetAfterSingleOp<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> globalPhase<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> identity<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+singleControlledIdentity<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+twoQubitsOneIdentity<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+threeQubitsOneIdentity<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledIdentity<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> x<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledX<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledX<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> y<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledY<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledY<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> z<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledZ<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledZ<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> h<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledH<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledH<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> hWithoutRegister<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> s<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledS<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledS<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> sdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledSdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledSdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> t_<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledT<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledT<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> tdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledTdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledTdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> sx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledSx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledSx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> sxdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+singleControlledSxdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledSxdg<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> rx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledRx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledRx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> ry<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledRy<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledRy<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> rz<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledRz<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledRz<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> p<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledP<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledP<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> r<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledR<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledR<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> u2<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledU2<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledU2<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> u<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledU<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> multipleControlledU<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> swap<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+singleControlledSwap<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledSwap<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> iswap<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+singleControlledIswap<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledIswap<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> dcx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledDcx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledDcx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> ecr<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledEcr<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledEcr<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> rxx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledRxx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledRxx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> tripleControlledRxx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> ryy<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledRyy<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledRyy<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> rzx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledRzx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledRzx<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> rzz<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> singleControlledRzz<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledRzz<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> xxPlusYY<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+singleControlledXxPlusYY<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledXxPlusYY<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> xxMinusYY<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+singleControlledXxMinusYY<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+multipleControlledXxMinusYY<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> simpleIf<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> ifElse<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> ifTwoQubits<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> nestedIfOpForLoop<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> simpleWhileReset<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> simpleDoWhileReset<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> simpleForLoop<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> nestedForLoopIfOp<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+nestedForLoopWhileOp<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+nestedForLoopCtrlOpWithSeparateQubit<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type>
+nestedForLoopCtrlOpWithExtractedQubit<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> ctrlTwo<true>(QIRProgramBuilder& b);
 } // namespace mlir::qir
