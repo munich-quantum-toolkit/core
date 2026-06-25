@@ -739,8 +739,8 @@ private:
         continue;
       }
 
-      // To be benchmarked: f.getEdges() is potentially to expensive because it builds a
-      // llvm::DenseMap.
+      // To be benchmarked: f.getEdges() is potentially to expensive because it
+      // builds a llvm::DenseMap.
 
       for (const auto [u, v] : f.getEdges()) {
         if (f.getDegree(v) == 0) {

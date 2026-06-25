@@ -32,9 +32,11 @@ public:
   using difference_type = std::ptrdiff_t;
   using value_type = Operation*;
 
-  WireIterator() : op_(nullptr), qubit_(nullptr), isFinal_(false), isSentinel_(false) {}
+  WireIterator()
+      : op_(nullptr), qubit_(nullptr), isFinal_(false), isSentinel_(false) {}
   explicit WireIterator(Value qubit)
-      : op_(qubit.getDefiningOp()), qubit_(qubit), isFinal_(false), isSentinel_(false) {}
+      : op_(qubit.getDefiningOp()), qubit_(qubit), isFinal_(false),
+        isSentinel_(false) {}
 
   /// @returns the operation the iterator points to.
   [[nodiscard]] Operation* operation() const { return op_; }
