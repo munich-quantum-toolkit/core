@@ -24,6 +24,8 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numeric>
+#include <optional>
 #include <utility>
 
 namespace mlir::qco {
@@ -815,6 +817,792 @@ Matrix4x4::symmetricEigen4(const std::array<double, 16>& symmetric) {
   return result;
 }
 
+namespace {
+// Adapted from John Burkardt's MIT-licensed EISPACK C port (pythag, csroot) and
+// NETLIB EISPACK Fortran (corth.f, comqr2.f, cdiv.f). Uses low=0, igh=n-1
+// without CBAL balancing, matching EISPACK when balancing is skipped.
+
+/// Row-major `ld x n` matrix view for EISPACK storage (`values[row + col *
+/// ld]`).
+class ComplexLdMatrix {
+public:
+  ComplexLdMatrix(MutableArrayRef<double> values, const int ld)
+      : values_(values), ld_(ld) {}
+
+  [[nodiscard]] static std::size_t rowMajorIndex(const int row, const int col,
+                                                 const int ld) {
+    return static_cast<std::size_t>(row) +
+           (static_cast<std::size_t>(col) * static_cast<std::size_t>(ld));
+  }
+
+  [[nodiscard]] std::size_t linearIndex(const int row, const int col) const {
+    return rowMajorIndex(row, col, ld_);
+  }
+
+  [[nodiscard]] double& at(const int row, const int col) {
+    return values_[linearIndex(row, col)];
+  }
+
+  [[nodiscard]] const double& at(const int row, const int col) const {
+    return values_[linearIndex(row, col)];
+  }
+
+private:
+  MutableArrayRef<double> values_;
+  int ld_;
+};
+
+[[nodiscard]] double complexPythag(const double a, const double b) {
+  double p = std::max(std::abs(a), std::abs(b));
+  if (p != 0.0) {
+    double r = std::min(std::abs(a), std::abs(b)) / p;
+    r = r * r;
+    while (true) {
+      const double t = 4.0 + r;
+      if (t == 4.0) {
+        break;
+      }
+      const double s = r / t;
+      const double u = 1.0 + (2.0 * s);
+      p = u * p;
+      r = (s / u) * (s / u) * r;
+    }
+  }
+  return p;
+}
+
+[[nodiscard]] std::pair<double, double> complexCsroot(const double xr,
+                                                      const double xi) {
+  const double tr = xr;
+  const double ti = xi;
+  const double s = std::sqrt(0.5 * (complexPythag(tr, ti) + std::abs(tr)));
+
+  double yr = 0.0;
+  double yi = 0.0;
+  if (0.0 <= tr) {
+    yr = s;
+  }
+
+  double sSign = s;
+  if (ti < 0.0) {
+    sSign = -s;
+  }
+
+  if (tr <= 0.0) {
+    yi = sSign;
+  }
+
+  if (tr < 0.0) {
+    yr = 0.5 * (ti / yi);
+  } else if (0.0 < tr) {
+    yi = 0.5 * (ti / yr);
+  }
+  return {yr, yi};
+}
+
+[[nodiscard]] std::pair<double, double> complexCdiv(const double ar,
+                                                    const double ai,
+                                                    const double br,
+                                                    const double bi) {
+  const double s = std::abs(br) + std::abs(bi);
+  const double ars = ar / s;
+  const double ais = ai / s;
+  const double brs = br / s;
+  const double bis = bi / s;
+  const double denom = (brs * brs) + (bis * bis);
+  return {(ars * brs + ais * bis) / denom, (ais * brs - ars * bis) / denom};
+}
+
+void complexCorth(const int nm, const int n, const int low, const int igh,
+                  MutableArrayRef<double> arBuf, MutableArrayRef<double> aiBuf,
+                  MutableArrayRef<double> ortrBuf,
+                  MutableArrayRef<double> ortiBuf) {
+  ComplexLdMatrix ar(arBuf, nm);
+  ComplexLdMatrix ai(aiBuf, nm);
+  const auto ortrAt = [&ortrBuf](const int index) -> double& {
+    return ortrBuf[static_cast<std::size_t>(index)];
+  };
+  const auto ortiAt = [&ortiBuf](const int index) -> double& {
+    return ortiBuf[static_cast<std::size_t>(index)];
+  };
+
+  const int kp1 = low + 1;
+  const int la = igh - 1;
+  if (la < kp1) {
+    return;
+  }
+
+  for (int m = kp1; m <= la; ++m) {
+    double h = 0.0;
+    ortrAt(m) = 0.0;
+    ortiAt(m) = 0.0;
+    double scale = 0.0;
+    const int subCol = m - 1;
+    for (int i = m; i <= igh; ++i) {
+      scale += std::abs(ar.at(i, subCol)) + std::abs(ai.at(i, subCol));
+    }
+
+    if (scale == 0.0) {
+      continue;
+    }
+
+    const int mp = m + igh;
+    for (int ii = m; ii <= igh; ++ii) {
+      const int i = mp - ii;
+      ortrAt(i) = ar.at(i, subCol) / scale;
+      ortiAt(i) = ai.at(i, subCol) / scale;
+      h += (ortrAt(i) * ortrAt(i)) + (ortiAt(i) * ortiAt(i));
+    }
+
+    double g = std::sqrt(h);
+    const double f = complexPythag(ortrAt(m), ortiAt(m));
+    if (f == 0.0) {
+      ortrAt(m) = g;
+      ar.at(m, subCol) = scale;
+    } else {
+      h += f * g;
+      g /= f;
+      ortrAt(m) = (1.0 + g) * ortrAt(m);
+      ortiAt(m) = (1.0 + g) * ortiAt(m);
+    }
+
+    for (int j = m; j < n; ++j) {
+      double fr = 0.0;
+      double fi = 0.0;
+      for (int ii = m; ii <= igh; ++ii) {
+        const int i = mp - ii;
+        fr += (ortrAt(i) * ar.at(i, j)) + (ortiAt(i) * ai.at(i, j));
+        fi += (ortrAt(i) * ai.at(i, j)) - (ortiAt(i) * ar.at(i, j));
+      }
+      fr /= h;
+      fi /= h;
+      for (int i = m; i <= igh; ++i) {
+        ar.at(i, j) -= (fr * ortrAt(i)) - (fi * ortiAt(i));
+        ai.at(i, j) -= (fr * ortiAt(i)) + (fi * ortrAt(i));
+      }
+    }
+
+    for (int i = 0; i <= igh; ++i) {
+      double fr = 0.0;
+      double fi = 0.0;
+      for (int jj = m; jj <= igh; ++jj) {
+        const int j = mp - jj;
+        fr += (ortrAt(j) * ar.at(i, j)) - (ortiAt(j) * ai.at(i, j));
+        fi += (ortrAt(j) * ai.at(i, j)) + (ortiAt(j) * ar.at(i, j));
+      }
+      fr /= h;
+      fi /= h;
+      for (int j = m; j <= igh; ++j) {
+        ar.at(i, j) -= (fr * ortrAt(j)) + (fi * ortiAt(j));
+        ai.at(i, j) += (fr * ortiAt(j)) - (fi * ortrAt(j));
+      }
+    }
+
+    ortrAt(m) = scale * ortrAt(m);
+    ortiAt(m) = scale * ortiAt(m);
+    ar.at(m, subCol) = -g * ar.at(m, subCol);
+    ai.at(m, subCol) = -g * ai.at(m, subCol);
+  }
+}
+
+[[nodiscard]] int
+complexComqr2(const int nm, const int n, const int low, const int igh,
+              MutableArrayRef<double> ortrBuf, MutableArrayRef<double> ortiBuf,
+              MutableArrayRef<double> hrBuf, MutableArrayRef<double> hiBuf,
+              MutableArrayRef<double> wrBuf, MutableArrayRef<double> wiBuf,
+              MutableArrayRef<double> zrBuf, MutableArrayRef<double> ziBuf) {
+  ComplexLdMatrix hr(hrBuf, nm);
+  ComplexLdMatrix hi(hiBuf, nm);
+  ComplexLdMatrix zr(zrBuf, nm);
+  ComplexLdMatrix zi(ziBuf, nm);
+  const auto ortrAt = [&ortrBuf](const int index) -> double& {
+    return ortrBuf[static_cast<std::size_t>(index)];
+  };
+  const auto ortiAt = [&ortiBuf](const int index) -> double& {
+    return ortiBuf[static_cast<std::size_t>(index)];
+  };
+  const auto wrAt = [&wrBuf](const int index) -> double& {
+    return wrBuf[static_cast<std::size_t>(index)];
+  };
+  const auto wiAt = [&wiBuf](const int index) -> double& {
+    return wiBuf[static_cast<std::size_t>(index)];
+  };
+
+  for (int j = 0; j < n; ++j) {
+    for (int i = 0; i < n; ++i) {
+      zr.at(i, j) = 0.0;
+      zi.at(i, j) = 0.0;
+    }
+    zr.at(j, j) = 1.0;
+  }
+
+  const int iend = igh - low - 1;
+  if (iend > 0) {
+    for (int ii = 1; ii <= iend; ++ii) {
+      const int i = igh - ii;
+      if (ortrAt(i) == 0.0 && ortiAt(i) == 0.0) {
+        continue;
+      }
+      if (hr.at(i, i - 1) == 0.0 && hi.at(i, i - 1) == 0.0) {
+        continue;
+      }
+      const double ortNorm =
+          (hr.at(i, i - 1) * ortrAt(i)) + (hi.at(i, i - 1) * ortiAt(i));
+      const int ip1 = i + 1;
+      for (int k = ip1; k <= igh; ++k) {
+        ortrAt(k) = hr.at(k, i - 1);
+        ortiAt(k) = hi.at(k, i - 1);
+      }
+      for (int j = i; j <= igh; ++j) {
+        double sr = 0.0;
+        double si = 0.0;
+        for (int k = i; k <= igh; ++k) {
+          sr += (ortrAt(k) * zr.at(k, j)) + (ortiAt(k) * zi.at(k, j));
+          si += (ortrAt(k) * zi.at(k, j)) - (ortiAt(k) * zr.at(k, j));
+        }
+        sr /= ortNorm;
+        si /= ortNorm;
+        for (int k = i; k <= igh; ++k) {
+          zr.at(k, j) += (sr * ortrAt(k)) - (si * ortiAt(k));
+          zi.at(k, j) += (sr * ortiAt(k)) + (si * ortrAt(k));
+        }
+      }
+    }
+  }
+
+  if (iend >= 0) {
+    const int hessLow = low + 1;
+    for (int i = hessLow; i <= igh; ++i) {
+      const int ll = std::min(i + 1, igh);
+      if (hi.at(i, i - 1) == 0.0) {
+        continue;
+      }
+      const double hessNorm = complexPythag(hr.at(i, i - 1), hi.at(i, i - 1));
+      const double yr = hr.at(i, i - 1) / hessNorm;
+      const double yi = hi.at(i, i - 1) / hessNorm;
+      hr.at(i, i - 1) = hessNorm;
+      hi.at(i, i - 1) = 0.0;
+      for (int j = i; j < n; ++j) {
+        const double si = (yr * hi.at(i, j)) - (yi * hr.at(i, j));
+        hr.at(i, j) = (yr * hr.at(i, j)) + (yi * hi.at(i, j));
+        hi.at(i, j) = si;
+      }
+      for (int j = 0; j <= ll; ++j) {
+        const double si = (yr * hi.at(j, i)) + (yi * hr.at(j, i));
+        hr.at(j, i) = (yr * hr.at(j, i)) - (yi * hi.at(j, i));
+        hi.at(j, i) = si;
+      }
+      for (int j = low; j <= igh; ++j) {
+        const double si = (yr * zi.at(j, i)) + (yi * zr.at(j, i));
+        zr.at(j, i) = (yr * zr.at(j, i)) - (yi * zi.at(j, i));
+        zi.at(j, i) = si;
+      }
+    }
+  }
+
+  for (int i = 0; i < n; ++i) {
+    if (i >= low && i <= igh) {
+      continue;
+    }
+    wrAt(i) = hr.at(i, i);
+    wiAt(i) = hi.at(i, i);
+  }
+
+  int en = igh;
+  double tr = 0.0;
+  double ti = 0.0;
+  int itn = 30 * n;
+
+  while (en >= low) {
+    int its = 0;
+    const int enm1 = en - 1;
+
+    while (true) {
+      int l = low;
+      for (int ll = low; ll <= en; ++ll) {
+        l = en + low - ll;
+        if (l == low) {
+          break;
+        }
+        const double tst1Local = std::abs(hr.at((l - 1), l - 1)) +
+                                 std::abs(hi.at((l - 1), l - 1)) +
+                                 std::abs(hr.at(l, l)) + std::abs(hi.at(l, l));
+        const double tst2Local = tst1Local + std::abs(hr.at(l, l - 1));
+        if (tst2Local == tst1Local) {
+          break;
+        }
+      }
+
+      if (l == en) {
+        break;
+      }
+      if (itn == 0) {
+        return en;
+      }
+
+      double sr = hr.at(en, en);
+      double si = hi.at(en, en);
+      if (its == 10 || its == 20) {
+        sr = std::abs(hr.at(en, enm1)) + std::abs(hr.at(enm1, en - 2));
+        si = 0.0;
+      } else {
+        double xr = hr.at(enm1, en) * hr.at(en, enm1);
+        double xi = hi.at(enm1, en) * hr.at(en, enm1);
+        if (xr != 0.0 || xi != 0.0) {
+          const double yr = (hr.at(enm1, enm1) - sr) / 2.0;
+          const double yi = (hi.at(enm1, enm1) - si) / 2.0;
+          auto [zzr, zzi] =
+              complexCsroot((yr * yr) - (yi * yi) + xr, (2.0 * yr * yi) + xi);
+          if ((yr * zzr) + (yi * zzi) < 0.0) {
+            zzr = -zzr;
+            zzi = -zzi;
+          }
+          std::tie(xr, xi) = complexCdiv(xr, xi, yr + zzr, yi + zzi);
+          sr -= xr;
+          si -= xi;
+        }
+      }
+
+      for (int i = low; i <= en; ++i) {
+        hr.at(i, i) -= sr;
+        hi.at(i, i) -= si;
+      }
+      tr += sr;
+      ti += si;
+      ++its;
+      --itn;
+
+      {
+        const int lp1 = l + 1;
+        for (int i = lp1; i <= en; ++i) {
+          sr = hr.at(i, i - 1);
+          hr.at(i, i - 1) = 0.0;
+          const double stepNorm = complexPythag(
+              complexPythag(hr.at((i - 1), i - 1), hi.at((i - 1), i - 1)), sr);
+          const double xr = hr.at((i - 1), i - 1) / stepNorm;
+          wrAt(i - 1) = xr;
+          const double xi = hi.at((i - 1), i - 1) / stepNorm;
+          wiAt(i - 1) = xi;
+          hr.at((i - 1), i - 1) = stepNorm;
+          hi.at((i - 1), i - 1) = 0.0;
+          hi.at(i, i - 1) = sr / stepNorm;
+
+          for (int j = i; j < n; ++j) {
+            const double yr = hr.at((i - 1), j);
+            const double yi = hi.at((i - 1), j);
+            const double zzr = hr.at(i, j);
+            const double zzi = hi.at(i, j);
+            hr.at((i - 1), j) = (xr * yr) + (xi * yi) + (hi.at(i, i - 1) * zzr);
+            hi.at((i - 1), j) = (xr * yi) - (xi * yr) + (hi.at(i, i - 1) * zzi);
+            hr.at(i, j) = (xr * zzr) - (xi * zzi) - (hi.at(i, i - 1) * yr);
+            hi.at(i, j) = (xr * zzi) + (xi * zzr) - (hi.at(i, i - 1) * yi);
+          }
+        }
+      }
+
+      si = hi.at(en, en);
+      if (si != 0.0) {
+        const double stepNorm = complexPythag(hr.at(en, en), si);
+        sr = hr.at(en, en) / stepNorm;
+        si /= stepNorm;
+        hr.at(en, en) = stepNorm;
+        hi.at(en, en) = 0.0;
+        if (en != n - 1) {
+          const int ip1 = en + 1;
+          for (int j = ip1; j < n; ++j) {
+            const double yr = hr.at(en, j);
+            const double yi = hi.at(en, j);
+            hr.at(en, j) = (sr * yr) + (si * yi);
+            hi.at(en, j) = (sr * yi) - (si * yr);
+          }
+        }
+      }
+
+      {
+        const int lp1 = l + 1;
+        for (int j = lp1; j <= en; ++j) {
+          const double xr = wrAt(j - 1);
+          const double xi = wiAt(j - 1);
+          for (int i = 0; i <= j; ++i) {
+            double yr = hr.at(i, j - 1);
+            double yi = 0.0;
+            const double zzr = hr.at(i, j);
+            double zzi = hi.at(i, j);
+            if (i == j) {
+              yi = hi.at(i, j - 1);
+              hi.at(i, j - 1) = (xr * yi) + (xi * yr) + (hi.at(j, j - 1) * zzi);
+            }
+            hr.at(i, j - 1) = (xr * yr) - (xi * yi) + (hi.at(j, j - 1) * zzr);
+            hr.at(i, j) = (xr * zzr) + (xi * zzi) - (hi.at(j, j - 1) * yr);
+            hi.at(i, j) = (xr * zzi) - (xi * zzr) - (hi.at(j, j - 1) * yi);
+          }
+          for (int i = low; i <= igh; ++i) {
+            const double yr = zr.at(i, j - 1);
+            const double yi = zi.at(i, j - 1);
+            const double zzr = zr.at(i, j);
+            const double zzi = zi.at(i, j);
+            zr.at(i, j - 1) = (xr * yr) - (xi * yi) + (hi.at(j, j - 1) * zzr);
+            zi.at(i, j - 1) = (xr * yi) + (xi * yr) + (hi.at(j, j - 1) * zzi);
+            zr.at(i, j) = (xr * zzr) + (xi * zzi) - (hi.at(j, j - 1) * yr);
+            zi.at(i, j) = (xr * zzi) - (xi * zzr) - (hi.at(j, j - 1) * yi);
+          }
+        }
+      }
+
+      if (si != 0.0) {
+        for (int i = 0; i <= en; ++i) {
+          const double yr = hr.at(i, en);
+          const double yi = hi.at(i, en);
+          hr.at(i, en) = (sr * yr) - (si * yi);
+          hi.at(i, en) = (sr * yi) + (si * yr);
+        }
+        for (int i = low; i <= igh; ++i) {
+          const double yr = zr.at(i, en);
+          const double yi = zi.at(i, en);
+          zr.at(i, en) = (sr * yr) - (si * yi);
+          zi.at(i, en) = (sr * yi) + (si * yr);
+        }
+      }
+    }
+
+    hr.at(en, en) += tr;
+    wrAt(en) = hr.at(en, en);
+    hi.at(en, en) += ti;
+    wiAt(en) = hi.at(en, en);
+    en = enm1;
+  }
+
+  double norm = 0.0;
+  for (int i = 0; i < n; ++i) {
+    for (int j = i; j < n; ++j) {
+      const double matrixNorm = std::abs(hr.at(i, j)) + std::abs(hi.at(i, j));
+      norm = std::max(norm, matrixNorm);
+    }
+  }
+
+  if (n != 1 && norm != 0.0) {
+    for (int nn = 2; nn <= n; ++nn) {
+      en = n + 2 - nn;
+      double xr = wrAt(en);
+      double xi = wiAt(en);
+      hr.at(en, en) = 1.0;
+      hi.at(en, en) = 0.0;
+      const int enm1Back = en - 1;
+      for (int ii = 1; ii <= enm1Back; ++ii) {
+        const int i = en - ii;
+        double zzr = 0.0;
+        double zzi = 0.0;
+        const int ip1 = i + 1;
+        for (int j = ip1; j <= en; ++j) {
+          zzr += (hr.at(i, j) * hr.at(j, en)) - (hi.at(i, j) * hi.at(j, en));
+          zzi += (hr.at(i, j) * hi.at(j, en)) + (hi.at(i, j) * hr.at(j, en));
+        }
+        double yr = xr - wrAt(i);
+        double yi = xi - wiAt(i);
+        if (yr == 0.0 && yi == 0.0) {
+          double tst1 = norm;
+          yr = tst1;
+          double tst2 = 0.0;
+          do {
+            yr = 0.01 * yr;
+            tst2 = norm + yr;
+          } while (tst2 <= tst1);
+        }
+        auto [divReal, divImag] = complexCdiv(zzr, zzi, yr, yi);
+        hr.at(i, en) = divReal;
+        hi.at(i, en) = divImag;
+        const double trLocal = std::abs(hr.at(i, en)) + std::abs(hi.at(i, en));
+        if (trLocal == 0.0) {
+          continue;
+        }
+        double tst1 = trLocal;
+        const double tst2 = tst1 + (1.0 / tst1);
+        if (tst2 <= tst1) {
+          continue;
+        }
+        for (int j = i; j <= en; ++j) {
+          hr.at(j, en) /= trLocal;
+          hi.at(j, en) /= trLocal;
+        }
+      }
+    }
+
+    for (int i = 0; i < n; ++i) {
+      if (i >= low && i <= igh) {
+        continue;
+      }
+      for (int j = i; j < n; ++j) {
+        zr.at(i, j) = hr.at(i, j);
+        zi.at(i, j) = hi.at(i, j);
+      }
+    }
+
+    for (int jj = low; jj <= igh; ++jj) {
+      const int j = igh + low - jj;
+      const int m = std::min(j, igh);
+      for (int i = low; i <= igh; ++i) {
+        double zzr = 0.0;
+        double zzi = 0.0;
+        for (int k = low; k <= m; ++k) {
+          zzr += (zr.at(i, k) * hr.at(k, j)) - (zi.at(i, k) * hi.at(k, j));
+          zzi += (zr.at(i, k) * hi.at(k, j)) + (zi.at(i, k) * hr.at(k, j));
+        }
+        zr.at(i, j) = zzr;
+        zi.at(i, j) = zzi;
+      }
+    }
+  }
+
+  return 0;
+}
+
+constexpr int K_COMPLEX_EIGEN4_SIZE = 4;
+constexpr int K_COMPLEX_EIGEN4_LD = K_COMPLEX_EIGEN4_SIZE;
+// EISPACK `comqr2` backsubstitution uses column/row index `n` in an `nm`-stride
+// layout.
+constexpr int K_COMPLEX_EIGEN4_MATRIX_STORAGE =
+    (K_COMPLEX_EIGEN4_LD * K_COMPLEX_EIGEN4_SIZE) + K_COMPLEX_EIGEN4_SIZE + 1;
+constexpr int K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE = K_COMPLEX_EIGEN4_SIZE + 1;
+
+[[nodiscard]] std::size_t complexMatrixStorageSize(const int ld,
+                                                   const int cols) {
+  return (static_cast<std::size_t>(ld) * static_cast<std::size_t>(cols)) +
+         static_cast<std::size_t>(cols) + 1U;
+}
+
+[[nodiscard]] std::size_t complexEigenvalueStorageSize(const int eigenvalues) {
+  return static_cast<std::size_t>(eigenvalues) + 1U;
+}
+
+[[nodiscard]] ComplexEigen4 buildComplexEigen4(
+    const std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE>& wr,
+    const std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE>& wi,
+    const std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& zr,
+    const std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& zi) {
+  ComplexEigen4 result;
+  for (int col = 0; col < K_COMPLEX_EIGEN4_SIZE; ++col) {
+    result.eigenvalues[static_cast<std::size_t>(col)] = Complex(
+        wr[static_cast<std::size_t>(col)], wi[static_cast<std::size_t>(col)]);
+    double norm = 0.0;
+    for (int row = 0; row < K_COMPLEX_EIGEN4_SIZE; ++row) {
+      const std::size_t idx =
+          ComplexLdMatrix::rowMajorIndex(row, col, K_COMPLEX_EIGEN4_SIZE);
+      norm += (zr[idx] * zr[idx]) + (zi[idx] * zi[idx]);
+    }
+    norm = std::sqrt(norm);
+    for (int row = 0; row < K_COMPLEX_EIGEN4_SIZE; ++row) {
+      const std::size_t idx =
+          ComplexLdMatrix::rowMajorIndex(row, col, K_COMPLEX_EIGEN4_SIZE);
+      if (norm > MATRIX_TOLERANCE) {
+        result.eigenvectors(static_cast<std::size_t>(row),
+                            static_cast<std::size_t>(col)) =
+            Complex(zr[idx] / norm, zi[idx] / norm);
+      } else {
+        result.eigenvectors(static_cast<std::size_t>(row),
+                            static_cast<std::size_t>(col)) =
+            Complex(zr[idx], zi[idx]);
+      }
+    }
+  }
+  return result;
+}
+
+void copyMatrix4x4ToEispack(
+    const Matrix4x4& matrix,
+    std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& ar,
+    std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& ai) {
+  for (std::size_t row = 0; row < Matrix4x4::K_ROWS; ++row) {
+    for (std::size_t col = 0; col < Matrix4x4::K_COLS; ++col) {
+      const Complex& value = matrix(row, col);
+      const std::size_t idx = row + (col * Matrix4x4::K_ROWS);
+      ar[idx] = std::real(value);
+      ai[idx] = std::imag(value);
+    }
+  }
+}
+
+// Stack-specialized EISPACK `corth` / `comqr2` for `n = 4` (fixed-size arrays).
+[[nodiscard]] std::optional<ComplexEigen4>
+computeComplexEigen4(const Matrix4x4& matrix) {
+  constexpr int n = K_COMPLEX_EIGEN4_SIZE;
+  constexpr int nm = n;
+  constexpr int low = 0;
+  constexpr int igh = n - 1;
+
+  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> ar{};
+  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> ai{};
+  copyMatrix4x4ToEispack(matrix, ar, ai);
+
+  std::array<double, 4> ortr{};
+  std::array<double, 4> orti{};
+  std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE> wr{};
+  std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE> wi{};
+  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> zr{};
+  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> zi{};
+
+  complexCorth(nm, n, low, igh, ar, ai, ortr, orti);
+  const int ierr =
+      complexComqr2(nm, n, low, igh, ortr, orti, ar, ai, wr, wi, zr, zi);
+  if (ierr != 0) {
+    return std::nullopt;
+  }
+  return buildComplexEigen4(wr, wi, zr, zi);
+}
+
+void normalizeVector(SmallVector<Complex>& vector) {
+  const double norm =
+      std::sqrt(std::accumulate(vector.begin(), vector.end(), 0.0,
+                                [](const double sum, const Complex& value) {
+                                  return sum + std::norm(value);
+                                }));
+  if (norm <= MATRIX_TOLERANCE) {
+    return;
+  }
+  for (Complex& value : vector) {
+    value /= norm;
+  }
+}
+
+[[nodiscard]] std::optional<ComplexEigen>
+complexEigen1x1(const DynamicMatrix& matrix) {
+  ComplexEigen result;
+  result.eigenvalues.push_back(matrix(0, 0));
+  result.eigenvectors = DynamicMatrix(1);
+  result.eigenvectors(0, 0) = 1.0;
+  return result;
+}
+
+[[nodiscard]] ComplexEigen2 computeComplexEigen2(const Matrix2x2& matrix) {
+  const Complex a = matrix(0, 0);
+  const Complex b = matrix(0, 1);
+  const Complex c = matrix(1, 0);
+  const Complex d = matrix(1, 1);
+  const Complex trace = a + d;
+  const Complex determinant = a * d - b * c;
+  const Complex discriminant = std::sqrt(trace * trace - 4.0 * determinant);
+  const Complex lambda0 = (trace + discriminant) * 0.5;
+  const Complex lambda1 = (trace - discriminant) * 0.5;
+
+  auto eigenvectorFor = [&](const Complex& lambda) -> SmallVector<Complex> {
+    SmallVector<Complex> vector(2, Complex{0.0, 0.0});
+    if (std::abs(b) <= MATRIX_TOLERANCE && std::abs(c) <= MATRIX_TOLERANCE) {
+      if (std::abs(lambda - a) <= MATRIX_TOLERANCE) {
+        vector[0] = 1.0;
+        vector[1] = 0.0;
+      } else {
+        vector[0] = 0.0;
+        vector[1] = 1.0;
+      }
+    } else if (std::abs(b) > MATRIX_TOLERANCE) {
+      vector[0] = b;
+      vector[1] = lambda - a;
+    } else {
+      vector[0] = lambda - d;
+      vector[1] = c;
+    }
+    normalizeVector(vector);
+    return vector;
+  };
+
+  const SmallVector<Complex> vector0 = eigenvectorFor(lambda0);
+  const SmallVector<Complex> vector1 = eigenvectorFor(lambda1);
+
+  ComplexEigen2 result;
+  result.eigenvalues = {lambda0, lambda1};
+  result.eigenvectors(0, 0) = vector0[0];
+  result.eigenvectors(1, 0) = vector0[1];
+  result.eigenvectors(0, 1) = vector1[0];
+  result.eigenvectors(1, 1) = vector1[1];
+  return result;
+}
+
+[[nodiscard]] std::optional<ComplexEigen>
+toComplexEigen(const ComplexEigen2& eigen2) {
+  ComplexEigen result;
+  result.eigenvalues.assign(eigen2.eigenvalues.begin(),
+                            eigen2.eigenvalues.end());
+  result.eigenvectors = DynamicMatrix(eigen2.eigenvectors);
+  return result;
+}
+
+[[nodiscard]] std::optional<ComplexEigen>
+toComplexEigen(const ComplexEigen4& eigen4) {
+  ComplexEigen result;
+  result.eigenvalues.assign(eigen4.eigenvalues.begin(),
+                            eigen4.eigenvalues.end());
+  result.eigenvectors = DynamicMatrix(eigen4.eigenvectors);
+  return result;
+}
+
+[[nodiscard]] std::optional<ComplexEigen>
+computeComplexEigen(const DynamicMatrix& matrix) {
+  const std::int64_t dim = matrix.rows();
+  assert(dim == matrix.cols() && dim >= 3 && dim != 4);
+  const int n = static_cast<int>(dim);
+  const int nm = n;
+  const int low = 0;
+  const int igh = n - 1;
+
+  const std::size_t matrixStorage = complexMatrixStorageSize(nm, n);
+  SmallVector<double> ar(matrixStorage);
+  SmallVector<double> ai(matrixStorage);
+  for (int row = 0; row < n; ++row) {
+    for (int col = 0; col < n; ++col) {
+      const Complex value = matrix(row, col);
+      const std::size_t idx = ComplexLdMatrix::rowMajorIndex(row, col, n);
+      ar[idx] = std::real(value);
+      ai[idx] = std::imag(value);
+    }
+  }
+
+  SmallVector<double> ortr(static_cast<std::size_t>(n));
+  SmallVector<double> orti(static_cast<std::size_t>(n));
+  SmallVector<double> wr(complexEigenvalueStorageSize(n));
+  SmallVector<double> wi(complexEigenvalueStorageSize(n));
+  SmallVector<double> zr(matrixStorage);
+  SmallVector<double> zi(matrixStorage);
+
+  complexCorth(nm, n, low, igh, ar, ai, ortr, orti);
+  const int ierr =
+      complexComqr2(nm, n, low, igh, ortr, orti, ar, ai, wr, wi, zr, zi);
+  if (ierr != 0) {
+    return std::nullopt;
+  }
+
+  ComplexEigen result;
+  result.eigenvalues.reserve(static_cast<std::size_t>(n));
+  result.eigenvectors = DynamicMatrix(dim);
+  for (int col = 0; col < n; ++col) {
+    result.eigenvalues.emplace_back(wr[static_cast<std::size_t>(col)],
+                                    wi[static_cast<std::size_t>(col)]);
+    double norm = 0.0;
+    for (int row = 0; row < n; ++row) {
+      const std::size_t idx = ComplexLdMatrix::rowMajorIndex(row, col, n);
+      norm += (zr[idx] * zr[idx]) + (zi[idx] * zi[idx]);
+    }
+    norm = std::sqrt(norm);
+    for (int row = 0; row < n; ++row) {
+      const std::size_t idx = ComplexLdMatrix::rowMajorIndex(row, col, n);
+      if (norm > MATRIX_TOLERANCE) {
+        result.eigenvectors(row, col) = Complex(zr[idx] / norm, zi[idx] / norm);
+      } else {
+        result.eigenvectors(row, col) = Complex(zr[idx], zi[idx]);
+      }
+    }
+  }
+  return result;
+}
+
+} // namespace
+
+ComplexEigen2 Matrix2x2::complexEigen() const {
+  return computeComplexEigen2(*this);
+}
+
+std::optional<ComplexEigen4> Matrix4x4::complexEigen() const {
+  return computeComplexEigen4(*this);
+}
+
 struct DynamicMatrix::Impl {
   std::int64_t dim = 0;
   SmallVector<Complex> data;
@@ -1013,6 +1801,35 @@ Matrix4x4 operator*(const Complex& scalar, const Matrix4x4& matrix) {
 
 DynamicMatrix operator*(const Complex& scalar, const DynamicMatrix& matrix) {
   return matrix * scalar;
+}
+
+std::optional<ComplexEigen> DynamicMatrix::complexEigen() const {
+  const std::size_t dim = checkedDim(impl_->dim);
+  if (dim == 0) {
+    return std::nullopt;
+  }
+  if (dim == 1) {
+    return complexEigen1x1(*this);
+  }
+  if (dim == 2) {
+    Matrix2x2 fixed;
+    if (!fixed.assignFrom(*this)) {
+      return std::nullopt;
+    }
+    return toComplexEigen(fixed.complexEigen());
+  }
+  if (dim == 4) {
+    Matrix4x4 fixed;
+    if (!fixed.assignFrom(*this)) {
+      return std::nullopt;
+    }
+    const std::optional<ComplexEigen4> eigen4 = fixed.complexEigen();
+    if (!eigen4) {
+      return std::nullopt;
+    }
+    return toComplexEigen(*eigen4);
+  }
+  return computeComplexEigen(*this);
 }
 
 } // namespace mlir::qco
