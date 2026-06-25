@@ -155,7 +155,14 @@ TEST_F(DriversTest, ProgramGraphWalk) {
         return SmallVector<Value>{iterQ0, iterQ1, args[2], args[3]};
       });
 
-  builder.measure(forResults[0]);
+  const auto q05 = builder.qcoIf(
+      false, forResults[0],
+      [&](ValueRange args) { return SmallVector<Value>{builder.h(args[0])}; },
+      [&](ValueRange args) {
+        return SmallVector<Value>{builder.id(args[0])};
+      })[0];
+
+  builder.measure(q05);
   builder.measure(forResults[1]);
   builder.measure(forResults[2]);
   builder.measure(forResults[3]);
