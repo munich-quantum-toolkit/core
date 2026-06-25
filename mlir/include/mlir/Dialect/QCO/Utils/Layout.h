@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Support/LLVM.h>
 

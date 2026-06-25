@@ -10,11 +10,13 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/LogicalResult.h>
@@ -28,7 +30,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/Passes.h>
 
 #include <cassert>
@@ -41,10 +42,12 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+namespace {
 struct Device {
   size_t nqubits{};
   DenseSet<std::pair<size_t, size_t>> couplingSet;
 };
+} // namespace
 
 /// Return true, if the operations within a region fulfill the given coupling
 /// constraints.
