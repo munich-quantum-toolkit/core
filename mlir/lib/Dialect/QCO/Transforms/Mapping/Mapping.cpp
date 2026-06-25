@@ -891,7 +891,7 @@ private:
   }
 
   /// Advance past all executable gates and return operations with nested
-  /// regions and the respecitve wire indices. Stops when no more executable
+  /// regions and the respective wire indices. Stops when no more executable
   /// gates are found. After the function returns, the wires point at the
   /// results of non-executable gates or operations with nested regions.
   template <WireDirection Direction>
