@@ -1089,7 +1089,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"ControlledTwoX", MQT_NAMED_BUILDER(controlledTwoX),
                     MQT_NAMED_BUILDER(alloc2QubitRegister)},
         QCOTestCase{"InverseTwoX", MQT_NAMED_BUILDER(inverseTwoX),
-                    MQT_NAMED_BUILDER(alloc2QubitRegister)}));
+                    MQT_NAMED_BUILDER(alloc1QubitRegister)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/XxMinusYyOp.cpp
