@@ -134,12 +134,9 @@ std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
   }
 
   using namespace std::complex_literals;
-  const auto c = std::cos(*theta / 2);
-  const auto s = std::sin(*theta / 2);
-
-  // `std::polar` has undefined behavior for negative magnitudes (libc++ returns
-  // NaN), and `sin`/`cos` of `theta / 2` can be negative. Build the phased
-  // entries via `mag * e^{i*phi}` instead, which is well-defined for any sign.
+  const auto halfTheta = *theta / 2;
+  const auto c = std::cos(halfTheta);
+  const auto s = std::sin(halfTheta);
   const auto m01 = s * std::exp(1i * (*lambda + std::numbers::pi));
   const auto m10 = s * std::exp(1i * (*phi));
   const auto m11 = c * std::exp(1i * (*phi + *lambda));
