@@ -15,10 +15,10 @@
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <numeric>
 #include <random>
-#include <cassert>
 
 namespace mlir::qco {
 Layout Layout::random(const size_t nqubits, const size_t seed) {
