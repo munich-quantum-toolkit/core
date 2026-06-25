@@ -311,10 +311,9 @@ protected:
     std::tie(wires, infos) = std::move(place(body, *layout, rewriter));
 
     Statistics stats;
-    Layout resolved = std::move(*layout);
-    RoutingBundle bundle{.infos = std::move(infos),
-                         .wires = std::move(wires),
-                         .layout = resolved};
+    RoutingBundle bundle{.wires = std::move(wires),
+                         .infos = std::move(infos),
+                         .layout = std::move(*layout)};
 
     const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
         bundle, stats, &rewriter);
