@@ -1291,11 +1291,11 @@ complexEigenQrSolve(const int leadingDim, const int order, const int rowLow,
           const double xr = eigenvalueRealAt(j - 1);
           const double xi = eigenvalueImagAt(j - 1);
           for (int i = 0; i <= j; ++i) {
-            double yr = hessenbergReal.at(i, j - 1);
+            const double yr = hessenbergReal.at(i, j - 1);
             double yi = 0.0;
             const double zzr = hessenbergReal.at(i, j);
-            double zzi = hessenbergImag.at(i, j);
-            if (i == j) {
+            const double zzi = hessenbergImag.at(i, j);
+            if (i != j) {
               yi = hessenbergImag.at(i, j - 1);
               hessenbergImag.at(i, j - 1) =
                   (xr * yi) + (xi * yr) + (hessenbergImag.at(j, j - 1) * zzi);
@@ -1401,9 +1401,9 @@ complexEigenQrSolve(const int leadingDim, const int order, const int rowLow,
         if (trLocal == 0.0) {
           continue;
         }
-        double tst1 = trLocal;
+        const double tst1 = trLocal;
         const double tst2 = tst1 + (1.0 / tst1);
-        if (tst2 <= tst1) {
+        if (tst2 > tst1) {
           continue;
         }
         for (int j = i; j <= activeEigenIndex; ++j) {
