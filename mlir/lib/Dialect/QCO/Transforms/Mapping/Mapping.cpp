@@ -170,6 +170,13 @@ private:
     float lambda;
   };
 
+  /// Utility-struct for routing functions.
+  struct RoutingBundle {
+    Wires wires;
+    WireInfos infos;
+    Layout layout;
+  };
+
   /// Describes a node in the A* search graph.
   struct Node {
     struct ComparePointer {
@@ -304,10 +311,13 @@ protected:
 
     std::tie(wires, infos) = std::move(place(body, *layout, rewriter));
 
-    Statistics s;
+    Statistics stats;
+    RoutingBundle bundle{.infos = std::move(infos),
+                         .wires = std::move(wires),
+                         .layout = std::move(*layout)};
 
     const auto res = route<WireDirection::Forward, RoutingMode::Hot>(
-        wires, infos, *layout, s, &rewriter);
+        bundle, stats, &rewriter);
     if (res.failed()) {
       func.emitError() << "failed to map the function";
       signalPassFailure();
@@ -315,7 +325,7 @@ protected:
     }
 
     // Collect statistics.
-    numSwaps += s.nswaps;
+    numSwaps += stats.nswaps;
 
     // Fix SSA Dominance issues.
     llvm::for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
@@ -552,29 +562,26 @@ private:
     std::mt19937_64 rng{seed};
 
     struct Trial {
-      Layout layout;
+      RoutingBundle bundle;
       Statistics stats{};
       bool success{false};
     };
 
-    SmallVector<Trial> trials;
+    SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
     for (size_t i = 0; i < ntrials; ++i) {
-      trials.emplace_back(Layout::random(device.nqubits(), rng()));
+      trials.emplace_back(
+          RoutingBundle{.wires = wires,
+                        .infos = infos,
+                        .layout = Layout::random(device.nqubits(), rng())});
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
-      Wires locWires(wires);
-      WireInfos locInfos(infos);
-
       for (size_t i = 0; i < niterations; ++i) {
-        if (route<WireDirection::Forward>(locWires, locInfos, t.layout, t.stats)
-                .failed()) {
+        if (route<WireDirection::Forward>(t.bundle, t.stats).failed()) {
           return;
         }
-        if (route<WireDirection::Backward>(locWires, locInfos, t.layout,
-                                           t.stats)
-                .failed()) {
+        if (route<WireDirection::Backward>(t.bundle, t.stats).failed()) {
           return;
         }
       }
@@ -594,7 +601,7 @@ private:
       return failure();
     }
 
-    return best->layout;
+    return best->bundle.layout;
   }
 
   /// Perform A* search to find a sequence of SWAPs that makes all two-qubit ops
@@ -739,8 +746,8 @@ private:
         continue;
       }
 
-      // To be benchmarked: f.getEdges() is potentially to expensive because it builds a
-      // llvm::DenseMap.
+      // To be benchmarked: f.getEdges() is potentially to expensive because it
+      // builds a llvm::DenseMap.
 
       for (const auto [u, v] : f.getEdges()) {
         if (f.getDegree(v) == 0) {
@@ -847,9 +854,9 @@ private:
   /// (`RoutingMode::Cold`) or into the IR (`RoutingMode::Hot`). The function
   /// expects that each wire points at the correct insertion point.
   template <RoutingMode Mode>
-  static void insertSWAPs(ArrayRef<IndexPairType> swaps, Wires& wires,
-                          WireInfos& infos, Layout& layout, Statistics& stats,
-                          IRRewriter* rewriter) {
+  static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
+                          Statistics& stats, IRRewriter* rewriter) {
+    auto& [wires, infos, layout] = bundle;
     for (const auto& [hw0, hw1] : swaps) {
       if constexpr (Mode == RoutingMode::Hot) {
         const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
@@ -884,124 +891,48 @@ private:
     stats.nswaps += swaps.size();
   }
 
-  /// Advance past all executable gates and recurse into nested regions.
-  /// Stops when no more executable gates are found.
-  template <WireDirection Direction, RoutingMode Mode>
-  LogicalResult advanceAndRecurse(Wires& wires, const WireInfos& infos,
-                                  const Layout& layout, Statistics& stats,
-                                  IRRewriter* rewriter) {
-    using Traits = WireTraversalTraits<Direction>;
-    using StackFrame = std::pair<Operation*, SmallVector<size_t>>;
+  /// Advance past all executable gates and return operations with nested
+  /// regions and the respecitve wire indices. Stops when no more executable
+  /// gates are found. After the function returns, the wires point at the
+  /// results of non-executable gates or operations with nested regions.
+  template <WireDirection Direction>
+  SmallVector<std::pair<Operation*, SmallVector<size_t>>>
+  advance(Wires& wires, const WireInfos& infos, const Layout& layout) {
+    SmallVector<std::pair<Operation*, SmallVector<size_t>>> stack;
 
-    SmallVector<StackFrame> stack;
-    while (true) {
+    // Advance wires past all executable gates and push operations with
+    // nested regions and the respective wire indices of their inputs onto the
+    // result stack.
 
-      // Advance wires past all executable gates and push operations with
-      // nested regions and the respective wire indices of their inputs onto the
-      // stack.
-
-      walkProgramGraph<Direction>(wires, [&](const ReadyRange& ready,
-                                             ReleasedOps& released) {
-        if (ready.empty()) {
-          return WalkResult::advance();
-        }
-
-        for (const auto& [readyOp, indices] : ready) {
-          TypeSwitch<Operation*>(readyOp)
-              .template Case<BarrierOp>(
-                  [&](BarrierOp op) { released.emplace_back(op); })
-              .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-                const auto prog0 = infos.lookupProgram(indices[0]);
-                const auto prog1 = infos.lookupProgram(indices[1]);
-                if (device.areAdjacent(
-                        layout.getHardwareIndices(prog0, prog1))) {
-                  released.emplace_back(op);
-                }
-              })
-              .template Case<scf::ForOp>(
-                  [&](scf::ForOp op) { stack.emplace_back(op, indices); });
-        }
-
-        if (released.empty()) {
-          return WalkResult::interrupt();
-        }
-
+    walkProgramGraph<Direction>(wires, [&](const ReadyRange& ready,
+                                           ReleasedOps& released) {
+      if (ready.empty()) {
         return WalkResult::advance();
-      });
-
-      if (stack.empty()) {
-        break;
       }
 
-      // The wires now point at the results of non-executable gates or
-      // operations with nested regions. Continue with processing the nested
-      // regions recursively.
-
-      for (const auto& [op, indices] : stack) {
-        assert(isa<scf::ForOp>(op));
-        auto forOp = cast<scf::ForOp>(op);
-
-        Wires childWires;
-        WireInfos childInfos;
-
-        // Map parent (results) to child values (iter args). Going forwards, the
-        // recursive routing starts at block arguments, while the backwards go
-        // starts at the yielded values.
-
-        for (size_t i : indices) {
-          const auto prog = infos.lookupProgram(i);
-          const auto res = cast<OpResult>(wires[i].qubit());
-          const auto arg = forOp.getTiedLoopRegionIterArg(res);
-          const auto index = childWires.size();
-
-          if constexpr (Direction == WireDirection::Forward) {
-            childWires.emplace_back(arg);
-            childInfos.map(index, prog);
-          } else {
-            const auto yield = forOp.getTiedLoopYieldedValue(arg)->get();
-            childWires.emplace_back(yield);
-            childInfos.map(index, prog);
-          }
-        }
-
-        Layout childLayout(layout);
-        const auto res = route<Direction, Mode>(childWires, childInfos,
-                                                childLayout, stats, rewriter);
-        if (failed(res)) {
-          return failure();
-        }
-
-        const auto swaps = restore(childLayout, layout);
-
-        if constexpr (Mode == RoutingMode::Hot) {
-
-          // After routing the loop body, all iterators point to
-          // std::default_sentinel. To move the iterators to the correct
-          // qubit SSA values for the epilogue SWAPs, decrement each
-          // twice: (sentinel → yield → unitary/block arg).
-
-          llvm::for_each(childWires, [](auto& it) { std::advance(it, -2); });
-        }
-
-        insertSWAPs<Mode>(swaps, childWires, childInfos, childLayout, stats,
-                          rewriter);
-
-        if constexpr (Mode == RoutingMode::Hot) {
-          sortTopologically(forOp.getBody());
-        }
-
-        // Finally, move past the operation with nested regions by incrementing
-        // the respective global wires.
-
-        llvm::for_each(indices, [&](size_t i) {
-          std::advance(wires[i], Traits::stride());
-        });
+      for (const auto& [readyOp, indices] : ready) {
+        TypeSwitch<Operation*>(readyOp)
+            .template Case<BarrierOp>(
+                [&](BarrierOp op) { released.emplace_back(op); })
+            .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+              const auto prog0 = infos.lookupProgram(indices[0]);
+              const auto prog1 = infos.lookupProgram(indices[1]);
+              if (device.areAdjacent(layout.getHardwareIndices(prog0, prog1))) {
+                released.emplace_back(op);
+              }
+            })
+            .template Case<scf::ForOp>(
+                [&](scf::ForOp op) { stack.emplace_back(op, indices); });
       }
 
-      stack.clear();
-    }
+      if (released.empty()) {
+        return WalkResult::interrupt();
+      }
 
-    return success();
+      return WalkResult::advance();
+    });
+
+    return stack;
   }
 
   /// Iterates over a dynamically computed window of layers and uses A* search
@@ -1011,13 +942,80 @@ private:
   /// unable to find a solution.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  LogicalResult route(Wires& wires, WireInfos& infos, Layout& layout,
-                      Statistics& stats, IRRewriter* rewriter = nullptr) {
+  LogicalResult route(RoutingBundle& bundle, Statistics& stats,
+                      IRRewriter* rewriter = nullptr) {
+    using Traits = WireTraversalTraits<Direction>;
+
+    auto& [wires, infos, layout] = bundle;
+
     while (true) {
-      const auto res = advanceAndRecurse<Direction, Mode>(wires, infos, layout,
-                                                          stats, rewriter);
-      if (failed(res)) {
-        return failure();
+
+      while (true) {
+        const auto stack = advance<Direction>(wires, infos, layout);
+
+        if (stack.empty()) {
+          break;
+        }
+
+        // Continue with processing the nested regions recursively.
+
+        for (const auto& [op, indices] : stack) {
+          assert(isa<scf::ForOp>(op));
+          auto forOp = cast<scf::ForOp>(op);
+
+          RoutingBundle child{.layout = layout};
+
+          // Map parent (results) to child values (iter args). Going forwards,
+          // the recursive routing starts at block arguments, while the
+          // backwards go starts at the yielded values.
+
+          for (size_t i : indices) {
+            const auto prog = infos.lookupProgram(i);
+            const auto res = cast<OpResult>(wires[i].qubit());
+            const auto arg = forOp.getTiedLoopRegionIterArg(res);
+            const auto index = child.wires.size();
+
+            if constexpr (Direction == WireDirection::Forward) {
+              child.wires.emplace_back(arg);
+              child.infos.map(index, prog);
+            } else {
+              const auto yield = forOp.getTiedLoopYieldedValue(arg)->get();
+              child.wires.emplace_back(yield);
+              child.infos.map(index, prog);
+            }
+          }
+
+          Layout childLayout(layout);
+          const auto res = route<Direction, Mode>(child, stats, rewriter);
+          if (failed(res)) {
+            return failure();
+          }
+
+          const auto swaps = restore(childLayout, layout);
+
+          if constexpr (Mode == RoutingMode::Hot) {
+
+            // After routing the loop body, all iterators point to
+            // std::default_sentinel. To move the iterators to the correct
+            // qubit SSA values for the epilogue SWAPs, decrement each
+            // twice: (sentinel → yield → unitary/block arg).
+
+            llvm::for_each(child.wires, [](auto& it) { std::advance(it, -2); });
+          }
+
+          insertSWAPs<Mode>(swaps, child, stats, rewriter);
+
+          if constexpr (Mode == RoutingMode::Hot) {
+            sortTopologically(forOp.getBody());
+          }
+
+          // Finally, move past the operation with nested regions by
+          // incrementing the respective global wires.
+
+          llvm::for_each(indices, [&](size_t i) {
+            std::advance(wires[i], Traits::stride());
+          });
+        }
       }
 
       const auto window = getWindow<Direction>(wires, infos);
@@ -1043,7 +1041,7 @@ private:
         }
       }
 
-      insertSWAPs<Mode>(*swaps, wires, infos, layout, stats, rewriter);
+      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
 
       if constexpr (Mode == RoutingMode::Hot) {
 
