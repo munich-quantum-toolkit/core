@@ -42,9 +42,9 @@ with the exception that minor releases may include breaking changes.
   [#1569], [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623],
   [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700],
   [#1710], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765],
-  [#1774], [#1780], [#1781], [#1782], [#1787], [#1802], [#1809])
-  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
-  [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
+  [#1774], [#1780], [#1781], [#1782], [#1787], [#1802], [#1806], [#1807], 
+  [#1809]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**], 
+  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**])
 
 ### Changed
@@ -599,6 +599,8 @@ changelogs._
 <!-- PR links -->
 
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
+[#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
+[#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
 [#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
 [#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
 [#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
