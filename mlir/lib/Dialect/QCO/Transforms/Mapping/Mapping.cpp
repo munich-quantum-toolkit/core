@@ -189,17 +189,13 @@ private:
     size_t depth;
     float f;
 
-    /**
-     * @brief Construct a root node with the given layout. Initialize the
-     * sequence with an empty vector and set the cost to zero.
-     */
+    /// Construct a root node with the given layout. Initialize the
+    /// sequence with an empty vector and set the cost to zero.
     explicit Node(Layout layout)
         : layout(std::move(layout)), parent(nullptr), depth(0), f(0) {}
 
-    /**
-     * @brief Construct a non-root node from its parent node. Apply the given
-     * swap to the layout of the parent node.
-     */
+    /// Construct a non-root node from its parent node. Apply the given swap to
+    /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
          const AugmentedDevice& device, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
@@ -208,10 +204,8 @@ private:
       f = g(params.alpha) + h(window, device, params); // NOLINT
     }
 
-    /**
-     * @returns true if the current SWAP sequence makes all gates in the front
-     * executable.
-     */
+    /// Return true, if the current SWAP sequence makes all gates in the front
+    /// executable.
     [[nodiscard]] bool isGoal(const IndexPairType& front,
                               const AugmentedDevice& device) const {
       const auto [hw0, hw1] =
@@ -220,25 +214,19 @@ private:
     }
 
   private:
-    /**
-     * @brief Calculate the path cost for the A* search algorithm.
-     *
-     * The path cost function is the weighted sum of the currently required
-     * SWAPs.
-     */
+    /// Calculate the path cost for the A* search algorithm.
+    /// The path costs are the weighted sum of the currently required SWAPs.
     [[nodiscard]] float g(const float alpha) const {
       return alpha * static_cast<float>(depth);
     }
 
-    /**
-     * @brief Calculate the heuristic cost for the A* search algorithm.
-     *
-     * Computes the minimal number of SWAPs required to route each gate in
-     * each layer. For each gate, this is determined by the shortest distance
-     * between its hardware qubits. Intuitively, this is the number of SWAPs
-     * that a naive router would insert to route the layers (with a constant
-     * layout).
-     */
+    /// Calculate the heuristic cost for the A* search algorithm.
+    ///
+    /// Computes the minimal number of SWAPs required to route each gate in
+    /// each layer. For each gate, this is determined by the shortest distance
+    /// between its hardware qubits. Intuitively, this is the number of SWAPs
+    /// that a naive router would insert to route the layers (with a constant
+    /// layout).
     [[nodiscard]] float h(const Window& window, const AugmentedDevice& device,
                           const Parameters& params) const {
       float costs{0};
@@ -331,6 +319,9 @@ protected:
   }
 
 private:
+  /// Extend the init arguments of an `scf::ForOp` by adding a given range of
+  /// additional SSA values. Replaces the existing operation and returns the
+  /// newly created one.
   static scf::ForOp extend(scf::ForOp loop, ValueRange addons,
                            IRRewriter& rewriter) {
     OpBuilder::InsertionGuard guard(rewriter);
