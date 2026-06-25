@@ -32,11 +32,21 @@ protected:
     ModuleOp anchor = getOperation();
     IRRewriter rewriter(&getContext());
 
-    anchor.walk([&rewriter](mlir::Operation* op) {
-      if (auto swap = mlir::dyn_cast<SWAPOp>(op)) {
-        rewriter.replaceOp(swap, {swap.getQubit1In(), swap.getQubit0In()});
+    while (auto nextSwap = findNextSwap(anchor)) {
+      rewriter.replaceOp(nextSwap,
+                         {nextSwap.getQubit1In(), nextSwap.getQubit0In()});
+    }
+  }
+
+private:
+  SWAPOp findNextSwap(ModuleOp anchor) {
+    SWAPOp nextSwap = nullptr;
+    anchor.walk([&nextSwap](mlir::Operation* op) {
+      if (auto swapIterator = mlir::dyn_cast<SWAPOp>(op)) {
+        nextSwap = swapIterator;
       }
     });
+    return nextSwap;
   }
 };
 } // namespace

@@ -91,3 +91,57 @@ TEST_F(SwapAbsorbPassTest, PassReordersTwoQubitCircuitWithLeadingSwap) {
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(swapModule.get(), reference.get()));
 }
+
+TEST_F(SwapAbsorbPassTest,
+       PassReordersTwoQubitCircuitWithSwapAfterSingleQubitGate) {
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  q0 = programBuilder.x(q0);
+  q1 = programBuilder.y(q1);
+  std::tie(q0, q1) = programBuilder.swap(q0, q1);
+  q0 = programBuilder.z(q0);
+  q1 = programBuilder.h(q1);
+  swapModule = programBuilder.finalize();
+
+  auto qRef0 = referenceBuilder.allocQubit();
+  auto qRef1 = referenceBuilder.allocQubit();
+  qRef0 = referenceBuilder.x(qRef0);
+  qRef1 = referenceBuilder.y(qRef1);
+  qRef0 = referenceBuilder.h(qRef0);
+  qRef1 = referenceBuilder.z(qRef1);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(applySwapAbsorbPass(swapModule.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(swapModule.get(), reference.get()));
+}
+
+TEST_F(SwapAbsorbPassTest, PassReordersCircuitWithMultipleLeadingSwap) {
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
+  auto q3 = programBuilder.allocQubit();
+  std::tie(q0, q1) = programBuilder.swap(q0, q1);
+  std::tie(q2, q3) = programBuilder.swap(q2, q3);
+  q0 = programBuilder.x(q0);
+  q1 = programBuilder.h(q1);
+  q2 = programBuilder.h(q2);
+  q3 = programBuilder.x(q3);
+  swapModule = programBuilder.finalize();
+
+  auto qRef0 = referenceBuilder.allocQubit();
+  auto qRef1 = referenceBuilder.allocQubit();
+  auto qRef2 = referenceBuilder.allocQubit();
+  auto qRef3 = referenceBuilder.allocQubit();
+  qRef0 = referenceBuilder.h(qRef0);
+  qRef1 = referenceBuilder.x(qRef1);
+  qRef2 = referenceBuilder.x(qRef2);
+  qRef3 = referenceBuilder.h(qRef3);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(applySwapAbsorbPass(swapModule.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(swapModule.get(), reference.get()));
+}
