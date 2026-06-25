@@ -422,8 +422,7 @@ TEST_P(MappingPassTest, ParallelLoops) {
   const auto& device = GetParam();
 
   PassManager pm(context.get());
-  pm.addPass(createMappingPass(
-      device.couplingSet, MappingPassOptions{}));
+  pm.addPass(createMappingPass(device.couplingSet, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
