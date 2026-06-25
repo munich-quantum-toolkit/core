@@ -54,7 +54,7 @@ namespace mlir::qco {
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 emptyQCO(QCOProgramBuilder& b) {
-  return measureAndReturn(b, {});
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -66,7 +66,7 @@ allocQubit(QCOProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubitNoMeasure(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
-  return measureAndReturn(b, {});
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -104,7 +104,7 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 staticQubitsNoMeasure(QCOProgramBuilder& b) {
   auto q1 = b.staticQubit(0);
   auto q2 = b.staticQubit(1);
-  return measureAndReturn(b, {});
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -160,9 +160,8 @@ staticQubitsWithInv(QCOProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocSinkPair(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
-  auto [q1, c] = b.measure(q);
-  b.sink(q1);
-  return {{c}, {b.getI1Type()}};
+  b.sink(q);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
