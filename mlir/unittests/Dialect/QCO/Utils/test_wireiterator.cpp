@@ -19,6 +19,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/Support/LLVM.h>
 
 #include <iterator>
 #include <memory>

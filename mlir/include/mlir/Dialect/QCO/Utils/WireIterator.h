@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
 
 #include <cstdint>
 #include <iterator>
@@ -79,10 +80,16 @@ public:
   }
 
 private:
-  /// @brief Move to the next operation on the qubit wire.
+  /// Return true, if an op doesn't return, but only consumes, a qubit value.
+  static bool isSinkLikeOperation(Operation* op);
+
+  /// Return true, if an op doesn't consume, but only returns, a qubit value.
+  static bool isSourceLikeOperation(Operation* op);
+
+  /// Move to the next operation on the qubit wire.
   void forward();
 
-  /// @brief Move to the previous operation on the qubit wire.
+  /// Move to the previous operation on the qubit wire.
   void backward();
 
   Operation* op_;
