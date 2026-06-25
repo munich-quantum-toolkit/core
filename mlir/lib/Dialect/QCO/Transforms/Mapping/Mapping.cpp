@@ -89,8 +89,8 @@ private:
     [[nodiscard]] size_t nqubits() const { return coupling_.getNumNodes(); }
 
     /// Return true if two qubits are adjacent.
-    [[nodiscard]] bool areAdjacent(std::pair<size_t, size_t> qubits) const {
-      return dist_[qubits.first][qubits.second] == 1UL;
+    [[nodiscard]] bool areAdjacent(size_t u, size_t v) const {
+      return dist_[u][v] == 1UL;
     }
 
     /// Return the length of the shortest path between two qubits.
@@ -215,8 +215,9 @@ private:
      */
     [[nodiscard]] bool isGoal(const IndexPairType& front,
                               const AugmentedDevice& device) const {
-      return device.areAdjacent(
-          layout.getHardwareIndices(front.first, front.second));
+      const auto [hw0, hw1] =
+          layout.getHardwareIndices(front.first, front.second);
+      return device.areAdjacent(hw0, hw1);
     }
 
   private:
@@ -916,7 +917,8 @@ private:
             .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
               const auto prog0 = infos.lookupProgram(indices[0]);
               const auto prog1 = infos.lookupProgram(indices[1]);
-              if (device.areAdjacent(layout.getHardwareIndices(prog0, prog1))) {
+              const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+              if (device.areAdjacent(hw0, hw1)) {
                 released.emplace_back(op);
               }
             })
