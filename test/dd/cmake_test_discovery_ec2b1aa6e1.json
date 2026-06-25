@@ -1,0 +1,1622 @@
+{
+  "tests": 292,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "StateGenerationTest",
+      "tests": 23,
+      "testsuite": [
+        {
+          "name": "MakeZero",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 54
+        },
+        {
+          "name": "MakeBasis",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 76
+        },
+        {
+          "name": "MakeBasisDifficult",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 101
+        },
+        {
+          "name": "MakeGHZ",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 129
+        },
+        {
+          "name": "MakeGHZZeroQubits",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 153
+        },
+        {
+          "name": "MakeW",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 166
+        },
+        {
+          "name": "MakeWZeroQubits",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 194
+        },
+        {
+          "name": "FromVectorZero",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 207
+        },
+        {
+          "name": "FromVectorScalar",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 222
+        },
+        {
+          "name": "FromVector",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 239
+        },
+        {
+          "name": "MakeZeroInvalidArguments",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 270
+        },
+        {
+          "name": "MakeBasisInvalidArguments",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 280
+        },
+        {
+          "name": "MakeGHZInvalidArguments",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 294
+        },
+        {
+          "name": "MakeWInvalidArguments",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 304
+        },
+        {
+          "name": "FromVectorInvalidArguments",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 319
+        },
+        {
+          "name": "GenerateExponential",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 335
+        },
+        {
+          "name": "GenerateExponentialWithSeed",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 362
+        },
+        {
+          "name": "GenerateRandomOneQubit",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 389
+        },
+        {
+          "name": "GenerateRandomRoundRobin",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 414
+        },
+        {
+          "name": "GenerateRandomRoundRobinWithSeed",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 446
+        },
+        {
+          "name": "GenerateRandomRandom",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 479
+        },
+        {
+          "name": "GenerateRandomRandomWithSeed",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 511
+        },
+        {
+          "name": "GenerateRandomInvalidArguments",
+          "file": "\/workspaces\/core\/test\/dd\/test_state_generation.cpp",
+          "line": 544
+        }
+      ]
+    },
+    {
+      "name": "DDPackageTest",
+      "tests": 96,
+      "testsuite": [
+        {
+          "name": "TrivialTest",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 51
+        },
+        {
+          "name": "BellState",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 71
+        },
+        {
+          "name": "QFTState",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 138
+        },
+        {
+          "name": "CorruptedBellState",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 265
+        },
+        {
+          "name": "InvalidStandardOperation",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 286
+        },
+        {
+          "name": "PrintNoneGateType",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 305
+        },
+        {
+          "name": "NegativeControl",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 311
+        },
+        {
+          "name": "IdentityTrace",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 320
+        },
+        {
+          "name": "CNotKronTrace",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 327
+        },
+        {
+          "name": "PartialIdentityTrace",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 335
+        },
+        {
+          "name": "PartialSWapMatTrace",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 342
+        },
+        {
+          "name": "PartialTraceKeepInnerQubits",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 355
+        },
+        {
+          "name": "TraceComplexity",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 380
+        },
+        {
+          "name": "KeepBottomQubitsPartialTraceComplexity",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 398
+        },
+        {
+          "name": "PartialTraceComplexity",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 427
+        },
+        {
+          "name": "StateGenerationManipulation",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 459
+        },
+        {
+          "name": "VectorSerializationTest",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 475
+        },
+        {
+          "name": "BellMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 495
+        },
+        {
+          "name": "MatrixSerializationTest",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 577
+        },
+        {
+          "name": "SerializationErrors",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 597
+        },
+        {
+          "name": "Ancillaries",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 648
+        },
+        {
+          "name": "GarbageVector",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 684
+        },
+        {
+          "name": "GarbageMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 718
+        },
+        {
+          "name": "ReduceGarbageVector",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 755
+        },
+        {
+          "name": "ReduceGarbageVectorTGate",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 777
+        },
+        {
+          "name": "ReduceGarbageMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 798
+        },
+        {
+          "name": "ReduceGarbageMatrix2",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 839
+        },
+        {
+          "name": "ReduceGarbageMatrixNoGarbage",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 872
+        },
+        {
+          "name": "ReduceGarbageMatrixTGate",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 891
+        },
+        {
+          "name": "InvalidMakeBasisStateAndGate",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 917
+        },
+        {
+          "name": "PackageReset",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 923
+        },
+        {
+          "name": "ResetClearsRoots",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 945
+        },
+        {
+          "name": "DuplicatetrackDoesNotLeaveStaleRoot",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 966
+        },
+        {
+          "name": "Inverse",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 996
+        },
+        {
+          "name": "trackTwiceThenuntrackTwice",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1015
+        },
+        {
+          "name": "UniqueTableAllocation",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1044
+        },
+        {
+          "name": "SpecialCaseTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1067
+        },
+        {
+          "name": "KroneckerProduct",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1101
+        },
+        {
+          "name": "KroneckerProductVectors",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1119
+        },
+        {
+          "name": "KroneckerIdentityHandling",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1128
+        },
+        {
+          "name": "NearZeroNormalize",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1150
+        },
+        {
+          "name": "DestructiveMeasurementAll",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1207
+        },
+        {
+          "name": "DestructiveMeasurementOne",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1232
+        },
+        {
+          "name": "ExportPolarPhaseFormatted",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1253
+        },
+        {
+          "name": "BasicNumericInstabilityTest",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1322
+        },
+        {
+          "name": "BasicNumericStabilityTest",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1376
+        },
+        {
+          "name": "NormalizationNumericStabilityTest",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1405
+        },
+        {
+          "name": "FidelityOfMeasurementOutcomes",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1421
+        },
+        {
+          "name": "CloseToIdentity",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1439
+        },
+        {
+          "name": "CloseToIdentityWithGarbageAtTheBeginning",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1472
+        },
+        {
+          "name": "CloseToIdentityWithGarbageAtTheEnd",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1497
+        },
+        {
+          "name": "CloseToIdentityWithGarbageInTheMiddle",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1526
+        },
+        {
+          "name": "calCulpDistance",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1555
+        },
+        {
+          "name": "stateFromVectorBell",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1564
+        },
+        {
+          "name": "stateFromVectorEmpty",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1586
+        },
+        {
+          "name": "stateFromVectorNoPowerOfTwo",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1592
+        },
+        {
+          "name": "stateFromScalar",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1598
+        },
+        {
+          "name": "expectationValueGlobalOperators",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1606
+        },
+        {
+          "name": "expectationValueLocalOperators",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1636
+        },
+        {
+          "name": "expectationValueExceptions",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1656
+        },
+        {
+          "name": "DDFromSingleQubitMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1666
+        },
+        {
+          "name": "DDFromTwoQubitMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1677
+        },
+        {
+          "name": "DDFromTwoQubitAsymmetricalMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1689
+        },
+        {
+          "name": "DDFromThreeQubitMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1703
+        },
+        {
+          "name": "DDFromEmptyMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1719
+        },
+        {
+          "name": "DDFromNonPowerOfTwoMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1727
+        },
+        {
+          "name": "DDFromNonSquareMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1735
+        },
+        {
+          "name": "DDFromSingleElementMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1743
+        },
+        {
+          "name": "TwoQubitControlledGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1757
+        },
+        {
+          "name": "TwoQubitControlledGateDDConstructionNegativeControls",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1784
+        },
+        {
+          "name": "SWAPGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1821
+        },
+        {
+          "name": "PeresGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1844
+        },
+        {
+          "name": "iSWAPGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1875
+        },
+        {
+          "name": "DCXGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1930
+        },
+        {
+          "name": "RZZGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1951
+        },
+        {
+          "name": "RYYGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 1993
+        },
+        {
+          "name": "RXXGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2040
+        },
+        {
+          "name": "RZXGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2083
+        },
+        {
+          "name": "ECRGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2124
+        },
+        {
+          "name": "XXMinusYYGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2151
+        },
+        {
+          "name": "XXPlusYYGateDDConstruction",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2217
+        },
+        {
+          "name": "InnerProductTopNodeConjugation",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2281
+        },
+        {
+          "name": "DDNodeLeakRegressionTest",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2306
+        },
+        {
+          "name": "CTPerformanceRegressionTest",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2323
+        },
+        {
+          "name": "DataStructureStatistics",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2342
+        },
+        {
+          "name": "DDStatistics",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2359
+        },
+        {
+          "name": "ReduceAncillaRegression",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2383
+        },
+        {
+          "name": "VectorConjugate",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2398
+        },
+        {
+          "name": "ReduceAncillaIdentity",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2427
+        },
+        {
+          "name": "ReduceAncillaIdentityBeforeFirstNode",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2439
+        },
+        {
+          "name": "ReduceAncillaIdentityAfterLastNode",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2453
+        },
+        {
+          "name": "ReduceAncillaIdentityBetweenTwoNodes",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2466
+        },
+        {
+          "name": "ReduceGarbageIdentity",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2483
+        },
+        {
+          "name": "ReduceGarbageIdentityBeforeFirstNode",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2500
+        },
+        {
+          "name": "ReduceGarbageIdentityAfterLastNode",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2520
+        },
+        {
+          "name": "ReduceGarbageIdentityBetweenTwoNodes",
+          "file": "\/workspaces\/core\/test\/dd\/test_package.cpp",
+          "line": 2540
+        }
+      ]
+    },
+    {
+      "name": "VectorFunctionality",
+      "tests": 15,
+      "testsuite": [
+        {
+          "name": "GetValueByPathTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 29
+        },
+        {
+          "name": "GetValueByIndexTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 34
+        },
+        {
+          "name": "GetValueByIndexEndianness",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 39
+        },
+        {
+          "name": "GetVectorTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 50
+        },
+        {
+          "name": "GetVectorRoundtrip",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 55
+        },
+        {
+          "name": "GetVectorTolerance",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 64
+        },
+        {
+          "name": "GetSparseVectorTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 76
+        },
+        {
+          "name": "GetSparseVectorConsistency",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 83
+        },
+        {
+          "name": "GetSparseVectorTolerance",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 95
+        },
+        {
+          "name": "PrintVectorTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 110
+        },
+        {
+          "name": "PrintVector",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 121
+        },
+        {
+          "name": "AddToVectorTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 133
+        },
+        {
+          "name": "AddToVector",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 139
+        },
+        {
+          "name": "SizeTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 150
+        },
+        {
+          "name": "SizeBellState",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 155
+        }
+      ]
+    },
+    {
+      "name": "MatrixFunctionality",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "GetValueByPathTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 166
+        },
+        {
+          "name": "GetValueByIndexTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 171
+        },
+        {
+          "name": "GetValueByIndexEndianness",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 176
+        },
+        {
+          "name": "GetMatrixTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 198
+        },
+        {
+          "name": "GetMatrixRoundtrip",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 203
+        },
+        {
+          "name": "GetMatrixTolerance",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 225
+        },
+        {
+          "name": "GetSparseMatrixTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 254
+        },
+        {
+          "name": "GetSparseMatrixConsistency",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 261
+        },
+        {
+          "name": "GetSparseMatrixTolerance",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 281
+        },
+        {
+          "name": "PrintMatrixTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 308
+        },
+        {
+          "name": "PrintMatrix",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 319
+        },
+        {
+          "name": "SizeTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 339
+        },
+        {
+          "name": "SizeBellState",
+          "file": "\/workspaces\/core\/test\/dd\/test_edge_functionality.cpp",
+          "line": 344
+        }
+      ]
+    },
+    {
+      "name": "DDFunctionality",
+      "tests": 12,
+      "testsuite": [
+        {
+          "name": "BuildCircuit",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 245
+        },
+        {
+          "name": "NonUnitary",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 342
+        },
+        {
+          "name": "CircuitEquivalence",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 369
+        },
+        {
+          "name": "ChangePermutation",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 399
+        },
+        {
+          "name": "FuseTwoSingleQubitGates",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 424
+        },
+        {
+          "name": "FuseThreeSingleQubitGates",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 455
+        },
+        {
+          "name": "FuseNoSingleQubitGates",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 489
+        },
+        {
+          "name": "FuseSingleQubitGatesAcrossOtherGates",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 523
+        },
+        {
+          "name": "IfElseOperationConditions",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 556
+        },
+        {
+          "name": "IfElseOperationElseBranch",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 584
+        },
+        {
+          "name": "VectorKroneckerWithTerminal",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 601
+        },
+        {
+          "name": "DynamicCircuitSimulationWithSWAP",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 620
+        }
+      ]
+    },
+    {
+      "name": "CNTest",
+      "tests": 18,
+      "testsuite": [
+        {
+          "name": "ComplexNumberCreation",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 42
+        },
+        {
+          "name": "NearZeroLookup",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 77
+        },
+        {
+          "name": "SortedBuckets",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 82
+        },
+        {
+          "name": "GarbageCollectSomeInBucket",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 114
+        },
+        {
+          "name": "LookupInNeighbouringBuckets",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 148
+        },
+        {
+          "name": "NumberPrintingToString",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 248
+        },
+        {
+          "name": "ComplexTableAllocation",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 427
+        },
+        {
+          "name": "DoubleHitInFindOrInsert",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 459
+        },
+        {
+          "name": "DoubleHitAcrossBuckets",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 478
+        },
+        {
+          "name": "exactlyZeroComparison",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 505
+        },
+        {
+          "name": "exactlyOneComparison",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 512
+        },
+        {
+          "name": "ExportConditionalFormat1",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 519
+        },
+        {
+          "name": "ExportConditionalFormat2",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 523
+        },
+        {
+          "name": "ExportConditionalFormat3",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 527
+        },
+        {
+          "name": "ExportConditionalFormat4",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 531
+        },
+        {
+          "name": "ExportConditionalFormat5",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 535
+        },
+        {
+          "name": "ExportConditionalFormat6",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 541
+        },
+        {
+          "name": "ExportConditionalFormat7",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 545
+        }
+      ]
+    },
+    {
+      "name": "DDComplexTest",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "LowestFractions",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 236
+        },
+        {
+          "name": "NumberPrintingFormattedFractions",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 265
+        },
+        {
+          "name": "NumberPrintingFormattedFractionsSqrt",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 325
+        },
+        {
+          "name": "NumberPrintingFormattedFractionsPi",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 371
+        },
+        {
+          "name": "NumberPrintingFormattedFloating",
+          "file": "\/workspaces\/core\/test\/dd\/test_complex.cpp",
+          "line": 417
+        }
+      ]
+    },
+    {
+      "name": "ApproximationTest",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "OneQubitKeepAllBudgetZero",
+          "file": "\/workspaces\/core\/test\/dd\/test_approximations.cpp",
+          "line": 45
+        },
+        {
+          "name": "OneQubitKeepAllBudgetTooSmall",
+          "file": "\/workspaces\/core\/test\/dd\/test_approximations.cpp",
+          "line": 78
+        },
+        {
+          "name": "OneQubitRemoveTerminalEdge",
+          "file": "\/workspaces\/core\/test\/dd\/test_approximations.cpp",
+          "line": 111
+        },
+        {
+          "name": "TwoQubitRemoveNode",
+          "file": "\/workspaces\/core\/test\/dd\/test_approximations.cpp",
+          "line": 144
+        },
+        {
+          "name": "TwoQubitCorrectlyRebuilt",
+          "file": "\/workspaces\/core\/test\/dd\/test_approximations.cpp",
+          "line": 190
+        },
+        {
+          "name": "ThreeQubitRemoveNodeWithChildren",
+          "file": "\/workspaces\/core\/test\/dd\/test_approximations.cpp",
+          "line": 241
+        },
+        {
+          "name": "ThreeQubitRemoveUnconnected",
+          "file": "\/workspaces\/core\/test\/dd\/test_approximations.cpp",
+          "line": 287
+        },
+        {
+          "name": "NodesVisited",
+          "file": "\/workspaces\/core\/test\/dd\/test_approximations.cpp",
+          "line": 334
+        }
+      ]
+    },
+    {
+      "name": "Parameters\/DDFunctionality",
+      "tests": 102,
+      "testsuite": [
+        {
+          "name": "StandardOpBuildInverseBuild\/gphase",
+          "value_param": "gphase",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/i",
+          "value_param": "i",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/h",
+          "value_param": "h",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/x",
+          "value_param": "x",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/y",
+          "value_param": "y",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/z",
+          "value_param": "z",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/s",
+          "value_param": "s",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/sdg",
+          "value_param": "sdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/t",
+          "value_param": "t",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/tdg",
+          "value_param": "tdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/sx",
+          "value_param": "sx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/sxdg",
+          "value_param": "sxdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/v",
+          "value_param": "v",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/vdg",
+          "value_param": "vdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/u",
+          "value_param": "u",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/u2",
+          "value_param": "u2",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/p",
+          "value_param": "p",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/r",
+          "value_param": "r",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/rx",
+          "value_param": "rx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/ry",
+          "value_param": "ry",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/rz",
+          "value_param": "rz",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/peres",
+          "value_param": "peres",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/peresdg",
+          "value_param": "peresdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/swap",
+          "value_param": "swap",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/iswap",
+          "value_param": "iswap",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/iswapdg",
+          "value_param": "iswapdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/dcx",
+          "value_param": "dcx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/ecr",
+          "value_param": "ecr",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/rxx",
+          "value_param": "rxx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/ryy",
+          "value_param": "ryy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/rzz",
+          "value_param": "rzz",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/rzx",
+          "value_param": "rzx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/xx_minus_yy",
+          "value_param": "xx_minus_yy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "StandardOpBuildInverseBuild\/xx_plus_yy",
+          "value_param": "xx_plus_yy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 73
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/gphase",
+          "value_param": "gphase",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/i",
+          "value_param": "i",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/h",
+          "value_param": "h",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/x",
+          "value_param": "x",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/y",
+          "value_param": "y",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/z",
+          "value_param": "z",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/s",
+          "value_param": "s",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/sdg",
+          "value_param": "sdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/t",
+          "value_param": "t",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/tdg",
+          "value_param": "tdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/sx",
+          "value_param": "sx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/sxdg",
+          "value_param": "sxdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/v",
+          "value_param": "v",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/vdg",
+          "value_param": "vdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/u",
+          "value_param": "u",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/u2",
+          "value_param": "u2",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/p",
+          "value_param": "p",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/r",
+          "value_param": "r",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/rx",
+          "value_param": "rx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/ry",
+          "value_param": "ry",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/rz",
+          "value_param": "rz",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/peres",
+          "value_param": "peres",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/peresdg",
+          "value_param": "peresdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/swap",
+          "value_param": "swap",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/iswap",
+          "value_param": "iswap",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/iswapdg",
+          "value_param": "iswapdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/dcx",
+          "value_param": "dcx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/ecr",
+          "value_param": "ecr",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/rxx",
+          "value_param": "rxx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/ryy",
+          "value_param": "ryy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/rzz",
+          "value_param": "rzz",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/rzx",
+          "value_param": "rzx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/xx_minus_yy",
+          "value_param": "xx_minus_yy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardOpBuildInverseBuild\/xx_plus_yy",
+          "value_param": "xx_plus_yy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 129
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/gphase",
+          "value_param": "gphase",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/i",
+          "value_param": "i",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/h",
+          "value_param": "h",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/x",
+          "value_param": "x",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/y",
+          "value_param": "y",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/z",
+          "value_param": "z",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/s",
+          "value_param": "s",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/sdg",
+          "value_param": "sdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/t",
+          "value_param": "t",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/tdg",
+          "value_param": "tdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/sx",
+          "value_param": "sx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/sxdg",
+          "value_param": "sxdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/v",
+          "value_param": "v",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/vdg",
+          "value_param": "vdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/u",
+          "value_param": "u",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/u2",
+          "value_param": "u2",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/p",
+          "value_param": "p",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/r",
+          "value_param": "r",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/rx",
+          "value_param": "rx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/ry",
+          "value_param": "ry",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/rz",
+          "value_param": "rz",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/peres",
+          "value_param": "peres",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/peresdg",
+          "value_param": "peresdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/swap",
+          "value_param": "swap",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/iswap",
+          "value_param": "iswap",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/iswapdg",
+          "value_param": "iswapdg",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/dcx",
+          "value_param": "dcx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/ecr",
+          "value_param": "ecr",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/rxx",
+          "value_param": "rxx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/ryy",
+          "value_param": "ryy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/rzz",
+          "value_param": "rzz",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/rzx",
+          "value_param": "rzx",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/xx_minus_yy",
+          "value_param": "xx_minus_yy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        },
+        {
+          "name": "ControlledStandardNegOpBuildInverseBuild\/xx_plus_yy",
+          "value_param": "xx_plus_yy",
+          "file": "\/workspaces\/core\/test\/dd\/test_dd_functionality.cpp",
+          "line": 186
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,574 @@
+{
+  "tests": 92,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "DeviceSessionConfigTest",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "AddDynamicDeviceLibraryWithBaseUrl",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 522
+        },
+        {
+          "name": "AddDynamicDeviceLibraryWithCustomParameters",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 532
+        },
+        {
+          "name": "AddDynamicDeviceLibraryWithAuthToken",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 556
+        },
+        {
+          "name": "AddDynamicDeviceLibraryWithAuthFile",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 567
+        },
+        {
+          "name": "AddDynamicDeviceLibraryWithUsernamePassword",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 579
+        },
+        {
+          "name": "AddDynamicDeviceLibraryWithAllParameters",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 591
+        },
+        {
+          "name": "IdempotentLoadingWithDifferentConfigs",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 621
+        }
+      ]
+    },
+    {
+      "name": "DynamicDeviceLibraryTest",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "addDynamicDeviceLibraryReturnsDevice",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 654
+        }
+      ]
+    },
+    {
+      "name": "DefaultDevices\/DriverTest",
+      "tests": 63,
+      "testsuite": [
+        {
+          "name": "SessionSetParameter\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 127
+        },
+        {
+          "name": "SessionSetParameter\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 127
+        },
+        {
+          "name": "SessionSetParameter\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 127
+        },
+        {
+          "name": "JobCreate\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 146
+        },
+        {
+          "name": "JobCreate\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 146
+        },
+        {
+          "name": "JobCreate\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 146
+        },
+        {
+          "name": "JobSetParameter\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 154
+        },
+        {
+          "name": "JobSetParameter\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 154
+        },
+        {
+          "name": "JobSetParameter\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 154
+        },
+        {
+          "name": "JobQueryProperty\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 175
+        },
+        {
+          "name": "JobQueryProperty\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 175
+        },
+        {
+          "name": "JobQueryProperty\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 175
+        },
+        {
+          "name": "JobSubmit\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 215
+        },
+        {
+          "name": "JobSubmit\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 215
+        },
+        {
+          "name": "JobSubmit\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 215
+        },
+        {
+          "name": "JobCancel\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 224
+        },
+        {
+          "name": "JobCancel\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 224
+        },
+        {
+          "name": "JobCancel\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 224
+        },
+        {
+          "name": "JobCheck\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 234
+        },
+        {
+          "name": "JobCheck\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 234
+        },
+        {
+          "name": "JobCheck\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 234
+        },
+        {
+          "name": "JobWait\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 244
+        },
+        {
+          "name": "JobWait\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 244
+        },
+        {
+          "name": "JobWait\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 244
+        },
+        {
+          "name": "JobGetResults\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 254
+        },
+        {
+          "name": "JobGetResults\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 254
+        },
+        {
+          "name": "JobGetResults\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 254
+        },
+        {
+          "name": "QueryDeviceProperty\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 267
+        },
+        {
+          "name": "QueryDeviceProperty\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 267
+        },
+        {
+          "name": "QueryDeviceProperty\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 267
+        },
+        {
+          "name": "QuerySiteProperty\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 276
+        },
+        {
+          "name": "QuerySiteProperty\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 276
+        },
+        {
+          "name": "QuerySiteProperty\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 276
+        },
+        {
+          "name": "QueryOperationProperty\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 285
+        },
+        {
+          "name": "QueryOperationProperty\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 285
+        },
+        {
+          "name": "QueryOperationProperty\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 285
+        },
+        {
+          "name": "QueryDeviceVersion\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 296
+        },
+        {
+          "name": "QueryDeviceVersion\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 296
+        },
+        {
+          "name": "QueryDeviceVersion\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 296
+        },
+        {
+          "name": "QueryDeviceLibraryVersion\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 311
+        },
+        {
+          "name": "QueryDeviceLibraryVersion\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 311
+        },
+        {
+          "name": "QueryDeviceLibraryVersion\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 311
+        },
+        {
+          "name": "QueryNumQubits\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 326
+        },
+        {
+          "name": "QueryNumQubits\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 326
+        },
+        {
+          "name": "QueryNumQubits\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 326
+        },
+        {
+          "name": "QuerySites\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 336
+        },
+        {
+          "name": "QuerySites\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 336
+        },
+        {
+          "name": "QuerySites\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 336
+        },
+        {
+          "name": "QueryOperations\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 380
+        },
+        {
+          "name": "QueryOperations\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 380
+        },
+        {
+          "name": "QueryOperations\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 380
+        },
+        {
+          "name": "SessionAlloc\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 455
+        },
+        {
+          "name": "SessionAlloc\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 455
+        },
+        {
+          "name": "SessionAlloc\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 455
+        },
+        {
+          "name": "SessionInit\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 459
+        },
+        {
+          "name": "SessionInit\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 459
+        },
+        {
+          "name": "SessionInit\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 459
+        },
+        {
+          "name": "QuerySessionProperty\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 466
+        },
+        {
+          "name": "QuerySessionProperty\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 466
+        },
+        {
+          "name": "QuerySessionProperty\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 466
+        },
+        {
+          "name": "QueryNeedsCalibration\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 493
+        },
+        {
+          "name": "QueryNeedsCalibration\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 493
+        },
+        {
+          "name": "QueryNeedsCalibration\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 493
+        }
+      ]
+    },
+    {
+      "name": "DefaultDevices\/DriverJobTest",
+      "tests": 21,
+      "testsuite": [
+        {
+          "name": "JobSetParameter\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 159
+        },
+        {
+          "name": "JobSetParameter\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 159
+        },
+        {
+          "name": "JobSetParameter\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 159
+        },
+        {
+          "name": "JobQueryProperty\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 181
+        },
+        {
+          "name": "JobQueryProperty\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 181
+        },
+        {
+          "name": "JobQueryProperty\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 181
+        },
+        {
+          "name": "JobSubmit\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 219
+        },
+        {
+          "name": "JobSubmit\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 219
+        },
+        {
+          "name": "JobSubmit\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 219
+        },
+        {
+          "name": "JobCancel\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 228
+        },
+        {
+          "name": "JobCancel\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 228
+        },
+        {
+          "name": "JobCancel\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 228
+        },
+        {
+          "name": "JobCheck\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 238
+        },
+        {
+          "name": "JobCheck\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 238
+        },
+        {
+          "name": "JobCheck\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 238
+        },
+        {
+          "name": "JobWait\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 248
+        },
+        {
+          "name": "JobWait\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 248
+        },
+        {
+          "name": "JobWait\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 248
+        },
+        {
+          "name": "JobGetResults\/MQT_NA_Default_QDMI_Device",
+          "value_param": "\"MQT NA Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 260
+        },
+        {
+          "name": "JobGetResults\/MQT_Core_DDSIM_QDMI_Device",
+          "value_param": "\"MQT Core DDSIM QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 260
+        },
+        {
+          "name": "JobGetResults\/MQT_SC_Default_QDMI_Device",
+          "value_param": "\"MQT SC Default QDMI Device\"",
+          "file": "\/workspaces\/core\/test\/qdmi\/driver\/test_driver.cpp",
+          "line": 260
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "tests": 4,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "QIRRunnerTest\/QIRRunnerTest",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "QIRFile\/BellPairAdaptive",
+          "value_param": "\"\/workspaces\/core\/test\/circuits\/BellPairAdaptive.ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/runner\/test_qir_runner.cpp",
+          "line": 37
+        },
+        {
+          "name": "QIRFile\/BellPairDynamic",
+          "value_param": "\"\/workspaces\/core\/test\/circuits\/BellPairDynamic.ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/runner\/test_qir_runner.cpp",
+          "line": 37
+        },
+        {
+          "name": "QIRFile\/BellPairStatic",
+          "value_param": "\"\/workspaces\/core\/test\/circuits\/BellPairStatic.ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/runner\/test_qir_runner.cpp",
+          "line": 37
+        },
+        {
+          "name": "QIRFile\/GHZ4Dynamic",
+          "value_param": "\"\/workspaces\/core\/test\/circuits\/GHZ4Dynamic.ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/runner\/test_qir_runner.cpp",
+          "line": 37
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,230 @@
+{
+  "tests": 40,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "ScQDMISpecificationTest",
+      "tests": 18,
+      "testsuite": [
+        {
+          "name": "SessionAlloc",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 93
+        },
+        {
+          "name": "SessionInit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 98
+        },
+        {
+          "name": "SessionSetParameter",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 104
+        },
+        {
+          "name": "JobCreate",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 123
+        },
+        {
+          "name": "JobSetParameter",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 141
+        },
+        {
+          "name": "JobQueryProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 158
+        },
+        {
+          "name": "JobSubmit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 188
+        },
+        {
+          "name": "JobCancel",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 197
+        },
+        {
+          "name": "JobCheck",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 207
+        },
+        {
+          "name": "JobWait",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 218
+        },
+        {
+          "name": "JobGetResults",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 229
+        },
+        {
+          "name": "QueryDeviceProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 244
+        },
+        {
+          "name": "QuerySiteProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 264
+        },
+        {
+          "name": "QueryDeviceName",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 281
+        },
+        {
+          "name": "QueryDeviceVersion",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 296
+        },
+        {
+          "name": "QueryDeviceLibraryVersion",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 311
+        },
+        {
+          "name": "QuerySiteIndex",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 327
+        },
+        {
+          "name": "QueryDeviceQubitNum",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 338
+        }
+      ]
+    },
+    {
+      "name": "ScQDMIJobSpecificationTest",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "JobSetParameter",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 147
+        },
+        {
+          "name": "JobQueryProperty",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 164
+        },
+        {
+          "name": "QueryJobId",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 173
+        },
+        {
+          "name": "JobSubmit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 192
+        },
+        {
+          "name": "JobCancel",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 201
+        },
+        {
+          "name": "JobCheck",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 212
+        },
+        {
+          "name": "JobWait",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 223
+        },
+        {
+          "name": "JobGetResults",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_device.cpp",
+          "line": 235
+        }
+      ]
+    },
+    {
+      "name": "ScExecutableTest",
+      "tests": 13,
+      "testsuite": [
+        {
+          "name": "Version",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 31
+        },
+        {
+          "name": "MissingSubcommand",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 59
+        },
+        {
+          "name": "UnknownSubcommand",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 81
+        },
+        {
+          "name": "SchemaUnknownOption",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 103
+        },
+        {
+          "name": "SchemaMissingFile",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 125
+        },
+        {
+          "name": "ValidateInvalidJson",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 147
+        },
+        {
+          "name": "GenerateMissingFile",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 162
+        },
+        {
+          "name": "Usage",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 184
+        },
+        {
+          "name": "SchemaUsage",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 208
+        },
+        {
+          "name": "ValidateUsage",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 232
+        },
+        {
+          "name": "GenerateUsage",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 256
+        },
+        {
+          "name": "RoundTrip",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 280
+        },
+        {
+          "name": "RoundTripFile",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_app.cpp",
+          "line": 323
+        }
+      ]
+    },
+    {
+      "name": "ScGeneratorTest",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "WriteJSONSchema",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/sc\/test_generator.cpp",
+          "line": 41
+        }
+      ]
+    }
+  ]
+}

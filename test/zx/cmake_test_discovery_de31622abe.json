@@ -1,0 +1,566 @@
+{
+  "tests": 106,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "ZXFunctionalityTest",
+      "tests": 45,
+      "testsuite": [
+        {
+          "name": "parseQasm",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 64
+        },
+        {
+          "name": "complexCircuit",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 116
+        },
+        {
+          "name": "nestedCompoundGate",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 155
+        },
+        {
+          "name": "Phase",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 174
+        },
+        {
+          "name": "Compound",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 189
+        },
+        {
+          "name": "CRZ",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 207
+        },
+        {
+          "name": "CCZ",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 221
+        },
+        {
+          "name": "MCX",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 234
+        },
+        {
+          "name": "MCX0",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 245
+        },
+        {
+          "name": "MCX1",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 256
+        },
+        {
+          "name": "MCZ",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 268
+        },
+        {
+          "name": "MCZ0",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 279
+        },
+        {
+          "name": "MCZ1",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 290
+        },
+        {
+          "name": "MCZ2",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 301
+        },
+        {
+          "name": "MCRZ",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 314
+        },
+        {
+          "name": "MCRZ0",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 326
+        },
+        {
+          "name": "MCRZ1",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 337
+        },
+        {
+          "name": "UnsupportedControl",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 348
+        },
+        {
+          "name": "UnsupportedControl2",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 358
+        },
+        {
+          "name": "UnsupportedControl3",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 368
+        },
+        {
+          "name": "UnsupportedTwoTargetControl",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 378
+        },
+        {
+          "name": "InitialLayout",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 388
+        },
+        {
+          "name": "FromSymbolic",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 404
+        },
+        {
+          "name": "RZ",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 417
+        },
+        {
+          "name": "ISWAP",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 427
+        },
+        {
+          "name": "XXplusYY",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 443
+        },
+        {
+          "name": "XXminusYY",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 469
+        },
+        {
+          "name": "SWAP",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 495
+        },
+        {
+          "name": "CSWAP",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 507
+        },
+        {
+          "name": "MCSWAP",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 519
+        },
+        {
+          "name": "MCRzz",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 531
+        },
+        {
+          "name": "MCRxx",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 542
+        },
+        {
+          "name": "MCRzx",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 553
+        },
+        {
+          "name": "MCRx0",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 564
+        },
+        {
+          "name": "MCRx1",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 573
+        },
+        {
+          "name": "MCRx2",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 582
+        },
+        {
+          "name": "MCRx3",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 591
+        },
+        {
+          "name": "MCPhase",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 600
+        },
+        {
+          "name": "MCS",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 610
+        },
+        {
+          "name": "MCSdg",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 620
+        },
+        {
+          "name": "MCT",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 630
+        },
+        {
+          "name": "MCTdg",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 640
+        },
+        {
+          "name": "MCPhase2",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 650
+        },
+        {
+          "name": "MCS2",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 660
+        },
+        {
+          "name": "MCT2",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx_functionality.cpp",
+          "line": 670
+        }
+      ]
+    },
+    {
+      "name": "ZXDiagramTest",
+      "tests": 11,
+      "testsuite": [
+        {
+          "name": "createDiagram",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 61
+        },
+        {
+          "name": "deletions",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 105
+        },
+        {
+          "name": "graphLike",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 116
+        },
+        {
+          "name": "adjoint",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 151
+        },
+        {
+          "name": "approximate",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 186
+        },
+        {
+          "name": "ancilla",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 201
+        },
+        {
+          "name": "RemoveScalarSubDiagram",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 233
+        },
+        {
+          "name": "AdjMat",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 248
+        },
+        {
+          "name": "ConnectedSet",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 266
+        },
+        {
+          "name": "EdgeTypePrinting",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 281
+        },
+        {
+          "name": "VertexTypePrinting",
+          "file": "\/workspaces\/core\/test\/zx\/test_zx.cpp",
+          "line": 304
+        }
+      ]
+    },
+    {
+      "name": "SimplifyTest",
+      "tests": 19,
+      "testsuite": [
+        {
+          "name": "idSimp",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 63
+        },
+        {
+          "name": "idSimp2",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 76
+        },
+        {
+          "name": "spiderFusion",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 91
+        },
+        {
+          "name": "spiderFusion2",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 110
+        },
+        {
+          "name": "spiderFusionParallelEdges",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 133
+        },
+        {
+          "name": "localComp",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 148
+        },
+        {
+          "name": "pivotPauli",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 194
+        },
+        {
+          "name": "interiorClifford",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 242
+        },
+        {
+          "name": "interiorClifford2",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 257
+        },
+        {
+          "name": "nonPauliPivot",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 287
+        },
+        {
+          "name": "pauliPivot2",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 315
+        },
+        {
+          "name": "gadgetSimp",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 335
+        },
+        {
+          "name": "gadgetSimp2",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 367
+        },
+        {
+          "name": "fullReduce2",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 392
+        },
+        {
+          "name": "fullReduceApprox",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 423
+        },
+        {
+          "name": "fullReduceNotApprox",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 454
+        },
+        {
+          "name": "idSymbolic",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 485
+        },
+        {
+          "name": "equivalenceSymbolic",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 504
+        },
+        {
+          "name": "OnlyDeletedVertices",
+          "file": "\/workspaces\/core\/test\/zx\/test_simplify.cpp",
+          "line": 594
+        }
+      ]
+    },
+    {
+      "name": "RationalTest",
+      "tests": 16,
+      "testsuite": [
+        {
+          "name": "normalize",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 24
+        },
+        {
+          "name": "fromDouble",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 29
+        },
+        {
+          "name": "fromDouble2",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 34
+        },
+        {
+          "name": "fromDouble3",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 39
+        },
+        {
+          "name": "fromDouble4",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 44
+        },
+        {
+          "name": "fromDouble5",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 49
+        },
+        {
+          "name": "fromDouble6",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 54
+        },
+        {
+          "name": "add",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 59
+        },
+        {
+          "name": "add2",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 67
+        },
+        {
+          "name": "sub",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 75
+        },
+        {
+          "name": "sub2",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 83
+        },
+        {
+          "name": "mul",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 91
+        },
+        {
+          "name": "mul2",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 99
+        },
+        {
+          "name": "div",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 107
+        },
+        {
+          "name": "approximateDivPi",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 115
+        },
+        {
+          "name": "approximate",
+          "file": "\/workspaces\/core\/test\/zx\/test_rational.cpp",
+          "line": 120
+        }
+      ]
+    },
+    {
+      "name": "ExpressionTest",
+      "tests": 15,
+      "testsuite": [
+        {
+          "name": "basicOps1",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 36
+        },
+        {
+          "name": "basicOps2",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 56
+        },
+        {
+          "name": "mult",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 84
+        },
+        {
+          "name": "div",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 104
+        },
+        {
+          "name": "Commutativity",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 118
+        },
+        {
+          "name": "Associativity",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 127
+        },
+        {
+          "name": "Distributive",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 136
+        },
+        {
+          "name": "Variable",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 148
+        },
+        {
+          "name": "SumNegation",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 155
+        },
+        {
+          "name": "SumMult",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 164
+        },
+        {
+          "name": "CliffordRounding",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 169
+        },
+        {
+          "name": "Clifford",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 182
+        },
+        {
+          "name": "Convertability",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 200
+        },
+        {
+          "name": "Instantiation",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 207
+        },
+        {
+          "name": "Arithmetic",
+          "file": "\/workspaces\/core\/test\/zx\/test_expression.cpp",
+          "line": 220
+        }
+      ]
+    }
+  ]
+}

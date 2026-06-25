@@ -1,0 +1,22 @@
+{
+  "tests": 2,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "TestNAFoMaC",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "TrapsJSONRoundTrip",
+          "file": "\/workspaces\/core\/test\/na\/fomac\/test_fomac.cpp",
+          "line": 35
+        },
+        {
+          "name": "FullJSONRoundTrip",
+          "file": "\/workspaces\/core\/test\/na\/fomac\/test_fomac.cpp",
+          "line": 51
+        }
+      ]
+    }
+  ]
+}

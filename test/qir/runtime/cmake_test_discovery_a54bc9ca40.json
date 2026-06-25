@@ -1,0 +1,312 @@
+{
+  "tests": 58,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "QIRRuntimeTest",
+      "tests": 54,
+      "testsuite": [
+        {
+          "name": "XGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 43
+        },
+        {
+          "name": "YGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 49
+        },
+        {
+          "name": "ZGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 55
+        },
+        {
+          "name": "HGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 61
+        },
+        {
+          "name": "SGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 67
+        },
+        {
+          "name": "SdgGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 73
+        },
+        {
+          "name": "SXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 79
+        },
+        {
+          "name": "SXdgGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 85
+        },
+        {
+          "name": "SqrtXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 91
+        },
+        {
+          "name": "SqrtXdgGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 97
+        },
+        {
+          "name": "TGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 103
+        },
+        {
+          "name": "TdgGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 109
+        },
+        {
+          "name": "RGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 115
+        },
+        {
+          "name": "PRXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 121
+        },
+        {
+          "name": "RXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 127
+        },
+        {
+          "name": "RYGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 133
+        },
+        {
+          "name": "RZGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 139
+        },
+        {
+          "name": "PGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 145
+        },
+        {
+          "name": "RXXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 151
+        },
+        {
+          "name": "RYYGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 158
+        },
+        {
+          "name": "RZZGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 165
+        },
+        {
+          "name": "RZXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 172
+        },
+        {
+          "name": "UGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 179
+        },
+        {
+          "name": "U3Gate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 185
+        },
+        {
+          "name": "U2Gate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 191
+        },
+        {
+          "name": "U1Gate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 197
+        },
+        {
+          "name": "CU1Gate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 203
+        },
+        {
+          "name": "CU3Gate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 210
+        },
+        {
+          "name": "CNotGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 217
+        },
+        {
+          "name": "CXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 224
+        },
+        {
+          "name": "CYGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 231
+        },
+        {
+          "name": "CZGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 238
+        },
+        {
+          "name": "CHGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 245
+        },
+        {
+          "name": "SwapGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 252
+        },
+        {
+          "name": "CSwapGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 267
+        },
+        {
+          "name": "CRZGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 275
+        },
+        {
+          "name": "CRYGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 282
+        },
+        {
+          "name": "CRXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 289
+        },
+        {
+          "name": "CPGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 296
+        },
+        {
+          "name": "CCXGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 303
+        },
+        {
+          "name": "CCYGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 311
+        },
+        {
+          "name": "CCZGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 319
+        },
+        {
+          "name": "MGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 327
+        },
+        {
+          "name": "MeasureGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 333
+        },
+        {
+          "name": "MzGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 339
+        },
+        {
+          "name": "ResetGate",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 346
+        },
+        {
+          "name": "BellPairStatic",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 352
+        },
+        {
+          "name": "BellPairDynamic",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 370
+        },
+        {
+          "name": "BellPairStaticReverse",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 390
+        },
+        {
+          "name": "BellPairDynamicReverse",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 408
+        },
+        {
+          "name": "GHZ4Static",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 428
+        },
+        {
+          "name": "GHZ4Dynamic",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 457
+        },
+        {
+          "name": "PackageResizeWhenEnlargingState",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 506
+        },
+        {
+          "name": "TakeStateReturnsStateAndResetsRuntime",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 514
+        }
+      ]
+    },
+    {
+      "name": "QIRExecutablesTest\/QIRFilesTest",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "Executables\/mqt_core_qir_bell_pair_adaptive_ll",
+          "value_param": "\"\/workspaces\/core\/build\/release\/test\/qir\/runtime\/mqt-core-qir-bell-pair-adaptive-ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 550
+        },
+        {
+          "name": "Executables\/mqt_core_qir_bell_pair_dynamic_ll",
+          "value_param": "\"\/workspaces\/core\/build\/release\/test\/qir\/runtime\/mqt-core-qir-bell-pair-dynamic-ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 550
+        },
+        {
+          "name": "Executables\/mqt_core_qir_bell_pair_static_ll",
+          "value_param": "\"\/workspaces\/core\/build\/release\/test\/qir\/runtime\/mqt-core-qir-bell-pair-static-ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 550
+        },
+        {
+          "name": "Executables\/mqt_core_qir_g_h_z4_dynamic_ll",
+          "value_param": "\"\/workspaces\/core\/build\/release\/test\/qir\/runtime\/mqt-core-qir-g-h-z4-dynamic-ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/runtime\/test_qir_runtime.cpp",
+          "line": 550
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "tests": 6,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "JitSessionTest",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "LoadModuleFromMemory",
+          "file": "\/workspaces\/core\/test\/qir\/jit\/test_jit_session.cpp",
+          "line": 36
+        },
+        {
+          "name": "SamplingRecordsOutputs",
+          "file": "\/workspaces\/core\/test\/qir\/jit\/test_jit_session.cpp",
+          "line": 43
+        },
+        {
+          "name": "StateExtractionLeavesNoRecordedOutputs",
+          "file": "\/workspaces\/core\/test\/qir\/jit\/test_jit_session.cpp",
+          "line": 51
+        }
+      ]
+    },
+    {
+      "name": "JitSessionErrors",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "MalformedIRThrows",
+          "file": "\/workspaces\/core\/test\/qir\/jit\/test_jit_session.cpp",
+          "line": 58
+        }
+      ]
+    },
+    {
+      "name": "BellPair\/IRRewriterTest",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "StripMeasurementRelatedCalls\/0",
+          "value_param": "\"BellPairStatic.ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/jit\/test_ir_rewriter.cpp",
+          "line": 80
+        },
+        {
+          "name": "StripMeasurementRelatedCalls\/1",
+          "value_param": "\"BellPairDynamic.ll\"",
+          "file": "\/workspaces\/core\/test\/qir\/jit\/test_ir_rewriter.cpp",
+          "line": 80
+        }
+      ]
+    }
+  ]
+}

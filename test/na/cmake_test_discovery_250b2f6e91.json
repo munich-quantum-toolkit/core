@@ -1,0 +1,138 @@
+{
+  "tests": 24,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "NAComputation",
+      "tests": 10,
+      "testsuite": [
+        {
+          "name": "Atom",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 32
+        },
+        {
+          "name": "Zone",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 40
+        },
+        {
+          "name": "ZonesExtent",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 47
+        },
+        {
+          "name": "Location",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 55
+        },
+        {
+          "name": "LocalRXOp",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 66
+        },
+        {
+          "name": "LocalRZOp",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 72
+        },
+        {
+          "name": "General",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 78
+        },
+        {
+          "name": "EmptyPrint",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 126
+        },
+        {
+          "name": "GetPositionOfAtomAfterOperation",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 249
+        },
+        {
+          "name": "NonMovingAtomsViolateRowOrderConstraint",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 260
+        }
+      ]
+    },
+    {
+      "name": "NAComputationValidateAODConstraints",
+      "tests": 14,
+      "testsuite": [
+        {
+          "name": "AtomAlreadyLoaded",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 157
+        },
+        {
+          "name": "AtomNotLoaded",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 165
+        },
+        {
+          "name": "DuplicateAtomsInShuttle",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 169
+        },
+        {
+          "name": "DuplicateEndPoints",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 176
+        },
+        {
+          "name": "ColumnPreserving1",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 183
+        },
+        {
+          "name": "RowPreserving1",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 190
+        },
+        {
+          "name": "ColumnPreserving2",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 197
+        },
+        {
+          "name": "RowPreserving2",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 204
+        },
+        {
+          "name": "ColumnPreserving3",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 212
+        },
+        {
+          "name": "RowPreserving3",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 219
+        },
+        {
+          "name": "DuplicateAtomsInRz",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 226
+        },
+        {
+          "name": "DuplicateAtoms",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 230
+        },
+        {
+          "name": "RowPreserving4",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 235
+        },
+        {
+          "name": "StoreStoredAtom",
+          "file": "\/workspaces\/core\/test\/na\/test_nacomputation.cpp",
+          "line": 242
+        }
+      ]
+    }
+  ]
+}

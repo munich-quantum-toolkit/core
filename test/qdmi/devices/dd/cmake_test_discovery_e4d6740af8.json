@@ -1,0 +1,318 @@
+{
+  "tests": 42,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "DeviceStatus",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "TransitionsBusyThenIdleAfterJob",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/device_status_test.cpp",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "name": "Concurrency",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "ConcurrentStatevectorReads",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/concurrency_test.cpp",
+          "line": 27
+        },
+        {
+          "name": "ConcurrentHistogramReads",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/concurrency_test.cpp",
+          "line": 58
+        },
+        {
+          "name": "ConcurrentCheckDuringRun",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/concurrency_test.cpp",
+          "line": 97
+        }
+      ]
+    },
+    {
+      "name": "ErrorHandling",
+      "tests": 6,
+      "testsuite": [
+        {
+          "name": "NullptrArguments",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/error_handling_test.cpp",
+          "line": 31
+        },
+        {
+          "name": "GetResultsBeforeDone",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/error_handling_test.cpp",
+          "line": 74
+        },
+        {
+          "name": "MaxEnums",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/error_handling_test.cpp",
+          "line": 94
+        },
+        {
+          "name": "CustomEnums",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/error_handling_test.cpp",
+          "line": 139
+        },
+        {
+          "name": "BadState",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/error_handling_test.cpp",
+          "line": 263
+        },
+        {
+          "name": "MalformedProgramFailsForBothModes",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/error_handling_test.cpp",
+          "line": 291
+        }
+      ]
+    },
+    {
+      "name": "ResultsProbabilities",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "DenseSumToOneAndBufferTooSmall",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_probabilities_test.cpp",
+          "line": 24
+        },
+        {
+          "name": "SparseSumToOneAndBufferTooSmall",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_probabilities_test.cpp",
+          "line": 52
+        }
+      ]
+    },
+    {
+      "name": "ResultsStatevector",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "DenseNormalizedAndBufferTooSmall",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_statevector_test.cpp",
+          "line": 34
+        },
+        {
+          "name": "SparseNormalizedAndBufferTooSmall",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_statevector_test.cpp",
+          "line": 62
+        },
+        {
+          "name": "HistogramRequestsInvalidWithShotsZero",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_statevector_test.cpp",
+          "line": 99
+        }
+      ]
+    },
+    {
+      "name": "QIRStateExtractionTest",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "BellPairStaticBaseStringYieldsBellState",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_statevector_test.cpp",
+          "line": 126
+        }
+      ]
+    },
+    {
+      "name": "HistogramTest",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "QASM3Program",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 109
+        }
+      ]
+    },
+    {
+      "name": "QIRHistogramTestModule",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "BaseStatic",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 116
+        },
+        {
+          "name": "BaseDynamic",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 126
+        },
+        {
+          "name": "Adaptive",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 137
+        }
+      ]
+    },
+    {
+      "name": "QIRHistogramTestString",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "BaseStatic",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 121
+        },
+        {
+          "name": "BaseDynamic",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 131
+        },
+        {
+          "name": "Adaptive",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 142
+        }
+      ]
+    },
+    {
+      "name": "ResultsSampling",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "BufferTooSmallErrors",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 149
+        },
+        {
+          "name": "StateAndProbRequestsAreInvalidWhenShotsPositive",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/results_sampling_test.cpp",
+          "line": 178
+        }
+      ]
+    },
+    {
+      "name": "JobLifecycle",
+      "tests": 6,
+      "testsuite": [
+        {
+          "name": "SubmitAndWaitSampling",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/job_lifecycle_test.cpp",
+          "line": 24
+        },
+        {
+          "name": "SubmitAndWaitStatevector",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/job_lifecycle_test.cpp",
+          "line": 34
+        },
+        {
+          "name": "WaitInvalidBeforeSubmitAndIdempotentAfterDone",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/job_lifecycle_test.cpp",
+          "line": 44
+        },
+        {
+          "name": "WaitTimeoutPath",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/job_lifecycle_test.cpp",
+          "line": 59
+        },
+        {
+          "name": "CancelFromCreatedAndFromRunningAndFromDone",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/job_lifecycle_test.cpp",
+          "line": 75
+        },
+        {
+          "name": "FreeWhileRunningWaitsForCompletion",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/job_lifecycle_test.cpp",
+          "line": 108
+        }
+      ]
+    },
+    {
+      "name": "JobParameters",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "SetAndQueryBasics",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/job_parameters_test.cpp",
+          "line": 25
+        },
+        {
+          "name": "ProgramFormatSupport",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/job_parameters_test.cpp",
+          "line": 88
+        }
+      ]
+    },
+    {
+      "name": "SessionLifecycle",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "AllocAndInit",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/session_lifecycle_test.cpp",
+          "line": 23
+        },
+        {
+          "name": "InitBadStateAndInvalidArg",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/session_lifecycle_test.cpp",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "name": "SessionParameters",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "SetParameterBehaviors",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/session_lifecycle_test.cpp",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "name": "DeviceProperties",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "BasicStringsAndSizes",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/device_properties_test.cpp",
+          "line": 27
+        },
+        {
+          "name": "UnitsAndScales",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/device_properties_test.cpp",
+          "line": 68
+        },
+        {
+          "name": "SitesAndOperationsLists",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/device_properties_test.cpp",
+          "line": 113
+        },
+        {
+          "name": "QubitsNumAvailable",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/device_properties_test.cpp",
+          "line": 123
+        }
+      ]
+    },
+    {
+      "name": "SiteProperties",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "IndexAvailable",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/device_properties_test.cpp",
+          "line": 133
+        }
+      ]
+    },
+    {
+      "name": "OperationProperties",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "BasicQueries",
+          "file": "\/workspaces\/core\/test\/qdmi\/devices\/dd\/device_properties_test.cpp",
+          "line": 151
+        }
+      ]
+    }
+  ]
+}
