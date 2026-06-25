@@ -25,6 +25,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -740,7 +741,9 @@ private:
 
       for (const auto v : f.getNodes()) {
         if (f.getDegree(v) == 0) {
+          assert(!f.getEdges().empty());
           const auto u = f.getEdges(v).front();
+          llvm::dbgs() << v << ", " << u << '\n';
           curr.swap(u, v);
           swaps.emplace_back(u, v);
           break;
