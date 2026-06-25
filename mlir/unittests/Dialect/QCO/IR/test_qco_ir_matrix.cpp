@@ -32,6 +32,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <complex>
+#include <cstddef>
 #include <memory>
 #include <string>
 
