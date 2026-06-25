@@ -901,10 +901,11 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Apply a controlled operation
+   * @brief Apply a control modifier to a collection of gates
    *
    * @param controls Control qubits
-   * @param body Function that builds the body containing the target operation
+   * @param targets Target qubits the body operates on
+   * @param body Function that builds the body containing the target gates
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -923,10 +924,10 @@ public:
                          const function_ref<void(ValueRange)>& body);
 
   /**
-   * @brief Apply an inverse (i.e., adjoint) operation.
+   * @brief Apply an inverse (i.e., adjoint) modifier to a collection of gates
    *
-   * @param body Function that builds the body containing the operation to
-   * invert
+   * @param qubits The qubits the body operates on
+   * @param body Function that builds the body containing the gates to invert
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -936,8 +937,8 @@ public:
    * });
    * ```
    * ```mlir
-   * qc.inv {
-   *   qc.s %q0 : !qc.qubit
+   * qc.inv (%a0 = %q0) {
+   *   qc.s %a0 : !qc.qubit
    * }
    * ```
    */
@@ -945,12 +946,11 @@ public:
                         const function_ref<void(ValueRange)>& body);
 
   /**
-   * @brief Apply a power operation.
+   * @brief Apply a power modifier to a collection of gates
    *
    * @param exponent The exponent to raise the operation to
-   * @param qubits The qubits the body operates on (aliased into the body via
-   * block arguments)
-   * @param body Function that builds the body containing the operation to
+   * @param qubits The qubits the body operates on
+   * @param body Function that builds the body containing the gates to
    * exponentiate
    * @return Reference to this builder for method chaining
    *
@@ -959,7 +959,7 @@ public:
    * builder.pow(2.0, q0, [&](ValueRange qubits) { builder.s(qubits[0]); });
    * ```
    * ```mlir
-   * qc.pow(2.000000e+00) (%a0 = %q0) {
+   * qc.pow(%exponent) (%a0 = %q0) {
    *   qc.s %a0 : !qc.qubit
    * } : !qc.qubit
    * ```

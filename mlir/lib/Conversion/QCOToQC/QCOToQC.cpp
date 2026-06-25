@@ -701,14 +701,14 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
  *
  * @par Example:
  * ```mlir
- * %q0_out = qco.pow (2.000000e+00) (%a_in = %q0_in) {
+ * %q0_out = qco.pow(%exponent) (%a_in = %q0_in) {
  *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
  *   qco.yield %a_res
  * } : {!qco.qubit} -> {!qco.qubit}
  * ```
  * is converted to
  * ```mlir
- * qc.pow(2.000000e+00) (%a0 = %q0) {
+ * qc.pow(%exponent) (%a0 = %q0) {
  *   qc.s %a0 : !qc.qubit
  * } : !qc.qubit
  * ```

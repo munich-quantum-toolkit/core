@@ -1150,11 +1150,11 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Apply a controlled operation
+   * @brief Apply a control modifier to a collection of gates
    *
-   * @param controls Control qubits
-   * @param targets Target qubits
-   * @param body Function that builds the body containing the target operation
+   * @param controls Input control qubits
+   * @param targets Input target qubits
+   * @param body Function that builds the body containing the target gates
    * @return Pair of (output_control_qubits, output_target_qubits)
    *
    * @par Example:
@@ -1177,10 +1177,10 @@ public:
        function_ref<SmallVector<Value>(ValueRange)> body);
 
   /**
-   * @brief Apply an inverse operation
+   * @brief Apply an inverse (i.e., adjoint) modifier to a collection of gates
    *
-   * @param qubits Qubits involved in the operation
-   * @param body Function that builds the body containing the target operation
+   * @param qubits Input qubits
+   * @param body Function that builds the body containing the gates to invert
    * @return Output qubits
    *
    * @par Example:
@@ -1202,11 +1202,11 @@ public:
                  function_ref<SmallVector<Value>(ValueRange)> body);
 
   /**
-   * @brief Apply a power operation.
+   * @brief Apply a power modifier to a collection of gates
    *
    * @param qubits Input qubits
-   * @param exponent The exponent to raise the operation to
-   * @param body Function that builds the body containing the operation to
+   * @param exponent The exponent to raise the gates to
+   * @param body Function that builds the body containing the gates to
    * exponentiate
    * @return Output qubits
    *
@@ -1219,7 +1219,7 @@ public:
    * );
    * ```
    * ```mlir
-   * %q_out = qco.pow (2.000000e+00) (%q = %q_in) {
+   * %q_out = qco.pow(%exponent) (%q = %q_in) {
    *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
    *   qco.yield %q_res
    * } : {!qco.qubit} -> {!qco.qubit}

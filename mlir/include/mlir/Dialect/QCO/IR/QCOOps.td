@@ -1068,10 +1068,10 @@ def CtrlOp : QCOOp<"ctrl",
                              SameOperandsAndResultShape,
                              SingleBlockImplicitTerminator<"YieldOp">,
                              RecursiveMemoryEffects]> {
-  let summary = "Add control qubits to a unitary operation";
+  let summary = "Apply a control modifier to a collection of gates";
   let description = [{
-        A modifier operation that adds control qubits to the unitary operation defined in its body region.
-        The controlled operation applies the underlying unitary only when all control qubits are in the $|1\rangle$ state.
+        A modifier operation that adds control qubits to the gates defined in its body region.
+        The controlled operation applies the controlled gates only when all control qubits are in the $|1\rangle$ state.
 
         The operation takes a variadic number of control and target qubits as inputs and produces corresponding output qubits.
         Control qubits are not modified by the operation and simply pass through to the outputs.
@@ -1147,9 +1147,10 @@ def CtrlOp : QCOOp<"ctrl",
 def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
                                    SingleBlockImplicitTerminator<"YieldOp">,
                                    RecursiveMemoryEffects]> {
-  let summary = "Invert a unitary operation";
+  let summary =
+      "Apply an inverse (i.e., adjoint) modifier to a collection of gates";
   let description = [{
-        A modifier operation that inverts the unitary operation defined in its body region.
+        A modifier operation that inverts the gates defined in its body region.
 
         The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
 
@@ -1224,13 +1225,22 @@ def PowOp
                       RecursiveMemoryEffects]> {
   let summary = "Raise a unitary operation to a power";
   let description = [{
-        A modifier operation that raises the unitary operation defined in its body
-        region to the given floating-point exponent. The operation takes a variadic
-        number of qubits as inputs and produces corresponding output qubits.
+        A modifier operation that raises the gates defined in its body region to a given power.
+
+        The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
+
+        The exponent can be an integer or a floating-point number.
+
+        - r > 0: apply the gate raised to the r-th power.
+        - r = 0: identity (no-op).
+        - r < 0: equivalent to inv @ pow(-r) @ g.
+
+        The body region may contain an arbitrary amount of unitary and classical operations.
+        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
 
         Example:
         ```mlir
-        %q_out = qco.pow (0.5) (%q = %q_in) {
+        %q_out = qco.pow(%exponent) (%q = %q_in) {
             %q_1 = qco.s %q : !qco.qubit -> !qco.qubit
             qco.yield %q_1
         } : {!qco.qubit} -> {!qco.qubit}

@@ -919,10 +919,10 @@ def CtrlOp
            traits = [UnitaryOpInterface, AttrSizedOperandSegments,
                      SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
                      RecursiveMemoryEffects]> {
-  let summary = "Add control qubits to a unitary operation";
+  let summary = "Apply a control modifier to a collection of gates";
   let description = [{
-        A modifier operation that adds control qubits to the unitary operation defined in its body region.
-        The controlled operation applies the underlying unitary only when all control qubits are in the $|1\rangle$ state.
+        A modifier operation that adds control qubits to the gates defined in its body region.
+        The controlled operation applies the controlled gates only when all control qubits are in the $|1\rangle$ state.
 
         Note that control qubits are logically unmodified by this operation in that their quantum state remains unchanged.
         However, the `controls` argument is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
@@ -978,9 +978,10 @@ def InvOp : QCOp<"inv",
                  traits = [UnitaryOpInterface,
                            SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
                            RecursiveMemoryEffects]> {
-  let summary = "Invert a unitary operation";
+  let summary =
+      "Apply an inverse (i.e., adjoint) modifier to a collection of gates";
   let description = [{
-        A modifier operation that inverts the unitary operation defined in its body region.
+        A modifier operation that inverts the gates defined in its body region.
 
         The body region may contain an arbitrary amount of unitary and classical operations.
         Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
@@ -1031,10 +1032,11 @@ def PowOp : QCOp<"pow",
                  traits = [UnitaryOpInterface,
                            SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
                            RecursiveMemoryEffects]> {
-  let summary = "Apply a gate power modifier";
+  let summary = "Apply a power modifier to a collection of gates";
   let description = [{
-          A modifier operation that raises the unitary operation defined in its
-          body region to a given power (exponent can be integer or fractional).
+          A modifier operation that raises the gates defined in its body region to a given power.
+
+          The exponent can be an integer or a floating-point number.
 
           - r > 0: apply the gate raised to the r-th power.
           - r = 0: identity (no-op).
@@ -1045,7 +1047,7 @@ def PowOp : QCOp<"pow",
 
           Example:
           ```mlir
-          qc.pow(2.000000e+00) (%a0 = %q0) {
+          qc.pow(%exponent) (%a0 = %q0) {
             qc.s %a0 : !qc.qubit
           } : !qc.qubit
           ```

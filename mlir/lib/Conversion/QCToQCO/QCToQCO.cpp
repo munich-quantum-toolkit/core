@@ -1177,13 +1177,13 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
  *
  * @par Example:
  * ```mlir
- * qc.pow(2.000000e+00) (%a0 = %q0) {
+ * qc.pow(%exponent) (%a0 = %q0) {
  *   qc.s %a0 : !qc.qubit
  * } : !qc.qubit
  * ```
  * is converted to
  * ```mlir
- * %q0_out = qco.pow (2.000000e+00) (%a0_in = %q0_in) {
+ * %q0_out = qco.pow(%exponent) (%a0_in = %q0_in) {
  *   %a0_res = qco.s %a0_in : !qco.qubit -> !qco.qubit
  *   qco.yield %a0_res
  * } : {!qco.qubit} -> {!qco.qubit}
