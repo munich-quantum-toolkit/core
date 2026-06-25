@@ -23,7 +23,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cmath>
 #include <optional>
 
 namespace mlir::qco {
@@ -41,6 +40,7 @@ std::optional<Matrix2x2> composeSingleQubitBodyMatrix(Block& block) {
                  return false;
                }
                global *= (*matrix)(0, 0);
+               found = true;
                return true;
              })
              .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
@@ -66,7 +66,7 @@ std::optional<Matrix2x2> composeSingleQubitBodyMatrix(Block& block) {
       return std::nullopt;
     }
   }
-  if (!found && std::abs(global - Complex{1.0, 0.0}) <= utils::TOLERANCE) {
+  if (!found) {
     return std::nullopt;
   }
   acc *= global;

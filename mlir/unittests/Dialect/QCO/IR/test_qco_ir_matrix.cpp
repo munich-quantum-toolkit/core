@@ -10,9 +10,10 @@
 
 #include "TestCaseUtils.h"
 #include "dd/DDDefinitions.hpp"
+#include "dd/FunctionalityConstruction.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
+#include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
@@ -49,6 +50,17 @@ matrix4FromDefinition(const Definition& definition) {
       definition[1][0], definition[1][1], definition[1][2], definition[1][3],
       definition[2][0], definition[2][1], definition[2][2], definition[2][3],
       definition[3][0], definition[3][1], definition[3][2], definition[3][3]);
+}
+
+template <typename Fn>
+[[nodiscard]] static Matrix4x4
+expectedMatrixFromComputation(const Fn& build,
+                              const std::size_t numQubits = 2) {
+  qc::QuantumComputation comp;
+  build(comp);
+  const auto package = std::make_unique<dd::Package>(numQubits);
+  return matrix4FromDefinition(
+      dd::buildFunctionality(comp, *package).getMatrix(numQubits));
 }
 
 static void controlledXH(QCOProgramBuilder& b) {
@@ -106,13 +118,11 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
   auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
   auto matrix = ctrlOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto cx = qc::StandardOperation(1, 0, qc::OpType::X);
-  const auto dd = std::make_unique<dd::Package>(2);
-  const auto cxDD = dd::getDD(cx, *dd);
-  const auto definition = cxDD.getMatrix(2);
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.cx(1, 0);
+      });
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
@@ -126,12 +136,11 @@ TEST_F(QCOMatrixTest, ControlledHOpMatrix) {
   auto matrix = ctrlOp.getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
-  const auto ch = qc::StandardOperation(1, 0, qc::OpType::H);
-  const auto dd = std::make_unique<dd::Package>(2);
-  const auto chDD = dd::getDD(ch, *dd);
-  const auto definition = chDD.getMatrix(2);
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.ch(1, 0);
+      });
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
@@ -145,13 +154,12 @@ TEST_F(QCOMatrixTest, ControlledXHOpMatrix) {
   auto matrix = ctrlOp.getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
-  qc::CompoundOperation body;
-  body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::X);
-  body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::H);
-
-  const auto dd = std::make_unique<dd::Package>(2);
-  const auto bodyDD = dd::getDD(body, *dd);
-  const Matrix4x4 expected = matrix4FromDefinition(bodyDD.getMatrix(2));
+  const Matrix4x4 expected =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.cx(1, 0);
+        comp.ch(1, 0);
+      });
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
@@ -165,13 +173,15 @@ TEST_F(QCOMatrixTest, ControlledInverseHTOpMatrix) {
   auto matrix = ctrlOp.getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
-  qc::CompoundOperation body;
-  body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::H);
-  body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::T);
-
-  const auto dd = std::make_unique<dd::Package>(2);
-  const auto bodyDD = dd::getInverseDD(body, *dd);
-  const Matrix4x4 expected = matrix4FromDefinition(bodyDD.getMatrix(2));
+  const Matrix4x4 expected =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        qc::CompoundOperation body;
+        body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::H);
+        body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::T);
+        body.invert();
+        comp.push_back(body);
+      });
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
@@ -188,13 +198,11 @@ TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {
   auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
   auto matrix = invOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto iswapdg = qc::StandardOperation({0, 1}, qc::OpType::iSWAPdg);
-  const auto dd = std::make_unique<dd::Package>(2);
-  const auto iswapdgDD = dd::getDD(iswapdg, *dd);
-  const auto definition = iswapdgDD.getMatrix(2);
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  const Matrix4x4 expected =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.iswapdg(0, 1);
+      });
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }

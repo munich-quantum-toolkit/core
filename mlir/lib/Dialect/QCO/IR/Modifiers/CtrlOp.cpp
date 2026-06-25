@@ -308,13 +308,15 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
         "is not supported due to memory constraints.");
   }
 
+  const auto numControls = getNumControls();
+
   // Build `I_{2^controls} ⊗ U` by placing the target block in the bottom-right
   // corner of a `2^controls * targetDim` identity.
   const auto controlledMatrix =
-      [this](const std::int64_t targetDim,
-             const auto& targetBlock) -> DynamicMatrix {
+      [numControls](const std::int64_t targetDim,
+                    const auto& targetBlock) -> DynamicMatrix {
     auto matrix = DynamicMatrix::identity(static_cast<int64_t>(
-        (1ULL << getNumControls()) * static_cast<std::size_t>(targetDim)));
+        (1ULL << numControls) * static_cast<std::size_t>(targetDim)));
     matrix.setBottomRightCorner(targetBlock);
     return matrix;
   };
