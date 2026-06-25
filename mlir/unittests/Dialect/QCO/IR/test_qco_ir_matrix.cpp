@@ -28,6 +28,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Support/LLVM.h>
 
 #include <complex>
 #include <memory>
