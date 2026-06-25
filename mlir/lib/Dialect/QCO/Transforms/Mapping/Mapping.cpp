@@ -26,7 +26,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -985,13 +984,12 @@ private:
             }
           }
 
-          Layout childLayout(layout);
           const auto res = route<Direction, Mode>(child, stats, rewriter);
           if (failed(res)) {
             return failure();
           }
 
-          const auto swaps = restore(childLayout, layout);
+          const auto swaps = restore(child.layout, layout);
 
           if constexpr (Mode == RoutingMode::Hot) {
 
