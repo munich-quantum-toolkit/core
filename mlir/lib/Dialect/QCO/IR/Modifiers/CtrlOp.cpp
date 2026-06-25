@@ -312,7 +312,7 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   // corner of a `2^controls * targetDim` identity.
   const auto controlledMatrix =
       [this](const std::int64_t targetDim,
-             const auto& targetBlock) -> std::optional<DynamicMatrix> {
+             const auto& targetBlock) -> DynamicMatrix {
     auto matrix = DynamicMatrix::identity(static_cast<int64_t>(
         (1ULL << getNumControls()) * static_cast<std::size_t>(targetDim)));
     matrix.setBottomRightCorner(targetBlock);
