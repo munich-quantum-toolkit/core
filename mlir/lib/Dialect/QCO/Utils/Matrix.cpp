@@ -818,15 +818,15 @@ Matrix4x4::symmetricEigen4(const std::array<double, 16>& symmetric) {
 }
 
 namespace {
-// Adapted from John Burkardt's MIT-licensed EISPACK C port (pythag, csroot) and
-// NETLIB EISPACK Fortran (corth.f, comqr2.f, cdiv.f). Uses low=0, igh=n-1
-// without CBAL balancing, matching EISPACK when balancing is skipped.
+// EISPACK routine mapping: complexEigenStableHypot (pythag),
+// complexEigenComplexSqrt (csroot), complexEigenComplexDivide (cdiv),
+// complexEigenReduceToHessenberg (corth), complexEigenQrSolve (comqr2).
 
 /// Row-major `ld x n` matrix view for EISPACK storage (`values[row + col *
 /// ld]`).
-class ComplexLdMatrix {
+class EispackMatrixView {
 public:
-  ComplexLdMatrix(MutableArrayRef<double> values, const int ld)
+  EispackMatrixView(MutableArrayRef<double> values, const int ld)
       : values_(values), ld_(ld) {}
 
   [[nodiscard]] static std::size_t rowMajorIndex(const int row, const int col,
@@ -852,7 +852,7 @@ private:
   int ld_;
 };
 
-[[nodiscard]] double complexPythag(const double a, const double b) {
+[[nodiscard]] double complexEigenStableHypot(const double a, const double b) {
   double p = std::max(std::abs(a), std::abs(b));
   if (p != 0.0) {
     double r = std::min(std::abs(a), std::abs(b)) / p;
@@ -871,434 +871,518 @@ private:
   return p;
 }
 
-[[nodiscard]] std::pair<double, double> complexCsroot(const double xr,
-                                                      const double xi) {
-  const double tr = xr;
-  const double ti = xi;
-  const double s = std::sqrt(0.5 * (complexPythag(tr, ti) + std::abs(tr)));
+[[nodiscard]] std::pair<double, double>
+complexEigenComplexSqrt(const double xr, const double xi) {
+  const double inputReal = xr;
+  const double inputImag = xi;
+  const double s =
+      std::sqrt(0.5 * (complexEigenStableHypot(inputReal, inputImag) +
+                       std::abs(inputReal)));
 
   double yr = 0.0;
   double yi = 0.0;
-  if (0.0 <= tr) {
+  if (0.0 <= inputReal) {
     yr = s;
   }
 
   double sSign = s;
-  if (ti < 0.0) {
+  if (inputImag < 0.0) {
     sSign = -s;
   }
 
-  if (tr <= 0.0) {
+  if (inputReal <= 0.0) {
     yi = sSign;
   }
 
-  if (tr < 0.0) {
-    yr = 0.5 * (ti / yi);
-  } else if (0.0 < tr) {
-    yi = 0.5 * (ti / yr);
+  if (inputReal < 0.0) {
+    yr = 0.5 * (inputImag / yi);
+  } else if (0.0 < inputReal) {
+    yi = 0.5 * (inputImag / yr);
   }
   return {yr, yi};
 }
 
-[[nodiscard]] std::pair<double, double> complexCdiv(const double ar,
-                                                    const double ai,
-                                                    const double br,
-                                                    const double bi) {
-  const double s = std::abs(br) + std::abs(bi);
-  const double ars = ar / s;
-  const double ais = ai / s;
-  const double brs = br / s;
-  const double bis = bi / s;
-  const double denom = (brs * brs) + (bis * bis);
-  return {(ars * brs + ais * bis) / denom, (ais * brs - ars * bis) / denom};
+[[nodiscard]] std::pair<double, double>
+complexEigenComplexDivide(const double dividendReal, const double dividendImag,
+                          const double divisorReal, const double divisorImag) {
+  const double s = std::abs(divisorReal) + std::abs(divisorImag);
+  const double dividendRealScaled = dividendReal / s;
+  const double dividendImagScaled = dividendImag / s;
+  const double divisorRealScaled = divisorReal / s;
+  const double divisorImagScaled = divisorImag / s;
+  const double denom = (divisorRealScaled * divisorRealScaled) +
+                       (divisorImagScaled * divisorImagScaled);
+  return {((dividendRealScaled * divisorRealScaled) +
+           (dividendImagScaled * divisorImagScaled)) /
+              denom,
+          ((dividendImagScaled * divisorRealScaled) -
+           (dividendRealScaled * divisorImagScaled)) /
+              denom};
 }
 
-void complexCorth(const int nm, const int n, const int low, const int igh,
-                  MutableArrayRef<double> arBuf, MutableArrayRef<double> aiBuf,
-                  MutableArrayRef<double> ortrBuf,
-                  MutableArrayRef<double> ortiBuf) {
-  ComplexLdMatrix ar(arBuf, nm);
-  ComplexLdMatrix ai(aiBuf, nm);
-  const auto ortrAt = [&ortrBuf](const int index) -> double& {
-    return ortrBuf[static_cast<std::size_t>(index)];
+void complexEigenReduceToHessenberg(
+    const int leadingDim, const int order, const int rowLow, const int rowHigh,
+    MutableArrayRef<double> matrixRealBuf,
+    MutableArrayRef<double> matrixImagBuf,
+    MutableArrayRef<double> householderRealBuf,
+    MutableArrayRef<double> householderImagBuf) {
+  EispackMatrixView matrixReal(matrixRealBuf, leadingDim);
+  EispackMatrixView matrixImag(matrixImagBuf, leadingDim);
+  const auto householderRealAt =
+      [&householderRealBuf](const int index) -> double& {
+    return householderRealBuf[static_cast<std::size_t>(index)];
   };
-  const auto ortiAt = [&ortiBuf](const int index) -> double& {
-    return ortiBuf[static_cast<std::size_t>(index)];
+  const auto householderImagAt =
+      [&householderImagBuf](const int index) -> double& {
+    return householderImagBuf[static_cast<std::size_t>(index)];
   };
 
-  const int kp1 = low + 1;
-  const int la = igh - 1;
+  const int kp1 = rowLow + 1;
+  const int la = rowHigh - 1;
   if (la < kp1) {
     return;
   }
 
   for (int m = kp1; m <= la; ++m) {
     double h = 0.0;
-    ortrAt(m) = 0.0;
-    ortiAt(m) = 0.0;
+    householderRealAt(m) = 0.0;
+    householderImagAt(m) = 0.0;
     double scale = 0.0;
     const int subCol = m - 1;
-    for (int i = m; i <= igh; ++i) {
-      scale += std::abs(ar.at(i, subCol)) + std::abs(ai.at(i, subCol));
+    for (int i = m; i <= rowHigh; ++i) {
+      scale += std::abs(matrixReal.at(i, subCol)) +
+               std::abs(matrixImag.at(i, subCol));
     }
 
     if (scale == 0.0) {
       continue;
     }
 
-    const int mp = m + igh;
-    for (int ii = m; ii <= igh; ++ii) {
+    const int mp = m + rowHigh;
+    for (int ii = m; ii <= rowHigh; ++ii) {
       const int i = mp - ii;
-      ortrAt(i) = ar.at(i, subCol) / scale;
-      ortiAt(i) = ai.at(i, subCol) / scale;
-      h += (ortrAt(i) * ortrAt(i)) + (ortiAt(i) * ortiAt(i));
+      householderRealAt(i) = matrixReal.at(i, subCol) / scale;
+      householderImagAt(i) = matrixImag.at(i, subCol) / scale;
+      h += (householderRealAt(i) * householderRealAt(i)) +
+           (householderImagAt(i) * householderImagAt(i));
     }
 
     double g = std::sqrt(h);
-    const double f = complexPythag(ortrAt(m), ortiAt(m));
+    const double f =
+        complexEigenStableHypot(householderRealAt(m), householderImagAt(m));
     if (f == 0.0) {
-      ortrAt(m) = g;
-      ar.at(m, subCol) = scale;
+      householderRealAt(m) = g;
+      matrixReal.at(m, subCol) = scale;
     } else {
       h += f * g;
       g /= f;
-      ortrAt(m) = (1.0 + g) * ortrAt(m);
-      ortiAt(m) = (1.0 + g) * ortiAt(m);
+      householderRealAt(m) = (1.0 + g) * householderRealAt(m);
+      householderImagAt(m) = (1.0 + g) * householderImagAt(m);
     }
 
-    for (int j = m; j < n; ++j) {
+    for (int j = m; j < order; ++j) {
       double fr = 0.0;
       double fi = 0.0;
-      for (int ii = m; ii <= igh; ++ii) {
+      for (int ii = m; ii <= rowHigh; ++ii) {
         const int i = mp - ii;
-        fr += (ortrAt(i) * ar.at(i, j)) + (ortiAt(i) * ai.at(i, j));
-        fi += (ortrAt(i) * ai.at(i, j)) - (ortiAt(i) * ar.at(i, j));
+        fr += (householderRealAt(i) * matrixReal.at(i, j)) +
+              (householderImagAt(i) * matrixImag.at(i, j));
+        fi += (householderRealAt(i) * matrixImag.at(i, j)) -
+              (householderImagAt(i) * matrixReal.at(i, j));
       }
       fr /= h;
       fi /= h;
-      for (int i = m; i <= igh; ++i) {
-        ar.at(i, j) -= (fr * ortrAt(i)) - (fi * ortiAt(i));
-        ai.at(i, j) -= (fr * ortiAt(i)) + (fi * ortrAt(i));
+      for (int i = m; i <= rowHigh; ++i) {
+        matrixReal.at(i, j) -=
+            (fr * householderRealAt(i)) - (fi * householderImagAt(i));
+        matrixImag.at(i, j) -=
+            (fr * householderImagAt(i)) + (fi * householderRealAt(i));
       }
     }
 
-    for (int i = 0; i <= igh; ++i) {
+    for (int i = 0; i <= rowHigh; ++i) {
       double fr = 0.0;
       double fi = 0.0;
-      for (int jj = m; jj <= igh; ++jj) {
+      for (int jj = m; jj <= rowHigh; ++jj) {
         const int j = mp - jj;
-        fr += (ortrAt(j) * ar.at(i, j)) - (ortiAt(j) * ai.at(i, j));
-        fi += (ortrAt(j) * ai.at(i, j)) + (ortiAt(j) * ar.at(i, j));
+        fr += (householderRealAt(j) * matrixReal.at(i, j)) -
+              (householderImagAt(j) * matrixImag.at(i, j));
+        fi += (householderRealAt(j) * matrixImag.at(i, j)) +
+              (householderImagAt(j) * matrixReal.at(i, j));
       }
       fr /= h;
       fi /= h;
-      for (int j = m; j <= igh; ++j) {
-        ar.at(i, j) -= (fr * ortrAt(j)) + (fi * ortiAt(j));
-        ai.at(i, j) += (fr * ortiAt(j)) - (fi * ortrAt(j));
+      for (int j = m; j <= rowHigh; ++j) {
+        matrixReal.at(i, j) -=
+            (fr * householderRealAt(j)) + (fi * householderImagAt(j));
+        matrixImag.at(i, j) +=
+            (fr * householderImagAt(j)) - (fi * householderRealAt(j));
       }
     }
 
-    ortrAt(m) = scale * ortrAt(m);
-    ortiAt(m) = scale * ortiAt(m);
-    ar.at(m, subCol) = -g * ar.at(m, subCol);
-    ai.at(m, subCol) = -g * ai.at(m, subCol);
+    householderRealAt(m) = scale * householderRealAt(m);
+    householderImagAt(m) = scale * householderImagAt(m);
+    matrixReal.at(m, subCol) = -g * matrixReal.at(m, subCol);
+    matrixImag.at(m, subCol) = -g * matrixImag.at(m, subCol);
   }
 }
 
 [[nodiscard]] int
-complexComqr2(const int nm, const int n, const int low, const int igh,
-              MutableArrayRef<double> ortrBuf, MutableArrayRef<double> ortiBuf,
-              MutableArrayRef<double> hrBuf, MutableArrayRef<double> hiBuf,
-              MutableArrayRef<double> wrBuf, MutableArrayRef<double> wiBuf,
-              MutableArrayRef<double> zrBuf, MutableArrayRef<double> ziBuf) {
-  ComplexLdMatrix hr(hrBuf, nm);
-  ComplexLdMatrix hi(hiBuf, nm);
-  ComplexLdMatrix zr(zrBuf, nm);
-  ComplexLdMatrix zi(ziBuf, nm);
-  const auto ortrAt = [&ortrBuf](const int index) -> double& {
-    return ortrBuf[static_cast<std::size_t>(index)];
+complexEigenQrSolve(const int leadingDim, const int order, const int rowLow,
+                    const int rowHigh,
+                    MutableArrayRef<double> householderRealBuf,
+                    MutableArrayRef<double> householderImagBuf,
+                    MutableArrayRef<double> hessenbergRealBuf,
+                    MutableArrayRef<double> hessenbergImagBuf,
+                    MutableArrayRef<double> eigenvalueRealBuf,
+                    MutableArrayRef<double> eigenvalueImagBuf,
+                    MutableArrayRef<double> eigenvectorRealBuf,
+                    MutableArrayRef<double> eigenvectorImagBuf) {
+  EispackMatrixView hessenbergReal(hessenbergRealBuf, leadingDim);
+  EispackMatrixView hessenbergImag(hessenbergImagBuf, leadingDim);
+  EispackMatrixView eigenvectorReal(eigenvectorRealBuf, leadingDim);
+  EispackMatrixView eigenvectorImag(eigenvectorImagBuf, leadingDim);
+  const auto householderRealAt =
+      [&householderRealBuf](const int index) -> double& {
+    return householderRealBuf[static_cast<std::size_t>(index)];
   };
-  const auto ortiAt = [&ortiBuf](const int index) -> double& {
-    return ortiBuf[static_cast<std::size_t>(index)];
+  const auto householderImagAt =
+      [&householderImagBuf](const int index) -> double& {
+    return householderImagBuf[static_cast<std::size_t>(index)];
   };
-  const auto wrAt = [&wrBuf](const int index) -> double& {
-    return wrBuf[static_cast<std::size_t>(index)];
+  const auto eigenvalueRealAt =
+      [&eigenvalueRealBuf](const int index) -> double& {
+    return eigenvalueRealBuf[static_cast<std::size_t>(index)];
   };
-  const auto wiAt = [&wiBuf](const int index) -> double& {
-    return wiBuf[static_cast<std::size_t>(index)];
+  const auto eigenvalueImagAt =
+      [&eigenvalueImagBuf](const int index) -> double& {
+    return eigenvalueImagBuf[static_cast<std::size_t>(index)];
   };
 
-  for (int j = 0; j < n; ++j) {
-    for (int i = 0; i < n; ++i) {
-      zr.at(i, j) = 0.0;
-      zi.at(i, j) = 0.0;
+  for (int j = 0; j < order; ++j) {
+    for (int i = 0; i < order; ++i) {
+      eigenvectorReal.at(i, j) = 0.0;
+      eigenvectorImag.at(i, j) = 0.0;
     }
-    zr.at(j, j) = 1.0;
+    eigenvectorReal.at(j, j) = 1.0;
   }
 
-  const int iend = igh - low - 1;
-  if (iend > 0) {
-    for (int ii = 1; ii <= iend; ++ii) {
-      const int i = igh - ii;
-      if (ortrAt(i) == 0.0 && ortiAt(i) == 0.0) {
+  const int numHouseholderReflections = rowHigh - rowLow - 1;
+  if (numHouseholderReflections > 0) {
+    for (int ii = 1; ii <= numHouseholderReflections; ++ii) {
+      const int i = rowHigh - ii;
+      if (householderRealAt(i) == 0.0 && householderImagAt(i) == 0.0) {
         continue;
       }
-      if (hr.at(i, i - 1) == 0.0 && hi.at(i, i - 1) == 0.0) {
+      if (hessenbergReal.at(i, i - 1) == 0.0 &&
+          hessenbergImag.at(i, i - 1) == 0.0) {
         continue;
       }
-      const double ortNorm =
-          (hr.at(i, i - 1) * ortrAt(i)) + (hi.at(i, i - 1) * ortiAt(i));
+      const double householderNorm =
+          (hessenbergReal.at(i, i - 1) * householderRealAt(i)) +
+          (hessenbergImag.at(i, i - 1) * householderImagAt(i));
       const int ip1 = i + 1;
-      for (int k = ip1; k <= igh; ++k) {
-        ortrAt(k) = hr.at(k, i - 1);
-        ortiAt(k) = hi.at(k, i - 1);
+      for (int k = ip1; k <= rowHigh; ++k) {
+        householderRealAt(k) = hessenbergReal.at(k, i - 1);
+        householderImagAt(k) = hessenbergImag.at(k, i - 1);
       }
-      for (int j = i; j <= igh; ++j) {
+      for (int j = i; j <= rowHigh; ++j) {
         double sr = 0.0;
         double si = 0.0;
-        for (int k = i; k <= igh; ++k) {
-          sr += (ortrAt(k) * zr.at(k, j)) + (ortiAt(k) * zi.at(k, j));
-          si += (ortrAt(k) * zi.at(k, j)) - (ortiAt(k) * zr.at(k, j));
+        for (int k = i; k <= rowHigh; ++k) {
+          sr += (householderRealAt(k) * eigenvectorReal.at(k, j)) +
+                (householderImagAt(k) * eigenvectorImag.at(k, j));
+          si += (householderRealAt(k) * eigenvectorImag.at(k, j)) -
+                (householderImagAt(k) * eigenvectorReal.at(k, j));
         }
-        sr /= ortNorm;
-        si /= ortNorm;
-        for (int k = i; k <= igh; ++k) {
-          zr.at(k, j) += (sr * ortrAt(k)) - (si * ortiAt(k));
-          zi.at(k, j) += (sr * ortiAt(k)) + (si * ortrAt(k));
+        sr /= householderNorm;
+        si /= householderNorm;
+        for (int k = i; k <= rowHigh; ++k) {
+          eigenvectorReal.at(k, j) +=
+              (sr * householderRealAt(k)) - (si * householderImagAt(k));
+          eigenvectorImag.at(k, j) +=
+              (sr * householderImagAt(k)) + (si * householderRealAt(k));
         }
       }
     }
   }
 
-  if (iend >= 0) {
-    const int hessLow = low + 1;
-    for (int i = hessLow; i <= igh; ++i) {
-      const int ll = std::min(i + 1, igh);
-      if (hi.at(i, i - 1) == 0.0) {
+  if (numHouseholderReflections >= 0) {
+    const int hessLow = rowLow + 1;
+    for (int i = hessLow; i <= rowHigh; ++i) {
+      const int ll = std::min(i + 1, rowHigh);
+      if (hessenbergImag.at(i, i - 1) == 0.0) {
         continue;
       }
-      const double hessNorm = complexPythag(hr.at(i, i - 1), hi.at(i, i - 1));
-      const double yr = hr.at(i, i - 1) / hessNorm;
-      const double yi = hi.at(i, i - 1) / hessNorm;
-      hr.at(i, i - 1) = hessNorm;
-      hi.at(i, i - 1) = 0.0;
-      for (int j = i; j < n; ++j) {
-        const double si = (yr * hi.at(i, j)) - (yi * hr.at(i, j));
-        hr.at(i, j) = (yr * hr.at(i, j)) + (yi * hi.at(i, j));
-        hi.at(i, j) = si;
+      const double subdiagonalNorm = complexEigenStableHypot(
+          hessenbergReal.at(i, i - 1), hessenbergImag.at(i, i - 1));
+      const double yr = hessenbergReal.at(i, i - 1) / subdiagonalNorm;
+      const double yi = hessenbergImag.at(i, i - 1) / subdiagonalNorm;
+      hessenbergReal.at(i, i - 1) = subdiagonalNorm;
+      hessenbergImag.at(i, i - 1) = 0.0;
+      for (int j = i; j < order; ++j) {
+        const double si =
+            (yr * hessenbergImag.at(i, j)) - (yi * hessenbergReal.at(i, j));
+        hessenbergReal.at(i, j) =
+            (yr * hessenbergReal.at(i, j)) + (yi * hessenbergImag.at(i, j));
+        hessenbergImag.at(i, j) = si;
       }
       for (int j = 0; j <= ll; ++j) {
-        const double si = (yr * hi.at(j, i)) + (yi * hr.at(j, i));
-        hr.at(j, i) = (yr * hr.at(j, i)) - (yi * hi.at(j, i));
-        hi.at(j, i) = si;
+        const double si =
+            (yr * hessenbergImag.at(j, i)) + (yi * hessenbergReal.at(j, i));
+        hessenbergReal.at(j, i) =
+            (yr * hessenbergReal.at(j, i)) - (yi * hessenbergImag.at(j, i));
+        hessenbergImag.at(j, i) = si;
       }
-      for (int j = low; j <= igh; ++j) {
-        const double si = (yr * zi.at(j, i)) + (yi * zr.at(j, i));
-        zr.at(j, i) = (yr * zr.at(j, i)) - (yi * zi.at(j, i));
-        zi.at(j, i) = si;
+      for (int j = rowLow; j <= rowHigh; ++j) {
+        const double si =
+            (yr * eigenvectorImag.at(j, i)) + (yi * eigenvectorReal.at(j, i));
+        eigenvectorReal.at(j, i) =
+            (yr * eigenvectorReal.at(j, i)) - (yi * eigenvectorImag.at(j, i));
+        eigenvectorImag.at(j, i) = si;
       }
     }
   }
 
-  for (int i = 0; i < n; ++i) {
-    if (i >= low && i <= igh) {
+  for (int i = 0; i < order; ++i) {
+    if (i >= rowLow && i <= rowHigh) {
       continue;
     }
-    wrAt(i) = hr.at(i, i);
-    wiAt(i) = hi.at(i, i);
+    eigenvalueRealAt(i) = hessenbergReal.at(i, i);
+    eigenvalueImagAt(i) = hessenbergImag.at(i, i);
   }
 
-  int en = igh;
-  double tr = 0.0;
-  double ti = 0.0;
-  int itn = 30 * n;
+  int activeEigenIndex = rowHigh;
+  double eigenSumReal = 0.0;
+  double eigenSumImag = 0.0;
+  int qrIterationBudget = 30 * order;
 
-  while (en >= low) {
-    int its = 0;
-    const int enm1 = en - 1;
+  while (activeEigenIndex >= rowLow) {
+    int qrIterationStep = 0;
+    const int activeEigenIndexMinus1 = activeEigenIndex - 1;
 
     while (true) {
-      int l = low;
-      for (int ll = low; ll <= en; ++ll) {
-        l = en + low - ll;
-        if (l == low) {
+      int l = rowLow;
+      for (int ll = rowLow; ll <= activeEigenIndex; ++ll) {
+        l = activeEigenIndex + rowLow - ll;
+        if (l == rowLow) {
           break;
         }
-        const double tst1Local = std::abs(hr.at((l - 1), l - 1)) +
-                                 std::abs(hi.at((l - 1), l - 1)) +
-                                 std::abs(hr.at(l, l)) + std::abs(hi.at(l, l));
-        const double tst2Local = tst1Local + std::abs(hr.at(l, l - 1));
+        const double tst1Local = std::abs(hessenbergReal.at((l - 1), l - 1)) +
+                                 std::abs(hessenbergImag.at((l - 1), l - 1)) +
+                                 std::abs(hessenbergReal.at(l, l)) +
+                                 std::abs(hessenbergImag.at(l, l));
+        const double tst2Local =
+            tst1Local + std::abs(hessenbergReal.at(l, l - 1));
         if (tst2Local == tst1Local) {
           break;
         }
       }
 
-      if (l == en) {
+      if (l == activeEigenIndex) {
         break;
       }
-      if (itn == 0) {
-        return en;
+      if (qrIterationBudget == 0) {
+        return activeEigenIndex;
       }
 
-      double sr = hr.at(en, en);
-      double si = hi.at(en, en);
-      if (its == 10 || its == 20) {
-        sr = std::abs(hr.at(en, enm1)) + std::abs(hr.at(enm1, en - 2));
+      double sr = hessenbergReal.at(activeEigenIndex, activeEigenIndex);
+      double si = hessenbergImag.at(activeEigenIndex, activeEigenIndex);
+      if (qrIterationStep == 10 || qrIterationStep == 20) {
+        sr = std::abs(
+                 hessenbergReal.at(activeEigenIndex, activeEigenIndexMinus1)) +
+             std::abs(hessenbergReal.at(activeEigenIndexMinus1,
+                                        activeEigenIndex - 2));
         si = 0.0;
       } else {
-        double xr = hr.at(enm1, en) * hr.at(en, enm1);
-        double xi = hi.at(enm1, en) * hr.at(en, enm1);
+        double xr =
+            hessenbergReal.at(activeEigenIndexMinus1, activeEigenIndex) *
+            hessenbergReal.at(activeEigenIndex, activeEigenIndexMinus1);
+        double xi =
+            hessenbergImag.at(activeEigenIndexMinus1, activeEigenIndex) *
+            hessenbergReal.at(activeEigenIndex, activeEigenIndexMinus1);
         if (xr != 0.0 || xi != 0.0) {
-          const double yr = (hr.at(enm1, enm1) - sr) / 2.0;
-          const double yi = (hi.at(enm1, enm1) - si) / 2.0;
-          auto [zzr, zzi] =
-              complexCsroot((yr * yr) - (yi * yi) + xr, (2.0 * yr * yi) + xi);
+          const double yr = (hessenbergReal.at(activeEigenIndexMinus1,
+                                               activeEigenIndexMinus1) -
+                             sr) /
+                            2.0;
+          const double yi = (hessenbergImag.at(activeEigenIndexMinus1,
+                                               activeEigenIndexMinus1) -
+                             si) /
+                            2.0;
+          auto [zzr, zzi] = complexEigenComplexSqrt((yr * yr) - (yi * yi) + xr,
+                                                    (2.0 * yr * yi) + xi);
           if ((yr * zzr) + (yi * zzi) < 0.0) {
             zzr = -zzr;
             zzi = -zzi;
           }
-          std::tie(xr, xi) = complexCdiv(xr, xi, yr + zzr, yi + zzi);
+          std::tie(xr, xi) =
+              complexEigenComplexDivide(xr, xi, yr + zzr, yi + zzi);
           sr -= xr;
           si -= xi;
         }
       }
 
-      for (int i = low; i <= en; ++i) {
-        hr.at(i, i) -= sr;
-        hi.at(i, i) -= si;
+      for (int i = rowLow; i <= activeEigenIndex; ++i) {
+        hessenbergReal.at(i, i) -= sr;
+        hessenbergImag.at(i, i) -= si;
       }
-      tr += sr;
-      ti += si;
-      ++its;
-      --itn;
+      eigenSumReal += sr;
+      eigenSumImag += si;
+      ++qrIterationStep;
+      --qrIterationBudget;
 
       {
         const int lp1 = l + 1;
-        for (int i = lp1; i <= en; ++i) {
-          sr = hr.at(i, i - 1);
-          hr.at(i, i - 1) = 0.0;
-          const double stepNorm = complexPythag(
-              complexPythag(hr.at((i - 1), i - 1), hi.at((i - 1), i - 1)), sr);
-          const double xr = hr.at((i - 1), i - 1) / stepNorm;
-          wrAt(i - 1) = xr;
-          const double xi = hi.at((i - 1), i - 1) / stepNorm;
-          wiAt(i - 1) = xi;
-          hr.at((i - 1), i - 1) = stepNorm;
-          hi.at((i - 1), i - 1) = 0.0;
-          hi.at(i, i - 1) = sr / stepNorm;
+        for (int i = lp1; i <= activeEigenIndex; ++i) {
+          sr = hessenbergReal.at(i, i - 1);
+          hessenbergReal.at(i, i - 1) = 0.0;
+          const double stepNorm = complexEigenStableHypot(
+              complexEigenStableHypot(hessenbergReal.at((i - 1), i - 1),
+                                      hessenbergImag.at((i - 1), i - 1)),
+              sr);
+          const double xr = hessenbergReal.at((i - 1), i - 1) / stepNorm;
+          eigenvalueRealAt(i - 1) = xr;
+          const double xi = hessenbergImag.at((i - 1), i - 1) / stepNorm;
+          eigenvalueImagAt(i - 1) = xi;
+          hessenbergReal.at((i - 1), i - 1) = stepNorm;
+          hessenbergImag.at((i - 1), i - 1) = 0.0;
+          hessenbergImag.at(i, i - 1) = sr / stepNorm;
 
-          for (int j = i; j < n; ++j) {
-            const double yr = hr.at((i - 1), j);
-            const double yi = hi.at((i - 1), j);
-            const double zzr = hr.at(i, j);
-            const double zzi = hi.at(i, j);
-            hr.at((i - 1), j) = (xr * yr) + (xi * yi) + (hi.at(i, i - 1) * zzr);
-            hi.at((i - 1), j) = (xr * yi) - (xi * yr) + (hi.at(i, i - 1) * zzi);
-            hr.at(i, j) = (xr * zzr) - (xi * zzi) - (hi.at(i, i - 1) * yr);
-            hi.at(i, j) = (xr * zzi) + (xi * zzr) - (hi.at(i, i - 1) * yi);
+          for (int j = i; j < order; ++j) {
+            const double yr = hessenbergReal.at((i - 1), j);
+            const double yi = hessenbergImag.at((i - 1), j);
+            const double zzr = hessenbergReal.at(i, j);
+            const double zzi = hessenbergImag.at(i, j);
+            hessenbergReal.at((i - 1), j) =
+                (xr * yr) + (xi * yi) + (hessenbergImag.at(i, i - 1) * zzr);
+            hessenbergImag.at((i - 1), j) =
+                (xr * yi) - (xi * yr) + (hessenbergImag.at(i, i - 1) * zzi);
+            hessenbergReal.at(i, j) =
+                (xr * zzr) - (xi * zzi) - (hessenbergImag.at(i, i - 1) * yr);
+            hessenbergImag.at(i, j) =
+                (xr * zzi) + (xi * zzr) - (hessenbergImag.at(i, i - 1) * yi);
           }
         }
       }
 
-      si = hi.at(en, en);
+      si = hessenbergImag.at(activeEigenIndex, activeEigenIndex);
       if (si != 0.0) {
-        const double stepNorm = complexPythag(hr.at(en, en), si);
-        sr = hr.at(en, en) / stepNorm;
+        const double stepNorm = complexEigenStableHypot(
+            hessenbergReal.at(activeEigenIndex, activeEigenIndex), si);
+        sr = hessenbergReal.at(activeEigenIndex, activeEigenIndex) / stepNorm;
         si /= stepNorm;
-        hr.at(en, en) = stepNorm;
-        hi.at(en, en) = 0.0;
-        if (en != n - 1) {
-          const int ip1 = en + 1;
-          for (int j = ip1; j < n; ++j) {
-            const double yr = hr.at(en, j);
-            const double yi = hi.at(en, j);
-            hr.at(en, j) = (sr * yr) + (si * yi);
-            hi.at(en, j) = (sr * yi) - (si * yr);
+        hessenbergReal.at(activeEigenIndex, activeEigenIndex) = stepNorm;
+        hessenbergImag.at(activeEigenIndex, activeEigenIndex) = 0.0;
+        if (activeEigenIndex != order - 1) {
+          const int ip1 = activeEigenIndex + 1;
+          for (int j = ip1; j < order; ++j) {
+            const double yr = hessenbergReal.at(activeEigenIndex, j);
+            const double yi = hessenbergImag.at(activeEigenIndex, j);
+            hessenbergReal.at(activeEigenIndex, j) = (sr * yr) + (si * yi);
+            hessenbergImag.at(activeEigenIndex, j) = (sr * yi) - (si * yr);
           }
         }
       }
 
       {
         const int lp1 = l + 1;
-        for (int j = lp1; j <= en; ++j) {
-          const double xr = wrAt(j - 1);
-          const double xi = wiAt(j - 1);
+        for (int j = lp1; j <= activeEigenIndex; ++j) {
+          const double xr = eigenvalueRealAt(j - 1);
+          const double xi = eigenvalueImagAt(j - 1);
           for (int i = 0; i <= j; ++i) {
-            double yr = hr.at(i, j - 1);
+            double yr = hessenbergReal.at(i, j - 1);
             double yi = 0.0;
-            const double zzr = hr.at(i, j);
-            double zzi = hi.at(i, j);
+            const double zzr = hessenbergReal.at(i, j);
+            double zzi = hessenbergImag.at(i, j);
             if (i == j) {
-              yi = hi.at(i, j - 1);
-              hi.at(i, j - 1) = (xr * yi) + (xi * yr) + (hi.at(j, j - 1) * zzi);
+              yi = hessenbergImag.at(i, j - 1);
+              hessenbergImag.at(i, j - 1) =
+                  (xr * yi) + (xi * yr) + (hessenbergImag.at(j, j - 1) * zzi);
             }
-            hr.at(i, j - 1) = (xr * yr) - (xi * yi) + (hi.at(j, j - 1) * zzr);
-            hr.at(i, j) = (xr * zzr) + (xi * zzi) - (hi.at(j, j - 1) * yr);
-            hi.at(i, j) = (xr * zzi) - (xi * zzr) - (hi.at(j, j - 1) * yi);
+            hessenbergReal.at(i, j - 1) =
+                (xr * yr) - (xi * yi) + (hessenbergImag.at(j, j - 1) * zzr);
+            hessenbergReal.at(i, j) =
+                (xr * zzr) + (xi * zzi) - (hessenbergImag.at(j, j - 1) * yr);
+            hessenbergImag.at(i, j) =
+                (xr * zzi) - (xi * zzr) - (hessenbergImag.at(j, j - 1) * yi);
           }
-          for (int i = low; i <= igh; ++i) {
-            const double yr = zr.at(i, j - 1);
-            const double yi = zi.at(i, j - 1);
-            const double zzr = zr.at(i, j);
-            const double zzi = zi.at(i, j);
-            zr.at(i, j - 1) = (xr * yr) - (xi * yi) + (hi.at(j, j - 1) * zzr);
-            zi.at(i, j - 1) = (xr * yi) + (xi * yr) + (hi.at(j, j - 1) * zzi);
-            zr.at(i, j) = (xr * zzr) + (xi * zzi) - (hi.at(j, j - 1) * yr);
-            zi.at(i, j) = (xr * zzi) - (xi * zzr) - (hi.at(j, j - 1) * yi);
+          for (int i = rowLow; i <= rowHigh; ++i) {
+            const double yr = eigenvectorReal.at(i, j - 1);
+            const double yi = eigenvectorImag.at(i, j - 1);
+            const double zzr = eigenvectorReal.at(i, j);
+            const double zzi = eigenvectorImag.at(i, j);
+            eigenvectorReal.at(i, j - 1) =
+                (xr * yr) - (xi * yi) + (hessenbergImag.at(j, j - 1) * zzr);
+            eigenvectorImag.at(i, j - 1) =
+                (xr * yi) + (xi * yr) + (hessenbergImag.at(j, j - 1) * zzi);
+            eigenvectorReal.at(i, j) =
+                (xr * zzr) + (xi * zzi) - (hessenbergImag.at(j, j - 1) * yr);
+            eigenvectorImag.at(i, j) =
+                (xr * zzi) - (xi * zzr) - (hessenbergImag.at(j, j - 1) * yi);
           }
         }
       }
 
       if (si != 0.0) {
-        for (int i = 0; i <= en; ++i) {
-          const double yr = hr.at(i, en);
-          const double yi = hi.at(i, en);
-          hr.at(i, en) = (sr * yr) - (si * yi);
-          hi.at(i, en) = (sr * yi) + (si * yr);
+        for (int i = 0; i <= activeEigenIndex; ++i) {
+          const double yr = hessenbergReal.at(i, activeEigenIndex);
+          const double yi = hessenbergImag.at(i, activeEigenIndex);
+          hessenbergReal.at(i, activeEigenIndex) = (sr * yr) - (si * yi);
+          hessenbergImag.at(i, activeEigenIndex) = (sr * yi) + (si * yr);
         }
-        for (int i = low; i <= igh; ++i) {
-          const double yr = zr.at(i, en);
-          const double yi = zi.at(i, en);
-          zr.at(i, en) = (sr * yr) - (si * yi);
-          zi.at(i, en) = (sr * yi) + (si * yr);
+        for (int i = rowLow; i <= rowHigh; ++i) {
+          const double yr = eigenvectorReal.at(i, activeEigenIndex);
+          const double yi = eigenvectorImag.at(i, activeEigenIndex);
+          eigenvectorReal.at(i, activeEigenIndex) = (sr * yr) - (si * yi);
+          eigenvectorImag.at(i, activeEigenIndex) = (sr * yi) + (si * yr);
         }
       }
     }
 
-    hr.at(en, en) += tr;
-    wrAt(en) = hr.at(en, en);
-    hi.at(en, en) += ti;
-    wiAt(en) = hi.at(en, en);
-    en = enm1;
+    hessenbergReal.at(activeEigenIndex, activeEigenIndex) += eigenSumReal;
+    eigenvalueRealAt(activeEigenIndex) =
+        hessenbergReal.at(activeEigenIndex, activeEigenIndex);
+    hessenbergImag.at(activeEigenIndex, activeEigenIndex) += eigenSumImag;
+    eigenvalueImagAt(activeEigenIndex) =
+        hessenbergImag.at(activeEigenIndex, activeEigenIndex);
+    activeEigenIndex = activeEigenIndexMinus1;
   }
 
   double norm = 0.0;
-  for (int i = 0; i < n; ++i) {
-    for (int j = i; j < n; ++j) {
-      const double matrixNorm = std::abs(hr.at(i, j)) + std::abs(hi.at(i, j));
+  for (int i = 0; i < order; ++i) {
+    for (int j = i; j < order; ++j) {
+      const double matrixNorm =
+          std::abs(hessenbergReal.at(i, j)) + std::abs(hessenbergImag.at(i, j));
       norm = std::max(norm, matrixNorm);
     }
   }
 
-  if (n != 1 && norm != 0.0) {
-    for (int nn = 2; nn <= n; ++nn) {
-      en = n + 2 - nn;
-      double xr = wrAt(en);
-      double xi = wiAt(en);
-      hr.at(en, en) = 1.0;
-      hi.at(en, en) = 0.0;
-      const int enm1Back = en - 1;
+  if (order != 1 && norm != 0.0) {
+    for (int nn = 2; nn <= order; ++nn) {
+      activeEigenIndex = order + 2 - nn;
+      double xr = eigenvalueRealAt(activeEigenIndex);
+      double xi = eigenvalueImagAt(activeEigenIndex);
+      hessenbergReal.at(activeEigenIndex, activeEigenIndex) = 1.0;
+      hessenbergImag.at(activeEigenIndex, activeEigenIndex) = 0.0;
+      const int enm1Back = activeEigenIndex - 1;
       for (int ii = 1; ii <= enm1Back; ++ii) {
-        const int i = en - ii;
+        const int i = activeEigenIndex - ii;
         double zzr = 0.0;
         double zzi = 0.0;
         const int ip1 = i + 1;
-        for (int j = ip1; j <= en; ++j) {
-          zzr += (hr.at(i, j) * hr.at(j, en)) - (hi.at(i, j) * hi.at(j, en));
-          zzi += (hr.at(i, j) * hi.at(j, en)) + (hi.at(i, j) * hr.at(j, en));
+        for (int j = ip1; j <= activeEigenIndex; ++j) {
+          zzr += (hessenbergReal.at(i, j) *
+                  hessenbergReal.at(j, activeEigenIndex)) -
+                 (hessenbergImag.at(i, j) *
+                  hessenbergImag.at(j, activeEigenIndex));
+          zzi += (hessenbergReal.at(i, j) *
+                  hessenbergImag.at(j, activeEigenIndex)) +
+                 (hessenbergImag.at(i, j) *
+                  hessenbergReal.at(j, activeEigenIndex));
         }
-        double yr = xr - wrAt(i);
-        double yi = xi - wiAt(i);
+        double yr = xr - eigenvalueRealAt(i);
+        double yi = xi - eigenvalueImagAt(i);
         if (yr == 0.0 && yi == 0.0) {
           double tst1 = norm;
           yr = tst1;
@@ -1308,10 +1392,12 @@ complexComqr2(const int nm, const int n, const int low, const int igh,
             tst2 = norm + yr;
           } while (tst2 <= tst1);
         }
-        auto [divReal, divImag] = complexCdiv(zzr, zzi, yr, yi);
-        hr.at(i, en) = divReal;
-        hi.at(i, en) = divImag;
-        const double trLocal = std::abs(hr.at(i, en)) + std::abs(hi.at(i, en));
+        auto [divReal, divImag] = complexEigenComplexDivide(zzr, zzi, yr, yi);
+        hessenbergReal.at(i, activeEigenIndex) = divReal;
+        hessenbergImag.at(i, activeEigenIndex) = divImag;
+        const double trLocal =
+            std::abs(hessenbergReal.at(i, activeEigenIndex)) +
+            std::abs(hessenbergImag.at(i, activeEigenIndex));
         if (trLocal == 0.0) {
           continue;
         }
@@ -1320,35 +1406,37 @@ complexComqr2(const int nm, const int n, const int low, const int igh,
         if (tst2 <= tst1) {
           continue;
         }
-        for (int j = i; j <= en; ++j) {
-          hr.at(j, en) /= trLocal;
-          hi.at(j, en) /= trLocal;
+        for (int j = i; j <= activeEigenIndex; ++j) {
+          hessenbergReal.at(j, activeEigenIndex) /= trLocal;
+          hessenbergImag.at(j, activeEigenIndex) /= trLocal;
         }
       }
     }
 
-    for (int i = 0; i < n; ++i) {
-      if (i >= low && i <= igh) {
+    for (int i = 0; i < order; ++i) {
+      if (i >= rowLow && i <= rowHigh) {
         continue;
       }
-      for (int j = i; j < n; ++j) {
-        zr.at(i, j) = hr.at(i, j);
-        zi.at(i, j) = hi.at(i, j);
+      for (int j = i; j < order; ++j) {
+        eigenvectorReal.at(i, j) = hessenbergReal.at(i, j);
+        eigenvectorImag.at(i, j) = hessenbergImag.at(i, j);
       }
     }
 
-    for (int jj = low; jj <= igh; ++jj) {
-      const int j = igh + low - jj;
-      const int m = std::min(j, igh);
-      for (int i = low; i <= igh; ++i) {
+    for (int jj = rowLow; jj <= rowHigh; ++jj) {
+      const int j = rowHigh + rowLow - jj;
+      const int m = std::min(j, rowHigh);
+      for (int i = rowLow; i <= rowHigh; ++i) {
         double zzr = 0.0;
         double zzi = 0.0;
-        for (int k = low; k <= m; ++k) {
-          zzr += (zr.at(i, k) * hr.at(k, j)) - (zi.at(i, k) * hi.at(k, j));
-          zzi += (zr.at(i, k) * hi.at(k, j)) + (zi.at(i, k) * hr.at(k, j));
+        for (int k = rowLow; k <= m; ++k) {
+          zzr += (eigenvectorReal.at(i, k) * hessenbergReal.at(k, j)) -
+                 (eigenvectorImag.at(i, k) * hessenbergImag.at(k, j));
+          zzi += (eigenvectorReal.at(i, k) * hessenbergImag.at(k, j)) +
+                 (eigenvectorImag.at(i, k) * hessenbergReal.at(k, j));
         }
-        zr.at(i, j) = zzr;
-        zi.at(i, j) = zzi;
+        eigenvectorReal.at(i, j) = zzr;
+        eigenvectorImag.at(i, j) = zzi;
       }
     }
   }
@@ -1364,89 +1452,99 @@ constexpr int K_COMPLEX_EIGEN4_MATRIX_STORAGE =
     (K_COMPLEX_EIGEN4_LD * K_COMPLEX_EIGEN4_SIZE) + K_COMPLEX_EIGEN4_SIZE + 1;
 constexpr int K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE = K_COMPLEX_EIGEN4_SIZE + 1;
 
-[[nodiscard]] std::size_t complexMatrixStorageSize(const int ld,
-                                                   const int cols) {
-  return (static_cast<std::size_t>(ld) * static_cast<std::size_t>(cols)) +
-         static_cast<std::size_t>(cols) + 1U;
+[[nodiscard]] std::size_t eispackMatrixBufferSize(const int leadingDim,
+                                                  const int order) {
+  return (static_cast<std::size_t>(leadingDim) *
+          static_cast<std::size_t>(order)) +
+         static_cast<std::size_t>(order) + 1U;
 }
 
-[[nodiscard]] std::size_t complexEigenvalueStorageSize(const int eigenvalues) {
-  return static_cast<std::size_t>(eigenvalues) + 1U;
+[[nodiscard]] std::size_t eispackEigenvalueBufferSize(const int order) {
+  return static_cast<std::size_t>(order) + 1U;
 }
 
-[[nodiscard]] ComplexEigen4 buildComplexEigen4(
-    const std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE>& wr,
-    const std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE>& wi,
-    const std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& zr,
-    const std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& zi) {
+[[nodiscard]] ComplexEigen4 assembleComplexEigen4(
+    const std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE>&
+        eigenvalueReal,
+    const std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE>&
+        eigenvalueImag,
+    const std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& eigenvectorReal,
+    const std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>&
+        eigenvectorImag) {
   ComplexEigen4 result;
   for (int col = 0; col < K_COMPLEX_EIGEN4_SIZE; ++col) {
-    result.eigenvalues[static_cast<std::size_t>(col)] = Complex(
-        wr[static_cast<std::size_t>(col)], wi[static_cast<std::size_t>(col)]);
+    result.eigenvalues[static_cast<std::size_t>(col)] =
+        Complex(eigenvalueReal[static_cast<std::size_t>(col)],
+                eigenvalueImag[static_cast<std::size_t>(col)]);
     double norm = 0.0;
     for (int row = 0; row < K_COMPLEX_EIGEN4_SIZE; ++row) {
       const std::size_t idx =
-          ComplexLdMatrix::rowMajorIndex(row, col, K_COMPLEX_EIGEN4_SIZE);
-      norm += (zr[idx] * zr[idx]) + (zi[idx] * zi[idx]);
+          EispackMatrixView::rowMajorIndex(row, col, K_COMPLEX_EIGEN4_SIZE);
+      norm += (eigenvectorReal[idx] * eigenvectorReal[idx]) +
+              (eigenvectorImag[idx] * eigenvectorImag[idx]);
     }
     norm = std::sqrt(norm);
     for (int row = 0; row < K_COMPLEX_EIGEN4_SIZE; ++row) {
       const std::size_t idx =
-          ComplexLdMatrix::rowMajorIndex(row, col, K_COMPLEX_EIGEN4_SIZE);
+          EispackMatrixView::rowMajorIndex(row, col, K_COMPLEX_EIGEN4_SIZE);
       if (norm > MATRIX_TOLERANCE) {
         result.eigenvectors(static_cast<std::size_t>(row),
                             static_cast<std::size_t>(col)) =
-            Complex(zr[idx] / norm, zi[idx] / norm);
+            Complex(eigenvectorReal[idx] / norm, eigenvectorImag[idx] / norm);
       } else {
         result.eigenvectors(static_cast<std::size_t>(row),
                             static_cast<std::size_t>(col)) =
-            Complex(zr[idx], zi[idx]);
+            Complex(eigenvectorReal[idx], eigenvectorImag[idx]);
       }
     }
   }
   return result;
 }
 
-void copyMatrix4x4ToEispack(
+void splitMatrix4x4ToRealImag(
     const Matrix4x4& matrix,
-    std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& ar,
-    std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& ai) {
+    std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& matrixReal,
+    std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& matrixImag) {
   for (std::size_t row = 0; row < Matrix4x4::K_ROWS; ++row) {
     for (std::size_t col = 0; col < Matrix4x4::K_COLS; ++col) {
       const Complex& value = matrix(row, col);
       const std::size_t idx = row + (col * Matrix4x4::K_ROWS);
-      ar[idx] = std::real(value);
-      ai[idx] = std::imag(value);
+      matrixReal[idx] = std::real(value);
+      matrixImag[idx] = std::imag(value);
     }
   }
 }
 
 // Stack-specialized EISPACK `corth` / `comqr2` for `n = 4` (fixed-size arrays).
 [[nodiscard]] std::optional<ComplexEigen4>
-computeComplexEigen4(const Matrix4x4& matrix) {
-  constexpr int n = K_COMPLEX_EIGEN4_SIZE;
-  constexpr int nm = n;
-  constexpr int low = 0;
-  constexpr int igh = n - 1;
+decomposeComplexEigen4(const Matrix4x4& matrix) {
+  constexpr int order = K_COMPLEX_EIGEN4_SIZE;
+  constexpr int leadingDim = order;
+  constexpr int rowLow = 0;
+  constexpr int rowHigh = order - 1;
 
-  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> ar{};
-  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> ai{};
-  copyMatrix4x4ToEispack(matrix, ar, ai);
+  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> matrixReal{};
+  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> matrixImag{};
+  splitMatrix4x4ToRealImag(matrix, matrixReal, matrixImag);
 
-  std::array<double, 4> ortr{};
-  std::array<double, 4> orti{};
-  std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE> wr{};
-  std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE> wi{};
-  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> zr{};
-  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> zi{};
+  std::array<double, 4> householderReal{};
+  std::array<double, 4> householderImag{};
+  std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE> eigenvalueReal{};
+  std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE> eigenvalueImag{};
+  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> eigenvectorReal{};
+  std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE> eigenvectorImag{};
 
-  complexCorth(nm, n, low, igh, ar, ai, ortr, orti);
-  const int ierr =
-      complexComqr2(nm, n, low, igh, ortr, orti, ar, ai, wr, wi, zr, zi);
-  if (ierr != 0) {
+  complexEigenReduceToHessenberg(leadingDim, order, rowLow, rowHigh, matrixReal,
+                                 matrixImag, householderReal, householderImag);
+  const int convergenceStatus = complexEigenQrSolve(
+      leadingDim, order, rowLow, rowHigh, householderReal, householderImag,
+      matrixReal, matrixImag, eigenvalueReal, eigenvalueImag, eigenvectorReal,
+      eigenvectorImag);
+  if (convergenceStatus != 0) {
     return std::nullopt;
   }
-  return buildComplexEigen4(wr, wi, zr, zi);
+  return assembleComplexEigen4(eigenvalueReal, eigenvalueImag, eigenvectorReal,
+                               eigenvectorImag);
 }
 
 void normalizeVector(SmallVector<Complex>& vector) {
@@ -1464,7 +1562,7 @@ void normalizeVector(SmallVector<Complex>& vector) {
 }
 
 [[nodiscard]] std::optional<ComplexEigen>
-complexEigen1x1(const DynamicMatrix& matrix) {
+decomposeComplexEigen1x1(const DynamicMatrix& matrix) {
   ComplexEigen result;
   result.eigenvalues.push_back(matrix(0, 0));
   result.eigenvectors = DynamicMatrix(1);
@@ -1472,7 +1570,7 @@ complexEigen1x1(const DynamicMatrix& matrix) {
   return result;
 }
 
-[[nodiscard]] ComplexEigen2 computeComplexEigen2(const Matrix2x2& matrix) {
+[[nodiscard]] ComplexEigen2 decomposeComplexEigen2(const Matrix2x2& matrix) {
   const Complex a = matrix(0, 0);
   const Complex b = matrix(0, 1);
   const Complex c = matrix(1, 0);
@@ -1535,58 +1633,68 @@ toComplexEigen(const ComplexEigen4& eigen4) {
 }
 
 [[nodiscard]] std::optional<ComplexEigen>
-computeComplexEigen(const DynamicMatrix& matrix) {
+decomposeComplexEigenDynamic(const DynamicMatrix& matrix) {
   const std::int64_t dim = matrix.rows();
   assert(dim == matrix.cols() && dim >= 3 && dim != 4);
-  const int n = static_cast<int>(dim);
-  const int nm = n;
-  const int low = 0;
-  const int igh = n - 1;
+  const int order = static_cast<int>(dim);
+  const int leadingDim = order;
+  const int rowLow = 0;
+  const int rowHigh = order - 1;
 
-  const std::size_t matrixStorage = complexMatrixStorageSize(nm, n);
-  SmallVector<double> ar(matrixStorage);
-  SmallVector<double> ai(matrixStorage);
-  for (int row = 0; row < n; ++row) {
-    for (int col = 0; col < n; ++col) {
+  const std::size_t matrixStorage = eispackMatrixBufferSize(leadingDim, order);
+  SmallVector<double> matrixReal(matrixStorage);
+  SmallVector<double> matrixImag(matrixStorage);
+  for (int row = 0; row < order; ++row) {
+    for (int col = 0; col < order; ++col) {
       const Complex value = matrix(row, col);
-      const std::size_t idx = ComplexLdMatrix::rowMajorIndex(row, col, n);
-      ar[idx] = std::real(value);
-      ai[idx] = std::imag(value);
+      const std::size_t idx =
+          EispackMatrixView::rowMajorIndex(row, col, leadingDim);
+      matrixReal[idx] = std::real(value);
+      matrixImag[idx] = std::imag(value);
     }
   }
 
-  SmallVector<double> ortr(static_cast<std::size_t>(n));
-  SmallVector<double> orti(static_cast<std::size_t>(n));
-  SmallVector<double> wr(complexEigenvalueStorageSize(n));
-  SmallVector<double> wi(complexEigenvalueStorageSize(n));
-  SmallVector<double> zr(matrixStorage);
-  SmallVector<double> zi(matrixStorage);
+  SmallVector<double> householderReal(static_cast<std::size_t>(order));
+  SmallVector<double> householderImag(static_cast<std::size_t>(order));
+  SmallVector<double> eigenvalueReal(eispackEigenvalueBufferSize(order));
+  SmallVector<double> eigenvalueImag(eispackEigenvalueBufferSize(order));
+  SmallVector<double> eigenvectorReal(matrixStorage);
+  SmallVector<double> eigenvectorImag(matrixStorage);
 
-  complexCorth(nm, n, low, igh, ar, ai, ortr, orti);
-  const int ierr =
-      complexComqr2(nm, n, low, igh, ortr, orti, ar, ai, wr, wi, zr, zi);
-  if (ierr != 0) {
+  complexEigenReduceToHessenberg(leadingDim, order, rowLow, rowHigh, matrixReal,
+                                 matrixImag, householderReal, householderImag);
+  const int convergenceStatus = complexEigenQrSolve(
+      leadingDim, order, rowLow, rowHigh, householderReal, householderImag,
+      matrixReal, matrixImag, eigenvalueReal, eigenvalueImag, eigenvectorReal,
+      eigenvectorImag);
+  if (convergenceStatus != 0) {
     return std::nullopt;
   }
 
   ComplexEigen result;
-  result.eigenvalues.reserve(static_cast<std::size_t>(n));
+  result.eigenvalues.reserve(static_cast<std::size_t>(order));
   result.eigenvectors = DynamicMatrix(dim);
-  for (int col = 0; col < n; ++col) {
-    result.eigenvalues.emplace_back(wr[static_cast<std::size_t>(col)],
-                                    wi[static_cast<std::size_t>(col)]);
+  for (int col = 0; col < order; ++col) {
+    result.eigenvalues.emplace_back(
+        eigenvalueReal[static_cast<std::size_t>(col)],
+        eigenvalueImag[static_cast<std::size_t>(col)]);
     double norm = 0.0;
-    for (int row = 0; row < n; ++row) {
-      const std::size_t idx = ComplexLdMatrix::rowMajorIndex(row, col, n);
-      norm += (zr[idx] * zr[idx]) + (zi[idx] * zi[idx]);
+    for (int row = 0; row < order; ++row) {
+      const std::size_t idx =
+          EispackMatrixView::rowMajorIndex(row, col, leadingDim);
+      norm += (eigenvectorReal[idx] * eigenvectorReal[idx]) +
+              (eigenvectorImag[idx] * eigenvectorImag[idx]);
     }
     norm = std::sqrt(norm);
-    for (int row = 0; row < n; ++row) {
-      const std::size_t idx = ComplexLdMatrix::rowMajorIndex(row, col, n);
+    for (int row = 0; row < order; ++row) {
+      const std::size_t idx =
+          EispackMatrixView::rowMajorIndex(row, col, leadingDim);
       if (norm > MATRIX_TOLERANCE) {
-        result.eigenvectors(row, col) = Complex(zr[idx] / norm, zi[idx] / norm);
+        result.eigenvectors(row, col) =
+            Complex(eigenvectorReal[idx] / norm, eigenvectorImag[idx] / norm);
       } else {
-        result.eigenvectors(row, col) = Complex(zr[idx], zi[idx]);
+        result.eigenvectors(row, col) =
+            Complex(eigenvectorReal[idx], eigenvectorImag[idx]);
       }
     }
   }
@@ -1596,11 +1704,11 @@ computeComplexEigen(const DynamicMatrix& matrix) {
 } // namespace
 
 ComplexEigen2 Matrix2x2::complexEigen() const {
-  return computeComplexEigen2(*this);
+  return decomposeComplexEigen2(*this);
 }
 
 std::optional<ComplexEigen4> Matrix4x4::complexEigen() const {
-  return computeComplexEigen4(*this);
+  return decomposeComplexEigen4(*this);
 }
 
 struct DynamicMatrix::Impl {
@@ -1809,7 +1917,7 @@ std::optional<ComplexEigen> DynamicMatrix::complexEigen() const {
     return std::nullopt;
   }
   if (dim == 1) {
-    return complexEigen1x1(*this);
+    return decomposeComplexEigen1x1(*this);
   }
   if (dim == 2) {
     Matrix2x2 fixed;
@@ -1829,7 +1937,7 @@ std::optional<ComplexEigen> DynamicMatrix::complexEigen() const {
     }
     return toComplexEigen(*eigen4);
   }
-  return computeComplexEigen(*this);
+  return decomposeComplexEigenDynamic(*this);
 }
 
 } // namespace mlir::qco
