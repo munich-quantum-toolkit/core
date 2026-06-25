@@ -20,7 +20,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cmath>
 #include <optional>
 
 namespace mlir::qco {
