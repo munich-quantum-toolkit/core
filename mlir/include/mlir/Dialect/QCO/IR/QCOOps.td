@@ -477,8 +477,19 @@ def SXdgOp
 
 def TripleOp
     : QCOOp<"triple", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
-  // TODO: Task 1.2a
+  let summary = "Apply a Triple gate to a qubit";
+  let description = [{
+        Applies a Triple gate to a qubit and returns the transformed qubit.
 
+        Example:
+        ```mlir
+        %q_out = qco.triple %q_in : !qco.qubit -> !qco.qubit
+        ```
+    }];
+  let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+  let results = (outs QubitType:$qubit_out);
+  let assemblyFormat =
+      "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "triple"; }
     }];

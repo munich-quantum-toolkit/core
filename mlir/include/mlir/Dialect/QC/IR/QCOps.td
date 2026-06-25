@@ -422,9 +422,25 @@ def SXdgOp
 def TripleOp
     : QCOp<"triple", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
   // TODO: Task 1.1a
+  // Define the triple gate in the QC dialect. The triple gate is a one-target,
+  // zero-parameter gate (such as the X gate). It should have a qubit_in input
+  // argument and produce no results.
+  let summary = "Apply a Triple gate to a qubit";
+  let description = [{
+        Applies a Triple gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.triple %q : !qc.qubit
+        ```
+    }];
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
 
   let extraClassDeclaration = [{
         static StringRef getBaseSymbol() { return "triple"; }
+        Value getQubit(size_t i) { return getTarget(i); }
     }];
 }
 

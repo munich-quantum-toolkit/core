@@ -36,6 +36,30 @@ protected:
     auto* ctx = &getContext();
 
     // TODO: Task 4 (Bonus)
+    op->walk([&](scf::ForOp forOp) {
+      auto lbOp = forOp.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
+      auto ubOp = forOp.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+      auto stepOp = forOp.getStep().getDefiningOp<arith::ConstantIndexOp>();
+
+      if (lbOp && ubOp && stepOp) {
+        int64_t lb = lbOp.value();
+        int64_t ub = ubOp.value();
+        int64_t step = stepOp.value();
+
+        int64_t numIterations = (ub - lb) / step;
+
+        if (numIterations == 3) {
+          (void)loopUnrollByFactor(forOp, 3);
+        }
+      }
+    });
+
+    RewritePatternSet patterns(ctx);
+    TripleOp::getCanonicalizationPatterns(patterns, ctx);
+
+    if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
+      signalPassFailure();
+    }
   }
 };
 

@@ -1079,7 +1079,20 @@ struct ConvertQCTripleOp final : StatefulOpConversionPattern<qc::TripleOp> {
   matchAndRewrite(qc::TripleOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // TODO: Task 2.1
-    llvm::reportFatalInternalError("Not implemented yet");
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    Value qcQubit = op.getQubitIn();
+    auto qcoQubits =
+        resolveMappedQubits(state, operation, SmallVector<Value>{qcQubit});
+
+    auto qcoOp = qco::TripleOp::create(rewriter, op.getLoc(), qcoQubits[0]);
+
+    assignMappedQubits(state, operation, SmallVector<Value>{qcQubit},
+                       SmallVector<Value>{qcoOp.getQubitOut()});
+
+    rewriter.eraseOp(op);
+    return success();
+    // llvm::reportFatalInternalError("Not implemented yet");
   }
 };
 

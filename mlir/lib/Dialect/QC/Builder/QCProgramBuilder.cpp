@@ -265,18 +265,25 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
 
 QCProgramBuilder& QCProgramBuilder::triple(Value qubit) {
   // TODO: Task 1.1b
-  llvm::reportFatalInternalError("Not implemented yet");
+  checkFinalized();
+  TripleOp::create(*this, qubit);
+  return *this;
+  // llvm::reportFatalInternalError("Not implemented yet");
 }
 
 QCProgramBuilder& QCProgramBuilder::ctriple(Value control, Value target) {
   // TODO: Task 1.1b
-  llvm::reportFatalInternalError("Not implemented yet");
+  return mctriple({control}, target);
+  // llvm::reportFatalInternalError("Not implemented yet");
 }
 
 QCProgramBuilder& QCProgramBuilder::mctriple(ValueRange controls,
                                              Value target) {
   // TODO: Task 1.1b
-  llvm::reportFatalInternalError("Not implemented yet");
+  ctrl(controls, target,
+       [&](ValueRange targets) { TripleOp::create(*this, targets[0]); });
+  return *this;
+  // llvm::reportFatalInternalError("Not implemented yet");
 }
 
 // OneTargetOneParameter
