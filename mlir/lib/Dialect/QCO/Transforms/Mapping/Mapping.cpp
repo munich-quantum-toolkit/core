@@ -120,7 +120,7 @@ private:
     [[nodiscard]] size_t maxDegree() const { return coupling_.getMaxDegree(); }
 
   private:
-    Graph<GraphType::Undirected, size_t> coupling_;
+    Graph<> coupling_;
     Matrix<size_t> dist_;
   };
 
@@ -294,6 +294,7 @@ protected:
     if (failed(layout)) {
       func->emitError() << "failed to refine random initial layouts.";
       signalPassFailure();
+      return;
     }
 
     std::tie(wires, infos) = std::move(place(body, *layout, rewriter));
@@ -696,7 +697,7 @@ private:
 
     Layout curr(from);
     SmallVector<IndexPairType> swaps;
-    Graph<GraphType::Directed, size_t> f;
+    Graph<> f;
 
     const auto shouldAddEdge = [&](size_t hwA, size_t hwB) {
       const auto prog = curr.getProgramIndex(hwA);
@@ -736,11 +737,9 @@ private:
         continue;
       }
 
-      // To be benchmarked: f.getEdges() is potentially to expensive because it
-      // builds a llvm::DenseMap.
-
-      for (const auto [u, v] : f.getEdges()) {
+      for (const auto v : f.getNodes()) {
         if (f.getDegree(v) == 0) {
+          const auto u = f.getEdges(v).front();
           curr.swap(u, v);
           swaps.emplace_back(u, v);
           break;
@@ -1054,6 +1053,25 @@ private:
 std::unique_ptr<Pass>
 createMappingPass(const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
                   MappingPassOptions options) {
+
+  // Verify the assumption that the coupling set is symmetric:
+  // For every edge (u, v) in the set, (v, u) must also be present.
+
+  for (const auto& [u, v] : couplingSet) {
+    if (u == v) {
+      llvm::reportFatalUsageError("Found an invalid (u, u) edge.");
+      return nullptr;
+    }
+
+    // Check if the reverse edge exists
+    auto reverseEdge = std::make_pair(v, u);
+    if (!couplingSet.contains(reverseEdge)) {
+      llvm::reportFatalUsageError("Expected symmetric coupling set: edge (" +
+                                  Twine(u) + ", " + Twine(v) +
+                                  ") exists but (" + Twine(v) + ", " +
+                                  Twine(u) + ") does not.");
+    }
+  }
   return std::make_unique<MappingPass>(couplingSet, options);
 }
 

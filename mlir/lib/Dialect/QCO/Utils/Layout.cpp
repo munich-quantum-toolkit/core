@@ -52,6 +52,8 @@ size_t Layout::getHardwareIndex(const size_t prog) const {
 }
 
 void Layout::swap(const size_t hwA, const size_t hwB) {
+  assert(hwA < hardwareToProgram_.size() && "hardware index out of bounds");
+  assert(hwB < hardwareToProgram_.size() && "hardware index out of bounds");
   const auto progA = hardwareToProgram_[hwA];
   const auto progB = hardwareToProgram_[hwB];
 

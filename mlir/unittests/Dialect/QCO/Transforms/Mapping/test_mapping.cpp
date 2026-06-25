@@ -403,10 +403,10 @@ TEST_P(MappingPassTest, GroverLike) {
   std::tie(q3, c3) = builder.measure(q3);
   std::tie(flag, c4) = builder.measure(flag);
 
-  tensor = builder.qtensorInsert(q0, tensor, 1);
-  tensor = builder.qtensorInsert(q1, tensor, 2);
-  tensor = builder.qtensorInsert(q2, tensor, 3);
-  tensor = builder.qtensorInsert(q3, tensor, 4);
+  tensor = builder.qtensorInsert(q0, tensor, 0);
+  tensor = builder.qtensorInsert(q1, tensor, 1);
+  tensor = builder.qtensorInsert(q2, tensor, 2);
+  tensor = builder.qtensorInsert(q3, tensor, 3);
   flagTensor = builder.qtensorInsert(flag, flagTensor, 0);
 
   builder.qtensorDealloc(tensor);

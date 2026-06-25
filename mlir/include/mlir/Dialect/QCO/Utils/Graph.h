@@ -24,9 +24,8 @@ namespace mlir::qco {
 template <class T> using Vector = SmallVector<T, 0>;
 template <class T> using Matrix = Vector<Vector<T>>;
 
-enum class GraphType : bool { Directed, Undirected };
-
-template <GraphType Type, class IdT> class Graph {
+/// A directed graph.
+template <class IdT = size_t> class Graph {
 public:
   /// Construct an empty graph.
   Graph() = default;
@@ -36,12 +35,16 @@ public:
     for_each(edges, [this](const auto& e) { addEdge(e); });
   }
 
-  /// Add an edge to the graph. Implicitly adds nodes.
+  /// Add a directed edge to the internal representation of the graph.
+  /// Implicitly adds nodes.
   void addEdge(IdT u, IdT v) {
-    addDirectedEdge(u, v);
-    if constexpr (Type == GraphType::Undirected) {
-      addDirectedEdge(v, u);
+    if (!adj_.contains(u)) {
+      adj_[u] = Vector<IdT>();
     }
+    if (!adj_.contains(v)) {
+      adj_[v] = Vector<IdT>();
+    }
+    adj_[u].emplace_back(v);
   }
 
   /// Add an edge to the graph.
@@ -52,11 +55,7 @@ public:
     llvm::DenseSet<std::pair<IdT, IdT>> edges;
     for (const auto& [u, nbrs] : adj_) {
       for (const auto& v : nbrs) {
-        if constexpr (Type == GraphType::Directed) {
-          edges.insert(std::make_pair(u, v));
-        } else {
-          edges.insert(std::minmax(u, v));
-        }
+        edges.insert(std::make_pair(u, v));
       }
     }
     return edges;
@@ -66,9 +65,8 @@ public:
   [[nodiscard]] ArrayRef<IdT> getEdges(size_t id) const { return adj_.at(id); }
 
   /// Return the nodes.
-  [[nodiscard]] ArrayRef<IdT> getNodes() const {
-    return to_vector(adj_.keys());
-  }
+  [[nodiscard]] Vector<IdT> getNodes() const { return to_vector(adj_.keys()); }
+
   /// Return the number of nodes.
   [[nodiscard]] size_t getNumNodes() const { return adj_.size(); }
 
@@ -202,17 +200,6 @@ public:
   }
 
 private:
-  /// Adds a directed edge to the internal representation of the graph.
-  void addDirectedEdge(IdT u, IdT v) {
-    if (!adj_.contains(u)) {
-      adj_[u] = Vector<size_t>();
-    }
-    if (!adj_.contains(v)) {
-      adj_[v] = Vector<size_t>();
-    }
-    adj_[u].emplace_back(v);
-  }
-
   llvm::DenseMap<IdT, Vector<IdT>> adj_;
 };
 } // namespace mlir::qco
