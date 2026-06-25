@@ -740,7 +740,7 @@ private:
 
       for (const auto v : f.getNodes()) {
         if (f.getDegree(v) == 0) {
-          if (const auto nbrs = device.neighboursOf(v); nbrs.size() > 0) {
+          if (const auto nbrs = device.neighboursOf(v); !nbrs.empty()) {
             const auto u = nbrs.front();
             curr.swap(u, v);
             swaps.emplace_back(u, v);
