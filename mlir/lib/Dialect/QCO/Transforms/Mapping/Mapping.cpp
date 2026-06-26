@@ -25,6 +25,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -78,8 +79,6 @@ private:
 
   class AugmentedDevice {
   public:
-    AugmentedDevice() = default;
-
     explicit AugmentedDevice(
         const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet)
         : coupling_(couplingSet), dist_(coupling_.getDistMatrix()) {}
@@ -94,34 +93,30 @@ private:
 
     /// Return the length of the shortest path between two qubits.
     [[nodiscard]] size_t distanceBetween(size_t u, size_t v) const {
-      if (dist_[u][v] == UINT64_MAX) {
+      const auto dist = dist_[u][v];
+      if (dist == UINT64_MAX) {
         report_fatal_error("Failed to compute the distance between qubits " +
                            Twine(u) + " and " + Twine(v));
       }
-      return dist_[u][v];
+      return dist;
+    }
+
+    /// Return the qubit identifiers.
+    [[nodiscard]] SmallVector<size_t> qubits() const {
+      return coupling_.getNodes();
     }
 
     /// Return all neighbours of a qubit.
     [[nodiscard]] ArrayRef<size_t> neighboursOf(size_t u) const {
-      return coupling_.getEdges(u);
-    }
-
-    /// Return the qubit identifiers.
-    [[nodiscard]] ArrayRef<size_t> qubits() const {
-      return coupling_.getNodes();
-    }
-
-    /// Return the couplings of the device.
-    [[nodiscard]] llvm::DenseSet<std::pair<size_t, size_t>> couplings() const {
-      return coupling_.getEdges();
+      return coupling_.getNeighbours(u);
     }
 
     /// Return the max degree (connectivity) of any qubit of the device.
     [[nodiscard]] size_t maxDegree() const { return coupling_.getMaxDegree(); }
 
   private:
-    Graph<> coupling_;
-    Matrix<size_t> dist_;
+    Graph coupling_;
+    Graph::DistanceMatrix dist_;
   };
 
   struct WireInfos {
@@ -253,14 +248,19 @@ public:
   /// Construct mapping from coupling set.
   explicit MappingPass(
       const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
-      MappingPassOptions options = {})
-      : MappingPassBase(options), device(couplingSet) {}
+      MappingPassOptions options)
+      : MappingPassBase(options),
+        device(std::make_shared<AugmentedDevice>(couplingSet)) {}
 
 protected:
   void runOnOperation() override {
     assert(alpha > 0 && "expected alpha > 0");
     assert(niterations > 0 && "expected niterations > 0");
     assert(ntrials > 0 && "expected ntrials > 0");
+
+    if (!device) {
+      llvm::reportFatalUsageError("No device specified!");
+    }
 
     IRRewriter rewriter(&getContext());
 
@@ -281,11 +281,11 @@ protected:
     auto& body = func.getFunctionBody();
     auto& [wires, infos] = *comp;
 
-    if (wires.size() > device.nqubits()) {
+    if (wires.size() > device->nqubits()) {
       func.emitError()
           << "requires " + Twine(wires.size()) +
                  " qubits. However, the architecture only supports " +
-                 Twine(device.nqubits()) + "qubits.";
+                 Twine(device->nqubits()) + "qubits.";
       signalPassFailure();
       return;
     }
@@ -564,7 +564,7 @@ private:
       trials.emplace_back(
           RoutingBundle{.wires = wires,
                         .infos = infos,
-                        .layout = Layout::random(device.nqubits(), rng())});
+                        .layout = Layout::random(device->nqubits(), rng())});
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
@@ -610,7 +610,7 @@ private:
                                                const Layout& layout) {
     constexpr size_t cap = 25'000'000UL;
 
-    const size_t b = device.maxDegree() * ((device.nqubits() + 1) / 2);
+    const size_t b = device->maxDegree() * ((device->nqubits() + 1) / 2);
     const size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
@@ -621,7 +621,7 @@ private:
 
     // Early exit, if the root node is a goal node already.
     Node* root = std::construct_at(arena.Allocate(), layout);
-    if (root->isGoal(window.front(), device)) {
+    if (root->isGoal(window.front(), *device)) {
       return SmallVector<IndexPairType>{};
     }
 
@@ -655,7 +655,7 @@ private:
       // If the currently visited node is a goal node, reconstruct the
       // sequence of SWAPs from this node to the root.
 
-      if (curr->isGoal(window.front(), device)) {
+      if (curr->isGoal(window.front(), *device)) {
         SmallVector<IndexPairType> seq(curr->depth);
         size_t j = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
@@ -673,7 +673,7 @@ private:
       const auto& [q0, q1] = window.front();
       for (const auto prog : {q0, q1}) {
         for (const auto hw0 = curr->layout.getHardwareIndex(prog);
-             const auto hw1 : device.neighboursOf(hw0)) {
+             const auto hw1 : device->neighboursOf(hw0)) {
           // Ensure consistent hashing/comparison.
           const IndexPairType swap = std::minmax(hw0, hw1);
           if (!expansionSet.insert(swap).second) {
@@ -681,12 +681,14 @@ private:
           }
 
           frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
-                                             window, device, params));
+                                             window, *device, params));
         }
       }
 
       ++i;
     }
+
+    llvm::dbgs() << i << '\n';
 
     return failure();
   }
@@ -696,29 +698,27 @@ private:
   SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
     static constexpr size_t MIN_CYCLE_LENGTH = 2;
 
+    Graph f;
     Layout curr(from);
     SmallVector<IndexPairType> swaps;
-    Graph<> f;
 
-    const auto shouldAddEdge = [&](size_t hwA, size_t hwB) {
-      const auto prog = curr.getProgramIndex(hwA);
+    const auto shouldAddEdge = [&](size_t u, size_t v) {
+      const auto prog = curr.getProgramIndex(u);
       const auto hwGoal = to.getHardwareIndex(prog);
-      return device.distanceBetween(hwB, hwGoal) <
-             device.distanceBetween(hwA, hwGoal);
+      return device->distanceBetween(v, hwGoal) <
+             device->distanceBetween(u, hwGoal);
     };
 
     do {
       f.clear();
 
-      // Build F-graph: add edges for both directions of each coupling
-      for (const auto& coupling : device.couplings()) {
-        const std::array<std::pair<size_t, size_t>, 2> directedEdges = {
-            {{coupling.first, coupling.second},
-             {coupling.second, coupling.first}}};
-
-        for (const auto& [hwA, hwB] : directedEdges) {
-          if (shouldAddEdge(hwA, hwB)) {
-            f.addEdge(hwA, hwB);
+      // Build F-graph: Add edges to F for each edge in the coupling graph.
+      // Note that this assumes that the coupling graph is directed, but
+      // symmetric (essentially: undirected).
+      for (const auto u : device->qubits()) {
+        for (const auto v : device->neighboursOf(u)) {
+          if (shouldAddEdge(u, v)) {
+            f.addEdge(u, v);
           }
         }
       }
@@ -740,7 +740,7 @@ private:
 
       for (const auto v : f.getNodes()) {
         if (f.getDegree(v) == 0) {
-          if (const auto nbrs = device.neighboursOf(v); !nbrs.empty()) {
+          if (const auto nbrs = device->neighboursOf(v); !nbrs.empty()) {
             const auto u = nbrs.front();
             curr.swap(u, v);
             swaps.emplace_back(u, v);
@@ -906,7 +906,7 @@ private:
               const auto prog0 = infos.lookupProgram(indices[0]);
               const auto prog1 = infos.lookupProgram(indices[1]);
               const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-              if (device.areAdjacent(hw0, hw1)) {
+              if (device->areAdjacent(hw0, hw1)) {
                 released.emplace_back(op);
               }
             })
@@ -1048,7 +1048,7 @@ private:
     return success();
   }
 
-  AugmentedDevice device;
+  std::shared_ptr<AugmentedDevice> device;
 };
 
 } // namespace
@@ -1073,6 +1073,7 @@ createMappingPass(const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
                                   Twine(u) + ") does not.");
     }
   }
+
   return std::make_unique<MappingPass>(couplingSet, options);
 }
 
