@@ -288,10 +288,10 @@ test-skip = [
 [tool.cibuildwheel.linux]
 before-all = """
 uv tool install sccache>=0.10.0
-curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 22.1.0 -p /opt/llvm-22.1.0
+curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 22.1.7 -p /opt/llvm-22.1.7
 """
 before-test = "uvx sccache --show-stats"
-environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llvm-22.1.0/lib/cmake/mlir" }
+environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llvm-22.1.7/lib/cmake/mlir" }
 
 [tool.cibuildwheel.macos]
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }

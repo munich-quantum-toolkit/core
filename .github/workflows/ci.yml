@@ -187,7 +187,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
 
   python-coverage:
     name: 🐍 Coverage
@@ -196,7 +196,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
     with:
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
     permissions:
       contents: read
       id-token: write
@@ -214,7 +214,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
 
   python-linter:
     name: 🐍 Lint
@@ -252,7 +252,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 22.1.0
+      llvm-version: 22.1.7
 
   # this job does nothing and is only used for branch protection
   required-checks-pass:
