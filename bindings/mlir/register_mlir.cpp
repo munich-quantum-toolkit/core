@@ -13,16 +13,17 @@
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
-#include "qasm3/Exception.hpp"
-#include "qasm3/Importer.hpp"
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/Support/SMLoc.h>
+#include <llvm/Support/SourceMgr.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -34,6 +35,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/FileUtilities.h>
 #include <mlir/Support/LogicalResult.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
@@ -101,16 +103,7 @@ parseMlirText(mlir::MLIRContext* context, const std::string& text) {
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromQasmString(mlir::MLIRContext* context,
                      const std::string& qasmSource) {
-  try {
-    const auto computation = qasm3::Importer::imports(qasmSource);
-    return moduleFromQuantumComputation(context, computation);
-  } catch (const qasm3::CompilerError& exception) {
-    throw std::runtime_error(std::string("Failed to parse OpenQASM input: ") +
-                             exception.what());
-  } catch (const std::exception& exception) {
-    throw std::runtime_error(std::string("Failed to import OpenQASM input: ") +
-                             exception.what());
-  }
+  return mlir::qc::translateQASM3ToQC(qasmSource, context);
 }
 
 /**
@@ -118,16 +111,17 @@ moduleFromQasmString(mlir::MLIRContext* context,
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromQasmFile(mlir::MLIRContext* context, const std::string& path) {
-  try {
-    const auto computation = qasm3::Importer::importf(path);
-    return moduleFromQuantumComputation(context, computation);
-  } catch (const qasm3::CompilerError& exception) {
-    throw std::runtime_error(std::string("Failed to parse OpenQASM file '") +
-                             path + "': " + exception.what());
-  } catch (const std::exception& exception) {
-    throw std::runtime_error(std::string("Failed to import OpenQASM file '") +
-                             path + "': " + exception.what());
+  std::string errorMessage;
+  auto file = mlir::openInputFile(path, &errorMessage);
+  if (!file) {
+    llvm::errs() << "Failed to load file '" << path << "': '" << errorMessage
+                 << "'\n";
+    return nullptr;
   }
+
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
+  return mlir::qc::translateQASM3ToQC(sourceMgr, context);
 }
 
 /**

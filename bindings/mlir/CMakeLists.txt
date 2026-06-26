@@ -29,8 +29,7 @@ if(NOT TARGET ${TARGET_NAME})
     MLIRJeffToQCO
     MLIRQCOToQC
     MQT::MLIRSupport
-    MQT::CoreIR
-    MQT::CoreQASM)
+    MQT::CoreIR)
 
   # install the Python stub file in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")
