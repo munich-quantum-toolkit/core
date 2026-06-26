@@ -194,9 +194,6 @@ jobs:
     needs: [change-detection, python-tests]
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
-    with:
-      setup-mlir: true
-      llvm-version: 22.1.7
     permissions:
       contents: read
       id-token: write
@@ -225,6 +222,8 @@ jobs:
       check-stubs: true
       enable-ty: true
       enable-mypy: false
+      setup-mlir: true
+      llvm-version: 22.1.7
 
   build-sdist:
     name: 🚀 CD
