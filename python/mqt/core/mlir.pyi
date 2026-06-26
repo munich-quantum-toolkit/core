@@ -11,7 +11,8 @@
 def compile_program(
     program: object,
     *,
-    convert_to_qir: bool = False,
+    convert_to_qir_base: bool = False,
+    convert_to_qir_adaptive: bool = False,
     disable_merge_single_qubit_rotation_gates: bool = False,
     enable_hadamard_lifting: bool = False,
     enable_timing: bool = False,
@@ -26,7 +27,8 @@ def compile_program(
             - Path to `.qasm`, `.mlir`, or `.jeff` files
             - Qiskit :class:`~qiskit.circuit.QuantumCircuit`
             - MLIR source text
-        convert_to_qir: Whether to lower the result to QIR.
+        convert_to_qir_base: Whether to lower the result to a QIR program compliant with the Base Profile.
+        convert_to_qir_adaptive: Whether to lower the result to QIR program compliant with the Adaptive Profile.
         disable_merge_single_qubit_rotation_gates: Disable quaternion-based
             rotation merging.
         enable_hadamard_lifting: Enable Hadamard lifting optimization.

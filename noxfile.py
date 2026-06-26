@@ -241,6 +241,8 @@ def stubs(session: nox.Session) -> None:
         "--module",
         "mqt.core.fomac",
         "--module",
+        "mqt.core.mlir",
+        "--module",
         "mqt.core.na",
     )
 

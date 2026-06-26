@@ -103,7 +103,7 @@ qubit[1] q;
 h q[0];
 """
 
-    result = compile_program(qasm, convert_to_qir=True)
+    result = compile_program(qasm, convert_to_qir_base=True)
 
     assert "module" in result
     assert "llvm." in result

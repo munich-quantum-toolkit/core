@@ -291,7 +291,8 @@ void convertJeffModuleToQC(mlir::ModuleOp module) {
  * @brief Compile a Python-provided quantum program and return MLIR text.
  */
 [[nodiscard]] auto
-compileProgram(const nb::object& program, const bool convertToQIR,
+compileProgram(const nb::object& program, const bool convertToQIRBase,
+               const bool convertToQIRAdaptive,
                const bool disableMergeSingleQubitRotationGates,
                const bool enableHadamardLifting, const bool enableTiming,
                const bool enableStatistics) -> std::string {
@@ -299,7 +300,8 @@ compileProgram(const nb::object& program, const bool convertToQIR,
   auto module = moduleFromInputProgram(context.get(), program);
 
   mlir::QuantumCompilerConfig config;
-  config.convertToQIR = convertToQIR;
+  config.convertToQIRBase = convertToQIRBase;
+  config.convertToQIRAdaptive = convertToQIRAdaptive;
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
@@ -324,7 +326,7 @@ MQT Core MLIR compiler bindings.
   nb::module_::import_("mqt.core.ir");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
-        "convert_to_qir"_a = false,
+        "convert_to_qir_base"_a = false, "convert_to_qir_adaptive"_a = false,
         "disable_merge_single_qubit_rotation_gates"_a = false,
         "enable_hadamard_lifting"_a = false, "enable_timing"_a = false,
         "enable_statistics"_a = false,
@@ -338,7 +340,8 @@ Args:
         - Path to `.qasm`, `.mlir`, or `.jeff` files
         - Qiskit :class:`~qiskit.circuit.QuantumCircuit`
         - MLIR source text
-    convert_to_qir: Whether to lower the result to QIR.
+    convert_to_qir_base: Whether to lower the result to a QIR program compliant with the Base Profile.
+    convert_to_qir_adaptive: Whether to lower the result to QIR program compliant with the Adaptive Profile.
     disable_merge_single_qubit_rotation_gates: Disable quaternion-based
         rotation merging.
     enable_hadamard_lifting: Enable Hadamard lifting optimization.
