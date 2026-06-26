@@ -11,13 +11,14 @@
 #include "mlir/Dialect/QCO/Utils/Graph.h"
 
 #include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Debug.h>
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <utility>
 
@@ -80,7 +81,7 @@ std::optional<SmallVector<size_t>> Graph::findCycle() const {
   llvm::DenseMap<size_t, State> states;
 
   // Preparation step: Mark all nodes as unseen.
-  for_each(adj_.keys(), [&](size_t id) { states[id] = State::Unseen; });
+  llvm::for_each(adj_.keys(), [&](size_t id) { states[id] = State::Unseen; });
 
   for (const auto initId : adj_.keys()) {
     // Only start from unseen nodes.
