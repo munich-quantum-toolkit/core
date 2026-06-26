@@ -158,4 +158,56 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
   }];
 }
 
+def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "This pass applies constant propagation to a circuit. It "
+                "assumes that all input qubits are |0>. It propagates the "
+                "state of the qubits up to a given complexity threshold and "
+                "removes gates which are superfluous considering the current "
+                "state. It also replaces quantum control with classical control "
+                "if possible and moves measurements as far to the front as possible.";
+  let description = [{
+     This pass applies quantum constant propagation. This optimization routines assumes that the input qubits of the
+     circuits are |0>. It propagates the qubit states and the state of additional classical values through the circuit.
+     All quantum instructions are removed which are superfluous considering the current state. Additionaly, quantum
+     controls can be replaced by equivalent classical control. To do this most efficiently, the measurements are moved
+     as far to the front of a circuit as possible.
+
+     The qubit states and classical values are stored in hybrid states. Hybrid states are stored in a union table to
+     reduce the amount of complex amplitudes and classical values to track. There is a maximum number of non zero
+     amplitudes that is saved per union table entry. Additionally, there is also a maximum of hybrid states that can be
+     propagated. If the maximum number of amplitudes or the maximum number of hybrid states is exceeded, the propagated
+     state reaches top and no optimization routines are further applied.
+
+     The applied optimization routines are:
+
+     **General Control Reduction**
+     If a controlling qubit or classical value is always true, the control is removed. Classical vales are considered
+     true if they are not zero.
+     If a controlling qubit or classical value is alaways false, the complete gate is removed.
+
+     **Unsatisfiable Controls**
+     If a combination of controls (both quantum and classical) cannot be satisfied, the complete controlled gate is
+     removed.
+
+     **Quantum Control Reduction**
+     If a controlling qubit is true if and only if a classical value is true (false), the quantum control is replaced by a
+     classical one. If the classical value is false if and only if the qubit is true, the classical value becomes a
+     negative control.
+
+     **Implied Qubits**
+     If a controlling qubit is implied by other controlling qubits/classical values, the implied qubit is removed from
+     the controls.
+
+     **Phase Gate Reduction**
+     If a phase gate would only apply a global phase (e.g. if the quantum state is |11> and a Z-gate is applied), the
+     phase gate is removed and replaced by a global phase gate instead.
+
+  }];
+  let options = [Option<"maximumNonzeroAmplitudes", "maximumNonzeroAmplitudes", "std::size_t", "4",
+                         "The maximum number of non-zero amplitudes in the tracted quantum states before reaching top.">,
+                   Option<"maximumHybridStates", "maximumHybridStates", "std::size_t", "4",
+                          "The maximum number of hybrid states which have a non-zero probabilty.">];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

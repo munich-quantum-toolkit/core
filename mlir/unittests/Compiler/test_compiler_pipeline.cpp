@@ -119,12 +119,14 @@ protected:
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
                           const bool disableMergeSingleQubitRotationGates,
                           const bool enableHadamardLifting,
+                          const bool enableConstantPropagation,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
     config.disableMergeSingleQubitRotationGates =
         disableMergeSingleQubitRotationGates;
     config.enableHadamardLifting = enableHadamardLifting;
+    config.enableConstantPropagation = enableConstantPropagation;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 
@@ -168,7 +170,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   EXPECT_TRUE(mlir::verify(*module).succeeded());
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), testCase.convertToQIR, false, false, record);
+  runPipeline(module.get(), testCase.convertToQIR, false, false, false, record);
 
   ASSERT_TRUE(testCase.qcReferenceBuilder);
   auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
@@ -215,7 +217,7 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
   ASSERT_TRUE(module);
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), false, false, false, record);
+  runPipeline(module.get(), false, false, false, false, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
@@ -238,7 +240,7 @@ TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
   ASSERT_TRUE(module);
 
   mlir::CompilationRecord record;
-  runPipeline(module.get(), false, true, true, record);
+  runPipeline(module.get(), false, true, true, false, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);

@@ -46,6 +46,9 @@ struct QuantumCompilerConfig {
 
   /// Enable Hadamard lifting
   bool enableHadamardLifting = false;
+
+  /// Enable constant propagation
+  bool enableConstantPropagation = false;
 };
 
 /**

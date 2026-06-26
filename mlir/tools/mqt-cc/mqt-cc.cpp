@@ -81,6 +81,10 @@ static cl::opt<bool> disableMergeSingleQubitRotationGates(
 static cl::opt<bool> enableHadamardLifting(
     "hadamard-lifting", cl::desc("Apply Hadamard lifting during optimization"),
     cl::init(false));
+static cl::opt<bool> enableHadamardLifting(
+    "constant-propagation",
+    cl::desc("Apply constant propagation during optimization"),
+    cl::init(false));
 
 /**
  * @brief Load and parse a .qasm file
