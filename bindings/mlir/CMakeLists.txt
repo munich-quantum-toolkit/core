@@ -33,11 +33,9 @@ if(NOT TARGET ${TARGET_NAME})
 
   # install the Python stub file in editable mode for better IDE support
   if(SKBUILD_STATE STREQUAL "editable")
-    if(EXISTS "${PROJECT_SOURCE_DIR}/python/mqt/core/mlir.pyi")
-      install(
-        FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/mlir.pyi
-        DESTINATION .
-        COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
-    endif()
+    install(
+      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/mlir.pyi
+      DESTINATION .
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()
 endif()
