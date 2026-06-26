@@ -22,15 +22,13 @@ def compile_program(
 
     Args:
         program: Input program in one of the supported forms:
+            - Path to a `.jeff`, `.mlir`, or `.qasm` file
+            - MLIR or OpenQASM source string
             - :class:`mqt.core.ir.QuantumComputation`
-            - OpenQASM source text
-            - Path to `.qasm`, `.mlir`, or `.jeff` files
-            - Qiskit :class:`~qiskit.circuit.QuantumCircuit`
-            - MLIR source text
+            - :class:`~qiskit.circuit.QuantumCircuit`
         convert_to_qir_base: Whether to lower the result to a QIR program compliant with the Base Profile.
         convert_to_qir_adaptive: Whether to lower the result to QIR program compliant with the Adaptive Profile.
-        disable_merge_single_qubit_rotation_gates: Disable quaternion-based
-            rotation merging.
+        disable_merge_single_qubit_rotation_gates: Disable quaternion-based rotation merging.
         enable_hadamard_lifting: Enable Hadamard lifting optimization.
         enable_timing: Enable MLIR pass timing.
         enable_statistics: Enable MLIR pass statistics.

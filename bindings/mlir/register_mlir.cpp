@@ -75,30 +75,40 @@ namespace {
 }
 
 /**
- * @brief Convert a `QuantumComputation` to a QC MLIR module.
+ * @brief Deserialize a `.jeff` file and convert the program to QC.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromQuantumComputation(mlir::MLIRContext* context,
-                             const qc::QuantumComputation& computation) {
-  auto module = mlir::translateQuantumComputationToQC(context, computation);
+moduleFromJeffFile(mlir::MLIRContext* context, const std::string& path) {
+  auto module = deserializeFromFile(context, path);
   if (!module) {
-    throw std::runtime_error(
-        "Failed to translate quantum computation to MLIR.");
+    throw std::runtime_error(std::string("Failed to deserialize jeff file '") +
+                             path + "'.");
   }
+
+  mlir::PassManager pm(module->getContext());
+  pm.addPass(mlir::createJeffToQCO());
+  populateQCOCleanupPipeline(pm);
+  pm.addPass(mlir::createQCOToQC());
+  populateQCCleanupPipeline(pm);
+
+  if (mlir::failed(pm.run(*module))) {
+    throw std::runtime_error("Failed to convert from jeff to QC.");
+  }
+
   return module;
 }
 
 /**
- * @brief Parse MLIR source text into a module.
+ * @brief Parse an MLIR source string into a module.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-parseMlirText(mlir::MLIRContext* context, const std::string& text) {
+moduleFromMlirString(mlir::MLIRContext* context, const std::string& text) {
   return mlir::parseSourceString<mlir::ModuleOp>(llvm::StringRef(text),
                                                  context);
 }
 
 /**
- * @brief Parse OpenQASM source text into a QC MLIR module.
+ * @brief Parse an OpenQASM source string and translate it to a QC program.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromQasmString(mlir::MLIRContext* context,
@@ -107,7 +117,7 @@ moduleFromQasmString(mlir::MLIRContext* context,
 }
 
 /**
- * @brief Parse an OpenQASM file into a QC MLIR module.
+ * @brief Parse a `.qasm` file and translate it to a QC program.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromQasmFile(mlir::MLIRContext* context, const std::string& path) {
@@ -125,123 +135,69 @@ moduleFromQasmFile(mlir::MLIRContext* context, const std::string& path) {
 }
 
 /**
- * @brief Convert a deserialized jeff module to QC dialect.
- */
-void convertJeffModuleToQC(mlir::ModuleOp module) {
-  mlir::PassManager passManager(module.getContext());
-  passManager.addPass(mlir::createJeffToQCO());
-  ::populateQCOCleanupPipeline(passManager);
-  passManager.addPass(mlir::createQCOToQC());
-  ::populateQCCleanupPipeline(passManager);
-
-  if (mlir::failed(passManager.run(module))) {
-    throw std::runtime_error("Failed to convert jeff input to QC MLIR.");
-  }
-}
-
-/**
- * @brief Parse a `.jeff` file and convert it to a QC MLIR module.
+ * @brief Parse a source string into an MLR module.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromJeffFile(mlir::MLIRContext* context, const std::string& path) {
-  auto module = deserializeFromFile(context, path);
-  if (!module) {
-    throw std::runtime_error(std::string("Failed to deserialize jeff file '") +
-                             path + "'.");
-  }
-  convertJeffModuleToQC(module.get());
-  return module;
-}
-
-/**
- * @brief Read a text file into a string.
- */
-[[nodiscard]] std::string readTextFile(const std::string& path) {
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    throw std::runtime_error(std::string("Failed to open file '") + path +
-                             "'.");
-  }
-  return {std::istreambuf_iterator<char>(file),
-          std::istreambuf_iterator<char>()};
-}
-
-/**
- * @brief Lowercase a file extension for robust comparisons.
- */
-[[nodiscard]] std::string toLower(std::string value) {
-  std::ranges::transform(value, value.begin(), [](const unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
-  return value;
-}
-
-/**
- * @brief Try to parse in-memory source either as OpenQASM or MLIR.
- */
-[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromTextInput(mlir::MLIRContext* context, const std::string& input) {
+moduleFromSourceString(mlir::MLIRContext* context, const std::string& input) {
   if (input.find("OPENQASM") != std::string::npos) {
     return moduleFromQasmString(context, input);
   }
 
-  if (auto module = parseMlirText(context, input)) {
+  if (auto module = moduleFromMlirString(context, input)) {
     return module;
   }
 
-  try {
-    return moduleFromQasmString(context, input);
-  } catch (const std::exception&) {
-    throw std::runtime_error("Failed to parse input as MLIR or OpenQASM.");
-  }
+  throw std::runtime_error("Failed to parse source string.");
 }
 
 /**
- * @brief Resolve string/path-like input to an MLIR module.
+ * @brief Resolve a string to an MLIR module.
+ *
+ * @details The string can be a source string or a path to a file.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
-moduleFromStringOrPathLike(mlir::MLIRContext* context, const std::string& input,
-                           const bool pathLikeObject) {
+moduleFromString(mlir::MLIRContext* context, const std::string& input) {
   const auto path = std::filesystem::path(input);
-  std::error_code errorCode;
-  const auto inputExists = std::filesystem::exists(path, errorCode);
-
-  if (errorCode) {
-    if (pathLikeObject) {
-      throw std::runtime_error(std::string("Failed to inspect input path '") +
-                               input + "': " + errorCode.message());
-    }
-    return moduleFromTextInput(context, input);
+  if (path.empty() || !path.has_extension() ||
+      (path.extension() != ".jeff" && path.extension() != ".mlir" &&
+       path.extension() != ".qasm")) {
+    return moduleFromSourceString(context, input);
   }
 
-  if (inputExists) {
-    if (!std::filesystem::is_regular_file(path, errorCode)) {
-      if (errorCode) {
-        throw std::runtime_error(std::string("Failed to inspect input path '") +
-                                 input + "': " + errorCode.message());
-      }
-      throw std::runtime_error(std::string("Input path '") + input +
-                               "' is not a file.");
-    }
-
-    const auto extension = toLower(path.extension().string());
-    if (extension == ".qasm") {
-      return moduleFromQasmFile(context, input);
-    }
-    if (extension == ".jeff") {
-      return moduleFromJeffFile(context, input);
-    }
-
-    return moduleFromTextInput(context, readTextFile(input));
-  }
-
-  if (pathLikeObject || path.extension() == ".qasm" ||
-      path.extension() == ".mlir" || path.extension() == ".jeff") {
+  const auto pathExists = std::filesystem::exists(path);
+  if (!pathExists) {
     throw std::runtime_error(std::string("Input file '") + input +
                              "' does not exist.");
   }
 
-  return moduleFromTextInput(context, input);
+  const auto isFile = std::filesystem::is_regular_file(path);
+  if (!isFile) {
+    throw std::runtime_error(std::string("Input path '") + input +
+                             "' is not a file.");
+  }
+
+  const auto extension = path.extension().string();
+  if (extension == ".jeff") {
+    return moduleFromJeffFile(context, input);
+  }
+  if (extension == ".qasm") {
+    return moduleFromQasmFile(context, input);
+  }
+  throw std::runtime_error(std::string("Input file '") + input +
+                           "' has unsupported extension '" + extension + "'.");
+}
+
+/**
+ * @brief Translate a `QuantumComputation` to a QC program.
+ */
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+moduleFromQuantumComputation(mlir::MLIRContext* context,
+                             const qc::QuantumComputation& computation) {
+  auto module = mlir::translateQuantumComputationToQC(context, computation);
+  if (!module) {
+    throw std::runtime_error("Failed to translate QuantumComputation to MLIR.");
+  }
+  return module;
 }
 
 /**
@@ -249,32 +205,35 @@ moduleFromStringOrPathLike(mlir::MLIRContext* context, const std::string& input,
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromInputProgram(mlir::MLIRContext* context, const nb::object& program) {
-  if (nb::isinstance<qc::QuantumComputation>(program)) {
-    const auto& computation = nb::cast<const qc::QuantumComputation&>(program);
-    return moduleFromQuantumComputation(context, computation);
-  }
-
   if (nb::isinstance<nb::str>(program)) {
-    return moduleFromStringOrPathLike(context, nb::cast<std::string>(program),
-                                      false);
+    return moduleFromString(context, nb::cast<std::string>(program));
   }
 
   if (nb::hasattr(program, "__fspath__")) {
-    const auto pathAsString = nb::cast<std::string>(
+    const auto path = nb::cast<std::string>(
         nb::module_::import_("os").attr("fspath")(program));
-    return moduleFromStringOrPathLike(context, pathAsString, true);
+    return moduleFromString(context, path);
   }
 
-  // Fallback route for optional Qiskit circuits and other Python-side
-  // converters handled by `mqt.core.load`.
-  const auto loaded =
-      nb::module_::import_("mqt.core.load").attr("load")(program);
-  const auto& computation = nb::cast<const qc::QuantumComputation&>(loaded);
-  return moduleFromQuantumComputation(context, computation);
+  if (nb::isinstance<qc::QuantumComputation>(program)) {
+    const auto& qc = nb::cast<const qc::QuantumComputation&>(program);
+    return moduleFromQuantumComputation(context, qc);
+  }
+
+  const auto programType =
+      nb::cast<std::string>(program.type().attr("__name__"));
+  if (programType == "QuantumCircuit") {
+    const auto& qc = nb::cast<qc::QuantumComputation>(
+        nb::module_::import_("mqt.core.load").attr("load")(program));
+    return moduleFromQuantumComputation(context, qc);
+  }
+
+  throw std::runtime_error(std::string("Program type ") + programType +
+                           " is not supported.");
 }
 
 /**
- * @brief Compile a Python-provided quantum program and return MLIR text.
+ * @brief Compile a program and return the final MLIR module as a string.
  */
 [[nodiscard]] std::string
 compileProgram(const nb::object& program, const bool convertToQIRBase,
@@ -321,15 +280,13 @@ Compile an input quantum program with the MQT MLIR compiler pipeline.
 
 Args:
     program: Input program in one of the supported forms:
+        - Path to a `.jeff`, `.mlir`, or `.qasm` file
+        - MLIR or OpenQASM source string
         - :class:`mqt.core.ir.QuantumComputation`
-        - OpenQASM source text
-        - Path to `.qasm`, `.mlir`, or `.jeff` files
-        - Qiskit :class:`~qiskit.circuit.QuantumCircuit`
-        - MLIR source text
+        - :class:`~qiskit.circuit.QuantumCircuit`
     convert_to_qir_base: Whether to lower the result to a QIR program compliant with the Base Profile.
     convert_to_qir_adaptive: Whether to lower the result to QIR program compliant with the Adaptive Profile.
-    disable_merge_single_qubit_rotation_gates: Disable quaternion-based
-        rotation merging.
+    disable_merge_single_qubit_rotation_gates: Disable quaternion-based rotation merging.
     enable_hadamard_lifting: Enable Hadamard lifting optimization.
     enable_timing: Enable MLIR pass timing.
     enable_statistics: Enable MLIR pass statistics.
