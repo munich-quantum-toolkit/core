@@ -40,16 +40,12 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
 
-#include <algorithm>
 #include <cctype>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <memory>
-#include <optional>
-#include <ranges>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace mqt {
 
@@ -115,9 +111,8 @@ moduleFromMlirFile(mlir::MLIRContext* context, const std::string& path) {
   std::string errorMessage;
   auto file = mlir::openInputFile(path, &errorMessage);
   if (!file) {
-    llvm::errs() << "Failed to load file '" << path << "': '" << errorMessage
-                 << "'\n";
-    return nullptr;
+    throw std::runtime_error(std::string("Failed to load file '") + path +
+                             "': '" + errorMessage + "'");
   }
 
   llvm::SourceMgr sourceMgr;
@@ -142,9 +137,8 @@ moduleFromQasmFile(mlir::MLIRContext* context, const std::string& path) {
   std::string errorMessage;
   auto file = mlir::openInputFile(path, &errorMessage);
   if (!file) {
-    llvm::errs() << "Failed to load file '" << path << "': '" << errorMessage
-                 << "'\n";
-    return nullptr;
+    throw std::runtime_error(std::string("Failed to load file '") + path +
+                             "': '" + errorMessage + "'");
   }
 
   llvm::SourceMgr sourceMgr;
