@@ -59,8 +59,7 @@ namespace {
 /**
  * @brief Construct and initialize the MLIR context used by the compiler.
  */
-[[nodiscard]] auto createCompilerContext()
-    -> std::unique_ptr<mlir::MLIRContext> {
+[[nodiscard]] std::unique_ptr<mlir::MLIRContext> createCompilerContext() {
   mlir::DialectRegistry registry;
   registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
                   mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
@@ -76,10 +75,9 @@ namespace {
 /**
  * @brief Convert a `QuantumComputation` to a QC MLIR module.
  */
-[[nodiscard]] auto
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromQuantumComputation(mlir::MLIRContext* context,
-                             const qc::QuantumComputation& computation)
-    -> mlir::OwningOpRef<mlir::ModuleOp> {
+                             const qc::QuantumComputation& computation) {
   auto module = mlir::translateQuantumComputationToQC(context, computation);
   if (!module) {
     throw std::runtime_error(
@@ -91,9 +89,8 @@ moduleFromQuantumComputation(mlir::MLIRContext* context,
 /**
  * @brief Parse MLIR source text into a module.
  */
-[[nodiscard]] auto parseMlirText(mlir::MLIRContext* context,
-                                 const std::string& text)
-    -> mlir::OwningOpRef<mlir::ModuleOp> {
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+parseMlirText(mlir::MLIRContext* context, const std::string& text) {
   return mlir::parseSourceString<mlir::ModuleOp>(llvm::StringRef(text),
                                                  context);
 }
@@ -101,9 +98,9 @@ moduleFromQuantumComputation(mlir::MLIRContext* context,
 /**
  * @brief Parse OpenQASM source text into a QC MLIR module.
  */
-[[nodiscard]] auto moduleFromQasmString(mlir::MLIRContext* context,
-                                        const std::string& qasmSource)
-    -> mlir::OwningOpRef<mlir::ModuleOp> {
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+moduleFromQasmString(mlir::MLIRContext* context,
+                     const std::string& qasmSource) {
   try {
     const auto computation = qasm3::Importer::imports(qasmSource);
     return moduleFromQuantumComputation(context, computation);
@@ -119,9 +116,8 @@ moduleFromQuantumComputation(mlir::MLIRContext* context,
 /**
  * @brief Parse an OpenQASM file into a QC MLIR module.
  */
-[[nodiscard]] auto moduleFromQasmFile(mlir::MLIRContext* context,
-                                      const std::string& path)
-    -> mlir::OwningOpRef<mlir::ModuleOp> {
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+moduleFromQasmFile(mlir::MLIRContext* context, const std::string& path) {
   try {
     const auto computation = qasm3::Importer::importf(path);
     return moduleFromQuantumComputation(context, computation);
@@ -152,9 +148,8 @@ void convertJeffModuleToQC(mlir::ModuleOp module) {
 /**
  * @brief Parse a `.jeff` file and convert it to a QC MLIR module.
  */
-[[nodiscard]] auto moduleFromJeffFile(mlir::MLIRContext* context,
-                                      const std::string& path)
-    -> mlir::OwningOpRef<mlir::ModuleOp> {
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+moduleFromJeffFile(mlir::MLIRContext* context, const std::string& path) {
   auto module = deserializeFromFile(context, path);
   if (!module) {
     throw std::runtime_error(std::string("Failed to deserialize jeff file '") +
@@ -167,7 +162,7 @@ void convertJeffModuleToQC(mlir::ModuleOp module) {
 /**
  * @brief Read a text file into a string.
  */
-[[nodiscard]] auto readTextFile(const std::string& path) -> std::string {
+[[nodiscard]] std::string readTextFile(const std::string& path) {
   std::ifstream file(path);
   if (!file.is_open()) {
     throw std::runtime_error(std::string("Failed to open file '") + path +
@@ -180,7 +175,7 @@ void convertJeffModuleToQC(mlir::ModuleOp module) {
 /**
  * @brief Lowercase a file extension for robust comparisons.
  */
-[[nodiscard]] auto toLower(std::string value) -> std::string {
+[[nodiscard]] std::string toLower(std::string value) {
   std::ranges::transform(value, value.begin(), [](const unsigned char c) {
     return static_cast<char>(std::tolower(c));
   });
@@ -190,9 +185,8 @@ void convertJeffModuleToQC(mlir::ModuleOp module) {
 /**
  * @brief Try to parse in-memory source either as OpenQASM or MLIR.
  */
-[[nodiscard]] auto moduleFromTextInput(mlir::MLIRContext* context,
-                                       const std::string& input)
-    -> mlir::OwningOpRef<mlir::ModuleOp> {
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+moduleFromTextInput(mlir::MLIRContext* context, const std::string& input) {
   if (input.find("OPENQASM") != std::string::npos) {
     return moduleFromQasmString(context, input);
   }
@@ -211,10 +205,9 @@ void convertJeffModuleToQC(mlir::ModuleOp module) {
 /**
  * @brief Resolve string/path-like input to an MLIR module.
  */
-[[nodiscard]] auto moduleFromStringOrPathLike(mlir::MLIRContext* context,
-                                              const std::string& input,
-                                              const bool pathLikeObject)
-    -> mlir::OwningOpRef<mlir::ModuleOp> {
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+moduleFromStringOrPathLike(mlir::MLIRContext* context, const std::string& input,
+                           const bool pathLikeObject) {
   const auto path = std::filesystem::path(input);
   std::error_code errorCode;
   const auto inputExists = std::filesystem::exists(path, errorCode);
@@ -260,9 +253,8 @@ void convertJeffModuleToQC(mlir::ModuleOp module) {
 /**
  * @brief Convert a generic Python object to an MLIR module.
  */
-[[nodiscard]] auto moduleFromInputProgram(mlir::MLIRContext* context,
-                                          const nb::object& program)
-    -> mlir::OwningOpRef<mlir::ModuleOp> {
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+moduleFromInputProgram(mlir::MLIRContext* context, const nb::object& program) {
   if (nb::isinstance<qc::QuantumComputation>(program)) {
     const auto& computation = nb::cast<const qc::QuantumComputation&>(program);
     return moduleFromQuantumComputation(context, computation);
@@ -290,12 +282,12 @@ void convertJeffModuleToQC(mlir::ModuleOp module) {
 /**
  * @brief Compile a Python-provided quantum program and return MLIR text.
  */
-[[nodiscard]] auto
+[[nodiscard]] std::string
 compileProgram(const nb::object& program, const bool convertToQIRBase,
                const bool convertToQIRAdaptive,
                const bool disableMergeSingleQubitRotationGates,
                const bool enableHadamardLifting, const bool enableTiming,
-               const bool enableStatistics) -> std::string {
+               const bool enableStatistics) {
   auto context = createCompilerContext();
   auto module = moduleFromInputProgram(context.get(), program);
 
