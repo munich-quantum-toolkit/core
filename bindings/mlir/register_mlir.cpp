@@ -108,6 +108,24 @@ moduleFromMlirString(mlir::MLIRContext* context, const std::string& text) {
 }
 
 /**
+ * @brief Parse a `.mlir` file into a module.
+ */
+[[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+moduleFromMlirFile(mlir::MLIRContext* context, const std::string& path) {
+  std::string errorMessage;
+  auto file = mlir::openInputFile(path, &errorMessage);
+  if (!file) {
+    llvm::errs() << "Failed to load file '" << path << "': '" << errorMessage
+                 << "'\n";
+    return nullptr;
+  }
+
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
+  return parseSourceFile<mlir::ModuleOp>(sourceMgr, context);
+}
+
+/**
  * @brief Parse an OpenQASM source string and translate it to a QC program.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
@@ -179,6 +197,9 @@ moduleFromString(mlir::MLIRContext* context, const std::string& input) {
   const auto extension = path.extension().string();
   if (extension == ".jeff") {
     return moduleFromJeffFile(context, input);
+  }
+  if (extension == ".mlir") {
+    return moduleFromMlirFile(context, input);
   }
   if (extension == ".qasm") {
     return moduleFromQasmFile(context, input);

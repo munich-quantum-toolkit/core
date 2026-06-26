@@ -56,6 +56,17 @@ def test_compile_program_mlir_string() -> None:
     assert "func.func" in result
 
 
+def test_compile_program_mlir_file(tmp_path: Path) -> None:
+    """Compile a `.mlir` file."""
+    path = tmp_path / "program.mlir"
+    path.write_text(MLIR_STRING, encoding="utf-8")
+
+    result = compile_program(path)
+
+    assert "module" in result
+    assert "func.func" in result
+
+
 def test_compile_program_qasm_string() -> None:
     """Compile an OpenQASM string."""
     result = compile_program(QASM_STRING)
