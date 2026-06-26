@@ -17,9 +17,6 @@
 
 namespace mlir::qco {
 
-/// @name Symmetric eigendecomposition (EISPACK-backed)
-/// @{
-
 /**
  * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
  *
@@ -50,11 +47,6 @@ decomposeSymmetricEigen4(const std::array<double, 16>& symmetric);
  * must form a symmetric matrix; imaginary parts are ignored.
  */
 [[nodiscard]] SymmetricEigen4 decomposeSymmetricEigen4(const Matrix4x4& matrix);
-
-/// @}
-
-/// @name Complex eigendecomposition (EISPACK-backed)
-/// @{
 
 /**
  * @brief Computes the eigendecomposition of a `1x1` dynamic matrix.
@@ -127,7 +119,5 @@ decomposeComplexEigenDynamic(const DynamicMatrix& matrix);
  * @return Dynamic-matrix eigenvector storage with the same eigenvalues.
  */
 [[nodiscard]] ComplexEigen fromComplexEigen(const ComplexEigen4& eigen4);
-
-/// @}
 
 } // namespace mlir::qco
