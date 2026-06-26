@@ -15,12 +15,12 @@
 
 #include <array>
 #include <complex>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <type_traits>
-#include <vector>
 
 namespace mlir::qco {
 
@@ -244,9 +244,10 @@ struct Matrix2x2 {
    *
    * Uses a closed-form formula for `2x2` matrices.
    *
-   * @return Eigenpairs.
+   * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
+   * non-finite eigenvalues.
    */
-  [[nodiscard]] ComplexEigen2 complexEigen() const;
+  [[nodiscard]] std::optional<ComplexEigen2> complexEigen() const;
 
   /**
    * @brief Embed this single-qubit matrix into an @p numQubits-qubit Hilbert
@@ -778,9 +779,11 @@ public:
    * @brief Computes the eigendecomposition of this square matrix.
    *
    * Uses EISPACK `corth` followed by `comqr2` (complex Hessenberg reduction
-   * and QR eigenanalysis). Adapted from John Burkardt's MIT-licensed EISPACK C
-   * port (`pythag`, `csroot`) and NETLIB EISPACK Fortran (`corth.f`,
-   * `comqr2.f`, `cdiv.f`). Dimensions `1` and `2` use closed-form formulas;
+   * and QR eigenanalysis). `pythag` and `csroot` follow John Burkardt's
+   * MIT-licensed EISPACK C port; `cdiv`, `corth`, and `comqr2` follow NETLIB
+   * EISPACK Fortran (https://netlib.org/eispack/cdiv.f,
+   * https://netlib.org/eispack/corth.f, https://netlib.org/eispack/comqr2.f).
+   * Dimensions `1` and `2` use closed-form formulas;
    * dimension `4` delegates to @ref Matrix4x4::complexEigen; all other sizes
    * use the general EISPACK path.
    *
@@ -795,6 +798,14 @@ private:
 };
 
 /**
+ * @brief Concept for the four supported matrix types.
+ */
+template <typename T>
+concept SupportedMatrix =
+    std::same_as<T, Matrix1x1> || std::same_as<T, Matrix2x2> ||
+    std::same_as<T, Matrix4x4> || std::same_as<T, DynamicMatrix>;
+
+/**
  * @brief Type trait for the four supported matrix types.
  *
  * True for @ref Matrix1x1, @ref Matrix2x2, @ref Matrix4x4, and @ref
@@ -805,9 +816,7 @@ private:
 template <typename T>
 inline constexpr bool
     is_supported_matrix_v = // NOLINT(readability-identifier-naming)
-    std::disjunction_v<std::is_same<T, Matrix1x1>, std::is_same<T, Matrix2x2>,
-                       std::is_same<T, Matrix4x4>,
-                       std::is_same<T, DynamicMatrix>>;
+    SupportedMatrix<T>;
 
 /// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
 /// `matrix * scalar`). Provided so generic code can scale a matrix from
@@ -869,7 +878,7 @@ struct ComplexEigen2 {
  */
 struct ComplexEigen {
   /// Eigenvalues in no particular order.
-  std::vector<Complex> eigenvalues;
+  SmallVector<Complex, 8> eigenvalues;
   /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
   DynamicMatrix eigenvectors;
 };
