@@ -10,15 +10,24 @@
 
 #pragma once
 
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 
+#include <cassert>
+#include <cstddef>
+#include <iterator>
 #include <variant>
 
 namespace mlir::utils {
 
+/// Default absolute tolerance for MLIR dialect numerics (angle wrapping,
+/// phase-zero checks).
 constexpr auto TOLERANCE = 1e-15;
 
 inline Value constantFromScalar(OpBuilder& builder, Location loc, double v) {
@@ -63,12 +72,10 @@ template <typename T>
   if (!constantOp) {
     return std::nullopt;
   }
-  auto floatAttr = dyn_cast<FloatAttr>(constantOp.getValue());
-  if (floatAttr) {
+  if (auto floatAttr = dyn_cast<FloatAttr>(constantOp.getValue())) {
     return floatAttr.getValueAsDouble();
   }
-  auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
-  if (intAttr) {
+  if (auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue())) {
     if (intAttr.getType().isUnsignedInteger()) {
       return static_cast<double>(intAttr.getValue().getZExtValue());
     }
@@ -76,6 +83,189 @@ template <typename T>
     return static_cast<double>(intAttr.getValue().getSExtValue());
   }
   return std::nullopt;
+}
+
+/**
+ * @brief Parse a list of aliased qubits.
+ *
+ * @details
+ * The modifier operations use aliased qubits inside of their region. This
+ * function resolves the relationship between the block arguments and the qubit
+ * operands. In the example below, the block argument `%a0` aliases the operand
+ * `%q1`.
+ *
+ * ```mlir
+ * qc.ctrl(%q0) targets(%a0 = %q1) {
+ *   qc.x %a0 : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ */
+template <typename QubitType>
+[[nodiscard]]
+ParseResult
+parseTargetAliasing(OpAsmParser& parser, Region& region,
+                    SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+  // 1. Parse the opening parenthesis
+  if (parser.parseLParen()) {
+    return failure();
+  }
+
+  // Temporary storage for block arguments we are about to create
+  SmallVector<OpAsmParser::Argument> blockArgs;
+
+  // 2. Prepare to parse the list
+  if (failed(parser.parseOptionalRParen())) {
+    do {
+      OpAsmParser::Argument newArg;              // The "new" variable name
+      OpAsmParser::UnresolvedOperand oldOperand; // The "old" input variable
+
+      // Parse "%new"
+      if (parser.parseArgument(newArg)) {
+        return failure();
+      }
+
+      // Parse "="
+      if (parser.parseEqual()) {
+        return failure();
+      }
+
+      // Parse "%old"
+      if (parser.parseOperand(oldOperand)) {
+        return failure();
+      }
+      operands.push_back(oldOperand);
+
+      // Hard-code QubitType because the modifiers only alias qubits
+      newArg.type = QubitType::get(parser.getBuilder().getContext());
+      blockArgs.push_back(newArg);
+    } while (succeeded(parser.parseOptionalComma()));
+
+    if (parser.parseRParen()) {
+      return failure();
+    }
+  }
+
+  // 4. Parse the Region
+  // We explicitly pass the blockArgs we just parsed so they become the entry
+  // block!
+  if (parser.parseRegion(region, blockArgs)) {
+    return failure();
+  }
+
+  return success();
+}
+
+/**
+ * @brief Print a list of aliased qubits.
+ *
+ * @details
+ * The modifier operations use aliased qubits inside of their region. This
+ * function prints a representation of the relationship between the block
+ * arguments and the qubit operands. In the example below, the block argument
+ * `%a0` aliases the operand `%q1`.
+ *
+ * ```mlir
+ * qc.ctrl(%q0) targets(%a0 = %q1) {
+ *   qc.x %a0 : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ */
+inline void printTargetAliasing(OpAsmPrinter& printer, Region& region,
+                                OperandRange targetsIn) {
+  printer << "(";
+  if (region.empty()) {
+    printer << ") ";
+    printer.printRegion(region, false);
+    return;
+  }
+  auto& entryBlock = region.front();
+
+  const auto numTargets = targetsIn.size();
+  for (unsigned i = 0; i < numTargets; ++i) {
+    if (i > 0) {
+      printer << ", ";
+    }
+    printer.printOperand(entryBlock.getArgument(i));
+    printer << " = ";
+    printer.printOperand(targetsIn[i]);
+  }
+  printer << ") ";
+
+  printer.printRegion(region, false);
+}
+
+/**
+ * @brief Get the value corresponding to @p qubit from the block arguments @p
+ * qubits if @p qubit is a block argument, otherwise return @p qubit itself.
+ */
+inline Value getValueFromBlockArgument(Value qubit, ValueRange qubits) {
+  if (auto blockArg = dyn_cast<BlockArgument>(qubit)) {
+    assert(blockArg.getArgNumber() < qubits.size() &&
+           "block argument index must be within qubits range");
+    return qubits[blockArg.getArgNumber()];
+  }
+  return qubit;
+}
+
+/**
+ * @brief Returns the number of operations implementing @p UnitaryInterface in
+ * @p block.
+ */
+template <typename UnitaryInterface>
+[[nodiscard]] size_t getNumBodyUnitaries(Block& block) {
+  return static_cast<size_t>(llvm::count_if(
+      block, [](Operation& op) { return isa<UnitaryInterface>(op); }));
+}
+
+/**
+ * @brief Returns the @p i-th operation implementing @p UnitaryInterface in
+ * @p block, reporting a fatal error if @p i is out of bounds.
+ */
+template <typename UnitaryInterface>
+[[nodiscard]] UnitaryInterface getBodyUnitary(Block& block, size_t i) {
+  auto unitaries = llvm::make_filter_range(
+      block, [](Operation& op) { return isa<UnitaryInterface>(op); });
+  auto it = std::next(unitaries.begin(), static_cast<std::ptrdiff_t>(i));
+  if (it == unitaries.end()) {
+    llvm::reportFatalUsageError("Unitary index out of bounds");
+  }
+  return cast<UnitaryInterface>(*it);
+}
+
+/**
+ * @brief Returns the single operation implementing @p UnitaryInterface in
+ * @p block, or a null interface if @p block does not contain exactly one.
+ */
+template <typename UnitaryInterface>
+[[nodiscard]] UnitaryInterface getSoleBodyUnitary(Block& block) {
+  auto unitaries = llvm::make_filter_range(
+      block, [](Operation& op) { return isa<UnitaryInterface>(op); });
+  auto it = unitaries.begin();
+  if (it == unitaries.end()) {
+    return {};
+  }
+  auto unitary = cast<UnitaryInterface>(*it);
+  if (++it != unitaries.end()) {
+    return {};
+  }
+  return unitary;
+}
+
+/**
+ * @brief Inlines a modifier body and replaces the modifier with its results.
+ *
+ * @details Inlines the operations of @p body in front of @p op, substituting
+ * the block arguments of @p body with @p blockArgReplacements, and replaces
+ * @p op with the values yielded by the body's terminator.
+ */
+inline void inlineModifierBody(Operation* op, Block& body,
+                               ValueRange blockArgReplacements,
+                               RewriterBase& rewriter) {
+  auto* terminator = body.getTerminator();
+  const SmallVector<Value> results(terminator->getOperands());
+  rewriter.inlineBlockBefore(&body, op, blockArgReplacements);
+  rewriter.eraseOp(terminator);
+  rewriter.replaceOp(op, results);
 }
 
 } // namespace mlir::utils

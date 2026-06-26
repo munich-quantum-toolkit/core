@@ -297,7 +297,6 @@ environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/opt/llv
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
-before-build = "uv pip install delvewheel>=1.11.2"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 
 [[tool.cibuildwheel.overrides]]
@@ -368,6 +367,5 @@ dev = [
   {include-group = "build"},
   {include-group = "test"},
   "lit>=18.1.8",
-  "nox>=2025.11.12",
-  "ty==0.0.39",
+  "nox>=2025.11.12"
 ]

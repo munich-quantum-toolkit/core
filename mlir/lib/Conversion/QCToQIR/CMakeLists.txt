@@ -6,21 +6,6 @@
 #
 # Licensed under the MIT License
 
-file(GLOB CONVERSION_SOURCES *.cpp)
-
-add_mlir_conversion_library(
-  MLIRQCToQIR
-  ${CONVERSION_SOURCES}
-  DEPENDS
-  QCToQIRIncGen
-  LINK_LIBS
-  MLIRQIRUtils
-  MLIRLLVMDialect
-  MLIRQCDialect
-  MLIRArithDialect
-  MLIRTransforms
-  MLIRFuncDialect
-  MLIRFuncToLLVM
-  MLIRReconcileUnrealizedCasts)
-
-mqt_mlir_target_use_project_options(MLIRQCToQIR)
+add_subdirectory(QIRCommon)
+add_subdirectory(QIRBase)
+add_subdirectory(QIRAdaptive)

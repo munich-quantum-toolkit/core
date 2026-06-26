@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/Utils/Utils.h"
+
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Attributes.h>
@@ -103,7 +105,7 @@ public:
       }
       return this->getOperation()->getOperand(T + i);
     }
-    ValueRange getParameters() {
+    OperandRange getParameters() {
       return this->getOperation()->getOperands().slice(T, P);
     }
 
@@ -126,6 +128,16 @@ public:
       }
       llvm::reportFatalUsageError(
           "Given qubit is not an input of the operation");
+    }
+
+    [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix() {
+      if constexpr (P == 0) {
+        return true;
+      } else {
+        return llvm::all_of(this->getParameters(), [](Value param) {
+          return utils::valueToDouble(param).has_value();
+        });
+      }
     }
   };
 };
@@ -151,8 +163,9 @@ inline func::FuncOp getEntryPoint(ModuleOp op) {
   };
 
   for (auto func : op.getOps<func::FuncOp>()) {
-    const auto passthrough = func->getAttrOfType<ArrayAttr>(PASSTHROUGH_LABEL);
-    if (passthrough && llvm::any_of(passthrough, isEntry)) {
+    if (const auto passthrough =
+            func->getAttrOfType<ArrayAttr>(PASSTHROUGH_LABEL);
+        passthrough && llvm::any_of(passthrough, isEntry)) {
       return func;
     }
   }

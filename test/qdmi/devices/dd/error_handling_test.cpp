@@ -75,9 +75,9 @@ TEST_F(ErrorHandling, GetResultsBeforeDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
+                                  qdmi_test::QASM3_HEAVY_SAMPLING),
             QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 64), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 16384), QDMI_SUCCESS);
   // Before submit → invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
@@ -294,7 +294,7 @@ TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   {
     const qdmi_test::JobGuard j{s.session};
     ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                    qdmi_test::MALFORMED_PROGRAM),
+                                    qdmi_test::QASM3_MALFORMED),
               QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setShots(j.job, 128), QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
@@ -306,7 +306,7 @@ TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   {
     const qdmi_test::JobGuard j{s.session};
     ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                    qdmi_test::MALFORMED_PROGRAM),
+                                    qdmi_test::QASM3_MALFORMED),
               QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
     ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);

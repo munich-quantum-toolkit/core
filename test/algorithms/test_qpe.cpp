@@ -175,7 +175,7 @@ TEST_P(QPE, IQPETest) {
   auto qc = qc::createIterativeQPE(lambda, precision);
   ASSERT_EQ(qc.getNqubits(), 2U);
 
-  constexpr auto shots = 8192U;
+  constexpr auto shots = 16384U;
   const auto measurements = dd::sample(qc, shots);
 
   // sort the measurements
