@@ -399,10 +399,10 @@ public:
   auto getMeasurements() const -> const std::string&;
 
   /// Emit `label:\n` to the output stream.
-  auto outputContainer(const char* label, int64_t elementCount) const -> void;
+  auto outputContainer(int64_t elementCount, const char* label) const -> void;
 
   /// Emit `label: valueStr\n` to the output stream.
-  auto outputValue(const char* label, std::string_view valueStr) const -> void;
+  auto outputValue(std::string_view valueStr, const char* label) const -> void;
 
   /// Move the quantum state out of the runtime.
   /// Then reset the runtime to a clean state ready for the next job.

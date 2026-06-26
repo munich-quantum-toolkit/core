@@ -385,32 +385,32 @@ bool __quantum__rt__read_result(Result* result) {
 void __quantum__rt__result_record_output(Result* result, const char* label) {
   const bool bit = __quantum__rt__read_result(result);
   auto& runtime = qir::Runtime::getInstance();
-  runtime.outputValue(label, bit ? "1" : "0");
+  runtime.outputValue(bit ? "1" : "0", label);
   // Accumulate new measurement bit.
   runtime.appendMeasurementBit(bit);
 }
 
 void __quantum__rt__bool_record_output(bool value, const char* label) {
-  qir::Runtime::getInstance().outputValue(label, value ? "1" : "0");
+  qir::Runtime::getInstance().outputValue(value ? "1" : "0", label);
 }
 
 void __quantum__rt__int_record_output(int64_t value, const char* label) {
-  qir::Runtime::getInstance().outputValue(label, std::to_string(value));
+  qir::Runtime::getInstance().outputValue(std::to_string(value), label);
 }
 
 void __quantum__rt__float_record_output(double value, const char* label) {
   std::ostringstream oss;
   oss << value;
-  qir::Runtime::getInstance().outputValue(label, oss.str());
+  qir::Runtime::getInstance().outputValue(oss.str(), label);
 }
 
 void __quantum__rt__tuple_record_output(int64_t elementCount,
                                         const char* label) {
-  qir::Runtime::getInstance().outputContainer(label, elementCount);
+  qir::Runtime::getInstance().outputContainer(elementCount, label);
 }
 
 void __quantum__rt__array_record_output(int64_t size, const char* label) {
-  qir::Runtime::getInstance().outputContainer(label, size);
+  qir::Runtime::getInstance().outputContainer(size, label);
 }
 
 } // extern "C"

@@ -180,12 +180,12 @@ auto Runtime::takeState() -> QState {
   return ret;
 }
 
-auto Runtime::outputContainer(const char* label,
-                              int64_t /* elementCount */) const -> void {
+auto Runtime::outputContainer(int64_t /* elementCount */,
+                              const char* label) const -> void {
   *os << (label != nullptr ? label : "") << ":\n";
 }
 
-auto Runtime::outputValue(const char* label, std::string_view valueStr) const
+auto Runtime::outputValue(std::string_view valueStr, const char* label) const
     -> void {
   *os << (label != nullptr ? label : "") << ": " << valueStr << "\n";
 }
