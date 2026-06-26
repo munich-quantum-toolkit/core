@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/QCO/Utils/Eigensolver.h"
 
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
+
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Support/LLVM.h>
@@ -22,13 +24,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <numeric>
 #include <optional>
+#include <tuple>
 #include <utility>
-#include <vector>
 
 namespace mlir::qco {
-namespace {
 // Adapted from John Burkardt's MIT-licensed EISPACK C port (`tred2` / `tql2`):
 // https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
 // Original Fortran: https://netlib.org/eispack/tred2.f,
@@ -266,8 +266,6 @@ static void symmetricTql24(std::array<double, 4>& diag,
   }
 }
 
-} // namespace
-
 [[nodiscard]] SymmetricEigen4
 decomposeSymmetricEigen4(const std::array<double, 16>& symmetric) {
   constexpr std::size_t n = 4;
@@ -291,13 +289,11 @@ decomposeSymmetricEigen4(const Matrix4x4& matrix) {
   return decomposeSymmetricEigen4(matrix.realPart());
 }
 
-namespace {
-
-[[nodiscard]] bool isFiniteComplex(const Complex& value) {
+[[nodiscard]] static bool isFiniteComplex(const Complex& value) {
   return std::isfinite(value.real()) && std::isfinite(value.imag());
 }
 
-[[nodiscard]] double vectorNorm(const llvm::ArrayRef<Complex> values) {
+[[nodiscard]] static double vectorNorm(const llvm::ArrayRef<Complex> values) {
   double sumSq = 0.0;
   for (const Complex& value : values) {
     sumSq += std::norm(value);
@@ -305,7 +301,7 @@ namespace {
   return std::sqrt(sumSq);
 }
 
-void normalizeInPlace(const llvm::MutableArrayRef<Complex> values) {
+static void normalizeInPlace(const llvm::MutableArrayRef<Complex> values) {
   const double norm = vectorNorm(values);
   if (norm <= MATRIX_TOLERANCE) {
     return;
@@ -325,6 +321,8 @@ void normalizeInPlace(const llvm::MutableArrayRef<Complex> values) {
 // Local names: complexEigenStableHypot (pythag), complexEigenComplexSqrt
 // (csroot), complexEigenComplexDivide (cdiv), complexEigenReduceToHessenberg
 // (corth), complexEigenQrSolve (comqr2).
+
+namespace {
 
 /// Row-major `ld x n` matrix view for EISPACK storage (`values[row + col *
 /// ld]`).
@@ -356,7 +354,10 @@ private:
   int ld_;
 };
 
-[[nodiscard]] double complexEigenStableHypot(const double a, const double b) {
+} // namespace
+
+[[nodiscard]] static double complexEigenStableHypot(const double a,
+                                                    const double b) {
   double p = std::max(std::abs(a), std::abs(b));
   if (p != 0.0) {
     double r = std::min(std::abs(a), std::abs(b)) / p;
@@ -375,7 +376,7 @@ private:
   return p;
 }
 
-[[nodiscard]] std::pair<double, double>
+[[nodiscard]] static std::pair<double, double>
 complexEigenComplexSqrt(const double xr, const double xi) {
   const double inputReal = xr;
   const double inputImag = xi;
@@ -406,7 +407,7 @@ complexEigenComplexSqrt(const double xr, const double xi) {
   return {yr, yi};
 }
 
-[[nodiscard]] std::pair<double, double>
+[[nodiscard]] static std::pair<double, double>
 complexEigenComplexDivide(const double dividendReal, const double dividendImag,
                           const double divisorReal, const double divisorImag) {
   const double s = std::abs(divisorReal) + std::abs(divisorImag);
@@ -424,12 +425,13 @@ complexEigenComplexDivide(const double dividendReal, const double dividendImag,
               denom};
 }
 
-void complexEigenReduceToHessenberg(
-    const int leadingDim, const int order, const int rowLow, const int rowHigh,
-    MutableArrayRef<double> matrixRealBuf,
-    MutableArrayRef<double> matrixImagBuf,
-    MutableArrayRef<double> householderRealBuf,
-    MutableArrayRef<double> householderImagBuf) {
+static void
+complexEigenReduceToHessenberg(const int leadingDim, const int order,
+                               const int rowLow, const int rowHigh,
+                               MutableArrayRef<double> matrixRealBuf,
+                               MutableArrayRef<double> matrixImagBuf,
+                               MutableArrayRef<double> householderRealBuf,
+                               MutableArrayRef<double> householderImagBuf) {
   EispackMatrixView matrixReal(matrixRealBuf, leadingDim);
   EispackMatrixView matrixImag(matrixImagBuf, leadingDim);
   const auto householderRealAt =
@@ -531,7 +533,7 @@ void complexEigenReduceToHessenberg(
   }
 }
 
-[[nodiscard]] int
+[[nodiscard]] static int
 complexEigenQrSolve(const int leadingDim, const int order, const int rowLow,
                     const int rowHigh,
                     MutableArrayRef<double> householderRealBuf,
@@ -955,18 +957,18 @@ constexpr int K_COMPLEX_EIGEN4_MATRIX_STORAGE =
     (K_COMPLEX_EIGEN4_LD * K_COMPLEX_EIGEN4_SIZE) + K_COMPLEX_EIGEN4_SIZE + 1;
 constexpr int K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE = K_COMPLEX_EIGEN4_SIZE + 1;
 
-[[nodiscard]] std::size_t eispackMatrixBufferSize(const int leadingDim,
-                                                  const int order) {
+[[nodiscard]] static std::size_t eispackMatrixBufferSize(const int leadingDim,
+                                                         const int order) {
   return (static_cast<std::size_t>(leadingDim) *
           static_cast<std::size_t>(order)) +
          static_cast<std::size_t>(order) + 1U;
 }
 
-[[nodiscard]] std::size_t eispackEigenvalueBufferSize(const int order) {
+[[nodiscard]] static std::size_t eispackEigenvalueBufferSize(const int order) {
   return static_cast<std::size_t>(order) + 1U;
 }
 
-[[nodiscard]] double
+[[nodiscard]] static double
 eigenvectorColumnNorm(const int order, const int col, const int leadingDim,
                       const ArrayRef<double> eigenvectorReal,
                       const ArrayRef<double> eigenvectorImag) {
@@ -980,16 +982,16 @@ eigenvectorColumnNorm(const int order, const int col, const int leadingDim,
   return std::sqrt(normSq);
 }
 
-[[nodiscard]] Complex normalizedEigenvectorEntry(const double real,
-                                                 const double imag,
-                                                 const double norm) {
+[[nodiscard]] static Complex normalizedEigenvectorEntry(const double real,
+                                                        const double imag,
+                                                        const double norm) {
   if (norm > MATRIX_TOLERANCE) {
-    return Complex(real / norm, imag / norm);
+    return {real / norm, imag / norm};
   }
-  return Complex(real, imag);
+  return {real, imag};
 }
 
-[[nodiscard]] ComplexEigen4 assembleComplexEigen4(
+[[nodiscard]] static ComplexEigen4 assembleComplexEigen4(
     const std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE>&
         eigenvalueReal,
     const std::array<double, K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE>&
@@ -1017,7 +1019,7 @@ eigenvectorColumnNorm(const int order, const int col, const int leadingDim,
   return result;
 }
 
-void splitMatrix4x4ToRealImag(
+static void splitMatrix4x4ToRealImag(
     const Matrix4x4& matrix,
     std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& matrixReal,
     std::array<double, K_COMPLEX_EIGEN4_MATRIX_STORAGE>& matrixImag) {
@@ -1031,9 +1033,9 @@ void splitMatrix4x4ToRealImag(
   }
 }
 
-void normalizeVector(SmallVector<Complex>& vector) { normalizeInPlace(vector); }
-
-} // namespace
+static void normalizeVector(SmallVector<Complex>& vector) {
+  normalizeInPlace(vector);
+}
 
 [[nodiscard]] std::optional<ComplexEigen4>
 decomposeComplexEigen4(const Matrix4x4& matrix) {

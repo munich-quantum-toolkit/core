@@ -17,7 +17,11 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <random>
+#include <string>
+#include <utility>
 
 using namespace mlir::qco;
 using namespace std::complex_literals;
@@ -82,16 +86,15 @@ static void verifyMatrix4x4FixedMatchesDynamic() {
   }
 }
 
-namespace {
-
-[[nodiscard]] bool complexesAreApprox(const Complex& lhs, const Complex& rhs,
-                                      const double tol) {
+[[nodiscard]] static bool
+complexesAreApprox(const Complex& lhs, const Complex& rhs, const double tol) {
   return std::abs(lhs - rhs) <= tol;
 }
 
-[[nodiscard]] bool eigenpairsSatisfy(const DynamicMatrix& matrix,
-                                     const ComplexEigen& decomposition,
-                                     const double tol = MATRIX_TOLERANCE) {
+[[nodiscard]] static bool
+eigenpairsSatisfy(const DynamicMatrix& matrix,
+                  const ComplexEigen& decomposition,
+                  const double tol = MATRIX_TOLERANCE) {
   const std::int64_t dim = matrix.rows();
   for (std::size_t colIdx = 0; colIdx < decomposition.eigenvalues.size();
        ++colIdx) {
@@ -112,7 +115,7 @@ namespace {
   return true;
 }
 
-[[nodiscard]] double matrixFrobeniusNorm(const DynamicMatrix& matrix) {
+[[nodiscard]] static double matrixFrobeniusNorm(const DynamicMatrix& matrix) {
   double sumSq = 0.0;
   const std::int64_t dim = matrix.rows();
   for (std::int64_t row = 0; row < dim; ++row) {
@@ -123,8 +126,9 @@ namespace {
   return std::sqrt(sumSq);
 }
 
-[[nodiscard]] double maxEigenpairResidual(const DynamicMatrix& matrix,
-                                          const ComplexEigen& decomposition) {
+[[nodiscard]] static double
+maxEigenpairResidual(const DynamicMatrix& matrix,
+                     const ComplexEigen& decomposition) {
   const std::int64_t dim = matrix.rows();
   double worst = 0.0;
   for (std::size_t colIdx = 0; colIdx < decomposition.eigenvalues.size();
@@ -144,7 +148,8 @@ namespace {
   return worst;
 }
 
-[[nodiscard]] double generalEigenpairTolerance(const DynamicMatrix& matrix) {
+[[nodiscard]] static double
+generalEigenpairTolerance(const DynamicMatrix& matrix) {
   const auto dim =
       static_cast<double>(std::max<std::int64_t>(matrix.rows(), 1));
   const double scale = std::max(1.0, matrixFrobeniusNorm(matrix));
@@ -152,7 +157,7 @@ namespace {
   return std::max(1e-10, 1e-11 * dim * scale);
 }
 
-void expectComplexEigen(const DynamicMatrix& matrix) {
+static void expectComplexEigen(const DynamicMatrix& matrix) {
   const std::optional<ComplexEigen> decomposition = matrix.complexEigen();
   ASSERT_TRUE(decomposition.has_value())
       << "complexEigen failed for " << matrix.rows() << "x" << matrix.cols();
@@ -162,7 +167,7 @@ void expectComplexEigen(const DynamicMatrix& matrix) {
   EXPECT_TRUE(eigenpairsSatisfy(matrix, *decomposition));
 }
 
-void expectGeneralComplexEigen(const DynamicMatrix& matrix) {
+static void expectGeneralComplexEigen(const DynamicMatrix& matrix) {
   const std::optional<ComplexEigen> decomposition = matrix.complexEigen();
   ASSERT_TRUE(decomposition.has_value())
       << "complexEigen failed for " << matrix.rows() << "x" << matrix.cols();
@@ -178,8 +183,8 @@ void expectGeneralComplexEigen(const DynamicMatrix& matrix) {
   EXPECT_TRUE(complexesAreApprox(matrix.trace(), eigenTrace, tol));
 }
 
-[[nodiscard]] DynamicMatrix randomComplexMatrix(const std::int64_t dim,
-                                                std::mt19937& rng) {
+[[nodiscard]] static DynamicMatrix randomComplexMatrix(const std::int64_t dim,
+                                                       std::mt19937& rng) {
   std::uniform_real_distribution dist(-3.0, 3.0);
   DynamicMatrix matrix(dim);
   for (std::int64_t row = 0; row < dim; ++row) {
@@ -190,7 +195,7 @@ void expectGeneralComplexEigen(const DynamicMatrix& matrix) {
   return matrix;
 }
 
-[[nodiscard]] DynamicMatrix diagonalUnitary(const std::int64_t dim) {
+[[nodiscard]] static DynamicMatrix diagonalUnitary(const std::int64_t dim) {
   DynamicMatrix matrix(dim);
   for (std::int64_t i = 0; i < dim; ++i) {
     matrix(i, i) = std::exp(1i * (0.1 * static_cast<double>(i)));
@@ -213,8 +218,6 @@ class ComplexEigenMatrixTest
 
 class ComplexEigenFixedDynamicTest
     : public testing::TestWithParam<FixedDynamicEigenCase> {};
-
-} // namespace
 
 TEST(UnitaryMatrix1x1, FromElementsAndAccess) {
   Matrix1x1 matrix = Matrix1x1::fromElements(Complex{0.5, 0.5});

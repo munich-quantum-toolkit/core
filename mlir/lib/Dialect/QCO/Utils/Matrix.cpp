@@ -17,7 +17,6 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
