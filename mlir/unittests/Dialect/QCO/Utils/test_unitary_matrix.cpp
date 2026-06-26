@@ -211,6 +211,8 @@ static void expectGeneralComplexEigen(const DynamicMatrix& matrix) {
                                  0.0, 1.0, 0.5, -2.0);  // row 3
 }
 
+namespace {
+
 struct ComplexEigenMatrixCase {
   std::string name;
   DynamicMatrix matrix;
@@ -226,6 +228,8 @@ class ComplexEigenMatrixTest
 
 class ComplexEigenFixedDynamicTest
     : public testing::TestWithParam<FixedDynamicEigenCase> {};
+
+} // namespace
 
 TEST(UnitaryMatrix1x1, FromElementsAndAccess) {
   Matrix1x1 matrix = Matrix1x1::fromElements(Complex{0.5, 0.5});
