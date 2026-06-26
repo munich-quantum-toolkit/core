@@ -10,16 +10,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 from qiskit import QuantumCircuit
 
 from mqt.core.ir import QuantumComputation
 from mqt.core.mlir import compile_program
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 MLIR_STRING = r"""module {
   func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
@@ -46,6 +43,15 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 """
+
+
+def test_compile_program_jeff_file() -> None:
+    """Compile a `.jeff` file."""
+    path = Path(__file__).parent.parent / "circuits" / "bell.jeff"
+    result = compile_program(path)
+
+    assert "module" in result
+    assert "func.func" in result
 
 
 def test_compile_program_mlir_string() -> None:
