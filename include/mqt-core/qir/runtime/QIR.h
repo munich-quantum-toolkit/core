@@ -183,11 +183,11 @@ void __quantum__rt__int_record_output(int64_t, const char*);
 void __quantum__rt__float_record_output(double, const char*);
 
 /// Inserts a marker in the generated output indicating that the next
-/// `elementCount` recorded values form the contents of a tuple. The second
+/// \p elementCount recorded values form the contents of a tuple. The second
 /// parameter defines a string label for the tuple.
 void __quantum__rt__tuple_record_output(int64_t elementCount, const char*);
 
-/// Inserts a marker in the generated output indicating that the next `size`
+/// Inserts a marker in the generated output indicating that the next \p size
 /// recorded values form the contents of an array. The second parameter defines
 /// a string label for the array.
 void __quantum__rt__array_record_output(int64_t size, const char*);

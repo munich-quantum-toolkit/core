@@ -86,7 +86,7 @@ protected:
     const auto& [keys, vals] = hist;
     // Both vectors have the same size.
     ASSERT_EQ(keys.size(), vals.size());
-    // Values sum up to the number of SHOTS.
+    // Values sum up to NUM_SHOTS.
     const auto sum = std::accumulate(vals.cbegin(), vals.cend(), size_t{0});
     EXPECT_EQ(sum, NUM_SHOTS);
     // Every key is a NUM_QUBITS-character bit string.
