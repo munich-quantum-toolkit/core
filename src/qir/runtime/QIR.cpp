@@ -15,7 +15,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -399,6 +398,11 @@ void __quantum__rt__int_record_output(int64_t value, const char* label) {
 }
 
 void __quantum__rt__float_record_output(double value, const char* label) {
+  // Use std::ostringstream rather than std::to_string.
+  // std::to_string formats with six digits after the decimal point and
+  // can print 0.000000 for very small numbers.
+  // std::ostringstream uses six significant digits by default and
+  // outputs very small numbers with scientific notation.
   std::ostringstream oss;
   oss << value;
   qir::Runtime::getInstance().outputValue(oss.str(), label);

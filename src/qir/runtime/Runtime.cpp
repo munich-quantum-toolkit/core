@@ -53,7 +53,6 @@ auto Runtime::reset() -> void {
   addressMode = AddressMode::UNKNOWN;
   qRegister.clear();
   rRegister.clear();
-  measurements.clear();
   // NOLINTBEGIN(performance-no-int-to-ptr)
   rRegister.emplace(reinterpret_cast<Result*>(RESULT_ZERO_ADDRESS),
                     ResultStruct{.refcount = 0, .r = false});
