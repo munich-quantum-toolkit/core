@@ -64,7 +64,7 @@ class QDMIEstimator(BaseEstimatorV2):
 
     @property
     def backend(self) -> QDMIBackend:
-        """Return the backend used by this estimator."""
+        """The backend used by the estimator."""
         return self._backend
 
     def run(
@@ -136,7 +136,7 @@ class QDMIEstimator(BaseEstimatorV2):
 
         # Flatten all combinations of bound circuits and measurement preparations
         total_circuits_to_run = []
-        metadata_map = []  # type: list[tuple[tuple[int, ...], complex, NDArray[np.int_]]]
+        metadata_map = []
 
         for index in np.ndindex(*bc_bound_circuits.shape):
             bound_circuit = bc_bound_circuits[index]

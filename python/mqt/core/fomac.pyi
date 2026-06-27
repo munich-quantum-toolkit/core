@@ -117,19 +117,19 @@ class Job:
 
     @property
     def id(self) -> str:
-        """Returns the job ID."""
+        """The job ID."""
 
     @property
     def program_format(self) -> ProgramFormat:
-        """Returns the program format used for the job."""
+        """The format of the submitted program."""
 
     @property
     def program(self) -> str:
-        """Returns the quantum program submitted for the job."""
+        """The submitted program."""
 
     @property
     def num_shots(self) -> int:
-        """Returns the number of shots for the job."""
+        """The number of shots."""
 
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...
