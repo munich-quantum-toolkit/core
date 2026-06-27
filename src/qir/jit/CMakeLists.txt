@@ -42,11 +42,4 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime ${llvm_native_libs})
-
-  # Add to list of MQT Core targets
-  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
-
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)

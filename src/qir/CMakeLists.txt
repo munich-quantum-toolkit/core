@@ -15,7 +15,3 @@ add_subdirectory(runtime)
 if(BUILD_MQT_CORE_QIR_RUNNER)
   add_subdirectory(runner)
 endif()
-
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
