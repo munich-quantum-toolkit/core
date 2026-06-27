@@ -81,7 +81,7 @@ class Session:
 class Job:
     """A job represents a submitted quantum program execution."""
 
-    def check(self) -> Job.Status:
+    def check(self) -> Status:
         """Returns the current status of the job."""
 
     def wait(self, timeout: int = 0) -> bool:
@@ -206,7 +206,7 @@ class Device:
     def version(self) -> str:
         """Returns the version of the device."""
 
-    def status(self) -> Device.Status:
+    def status(self) -> Status:
         """Returns the current status of the device."""
 
     def library_version(self) -> str:
@@ -215,19 +215,19 @@ class Device:
     def qubits_num(self) -> int:
         """Returns the number of qubits available on the device."""
 
-    def sites(self) -> list[Device.Site]:
+    def sites(self) -> list[Site]:
         """Returns the list of all sites (zone and regular sites) available on the device."""
 
-    def regular_sites(self) -> list[Device.Site]:
+    def regular_sites(self) -> list[Site]:
         """Returns the list of regular sites (without zone sites) available on the device."""
 
-    def zones(self) -> list[Device.Site]:
+    def zones(self) -> list[Site]:
         """Returns the list of zone sites (without regular sites) available on the device."""
 
-    def operations(self) -> list[Device.Operation]:
+    def operations(self) -> list[Operation]:
         """Returns the list of operations supported by the device."""
 
-    def coupling_map(self) -> list[tuple[Device.Site, Device.Site]] | None:
+    def coupling_map(self) -> list[tuple[Site, Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
 
     def needs_calibration(self) -> int | None:
