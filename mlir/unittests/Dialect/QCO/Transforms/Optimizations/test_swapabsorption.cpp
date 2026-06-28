@@ -145,3 +145,28 @@ TEST_F(SwapAbsorbPassTest, PassReordersCircuitWithMultipleLeadingSwap) {
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(swapModule.get(), reference.get()));
 }
+
+TEST_F(SwapAbsorbPassTest, PassReordersCircuitWithDependentSwap) {
+  auto q0 = programBuilder.allocQubit();
+  auto q1 = programBuilder.allocQubit();
+  auto q2 = programBuilder.allocQubit();
+  std::tie(q0, q1) = programBuilder.swap(q0, q1);
+  std::tie(q1, q2) = programBuilder.swap(q1, q2);
+  q0 = programBuilder.x(q0);
+  q1 = programBuilder.y(q1);
+  q2 = programBuilder.z(q2);
+  swapModule = programBuilder.finalize();
+
+  auto qRef00 = referenceBuilder.allocQubit();
+  auto qRef10 = referenceBuilder.allocQubit();
+  auto qRef20 = referenceBuilder.allocQubit();
+  auto qRef01 = referenceBuilder.x(qRef10);
+  auto qRef11 = referenceBuilder.y(qRef20);
+  auto qRef21 = referenceBuilder.z(qRef00);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(applySwapAbsorbPass(swapModule.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(swapModule.get(), reference.get()));
+}
