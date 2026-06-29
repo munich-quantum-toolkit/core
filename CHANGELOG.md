@@ -12,6 +12,8 @@ with the exception that minor releases may include breaking changes.
 
 ### Added
 
+- ✨ Add an `absorb-swaps` pass for absorbing initial SWAPs ([#1750])
+  ([**@jmoosburger**], [**@MatthiasReumann**], [**@burgholzer**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
   for fusing compile-time single-qubit unitary runs via Euler resynthesis
   ([#1672]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -613,6 +615,7 @@ changelogs._
 [#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
 [#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
 [#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
+[#1750]: https://github.com/munich-quantum-toolkit/core/pull/1750
 [#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
 [#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
@@ -861,6 +864,7 @@ changelogs._
 [**@keefehuang**]: https://github.com/keefehuang
 [**@J4MMlE**]: https://github.com/J4MMlE
 [**@rturrado**]: https://github.com/rturrado
+[**@jmoosburger**]: https://github.com/jmoosburger
 
 <!-- General links -->
 
