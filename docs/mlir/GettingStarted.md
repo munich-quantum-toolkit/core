@@ -433,6 +433,7 @@ qco.sink %q0_2 : !qco.qubit
 Moving on from one-qubit gates, let us apply a controlled-X operation.
 To that end, we allocate a second qubit and use the `ctrl` modifier operation of the respective dialect to implement the controlled-X.
 By using modifiers, arbitrary (multi-)controlled gates can be represented without having to explicitly define them.
+Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
 
 ::::{grid} 2
 :::{grid-item}
@@ -443,10 +444,10 @@ By using modifiers, arbitrary (multi-)controlled gates can be represented withou
 %q1 = qc.alloc : !qc.qubit
 
 qc.h %q0 : !qc.qubit
-qc.ctrl(%q0) {
-    qc.x %q1 : !qc.qubit
+qc.ctrl(%q0) targets(%arg0 = %q1) {
+    qc.x %arg0 : !qc.qubit
 
-} : !qc.qubit
+} : {!qc.qubit}, {!qc.qubit}
 
 %c0 = qc.measure %q0 : !qc.qubit -> i1
 %c1 = qc.measure %q1 : !qc.qubit -> i1
@@ -503,12 +504,6 @@ For instance, the controlled-X operation depends on the application of the Hadam
 This is especially useful for gate cancellation: if one gate is the inverse of another, cancel both.
 Consequently, the expressive data-flow representation is what makes the QCO dialect so powerful for optimization and, more generally, algorithms.
 
-However, that expressiveness also increases syntax complexity. This is best seen in the `qco.ctrl` operation:
-
-- The input target qubit must be explicitly specified and is aliased to the block argument `%arg0`.
-- The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield` to return the resulting values to the outer scope.
-- Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
-
 The following figure depicts the data-flow of the `ctrl` modifier.
 
 ```{figure} ../_static/mlir/ctrl-modifier.svg
@@ -526,6 +521,62 @@ The data-flow of the `ctrl` modifier.
 
 The data-flow of the `ctrl` modifier.
 ```
+
+The `qco.ctrl` operation also supports multiple targets. The following two snippets apply a CXX gate. 
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+%q0 = qc.alloc : !qc.qubit
+%q1 = qc.alloc : !qc.qubit
+%q2 = qc.alloc : !qc.qubit
+
+qc.h %q0 : !qc.qubit
+qc.ctrl(%q0) targets(%arg0 = %q1, %arg1 = %q2) {
+    qc.x %arg0 : !qc.qubit
+    qc.x %arg1 : !qc.qubit
+    qc.yield
+} : {!qc.qubit}, {!qc.qubit, !qc.qubit}
+
+%c0 = qc.measure %q0 : !qc.qubit -> i1
+%c1 = qc.measure %q1 : !qc.qubit -> i1
+%c2 = qc.measure %q2 : !qc.qubit -> i1
+
+qc.dealloc %q0 : !qc.qubit
+qc.dealloc %q1 : !qc.qubit
+qc.dealloc %q2 : !qc.qubit
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+%q0_0 = qco.alloc : !qco.qubit
+%q1_0 = qco.alloc : !qco.qubit
+%q2_0 = qco.alloc : !qco.qubit
+
+%q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+%q0_2, %q1_1, %q2_1 = qco.ctrl(%q0_1) targets (%arg0 = %q1_0, %arg1 = %q2_0) {
+    %q1_1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+    %q2_1 = qco.x %arg1 : !qco.qubit -> !qco.qubit
+    qco.yield %q1_1, %q2_1
+} : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+
+%q0_3, %c0 = qco.measure %q0_2 : !qco.qubit
+%q1_2, %c1 = qco.measure %q1_1 : !qco.qubit
+%q2_2, %c2 = qco.measure %q2_1 : !qco.qubit
+
+qco.sink %q0_3 : !qco.qubit
+qco.sink %q1_2 : !qco.qubit
+qco.sink %q2_2 : !qco.qubit
+```
+
+:::
+::::
 
 In many front-end quantum languages, there is a concept of a register, that is, a collection of qubits.
 The QC and QCO dialects use the `memref` and `qtensor` dialects to describe these constructs, respectively, where the latter is part of the MQT Compiler Collection.
@@ -549,15 +600,15 @@ The following snippets construct the three-qubit [GHZ](https://en.wikipedia.org/
 
 qc.h %q0 : !qc.qubit
 
-qc.ctrl(%q0) {
-    qc.x %q1 : !qc.qubit
+qc.ctrl(%q0) targets(%arg0 = %q1) {
+    qc.x %arg0 : !qc.qubit
 
-} : !qc.qubit
+} : {!qc.qubit}, {!qc.qubit}
 
-qc.ctrl(%q0) {
-    qc.x %q2 : !qc.qubit
+qc.ctrl(%q0) targets(%arg0 = %q2){
+    qc.x %arg0 : !qc.qubit
 
-} : !qc.qubit
+} : {!qc.qubit}, {!qc.qubit}
 
 
 
@@ -631,10 +682,10 @@ qc.h %q0 : !qc.qubit
 scf.for %iv = %c1 to %N step %c1 {
   %qi = memref.load %r0[%iv] : memref<?x!qc.qubit>
 
-  qc.ctrl(%q0) {
-    qc.x %qi : !qc.qubit
+  qc.ctrl(%q0) targets(%arg0 = %qi) {
+    qc.x %arg0 : !qc.qubit
 
-  } : !qc.qubit
+  } : {!qc.qubit}, {!qc.qubit}
 
 
 
@@ -701,10 +752,10 @@ func.func @ghz(%N: index) {
   scf.for %iv = %c1 to %N step %c1 {
     %qi = memref.load %r0[%iv] : memref<?x!qc.qubit>
 
-    qc.ctrl(%q0) {
-      qc.x %qi : !qc.qubit
+    qc.ctrl(%q0) targets(%arg0 = %qi) {
+      qc.x %arg0 : !qc.qubit
 
-    } : !qc.qubit
+    } : {!qc.qubit}, {!qc.qubit}
 
 
 
@@ -1106,12 +1157,12 @@ module {
 
     qc.h %0 : !qc.qubit
 
-    qc.ctrl(%0) {
-      qc.x %1 : !qc.qubit
-    } : !qc.qubit
-    qc.ctrl(%1) {
-      qc.x %2 : !qc.qubit
-    } : !qc.qubit
+    qc.ctrl(%0) targets (%arg0 = %1) {
+      qc.x %arg0 : !qc.qubit
+    } : {!qc.qubit}, {!qc.qubit}
+    qc.ctrl(%1) targets (%arg0 = %2) {
+      qc.x %arg0 : !qc.qubit
+    } : {!qc.qubit}, {!qc.qubit}
 
     qc.barrier %0, %1, %2 : !qc.qubit, !qc.qubit, !qc.qubit
     %3 = qc.measure("c", 3, 0) %0 : !qc.qubit -> i1
