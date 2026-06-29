@@ -149,9 +149,8 @@ static mlir::LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   if constexpr (std::is_same_v<ModuleType, mlir::ModuleOp>) {
     if (filename == "-") {
       mod.print(output->os());
-    } else if (writeBytecodeToFile(mod, output->os()).failed()) {
-      llvm::errs() << "Failed to write bytecode to file: " << filename << "\n";
-      return mlir::failure();
+    } else {
+      writeBytecodeToFile(mod, output->os());
     }
   } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
     if (filename == "-") {
@@ -256,11 +255,9 @@ int main(int argc, char** argv) {
       return 1;
     }
     if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
-      llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
       return 1;
     }
   } else if (writeOutput<ModuleOp>(mod.get(), outputFilename).failed()) {
-    llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
     return 1;
   }
 
