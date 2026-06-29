@@ -6,5 +6,6 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(Decomposition)
 add_subdirectory(Mapping)
 add_subdirectory(Optimizations)

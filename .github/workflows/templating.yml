@@ -16,7 +16,7 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - id: read-release-drafter-categories
         run: |
           JSON_CONTENT=$(cat .github/workflow_inputs/release_drafter_categories.json | jq -c .)
@@ -24,9 +24,9 @@ jobs:
       - id: create-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.APP_ID }}
+          client-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: munich-quantum-toolkit/templates@58aa931467691cea6d910016e1c75ab83780bc54 # v1.2.0
+      - uses: munich-quantum-toolkit/templates@7fe3464fde16330f8d452127a16e29019d7fc81c # v1.3.1
         with:
           token: ${{ steps.create-token.outputs.token }}
           name: Core
