@@ -1266,6 +1266,8 @@ struct CancelConsecutiveHadamardsPattern final : OpRewritePattern<HOp> {
     rewriter.replaceAllUsesWith(
       /*from= */nextOp.getOutputQubit(0),
       /*to= */op.getInputQubit(0));
+    rewriter.eraseOp(nextOp);
+    rewriter.eraseOp(op);
   }
 };
 ```
