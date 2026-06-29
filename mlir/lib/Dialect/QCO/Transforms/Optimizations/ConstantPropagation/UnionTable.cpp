@@ -82,6 +82,7 @@ bool UnionTable::areStatesAllTop() {
 void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
                                const std::span<Value> newQuantumTargets,
                                const std::span<Value> ctrlsQuantum,
+                               const std::span<Value> newCtrlsQuantum,
                                const std::span<Value> posCtrlsClassical,
                                const std::span<Value> negCtrlsClassical,
                                const std::span<Value> params) {
@@ -128,6 +129,7 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
     }
   }
   replaceValuesGlobally(targets, newQuantumTargets);
+  replaceValuesGlobally(ctrlsQuantum, newCtrlsQuantum);
 }
 
 void UnionTable::propagateMeasurement(
