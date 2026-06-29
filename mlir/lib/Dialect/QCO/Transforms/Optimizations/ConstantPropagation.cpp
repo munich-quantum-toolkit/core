@@ -11,13 +11,14 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Optimizations/ConstantPropagation/UnionTable.hpp"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 
-#include <mlir/Dialect/MemRef/IR/MemRefOps.h.inc>
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_CONSTANTPROPAGATION
@@ -60,9 +61,74 @@ bool moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
   return changed;
 }
 
+void removeOperation(UnitaryOpInterface* op, PatternRewriter& rewriter) {
+  for (const auto outQubit : op->getOutputQubits()) {
+    rewriter.replaceAllUsesWith(outQubit, op->getInputForOutput(outQubit));
+  }
+  rewriter.eraseOp(*op);
+}
+
+WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
+                          const std::span<Value> posClassicalCtrls,
+                          const std::span<Value> negClassicalCtrls) {
+  if (!posClassicalCtrls.empty() || !negClassicalCtrls.empty()) {
+    throw std::logic_error("Cannot handle constant operation in conditional "
+                           "branches during constant propagation.");
+  }
+
+  Value const res = op.getResult();
+  auto attr = op.getValue();
+  if (const auto intAttr = dyn_cast<IntegerAttr>(attr)) {
+    ut->propagateIntAlloc(res, intAttr.getInt());
+  }
+  if (const auto doubleAttr = dyn_cast<FloatAttr>(attr)) {
+    ut->propagateDoubleAlloc(res, doubleAttr.getValueAsDouble());
+  }
+  if (const auto boolAttr = dyn_cast<BoolAttr>(attr)) {
+    const bool v = boolAttr.getValue();
+    if (v) {
+      ut->propagateIntAlloc(res, 1);
+    } else {
+      ut->propagateIntAlloc(res, 0);
+    }
+  }
+  return WalkResult::advance();
+}
+
+WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
+                         const std::span<Value> ctrlsQuantum,
+                         const std::span<Value> posClassicalCtrls,
+                         const std::span<Value> negClassicalCtrls,
+                         PatternRewriter& rewriter,
+                         std::span<Operation*>& worklist) {
+  if (isa<IdOp>(op) || isa<ZOp>(op) || isa<SOp>(op) || isa<SdgOp>(op) ||
+      isa<TOp>(op) || isa<TdgOp>(op)) {
+    const auto addedGlobalPhase =
+        ut->globalPhaseThatIsAdded(*op, op->getInputQubit(0), ctrlsQuantum,
+                                   posClassicalCtrls, negClassicalCtrls);
+    if (addedGlobalPhase.has_value()) {
+      std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
+      const auto phase = addedGlobalPhase.value();
+      if (std::norm(phase) > 1e-4) {
+        GPhaseOp::create(rewriter, op->getLoc(), phase);
+      }
+      removeOperation(op, rewriter);
+    }
+  }
+
+  const auto targets = op->getInputTargets();
+  const auto results = op->getOutputTargets();
+  std::vector<Value> targetValues = {targets.begin(), targets.end()};
+  std::vector<Value> resultValues = {results.begin(), results.end()};
+  ut->propagateGate(*op, targetValues, resultValues, ctrlsQuantum,
+                    posClassicalCtrls, negClassicalCtrls);
+
+  return WalkResult::advance();
+}
+
 LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
-                                     std::span<Operation*> worklist,
-                                     const std::span<Value> quantumCtrls,
+                                     std::span<Operation*>& worklist,
+                                     const std::span<Value> ctrlsQuantum,
                                      const std::span<Value> posClassicalCtrls,
                                      const std::span<Value> negClassicalCtrls) {
   /// Iterate work-list.
@@ -74,93 +140,121 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
     if (curr == nullptr) {
       continue; // Skip erased ops.
     }
+    auto n = curr->getName().stripDialect().str();
+    std::string oName =
+        "Op: " + curr->getName().getStringRef().str() +
+        " dialect: " + curr->getName().getDialectNamespace().str();
 
     rewriter.setInsertionPoint(curr);
 
-    // const auto res =
-    //     TypeSwitch<Operation*, WalkResult>(curr)
-    //         /// mqtopt Dialect
-    //         .Case<UnitaryOpInterface>([&](const UnitaryOpInterface op) {
-    //           return handleUnitary(ut, op, posClassicalCtrls,
-    //           negClassicalCtrls,
-    //                                rewriter);
-    //         })
-    //         .Case<ResetOp>([&](const ResetOp op) {
-    //           return handleReset(ut, op, posClassicalCtrls,
-    //           negClassicalCtrls);
-    //         })
-    //         .Case<MeasureOp>([&](const MeasureOp op) {
-    //           return handleMeasure(ut, op, posClassicalCtrls,
-    //                                negClassicalCtrls);
-    //         })
-    //         .Case<AllocOp>([&](const AllocOp op) {
-    //           addedAtLeastOneQubit = true;
-    //           return handleQubitAlloc(ut, op);
-    //         })
-    //         .Case<StaticOp>(
-    //             [&](const StaticOp op) { return handleStaticOp(ut, op); })
-    //         .Case<SinkOp>([&]([[maybe_unused]] SinkOp op) {
-    //           return WalkResult::advance();
-    //         })
-    //         /// built-in Dialect
-    //         .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
-    //           return WalkResult::advance();
-    //         })
-    //         /// memref Dialect
-    //         .Case<memref::AllocOp>(
-    //             [&](const memref::AllocOp op) { return handleAlloc(ut, op);
-    //             })
-    //         .Case<memref::AllocaOp>([&](const memref::AllocaOp op) {
-    //           return handleAlloca(ut, op);
-    //         })
-    //         .Case<memref::DeallocOp>(
-    //             [&]([[maybe_unused]] const memref::DeallocOp op) {
-    //               return WalkResult::advance();
-    //             })
-    //         .Case<memref::LoadOp>([&](const memref::LoadOp op) {
-    //           addedAtLeastOneQubit = true;
-    //           return handleLoad(ut, op);
-    //         })
-    //         .Case<memref::StoreOp>([&](const memref::StoreOp op) {
-    //           return handleStore(ut, op, posClassicalCtrls,
-    //           negClassicalCtrls);
-    //         })
-    //         // arith dialect
-    //         .Case<arith::ConstantOp>([&](const arith::ConstantOp op) {
-    //           return handleConstant(qcp, op, posClassicalCtrls,
-    //                                 negClassicalCtrls);
-    //         })
-    //         .Case<arith::XOrIOp>(
-    //             [&](const arith::XOrIOp op) { return handleXOrIOp(qcp, op);
-    //             })
-    //         .Case<arith::AndIOp>(
-    //             [&](const arith::AndIOp op) { return handleAndIOp(qcp, op);
-    //             })
-    //         /// func Dialect
-    //         .Case<func::FuncOp>([&](const func::FuncOp op) {
-    //           return handleFunc(qcp, op, rewriter);
-    //         })
-    //         .Case<func::ReturnOp>([&]([[maybe_unused]] func::ReturnOp op) {
-    //           return WalkResult::advance();
-    //         })
-    //         /// scf Dialect
-    //         .Case<scf::ForOp>([&](scf::ForOp) { return handleFor(); })
-    //         .Case<scf::IfOp>([&](const scf::IfOp op) {
-    //           return handleIf(qcp, op, worklist, posClassicalCtrls,
-    //                           negClassicalCtrls, rewriter);
-    //         })
-    //         .Case<scf::YieldOp>([&]([[maybe_unused]] scf::YieldOp op) {
-    //           return WalkResult::advance();
-    //         })
-    //         /// Skip the rest.
-    //         .Default([](auto) {
-    //           throw std::runtime_error("Unsupported operation");
-    //           return WalkResult::interrupt();
-    //         });
+    const auto res =
+        TypeSwitch<Operation*, WalkResult>(curr)
+            /// qco Dialect
+            .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+              return handleUnitary(ut, &op, {}, posClassicalCtrls,
+                                   negClassicalCtrls, rewriter, worklist);
+            })
+            //         .Case<ResetOp>([&](const ResetOp op) {
+            //           return handleReset(ut, op, posClassicalCtrls,
+            //           negClassicalCtrls);
+            //         })
+            //         .Case<MeasureOp>([&](const MeasureOp op) {
+            //           return handleMeasure(ut, op, posClassicalCtrls,
+            //                                negClassicalCtrls);
+            //         })
+            .Case<AllocOp>([&](const AllocOp op) {
+              addedAtLeastOneQubit = true;
+              ut->propagateQubitAlloc(op->getOperand(0));
+              return WalkResult::advance();
+            })
+            //         .Case<StaticOp>(
+            //             [&](const StaticOp op) { return handleStaticOp(ut,
+            //             op); })
+            .Case<SinkOp>([&]([[maybe_unused]] SinkOp op) {
+              return WalkResult::advance();
+            })
+            //         .Case<IfOp>([&](const IfOp op) {
+            //           return handleIf(qcp, op, worklist, posClassicalCtrls,
+            //                           negClassicalCtrls, rewriter);
+            //         })
+            //         .Case<YieldOp>([&]([[maybe_unused]] YieldOp op) {
+            //           return WalkResult::advance();
+            //         })
+            //         /// built-in Dialect
+            //         .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
+            //           return WalkResult::advance();
+            //         })
+            // qtensor dialect
+            .Case<qtensor::AllocOp>([&]([[maybe_unused]] qtensor::AllocOp op) {
+              return WalkResult::advance();
+            })
+            .Case<qtensor::DeallocOp>(
+                [&]([[maybe_unused]] qtensor::DeallocOp op) {
+                  return WalkResult::advance();
+                })
+            .Case<qtensor::ExtractOp>([&](const qtensor::ExtractOp op) {
+              addedAtLeastOneQubit = true;
+              ut->propagateQubitAlloc(op->getResult(1));
+              return WalkResult::advance();
+            })
+            .Case<qtensor::InsertOp>(
+                [&]([[maybe_unused]] qtensor::InsertOp op) {
+                  return WalkResult::advance();
+                })
+            // memref Dialect
+            // .Case<memref::AllocOp>([&](const memref::AllocOp op) {
+            //   addedAtLeastOneQubit = true;
+            //   ut->propagateQubitAlloc(op->getOpResult(0));
+            //   return WalkResult::advance();
+            // })
+            //         .Case<memref::AllocaOp>([&](const memref::AllocaOp op) {
+            //           return handleAlloca(ut, op);
+            //         })
+            //         .Case<memref::DeallocOp>(
+            //             [&]([[maybe_unused]] const memref::DeallocOp op) {
+            //               return WalkResult::advance();
+            //             })
+            //         .Case<memref::LoadOp>([&](const memref::LoadOp op) {
+            //           addedAtLeastOneQubit = true;
+            //           return handleLoad(ut, op);
+            //         })
+            //         .Case<memref::StoreOp>([&](const memref::StoreOp op) {
+            //           return handleStore(ut, op, posClassicalCtrls,
+            //           negClassicalCtrls);
+            //         })
+            // arith dialect
+            .Case<arith::ConstantOp>([&](const arith::ConstantOp op) {
+              return handleConstant(ut, op, posClassicalCtrls,
+                                    negClassicalCtrls);
+            })
+            //         .Case<arith::XOrIOp>(
+            //             [&](const arith::XOrIOp op) { return
+            //             handleXOrIOp(qcp, op);
+            //             })
+            //         .Case<arith::AndIOp>(
+            //             [&](const arith::AndIOp op) { return
+            //             handleAndIOp(qcp, op);
+            //             })
+            // func Dialect
+            .Case<func::FuncOp>([&](const func::FuncOp op) {
+              if (!isEntryPoint(op)) {
+                throw std::domain_error(
+                    "Constant propagation does not support nested functions.");
+                return WalkResult::interrupt();
+              }
+              return WalkResult::advance();
+            })
+            .Case<func::ReturnOp>([&]([[maybe_unused]] func::ReturnOp op) {
+              return WalkResult::advance();
+            })
+            .Default([](auto) {
+              throw std::runtime_error("Unsupported operation");
+              return WalkResult::interrupt();
+            });
 
-    // if (res.wasInterrupted()) {
-    //   return failure();
-    // }
+    if (res.wasInterrupted()) {
+      return failure();
+    }
   }
   return success();
 }
@@ -204,7 +298,9 @@ LogicalResult applyCP(ModuleOp module, MLIRContext* ctx) {
   // TODO: Take maximum from params
   auto ut = UnionTable(16, 4);
 
-  return iterateThroughWorklist(rewriter, &ut, worklist, {}, {}, {});
+  std::span wl = {worklist.begin(), worklist.end()};
+
+  return iterateThroughWorklist(rewriter, &ut, wl, {}, {}, {});
 }
 
 /**

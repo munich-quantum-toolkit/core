@@ -61,15 +61,6 @@ protected:
     pm.addPass(createConstantPropagation());
     return pm.run(module);
   }
-
-  /**
-   * @brief Adds the canonicalizerPass to the current context and runs it.
-   */
-  static LogicalResult runCanonicalizerPass(ModuleOp module) {
-    PassManager pm(module.getContext());
-    pm.addPass(createCanonicalizerPass());
-    return pm.run(module);
-  }
 };
 
 } // namespace
@@ -109,7 +100,6 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -131,7 +121,6 @@ TEST_F(QCOConstantPropagationTest, testDontRemoveIfTargetInSuperposition) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -166,7 +155,6 @@ TEST_F(QCOConstantPropagationTest, testRemoveImpliedQubits) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -193,7 +181,6 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableQuantumCombination) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -223,7 +210,6 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -258,7 +244,6 @@ TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionalIfItsZero) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -291,7 +276,6 @@ TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionalIfItsOne) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -333,7 +317,6 @@ TEST_F(QCOConstantPropagationTest, testDoNotRemoveClassicalConditional) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -363,7 +346,6 @@ TEST_F(QCOConstantPropagationTest,
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -403,7 +385,6 @@ TEST_F(QCOConstantPropagationTest, testEquivalentClassicalAndQuantumControl) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -449,7 +430,6 @@ TEST_F(QCOConstantPropagationTest, testClassicalImpliesQuantum) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -476,7 +456,6 @@ TEST_F(QCOConstantPropagationTest, testReplaceSingleQubitPhaseGatePlusOne) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -498,11 +477,10 @@ TEST_F(QCOConstantPropagationTest, testReplaceSingleQubitPhaseGateMinusOne) {
   qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[0] = referenceBuilder.z(qRef[0]);
   qRef[0] = referenceBuilder.h(qRef[0]);
-  referenceBuilder.gphase(-1.0);
+  referenceBuilder.gphase(std::numbers::pi);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -523,7 +501,6 @@ TEST_F(QCOConstantPropagationTest, testRemoveMultiQubitPhaseGatePlusOne) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -543,11 +520,10 @@ TEST_F(QCOConstantPropagationTest, testRemoveMultiQubitPhaseGateMinusOne) {
   auto qRef = referenceBuilder.allocQubitRegister(2);
   qRef[0] = referenceBuilder.x(qRef[0]);
   referenceBuilder.cx(qRef[0], qRef[1]);
-  referenceBuilder.gphase(-1.0);
+  referenceBuilder.gphase(std::numbers::pi);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -573,7 +549,6 @@ TEST_F(QCOConstantPropagationTest, testDoNotRemoveMultiQubitPhaseGate) {
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
