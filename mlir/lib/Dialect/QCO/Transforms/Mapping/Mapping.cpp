@@ -712,6 +712,7 @@ private:
       // Note that this assumes that the coupling graph is directed, but
       // symmetric (essentially: undirected).
 
+      f.clear();
       for (const auto u : device->qubits()) {
         for (const auto v : device->neighboursOf(u)) {
           if (shouldAddEdge(u, v)) {
@@ -763,9 +764,7 @@ private:
       }
 
       assert(found);
-
-      f.clear();
-    };
+    }
 
     return swaps;
   }
