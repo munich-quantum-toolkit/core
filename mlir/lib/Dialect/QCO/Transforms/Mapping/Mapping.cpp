@@ -706,18 +706,22 @@ private:
              device->distanceBetween(u, hwGoal);
     };
 
-    do {
-      f.clear();
+    while (true) {
 
       // Build F-graph: Add edges to F for each edge in the coupling graph.
       // Note that this assumes that the coupling graph is directed, but
       // symmetric (essentially: undirected).
+
       for (const auto u : device->qubits()) {
         for (const auto v : device->neighboursOf(u)) {
           if (shouldAddEdge(u, v)) {
             f.addEdge(u, v);
           }
         }
+      }
+
+      if (f.empty()) {
+        break;
       }
 
       // Try to find a directed cycle in the F graph. If there is one,
@@ -740,18 +744,28 @@ private:
       // location (by one) and increases v's distance from 0 (already at the
       // correct location) to one.
 
+      bool found{false};
       for (const auto u : f.getNodes()) {
         if (f.getDegree(u) != 0) {
           for (const auto v : f.getNeighbours(u)) {
             if (f.getDegree(v) == 0) {
               curr.swap(u, v);
               swaps.emplace_back(u, v);
+              found = true;
               break;
             }
           }
         }
+
+        if (found) {
+          break;
+        }
       }
-    } while (!f.empty());
+
+      assert(found);
+
+      f.clear();
+    };
 
     return swaps;
   }
