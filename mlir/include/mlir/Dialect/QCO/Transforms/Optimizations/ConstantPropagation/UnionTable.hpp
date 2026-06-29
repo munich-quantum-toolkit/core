@@ -483,7 +483,7 @@ public:
    * @returns An optional containing the globally added value, if applicable.
    */
   [[nodiscard("UnionTable::globalPhaseThatIsAdded called but ignored")]]
-  std::optional<std::complex<double>>
+  std::optional<double>
   globalPhaseThatIsAdded(Operation* op, Value target,
                          std::span<Value> ctrlsQuantum = {},
                          std::span<Value> posCtrlsClassical = {},
