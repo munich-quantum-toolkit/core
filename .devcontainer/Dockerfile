@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+FROM mcr.microsoft.com/devcontainers/base:ubuntu26.04
 
 # Installs the basic underlying framework
 RUN apt-get -y update && \
