@@ -81,6 +81,14 @@ and build MQT Core in preparation for a `clang-tidy` run.
 
 If you are on Windows, use the `debug-windows` and `release-windows` presets.
 
+### Dev container
+
+A dev container configuration has been added to provide a consistent local
+development environment.
+Common IDEs like CLion and VS Code can open the repository directly within the
+container.
+This requires a Docker installation, as well as WSL if you are on Windows.
+
 ## [3.6.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.5` to `3.6`.
