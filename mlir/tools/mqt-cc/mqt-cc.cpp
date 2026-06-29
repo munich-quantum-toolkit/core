@@ -14,11 +14,17 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/SystemUtils.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Bytecode/BytecodeWriter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -32,6 +38,9 @@
 #include <mlir/Support/FileUtilities.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Export.h>
 
 #include <string>
 #include <utility>
@@ -89,7 +98,7 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::init(false));
 
 /**
- * @brief Load and parse a .qasm file
+ * @brief Load and parse a `.qasm` file
  */
 static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
                                           MLIRContext* context) {
@@ -107,7 +116,7 @@ static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
 }
 
 /**
- * @brief Load and parse a .mlir file
+ * @brief Load and parse a `.mlir` file
  */
 static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
                                           MLIRContext* context) {
@@ -125,7 +134,7 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
 }
 
 /**
- * @brief Write the module to the output file
+ * @brief Write an MLIR module to an output file
  */
 static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
   std::string errorMessage;
@@ -135,8 +144,34 @@ static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
     return mlir::failure();
   }
 
-  module.print(output->os());
-  output->keep();
+  if (filename == "-") {
+    module->print(output->os());
+    output->keep();
+    return mlir::success();
+  }
+
+  return writeBytecodeToFile(module, output->os());
+}
+
+/**
+ * @brief Write an LLVM module to an output file
+ */
+static mlir::LogicalResult writeOutputLLVM(llvm::Module* module,
+                                           StringRef filename) {
+  std::string errorMessage;
+  const auto output = openOutputFile(filename, &errorMessage);
+  if (!output) {
+    llvm::errs() << errorMessage << "\n";
+    return mlir::failure();
+  }
+
+  if (filename == "-") {
+    module->print(output->os(), nullptr);
+    output->keep();
+  } else {
+    llvm::WriteBitcodeToFile(*module, output->os());
+  }
+
   return mlir::success();
 }
 
@@ -153,6 +188,8 @@ int main(int argc, char** argv) {
       .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
               LLVM::LLVMDialect, memref::MemRefDialect, qc::QCDialect,
               qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
+  registerBuiltinDialectTranslation(registry);
+  registerLLVMDialectTranslation(registry);
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
@@ -213,9 +250,23 @@ int main(int argc, char** argv) {
   }
 
   // Write the output
-  if (writeOutput(module.get(), outputFilename).failed()) {
-    llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
-    return 1;
+  if (convertToQIRBase || convertToQIRAdaptive) {
+    llvm::LLVMContext llvmContext;
+    std::unique_ptr<llvm::Module> llvmModule =
+        translateModuleToLLVMIR(*module, llvmContext);
+    if (!llvmModule) {
+      llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
+      return 1;
+    }
+    if (writeOutputLLVM(llvmModule.get(), outputFilename).failed()) {
+      llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
+      return 1;
+    }
+  } else {
+    if (writeOutput(module.get(), outputFilename).failed()) {
+      llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
+      return 1;
+    }
   }
 
   return 0;
