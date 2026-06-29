@@ -97,6 +97,7 @@ WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
 
 WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
                          const std::span<Value> ctrlsQuantum,
+                         const std::span<Value> newCtrlsQuantum,
                          const std::span<Value> posClassicalCtrls,
                          const std::span<Value> negClassicalCtrls,
                          PatternRewriter& rewriter,
@@ -118,17 +119,38 @@ WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
 
   const auto targets = op->getInputTargets();
   const auto results = op->getOutputTargets();
+  const auto params = op->getParameters();
   std::vector<Value> targetValues = {targets.begin(), targets.end()};
   std::vector<Value> resultValues = {results.begin(), results.end()};
+  std::vector<Value> paramValues = {params.begin(), params.end()};
   ut->propagateGate(*op, targetValues, resultValues, ctrlsQuantum,
-                    posClassicalCtrls, negClassicalCtrls);
+                    newCtrlsQuantum, posClassicalCtrls, negClassicalCtrls,
+                    paramValues);
 
   return WalkResult::advance();
 }
 
+WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
+                        const std::span<Value> posClassicalCtrls,
+                        const std::span<Value> negClassicalCtrls,
+                        PatternRewriter& rewriter,
+                        std::span<Operation*>& worklist) {
+  const auto inputCtrs = op->getInputControls();
+  std::vector<Value> inCtrlValues = {inputCtrs.begin(), inputCtrs.end()};
+  // TODO: Check if gate is executable
+  // TODO: Work on the right qubits in body
+
+  const auto outputCtrls = op->getOutputControls();
+  std::vector<Value> outCtrlValues = {outputCtrls.begin(), outputCtrls.end()};
+
+  auto body = op->getBodyUnitary();
+  return handleUnitary(ut, &body, inCtrlValues, outCtrlValues,
+                       posClassicalCtrls, negClassicalCtrls, rewriter,
+                       worklist);
+}
+
 LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
                                      std::span<Operation*>& worklist,
-                                     const std::span<Value> ctrlsQuantum,
                                      const std::span<Value> posClassicalCtrls,
                                      const std::span<Value> negClassicalCtrls) {
   /// Iterate work-list.
@@ -151,7 +173,7 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
         TypeSwitch<Operation*, WalkResult>(curr)
             /// qco Dialect
             .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-              return handleUnitary(ut, &op, {}, posClassicalCtrls,
+              return handleUnitary(ut, &op, {}, {}, posClassicalCtrls,
                                    negClassicalCtrls, rewriter, worklist);
             })
             //         .Case<ResetOp>([&](const ResetOp op) {
@@ -300,7 +322,7 @@ LogicalResult applyCP(ModuleOp module, MLIRContext* ctx) {
 
   std::span wl = {worklist.begin(), worklist.end()};
 
-  return iterateThroughWorklist(rewriter, &ut, wl, {}, {}, {});
+  return iterateThroughWorklist(rewriter, &ut, wl, {}, {});
 }
 
 /**
