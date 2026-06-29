@@ -385,18 +385,18 @@ UnionTable::getValueThatIsEquivalentToQubit(const Value qubit) const {
   return result;
 }
 
-std::optional<std::complex<double>>
+std::optional<double>
 UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
                                    const std::span<Value> ctrlsQuantum,
                                    const std::span<Value> posCtrlsClassical,
                                    const std::span<Value> negCtrlsClassical) {
   // Diagonal gates w/o parameters: IdOp, ZOp, SOp, SdgOp, TOp, TdgOp
   if (isa<IdOp>(op)) {
-    return std::optional(std::complex<double>(1.0, 0.0));
+    return std::optional(0.0);
   }
   if (!(isa<ZOp>(op) || isa<SOp>(op) || isa<SdgOp>(op) || isa<TOp>(op) ||
         isa<TdgOp>(op))) {
-    return std::optional<std::complex<double>>();
+    return std::optional<double>();
   }
   const auto targetIndex = qubitsToGlobalIndices.at(target);
   const auto targetUte = valuesToEntries.at(target);
@@ -412,11 +412,11 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
   }
 
   if (alwaysZero) {
-    return std::optional(std::complex<double>(1.0, 0.0));
+    return std::optional(0.0);
   }
   if (!alwaysOne && ctrlsQuantum.empty() && posCtrlsClassical.empty() &&
       negCtrlsClassical.empty()) {
-    return std::optional<std::complex<double>>();
+    return std::optional<double>();
   }
 
   const auto participatingEntries = collectParticipatingEntries(
@@ -450,32 +450,31 @@ UnionTable::globalPhaseThatIsAdded(Operation* op, const Value target,
       highestStateAlwaysReached &= !ctrlsZeroProbability;
     }
     if (highestStateReachable && !highestStateAlwaysReached) {
-      return std::optional<std::complex<double>>();
+      return std::optional<double>();
     }
   }
   if (!highestStateReachable) {
-    return std::optional(std::complex<double>(1.0, 0.0));
+    return std::optional(0.0);
   }
   if (!highestStateAlwaysReached) {
-    return std::optional<std::complex<double>>();
+    return std::optional<double>();
   }
 
   // Only highest state reachable, return respective phase
   if (isa<ZOp>(op)) {
-    return std::optional(std::complex<double>(-1.0, 0.0));
+    return std::optional(std::numbers::pi);
   }
   if (isa<SOp>(op)) {
-    return std::optional(std::complex<double>(0.0, 1.0));
+    return std::optional(std::numbers::pi / 2);
   }
   if (isa<SdgOp>(op)) {
-    return std::optional(std::complex<double>(0.0, -1.0));
+    return std::optional(3.0 * std::numbers::pi / 2);
   }
-  constexpr auto inv_sqrt2 = 1.0 / std::numbers::sqrt2;
   if (isa<TOp>(op)) {
-    return std::optional(std::complex<double>(inv_sqrt2, inv_sqrt2));
+    return std::optional(std::numbers::pi / 4);
   }
   // Tdg Op
-  return std::optional(std::complex<double>(inv_sqrt2, -inv_sqrt2));
+  return std::optional(-std::numbers::pi / 2);
 }
 
 SuperfluousResult

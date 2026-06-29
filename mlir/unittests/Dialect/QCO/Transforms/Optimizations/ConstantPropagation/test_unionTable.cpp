@@ -682,7 +682,7 @@ TEST_F(UnionTablePropertiesTest, testMinusOneGlobalPhase) {
   ut.propagateGate(xOp, q2, q5);
   const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, v5, qCtrl);
   EXPECT_TRUE(globalPhase.has_value());
-  EXPECT_EQ(std::complex<double>(-1, 0), globalPhase.value());
+  EXPECT_EQ(std::numbers::pi, globalPhase.value());
 }
 
 TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
@@ -693,7 +693,7 @@ TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
   const auto globalPhase = ut.globalPhaseThatIsAdded(zOp, v2, qCtrl);
   EXPECT_FALSE(emptyGlobalPhase.has_value());
   EXPECT_TRUE(globalPhase.has_value());
-  EXPECT_EQ(std::complex<double>(1, 0), globalPhase.value());
+  EXPECT_EQ(0.0, globalPhase.value());
 }
 
 TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalValue) {
@@ -801,7 +801,7 @@ TEST_F(UnionTablePropertiesTest, globalPhaseOneQubit) {
 
   ASSERT_FALSE(globalPhase0.has_value());
   ASSERT_TRUE(globalPhase1.has_value());
-  ASSERT_EQ(std::complex<double>(-1, 0), globalPhase1.value());
+  ASSERT_EQ(std::numbers::pi, globalPhase1.value());
 }
 
 TEST_F(UnionTablePropertiesTest, noGlobalPhaseTwoQubitsA) {
@@ -834,8 +834,8 @@ TEST_F(UnionTablePropertiesTest, globalPhaseTwoQubits) {
 
   ASSERT_TRUE(globalPhase0.has_value());
   ASSERT_TRUE(globalPhase1.has_value());
-  ASSERT_EQ(std::complex<double>(1, 0), globalPhase0);
-  ASSERT_EQ(std::complex<double>(-1, 0), globalPhase1);
+  ASSERT_EQ(0.0, globalPhase0);
+  ASSERT_EQ(std::numbers::pi, globalPhase1);
 }
 
 TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsA) {
