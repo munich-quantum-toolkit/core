@@ -42,6 +42,7 @@
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Export.h>
 
+#include <memory>
 #include <string>
 #include <utility>
 
