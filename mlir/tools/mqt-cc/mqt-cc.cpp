@@ -117,7 +117,7 @@ static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
 }
 
 /**
- * @brief Load and parse a `.mlir` file
+ * @brief Load and parse an `.mlir` file
  */
 static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
                                           MLIRContext* context) {
