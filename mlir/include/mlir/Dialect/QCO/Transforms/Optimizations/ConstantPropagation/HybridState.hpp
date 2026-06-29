@@ -18,14 +18,9 @@
 #include <mlir/IR/Value.h>
 
 #include <complex>
-#include <cstddef>
-#include <cstdint>
 #include <memory>
-#include <optional>
-#include <ostream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace mlir::qco {

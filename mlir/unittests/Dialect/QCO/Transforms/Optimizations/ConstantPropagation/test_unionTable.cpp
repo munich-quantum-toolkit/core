@@ -41,6 +41,7 @@ protected:
   mlir::Value v7;
   mlir::Value v8;
   mlir::Value v9;
+  mlir::Value v10;
   mlir::Value i0;
   mlir::Value i1;
   mlir::Value i2;
@@ -55,6 +56,7 @@ protected:
   std::vector<mlir::Value> q7;
   std::vector<mlir::Value> q8;
   std::vector<mlir::Value> q9;
+  std::vector<mlir::Value> q10;
 
   UnionTableTest() : programBuilder(&context) {}
 
@@ -67,7 +69,7 @@ protected:
 
     programBuilder.initialize();
 
-    auto q = programBuilder.allocQubitRegister(10);
+    auto q = programBuilder.allocQubitRegister(11);
     hOp = HOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
@@ -85,6 +87,7 @@ protected:
     v7 = q[7];
     v8 = q[8];
     v9 = q[9];
+    v10 = q[10];
 
     q0 = {v0};
     q1 = {v1};
@@ -96,6 +99,7 @@ protected:
     q7 = {v7};
     q8 = {v8};
     q9 = {v9};
+    q10 = {v10};
 
     const auto iAttr = programBuilder.getI64IntegerAttr(0);
 
@@ -136,7 +140,7 @@ TEST_F(UnionTableTest, ApplyHGateToThirdQubit) {
 TEST_F(UnionTableTest, ApplyQuantumControlledGate) {
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, q5);
+  ut.propagateGate(xOp, q6, q7, q5, q8);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
@@ -155,7 +159,7 @@ TEST_F(UnionTableTest, ApplyClassicalControlledGateThatsFalse) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, q5, classicalControl);
+  ut.propagateGate(xOp, q6, q7, q5, q8, classicalControl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
@@ -169,7 +173,7 @@ TEST_F(UnionTableTest, ApplyClassicalControlledGateThatsTrue) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, q5, classicalControl);
+  ut.propagateGate(xOp, q6, q7, q5, q8, classicalControl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
@@ -183,7 +187,7 @@ TEST_F(UnionTableTest, ApplyNegClassicalControlledGateThatsTrue) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, q5, {}, classicalControl);
+  ut.propagateGate(xOp, q6, q7, q5, q8, {}, classicalControl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
@@ -197,7 +201,7 @@ TEST_F(UnionTableTest, ApplyNegClassicalControlledGateThatsFalse) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, q5, {}, classicalControl);
+  ut.propagateGate(xOp, q6, q7, q5, q8, {}, classicalControl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
@@ -212,7 +216,8 @@ TEST_F(UnionTableTest, ApplyPosNegClassicalControlledGateThatsFalse) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, q5, classicalControlOne, classicalControlZero);
+  ut.propagateGate(xOp, q6, q7, q5, q8, classicalControlOne,
+                   classicalControlZero);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 31, HybridStates: {{|10> "
@@ -227,7 +232,7 @@ TEST_F(UnionTableTest, ApplyPosNegClassicalControlledGateThatsTrue) {
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q1, q5);
   ut.propagateGate(xOp, q3, q6);
-  ut.propagateGate(xOp, q6, q7, q5, classicalControlTrue,
+  ut.propagateGate(xOp, q6, q7, q5, q8, classicalControlTrue,
                    classicalControlFalse);
 
   EXPECT_THAT(
@@ -249,7 +254,7 @@ TEST_F(UnionTableTest, ApplyControlledTwoBitGate) {
   ut.propagateIntAlloc(i2, 1);
   ut.propagateGate(hOp, q1, q4);
   ut.propagateGate(xOp, q3, q5);
-  ut.propagateGate(xOp, q5, q6, q4, classicalControlTrue,
+  ut.propagateGate(xOp, q5, q6, q4, q7, classicalControlTrue,
                    classicalControlFalse);
 
   EXPECT_THAT(ut.toString(),
@@ -269,9 +274,9 @@ TEST_F(UnionTableTest, doMeasurementWithOneResult) {
 
 TEST_F(UnionTableTest, doMeasurementWithTwoResults) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
   ut.propagateIntAlloc(i0, 10);
-  ut.propagateMeasurement(v5, v6, i0);
+  ut.propagateMeasurement(v5, v7, i0);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 10, HybridStates: {{|00> "
@@ -282,9 +287,9 @@ TEST_F(UnionTableTest, doMeasurementWithTwoResults) {
 TEST_F(UnionTableTest, doMeasurementWithNegPosCtrl) {
   std::vector ctrl = {i0};
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
   ut.propagateIntAlloc(i0, 0);
-  ut.propagateMeasurement(v5, v6, i0, ctrl);
+  ut.propagateMeasurement(v5, v7, i0, ctrl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
@@ -295,9 +300,9 @@ TEST_F(UnionTableTest, doMeasurementWithNegPosCtrl) {
 TEST_F(UnionTableTest, doMeasurementWithPosNegCtrl) {
   std::vector ctrl = {i0};
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
   ut.propagateIntAlloc(i0, 10);
-  ut.propagateMeasurement(v5, v6, i0, {}, ctrl);
+  ut.propagateMeasurement(v5, v7, i0, {}, ctrl);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr(
@@ -316,8 +321,8 @@ TEST_F(UnionTableTest, doResetWithOneResult) {
 
 TEST_F(UnionTableTest, doResetWithTwoResults) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateReset(v4, v6);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateReset(v6, v7);
 
   EXPECT_THAT(
       ut.toString(),
@@ -326,13 +331,13 @@ TEST_F(UnionTableTest, doResetWithTwoResults) {
 }
 
 TEST_F(UnionTableTest, swapGateApplicationDifferentStates) {
-  std::vector swapTargets = {v6, v2};
-  std::vector swapDestinations = {v7, v8};
+  std::vector swapTargets = {v7, v2};
+  std::vector swapDestinations = {v8, v9};
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateGate(xOp, q5, q6);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateGate(xOp, q5, q7);
   ut.propagateGate(swapOp, swapTargets, swapDestinations);
-  ut.propagateGate(xOp, q7, q9);
+  ut.propagateGate(xOp, q8, q10);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 20, HybridStates: {{|01> -> 0.71, "
@@ -343,11 +348,11 @@ TEST_F(UnionTableTest, swapGateApplicationDifferentStates) {
 }
 
 TEST_F(UnionTableTest, swapGateApplicationSameState) {
-  std::vector swapTargets = {v4, v6};
-  std::vector swapDestinations = {v7, v8};
+  std::vector swapTargets = {v6, v7};
+  std::vector swapDestinations = {v8, v9};
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(hOp, q1, q5, q4);
-  ut.propagateGate(xOp, q5, q6);
+  ut.propagateGate(hOp, q1, q5, q4, q6);
+  ut.propagateGate(xOp, q5, q7);
   ut.propagateGate(swapOp, swapTargets, swapDestinations);
 
   EXPECT_THAT(ut.toString(),
@@ -370,6 +375,7 @@ protected:
   mlir::Value v3;
   mlir::Value v4;
   mlir::Value v5;
+  mlir::Value v6;
   mlir::Value i0;
 
   std::vector<mlir::Value> q0;
@@ -378,6 +384,7 @@ protected:
   std::vector<mlir::Value> q3;
   std::vector<mlir::Value> q4;
   std::vector<mlir::Value> q5;
+  std::vector<mlir::Value> q6;
 
   UnionTableWithoutSetupAllocationsTest()
       : programBuilder(&context), referenceBuilder(&context) {}
@@ -392,7 +399,7 @@ protected:
     programBuilder.initialize();
     referenceBuilder.initialize();
 
-    auto q = programBuilder.allocQubitRegister(6);
+    auto q = programBuilder.allocQubitRegister(7);
     hOp = HOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
@@ -403,6 +410,7 @@ protected:
     v3 = q[3];
     v4 = q[4];
     v5 = q[5];
+    v6 = q[6];
 
     q0 = {v0};
     q1 = {v1};
@@ -410,6 +418,7 @@ protected:
     q3 = {v3};
     q4 = {v4};
     q5 = {v5};
+    q6 = {v6};
 
     const auto iAttr = programBuilder.getI64IntegerAttr(0);
 
@@ -451,9 +460,9 @@ TEST_F(UnionTableWithoutSetupAllocationsTest, doMeasurementsOnTop) {
   ut.propagateQubitAlloc(v1);
   ut.propagateIntAlloc(i0, 10);
   ut.propagateGate(hOp, q0, q2);
-  ut.propagateGate(xOp, q1, q3, q2);
-  ut.propagateGate(hOp, q3, q4); // State enters TOP
-  ut.propagateMeasurement(v4, v5, i0);
+  ut.propagateGate(xOp, q1, q3, q2, q4);
+  ut.propagateGate(hOp, q3, q5); // State enters TOP
+  ut.propagateMeasurement(v5, v6, i0);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
@@ -464,9 +473,9 @@ TEST_F(UnionTableWithoutSetupAllocationsTest, doResetOnTop) {
   ut.propagateQubitAlloc(v0);
   ut.propagateQubitAlloc(v1);
   ut.propagateGate(hOp, q0, q2);
-  ut.propagateGate(xOp, q1, q3, q2);
-  ut.propagateGate(hOp, q3, q4); // State enters TOP
-  ut.propagateReset(v4, v5);
+  ut.propagateGate(xOp, q1, q3, q2, q4);
+  ut.propagateGate(hOp, q3, q5); // State enters TOP
+  ut.propagateReset(v5, v6);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
@@ -480,7 +489,7 @@ TEST_F(UnionTableWithoutSetupAllocationsTest, unifyTooLargeHybridStates) {
   ut.propagateIntAlloc(i0, 10);
   ut.propagateGate(hOp, q0, q3);
   ut.propagateMeasurement(v3, v4, i0);
-  ut.propagateGate(xOp, q1, q5, q4);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 10, HybridStates: {TOP}"));
@@ -508,6 +517,10 @@ protected:
   mlir::Value v8;
   mlir::Value v9;
   mlir::Value v10;
+  mlir::Value v11;
+  mlir::Value v12;
+  mlir::Value v13;
+  mlir::Value v14;
   mlir::Value i0;
   mlir::Value i1;
 
@@ -522,6 +535,10 @@ protected:
   std::vector<mlir::Value> q8;
   std::vector<mlir::Value> q9;
   std::vector<mlir::Value> q10;
+  std::vector<mlir::Value> q11;
+  std::vector<mlir::Value> q12;
+  std::vector<mlir::Value> q13;
+  std::vector<mlir::Value> q14;
 
   UnionTablePropertiesTest() : programBuilder(&context) {}
 
@@ -534,7 +551,7 @@ protected:
 
     programBuilder.initialize();
 
-    auto q = programBuilder.allocQubitRegister(11);
+    auto q = programBuilder.allocQubitRegister(15);
     hOp = HOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
@@ -555,6 +572,10 @@ protected:
     v8 = q[8];
     v9 = q[9];
     v10 = q[10];
+    v11 = q[11];
+    v12 = q[12];
+    v13 = q[13];
+    v14 = q[14];
 
     q0 = {v0};
     q1 = {v1};
@@ -567,6 +588,10 @@ protected:
     q8 = {v8};
     q9 = {v9};
     q10 = {v10};
+    q11 = {v11};
+    q12 = {v12};
+    q13 = {v13};
+    q14 = {v14};
 
     const auto iAttr = programBuilder.getI64IntegerAttr(0);
 
@@ -587,52 +612,53 @@ protected:
 TEST_F(UnionTablePropertiesTest, alwaysZeroOneAreFalse) {
   std::vector ctrl = {i0};
   ut.propagateGate(hOp, q0, q3);
-  ut.propagateGate(xOp, q1, q4, q3);
-  ut.propagateGate(xOp, q2, q5, q4);
-  ut.propagateGate(xOp, q3, q6);
-  ut.propagateMeasurement(v4, v7, i0);
-  ut.propagateGate(hOp, q6, q8, {}, ctrl);
+  ut.propagateGate(xOp, q1, q4, q3, q5);
+  ut.propagateGate(xOp, q2, q6, q4, q7);
+  ut.propagateGate(xOp, q5, q8);
+  ut.propagateMeasurement(v7, v9, i0);
+  ut.propagateGate(hOp, q8, q10, {}, {}, ctrl);
 
-  EXPECT_FALSE(ut.isQubitAlwaysZero(v5));
-  EXPECT_FALSE(ut.isQubitAlwaysOne(v8));
+  EXPECT_FALSE(ut.isQubitAlwaysZero(v6));
+  EXPECT_FALSE(ut.isQubitAlwaysOne(v10));
 }
 
 TEST_F(UnionTablePropertiesTest, alwaysZeroIsTrue) {
   std::vector ctrl = {i0};
   ut.propagateGate(hOp, q0, q3);
-  ut.propagateGate(xOp, q1, q4, q3);
-  ut.propagateGate(xOp, q2, q5, q4);
-  ut.propagateGate(xOp, q3, q6);
-  ut.propagateMeasurement(v4, v7, i0);
-  ut.propagateGate(xOp, q5, q8, {}, ctrl);
-  ut.propagateGate(hOp, q6, q9, {}, ctrl);
+  ut.propagateGate(xOp, q1, q4, q3, q5);
+  ut.propagateGate(xOp, q2, q6, q4, q7);
+  ut.propagateGate(xOp, q5, q8);
+  ut.propagateMeasurement(v7, v9, i0);
+  ut.propagateGate(xOp, q6, q10, {}, {}, ctrl);
+  ut.propagateGate(hOp, q8, q11, {}, {}, ctrl);
 
-  EXPECT_TRUE(ut.isQubitAlwaysZero(v8));
+  EXPECT_TRUE(ut.isQubitAlwaysZero(v10));
 }
 
 TEST_F(UnionTablePropertiesTest, alwaysOneIsTrue) {
   std::vector ctrl = {i0};
-  std::vector qCtrl = {v7, v4};
+  std::vector qCtrl = {v7, v9};
+  std::vector qCtrlNew = {v12, v13};
   ut.propagateGate(hOp, q0, q3);
-  ut.propagateGate(xOp, q1, q4, q3);
-  ut.propagateGate(xOp, q2, q5, q4);
-  ut.propagateGate(xOp, q3, q6);
-  ut.propagateMeasurement(v5, v7, i0);
-  ut.propagateGate(hOp, q6, q8, {}, ctrl);
-  ut.propagateGate(zOp, q8, q9, qCtrl);
-  ut.propagateGate(hOp, q9, q10, {}, ctrl);
+  ut.propagateGate(xOp, q1, q4, q3, q5);
+  ut.propagateGate(xOp, q2, q6, q4, q7);
+  ut.propagateGate(xOp, q5, q8);
+  ut.propagateMeasurement(v6, v9, i0);
+  ut.propagateGate(hOp, q8, q10, {}, {}, ctrl);
+  ut.propagateGate(zOp, q10, q11, qCtrl, qCtrlNew);
+  ut.propagateGate(hOp, q11, q14, {}, {}, ctrl);
 
-  EXPECT_TRUE(ut.isQubitAlwaysOne(v10));
+  EXPECT_TRUE(ut.isQubitAlwaysOne(v14));
 }
 
 TEST_F(UnionTablePropertiesTest, bitAlwaysZeroIsTrueOneIsFalse) {
   std::vector ctrl = {i0};
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateMeasurement(v4, v6, i0);
-  ut.propagateGate(xOp, q5, q7, {}, ctrl);
-  ut.propagateMeasurement(v7, v8, i1);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateMeasurement(v6, v7, i0);
+  ut.propagateGate(xOp, q5, q8, {}, {}, ctrl);
+  ut.propagateMeasurement(v8, v9, i1);
 
   EXPECT_FALSE(ut.isClassicalValueAlwaysTrue(i0));
   EXPECT_TRUE(ut.isClassicalValueAlwaysFalse(i1));
@@ -642,10 +668,10 @@ TEST_F(UnionTablePropertiesTest, bitAlwaysZeroIsFalseOneIsTrue) {
   std::vector ctrl = {i0};
   ut.propagateIntAlloc(i1, 0);
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateMeasurement(v4, v6, i0);
-  ut.propagateGate(xOp, q5, q7, {}, {}, ctrl);
-  ut.propagateMeasurement(v7, v8, i1);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateMeasurement(v6, v7, i0);
+  ut.propagateGate(xOp, q5, q8, {}, {}, {}, ctrl);
+  ut.propagateMeasurement(v8, v9, i1);
 
   EXPECT_TRUE(ut.isClassicalValueAlwaysTrue(i1));
   EXPECT_FALSE(ut.isClassicalValueAlwaysFalse(i0));
@@ -653,25 +679,25 @@ TEST_F(UnionTablePropertiesTest, bitAlwaysZeroIsFalseOneIsTrue) {
 
 TEST_F(UnionTablePropertiesTest, testAllTopAmplitudes) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateGate(xOp, q2, q6, q5);
-  ut.propagateMeasurement(v6, v7, i0);
-  ut.propagateGate(hOp, q4, q8);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateGate(xOp, q2, q7, q5, q8);
+  ut.propagateMeasurement(v7, v9, i0);
+  ut.propagateGate(hOp, q6, q10);
   EXPECT_FALSE(ut.areStatesAllTop());
-  ut.propagateGate(hOp, q5, q9);
+  ut.propagateGate(hOp, q8, q11);
   EXPECT_TRUE(ut.areStatesAllTop());
-  ut.propagateMeasurement(v8, v10, i0);
+  ut.propagateMeasurement(v10, v12, i0);
   EXPECT_TRUE(ut.areStatesAllTop());
 }
 
 TEST_F(UnionTablePropertiesTest, testAllTopHybridStates) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateGate(xOp, q2, q6, q5);
-  ut.propagateMeasurement(v6, v7, i0);
-  ut.propagateGate(hOp, q4, q8);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateGate(xOp, q2, q7, q5, q8);
+  ut.propagateMeasurement(v7, v9, i0);
+  ut.propagateGate(hOp, q6, q10);
   EXPECT_FALSE(ut.areStatesAllTop());
-  ut.propagateMeasurement(v8, v10, i0);
+  ut.propagateMeasurement(v10, v11, i0);
   EXPECT_TRUE(ut.areStatesAllTop());
 }
 
@@ -698,32 +724,32 @@ TEST_F(UnionTablePropertiesTest, testOneGlobalPhase) {
 
 TEST_F(UnionTablePropertiesTest, FindEquivalentClassicalValue) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateMeasurement(v5, v6, i0);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateMeasurement(v5, v7, i0);
   const llvm::DenseMap<mlir::Value, bool> result =
-      ut.getValueThatIsEquivalentToQubit(v6);
+      ut.getValueThatIsEquivalentToQubit(v7);
   ASSERT_FALSE(result.empty());
   ASSERT_TRUE(result.at(i0));
 }
 
 TEST_F(UnionTablePropertiesTest, FindEquivalentReversedClassicalValue) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateGate(xOp, q4, q6);
-  ut.propagateMeasurement(v5, v7, i0);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateGate(xOp, q6, q7);
+  ut.propagateMeasurement(v5, v8, i0);
   const llvm::DenseMap<mlir::Value, bool> result =
-      ut.getValueThatIsEquivalentToQubit(v6);
+      ut.getValueThatIsEquivalentToQubit(v7);
   ASSERT_FALSE(result.empty());
   ASSERT_FALSE(result.at(i0));
 }
 
 TEST_F(UnionTablePropertiesTest, FindNoEquivalentClassicalValue) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateGate(hOp, q4, q6);
-  ut.propagateMeasurement(v5, v7, i0);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateGate(hOp, q6, q7);
+  ut.propagateMeasurement(v5, v8, i0);
   const llvm::DenseMap<mlir::Value, bool> result =
-      ut.getValueThatIsEquivalentToQubit(v6);
+      ut.getValueThatIsEquivalentToQubit(v7);
   ASSERT_TRUE(result.empty());
 }
 
@@ -731,20 +757,20 @@ TEST_F(UnionTablePropertiesTest, hasAlwaysZeroProbabilityTest) {
   std::vector classicalIndexVec = {i0};
   ut.propagateIntAlloc(i1, 20);
   ut.propagateGate(hOp, q0, q3);
-  ut.propagateGate(xOp, q1, q4, q3);
-  ut.propagateMeasurement(v4, v5, i0);
+  ut.propagateGate(xOp, q1, q4, q3, q5);
+  ut.propagateMeasurement(v4, v6, i0);
 
   llvm::DenseMap<mlir::Value, bool> qubits0;
   llvm::DenseMap<mlir::Value, bool> classicals0;
   llvm::DenseMap<mlir::Value, bool> qubits1;
   llvm::DenseMap<mlir::Value, bool> classicals1;
-  qubits0[v3] = true;
   qubits0[v5] = true;
+  qubits0[v6] = true;
   qubits0[v2] = false;
   classicals0[i0] = true;
   classicals0[i1] = true;
-  qubits1[v3] = false;
   qubits1[v5] = false;
+  qubits1[v6] = false;
   qubits1[v2] = true;
   classicals1[i1] = false;
 
@@ -763,23 +789,23 @@ TEST_F(UnionTablePropertiesTest, ImpliedQubit) {
   std::vector classicalIndexVec = {i0};
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
-  ut.propagateGate(hOp, q1, q6, q5);
-  ASSERT_TRUE(ut.isQubitImplied(v5, q6, classicalIndexVec, {}));
-  ASSERT_FALSE(ut.isQubitImplied(v6, q5, classicalIndexVec, {}));
+  ut.propagateGate(hOp, q1, q6, q5, q7);
+  ASSERT_TRUE(ut.isQubitImplied(v7, q6, classicalIndexVec, {}));
+  ASSERT_FALSE(ut.isQubitImplied(v6, q7, classicalIndexVec, {}));
 }
 
 TEST_F(UnionTablePropertiesTest, ImpliedQubitOnlyQubits) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
-  ut.propagateGate(hOp, q1, q6, q5);
-  ASSERT_TRUE(ut.isQubitImplied(v5, q6, {}, {}));
+  ut.propagateGate(hOp, q1, q6, q5, q7);
+  ASSERT_TRUE(ut.isQubitImplied(v7, q6, {}, {}));
 }
 
 TEST_F(UnionTablePropertiesTest, ImpliedQubitOnlyClassicalValues) {
   std::vector classicalIndexVec = {i0};
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
-  ut.propagateGate(hOp, q5, q6, {}, {}, classicalIndexVec);
+  ut.propagateGate(hOp, q5, q6, {}, {}, {}, classicalIndexVec);
   ASSERT_TRUE(ut.isQubitImplied(v6, {}, classicalIndexVec, {}));
 }
 
@@ -787,7 +813,7 @@ TEST_F(UnionTablePropertiesTest, ImpliedQubitNegClassicalValues) {
   std::vector classicalIndexVec = {i0};
   ut.propagateGate(hOp, q0, q4);
   ut.propagateMeasurement(v4, v5, i0);
-  ut.propagateGate(hOp, q5, q6, {}, classicalIndexVec);
+  ut.propagateGate(hOp, q5, q6, {}, {}, classicalIndexVec);
   ut.propagateGate(xOp, q6, q7);
   ASSERT_TRUE(ut.isQubitImplied(v7, {}, {}, classicalIndexVec));
 }
@@ -815,10 +841,10 @@ TEST_F(UnionTablePropertiesTest, noGlobalPhaseTwoQubitsA) {
 
 TEST_F(UnionTablePropertiesTest, noGlobalPhaseTwoQubitsB) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(hOp, q1, q5, q4);
-  ut.propagateMeasurement(v5, v6, i0);
+  ut.propagateGate(hOp, q1, q5, q4, q6);
+  ut.propagateMeasurement(v5, v7, i0);
 
-  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, v4, q6);
+  const auto globalPhase0 = ut.globalPhaseThatIsAdded(zOp, v6, q7);
 
   ASSERT_FALSE(globalPhase0.has_value());
 }
@@ -841,16 +867,16 @@ TEST_F(UnionTablePropertiesTest, globalPhaseTwoQubits) {
 TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsA) {
   ut.propagateGate(hOp, q0, q4);
   ut.propagateGate(xOp, q1, q5);
-  ut.propagateGate(xOp, q5, q6, q4);
-  std::vector combinations = {v4, v6};
+  ut.propagateGate(xOp, q5, q6, q4, q7);
+  std::vector combinations = {v6, v7};
 
   ASSERT_FALSE(ut.areThereSatisfiableCombinations(combinations));
 }
 
 TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsB) {
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  std::vector combinations = {v4, v5};
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  std::vector combinations = {v5, v6};
 
   ASSERT_TRUE(ut.areThereSatisfiableCombinations(combinations));
 }
@@ -858,13 +884,13 @@ TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsB) {
 TEST_F(UnionTablePropertiesTest, findNonSatisfiableCombinationsC) {
   ut.propagateIntAlloc(i1, 2);
   ut.propagateGate(hOp, q0, q4);
-  ut.propagateGate(xOp, q1, q5, q4);
-  ut.propagateMeasurement(v4, v6, i0);
-  ut.propagateMeasurement(v5, v7, i1);
-  ut.propagateGate(hOp, q6, q8);
-  ut.propagateGate(hOp, q7, q9, q8);
+  ut.propagateGate(xOp, q1, q5, q4, q6);
+  ut.propagateMeasurement(v6, v7, i0);
+  ut.propagateMeasurement(v5, v8, i1);
+  ut.propagateGate(hOp, q7, q9);
+  ut.propagateGate(hOp, q8, q10, q9, q11);
 
-  std::vector qubitCombinations = {v8, v9};
+  std::vector qubitCombinations = {v10, v11};
   std::vector classicalCombinations = {i0, i1};
   std::vector classicalVal0 = {i0};
   std::vector classicalVal1 = {i1};
@@ -894,6 +920,7 @@ protected:
   mlir::Value v5;
   mlir::Value v6;
   mlir::Value v7;
+  mlir::Value v8;
 
   std::vector<mlir::Value> q0;
   std::vector<mlir::Value> q1;
@@ -903,6 +930,7 @@ protected:
   std::vector<mlir::Value> q5;
   std::vector<mlir::Value> q6;
   std::vector<mlir::Value> q7;
+  std::vector<mlir::Value> q8;
 
   SmallUnionTableTest() : programBuilder(&context) {}
 
@@ -915,7 +943,7 @@ protected:
 
     programBuilder.initialize();
 
-    auto q = programBuilder.allocQubitRegister(8);
+    auto q = programBuilder.allocQubitRegister(9);
     hOp = HOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
                       q[0]);
     xOp = XOp::create(programBuilder, programBuilder.getLoc(), q[0].getType(),
@@ -929,6 +957,7 @@ protected:
     v5 = q[5];
     v6 = q[6];
     v7 = q[7];
+    v8 = q[8];
 
     q0 = {v0};
     q1 = {v1};
@@ -938,6 +967,7 @@ protected:
     q5 = {v5};
     q6 = {v6};
     q7 = {v7};
+    q8 = {v8};
 
     ut.propagateQubitAlloc(v0);
     ut.propagateQubitAlloc(v1);
@@ -948,9 +978,9 @@ protected:
 
 TEST_F(SmallUnionTableTest, handleErrorIfTwoManyAmplitudesAreNonzero) {
   ut.propagateGate(hOp, q3, q4);
-  ut.propagateGate(xOp, q2, q5, q4);
-  ut.propagateGate(hOp, q5, q6);
-  ut.propagateGate(hOp, q6, q7);
+  ut.propagateGate(xOp, q2, q5, q4, q6);
+  ut.propagateGate(hOp, q5, q7);
+  ut.propagateGate(hOp, q7, q8);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 32, HybridStates: {TOP}"));
@@ -959,8 +989,8 @@ TEST_F(SmallUnionTableTest, handleErrorIfTwoManyAmplitudesAreNonzero) {
 TEST_F(SmallUnionTableTest, applyGatesOnPartiallyTopQState) {
   ut.propagateGate(hOp, q2, q4);
   ut.propagateGate(hOp, q3, q5);
-  ut.propagateGate(xOp, q4, q6, q5); // Qubit 2 and 3 enter TOP
-  ut.propagateGate(xOp, q1, q7, q6);
+  ut.propagateGate(xOp, q4, q6, q5, q7); // Qubit 2 and 3 enter TOP
+  ut.propagateGate(xOp, q1, q8, q6);
 
   EXPECT_THAT(ut.toString(),
               testing::HasSubstr("Qubits: 321, HybridStates: {TOP}"));

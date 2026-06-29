@@ -17,11 +17,9 @@
 #include <mlir/IR/Value.h>
 
 #include <algorithm>
-#include <complex>
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -327,6 +325,7 @@ public:
    * @param targets An array of the Values of the target qubits.
    * @param newQuantumTargets The value of the qubits after the gate.
    * @param ctrlsQuantum An array of the values of the ctrl qubits.
+   * @param newCtrlsQuantum An values of the ctrl qubits after the gate.
    * @param posCtrlsClassical An array of the values of the ctrl bits.
    * @param negCtrlsClassical An array of the values of the negative ctrl bits.
    * @param params The parameter applied to the gate.
@@ -336,6 +335,7 @@ public:
   void propagateGate(Operation* gate, std::span<Value> targets,
                      std::span<Value> newQuantumTargets,
                      std::span<Value> ctrlsQuantum = {},
+                     std::span<Value> newCtrlsQuantum = {},
                      std::span<Value> posCtrlsClassical = {},
                      std::span<Value> negCtrlsClassical = {},
                      std::span<Value> params = {});
