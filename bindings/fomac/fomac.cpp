@@ -158,16 +158,16 @@ Returns:
           "Returns the sparse probabilities from the job (typically only "
           "available from simulator devices).");
 
-  job.def_prop_ro("id", &fomac::Session::Job::getId, "Returns the job ID.");
+  job.def_prop_ro("id", &fomac::Session::Job::getId, "The job ID.");
 
   job.def_prop_ro("program_format", &fomac::Session::Job::getProgramFormat,
-                  "Returns the program format used for the job.");
+                  "The format of the submitted program.");
 
   job.def_prop_ro("program", &fomac::Session::Job::getProgram,
-                  "Returns the quantum program submitted for the job.");
+                  "The submitted program.");
 
   job.def_prop_ro("num_shots", &fomac::Session::Job::getNumShots,
-                  "Returns the number of shots for the job.");
+                  "The number of shots.");
 
   job.def(nb::self == nb::self,
           nb::sig("def __eq__(self, arg: object, /) -> bool"));
