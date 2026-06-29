@@ -163,50 +163,21 @@ checkedHilbertDim(const std::size_t numQubits) {
   return std::int64_t{static_cast<int64_t>(std::uint64_t{1} << numQubits)};
 }
 
-static void validateCornerDims(const std::int64_t matrixDim,
-                               const std::int64_t blockDim) {
-  assert(matrixDim >= 0 && blockDim >= 0 && blockDim <= matrixDim &&
-         "block must fit in the bottom-right corner of the matrix");
-  std::ignore = checkedDim(matrixDim);
-}
-
-/// Copies @p blockData into the bottom-right @p blockDim x @p blockDim corner.
-static void copyBottomRightCorner(const std::int64_t matrixDim,
-                                  MutableArrayRef<Complex> matrixData,
-                                  const std::int64_t blockDim,
-                                  ArrayRef<Complex> blockData) {
-  validateCornerDims(matrixDim, blockDim);
-  assert(matrixData.size() >= checkedStorageSize(matrixDim));
-  assert(blockData.size() >= checkedStorageSize(blockDim));
-  const std::int64_t offset = matrixDim - blockDim;
-  for (std::int64_t row = 0; row < blockDim; ++row) {
-    for (std::int64_t col = 0; col < blockDim; ++col) {
-      matrixData[static_cast<std::size_t>(((offset + row) * matrixDim) +
-                                          offset + col)] =
-          blockData[static_cast<std::size_t>((row * blockDim) + col)];
-    }
-  }
-}
-
 /**
  * @brief Returns the @p qubitIndex bit of a computational-basis label.
  *
- * Qubit 0 is the MSB of @p stateIndex, matching @ref Matrix4x4::kron and
- * @ref Matrix2x2::embedInNqubit.
+ * Qubit @p i is bit @p i of @p stateIndex, matching @ref QuantumComputation.
  */
 [[nodiscard]] static std::size_t qubitBitAt(const std::size_t stateIndex,
-                                            const std::size_t numQubits,
                                             const std::size_t qubitIndex) {
-  return (stateIndex >> (numQubits - 1 - qubitIndex)) & 1U;
+  return (stateIndex >> qubitIndex) & 1U;
 }
 
 /**
  * @brief True when row and col agree on every wire except @p skipA and @p
  * skipB.
  *
- * Used when embedding a gate: untouched qubits must match or the matrix entry
- * is zero. For a single-qubit embed, pass @p skipB = @p numQubits so only @p
- * skipA is skipped.
+ * Untouched wires must match or the matrix entry is zero.
  */
 [[nodiscard]] static bool otherQubitBitsMatch(const std::size_t row,
                                               const std::size_t col,
@@ -217,11 +188,82 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
     if (q == skipA || q == skipB) {
       continue;
     }
-    if (qubitBitAt(row, numQubits, q) != qubitBitAt(col, numQubits, q)) {
+    if (qubitBitAt(row, q) != qubitBitAt(col, q)) {
       return false;
     }
   }
   return true;
+}
+
+/**
+ * @brief Packs the target-wire bits of @p stateIndex into a subspace index.
+ *
+ * Target wires are read in @p targetQubits order to index @p targetUnitary in
+ * @ref embedControlledUnitary.
+ */
+[[nodiscard]] static std::size_t
+extractTargetSubIndex(const std::size_t stateIndex,
+                      const ArrayRef<std::size_t> targetQubits) {
+  std::size_t sub = 0;
+  for (const auto target : targetQubits) {
+    sub = (sub << 1) | qubitBitAt(stateIndex, target);
+  }
+  return sub;
+}
+
+DynamicMatrix embedControlledUnitary(const std::size_t numQubits,
+                                     const ArrayRef<std::size_t> controlQubits,
+                                     const ArrayRef<std::size_t> targetQubits,
+                                     const DynamicMatrix& targetUnitary) {
+  assert(targetUnitary.rows() == targetUnitary.cols());
+  assert(static_cast<std::size_t>(targetUnitary.rows()) ==
+         (std::uint64_t{1} << targetQubits.size()));
+  assert(numQubits < std::numeric_limits<std::size_t>::digits);
+  for (const auto control : controlQubits) {
+    assert(control < numQubits && "Control wire index out of range");
+  }
+  for (const auto target : targetQubits) {
+    assert(target < numQubits && "Target wire index out of range");
+  }
+
+  const auto dim = checkedHilbertDim(numQubits);
+  DynamicMatrix out = DynamicMatrix::identity(dim);
+  const auto udim = static_cast<std::size_t>(dim);
+
+  std::size_t activeMask = 0;
+  for (const auto control : controlQubits) {
+    activeMask |= std::size_t{1} << control;
+  }
+  const std::size_t controlMask = activeMask;
+  for (const auto target : targetQubits) {
+    activeMask |= std::size_t{1} << target;
+  }
+  // Wires outside the gate must match between row and col.
+  const std::size_t passiveMask =
+      ((std::size_t{1} << numQubits) - 1) & ~activeMask;
+
+  llvm::SmallVector<std::int64_t, 64> targetIndexByState(udim);
+  for (std::size_t state = 0; state < udim; ++state) {
+    targetIndexByState[state] =
+        static_cast<std::int64_t>(extractTargetSubIndex(state, targetQubits));
+  }
+
+  for (std::size_t row = 0; row < udim; ++row) {
+    // Identity off the all-ones control subspace.
+    if ((row & controlMask) != controlMask) {
+      continue;
+    }
+    const std::int64_t targetRow = targetIndexByState[row];
+    for (std::size_t col = 0; col < udim; ++col) {
+      if ((col & controlMask) != controlMask ||
+          ((row ^ col) & passiveMask) != 0) {
+        continue;
+      }
+      out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
+          targetUnitary(targetRow, targetIndexByState[col]);
+    }
+  }
+  return out;
 }
 
 Matrix1x1 Matrix1x1::fromElements(const Complex m00) { return {m00}; }
@@ -337,8 +379,8 @@ DynamicMatrix Matrix2x2::embedInNqubit(const std::size_t numQubits,
       if (!otherQubitBitsMatch(row, col, numQubits, qubitIndex, numQubits)) {
         continue;
       }
-      const std::size_t rowBit = qubitBitAt(row, numQubits, qubitIndex);
-      const std::size_t colBit = qubitBitAt(col, numQubits, qubitIndex);
+      const std::size_t rowBit = qubitBitAt(row, qubitIndex);
+      const std::size_t colBit = qubitBitAt(col, qubitIndex);
       out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
           (*this)(rowBit, colBit);
     }
@@ -348,10 +390,10 @@ DynamicMatrix Matrix2x2::embedInNqubit(const std::size_t numQubits,
 
 Matrix4x4 Matrix2x2::embedInTwoQubit(const std::size_t qubitIndex) const {
   if (qubitIndex == 0) {
-    return Matrix4x4::kron(*this, Matrix2x2::identity());
+    return Matrix4x4::kron(Matrix2x2::identity(), *this);
   }
   if (qubitIndex == 1) {
-    return Matrix4x4::kron(Matrix2x2::identity(), *this);
+    return Matrix4x4::kron(*this, Matrix2x2::identity());
   }
   llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
 }
@@ -532,10 +574,10 @@ DynamicMatrix Matrix4x4::embedInNqubit(const std::size_t numQubits,
       if (!otherQubitBitsMatch(row, col, numQubits, q0Index, q1Index)) {
         continue;
       }
-      const std::size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
-                                  qubitBitAt(row, numQubits, q1Index);
-      const std::size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
-                                  qubitBitAt(col, numQubits, q1Index);
+      const std::size_t rowPair =
+          (qubitBitAt(row, q0Index) << 1) | qubitBitAt(row, q1Index);
+      const std::size_t colPair =
+          (qubitBitAt(col, q0Index) << 1) | qubitBitAt(col, q1Index);
       out(static_cast<std::int64_t>(row), static_cast<std::int64_t>(col)) =
           (*this)(rowPair, colPair);
     }
@@ -880,23 +922,6 @@ Complex& DynamicMatrix::operator()(const std::int64_t row,
 Complex DynamicMatrix::operator()(const std::int64_t row,
                                   const std::int64_t col) const {
   return impl_->data[static_cast<std::size_t>((row * impl_->dim) + col)];
-}
-
-void DynamicMatrix::setBottomRightCorner(const Matrix2x2& block) {
-  copyBottomRightCorner(impl_->dim, impl_->data,
-                        static_cast<std::int64_t>(Matrix2x2::K_ROWS),
-                        block.data);
-}
-
-void DynamicMatrix::setBottomRightCorner(const Matrix4x4& block) {
-  copyBottomRightCorner(impl_->dim, impl_->data,
-                        static_cast<std::int64_t>(Matrix4x4::K_ROWS),
-                        block.data);
-}
-
-void DynamicMatrix::setBottomRightCorner(const DynamicMatrix& block) {
-  copyBottomRightCorner(impl_->dim, impl_->data, block.impl_->dim,
-                        block.impl_->data);
 }
 
 DynamicMatrix DynamicMatrix::adjoint() const {

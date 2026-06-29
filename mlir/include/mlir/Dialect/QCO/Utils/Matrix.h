@@ -238,10 +238,10 @@ struct Matrix2x2 {
    * @brief Embed this single-qubit matrix into an @p numQubits-qubit Hilbert
    * space.
    *
-   * Wire @p qubitIndex uses the same MSB-first convention as @ref
-   * Matrix4x4::kron (high bit first operand, low bit second). For each basis
-   * pair whose untouched wires match, copies this matrix at the target qubit's
-   * row/column bits.
+   * Wire @p qubitIndex uses the same convention as @ref QuantumComputation:
+   * qubit @p i is bit @p i of the basis index. For each basis pair whose
+   * untouched wires match, copies this matrix at the target qubit's row/column
+   * bits.
    *
    * @param numQubits Number of qubits in the target Hilbert space.
    * @param qubitIndex Wire index to act on.
@@ -253,7 +253,7 @@ struct Matrix2x2 {
   /**
    * @brief Embed this single-qubit matrix into a two-qubit Hilbert space.
    *
-   * @param qubitIndex Wire index (`0` = high bit / MSB, `1` = low bit).
+   * @param qubitIndex Wire index to act on (qubit @p i = bit @p i).
    * @return The `4x4` embedded unitary.
    */
   [[nodiscard]] Matrix4x4 embedInTwoQubit(std::size_t qubitIndex) const;
@@ -407,11 +407,12 @@ struct Matrix4x4 {
   /**
    * @brief Kronecker product `lhs (x) rhs` of two single-qubit matrices.
    *
-   * Uses the computational-basis bit order where the first operand labels the
-   * high bit, matching `UnitaryOpInterface::getUnitaryMatrix4x4`.
+   * Uses the computational-basis bit order where qubit @p i is bit @p i,
+   * matching @ref QuantumComputation. For @f$A \otimes B@f$, @p lhs acts on
+   * wire @f$1@f$ and @p rhs on wire @f$0@f$.
    *
-   * @param lhs Left factor (acts on the high bit / qubit 0).
-   * @param rhs Right factor (acts on the low bit / qubit 1).
+   * @param lhs Left factor (acts on wire 1).
+   * @param rhs Right factor (acts on wire 0).
    * @return The `4x4` Kronecker product.
    */
   [[nodiscard]] static Matrix4x4 kron(const Matrix2x2& lhs,
@@ -482,9 +483,9 @@ struct Matrix4x4 {
    * @brief Embed this two-qubit matrix into an @p numQubits-qubit Hilbert
    * space.
    *
-   * Operand 0 labels the high bit of the pair and acts on @p q0Index; operand 1
-   * labels the low bit and acts on @p q1Index. For each basis pair whose other
-   * wires match, copies this matrix at the packed two-qubit row/column indices.
+   * Operand 0 labels wire @p q0Index and operand 1 labels wire @p q1Index.
+   * For each basis pair whose other wires match, copies this matrix at the
+   * packed two-qubit row/column indices.
    *
    * @param numQubits Number of qubits in the target Hilbert space.
    * @param q0Index Wire index of operand 0.
@@ -496,9 +497,10 @@ struct Matrix4x4 {
                                             std::size_t q1Index) const;
 
   /**
-   * @brief Reorder this matrix to act on qubits `{0, 1}`.
+   * @brief Reorder this matrix to act on wires @p q0Index and @p q1Index.
    *
-   * @param q0Index Wire index of operand 0; @p q1Index wire index of operand 1.
+   * @param q0Index Wire index of operand 0.
+   * @param q1Index Wire index of operand 1.
    * @return Reordered copy of this matrix.
    */
   [[nodiscard]] Matrix4x4 reorderForQubits(std::size_t q0Index,
@@ -613,28 +615,6 @@ public:
    * @return Copy of the element at `(row, col)`.
    */
   [[nodiscard]] Complex operator()(std::int64_t row, std::int64_t col) const;
-
-  /**
-   * @brief Copies a 2x2 block into the bottom-right corner.
-   * @param block Source block placed at indices `(dim-2, dim-2)` through
-   * `(dim-1, dim-1)`.
-   */
-  void setBottomRightCorner(const Matrix2x2& block);
-
-  /**
-   * @brief Copies a 4x4 block into the bottom-right corner.
-   * @param block Source block placed at indices `(dim-4, dim-4)` through
-   * `(dim-1, dim-1)`.
-   */
-  void setBottomRightCorner(const Matrix4x4& block);
-
-  /**
-   * @brief Copies a dynamic block into the bottom-right corner.
-   * @param block Source block placed at indices `(dim - block.rows(), ...)`
-   * through
-   * `(dim-1, dim-1)`.
-   */
-  void setBottomRightCorner(const DynamicMatrix& block);
 
   /**
    * @brief Returns the conjugate transpose (adjoint) of this matrix.
@@ -753,6 +733,26 @@ private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+/**
+ * @brief Embeds @p targetUnitary as multi-controlled on @p controlQubits.
+ *
+ * Qubit @p i is bit @p i of the basis index, matching @ref QuantumComputation.
+ * When every control qubit is \f$|1\rangle\f$, applies @p targetUnitary on
+ * @p targetQubits; otherwise the identity.
+ *
+ * @param numQubits Size of the qubit register the matrix acts on.
+ * @param controlQubits Program register indices of the control wires.
+ * @param targetQubits Program register indices of the target wires, in the
+ *        order used to index @p targetUnitary.
+ * @param targetUnitary Local unitary on the target subspace.
+ * @return The controlled unitary on the @p numQubits-qubit Hilbert space.
+ */
+[[nodiscard]] DynamicMatrix
+embedControlledUnitary(std::size_t numQubits,
+                       llvm::ArrayRef<std::size_t> controlQubits,
+                       llvm::ArrayRef<std::size_t> targetQubits,
+                       const DynamicMatrix& targetUnitary);
 
 /**
  * @brief Type trait for the four supported matrix types.

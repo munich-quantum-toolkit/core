@@ -20,6 +20,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/QTensor/IR/QTensorOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
@@ -30,15 +31,67 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;
 
 namespace {
+
+/**
+ * @brief Returns the program register index of @p qubit when known at compile
+ * time.
+ *
+ * Supports @c qco.static and @c qtensor.extract with an @c arith.constant
+ * index. Dynamic or negative indices yield @c std::nullopt.
+ */
+[[nodiscard]] std::optional<std::size_t> programQubitIndex(const Value qubit) {
+  auto* definingOp = qubit.getDefiningOp();
+  if (definingOp == nullptr) {
+    return std::nullopt;
+  }
+  if (auto staticOp = dyn_cast<StaticOp>(definingOp)) {
+    return static_cast<std::size_t>(staticOp.getIndex());
+  }
+  auto extractOp = dyn_cast<qtensor::ExtractOp>(definingOp);
+  if (!extractOp) {
+    return std::nullopt;
+  }
+  auto indexOp = extractOp.getIndex().getDefiningOp<arith::ConstantOp>();
+  if (!indexOp) {
+    return std::nullopt;
+  }
+  const auto indexAttr = dyn_cast<IntegerAttr>(indexOp.getValue());
+  if (!indexAttr) {
+    return std::nullopt;
+  }
+  const auto index = indexAttr.getInt();
+  if (index < 0) {
+    return std::nullopt;
+  }
+  return static_cast<std::size_t>(index);
+}
+
+/**
+ * @brief Maps each SSA qubit in @p qubits to its program register index.
+ *
+ * @return Indices in operand order, or @c std::nullopt if any wire is not
+ *         resolved by @ref programQubitIndex.
+ */
+[[nodiscard]] std::optional<SmallVector<std::size_t>>
+resolveQubitIndices(const ValueRange qubits) {
+  SmallVector<std::size_t> indices;
+  indices.reserve(qubits.size());
+  for (const auto qubit : qubits) {
+    if (const auto index = programQubitIndex(qubit)) {
+      indices.push_back(*index);
+    } else {
+      return std::nullopt;
+    }
+  }
+  return indices;
+}
 
 /**
  * @brief Merge nested control modifiers into a single one.
@@ -308,36 +361,28 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
         "is not supported due to memory constraints.");
   }
 
-  const auto numControls = getNumControls();
-
-  // Build `I_{2^controls} ⊗ U` by placing the target block in the bottom-right
-  // corner of a `2^controls * targetDim` identity.
-  const auto controlledMatrix =
-      [numControls](const std::int64_t targetDim,
-                    const auto& targetBlock) -> DynamicMatrix {
-    auto matrix = DynamicMatrix::identity(static_cast<int64_t>(
-        (1ULL << numControls) * static_cast<std::size_t>(targetDim)));
-    matrix.setBottomRightCorner(targetBlock);
-    return matrix;
-  };
-
-  // Single inner unitary (e.g. `ctrl { h }`, `ctrl { cx }`).
-  if (auto bodyUnitary =
-          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
-    if (const auto targetMatrix =
-            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
-      assert(targetMatrix->cols() == targetMatrix->rows());
-      return controlledMatrix(targetMatrix->cols(), *targetMatrix);
-    }
+  const auto controlQubits = resolveQubitIndices(getInputControls());
+  const auto targetQubits = resolveQubitIndices(getInputTargets());
+  if (!controlQubits || !targetQubits) {
     return std::nullopt;
   }
 
-  // Composed single-qubit body (e.g. `ctrl { h; x }`); embed the 2x2 directly.
-  if (getNumTargets() == 1) {
+  // Inner unitary on targets: one body op or a composed single-qubit sequence.
+  std::optional<DynamicMatrix> targetMatrix;
+  if (auto bodyUnitary =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
+    targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
+  } else if (getNumTargets() == 1) {
     if (const auto composed = composeSingleQubitBodyMatrix(*getBody())) {
-      return controlledMatrix(2, *composed);
+      targetMatrix = DynamicMatrix(*composed);
     }
   }
+  if (!targetMatrix) {
+    return std::nullopt;
+  }
 
-  return std::nullopt;
+  const std::size_t numQubits = 1 + std::max(*llvm::max_element(*controlQubits),
+                                             *llvm::max_element(*targetQubits));
+  return embedControlledUnitary(numQubits, *controlQubits, *targetQubits,
+                                *targetMatrix);
 }

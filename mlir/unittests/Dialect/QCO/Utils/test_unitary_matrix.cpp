@@ -232,33 +232,21 @@ TEST(DynamicMatrix, AssignFrom) {
   EXPECT_TRUE(dynamic.isApprox(source));
 }
 
-TEST(DynamicMatrix, SetBottomRightCorner) {
-  const Matrix2x2 x = pauliX();
-  const Matrix4x4 swap = swapMatrix();
+TEST(DynamicMatrix, EmbedControlledUnitary) {
+  // Controlled-X with control on wire 0 and target on wire 1.
+  const auto controlledX =
+      embedControlledUnitary(2, {0}, {1}, DynamicMatrix(pauliX()));
+  EXPECT_EQ(controlledX(0, 0), 1.0);
+  EXPECT_EQ(controlledX(1, 1), 0.0);
+  EXPECT_EQ(controlledX(1, 3), 1.0);
+  EXPECT_EQ(controlledX(2, 2), 1.0);
+  EXPECT_EQ(controlledX(3, 1), 1.0);
+  EXPECT_EQ(controlledX(3, 3), 0.0);
+}
 
-  DynamicMatrix with2x2 = DynamicMatrix::identity(4);
-  with2x2.setBottomRightCorner(x);
-  EXPECT_EQ(with2x2(0, 0), 1.0);
-  EXPECT_EQ(with2x2(2, 2), 0.0);
-  EXPECT_EQ(with2x2(2, 3), 1.0);
-  EXPECT_EQ(with2x2(3, 2), 1.0);
-
-  DynamicMatrix with4x4 = DynamicMatrix::identity(6);
-  with4x4.setBottomRightCorner(swap);
-  EXPECT_EQ(with4x4(0, 0), 1.0);
-  EXPECT_EQ(with4x4(1, 1), 1.0);
-  EXPECT_EQ(with4x4(2, 2), 1.0);
-  EXPECT_EQ(with4x4(3, 4), 1.0);
-  EXPECT_EQ(with4x4(4, 3), 1.0);
-  EXPECT_EQ(with4x4(5, 5), 1.0);
-
-  DynamicMatrix block = DynamicMatrix::identity(2);
-  block(0, 1) = 1i;
-  DynamicMatrix withDynamic = DynamicMatrix::identity(3);
-  withDynamic.setBottomRightCorner(block);
-  EXPECT_EQ(withDynamic(1, 1), 1.0);
-  EXPECT_EQ(withDynamic(1, 2), 1i);
-  EXPECT_EQ(withDynamic(2, 1), 0.0);
+TEST(DynamicMatrix, EmbedControlledUnitaryRejectsOutOfRangeWire) {
+  EXPECT_DEATH(embedControlledUnitary(2, {2}, {1}, DynamicMatrix(pauliX())),
+               "Control wire index out of range");
 }
 
 TEST(DynamicMatrix, Adjoint) {
@@ -409,28 +397,28 @@ TEST(UnitaryMatrix4x4, DiagonalRowsColumnsAndParts) {
 
 TEST(UnitaryMatrix4x4, KroneckerProduct) {
   const Matrix2x2 x = pauliX();
-  // X (x) I should swap the high bit.
-  const Matrix4x4 xi = Matrix4x4::kron(x, Matrix2x2::identity());
-  EXPECT_TRUE(xi.isApprox(Matrix4x4::fromElements(0, 0, 1, 0, // row 0
-                                                  0, 0, 0, 1, // row 1
-                                                  1, 0, 0, 0, // row 2
-                                                  0, 1, 0, 0)));
-  // I (x) X swaps the low bit.
+  // I (x) X acts on wire 0.
   const Matrix4x4 ix = Matrix4x4::kron(Matrix2x2::identity(), x);
   EXPECT_TRUE(ix.isApprox(Matrix4x4::fromElements(0, 1, 0, 0, // row 0
                                                   1, 0, 0, 0, // row 1
                                                   0, 0, 0, 1, // row 2
                                                   0, 0, 1, 0)));
+  // X (x) I acts on wire 1.
+  const Matrix4x4 xi = Matrix4x4::kron(x, Matrix2x2::identity());
+  EXPECT_TRUE(xi.isApprox(Matrix4x4::fromElements(0, 0, 1, 0, // row 0
+                                                  0, 0, 0, 1, // row 1
+                                                  1, 0, 0, 0, // row 2
+                                                  0, 1, 0, 0)));
 }
 
 TEST(UnitaryMatrix4x4, ReorderTwoQubitMatrix) {
   const Matrix2x2 x = pauliX();
-  const Matrix4x4 onHigh = Matrix4x4::kron(x, Matrix2x2::identity());
-  const Matrix4x4 onLow = Matrix4x4::kron(Matrix2x2::identity(), x);
+  const Matrix4x4 onWire0 = Matrix4x4::kron(Matrix2x2::identity(), x);
+  const Matrix4x4 onWire1 = Matrix4x4::kron(x, Matrix2x2::identity());
 
-  EXPECT_TRUE(onHigh.reorderForQubits(0, 1).isApprox(onHigh));
-  EXPECT_TRUE(onHigh.reorderForQubits(1, 0).isApprox(onLow));
-  EXPECT_TRUE(onLow.reorderForQubits(1, 0).isApprox(onHigh));
+  EXPECT_TRUE(onWire1.reorderForQubits(0, 1).isApprox(onWire1));
+  EXPECT_TRUE(onWire1.reorderForQubits(1, 0).isApprox(onWire0));
+  EXPECT_TRUE(onWire0.reorderForQubits(1, 0).isApprox(onWire1));
 }
 
 TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
@@ -440,9 +428,9 @@ TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
                                                0, 0, 0, 1, //
                                                0, 0, 1, 0);
   EXPECT_TRUE(x.embedInNqubit(2, 0).isApprox(
-      Matrix4x4::kron(x, Matrix2x2::identity())));
-  EXPECT_TRUE(x.embedInNqubit(2, 1).isApprox(
       Matrix4x4::kron(Matrix2x2::identity(), x)));
+  EXPECT_TRUE(x.embedInNqubit(2, 1).isApprox(
+      Matrix4x4::kron(x, Matrix2x2::identity())));
   EXPECT_TRUE(cx.embedInNqubit(2, 0, 1).isApprox(cx.reorderForQubits(0, 1)));
   const DynamicMatrix cxOn01 = cx.embedInNqubit(3, 0, 1);
   const DynamicMatrix cxOn12 = cx.embedInNqubit(3, 1, 2);

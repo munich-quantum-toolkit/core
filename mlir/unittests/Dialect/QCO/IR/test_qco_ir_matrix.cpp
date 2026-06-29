@@ -85,6 +85,31 @@ static void controlledInverseHT(QCOProgramBuilder& b) {
   });
 }
 
+/// Builds @c cx(q[0], q[1]) for control/target ordering tests.
+static void cxQubits01(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.cx(q[0], q[1]);
+}
+
+/// Builds @c cx(q[1], q[0]) for control/target ordering tests.
+static void cxQubits10(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.cx(q[1], q[0]);
+}
+
+/// Returns the unitary of the sole @c CtrlOp in a one-op program.
+[[nodiscard]] static std::optional<DynamicMatrix>
+ctrlOpMatrixFromBuilder(MLIRContext* ctx,
+                        llvm::function_ref<void(QCOProgramBuilder&)> build) {
+  auto moduleOp = QCOProgramBuilder::build(ctx, build);
+  if (!moduleOp) {
+    return std::nullopt;
+  }
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
+  return ctrlOp.getUnitaryMatrix();
+}
+
 namespace {
 
 struct QCOMatrixTestCase {
@@ -122,10 +147,32 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
   const Matrix4x4 expected =
       expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
         comp.addQubitRegister(2, "q");
-        comp.cx(1, 0);
+        comp.cx(0, 1);
       });
 
   ASSERT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, CXMatrixDependsOnControlTargetOrder) {
+  const Matrix4x4 cx01Ref =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.cx(0, 1);
+      });
+  const Matrix4x4 cx10Ref =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.cx(1, 0);
+      });
+  EXPECT_FALSE(cx01Ref.isApprox(cx10Ref));
+
+  const auto cx01Qco = ctrlOpMatrixFromBuilder(context.get(), cxQubits01);
+  const auto cx10Qco = ctrlOpMatrixFromBuilder(context.get(), cxQubits10);
+  ASSERT_TRUE(cx01Qco);
+  ASSERT_TRUE(cx10Qco);
+  EXPECT_FALSE(cx01Qco->isApprox(*cx10Qco));
+  EXPECT_TRUE(cx01Qco->isApprox(cx01Ref));
+  EXPECT_TRUE(cx10Qco->isApprox(cx10Ref));
 }
 
 TEST_F(QCOMatrixTest, ControlledHOpMatrix) {
@@ -140,7 +187,7 @@ TEST_F(QCOMatrixTest, ControlledHOpMatrix) {
   const Matrix4x4 expected =
       expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
         comp.addQubitRegister(2, "q");
-        comp.ch(1, 0);
+        comp.ch(0, 1);
       });
 
   ASSERT_TRUE(matrix->isApprox(expected));
@@ -158,8 +205,8 @@ TEST_F(QCOMatrixTest, ControlledXHOpMatrix) {
   const Matrix4x4 expected =
       expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
         comp.addQubitRegister(2, "q");
-        comp.cx(1, 0);
-        comp.ch(1, 0);
+        comp.cx(0, 1);
+        comp.ch(0, 1);
       });
 
   ASSERT_TRUE(matrix->isApprox(expected));
@@ -178,9 +225,10 @@ TEST_F(QCOMatrixTest, ControlledInverseHTOpMatrix) {
       expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
         comp.addQubitRegister(2, "q");
         qc::CompoundOperation body;
-        body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::H);
-        body.emplace_back<qc::StandardOperation>(1, 0, qc::OpType::T);
+        body.emplace_back<qc::StandardOperation>(1, qc::OpType::H);
+        body.emplace_back<qc::StandardOperation>(1, qc::OpType::T);
         body.invert();
+        body.addControl(qc::Control{0});
         comp.push_back(body);
       });
 
