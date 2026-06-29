@@ -114,3 +114,467 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
+
+/**
+ * @brief Test: This test checks that CNOTs are not changed if the target is not
+ * in |0> or |1>.
+ */
+TEST_F(QCOConstantPropagationTest, testDontRemoveIfTargetInSuperposition) {
+  auto q = programBuilder.allocQubitRegister(2);
+  q[0] = programBuilder.h(q[0]);
+  programBuilder.cx(q[0], q[1]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  referenceBuilder.cx(qRef[0], qRef[1]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that implied Qubits are removed from a
+ * controlled gate.
+ */
+TEST_F(QCOConstantPropagationTest, testRemoveImpliedQubits) {
+  auto q = programBuilder.allocQubitRegister(4);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.h(q[1]);
+  auto [q01, q2] =
+      programBuilder.ctrl({q[0], q[1]}, {q[2]}, [&](const ValueRange target) {
+        return SmallVector{programBuilder.x(target[0])};
+      });
+  programBuilder.ctrl({q01[0], q01[1], q2[0]}, {q[3]},
+                      [&](const ValueRange target) {
+                        return SmallVector{programBuilder.x(target[0])};
+                      });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(4);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.h(qRef[1]);
+  auto [qRef01, qRef2] = referenceBuilder.ctrl(
+      {qRef[0], qRef[1]}, {qRef[2]}, [&](const ValueRange target) {
+        return SmallVector{referenceBuilder.x(target[0])};
+      });
+  referenceBuilder.cx(qRef2[0], qRef[3]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that gates whose quantum controls cannot be
+ * satisfied are removed.
+ */
+TEST_F(QCOConstantPropagationTest, testUnsatisfiableQuantumCombination) {
+  auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.x(q[1]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  programBuilder.ctrl({q0, q1}, {q[2]}, [&](const ValueRange target) {
+    return SmallVector{programBuilder.s(target[0])};
+  });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.x(qRef[1]);
+  referenceBuilder.cx(qRef[0], qRef[1]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that gates whose quantum and classical controls
+ * cannot be satisfied are removed.
+ */
+TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
+  auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.x(q[1]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  auto [q01, b0] = programBuilder.measure(q0);
+  programBuilder.qcoIf(b0, {q01, q1}, [&](const ValueRange args) {
+    const auto [qi0, qi1] = programBuilder.cx(args[0], args[1]);
+    return SmallVector{qi0, qi1};
+  });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.x(qRef[1]);
+  auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  referenceBuilder.measure(qRef0);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that gates are unconditionally applied if the
+ * bit they depend on is always zero.
+ */
+TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionalIfItsZero) {
+  auto q = programBuilder.allocQubitRegister(1);
+  q[0] = programBuilder.h(q[0]);
+  q[0] = programBuilder.h(q[0]);
+  auto [q0, b0] = programBuilder.measure(q[0]);
+  programBuilder.qcoIf(
+      b0, {q0},
+      [&](const ValueRange args) {
+        const auto qi0 = programBuilder.x(args[0]);
+        return SmallVector{qi0};
+      },
+      [&](const ValueRange args) {
+        const auto qi0 = programBuilder.h(args[0]);
+        return SmallVector{qi0};
+      });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(1);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  auto [qRef0, bRef0] = referenceBuilder.measure(qRef[0]);
+  referenceBuilder.h(qRef0);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that gates are unconditionally applied if the
+ * bit they depend on is always one.
+ */
+TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionalIfItsOne) {
+  auto q = programBuilder.allocQubitRegister(1);
+  q[0] = programBuilder.x(q[0]);
+  auto [q0, b0] = programBuilder.measure(q[0]);
+  programBuilder.qcoIf(
+      b0, {q0},
+      [&](const ValueRange args) {
+        const auto qi0 = programBuilder.x(args[0]);
+        return SmallVector{qi0};
+      },
+      [&](const ValueRange args) {
+        const auto qi0 = programBuilder.h(args[0]);
+        return SmallVector{qi0};
+      });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(1);
+  qRef[0] = referenceBuilder.x(qRef[0]);
+  auto [qRef0, bRef0] = referenceBuilder.measure(qRef[0]);
+  referenceBuilder.x(qRef0);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that conditionals are not changed if we cannot
+ * tell the bits value.
+ */
+TEST_F(QCOConstantPropagationTest, testDoNotRemoveClassicalConditional) {
+  auto q = programBuilder.allocQubitRegister(1);
+  q[0] = programBuilder.h(q[0]);
+  auto [q0, b0] = programBuilder.measure(q[0]);
+  programBuilder.qcoIf(
+      b0, {q0},
+      [&](const ValueRange args) {
+        const auto qi0 = programBuilder.x(args[0]);
+        return SmallVector{qi0};
+      },
+      [&](const ValueRange args) {
+        const auto qi0 = programBuilder.h(args[0]);
+        return SmallVector{qi0};
+      });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(1);
+  qRef[0] = referenceBuilder.x(qRef[0]);
+  auto [qRef0, bRef0] = referenceBuilder.measure(qRef[0]);
+  referenceBuilder.qcoIf(
+      bRef0, {qRef0},
+      [&](const ValueRange args) {
+        const auto qi0 = referenceBuilder.x(args[0]);
+        return SmallVector{qi0};
+      },
+      [&](const ValueRange args) {
+        const auto qi0 = referenceBuilder.h(args[0]);
+        return SmallVector{qi0};
+      });
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that a quantum conditional is replaced by a
+ * classical if a qubit and a classical bit are equivalent.
+ */
+TEST_F(QCOConstantPropagationTest,
+       testEquivalentPositiveClassicalAndQuantumControl) {
+  auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.h(q[0]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  programBuilder.measure(q0);
+  programBuilder.cx(q1, q[2]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  auto [qRef01, bRef0] = referenceBuilder.measure(qRef0);
+  referenceBuilder.qcoIf(bRef0, {qRef[2]}, [&](const ValueRange args) {
+    const auto qi0 = referenceBuilder.x(args[0]);
+    return SmallVector{qi0};
+  });
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that multiple quantum conditionals are replaced
+ * by a classical if a qubit and a classical bit are equivalent.
+ */
+TEST_F(QCOConstantPropagationTest, testEquivalentClassicalAndQuantumControl) {
+  auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.h(q[0]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  programBuilder.measure(q0);
+  auto [q11, q2] = programBuilder.cx(q1, q[2]);
+  q[1] = programBuilder.x(q11);
+  programBuilder.cy(q[1], q2);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  auto [qRef01, bRef0] = referenceBuilder.measure(qRef0);
+  const auto qRange2 =
+      referenceBuilder.qcoIf(bRef0, {qRef[2]}, [&](const ValueRange args) {
+        const auto qi0 = referenceBuilder.x(args[0]);
+        return SmallVector{qi0};
+      });
+  referenceBuilder.x(qRef1);
+  referenceBuilder.qcoIf(
+      bRef0, qRange2,
+      [&](const ValueRange args) { return SmallVector{args[0]}; },
+      [&](const ValueRange args) {
+        const auto qi0 = referenceBuilder.y(args[0]);
+        return SmallVector{qi0};
+      });
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks if a quantum control is removed if the
+ * classical control implies the quantum one.
+ */
+TEST_F(QCOConstantPropagationTest, testClassicalImpliesQuantum) {
+  auto q = programBuilder.allocQubitRegister(2);
+  q[0] = programBuilder.h(q[0]);
+  auto [q0, b0] = programBuilder.measure(q[0]);
+  q[1] = programBuilder.x(q[1]);
+  auto [q01, q1] = programBuilder.cx(q0, q[1]);
+  auto [q11, q02] = programBuilder.ch(q1, q01);
+  programBuilder.qcoIf(b0, {q02, q11}, [&](const ValueRange args) {
+    const auto [qi0, qi1] = programBuilder.cx(args[0], args[1]);
+    return SmallVector{qi0, qi1};
+  });
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  auto [qRef0, bRef0] = referenceBuilder.measure(qRef[0]);
+  qRef[1] = referenceBuilder.x(qRef[1]);
+  const auto qRefRange1 =
+      referenceBuilder.qcoIf(bRef0, {qRef[1]}, [&](const ValueRange args) {
+        const auto qi0 = referenceBuilder.x(args[0]);
+        return SmallVector{qi0};
+      });
+  referenceBuilder.qcoIf(
+      bRef0, {qRef0},
+      [&](const ValueRange args) { return SmallVector{args[0]}; },
+      [&](const ValueRange args) {
+        const auto qi0 = referenceBuilder.h(args[0]);
+        return SmallVector{qi0};
+      });
+  referenceBuilder.qcoIf(bRef0, qRefRange1, [&](const ValueRange args) {
+    const auto qi0 = referenceBuilder.x(args[0]);
+    return SmallVector{qi0};
+  });
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks if a phase gate is removed if it only adds a
+ * global phase = 1.
+ */
+TEST_F(QCOConstantPropagationTest, testReplaceSingleQubitPhaseGatePlusOne) {
+  auto q = programBuilder.allocQubitRegister(1);
+  q[0] = programBuilder.h(q[0]);
+  q[0] = programBuilder.z(q[0]);
+  q[0] = programBuilder.z(q[0]);
+  q[0] = programBuilder.h(q[0]);
+  q[0] = programBuilder.z(q[0]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(1);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[0] = referenceBuilder.z(qRef[0]);
+  qRef[0] = referenceBuilder.z(qRef[0]);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks if a phase gate is replaced by a global phase
+ * gate if it only adds a global phase.
+ */
+TEST_F(QCOConstantPropagationTest, testReplaceSingleQubitPhaseGateMinusOne) {
+  auto q = programBuilder.allocQubitRegister(1);
+  q[0] = programBuilder.h(q[0]);
+  q[0] = programBuilder.z(q[0]);
+  q[0] = programBuilder.h(q[0]);
+  q[0] = programBuilder.z(q[0]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(1);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[0] = referenceBuilder.z(qRef[0]);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  referenceBuilder.gphase(-1.0);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks if a multi-qubit phase gate is removed if it
+ * only adds a global phase that is one.
+ */
+TEST_F(QCOConstantPropagationTest, testRemoveMultiQubitPhaseGatePlusOne) {
+  auto q = programBuilder.allocQubitRegister(2);
+  q[0] = programBuilder.h(q[0]);
+  programBuilder.cz(q[0], q[1]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks if a multi-qubit phase gate is replaced if it
+ * only adds a global phase.
+ */
+TEST_F(QCOConstantPropagationTest, testRemoveMultiQubitPhaseGateMinusOne) {
+  auto q = programBuilder.allocQubitRegister(2);
+  q[0] = programBuilder.x(q[0]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  programBuilder.cz(q0, q1);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  qRef[0] = referenceBuilder.x(qRef[0]);
+  referenceBuilder.cx(qRef[0], qRef[1]);
+  referenceBuilder.gphase(-1.0);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks if a multi-qubit phase gate is not removed if
+ * it adds different global phases depending on the actual state.
+ */
+TEST_F(QCOConstantPropagationTest, testDoNotRemoveMultiQubitPhaseGate) {
+  auto q = programBuilder.allocQubitRegister(2);
+  q[0] = programBuilder.h(q[0]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  auto [q01, b0] = programBuilder.measure(q0);
+  programBuilder.cz(q01, q1);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(2);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  auto [qRef01, bRef0] = referenceBuilder.measure(qRef0);
+  referenceBuilder.cz(qRef01, qRef1);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  ASSERT_TRUE(runCanonicalizerPass(reference.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
