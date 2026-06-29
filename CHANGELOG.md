@@ -12,6 +12,8 @@ with the exception that minor releases may include breaking changes.
 
 ### Added
 
+- 🐳 Add dev container configuration
+  for consistent local development environment ([#1786]) ([**@denialhaag**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
   for fusing compile-time single-qubit unitary runs via Euler resynthesis
   ([#1672]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -604,6 +606,7 @@ changelogs._
 [#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
 [#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
 [#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
+[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
 [#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
 [#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
 [#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
