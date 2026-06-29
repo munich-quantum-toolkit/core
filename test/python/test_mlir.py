@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import re
+from itertools import groupby
 from pathlib import Path
 
 import pytest
@@ -45,21 +47,28 @@ cx q[0], q[1];
 """
 
 
+def _sort_constants(text: str) -> str:
+    constant_re = re.compile(r"%.* = arith\.constant")
+    input_lines = text.splitlines()
+    output_lines = []
+    for is_constant, group in groupby(input_lines, key=lambda line: bool(constant_re.match(line.strip()))):
+        group_lines = list(group)
+        output_lines.extend(sorted(group_lines) if is_constant else group_lines)
+    return "\n".join(output_lines)
+
+
 def test_compile_program_jeff_file() -> None:
     """Compile a `.jeff` file."""
     path = Path(__file__).parent.parent / "circuits" / "bell.jeff"
-    result = compile_program(path)
 
-    assert "module" in result
-    assert "func.func" in result
+    result = compile_program(path)
+    assert _sort_constants(result) == _sort_constants(MLIR_STRING)
 
 
 def test_compile_program_mlir_string() -> None:
     """Compile an MLIR string."""
     result = compile_program(MLIR_STRING)
-
-    assert "module" in result
-    assert "func.func" in result
+    assert result == MLIR_STRING
 
 
 def test_compile_program_mlir_file(tmp_path: Path) -> None:
@@ -68,17 +77,13 @@ def test_compile_program_mlir_file(tmp_path: Path) -> None:
     path.write_text(MLIR_STRING, encoding="utf-8")
 
     result = compile_program(path)
-
-    assert "module" in result
-    assert "func.func" in result
+    assert result == MLIR_STRING
 
 
 def test_compile_program_qasm_string() -> None:
     """Compile an OpenQASM string."""
     result = compile_program(QASM_STRING)
-
-    assert "module" in result
-    assert "func.func" in result
+    assert result == MLIR_STRING
 
 
 def test_compile_program_qasm_file(tmp_path: Path) -> None:
@@ -87,9 +92,7 @@ def test_compile_program_qasm_file(tmp_path: Path) -> None:
     path.write_text(QASM_STRING, encoding="utf-8")
 
     result = compile_program(path)
-
-    assert "module" in result
-    assert "func.func" in result
+    assert result == MLIR_STRING
 
 
 def test_compile_program_quantum_computation() -> None:
@@ -99,9 +102,7 @@ def test_compile_program_quantum_computation() -> None:
     qc.cx(0, 1)
 
     result = compile_program(qc)
-
-    assert "module" in result
-    assert "func.func" in result
+    assert result == MLIR_STRING
 
 
 def test_compile_program_qiskit_quantum_circuit() -> None:
@@ -111,9 +112,7 @@ def test_compile_program_qiskit_quantum_circuit() -> None:
     qc.cx(0, 1)
 
     result = compile_program(qc)
-
-    assert "module" in result
-    assert "func.func" in result
+    assert result == MLIR_STRING
 
 
 def test_compile_program_convert_to_qir() -> None:
