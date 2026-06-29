@@ -137,7 +137,7 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
 /**
  * @brief Write an MLIR module to an output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
+static mlir::LogicalResult writeOutput(ModuleOp mod, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -146,8 +146,8 @@ static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
   }
 
   if (filename == "-") {
-    module->print(output->os());
-  } else if (writeBytecodeToFile(module, output->os()).failed()) {
+    mod->print(output->os());
+  } else if (writeBytecodeToFile(mod, output->os()).failed()) {
     llvm::errs() << "Failed to write bytecode to file: " << filename << "\n";
     return mlir::failure();
   }
@@ -165,7 +165,7 @@ static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
 /**
  * @brief Write an LLVM module to an output file
  */
-static mlir::LogicalResult writeOutputLLVM(llvm::Module* module,
+static mlir::LogicalResult writeOutputLLVM(llvm::Module* mod,
                                            StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
@@ -175,9 +175,9 @@ static mlir::LogicalResult writeOutputLLVM(llvm::Module* module,
   }
 
   if (filename == "-") {
-    module->print(output->os(), nullptr);
+    mod->print(output->os(), nullptr);
   } else {
-    llvm::WriteBitcodeToFile(*module, output->os());
+    llvm::WriteBitcodeToFile(*mod, output->os());
   }
 
   output->os().flush();
@@ -210,13 +210,13 @@ int main(int argc, char** argv) {
   context.loadAllAvailableDialects();
 
   // Load the input .mlir file
-  OwningOpRef<ModuleOp> module;
+  OwningOpRef<ModuleOp> mod;
   if (inputFilename.getValue().ends_with(".qasm")) {
-    module = loadQASMFile(inputFilename, &context);
+    mod = loadQASMFile(inputFilename, &context);
   } else {
-    module = loadMLIRFile(inputFilename, &context);
+    mod = loadMLIRFile(inputFilename, &context);
   }
-  if (!module) {
+  if (!mod) {
     return 1;
   }
 
@@ -235,8 +235,7 @@ int main(int argc, char** argv) {
   // Run the compilation pipeline
   CompilationRecord record;
   if (const QuantumCompilerPipeline pipeline(config);
-      pipeline
-          .runPipeline(module.get(), recordIntermediates ? &record : nullptr)
+      pipeline.runPipeline(mod.get(), recordIntermediates ? &record : nullptr)
           .failed()) {
     llvm::errs() << "Compilation pipeline failed\n";
     return 1;
@@ -267,17 +266,17 @@ int main(int argc, char** argv) {
   // Write the output
   if (convertToQIRBase || convertToQIRAdaptive) {
     llvm::LLVMContext llvmContext;
-    std::unique_ptr<llvm::Module> llvmModule =
-        translateModuleToLLVMIR(*module, llvmContext);
-    if (!llvmModule) {
+    std::unique_ptr<llvm::Module> llvmMod =
+        translateModuleToLLVMIR(*mod, llvmContext);
+    if (!llvmMod) {
       llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
       return 1;
     }
-    if (writeOutputLLVM(llvmModule.get(), outputFilename).failed()) {
+    if (writeOutputLLVM(llvmMod.get(), outputFilename).failed()) {
       llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
       return 1;
     }
-  } else if (writeOutput(module.get(), outputFilename).failed()) {
+  } else if (writeOutput(mod.get(), outputFilename).failed()) {
     llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
     return 1;
   }
