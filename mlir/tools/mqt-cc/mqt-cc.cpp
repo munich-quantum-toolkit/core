@@ -147,11 +147,13 @@ static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
 
   if (filename == "-") {
     module->print(output->os());
-    output->keep();
-    return mlir::success();
+  } else if (writeBytecodeToFile(module, output->os()).failed()) {
+    llvm::errs() << "Failed to write bytecode to file: " << filename << "\n";
+    return mlir::failure();
   }
 
-  return writeBytecodeToFile(module, output->os());
+  output->keep();
+  return mlir::success();
 }
 
 /**
@@ -168,11 +170,11 @@ static mlir::LogicalResult writeOutputLLVM(llvm::Module* module,
 
   if (filename == "-") {
     module->print(output->os(), nullptr);
-    output->keep();
   } else {
     llvm::WriteBitcodeToFile(*module, output->os());
   }
 
+  output->keep();
   return mlir::success();
 }
 
@@ -263,11 +265,9 @@ int main(int argc, char** argv) {
       llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
       return 1;
     }
-  } else {
-    if (writeOutput(module.get(), outputFilename).failed()) {
-      llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
-      return 1;
-    }
+  } else if (writeOutput(module.get(), outputFilename).failed()) {
+    llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
+    return 1;
   }
 
   return 0;
