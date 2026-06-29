@@ -135,9 +135,10 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
 }
 
 /**
- * @brief Write an MLIR module to an output file
+ * @brief Write a module to an output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp mod, StringRef filename) {
+template <typename ModuleType>
+static mlir::LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -145,39 +146,21 @@ static mlir::LogicalResult writeOutput(ModuleOp mod, StringRef filename) {
     return mlir::failure();
   }
 
-  if (filename == "-") {
-    mod->print(output->os());
-  } else if (writeBytecodeToFile(mod, output->os()).failed()) {
-    llvm::errs() << "Failed to write bytecode to file: " << filename << "\n";
-    return mlir::failure();
-  }
-
-  output->os().flush();
-  if (output->os().has_error()) {
-    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
-    return mlir::failure();
-  }
-
-  output->keep();
-  return mlir::success();
-}
-
-/**
- * @brief Write an LLVM module to an output file
- */
-static mlir::LogicalResult writeOutputLLVM(llvm::Module* mod,
-                                           StringRef filename) {
-  std::string errorMessage;
-  const auto output = openOutputFile(filename, &errorMessage);
-  if (!output) {
-    llvm::errs() << errorMessage << "\n";
-    return mlir::failure();
-  }
-
-  if (filename == "-") {
-    mod->print(output->os(), nullptr);
+  if constexpr (std::is_same_v<ModuleType, mlir::ModuleOp>) {
+    if (filename == "-") {
+      mod.print(output->os());
+    } else if (writeBytecodeToFile(mod, output->os()).failed()) {
+      llvm::errs() << "Failed to write bytecode to file: " << filename << "\n";
+      return mlir::failure();
+    }
+  } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
+    if (filename == "-") {
+      mod->print(output->os(), nullptr);
+    } else {
+      llvm::WriteBitcodeToFile(*mod, output->os());
+    }
   } else {
-    llvm::WriteBitcodeToFile(*mod, output->os());
+    llvm_unreachable("Unsupported module type");
   }
 
   output->os().flush();
@@ -272,11 +255,11 @@ int main(int argc, char** argv) {
       llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
       return 1;
     }
-    if (writeOutputLLVM(llvmMod.get(), outputFilename).failed()) {
+    if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
       llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
       return 1;
     }
-  } else if (writeOutput(mod.get(), outputFilename).failed()) {
+  } else if (writeOutput<ModuleOp>(mod.get(), outputFilename).failed()) {
     llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
     return 1;
   }
