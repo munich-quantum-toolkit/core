@@ -644,9 +644,11 @@ The data-flow of the `ctrl` modifier.
 The data-flow of the `ctrl` modifier.
 ```
 
-The `qco.ctrl` operation also supports multiple targets. The following two snippets apply a CXX gate. 
+The `qco.ctrl` operation also supports multiple targets.
+The following two snippets apply a CXX gate.
 
 ::::{grid} 2
+
 :::{grid-item}
 
 ```{code-block} mlir
@@ -698,11 +700,17 @@ qco.sink %q2_2 : !qco.qubit
 ```
 
 :::
+
 ::::
 
-In many front-end quantum languages, there is a concept of a register, that is, a collection of qubits.
-The QC and QCO dialects use the `memref` and `qtensor` dialects to describe these constructs, respectively, where the latter is part of the MQT Compiler Collection.
-The following snippets construct the three-qubit [GHZ](https://en.wikipedia.org/wiki/Greenberger–Horne–Zeilinger_state) state in the QC and QCO dialects.
+In many front-end quantum languages, there is a concept of a register, that is,
+a collection of qubits.
+The QC and QCO dialects use the `memref`
+and `qtensor` dialects to describe these constructs, respectively,
+where the latter is part of the MQT Compiler Collection.
+The following snippets construct the three-qubit
+[GHZ](https://en.wikipedia.org/wiki/Greenberger–Horne–Zeilinger_state) state in
+the QC and QCO dialects.
 In many front-end quantum languages, there is a concept of a register, that is,
 a collection of qubits.
 The QC and QCO dialects use the `memref`
