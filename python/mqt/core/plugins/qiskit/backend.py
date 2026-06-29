@@ -186,22 +186,22 @@ class QDMIBackend(BackendV2):
 
     @property
     def target(self) -> Target:
-        """Return the Target describing backend capabilities."""
+        """The Target describing the capabilities of the backend."""
         return self._target
 
     @property
     def provider(self) -> Any | None:  # noqa: ANN401
-        """Return the provider that created this backend."""
+        """The provider that created the backend."""
         return self._provider
 
     @property
     def max_circuits(self) -> int | None:
-        """Maximum number of circuits that can be run in a single job."""
+        """The maximum number of circuits that can be run in a single job."""
         return None  # No limit, processed sequentially
 
     @property
     def options(self) -> Options:
-        """Return backend options."""
+        """The backend options."""
         return self._options
 
     @classmethod
