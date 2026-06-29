@@ -575,8 +575,7 @@ Matrix4x4 Matrix4x4::reorderForQubits(const std::size_t q0Index,
     return fromElements(m[0], m[2], m[1], m[3], m[8], m[10], m[9], m[11], m[4],
                         m[6], m[5], m[7], m[12], m[14], m[13], m[15]);
   }
-  assert(false && "Invalid qubit indices for two-qubit reorder");
-  return *this;
+  llvm::reportFatalInternalError("Invalid qubit indices for two-qubit reorder");
 }
 
 SymmetricEigen4 Matrix4x4::symmetricEigen4() const {

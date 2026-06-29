@@ -54,6 +54,11 @@ static_assert(!SupportedMatrix<int>);
   return matrix;
 }
 
+[[nodiscard]] static bool
+complexesAreApprox(const Complex& lhs, const Complex& rhs, const double tol) {
+  return std::abs(lhs - rhs) <= tol;
+}
+
 static void verifyMatrix2x2FixedMatchesDynamic() {
   const Matrix2x2 gate =
       Matrix2x2::fromElements(std::exp(1i * 0.3), 0.1, 0.0, std::exp(1i * 1.1));
@@ -65,8 +70,8 @@ static void verifyMatrix2x2FixedMatchesDynamic() {
   EXPECT_TRUE(DynamicMatrix(fixed->eigenvectors)
                   .isApprox(dynamic->eigenvectors, MATRIX_TOLERANCE));
   for (std::size_t i = 0; i < 2; ++i) {
-    EXPECT_NEAR(std::abs(fixed->eigenvalues[i]),
-                std::abs(dynamic->eigenvalues[i]), MATRIX_TOLERANCE);
+    EXPECT_TRUE(complexesAreApprox(fixed->eigenvalues[i],
+                                   dynamic->eigenvalues[i], MATRIX_TOLERANCE));
   }
 }
 
@@ -82,14 +87,9 @@ static void verifyMatrix4x4FixedMatchesDynamic() {
   EXPECT_TRUE(DynamicMatrix(fixed->eigenvectors)
                   .isApprox(dynamic->eigenvectors, MATRIX_TOLERANCE));
   for (std::size_t i = 0; i < 4; ++i) {
-    EXPECT_NEAR(std::abs(fixed->eigenvalues[i]),
-                std::abs(dynamic->eigenvalues[i]), MATRIX_TOLERANCE);
+    EXPECT_TRUE(complexesAreApprox(fixed->eigenvalues[i],
+                                   dynamic->eigenvalues[i], MATRIX_TOLERANCE));
   }
-}
-
-[[nodiscard]] static bool
-complexesAreApprox(const Complex& lhs, const Complex& rhs, const double tol) {
-  return std::abs(lhs - rhs) <= tol;
 }
 
 [[nodiscard]] static bool
@@ -162,6 +162,10 @@ static void expectComplexEigen(const DynamicMatrix& matrix) {
   const std::optional<ComplexEigen> decomposition = matrix.complexEigen();
   ASSERT_TRUE(decomposition.has_value())
       << "complexEigen failed for " << matrix.rows() << "x" << matrix.cols();
+  ASSERT_EQ(decomposition->eigenvalues.size(),
+            static_cast<std::size_t>(matrix.rows()));
+  ASSERT_EQ(decomposition->eigenvectors.rows(), matrix.rows());
+  ASSERT_EQ(decomposition->eigenvectors.cols(), matrix.cols());
   for (const Complex& eigenvalue : decomposition->eigenvalues) {
     EXPECT_NEAR(std::abs(eigenvalue), 1.0, MATRIX_TOLERANCE);
   }
@@ -172,6 +176,10 @@ static void expectGeneralComplexEigen(const DynamicMatrix& matrix) {
   const std::optional<ComplexEigen> decomposition = matrix.complexEigen();
   ASSERT_TRUE(decomposition.has_value())
       << "complexEigen failed for " << matrix.rows() << "x" << matrix.cols();
+  ASSERT_EQ(decomposition->eigenvalues.size(),
+            static_cast<std::size_t>(matrix.rows()));
+  ASSERT_EQ(decomposition->eigenvectors.rows(), matrix.rows());
+  ASSERT_EQ(decomposition->eigenvectors.cols(), matrix.cols());
   const double tol = generalEigenpairTolerance(matrix);
   const double residual = maxEigenpairResidual(matrix, *decomposition);
   EXPECT_LE(residual, tol) << "max eigenpair residual " << residual
@@ -850,6 +858,16 @@ TEST(Eigensolver, Matrix2x2DiagonalClosedForm) {
                                             )));
 }
 
+TEST(Eigensolver, Matrix2x2IdentityFullBasis) {
+  const std::optional<ComplexEigen2> eigen =
+      decomposeComplexEigen2(Matrix2x2::identity());
+  ASSERT_TRUE(eigen.has_value());
+  EXPECT_TRUE(
+      eigen->eigenvectors.isApprox(Matrix2x2::identity(), MATRIX_TOLERANCE));
+  EXPECT_NEAR(std::abs(eigen->eigenvectors.determinant()), 1.0,
+              MATRIX_TOLERANCE);
+}
+
 TEST(Eigensolver, Matrix2x2LowerTriangularClosedForm) {
   const Matrix2x2 matrix = Matrix2x2::fromElements(1.0, 0.0, // row 0
                                                    2.0, 3.0  // row 1
@@ -926,7 +944,7 @@ TEST(SymmetricEigensolver, SparseCornerElement) {
 }
 
 TEST(Eigensolver, RandomComplex2x2ClosedForm) {
-  std::mt19937 rng(0xE1E1E1U);
+  std::mt19937 rng(0xE1E1E1U); // NOLINT(cert-msc51-cpp)
   for (int trial = 0; trial < 50; ++trial) {
     expectGeneralComplexEigen(randomComplexMatrix(2, rng));
   }

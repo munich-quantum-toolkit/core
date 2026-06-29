@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
@@ -185,7 +186,7 @@ static void symmetricTql24(std::array<double, 4>& diag,
     if (m != l) {
       while (true) {
         if (j == 30) {
-          assert(false && "symmetricTql2_4: failed to converge");
+          llvm::report_fatal_error("symmetricTql2_4: failed to converge");
         }
         ++j;
 
@@ -696,9 +697,11 @@ complexEigenQrSolve(const int leadingDim, const int order, const int rowLow,
       double si = hessenbergImag.at(activeEigenIndex, activeEigenIndex);
       if (qrIterationStep == 10 || qrIterationStep == 20) {
         sr = std::abs(
-                 hessenbergReal.at(activeEigenIndex, activeEigenIndexMinus1)) +
-             std::abs(hessenbergReal.at(activeEigenIndexMinus1,
-                                        activeEigenIndex - 2));
+            hessenbergReal.at(activeEigenIndex, activeEigenIndexMinus1));
+        if (activeEigenIndex >= rowLow + 2) {
+          sr += std::abs(
+              hessenbergReal.at(activeEigenIndexMinus1, activeEigenIndex - 2));
+        }
         si = 0.0;
       } else {
         double xr =
@@ -1092,17 +1095,22 @@ decomposeComplexEigen2(const Matrix2x2& matrix) {
     return std::nullopt;
   }
 
+  if (std::abs(b) <= MATRIX_TOLERANCE && std::abs(c) <= MATRIX_TOLERANCE) {
+    if (!isFiniteComplex(a) || !isFiniteComplex(d)) {
+      return std::nullopt;
+    }
+    ComplexEigen2 result;
+    result.eigenvalues = {a, d};
+    result.eigenvectors(0, 0) = 1.0;
+    result.eigenvectors(1, 0) = 0.0;
+    result.eigenvectors(0, 1) = 0.0;
+    result.eigenvectors(1, 1) = 1.0;
+    return result;
+  }
+
   auto eigenvectorFor = [&](const Complex& lambda) -> SmallVector<Complex> {
     SmallVector<Complex> vector(2, Complex{0.0, 0.0});
-    if (std::abs(b) <= MATRIX_TOLERANCE && std::abs(c) <= MATRIX_TOLERANCE) {
-      if (std::abs(lambda - a) <= MATRIX_TOLERANCE) {
-        vector[0] = 1.0;
-        vector[1] = 0.0;
-      } else {
-        vector[0] = 0.0;
-        vector[1] = 1.0;
-      }
-    } else if (std::abs(b) > MATRIX_TOLERANCE) {
+    if (std::abs(b) > MATRIX_TOLERANCE) {
       vector[0] = b;
       vector[1] = lambda - a;
     } else {
