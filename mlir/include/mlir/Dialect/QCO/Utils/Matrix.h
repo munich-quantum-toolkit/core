@@ -242,8 +242,6 @@ struct Matrix2x2 {
   /**
    * @brief Computes the eigendecomposition of this complex matrix.
    *
-   * Uses a closed-form formula for `2x2` matrices.
-   *
    * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
    * non-finite eigenvalues.
    */
@@ -547,10 +545,6 @@ struct Matrix4x4 {
 
   /**
    * @brief Computes the eigendecomposition of this complex matrix.
-   *
-   * Uses stack-specialized EISPACK `corth` / `comqr2` for fixed `n = 4`.
-   *
-   * @copydoc DynamicMatrix::complexEigen
    *
    * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
    */

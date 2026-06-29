@@ -27,10 +27,6 @@ namespace mlir::qco {
  * Original Fortran: https://netlib.org/eispack/tred2.f,
  * https://netlib.org/eispack/tql2.f
  *
- * @pre @p symmetric is real and symmetric: `symmetric[i,j] == symmetric[j,i]`
- * for all `i, j`. Only the lower triangle (including the diagonal) is read,
- * but supplying a non-symmetric matrix yields undefined numerical results.
- *
  * @param symmetric Row-major real symmetric `4x4` matrix.
  * @return Ascending eigenvalues and matching eigenvectors (as columns).
  */
@@ -42,25 +38,22 @@ decomposeSymmetricEigen4(const std::array<double, 16>& symmetric);
  *
  * @copydoc decomposeSymmetricEigen4(const std::array<double, 16>&)
  *
- * @param matrix Source matrix; only @ref Matrix4x4::realPart is used.
- * @pre Entries are real (imaginary parts must be negligible). The real parts
- * must form a symmetric matrix; imaginary parts are ignored.
+ * @param matrix Source matrix.
  */
 [[nodiscard]] SymmetricEigen4 decomposeSymmetricEigen4(const Matrix4x4& matrix);
 
 /**
  * @brief Computes the eigendecomposition of a `1x1` dynamic matrix.
  *
- * @param matrix Source matrix (must be `1x1`).
+ * @param matrix Source matrix.
  * @return The single eigenpair.
  */
 [[nodiscard]] std::optional<ComplexEigen>
 decomposeComplexEigen1x1(const DynamicMatrix& matrix);
 
 /**
- * @brief Computes the eigendecomposition of a `2x2` complex matrix.
- *
- * Uses a closed-form formula for `2x2` matrices.
+ * @brief Computes the eigendecomposition of a `2x2` complex matrix using a
+ * closed-form formula.
  *
  * @param matrix Source matrix.
  * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces

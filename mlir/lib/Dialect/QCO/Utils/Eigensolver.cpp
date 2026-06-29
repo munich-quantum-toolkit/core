@@ -294,16 +294,12 @@ decomposeSymmetricEigen4(const Matrix4x4& matrix) {
   return std::isfinite(value.real()) && std::isfinite(value.imag());
 }
 
-[[nodiscard]] static double vectorNorm(const llvm::ArrayRef<Complex> values) {
+static void normalizeInPlace(const llvm::MutableArrayRef<Complex> values) {
   double sumSq = 0.0;
   for (const Complex& value : values) {
     sumSq += std::norm(value);
   }
-  return std::sqrt(sumSq);
-}
-
-static void normalizeInPlace(const llvm::MutableArrayRef<Complex> values) {
-  const double norm = vectorNorm(values);
+  const double norm = std::sqrt(sumSq);
   if (norm <= MATRIX_TOLERANCE) {
     return;
   }
@@ -338,16 +334,12 @@ public:
            (static_cast<std::size_t>(col) * static_cast<std::size_t>(ld));
   }
 
-  [[nodiscard]] std::size_t linearIndex(const int row, const int col) const {
-    return rowMajorIndex(row, col, ld_);
-  }
-
   [[nodiscard]] double& at(const int row, const int col) {
-    return values_[linearIndex(row, col)];
+    return values_[rowMajorIndex(row, col, ld_)];
   }
 
   [[nodiscard]] const double& at(const int row, const int col) const {
-    return values_[linearIndex(row, col)];
+    return values_[rowMajorIndex(row, col, ld_)];
   }
 
 private:
@@ -960,17 +952,6 @@ constexpr int K_COMPLEX_EIGEN4_MATRIX_STORAGE =
     (K_COMPLEX_EIGEN4_LD * K_COMPLEX_EIGEN4_SIZE) + K_COMPLEX_EIGEN4_SIZE + 1;
 constexpr int K_COMPLEX_EIGEN4_EIGENVALUE_STORAGE = K_COMPLEX_EIGEN4_SIZE + 1;
 
-[[nodiscard]] static std::size_t eispackMatrixBufferSize(const int leadingDim,
-                                                         const int order) {
-  return (static_cast<std::size_t>(leadingDim) *
-          static_cast<std::size_t>(order)) +
-         static_cast<std::size_t>(order) + 1U;
-}
-
-[[nodiscard]] static std::size_t eispackEigenvalueBufferSize(const int order) {
-  return static_cast<std::size_t>(order) + 1U;
-}
-
 [[nodiscard]] static double
 eigenvectorColumnNorm(const int order, const int col, const int leadingDim,
                       const ArrayRef<double> eigenvectorReal,
@@ -1034,10 +1015,6 @@ static void splitMatrix4x4ToRealImag(
       matrixImag[idx] = std::imag(value);
     }
   }
-}
-
-static void normalizeVector(SmallVector<Complex>& vector) {
-  normalizeInPlace(vector);
 }
 
 [[nodiscard]] std::optional<ComplexEigen4>
@@ -1117,7 +1094,7 @@ decomposeComplexEigen2(const Matrix2x2& matrix) {
       vector[0] = lambda - d;
       vector[1] = c;
     }
-    normalizeVector(vector);
+    normalizeInPlace(vector);
     return vector;
   };
 
@@ -1164,7 +1141,9 @@ decomposeComplexEigenDynamic(const DynamicMatrix& matrix) {
   const int rowLow = 0;
   const int rowHigh = order - 1;
 
-  const std::size_t matrixStorage = eispackMatrixBufferSize(leadingDim, order);
+  const std::size_t matrixStorage =
+      (static_cast<std::size_t>(leadingDim) * static_cast<std::size_t>(order)) +
+      static_cast<std::size_t>(order) + 1U;
   SmallVector<double> matrixReal(matrixStorage);
   SmallVector<double> matrixImag(matrixStorage);
   for (int row = 0; row < order; ++row) {
@@ -1179,8 +1158,8 @@ decomposeComplexEigenDynamic(const DynamicMatrix& matrix) {
 
   SmallVector<double> householderReal(static_cast<std::size_t>(order));
   SmallVector<double> householderImag(static_cast<std::size_t>(order));
-  SmallVector<double> eigenvalueReal(eispackEigenvalueBufferSize(order));
-  SmallVector<double> eigenvalueImag(eispackEigenvalueBufferSize(order));
+  SmallVector<double> eigenvalueReal(static_cast<std::size_t>(order) + 1U);
+  SmallVector<double> eigenvalueImag(static_cast<std::size_t>(order) + 1U);
   SmallVector<double> eigenvectorReal(matrixStorage);
   SmallVector<double> eigenvectorImag(matrixStorage);
 

@@ -144,7 +144,7 @@ static void multiply4x4(const ArrayRef<Complex> lhs,
   return true;
 }
 
-/// Returns @p dim as `size_t` after checking it is non-negative and squarable.
+/// Returns @p dim as `size_t` after asserting it is non-negative and squarable.
 [[nodiscard]] static std::size_t checkedDim(const std::int64_t dim) {
   assert(dim >= 0 && "DynamicMatrix dimension must be non-negative");
   const auto udim = static_cast<std::size_t>(dim);
@@ -286,12 +286,12 @@ Matrix2x2 Matrix2x2::fromElements(const Complex& m00, const Complex& m01,
 }
 
 Complex& Matrix2x2::operator()(const std::size_t row, const std::size_t col) {
-  return data[checkedFlatIndex(row, col, K_ROWS)];
+  return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
 Complex Matrix2x2::operator()(const std::size_t row,
                               const std::size_t col) const {
-  return data[checkedFlatIndex(row, col, K_ROWS)];
+  return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
 Matrix2x2 Matrix2x2::operator*(const Matrix2x2& rhs) const {
@@ -389,12 +389,12 @@ Matrix4x4 Matrix4x4::fromElements(const Complex& m00, const Complex& m01,
 }
 
 Complex& Matrix4x4::operator()(const std::size_t row, const std::size_t col) {
-  return data[checkedFlatIndex(row, col, K_ROWS)];
+  return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
 Complex Matrix4x4::operator()(const std::size_t row,
                               const std::size_t col) const {
-  return data[checkedFlatIndex(row, col, K_ROWS)];
+  return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
 Matrix4x4 Matrix4x4::operator*(const Matrix4x4& rhs) const {
