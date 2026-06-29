@@ -726,8 +726,8 @@ private:
       // first SWAP changes the token (the qubit) on the target, invalidating
       // the edge in F.
 
-      if (const auto cycle = f.findCycle();
-          cycle && cycle->size() >= MIN_CYCLE_LENGTH) {
+      const auto cycle = f.findCycle();
+      if (cycle && cycle->size() >= MIN_CYCLE_LENGTH) {
         for (size_t i = 0; i + 1 < cycle->size(); ++i) {
           curr.swap((*cycle)[i], (*cycle)[i + 1]);
           swaps.emplace_back((*cycle)[i], (*cycle)[i + 1]);
@@ -735,14 +735,20 @@ private:
         continue;
       }
 
-      for (const auto v : f.getNodes()) {
-        if (f.getDegree(v) == 0) {
-          if (const auto nbrs = device->neighboursOf(v); !nbrs.empty()) {
-            const auto u = nbrs.front();
-            curr.swap(u, v);
-            swaps.emplace_back(u, v);
+      // Otherwise, search for an unhappy SWAP. That is, search for an edge (u,
+      // v), where exchanging u and v, reduces u's distance to its target
+      // location (by one) and increases v's distance from 0 (already at the
+      // correct location) to one.
+
+      for (const auto u : f.getNodes()) {
+        if (f.getDegree(u) != 0) {
+          for (const auto v : f.getNeighbours(u)) {
+            if (f.getDegree(v) == 0) {
+              curr.swap(u, v);
+              swaps.emplace_back(u, v);
+              break;
+            }
           }
-          break;
         }
       }
     } while (!f.empty());
