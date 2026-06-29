@@ -169,37 +169,50 @@ moduleFromSourceString(mlir::MLIRContext* context, const std::string& input) {
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromString(mlir::MLIRContext* context, const std::string& input) {
-  const auto path = std::filesystem::path(input);
-  if (path.empty() || !path.has_extension() ||
-      (path.extension() != ".jeff" && path.extension() != ".mlir" &&
-       path.extension() != ".qasm")) {
+  if (input.find('\n') != std::string::npos) {
     return moduleFromSourceString(context, input);
   }
 
-  const auto pathExists = std::filesystem::exists(path);
+  const auto path = std::filesystem::path(input);
+  if (path.empty()) {
+    return moduleFromSourceString(context, input);
+  }
+
+  std::error_code ec;
+  const auto pathExists = std::filesystem::exists(path, ec);
+  if (ec) {
+    throw std::runtime_error(std::string("Failed to inspect path '") + input +
+                             "': " + ec.message());
+  }
   if (!pathExists) {
     throw std::runtime_error(std::string("Input file '") + input +
                              "' does not exist.");
   }
 
-  const auto isFile = std::filesystem::is_regular_file(path);
+  const auto isFile = std::filesystem::is_regular_file(path, ec);
+  if (ec) {
+    throw std::runtime_error(std::string("Failed to inspect path '") + input +
+                             "': " + ec.message());
+  }
   if (!isFile) {
     throw std::runtime_error(std::string("Input path '") + input +
                              "' is not a file.");
   }
 
   const auto extension = path.extension().string();
+  if (extension != ".jeff" && extension != ".mlir" && extension != ".qasm") {
+    throw std::runtime_error(std::string("Input file '") + input +
+                             "' has unsupported extension '" + extension +
+                             "'.");
+  }
+
   if (extension == ".jeff") {
     return moduleFromJeffFile(context, input);
   }
   if (extension == ".mlir") {
     return moduleFromMlirFile(context, input);
   }
-  if (extension == ".qasm") {
-    return moduleFromQasmFile(context, input);
-  }
-  throw std::runtime_error(std::string("Input file '") + input +
-                           "' has unsupported extension '" + extension + "'.");
+  return moduleFromQasmFile(context, input);
 }
 
 /**
