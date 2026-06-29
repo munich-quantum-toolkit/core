@@ -83,11 +83,13 @@ If you are on Windows, use the `debug-windows` and `release-windows` presets.
 
 ### Dev container
 
-A dev container configuration has been added to provide a consistent local
-development environment.
-Common IDEs like CLion and VS Code can open the repository directly within the
-container.
-This requires a Docker installation, as well as WSL if you are on Windows.
+A [dev container](https://containers.dev/) configuration is available to provide
+a consistent local development environment.
+Common IDEs like
+[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
+and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
+open the repository directly inside the container.
+If you are on Windows, we recommend using Docker Desktop with the WSL 2 backend.
 
 ## [3.6.0]
 
