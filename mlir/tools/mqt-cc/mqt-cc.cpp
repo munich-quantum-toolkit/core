@@ -152,6 +152,12 @@ static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
     return mlir::failure();
   }
 
+  output->os().flush();
+  if (output->os().has_error()) {
+    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
+    return mlir::failure();
+  }
+
   output->keep();
   return mlir::success();
 }
@@ -172,6 +178,12 @@ static mlir::LogicalResult writeOutputLLVM(llvm::Module* module,
     module->print(output->os(), nullptr);
   } else {
     llvm::WriteBitcodeToFile(*module, output->os());
+  }
+
+  output->os().flush();
+  if (output->os().has_error()) {
+    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
+    return mlir::failure();
   }
 
   output->keep();
