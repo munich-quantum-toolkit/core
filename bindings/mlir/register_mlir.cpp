@@ -279,7 +279,11 @@ compileProgram(const nb::object& program, const bool convertToQIRBase,
                const bool enableHadamardLifting, const bool enableTiming,
                const bool enableStatistics) {
   auto context = createCompilerContext();
+
   auto mod = moduleFromInputProgram(context.get(), program);
+  if (!mod) {
+    throw std::runtime_error("Failed to create MLIR module.");
+  }
 
   mlir::QuantumCompilerConfig config;
   config.convertToQIRBase = convertToQIRBase;
@@ -292,13 +296,16 @@ compileProgram(const nb::object& program, const bool convertToQIRBase,
 
   const mlir::QuantumCompilerPipeline pipeline(config);
   if (mlir::failed(pipeline.runPipeline(mod.get()))) {
-    throw std::runtime_error("Compilation pipeline failed.");
+    throw std::runtime_error("Failed to run compilation pipeline.");
   }
 
   if (convertToQIRBase || convertToQIRAdaptive) {
     llvm::LLVMContext llvmContext;
     std::unique_ptr<llvm::Module> llvmMod =
         mlir::translateModuleToLLVMIR(*mod, llvmContext);
+    if (!llvmMod) {
+      throw std::runtime_error("Failed to translate MLIR module to LLVM IR.");
+    }
     std::string result;
     llvm::raw_string_ostream os(result);
     llvmMod->print(os, nullptr);
