@@ -28,6 +28,20 @@ namespace mlir::qco {
 
 namespace {
 
+#define CREATE_OP_CASE(opType)                                                 \
+  .Case<opType>([&](auto) {                                                    \
+    return opType::create(rewriter, op->getLoc(), targetInput);                \
+  })
+
+/**
+ * @brief Result of checking how do modify a controlled gate.
+ */
+struct controlsToModify {
+  llvm::DenseSet<Value> quantumCtrlsToRemove;
+  llvm::DenseSet<Value> classicalPosCtrlsToAdd;
+  llvm::DenseSet<Value> classicalNegCtrlsToAdd;
+};
+
 /**
  * This method checks whether the func::FuncOp is an entry point to the program.
  *
@@ -176,6 +190,38 @@ bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
   return addsGlobalPhase;
 }
 
+Operation* removeCtrlsOfGate(CtrlOp* op,
+                             const llvm::DenseSet<Value>& ctrlsToRemove,
+                             PatternRewriter& rewriter,
+                             std::span<Operation*>& worklist) {
+  for (const auto& qubitCtrl : ctrlsToRemove) {
+    rewriter.replaceAllUsesWith(op->getOutputForInput(qubitCtrl), qubitCtrl);
+  }
+  if (ctrlsToRemove.size() == op->getNumControls()) {
+    // Remove Ctrl completely
+    const auto targetInput = op->getInputTargets();
+    const auto newOp =
+        mlir::TypeSwitch<Operation*, Operation*>(op->getBodyUnitary())
+            CREATE_OP_CASE(IdOp) CREATE_OP_CASE(HOp) CREATE_OP_CASE(XOp)
+                .Default([&](auto) -> Operation* {
+                  throw std::runtime_error("Unsupported operation");
+                });
+    auto newUnitary = static_cast<UnitaryOpInterface>(newOp);
+    for (const auto inTarget : newUnitary.getInputQubits()) {
+      rewriter.replaceAllUsesWith(op->getOutputForInput(inTarget),
+                                  newUnitary.getOutputForInput(inTarget));
+    }
+    for (const auto ctrlQubit : op->getOutputControls()) {
+      rewriter.replaceAllUsesWith(ctrlQubit, op->getInputForOutput(ctrlQubit));
+    }
+    rewriter.eraseOp(*op);
+    std::ranges::replace(worklist, *op, newOp);
+
+    return newOp;
+  }
+  return nullptr;
+}
+
 /**
  * Handles a unitary gate, meaning it is propagated through the union table.
  *
@@ -289,7 +335,50 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
 
   const auto inputCtrls = op->getInputControls();
   std::vector<Value> inCtrlValues = {inputCtrls.begin(), inputCtrls.end()};
-  // TODO: Check if gate is executable
+
+  // Check if gate is executable
+  const auto satisfiable = ut->areThereSatisfiableCombinations(
+      inCtrlValues, posClassicalCtrls, negClassicalCtrls);
+  const auto superfluousCtrls = ut->getSuperfluousControls(
+      inCtrlValues, posClassicalCtrls, negClassicalCtrls);
+  if (superfluousCtrls.completelySuperfluous || !satisfiable) {
+    std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
+    removeCtrlOperation(op, rewriter);
+    return WalkResult::advance();
+  }
+
+  // Collect quantum values to remove and classical values to add
+  controlsToModify ctrlsToMod;
+  ctrlsToMod.quantumCtrlsToRemove = superfluousCtrls.superfluousQubits;
+  for (const auto superfluousQ : ctrlsToMod.quantumCtrlsToRemove) {
+    std::erase(inCtrlValues, superfluousQ);
+  }
+
+  for (const auto qCtrl : inCtrlValues) {
+    auto qCtrlValuesWithoutCurrent = inCtrlValues;
+    std::erase(qCtrlValuesWithoutCurrent, qCtrl);
+    if (ut->isQubitImplied(qCtrl, qCtrlValuesWithoutCurrent, posClassicalCtrls,
+                           negClassicalCtrls)) {
+      std::erase(inCtrlValues, qCtrl);
+      ctrlsToMod.quantumCtrlsToRemove.insert(qCtrl);
+    } else if (auto v = ut->getValueThatIsEquivalentToQubit(qCtrl);
+               !v.empty()) {
+      for (const auto& [value, b] : v) {
+        if (b) {
+          ctrlsToMod.classicalPosCtrlsToAdd.insert(value);
+        } else {
+          ctrlsToMod.classicalNegCtrlsToAdd.insert(value);
+        }
+        break;
+      }
+    }
+  }
+
+  if (!ctrlsToMod.quantumCtrlsToRemove.empty()) {
+    auto newOp = removeCtrlsOfGate(op, ctrlsToMod.quantumCtrlsToRemove,
+                                   rewriter, worklist);
+    return WalkResult::advance();
+  }
 
   auto body = op->getBodyUnitary();
   // Make sure that the right qubits in the right order are passed to the
@@ -310,7 +399,7 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
 
   std::vector<Value> resultQubits;
   resultQubits.reserve(numTargets);
-  const auto yieldOP = cast<YieldOp>(*(op->getBody()->rbegin()));
+  const auto yieldOP = cast<YieldOp>(*op->getBody()->rbegin());
   for (unsigned int uOpOutIndex = 0; uOpOutIndex < numTargets; ++uOpOutIndex) {
     for (unsigned int i = 0; i < numTargets; ++i) {
       if (yieldOP->getOperand(i) == body.getOutputTarget(uOpOutIndex)) {
