@@ -254,6 +254,8 @@ template <typename OpTy>
     return countOps<UOp>(funcOp);
   case ZSXX:
     return countZSXXGates(funcOp);
+  case R:
+    return countOps<ROp>(funcOp);
   }
   return 0;
 }
@@ -537,6 +539,8 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
     return isa<UOp>(op);
   case ZSXX:
     return isa<RZOp, SXOp, XOp>(op);
+  case R:
+    return isa<ROp>(op);
   }
   return false;
 }

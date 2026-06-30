@@ -98,6 +98,13 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::desc("Apply Hadamard lifting during optimization"),
     llvm::cl::init(false));
 
+static llvm::cl::opt<std::string> nativeGates(
+    "native-gates",
+    llvm::cl::desc(
+        "Comma-separated native gate menu for the fuse-two-qubit-unitary-runs "
+        "pass"),
+    llvm::cl::value_desc("csv"), llvm::cl::init(""));
+
 /**
  * @brief Load and parse a `.qasm` file
  */
@@ -213,6 +220,7 @@ int main(int argc, char** argv) {
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
+  config.nativeGates = nativeGates.getValue();
 
   // Run the compilation pipeline
   CompilationRecord record;
@@ -232,7 +240,8 @@ int main(int argc, char** argv) {
                  << record.afterQCOConversion << "\n";
     llvm::outs() << "After Initial QCO Canonicalization:\n"
                  << record.afterQCOCanon << "\n";
-    llvm::outs() << "After Optimization:\n" << record.afterOptimization << "\n";
+    llvm::outs() << "After Optimization and Native Gate Synthesis:\n"
+                 << record.afterOptimization << "\n";
     llvm::outs() << "After Final QCO Canonicalization:\n"
                  << record.afterOptimizationCanon << "\n";
     llvm::outs() << "After QCO-to-QC Conversion:\n"

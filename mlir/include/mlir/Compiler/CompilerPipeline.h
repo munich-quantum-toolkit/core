@@ -49,6 +49,18 @@ struct QuantumCompilerConfig {
 
   /// Enable Hadamard lifting
   bool enableHadamardLifting = false;
+
+  /// Comma-separated native gate menu. Recognised tokens: `u`, `x`, `sx`,
+  /// `rz` (or `p`), `rx`, `ry`, `r`, `cx`, `cz`, `rzz`.
+  /// Illustrative menus (use `cx` or `cz` as the entangler, or
+  /// both):
+  /// - `"x,sx,rz,cx"` / `"x,sx,rz,cz"` — IBM basic (no fractional 2q)
+  /// - `"x,sx,rz,rx,rzz,cx"` / `"...,cz"` — IBM fractional
+  /// - `"u,cx"` / `"u,cz"` — generic single-qubit U3 + CX/CZ
+  /// - `"r,cz"` — IQM-style default
+  /// - `"rx,rz,cx"`, `"rx,ry,cz"`, `"ry,rz,cx"` — supported RX/RY/RZ pairs plus
+  /// entangler
+  std::string nativeGates;
 };
 
 /**
@@ -84,7 +96,7 @@ struct CompilationRecord {
  * 2. QC cleanup pipeline
  * 3. QCO dialect (value semantics) - enables SSA-based optimizations
  * 4. QCO cleanup pipeline
- * 5. Quantum optimization passes
+ * 5. Optimization and native gate synthesis
  * 6. QCO cleanup pipeline
  * 7. QC dialect - converted back for backend lowering
  * 8. QC cleanup pipeline

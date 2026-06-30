@@ -15,6 +15,9 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
@@ -24,6 +27,8 @@
 #include "quantum_computation_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -34,12 +39,17 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <cstdlib>
 #include <iosfwd>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace mqt::test::compiler {
@@ -691,5 +701,209 @@ INSTANTIATE_TEST_SUITE_P(
         CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
                                  nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
                                  MQT_NAMED_BUILDER(mlir::qir::ctrlTwo)}));
+
+namespace {
+
+class CompilerPipelineNativeSynthesisConfigTest : public testing::Test {
+protected:
+  std::unique_ptr<mlir::MLIRContext> context;
+  mlir::OwningOpRef<mlir::ModuleOp> module;
+  mlir::QuantumCompilerConfig config;
+
+  void SetUp() override {
+    mlir::DialectRegistry registry;
+    registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
+                    mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
+                    mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
+                    mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
+                    mlir::LLVM::LLVMDialect>();
+    context = std::make_unique<mlir::MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+
+    module = mlir::qc::QCProgramBuilder::build(context.get(),
+                                               mlir::qc::staticQubitsWithOps);
+    ASSERT_TRUE(module);
+
+    config.recordIntermediates = true;
+  }
+
+  [[nodiscard]] mlir::CompilationRecord runPipelineAndExpectSuccess() const {
+    mlir::CompilationRecord record;
+    mlir::QuantumCompilerPipeline pipeline(config);
+    EXPECT_TRUE(pipeline.runPipeline(module.get(), &record).succeeded());
+    return record;
+  }
+
+  void runPipelineAndExpectFailure() const {
+    mlir::CompilationRecord record;
+    mlir::QuantumCompilerPipeline pipeline(config);
+    EXPECT_TRUE(mlir::failed(pipeline.runPipeline(module.get(), &record)));
+  }
+};
+
+} // namespace
+
+static std::optional<mlir::qco::Matrix4x4>
+computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
+  if (module == nullptr) {
+    return std::nullopt;
+  }
+
+  mlir::qco::Matrix4x4 unitary = mlir::qco::Matrix4x4::identity();
+  llvm::DenseMap<mlir::Value, std::size_t> qubitIds;
+
+  const auto getQubitId = [&](mlir::Value qubit) -> std::optional<std::size_t> {
+    const auto it = qubitIds.find(qubit);
+    if (it == qubitIds.end()) {
+      return std::nullopt;
+    }
+    return it->second;
+  };
+
+  for (auto func : module.getOps<mlir::func::FuncOp>()) {
+    for (auto& block : func.getBlocks()) {
+      for (auto& rawOp : block.getOperations()) {
+        if (auto staticOp = llvm::dyn_cast<mlir::qco::StaticOp>(&rawOp)) {
+          const auto index = static_cast<std::size_t>(staticOp.getIndex());
+          if (index >= 2) {
+            return std::nullopt;
+          }
+          qubitIds.try_emplace(staticOp.getResult(), index);
+          continue;
+        }
+
+        if (llvm::isa<mlir::qco::BarrierOp, mlir::qco::GPhaseOp>(&rawOp)) {
+          continue;
+        }
+
+        auto op = llvm::dyn_cast<mlir::qco::UnitaryOpInterface>(&rawOp);
+        if (!op) {
+          continue;
+        }
+
+        if (op.isSingleQubit()) {
+          const auto qid = getQubitId(op.getInputQubit(0));
+          if (!qid) {
+            return std::nullopt;
+          }
+          mlir::qco::Matrix2x2 oneQ;
+          if (!op.getUnitaryMatrix2x2(oneQ)) {
+            return std::nullopt;
+          }
+          unitary = oneQ.embedInTwoQubit(*qid) * unitary;
+          qubitIds[op.getOutputQubit(0)] = *qid;
+          continue;
+        }
+
+        if (op.isTwoQubit()) {
+          const auto q0 = getQubitId(op.getInputQubit(0));
+          const auto q1 = getQubitId(op.getInputQubit(1));
+          if (!q0 || !q1) {
+            return std::nullopt;
+          }
+          mlir::qco::Matrix4x4 twoQ;
+          if (!op.getUnitaryMatrix4x4(twoQ)) {
+            return std::nullopt;
+          }
+          const mlir::SmallVector<std::size_t, 2> ids{*q0, *q1};
+          unitary = twoQ.reorderForQubits(ids[0], ids[1]) * unitary;
+          qubitIds[op.getOutputQubit(0)] = *q0;
+          qubitIds[op.getOutputQubit(1)] = *q1;
+          continue;
+        }
+
+        return std::nullopt;
+      }
+    }
+  }
+
+  return unitary;
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       AppliesConfiguredNativeSynthesisProfileInStage5) {
+  config.nativeGates = "x,sx,rz,cx";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterOptimization.find("qco.h"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       AppliesConfiguredU3CxNativeSynthesisProfileInStage5) {
+  config.nativeGates = "u,cx";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterOptimization.find("qco.h"), std::string::npos);
+  EXPECT_NE(record.afterOptimization.find("qco.u"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       AppliesConfiguredExpandedNativeSynthesisProfileInStage5) {
+  config.nativeGates = "u,rx,rz,cx,cz";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterOptimization.find("qco.h"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       RejectsUnderSpecifiedNativeSynthesisMenuInStage5) {
+  config.nativeGates = "cx,cz";
+
+  runPipelineAndExpectFailure();
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       RejectsInvalidNativeGateTokenInStage5) {
+  config.nativeGates = "not-a-gate";
+
+  runPipelineAndExpectFailure();
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       LeavesIRUnchangedWhenNoNativeProfileIsConfigured) {
+  config.nativeGates = "";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterQCOCanon, record.afterOptimization);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       LeavesIRUnchangedWhenNativeGatesIsWhitespaceOnly) {
+  config.nativeGates = "   \t  ";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  EXPECT_NE(record.afterQCOCanon.find("qco.h"), std::string::npos);
+  EXPECT_EQ(record.afterQCOCanon, record.afterOptimization);
+}
+
+TEST_F(CompilerPipelineNativeSynthesisConfigTest,
+       NativeSynthesisPreservesUnitaryOnStaticQubits) {
+  config.nativeGates = "x,sx,rz,cx";
+
+  const auto record = runPipelineAndExpectSuccess();
+
+  auto preSynth = mlir::parseSourceString<mlir::ModuleOp>(record.afterQCOCanon,
+                                                          context.get());
+  auto postSynth = mlir::parseSourceString<mlir::ModuleOp>(
+      record.afterOptimization, context.get());
+  ASSERT_TRUE(preSynth);
+  ASSERT_TRUE(postSynth);
+
+  const auto preU = computeStaticTwoQubitUnitary(preSynth.get());
+  const auto postU = computeStaticTwoQubitUnitary(postSynth.get());
+  ASSERT_TRUE(preU);
+  ASSERT_TRUE(postU);
+  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*preU, *postU));
+}
 
 } // namespace mqt::test::compiler
