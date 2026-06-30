@@ -73,7 +73,7 @@ TEST_F(QIRRuntimeTest, SGate) {
 TEST_F(QIRRuntimeTest, SdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sdg__body(q0);
+  __quantum__qis__s__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, SXGate) {
@@ -85,19 +85,19 @@ TEST_F(QIRRuntimeTest, SXGate) {
 TEST_F(QIRRuntimeTest, SXdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sxdg__body(q0);
+  __quantum__qis__sx__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, SqrtXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sqrtx__body(q0);
+  __quantum__qis__sx__body(q0);
 }
 
 TEST_F(QIRRuntimeTest, SqrtXdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sqrtxdg__body(q0);
+  __quantum__qis__sx__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, TGate) {
@@ -109,7 +109,7 @@ TEST_F(QIRRuntimeTest, TGate) {
 TEST_F(QIRRuntimeTest, TdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__tdg__body(q0);
+  __quantum__qis__t__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, RGate) {
