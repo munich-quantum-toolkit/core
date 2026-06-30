@@ -1269,10 +1269,10 @@ def IfOp
         Block *thenBlock() {
           return &getThenRegion().back();
         }
-        
+
         /// Return the yield of the else-block.
         YieldOp thenYield();
-        
+
         /// Return the else-block.
         Block* elseBlock() {
           return &getElseRegion().back();
