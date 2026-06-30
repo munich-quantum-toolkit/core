@@ -31,7 +31,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <optional>
 
