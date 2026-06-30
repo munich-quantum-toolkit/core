@@ -150,12 +150,12 @@ class MockQDMIDevice:
 
         @property
         def id(self) -> str:
-            """Return job ID."""
+            """The job ID."""
             return self._id
 
         @property
         def num_shots(self) -> int:
-            """Return number of shots."""
+            """The number of shots."""
             return self._shots
 
         def check(self) -> fomac.Job.Status:
