@@ -67,14 +67,6 @@ struct ChamberState {
 static constexpr double PI = std::numbers::pi;
 static constexpr double PI_OVER_4 = PI / 4.0;
 
-static double remEuclid(const double a, const double b) {
-  if (b == 0.0) {
-    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
-  }
-  const auto r = std::fmod(a, b);
-  return (r < 0.0) ? r + std::abs(b) : r;
-}
-
 static constexpr Matrix4x4 MAGIC_BASIS_NON_NORMALIZED =
     Matrix4x4::fromElements( //
         1, 1i, 0, 0,         //

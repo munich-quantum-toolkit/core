@@ -12,10 +12,13 @@
 
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
 #include <array>
+#include <cmath>
 #include <complex>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -55,6 +58,15 @@ inline constexpr double WEYL_SUPER_CONTROLLED_MAX_RELATIVE = 1e-9;
   const auto traceAbs = std::abs(trace);
   const auto dimension = 4.0;
   return (dimension + (traceAbs * traceAbs)) / (dimension * (dimension + 1));
+}
+
+/** @brief Euclidean remainder mapping `a` into `[0, |b|)` for `b != 0`. */
+[[nodiscard]] inline double remEuclid(double a, double b) {
+  if (b == 0.0) {
+    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
+  }
+  const auto r = std::fmod(a, b);
+  return (r < 0.0) ? r + std::abs(b) : r;
 }
 
 /**
@@ -126,11 +138,19 @@ private:
  *
  * Emission order: for each `i`, apply `singleQubitFactors[2*i+1]` on q0 and
  * `singleQubitFactors[2*i]` on q1, then the basis gate (except after the last
- * pair).
+ * pair). Factor count is `2 * (numBasisUses + 1)` (at most @ref
+ * kMaxSingleQubitBasisFactors).
  */
+inline constexpr std::size_t kMaxSingleQubitBasisFactors = 8;
+
+[[nodiscard]] constexpr std::size_t
+singleQubitFactorCount(const std::uint8_t numBasisUses) {
+  return 2u * (static_cast<std::size_t>(numBasisUses) + 1u);
+}
+
 struct TwoQubitNativeDecomposition {
   std::uint8_t numBasisUses = 0;
-  SmallVector<Matrix2x2, 8> singleQubitFactors;
+  SmallVector<Matrix2x2> singleQubitFactors;
   double globalPhase = 0.0;
 };
 
@@ -257,14 +277,14 @@ private:
     Matrix2x2 q1ra; ///< q1 factor before `RZ(2b)` (2-basis layer 1).
   };
 
-  [[nodiscard]] static SmallVector<Matrix2x2, 8>
-  decomp0(const TwoQubitWeylDecomposition& target);
-  [[nodiscard]] SmallVector<Matrix2x2, 8>
-  decomp1(const TwoQubitWeylDecomposition& target) const;
-  [[nodiscard]] SmallVector<Matrix2x2, 8>
-  decomp2Supercontrolled(const TwoQubitWeylDecomposition& target) const;
-  [[nodiscard]] SmallVector<Matrix2x2, 8>
-  decomp3Supercontrolled(const TwoQubitWeylDecomposition& target) const;
+  static void decomp0(SmallVector<Matrix2x2>& out,
+                      const TwoQubitWeylDecomposition& target);
+  void decomp1(SmallVector<Matrix2x2>& out,
+               const TwoQubitWeylDecomposition& target) const;
+  void decomp2Supercontrolled(SmallVector<Matrix2x2>& out,
+                              const TwoQubitWeylDecomposition& target) const;
+  void decomp3Supercontrolled(SmallVector<Matrix2x2>& out,
+                              const TwoQubitWeylDecomposition& target) const;
   [[nodiscard]] std::array<std::complex<double>, 4>
   traces(const TwoQubitWeylDecomposition& target) const;
 

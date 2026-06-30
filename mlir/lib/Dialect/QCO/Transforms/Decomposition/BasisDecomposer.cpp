@@ -42,14 +42,6 @@ static constexpr Matrix2x2 K22_L =
     Matrix2x2::fromElements(INV_SQRT2, -INV_SQRT2, INV_SQRT2, INV_SQRT2);
 static constexpr Matrix2x2 K22_R = Matrix2x2::fromElements(0, 1, -1, 0);
 
-static double remEuclid(const double a, const double b) {
-  if (b == 0.0) {
-    llvm::reportFatalInternalError("remEuclid expects non-zero divisor");
-  }
-  const auto r = std::fmod(a, b);
-  return (r < 0.0) ? r + std::abs(b) : r;
-}
-
 static bool relativeEq(double lhs, double rhs, double epsilon,
                        double maxRelative) {
   if (lhs == rhs) {
@@ -202,19 +194,20 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
     return std::nullopt;
   }
 
-  SmallVector<Matrix2x2, 8> factors;
+  SmallVector<Matrix2x2> factors;
+  factors.reserve(singleQubitFactorCount(bestNbasis));
   switch (bestNbasis) {
   case 0:
-    factors = decomp0(targetDecomposition);
+    decomp0(factors, targetDecomposition);
     break;
   case 1:
-    factors = decomp1(targetDecomposition);
+    decomp1(factors, targetDecomposition);
     break;
   case 2:
-    factors = decomp2Supercontrolled(targetDecomposition);
+    decomp2Supercontrolled(factors, targetDecomposition);
     break;
   case 3:
-    factors = decomp3Supercontrolled(targetDecomposition);
+    decomp3Supercontrolled(factors, targetDecomposition);
     break;
   default:
     return std::nullopt;
@@ -234,58 +227,53 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
   };
 }
 
-SmallVector<Matrix2x2, 8>
-TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
-  return SmallVector<Matrix2x2, 8>{
-      target.k1r() * target.k2r(),
-      target.k1l() * target.k2l(),
-  };
+void TwoQubitBasisDecomposer::decomp0(SmallVector<Matrix2x2>& out,
+                                      const TwoQubitWeylDecomposition& target) {
+  out.push_back(target.k1r() * target.k2r());
+  out.push_back(target.k1l() * target.k2l());
 }
 
-SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp1(
+void TwoQubitBasisDecomposer::decomp1(
+    SmallVector<Matrix2x2>& out,
     const TwoQubitWeylDecomposition& target) const {
-  return SmallVector<Matrix2x2, 8>{
-      basisWeyl.k2r().adjoint() * target.k2r(),
-      basisWeyl.k2l().adjoint() * target.k2l(),
-      target.k1r() * basisWeyl.k1r().adjoint(),
-      target.k1l() * basisWeyl.k1l().adjoint(),
-  };
+  out.push_back(basisWeyl.k2r().adjoint() * target.k2r());
+  out.push_back(basisWeyl.k2l().adjoint() * target.k2l());
+  out.push_back(target.k1r() * basisWeyl.k1r().adjoint());
+  out.push_back(target.k1l() * basisWeyl.k1l().adjoint());
 }
 
-SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp2Supercontrolled(
+void TwoQubitBasisDecomposer::decomp2Supercontrolled(
+    SmallVector<Matrix2x2>& out,
     const TwoQubitWeylDecomposition& target) const {
   if (!isSuperControlled) {
     llvm::reportFatalInternalError(
         "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
         "- no guarantee for exact decomposition with two basis gates");
   }
-  return SmallVector<Matrix2x2, 8>{
-      smb.u3r * target.k2r(),
-      smb.u3l * target.k2l(),
-      smb.q1ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb,
-      smb.q1la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb,
-      target.k1r() * smb.q0r,
-      target.k1l() * smb.q0l,
-  };
+  out.push_back(smb.u3r * target.k2r());
+  out.push_back(smb.u3l * target.k2l());
+  out.push_back(smb.q1ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb);
+  out.push_back(smb.q1la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb);
+  out.push_back(target.k1r() * smb.q0r);
+  out.push_back(target.k1l() * smb.q0l);
 }
 
-SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp3Supercontrolled(
+void TwoQubitBasisDecomposer::decomp3Supercontrolled(
+    SmallVector<Matrix2x2>& out,
     const TwoQubitWeylDecomposition& target) const {
   if (!isSuperControlled) {
     llvm::reportFatalInternalError(
         "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
         "- no guarantee for exact decomposition with three basis gates");
   }
-  return SmallVector<Matrix2x2, 8>{
-      smb.u3r * target.k2r(),
-      smb.u3l * target.k2l(),
-      smb.u2ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb,
-      smb.u2la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb,
-      smb.u1ra * RZOp::unitaryMatrix(-2. * target.c()) * smb.u1rb,
-      smb.u1l,
-      target.k1r() * smb.u0r,
-      target.k1l() * smb.u0l,
-  };
+  out.push_back(smb.u3r * target.k2r());
+  out.push_back(smb.u3l * target.k2l());
+  out.push_back(smb.u2ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb);
+  out.push_back(smb.u2la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb);
+  out.push_back(smb.u1ra * RZOp::unitaryMatrix(-2. * target.c()) * smb.u1rb);
+  out.push_back(smb.u1l);
+  out.push_back(target.k1r() * smb.u0r);
+  out.push_back(target.k1l() * smb.u0l);
 }
 
 std::array<std::complex<double>, 4>
