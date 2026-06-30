@@ -19,6 +19,8 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 
+#include <iostream>
+
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_CONSTANTPROPAGATION
@@ -68,6 +70,17 @@ void removeOperation(UnitaryOpInterface* op, PatternRewriter& rewriter) {
   rewriter.eraseOp(*op);
 }
 
+void removeCtrlOperation(CtrlOp* op, PatternRewriter& rewriter,
+                         std::span<Operation*>& worklist) {
+  op->walk<WalkOrder::PreOrder>([&](Operation* bodyOp) {
+    std::ranges::replace(worklist, bodyOp, static_cast<Operation*>(nullptr));
+  });
+  for (const auto outQubit : op->getOutputQubits()) {
+    rewriter.replaceAllUsesWith(outQubit, op->getInputForOutput(outQubit));
+  }
+  rewriter.eraseOp(*op);
+}
+
 WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
                           const std::span<Value> posClassicalCtrls,
                           const std::span<Value> negClassicalCtrls) {
@@ -95,37 +108,67 @@ WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
   return WalkResult::advance();
 }
 
+bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
+                         const std::span<Value> ctrlsQuantum,
+                         const std::span<Value> posClassicalCtrls,
+                         const std::span<Value> negClassicalCtrls,
+                         PatternRewriter& rewriter,
+                         const std::span<Value> targetValues) {
+  bool addsGlobalPhase = false;
+  if (isa<IdOp>(op) || isa<ZOp>(op) || isa<SOp>(op) || isa<SdgOp>(op) ||
+      isa<TOp>(op) || isa<TdgOp>(op)) {
+    const auto inputQubit =
+        targetValues.empty() ? op->getInputQubit(0) : targetValues[0];
+    const auto addedGlobalPhase = ut->globalPhaseThatIsAdded(
+        *op, inputQubit, ctrlsQuantum, posClassicalCtrls, negClassicalCtrls);
+    if (addedGlobalPhase.has_value()) {
+      addsGlobalPhase = true;
+      const auto phase = addedGlobalPhase.value();
+      if (std::norm(phase) > 1e-4) {
+        GPhaseOp::create(rewriter, op->getLoc(), phase);
+      }
+    }
+  }
+  return addsGlobalPhase;
+}
+
 WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
                          const std::span<Value> ctrlsQuantum,
                          const std::span<Value> newCtrlsQuantum,
                          const std::span<Value> posClassicalCtrls,
                          const std::span<Value> negClassicalCtrls,
                          PatternRewriter& rewriter,
-                         std::span<Operation*>& worklist) {
-  if (isa<IdOp>(op) || isa<ZOp>(op) || isa<SOp>(op) || isa<SdgOp>(op) ||
-      isa<TOp>(op) || isa<TdgOp>(op)) {
-    const auto addedGlobalPhase =
-        ut->globalPhaseThatIsAdded(*op, op->getInputQubit(0), ctrlsQuantum,
-                                   posClassicalCtrls, negClassicalCtrls);
-    if (addedGlobalPhase.has_value()) {
-      std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
-      const auto phase = addedGlobalPhase.value();
-      if (std::norm(phase) > 1e-4) {
-        GPhaseOp::create(rewriter, op->getLoc(), phase);
-      }
-      removeOperation(op, rewriter);
-    }
+                         std::span<Operation*>& worklist,
+                         const std::span<Value> targetValues = {},
+                         const std::span<Value> resultValues = {}) {
+  // Check if a diagonal gate only adds a global phase
+  const bool addsGlobalPhase =
+      addsOnlyGlobalPhase(ut, op, ctrlsQuantum, posClassicalCtrls,
+                          negClassicalCtrls, rewriter, targetValues);
+  if (addsGlobalPhase) {
+    std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
+    removeOperation(op, rewriter);
+    return WalkResult::advance();
   }
 
-  const auto targets = op->getInputTargets();
-  const auto results = op->getOutputTargets();
   const auto params = op->getParameters();
-  std::vector<Value> targetValues = {targets.begin(), targets.end()};
-  std::vector<Value> resultValues = {results.begin(), results.end()};
   std::vector<Value> paramValues = {params.begin(), params.end()};
-  ut->propagateGate(*op, targetValues, resultValues, ctrlsQuantum,
-                    newCtrlsQuantum, posClassicalCtrls, negClassicalCtrls,
-                    paramValues);
+  if (targetValues.empty() && resultValues.empty()) {
+    const auto targets = op->getInputTargets();
+    const auto results = op->getOutputTargets();
+    std::vector<Value> targetVecs = {targets.begin(), targets.end()};
+    std::vector<Value> resultVecs = {results.begin(), results.end()};
+    ut->propagateGate(*op, targetVecs, resultVecs, ctrlsQuantum,
+                      newCtrlsQuantum, posClassicalCtrls, negClassicalCtrls,
+                      paramValues);
+  } else if (targetValues.size() == resultValues.size()) {
+    ut->propagateGate(*op, targetValues, resultValues, ctrlsQuantum,
+                      newCtrlsQuantum, posClassicalCtrls, negClassicalCtrls,
+                      paramValues);
+  } else {
+    throw std::invalid_argument(
+        "Given targetValues and resultValues need to be of same size.");
+  }
 
   return WalkResult::advance();
 }
@@ -135,18 +178,56 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
                         const std::span<Value> negClassicalCtrls,
                         PatternRewriter& rewriter,
                         std::span<Operation*>& worklist) {
-  const auto inputCtrs = op->getInputControls();
-  std::vector<Value> inCtrlValues = {inputCtrs.begin(), inputCtrs.end()};
+  const auto inputCtrls = op->getInputControls();
+  std::vector<Value> inCtrlValues = {inputCtrls.begin(), inputCtrls.end()};
   // TODO: Check if gate is executable
-  // TODO: Work on the right qubits in body
+
+  auto body = op->getBodyUnitary();
+  // Make sure that the right qubits in the right order are passed to the
+  // propagation of the body unitary
+  std::vector<Value> targetQubits;
+  const auto numTargets = op->getNumTargets();
+  targetQubits.reserve(numTargets);
+  const auto arguments = op->getRegion().getArguments();
+  for (unsigned int argIndex = 0; argIndex < arguments.size(); ++argIndex) {
+    for (unsigned int i = 0; i < numTargets; ++i) {
+      if (arguments[i] == body.getInputTarget(i)) {
+        targetQubits.insert(targetQubits.begin() + i,
+                            op->getInputTarget(argIndex));
+        break;
+      }
+    }
+  }
+
+  std::vector<Value> resultQubits;
+  resultQubits.reserve(numTargets);
+  const auto yieldOP = cast<YieldOp>(*(op->getBody()->rbegin()));
+  for (unsigned int uOpOutIndex = 0; uOpOutIndex < numTargets; ++uOpOutIndex) {
+    for (unsigned int i = 0; i < numTargets; ++i) {
+      if (yieldOP->getOperand(i) == body.getOutputTarget(uOpOutIndex)) {
+        resultQubits.insert(resultQubits.begin() + i,
+                            op->getOutputTarget(uOpOutIndex));
+        break;
+      }
+    }
+  }
 
   const auto outputCtrls = op->getOutputControls();
   std::vector<Value> outCtrlValues = {outputCtrls.begin(), outputCtrls.end()};
 
-  auto body = op->getBodyUnitary();
+  // Check if a diagonal gate only adds a global phase
+  const bool addsGlobalPhase =
+      addsOnlyGlobalPhase(ut, &body, inCtrlValues, posClassicalCtrls,
+                          negClassicalCtrls, rewriter, targetQubits);
+  if (addsGlobalPhase) {
+    std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
+    removeCtrlOperation(op, rewriter, worklist);
+    return WalkResult::advance();
+  }
+
   return handleUnitary(ut, &body, inCtrlValues, outCtrlValues,
-                       posClassicalCtrls, negClassicalCtrls, rewriter,
-                       worklist);
+                       posClassicalCtrls, negClassicalCtrls, rewriter, worklist,
+                       targetQubits, resultQubits);
 }
 
 LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
@@ -172,6 +253,10 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
             /// qco Dialect
+            .Case<CtrlOp>([&](CtrlOp op) {
+              return handleCtrlOp(ut, &op, posClassicalCtrls, negClassicalCtrls,
+                                  rewriter, worklist);
+            })
             .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
               return handleUnitary(ut, &op, {}, {}, posClassicalCtrls,
                                    negClassicalCtrls, rewriter, worklist);
