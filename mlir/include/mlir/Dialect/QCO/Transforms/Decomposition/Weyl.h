@@ -157,26 +157,71 @@ public:
       std::optional<std::uint8_t> numBasisGateUses = std::nullopt) const;
 
 private:
+  // clang-format off
+  /**
+   * @brief Precomputed single-qubit templates for super-controlled basis
+   * synthesis.
+   *
+   * Populated once in @ref create from the Weyl decomposition of the basis
+   * gate. Members are combined with target Weyl factors (`K1l`, `K1r`, `K2l`,
+   * `K2r`) and parameterized `RZ` rotations in @ref decomp2Supercontrolled and
+   * @ref decomp3Supercontrolled.
+   *
+   * Naming: suffix `l` / `r` is the q0 / q1 factor in `kron(q0_factor,
+   * q1_factor)`. Pairs `*la` / `*ra` and `*lb` / `*rb` sandwich an `RZ` on that
+   * wire
+   * (`u1ra·RZ(-2c)·u1rb`, `u2la·RZ(-2a)·u2lb`, `u2ra·RZ(2b)·u2rb`, etc.).
+   * `u3*` / `u2*` / `u1*` / `u0*` index layers from outside (post-`K2`) to
+   * inside (pre-`K1`) in the three-basis layout; `q*` members are the
+   * two-basis-only substitutes for the inner `u0*` and the `u2*a` halves of
+   * layer 1. `u3*`, `u2l*b`, and `u2r*b` are reused in both decomp paths
+   * (formerly duplicated as `q2*` / `q1l*b`).
+   *
+   * Emission order matches @ref TwoQubitNativeDecomposition: layer `i` applies
+   * `kron(factors[2*i+1], factors[2*i])`, then the basis gate `E` (except after
+   * the last layer). `E` is the fixed basis entangler (e.g. CX).
+   *
+   * @verbatim
+   * Two basis gates (numBasisUses = 2); left = outer, right = inner:
+   *
+   *          +---------+         +-------------------+         +---------+
+   *     q_0: | u3l.K2l |----+----| q1la.RZ(-2a).u2lb |----+----| K1l.q0l |
+   *          +---------+    |    +-------------------+    |    +---------+
+   *                         E                             E
+   *          +---------+    |    +-------------------+    |    +---------+
+   *     q_1: | u3r.K2r |----+----| q1ra.RZ(2b).u2rb  |----+----| K1r.q0r |
+   *          +---------+         +-------------------+         +---------+
+   *
+   * Three basis gates (numBasisUses = 3):
+   *
+   *          +---------+         +-------------------+         +-------------------+         +---------+
+   *     q_0: | u3l.K2l |----+----| u2la.RZ(-2a).u2lb |----+----|        u1l        |----+----| K1l.u0l |
+   *          +---------+    |    +-------------------+    |    +-------------------+    |    +---------+
+   *                         E                             E                             E
+   *          +---------+    |    +-------------------+    |    +-------------------+    |    +---------+
+   *     q_1: | u3r.K2r |----+----| u2ra.RZ(2b).u2rb  |----+----| u1ra.RZ(-2c).u1rb |----+----| K1r.u0r |
+   *          +---------+         +-------------------+         +-------------------+         +---------+
+   * @endverbatim
+   */
+  // clang-format on
   struct SmbPrecomputed {
-    Matrix2x2 u0l;
-    Matrix2x2 u0r;
-    Matrix2x2 u1l;
-    Matrix2x2 u1ra;
-    Matrix2x2 u1rb;
-    Matrix2x2 u2la;
-    Matrix2x2 u2lb;
-    Matrix2x2 u2ra;
-    Matrix2x2 u2rb;
-    Matrix2x2 u3l;
-    Matrix2x2 u3r;
-    Matrix2x2 q0l;
-    Matrix2x2 q0r;
-    Matrix2x2 q1la;
-    Matrix2x2 q1lb;
-    Matrix2x2 q1ra;
-    Matrix2x2 q1rb;
-    Matrix2x2 q2l;
-    Matrix2x2 q2r;
+    Matrix2x2 u0l;  ///< Inner q0 template (3-basis); combined with `K1l`.
+    Matrix2x2 u0r;  ///< Inner q1 template (3-basis); combined with `K1r`.
+    Matrix2x2 u1l;  ///< Middle-layer q0 factor (3-basis only).
+    Matrix2x2 u1ra; ///< q1 factor before `RZ(-2c)` (3-basis middle layer).
+    Matrix2x2 u1rb; ///< q1 factor after `RZ(-2c)` (3-basis middle layer).
+    Matrix2x2 u2la; ///< q0 factor before `RZ(-2a)`.
+    Matrix2x2 u2lb; ///< q0 factor after `RZ(-2a)`; shared with 2-basis path.
+    Matrix2x2 u2ra; ///< q1 factor before `RZ(2b)` (3-basis only).
+    Matrix2x2 u2rb; ///< q1 factor after `RZ(2b)`; shared with 2-basis path.
+    Matrix2x2 u3l;  ///< Outermost q0 template; combined with `K2l`; shared with
+                    ///< 2-basis path.
+    Matrix2x2 u3r;  ///< Outermost q1 template; combined with `K2r`; shared with
+                    ///< 2-basis path.
+    Matrix2x2 q0l;  ///< Inner q0 template (2-basis); combined with `K1l`.
+    Matrix2x2 q0r;  ///< Inner q1 template (2-basis); combined with `K1r`.
+    Matrix2x2 q1la; ///< q0 factor before `RZ(-2a)` (2-basis layer 1).
+    Matrix2x2 q1ra; ///< q1 factor before `RZ(2b)` (2-basis layer 1).
   };
 
   [[nodiscard]] static SmallVector<Matrix2x2, 8>

@@ -98,34 +98,46 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
       relativeEq(basisWeyl.c(), 0.0, 1e-13, 1e-09);
 
   const auto b = basisWeyl.b();
+  const Complex expMinusB = std::exp(-1i * b);
+  const Complex expPlusB = std::exp(1i * b);
+  const Complex expMinus2B = expMinusB * expMinusB;
+  const Complex expPlus2B = expPlusB * expPlusB;
+  const double cos2B = expPlus2B.real();
+  const double sin2B = expPlus2B.imag();
+
   Complex temp{0.5, -0.5};
-  const Matrix2x2 k11l = Matrix2x2::fromElements(
-      temp * (-1i * std::exp(-1i * b)), temp * std::exp(-1i * b),
-      temp * (-1i * std::exp(1i * b)), temp * -std::exp(1i * b));
+  const Matrix2x2 k11l =
+      Matrix2x2::fromElements(temp * (-1i * expMinusB), temp * expMinusB,
+                              temp * (-1i * expPlusB), temp * -expPlusB);
   const Matrix2x2 k11r = Matrix2x2::fromElements(
-      INV_SQRT2 * (1i * std::exp(-1i * b)), INV_SQRT2 * -std::exp(-1i * b),
-      INV_SQRT2 * std::exp(1i * b), INV_SQRT2 * (-1i * std::exp(1i * b)));
+      INV_SQRT2 * (1i * expMinusB), INV_SQRT2 * -expMinusB,
+      INV_SQRT2 * expPlusB, INV_SQRT2 * (-1i * expPlusB));
   const Matrix2x2 k32lK21l = Matrix2x2::fromElements(
-      INV_SQRT2 * Complex{1., std::cos(2. * b)},
-      INV_SQRT2 * (1i * std::sin(2. * b)), INV_SQRT2 * (1i * std::sin(2. * b)),
-      INV_SQRT2 * Complex{1., -std::cos(2. * b)});
+      INV_SQRT2 * Complex{1., cos2B}, INV_SQRT2 * (1i * sin2B),
+      INV_SQRT2 * (1i * sin2B), INV_SQRT2 * Complex{1., -cos2B});
   temp = Complex{0.5, 0.5};
-  const Matrix2x2 k21r = Matrix2x2::fromElements(
-      temp * (-1i * std::exp(-2i * b)), temp * std::exp(-2i * b),
-      temp * (1i * std::exp(2i * b)), temp * std::exp(2i * b));
-  const Matrix2x2 k31l = Matrix2x2::fromElements(
-      INV_SQRT2 * std::exp(-1i * b), INV_SQRT2 * std::exp(-1i * b),
-      INV_SQRT2 * -std::exp(1i * b), INV_SQRT2 * std::exp(1i * b));
-  const Matrix2x2 k31r = Matrix2x2::fromElements(1i * std::exp(1i * b), 0, 0,
-                                                 -1i * std::exp(-1i * b));
+  const Matrix2x2 k21r =
+      Matrix2x2::fromElements(temp * (-1i * expMinus2B), temp * expMinus2B,
+                              temp * (1i * expPlus2B), temp * expPlus2B);
+  const Matrix2x2 k31l =
+      Matrix2x2::fromElements(INV_SQRT2 * expMinusB, INV_SQRT2 * expMinusB,
+                              INV_SQRT2 * -expPlusB, INV_SQRT2 * expPlusB);
+  const Matrix2x2 k31r =
+      Matrix2x2::fromElements(1i * expPlusB, 0, 0, -1i * expMinusB);
   const Matrix2x2 k32r = Matrix2x2::fromElements(
-      temp * std::exp(1i * b), temp * -std::exp(-1i * b),
-      temp * (-1i * std::exp(1i * b)), temp * (-1i * std::exp(-1i * b)));
+      temp * expPlusB, temp * -expMinusB, temp * (-1i * expPlusB),
+      temp * (-1i * expMinusB));
 
   const auto k1lDagger = basisWeyl.k1l().adjoint();
   const auto k1rDagger = basisWeyl.k1r().adjoint();
   const auto k2lDagger = basisWeyl.k2l().adjoint();
   const auto k2rDagger = basisWeyl.k2r().adjoint();
+
+  const Matrix2x2 k11lK1lDagger = k11l * k1lDagger;
+  const Matrix2x2 k11rK1rDagger = k11r * k1rDagger;
+  const Matrix2x2 k2lDaggerK12l = k2lDagger * K12_L_ARR;
+  const Matrix2x2 k2rDaggerK12r = k2rDagger * K12_R_ARR;
+  const Matrix2x2 iPauliZ = Complex{0.0, 1.0} * ZOp::getUnitaryMatrix();
 
   TwoQubitBasisDecomposer decomposer;
   decomposer.basisFidelity = basisFidelity;
@@ -138,21 +150,15 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
       .u1ra = k2rDagger * k32r,
       .u1rb = k21r * k1rDagger,
       .u2la = k2lDagger * K22_L,
-      .u2lb = k11l * k1lDagger,
+      .u2lb = k11lK1lDagger,
       .u2ra = k2rDagger * K22_R,
-      .u2rb = k11r * k1rDagger,
-      .u3l = k2lDagger * K12_L_ARR,
-      .u3r = k2rDagger * K12_R_ARR,
+      .u2rb = k11rK1rDagger,
+      .u3l = k2lDaggerK12l,
+      .u3r = k2rDaggerK12r,
       .q0l = K12_L_ARR.adjoint() * k1lDagger,
-      .q0r = K12_R_ARR.adjoint() * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() *
-             k1rDagger,
+      .q0r = K12_R_ARR.adjoint() * iPauliZ * k1rDagger,
       .q1la = k2lDagger * k11l.adjoint(),
-      .q1lb = k11l * k1lDagger,
-      .q1ra = k2rDagger * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() *
-              k11r.adjoint(),
-      .q1rb = k11r * k1rDagger,
-      .q2l = k2lDagger * K12_L_ARR,
-      .q2r = k2rDagger * K12_R_ARR,
+      .q1ra = k2rDagger * iPauliZ * k11r.adjoint(),
   };
   return decomposer;
 }
@@ -171,7 +177,11 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
     const TwoQubitWeylDecomposition& targetDecomposition,
     std::optional<std::uint8_t> numBasisGateUses) const {
   const auto traceValues = traces(targetDecomposition);
-  auto getDefaultNbasis = [&]() -> std::uint8_t {
+
+  std::uint8_t bestNbasis;
+  if (numBasisGateUses) {
+    bestNbasis = *numBasisGateUses;
+  } else {
     auto bestValue = std::numeric_limits<double>::lowest();
     auto bestIndex = -1;
     double fidelityPower = 1.0;
@@ -190,10 +200,8 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
       llvm::reportFatalInternalError("Unable to select basis-gate count: all "
                                      "candidate fidelities are NaN");
     }
-    return static_cast<std::uint8_t>(bestIndex);
-  };
-
-  const auto bestNbasis = numBasisGateUses.value_or(getDefaultNbasis());
+    bestNbasis = static_cast<std::uint8_t>(bestIndex);
+  }
   if (bestNbasis > 1 && !isSuperControlled) {
     return std::nullopt;
   }
@@ -256,10 +264,10 @@ SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp2Supercontrolled(
         "- no guarantee for exact decomposition with two basis gates");
   }
   return SmallVector<Matrix2x2, 8>{
-      smb.q2r * target.k2r(),
-      smb.q2l * target.k2l(),
-      smb.q1ra * RZOp::unitaryMatrix(2. * target.b()) * smb.q1rb,
-      smb.q1la * RZOp::unitaryMatrix(-2. * target.a()) * smb.q1lb,
+      smb.u3r * target.k2r(),
+      smb.u3l * target.k2l(),
+      smb.q1ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb,
+      smb.q1la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb,
       target.k1r() * smb.q0r,
       target.k1l() * smb.q0l,
   };
