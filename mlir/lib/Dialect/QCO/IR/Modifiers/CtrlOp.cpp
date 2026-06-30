@@ -386,8 +386,7 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   participating.append(*controlQubits);
   participating.append(*targetQubits);
   llvm::sort(participating);
-  participating.erase(std::unique(participating.begin(), participating.end()),
-                      participating.end());
+  participating.erase(llvm::unique(participating), participating.end());
 
   const auto toLocal = [&](const std::size_t wire) {
     return static_cast<std::size_t>(llvm::find(participating, wire) -
