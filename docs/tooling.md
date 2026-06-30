@@ -25,7 +25,7 @@ and users who want to understand the project's ecosystem.
 | **scikit-build-core** | Build backend for Python package.                              | [Documentation](https://scikit-build-core.readthedocs.io/en/latest/).                                                                     |
 | **cibuildwheel**      | Builds wheels for all supported platforms and Python versions. | [Documentation](https://cibuildwheel.pypa.io/en/stable/). Configured in {code}`pyproject.toml`.                                           |
 
-By using nanobind, we can take advantage of the
+By using `nanobind`, we can take advantage of the
 [Stable ABI](https://docs.python.org/3/c-api/stable.html) for Python 3.12+.
 This means that, starting from Python 3.12,
 we only need to build one wheel per platform,
@@ -39,11 +39,11 @@ for free-threading Python yet.
 
 ## MLIR
 
-| Tool                        | Description                                                                     | Links / Notes                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| **MLIR**                    | Compiler infrastructure for building domain-specific compilers.                 | [Documentation](https://mlir.llvm.org/). We generally track the latest stable LLVM release. |
-| **portable-mlir-toolchain** | Pre-built binaries for MLIR and LLVM on all supported platforms.                | [Documentation](https://github.com/munich-quantum-software/portable-mlir-toolchain).        |
-| **setup-mlir**              | Installation scripts and GitHub Action for installing pre-built MLIR toolchain. | [Documentation](https://github.com/munich-quantum-software/setup-mlir).                     |
+| Tool                        | Description                                                                       | Links / Notes                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **MLIR**                    | Compiler infrastructure for building domain-specific compilers.                   | [Documentation](https://mlir.llvm.org/). We generally track the latest stable LLVM release. |
+| **portable-mlir-toolchain** | Pre-built binaries for MLIR and LLVM on all supported platforms.                  | [Documentation](https://github.com/munich-quantum-software/portable-mlir-toolchain).        |
+| **setup-mlir**              | Installation scripts and a GitHub action for installing pre-built MLIR toolchain. | [Documentation](https://github.com/munich-quantum-software/setup-mlir).                     |
 
 ## Python
 
