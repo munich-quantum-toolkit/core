@@ -383,8 +383,18 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  const std::size_t numQubits = 1 + std::max(*llvm::max_element(*controlQubits),
-                                             *llvm::max_element(*targetQubits));
-  return embedControlledUnitary(numQubits, *controlQubits, *targetQubits,
-                                *targetMatrix);
+  SmallVector<std::size_t> participating;
+  participating.append(*controlQubits);
+  participating.append(*targetQubits);
+  llvm::sort(participating);
+  participating.erase(std::unique(participating.begin(), participating.end()),
+                      participating.end());
+
+  const auto toLocal = [&](const std::size_t wire) {
+    return static_cast<std::size_t>(llvm::find(participating, wire) -
+                                    participating.begin());
+  };
+  return embedControlledUnitary(
+      participating.size(), llvm::map_to_vector(*controlQubits, toLocal),
+      llvm::map_to_vector(*targetQubits, toLocal), *targetMatrix);
 }

@@ -256,6 +256,28 @@ TEST_F(QCOMatrixTest, StaticQubitControlledXOpMatrix) {
   EXPECT_TRUE(matrix->isApprox(expected));
 }
 
+TEST_F(QCOMatrixTest, SparseWireIndicesUseMinimalParticipatingMatrix) {
+  const auto cx01 = ctrlOpMatrixFromBuilder(context.get(), cxQubits01);
+  const auto cx07 =
+      ctrlOpMatrixFromBuilder(context.get(), [](QCOProgramBuilder& b) {
+        auto q0 = b.staticQubit(0);
+        auto q7 = b.staticQubit(7);
+        b.ctrl(q0, q7, [&](ValueRange targets) {
+          return SmallVector{b.x(targets[0])};
+        });
+      });
+  ASSERT_TRUE(cx01);
+  ASSERT_TRUE(cx07);
+  EXPECT_TRUE(cx07->isApprox(*cx01));
+
+  const Matrix4x4 expected =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.cx(0, 1);
+      });
+  EXPECT_TRUE(cx07->isApprox(expected));
+}
+
 TEST_F(QCOMatrixTest, CtrlOpAllocOperandsReturnNullopt) {
   EXPECT_FALSE(ctrlOpMatrixFromBuilder(context.get(), [](QCOProgramBuilder& b) {
     auto ctrl = b.allocQubit();
