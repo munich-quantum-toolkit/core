@@ -18,8 +18,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 
-#include <cmath>
-#include <complex> // NOLINT(misc-include-cleaner)
 #include <cstddef>
 #include <cstdlib>
 #include <string>
@@ -27,26 +25,6 @@
 #include <vector>
 
 namespace mqt::test {
-
-/**
- * Check whether two unitary matrices are equal up to a single unit-modulus
- * global phase factor.
- *
- * The comparison is symmetric and numerically stable in the sense that a near
- * zero overlap (``|trace(rhs^H * lhs)| <= atol``) is treated as "not
- * equivalent" to avoid division by a tiny number.
- */
-template <typename Matrix>
-[[nodiscard]] bool isEquivalentUpToGlobalPhase(const Matrix& lhs,
-                                               const Matrix& rhs,
-                                               double atol = 1e-10) {
-  const auto overlap = (rhs.adjoint() * lhs).trace();
-  if (std::abs(overlap) <= atol) {
-    return false;
-  }
-  const auto factor = overlap / std::abs(overlap);
-  return lhs.isApprox(factor * rhs, atol);
-}
 
 template <typename BuilderT> struct NamedBuilder {
   const char* name = nullptr;

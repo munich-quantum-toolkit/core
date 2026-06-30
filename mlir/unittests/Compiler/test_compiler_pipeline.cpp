@@ -744,8 +744,6 @@ protected:
 
 } // namespace
 
-using mqt::test::isEquivalentUpToGlobalPhase;
-
 static std::optional<mlir::qco::Matrix4x4>
 computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
   if (module == nullptr) {

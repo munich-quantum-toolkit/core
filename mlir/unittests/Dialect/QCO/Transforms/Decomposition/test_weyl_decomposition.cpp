@@ -508,7 +508,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
         return std::nullopt;
       }
       Matrix4x4 twoQ;
-      if (!op.getUnitaryMatrix4x4(twoQ);) {
+      if (!op.getUnitaryMatrix4x4(twoQ)) {
         return std::nullopt;
       }
       unitary = twoQ.reorderForQubits(*q0id, *q1id) * unitary;
