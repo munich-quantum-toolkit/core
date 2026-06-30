@@ -137,6 +137,10 @@ void UnionTable::propagateMeasurement(
     const Value classicalTarget, const std::span<Value> posCtrlsClassical,
     const std::span<Value> negCtrlsClassical) {
 
+  if (!valuesToEntries.contains(classicalTarget)) {
+    propagateIntAlloc(classicalTarget, 0);
+  }
+
   std::vector targetVec = {quantumTarget, classicalTarget};
   const std::set<UnionTableEntry> participatingEntries =
       collectParticipatingEntries(targetVec, {}, posCtrlsClassical,
