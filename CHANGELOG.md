@@ -12,6 +12,8 @@ with the exception that minor releases may include breaking changes.
 
 ### Added
 
+- 🐳 Add dev container configuration
+  for consistent local development environment ([#1786]) ([**@denialhaag**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
   for fusing compile-time single-qubit unitary runs via Euler resynthesis
   ([#1672]) ([**@simon1hofmann**], [**@burgholzer**])
@@ -43,8 +45,9 @@ with the exception that minor releases may include breaking changes.
   [#1624], [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700],
   [#1710], [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765],
   [#1774], [#1780], [#1781], [#1782], [#1787], [#1802], [#1806], [#1807],
-  [#1808], [#1809]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
-  [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
+  [#1808], [#1809], [#1823])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**],
+  [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**])
 
 ### Changed
@@ -598,12 +601,14 @@ changelogs._
 
 <!-- PR links -->
 
+[#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
 [#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
 [#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
 [#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
 [#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
+[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
 [#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
 [#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
 [#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
