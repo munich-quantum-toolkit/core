@@ -9,8 +9,8 @@ mystnb:
 # Python Compiler Entry Point
 
 The {py:mod}`mqt.core.mlir` exposes a compact compiler entry point,
-{py:func}`~mqt.core.mlir.compile_program`,
-that routes multiple frontend formats into the MLIR-based compiler pipeline.
+{py:func}`~mqt.core.mlir.compile_program`, that routes multiple frontend formats
+into the MLIR-based compiler pipeline.
 
 ```{code-cell} ipython3
 from mqt.core.mlir import compile_program
