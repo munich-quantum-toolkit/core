@@ -28,6 +28,9 @@ if(NOT TARGET ${TARGET_NAME})
     MLIRJeffTranslation
     MLIRJeffToQCO
     MLIRQCOToQC
+    MLIRTargetLLVMIRExport
+    MLIRBuiltinToLLVMIRTranslation
+    MLIRLLVMToLLVMIRTranslation
     MQT::MLIRSupport
     MQT::CoreIR)
 

@@ -22,8 +22,11 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/Translation/Deserialize.hpp>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/SMLoc.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -37,6 +40,9 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/FileUtilities.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/ModuleTranslation.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
 
@@ -65,6 +71,8 @@ namespace {
                   mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
                   mlir::scf::SCFDialect, mlir::LLVM::LLVMDialect,
                   mlir::memref::MemRefDialect, mlir::jeff::JeffDialect>();
+  mlir::registerBuiltinDialectTranslation(registry);
+  mlir::registerLLVMDialectTranslation(registry);
 
   auto context = std::make_unique<mlir::MLIRContext>(registry);
   context->loadAllAvailableDialects();
@@ -76,23 +84,23 @@ namespace {
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromJeffFile(mlir::MLIRContext* context, const std::string& path) {
-  auto module = deserializeFromFile(context, path);
-  if (!module) {
+  auto mod = deserializeFromFile(context, path);
+  if (!mod) {
     throw std::runtime_error(std::string("Failed to deserialize jeff file '") +
                              path + "'.");
   }
 
-  mlir::PassManager pm(module->getContext());
+  mlir::PassManager pm(mod->getContext());
   pm.addPass(mlir::createJeffToQCO());
   populateQCOCleanupPipeline(pm);
   pm.addPass(mlir::createQCOToQC());
   populateQCCleanupPipeline(pm);
 
-  if (mlir::failed(pm.run(*module))) {
+  if (mlir::failed(pm.run(*mod))) {
     throw std::runtime_error("Failed to convert from jeff to QC.");
   }
 
-  return module;
+  return mod;
 }
 
 /**
@@ -156,8 +164,8 @@ moduleFromSourceString(mlir::MLIRContext* context, const std::string& input) {
     return moduleFromQasmString(context, input);
   }
 
-  if (auto module = moduleFromMlirString(context, input)) {
-    return module;
+  if (auto mod = moduleFromMlirString(context, input)) {
+    return mod;
   }
 
   throw std::runtime_error("Failed to parse source string.");
@@ -222,11 +230,11 @@ moduleFromString(mlir::MLIRContext* context, const std::string& input) {
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromQuantumComputation(mlir::MLIRContext* context,
                              const qc::QuantumComputation& computation) {
-  auto module = mlir::translateQuantumComputationToQC(context, computation);
-  if (!module) {
+  auto mod = mlir::translateQuantumComputationToQC(context, computation);
+  if (!mod) {
     throw std::runtime_error("Failed to translate QuantumComputation to MLIR.");
   }
-  return module;
+  return mod;
 }
 
 /**
@@ -271,7 +279,7 @@ compileProgram(const nb::object& program, const bool convertToQIRBase,
                const bool enableHadamardLifting, const bool enableTiming,
                const bool enableStatistics) {
   auto context = createCompilerContext();
-  auto module = moduleFromInputProgram(context.get(), program);
+  auto mod = moduleFromInputProgram(context.get(), program);
 
   mlir::QuantumCompilerConfig config;
   config.convertToQIRBase = convertToQIRBase;
@@ -283,11 +291,21 @@ compileProgram(const nb::object& program, const bool convertToQIRBase,
   config.enableStatistics = enableStatistics;
 
   const mlir::QuantumCompilerPipeline pipeline(config);
-  if (mlir::failed(pipeline.runPipeline(module.get()))) {
+  if (mlir::failed(pipeline.runPipeline(mod.get()))) {
     throw std::runtime_error("Compilation pipeline failed.");
   }
 
-  return mlir::captureIR(module.get());
+  if (convertToQIRBase || convertToQIRAdaptive) {
+    llvm::LLVMContext llvmContext;
+    std::unique_ptr<llvm::Module> llvmMod =
+        mlir::translateModuleToLLVMIR(*mod, llvmContext);
+    std::string result;
+    llvm::raw_string_ostream os(result);
+    llvmMod->print(os, nullptr);
+    return result;
+  }
+
+  return mlir::captureIR(mod.get());
 }
 
 } // namespace

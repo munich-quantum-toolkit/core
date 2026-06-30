@@ -119,8 +119,8 @@ def test_compile_program_convert_to_qir() -> None:
     """Compile with `convert_to_qir_base` enabled."""
     result = compile_program(QASM_STRING, convert_to_qir_base=True)
 
-    assert "module" in result
-    assert "llvm." in result
+    assert "; ModuleID" in result
+    assert "@__quantum__qis__h__body" in result
 
 
 def test_compile_program_fails_for_missing_file() -> None:
