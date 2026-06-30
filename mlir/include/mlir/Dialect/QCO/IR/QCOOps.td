@@ -1274,7 +1274,7 @@ def IfOp
         }
         YieldOp elseYield();
 
-        /// Return the result that corresponds to the given qubit operand, 
+        /// Return the result that corresponds to the given qubit operand,
         /// or "empty" OpResult on failure.
         OpResult getTiedResult(OpOperand* qubit) {
           auto results = getResults();
@@ -1318,7 +1318,7 @@ def IfOp
           return arguments[std::distance(qubits.begin(), it)];
         }
 
-        /// Return the argument that corresponds to the given qubit operand 
+        /// Return the argument that corresponds to the given qubit operand
         /// for the else-block, or "empty" BlockArgument on failure.
         BlockArgument getTiedElseBlockArgument(OpOperand* qubit) {
           auto arguments = elseBlock()->getArguments();
@@ -1336,7 +1336,7 @@ def IfOp
         /// Return the yielded value that corresponds to the given argument
         /// for the then-block, or `nullptr` on failure.
         OpOperand* getTiedThenYieldedValue(BlockArgument bbArg);
-        
+
         /// Return the yielded value that corresponds to the given argument
         /// for the else-block, or `nullptr` on failure.
         OpOperand* getTiedElseYieldedValue(BlockArgument bbArg);
