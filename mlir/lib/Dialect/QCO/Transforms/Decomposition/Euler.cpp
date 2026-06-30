@@ -103,21 +103,6 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
 //===----------------------------------------------------------------------===//
 
 /**
- * @brief Euler angles `(theta, phi, lambda)` and global phase for a 2x2
- * unitary.
- */
-namespace {
-
-struct EulerAngles {
-  double theta = 0.0;  ///< Middle rotation angle.
-  double phi = 0.0;    ///< First outer rotation angle.
-  double lambda = 0.0; ///< Second outer rotation angle.
-  double phase = 0.0;  ///< Global phase in radians.
-};
-
-} // namespace
-
-/**
  * @brief Z-Y-Z Euler angles and global phase for a 2x2 unitary.
  *
  * @param matrix Single-qubit unitary to decompose.
@@ -182,7 +167,7 @@ struct EulerAngles {
 }
 
 /**
- * @brief `U`-basis angles (Z-Y-Z angles with a `U`-vs-`RZ·RY·RZ` phase fix).
+ * @brief `U`-basis angles (Z-Y-Z angles with a `U`-vs-`RZ*RY*RZ` phase fix).
  *
  * @param matrix Single-qubit unitary to decompose.
  * @return `U`-gate angles and global phase.
@@ -197,15 +182,7 @@ struct EulerAngles {
           .phase = phase - (0.5 * (phi + lambda))};
 }
 
-/**
- * @brief Extracts `(theta, phi, lambda, phase)` for all Euler bases.
- *
- * @param matrix The single-qubit unitary to decompose.
- * @param basis The target Euler basis.
- * @return The extracted Euler angles and global phase.
- */
-[[nodiscard]] static EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
-                                                   const EulerBasis basis) {
+EulerAngles anglesFromUnitary(const Matrix2x2& matrix, const EulerBasis basis) {
   switch (basis) {
   case EulerBasis::ZYZ:
   case EulerBasis::ZSXX:

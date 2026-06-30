@@ -72,20 +72,23 @@ void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentXXMinusYY>(context);
 }
 
+Matrix4x4 XXMinusYYOp::unitaryMatrix(const double theta, const double beta) {
+  using namespace std::complex_literals;
+  const auto mc = std::cos(theta / 2);
+  const auto s = std::sin(theta / 2);
+  const auto msp = s * std::exp(1i * (beta - (std::numbers::pi / 2)));
+  const auto msm = s * std::exp(1i * (-beta - (std::numbers::pi / 2)));
+  return Matrix4x4::fromElements(mc, 0, 0, msm,  // row 0
+                                 0, 1, 0, 0,     // row 1
+                                 0, 0, 1, 0,     // row 2
+                                 msp, 0, 0, mc); // row 3
+}
+
 std::optional<Matrix4x4> XXMinusYYOp::getUnitaryMatrix() {
   const auto theta = valueToDouble(getTheta());
   const auto beta = valueToDouble(getBeta());
   if (!theta || !beta) {
     return std::nullopt;
   }
-
-  using namespace std::complex_literals;
-  const auto mc = std::cos(*theta / 2);
-  const auto s = std::sin(*theta / 2);
-  const auto msp = s * std::exp(1i * (*beta - (std::numbers::pi / 2)));
-  const auto msm = s * std::exp(1i * (-*beta - (std::numbers::pi / 2)));
-  return Matrix4x4::fromElements(mc, 0, 0, msm,  // row 0
-                                 0, 1, 0, 0,     // row 1
-                                 0, 0, 1, 0,     // row 2
-                                 msp, 0, 0, mc); // row 3
+  return unitaryMatrix(*theta, *beta);
 }
