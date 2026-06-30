@@ -86,7 +86,8 @@ public:
                     const BitIndexToRegisterMap& bitMap, std::size_t indent,
                     bool openQASM3) const override;
 
-  std::vector<std::unique_ptr<Operation>>& getOps() noexcept { return ops; }
+  [[nodiscard]] const std::vector<std::unique_ptr<Operation>>& getOps() const noexcept { return ops; }
+  [[nodiscard]] std::vector<std::unique_ptr<Operation>>& getOps() noexcept { return ops; }
 
   [[nodiscard]] auto getUsedQubitsPermuted(const Permutation& perm) const
       -> std::set<Qubit> override;
