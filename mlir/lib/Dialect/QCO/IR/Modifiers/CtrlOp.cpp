@@ -31,13 +31,12 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;
-
-namespace {
 
 /**
  * @brief Returns the program register index of @p qubit when known at compile
@@ -46,7 +45,8 @@ namespace {
  * Supports @c qco.static and @c qtensor.extract with an @c arith.constant
  * index. Dynamic or negative indices yield @c std::nullopt.
  */
-[[nodiscard]] std::optional<std::size_t> programQubitIndex(const Value qubit) {
+[[nodiscard]] static std::optional<std::size_t>
+programQubitIndex(const Value qubit) {
   auto* definingOp = qubit.getDefiningOp();
   if (definingOp == nullptr) {
     return std::nullopt;
@@ -79,7 +79,7 @@ namespace {
  * @return Indices in operand order, or @c std::nullopt if any wire is not
  *         resolved by @ref programQubitIndex.
  */
-[[nodiscard]] std::optional<SmallVector<std::size_t>>
+[[nodiscard]] static std::optional<SmallVector<std::size_t>>
 resolveQubitIndices(const ValueRange qubits) {
   SmallVector<std::size_t> indices;
   indices.reserve(qubits.size());
@@ -92,6 +92,8 @@ resolveQubitIndices(const ValueRange qubits) {
   }
   return indices;
 }
+
+namespace {
 
 /**
  * @brief Merge nested control modifiers into a single one.

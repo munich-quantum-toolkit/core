@@ -24,6 +24,7 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -34,6 +35,7 @@
 #include <complex>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 
 using namespace mlir;
