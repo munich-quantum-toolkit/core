@@ -57,6 +57,8 @@ releases may include breaking changes.
 
 ### Removed
 
+- 📝 Remove support for generating LaTeX documentation ([#1828])
+  ([**@denialhaag**])
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
@@ -584,6 +586,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
