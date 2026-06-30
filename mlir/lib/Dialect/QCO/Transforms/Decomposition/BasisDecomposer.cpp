@@ -34,7 +34,7 @@ static constexpr double PI_OVER_4 = PI / 4.0;
 static constexpr double INV_SQRT2 = 1.0 / std::numbers::sqrt2;
 
 static constexpr Matrix2x2 K12_R_ARR = Matrix2x2::fromElements(
-    1i * INV_SQRT2, INV_SQRT2, -INV_SQRT2, -1i * INV_SQRT2);
+    Complex{0.0, INV_SQRT2}, INV_SQRT2, -INV_SQRT2, Complex{0.0, -INV_SQRT2});
 static constexpr Matrix2x2 K12_L_ARR =
     Matrix2x2::fromElements(Complex{0.5, 0.5}, Complex{0.5, 0.5},
                             Complex{-0.5, 0.5}, Complex{0.5, -0.5});
