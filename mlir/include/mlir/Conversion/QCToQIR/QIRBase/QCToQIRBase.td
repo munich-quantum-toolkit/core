@@ -35,14 +35,6 @@ def QCToQIRBase : Pass<"qc-to-qir-base"> {
       3. Epilogue block: Records measurement results and returns from the entry function.
     - Blocks are connected via unconditional branches in the order listed above.
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
-
-    Producing LLVM IR:
-
-    - After conversion to the LLVM dialect, produce LLVM IR with:
-
-      ```
-      mlir-translate --mlir-to-llvmir input.mlir > output.ll
-      ```
   }];
 
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];

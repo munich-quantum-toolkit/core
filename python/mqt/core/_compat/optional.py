@@ -158,11 +158,7 @@ class OptionalDependencyTester:
 
     @property
     def module_name(self) -> str:
-        """Get the module name being tested.
-
-        Returns:
-            The module name string.
-        """
+        """The name of the module being tested."""
         return self._module
 
     def __repr__(self) -> str:

@@ -105,17 +105,20 @@ void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<ReplaceU2WithH, ReplaceU2WithRX, ReplaceU2WithRY>(context);
 }
 
+Matrix2x2 U2Op::unitaryMatrix(const double phi, const double lambda) {
+  constexpr auto m00 = 1 / std::numbers::sqrt2;
+  const auto m01 = std::polar(m00, lambda + std::numbers::pi);
+  const auto m10 = std::polar(m00, phi);
+  const auto m11 = std::polar(m00, phi + lambda);
+  return Matrix2x2::fromElements(m00, m01,  // row 0
+                                 m10, m11); // row 1
+}
+
 std::optional<Matrix2x2> U2Op::getUnitaryMatrix() {
   const auto phi = valueToDouble(getPhi());
   const auto lambda = valueToDouble(getLambda());
   if (!phi || !lambda) {
     return std::nullopt;
   }
-
-  constexpr auto m00 = 1 / std::numbers::sqrt2;
-  const auto m01 = std::polar(m00, *lambda + std::numbers::pi);
-  const auto m10 = std::polar(m00, *phi);
-  const auto m11 = std::polar(m00, *phi + *lambda);
-  return Matrix2x2::fromElements(m00, m01,  // row 0
-                                 m10, m11); // row 1
+  return unitaryMatrix(*phi, *lambda);
 }

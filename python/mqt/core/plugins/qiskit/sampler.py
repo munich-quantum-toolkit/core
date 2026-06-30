@@ -65,7 +65,7 @@ class QDMISampler(BaseSamplerV2):
 
     @property
     def backend(self) -> QDMIBackend:
-        """Return the backend used by this sampler."""
+        """The backend used by the sampler."""
         return self._backend
 
     def run(

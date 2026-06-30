@@ -11,14 +11,27 @@
 #pragma once
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/Utils.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <optional>
+
 namespace mlir::qco {
+
+/**
+ * @brief Composes compile-time single-qubit unitaries in a modifier body.
+ *
+ * @return The composed 2x2 target unitary in program order, or `std::nullopt`
+ *         when the body cannot be composed.
+ */
+[[nodiscard]] std::optional<Matrix2x2>
+composeSingleQubitBodyMatrix(Block& block);
 
 /**
  * @brief Check whether two parameter values match.

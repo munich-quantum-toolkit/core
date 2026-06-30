@@ -14,6 +14,7 @@ file(GLOB_RECURSE SCF "${CMAKE_CURRENT_SOURCE_DIR}/SCF/*.cpp")
 add_mlir_dialect_library(
   MLIRQCODialect
   QCOOps.cpp
+  QCOUtils.cpp
   ${MODIFIERS}
   ${OPERATIONS}
   ${QUBIT_MANAGEMENT}
