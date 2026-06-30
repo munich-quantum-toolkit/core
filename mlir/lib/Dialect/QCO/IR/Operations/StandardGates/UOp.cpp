@@ -125,6 +125,19 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
       context);
 }
 
+Matrix2x2 UOp::unitaryMatrix(const double theta, const double phi,
+                             const double lambda) {
+  using namespace std::complex_literals;
+  const auto halfTheta = theta / 2;
+  const auto c = std::cos(halfTheta);
+  const auto s = std::sin(halfTheta);
+  const auto m01 = s * std::exp(1i * (lambda + std::numbers::pi));
+  const auto m10 = s * std::exp(1i * phi);
+  const auto m11 = c * std::exp(1i * (phi + lambda));
+  return Matrix2x2::fromElements(c, m01,    // row 0
+                                 m10, m11); // row 1
+}
+
 std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
   const auto theta = valueToDouble(getTheta());
   const auto phi = valueToDouble(getPhi());
@@ -132,15 +145,5 @@ std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
   if (!theta || !phi || !lambda) {
     return std::nullopt;
   }
-
-  using namespace std::complex_literals;
-  const auto halfTheta = *theta / 2;
-  const auto c = std::cos(halfTheta);
-  const auto s = std::sin(halfTheta);
-
-  const auto m01 = s * std::exp(1i * (*lambda + std::numbers::pi));
-  const auto m10 = s * std::exp(1i * (*phi));
-  const auto m11 = c * std::exp(1i * (*phi + *lambda));
-  return Matrix2x2::fromElements(c, m01,    // row 0
-                                 m10, m11); // row 1
+  return unitaryMatrix(*theta, *phi, *lambda);
 }

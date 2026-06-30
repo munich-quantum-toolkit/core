@@ -64,12 +64,16 @@ void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRY>(context);
 }
 
+Matrix2x2 RYOp::unitaryMatrix(const double theta) {
+  const auto m00 = std::cos(theta / 2);
+  const auto m01 = -std::sin(theta / 2);
+  return Matrix2x2::fromElements(m00, m01,   // row 0
+                                 -m01, m00); // row 1
+}
+
 std::optional<Matrix2x2> RYOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m00 = std::cos(*theta / 2);
-    const auto m01 = -std::sin(*theta / 2);
-    return Matrix2x2::fromElements(m00, m01,   // row 0
-                                   -m01, m00); // row 1
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

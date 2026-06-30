@@ -244,8 +244,6 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
   return true;
 }
 
-Matrix1x1 Matrix1x1::fromElements(const Complex m00) { return {m00}; }
-
 Complex& Matrix1x1::operator()(const std::size_t row, const std::size_t col) {
   assert(row == 0 && col == 0 && "matrix index out of bounds");
   return value;
@@ -279,11 +277,6 @@ Matrix1x1& Matrix1x1::operator*=(const Complex& scalar) {
 }
 
 Matrix1x1 Matrix1x1::adjoint() const { return fromElements(std::conj(value)); }
-
-Matrix2x2 Matrix2x2::fromElements(const Complex& m00, const Complex& m01,
-                                  const Complex& m10, const Complex& m11) {
-  return {{m00, m01, m10, m11}};
-}
 
 Complex& Matrix2x2::operator()(const std::size_t row, const std::size_t col) {
   return data[checkedFlatIndex(row, col, K_COLS)];
@@ -374,18 +367,6 @@ Matrix4x4 Matrix2x2::embedInTwoQubit(const std::size_t qubitIndex) const {
     return Matrix4x4::kron(Matrix2x2::identity(), *this);
   }
   llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
-}
-
-Matrix4x4 Matrix4x4::fromElements(const Complex& m00, const Complex& m01,
-                                  const Complex& m02, const Complex& m03,
-                                  const Complex& m10, const Complex& m11,
-                                  const Complex& m12, const Complex& m13,
-                                  const Complex& m20, const Complex& m21,
-                                  const Complex& m22, const Complex& m23,
-                                  const Complex& m30, const Complex& m31,
-                                  const Complex& m32, const Complex& m33) {
-  return {{m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31,
-           m32, m33}};
 }
 
 Complex& Matrix4x4::operator()(const std::size_t row, const std::size_t col) {

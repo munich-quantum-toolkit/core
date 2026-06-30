@@ -35,11 +35,11 @@ static_assert(!is_supported_matrix_v<int>);
 static_assert(SupportedMatrix<Matrix2x2>);
 static_assert(!SupportedMatrix<int>);
 
-[[nodiscard]] static Matrix2x2 pauliX() {
+[[nodiscard]] static constexpr Matrix2x2 pauliX() {
   return Matrix2x2::fromElements(0, 1, 1, 0);
 }
 
-[[nodiscard]] static Matrix4x4 swapMatrix() {
+[[nodiscard]] static constexpr Matrix4x4 swapMatrix() {
   return Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
                                  0, 0, 1, 0,  // row 1
                                  0, 1, 0, 0,  // row 2
@@ -638,10 +638,10 @@ TEST(UnitaryMatrix4x4, ReorderTwoQubitMatrix) {
 
 TEST(UnitaryDynamicMatrix, NQubitEmbedMatchesTwoQubitSpecialization) {
   const Matrix2x2 x = pauliX();
-  const Matrix4x4 cx = Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
-                                               0, 1, 0, 0,  // row 1
-                                               0, 0, 0, 1,  // row 2
-                                               0, 0, 1, 0); // row 3
+  constexpr Matrix4x4 cx = Matrix4x4::fromElements(1, 0, 0, 0, //
+                                                   0, 1, 0, 0, //
+                                                   0, 0, 0, 1, //
+                                                   0, 0, 1, 0);
   EXPECT_TRUE(x.embedInNqubit(2, 0).isApprox(
       Matrix4x4::kron(x, Matrix2x2::identity())));
   EXPECT_TRUE(x.embedInNqubit(2, 1).isApprox(
