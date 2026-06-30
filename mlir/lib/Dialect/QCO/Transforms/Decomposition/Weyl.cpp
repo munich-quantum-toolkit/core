@@ -598,7 +598,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     const auto ab = (a_ + b_) / 2.;
     a_ = ab;
     b_ = ab;
-    globalPhase_ *= k2lphase;
+    globalPhase_ += k2lphase;
     k1l_ = k1l_ * RZOp::unitaryMatrix(k2lphi);
     k2l_ = RYOp::unitaryMatrix(k2ltheta) * RZOp::unitaryMatrix(k2llambda);
     k1r_ = k1r_ * RZOp::unitaryMatrix(k2lphi);
@@ -611,7 +611,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     const auto bc = (b_ + c_) / 2.;
     b_ = bc;
     c_ = bc;
-    globalPhase_ *= k2lphase;
+    globalPhase_ += k2lphase;
     k1l_ = k1l_ * RXOp::unitaryMatrix(k2lphi);
     k2l_ = RYOp::unitaryMatrix(k2ltheta) * RXOp::unitaryMatrix(k2llambda);
     k1r_ = k1r_ * RXOp::unitaryMatrix(k2lphi);
@@ -624,7 +624,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     const auto bc = (b_ - c_) / 2.;
     b_ = bc;
     c_ = -bc;
-    globalPhase_ *= k2lphase;
+    globalPhase_ += k2lphase;
     k1l_ = k1l_ * RXOp::unitaryMatrix(k2lphi);
     k2l_ = RYOp::unitaryMatrix(k2ltheta) * RXOp::unitaryMatrix(k2llambda);
     k1r_ = k1r_ * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() *
