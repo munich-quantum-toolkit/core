@@ -802,31 +802,4 @@ struct SymmetricEigen4 {
   Matrix4x4 eigenvectors{};
 };
 
-[[nodiscard]] Matrix2x2 rxMatrix(double theta);
-[[nodiscard]] Matrix2x2 ryMatrix(double theta);
-[[nodiscard]] Matrix2x2 rzMatrix(double theta);
-
-[[nodiscard]] const Matrix2x2& iPauliX();
-[[nodiscard]] const Matrix2x2& iPauliY();
-[[nodiscard]] const Matrix2x2& iPauliZ();
-
-[[nodiscard]] Matrix4x4 rxxMatrix(double theta);
-[[nodiscard]] Matrix4x4 ryyMatrix(double theta);
-[[nodiscard]] Matrix4x4 rzzMatrix(double theta);
-
-/**
- * @brief Controlled-`X` with control on qubit 0 (MSB) and target on qubit 1.
- *
- * Operand order matches @ref Matrix2x2::embedInTwoQubit and QCO unitaries.
- */
-[[nodiscard]] const Matrix4x4& twoQubitControlledX01();
-
-/**
- * @brief Controlled-`X` with control on qubit 1 and target on qubit 0.
- *
- * Same entangling content as @ref twoQubitControlledX01 but with wires
- * reversed; useful when parametrizing basis-decomposer tests.
- */
-[[nodiscard]] const Matrix4x4& twoQubitControlledZ();
-
 } // namespace mlir::qco

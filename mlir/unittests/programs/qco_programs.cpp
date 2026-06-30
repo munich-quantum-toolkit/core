@@ -320,15 +320,6 @@ void controlledTwoX(QCOProgramBuilder& b) {
   });
 }
 
-void controlledXH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange targets) {
-    auto wire = b.x(targets[0]);
-    wire = b.h(wire);
-    return SmallVector{wire};
-  });
-}
-
 void inverseTwoX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv(q[0], [&](ValueRange qubits) {

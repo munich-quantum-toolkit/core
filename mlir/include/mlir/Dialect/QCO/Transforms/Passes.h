@@ -14,8 +14,6 @@
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 
-#include <string>
-
 namespace mlir::qco {
 
 #define GEN_PASS_DECL

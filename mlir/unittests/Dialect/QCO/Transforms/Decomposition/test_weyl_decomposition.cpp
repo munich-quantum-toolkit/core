@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -62,6 +63,12 @@ static constexpr Matrix4x4 TWO_QUBIT_CONTROLLED_X10 =
                             0.0, 0.0, 0.0, 1.0, //
                             0.0, 0.0, 1.0, 0.0, //
                             0.0, 1.0, 0.0, 0.0);
+
+static constexpr Matrix4x4 TWO_QUBIT_CONTROLLED_Z =
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+                            0.0, 1.0, 0.0, 0.0, //
+                            0.0, 0.0, 1.0, 0.0, //
+                            0.0, 0.0, 0.0, -1.0);
 
 template <typename MatrixT>
 static bool isUnitaryMatrix(const MatrixT& matrix,
@@ -443,21 +450,6 @@ static bool extractSingleQubitMatrix(UnitaryOpInterface op, Matrix2x2& out) {
 }
 
 static bool extractTwoQubitMatrix(UnitaryOpInterface op, Matrix4x4& out) {
-  if (auto ctrl = llvm::dyn_cast<CtrlOp>(op.getOperation())) {
-    if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
-      return false;
-    }
-    Operation* body = ctrl.getBodyUnitary(0).getOperation();
-    if (llvm::isa<XOp>(body)) {
-      out = twoQubitControlledX01();
-      return true;
-    }
-    if (llvm::isa<ZOp>(body)) {
-      out = twoQubitControlledZ();
-      return true;
-    }
-    return false;
-  }
   return op.getUnitaryMatrix4x4(out);
 }
 
@@ -516,7 +508,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
         return std::nullopt;
       }
       Matrix4x4 twoQ;
-      if (!extractTwoQubitMatrix(op, twoQ)) {
+      if (!op.getUnitaryMatrix4x4(twoQ);) {
         return std::nullopt;
       }
       unitary = twoQ.reorderForQubits(*q0id, *q1id) * unitary;
@@ -604,7 +596,7 @@ INSTANTIATE_TEST_SUITE_P(
     Profiles, WeylSynthesisTest,
     testing::Values(
         WeylSynthesisCase{"CxGeneric", "u,cx",
-                          [] { return twoQubitControlledX01(); }},
+                          [] { return TWO_QUBIT_CONTROLLED_X01; }},
         WeylSynthesisCase{"ProductGeneric", "u,cx",
                           [] {
                             return Matrix4x4::kron(RZOp::unitaryMatrix(1.0),
@@ -614,12 +606,12 @@ INSTANTIATE_TEST_SUITE_P(
                           [] {
                             return Matrix4x4::kron(HOp::getUnitaryMatrix(),
                                                    Matrix2x2::identity()) *
-                                   twoQubitControlledX01() *
+                                   TWO_QUBIT_CONTROLLED_X01 *
                                    Matrix4x4::kron(RZOp::unitaryMatrix(0.2),
                                                    RYOp::unitaryMatrix(0.1));
                           }},
         WeylSynthesisCase{"CzGeneric", "u,cz",
-                          [] { return twoQubitControlledZ(); }}),
+                          [] { return TWO_QUBIT_CONTROLLED_Z; }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });
@@ -657,7 +649,7 @@ TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
   Value out1;
   EXPECT_TRUE(failed(synthesizeUnitary2QWeyl(
       builder, func.getLoc(), entry->getArgument(0), entry->getArgument(1),
-      twoQubitControlledX01(), *spec, out0, out1)));
+      TWO_QUBIT_CONTROLLED_X01, *spec, out0, out1)));
 }
 
 TEST(NativeSpecTest, ParsesAndRejectsMenus) {

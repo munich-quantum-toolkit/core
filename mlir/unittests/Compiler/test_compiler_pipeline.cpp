@@ -805,19 +805,7 @@ computeStaticTwoQubitUnitary(mlir::ModuleOp module) {
             return std::nullopt;
           }
           mlir::qco::Matrix4x4 twoQ;
-          if (auto ctrl = llvm::dyn_cast<mlir::qco::CtrlOp>(&rawOp)) {
-            if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
-              return std::nullopt;
-            }
-            auto* body = ctrl.getBodyUnitary(0).getOperation();
-            if (llvm::isa<mlir::qco::XOp>(body)) {
-              twoQ = mlir::qco::twoQubitControlledX01();
-            } else if (llvm::isa<mlir::qco::ZOp>(body)) {
-              twoQ = mlir::qco::twoQubitControlledZ();
-            } else {
-              return std::nullopt;
-            }
-          } else if (!op.getUnitaryMatrix4x4(twoQ)) {
+          if (!op.getUnitaryMatrix4x4(twoQ)) {
             return std::nullopt;
           }
           const mlir::SmallVector<std::size_t, 2> ids{*q0, *q1};

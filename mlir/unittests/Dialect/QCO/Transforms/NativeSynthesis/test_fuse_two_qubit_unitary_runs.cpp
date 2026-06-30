@@ -53,6 +53,15 @@ using namespace mqt::test;
 using ProgramFn = void (*)(mlir::qc::QCProgramBuilder&);
 using NativePredicate = bool (*)(OwningOpRef<ModuleOp>&);
 
+static void controlledXH(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.ctrl(q0, {q1}, [&](ValueRange targets) {
+    b.x(targets[0]);
+    b.h(targets[0]);
+  });
+}
+
 template <typename... Allowed1QOps>
 static bool onlyTheseOps(OwningOpRef<ModuleOp>& moduleOp, bool allowCx,
                          bool allowCz) {
@@ -675,7 +684,7 @@ TEST_F(FuseTwoQubitUnitaryRunsPassTest, InverseWrappedOpsSynthesize) {
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest, ControlledXHSynthesizesToNativeMenu) {
-  expectEquivalentAndNativeAfterSynthesis(mlir::qc::controlledXH, "x,sx,rz,cx",
+  expectEquivalentAndNativeAfterSynthesis(controlledXH, "x,sx,rz,cx",
                                           onlyIbmBasicCxOps);
 }
 

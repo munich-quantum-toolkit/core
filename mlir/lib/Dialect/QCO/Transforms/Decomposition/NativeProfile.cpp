@@ -37,6 +37,24 @@
 using mlir::qco::Matrix2x2;
 using mlir::qco::Matrix4x4;
 
+namespace {
+
+const Matrix4x4& canonicalControlledX() {
+  static const Matrix4x4 matrix =
+      Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                              0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
+  return matrix;
+}
+
+const Matrix4x4& canonicalControlledZ() {
+  static const Matrix4x4 matrix =
+      Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                              1.0, 0.0, 0.0, 0.0, 0.0, -1.0);
+  return matrix;
+}
+
+} // namespace
+
 namespace mlir::qco::decomposition {
 
 static std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
@@ -107,13 +125,12 @@ cachedBasisDecomposer(NativeGateKind entangler) {
   switch (entangler) {
   case NativeGateKind::CX: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(mlir::qco::twoQubitControlledX01(),
-                                        1.0);
+        TwoQubitBasisDecomposer::create(canonicalControlledX(), 1.0);
     return DECOMPOSER;
   }
   case NativeGateKind::CZ: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(mlir::qco::twoQubitControlledZ(), 1.0);
+        TwoQubitBasisDecomposer::create(canonicalControlledZ(), 1.0);
     return DECOMPOSER;
   }
   default:
