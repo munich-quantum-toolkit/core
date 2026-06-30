@@ -1266,13 +1266,80 @@ def IfOp
 
   let extraClassDeclaration = [{
         Block *thenBlock() {
-           return &getThenRegion().back();
+          return &getThenRegion().back();
         }
         YieldOp thenYield();
         Block* elseBlock() {
-           return &getElseRegion().back();
+          return &getElseRegion().back();
         }
         YieldOp elseYield();
+
+        /// Return the result that corresponds to the given qubit operand, 
+        /// or "empty" OpResult on failure.
+        OpResult getTiedResult(OpOperand* qubit) {
+          auto results = getResults();
+          if (results.empty()) {
+            return {};
+          }
+          auto qubits = getQubitsMutable();
+          auto it = ::llvm::find(qubits, *qubit);
+          if (it == qubits.end()) {
+            return {};
+          }
+          return results[std::distance(qubits.begin(), it)];
+        }
+
+        /// Return the qubit operand that corresponds to the given result,
+        /// or `nullptr` on failure.
+        OpOperand* getTiedQubit(OpResult result) {
+          auto results = getResults();
+          if (results.empty()) {
+            return nullptr;
+          }
+          auto it = ::llvm::find(results, result);
+          if (it == results.end()) {
+            return nullptr;
+          }
+          return &getQubitsMutable()[std::distance(results.begin(), it)];
+        }
+
+        /// Return the argument that corresponds to the given qubit operand
+        /// for the then-block, or "empty" BlockArgument on failure.
+        BlockArgument getTiedThenBlockArgument(OpOperand* qubit) {
+          auto arguments = thenBlock()->getArguments();
+          if (arguments.empty()) {
+            return {};
+          }
+          auto qubits = getQubitsMutable();
+          auto it = ::llvm::find(qubits, *qubit);
+          if (it == qubits.end()) {
+            return {};
+          }
+          return arguments[std::distance(qubits.begin(), it)];
+        }
+
+        /// Return the argument that corresponds to the given qubit operand 
+        /// for the else-block, or "empty" BlockArgument on failure.
+        BlockArgument getTiedElseBlockArgument(OpOperand* qubit) {
+          auto arguments = elseBlock()->getArguments();
+          if (arguments.empty()) {
+            return {};
+          }
+          auto qubits = getQubitsMutable();
+          auto it = ::llvm::find(qubits, *qubit);
+          if (it == qubits.end()) {
+            return {};
+          }
+          return arguments[std::distance(qubits.begin(), it)];
+        }
+
+        /// Return the yielded value that corresponds to the given argument
+        /// for the then-block, or `nullptr` on failure.
+        OpOperand* getTiedThenYieldedValue(BlockArgument bbArg);
+        
+        /// Return the yielded value that corresponds to the given argument
+        /// for the else-block, or `nullptr` on failure.
+        OpOperand* getTiedElseYieldedValue(BlockArgument bbArg);
     }];
 
   let extraClassDefinition = [{
@@ -1281,6 +1348,32 @@ def IfOp
         }
         YieldOp $cppClass::elseYield() {
            return cast<YieldOp>(&elseBlock()->back());
+        }
+
+        OpOperand* $cppClass::getTiedThenYieldedValue(BlockArgument bbArg) {
+          auto arguments = thenBlock()->getArguments();
+          if (arguments.empty()) {
+            return nullptr;
+          }
+          auto it = ::llvm::find(arguments, bbArg);
+          if (it == arguments.end()) {
+            return nullptr;
+          }
+          auto yield = thenYield();
+          return &yield.getTargetsMutable()[std::distance(arguments.begin(), it)];
+        }
+
+        OpOperand* $cppClass::getTiedElseYieldedValue(BlockArgument bbArg) {
+          auto arguments = elseBlock()->getArguments();
+          if (arguments.empty()) {
+            return nullptr;
+          }
+          auto it = ::llvm::find(arguments, bbArg);
+          if (it == arguments.end()) {
+            return nullptr;
+          }
+          auto yield = elseYield();
+          return &yield.getTargetsMutable()[std::distance(arguments.begin(), it)];
         }
     }];
 
