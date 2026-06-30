@@ -6,26 +6,24 @@ is a standardized intermediate representation for quantum programs based on the
 
 ## The QIR Runtime in MQT Core
 
-MQT Core provides a runtime for QIR
-that is based on its decision diagram-based quantum simulator.
-This allows for the execution of QIR programs using MQT Core's high-performance
-simulation capabilities.
+MQT Core provides a runtime for QIR that is based on its decision diagram-based
+quantum simulator. This allows for the execution of QIR programs using MQT
+Core's high-performance simulation capabilities.
 
 The runtime can be utilized in two ways:
 
-1. As a standalone library that can be linked to any QIR program,
-   resulting in a binary executable.
-2. By using the `mqt-core-qir-runner` command-line tool,
-   which interprets QIR programs directly.
+1. As a standalone library that can be linked to any QIR program, resulting in a
+   binary executable.
+2. By using the `mqt-core-qir-runner` command-line tool, which interprets QIR
+   programs directly.
 
 See {cite:p}`stadeTowardsSupportingQIR2025` for more details.
 
 ### Building the Runner
 
 To build this tool, the CMake option `BUILD_MQT_CORE_QIR_RUNNER` has to be
-enabled.
-It is enabled by default, but depends on `BUILD_MQT_CORE_MLIR` being set.
-From the root of the repository, you can build the runner as follows:
+enabled. It is enabled by default, but depends on `BUILD_MQT_CORE_MLIR` being
+set. From the root of the repository, you can build the runner as follows:
 
 ```bash
 cmake -S . -B build -DBUILD_MQT_CORE_QIR_RUNNER=ON -DBUILD_MQT_CORE_MLIR=ON
@@ -37,8 +35,8 @@ After building, the tool can be found in the build directory under
 
 ### Executing a QIR Program
 
-The `mqt-core-qir-runner` can be used to execute a QIR file
-(typically with a `.ll` extension).
+The `mqt-core-qir-runner` can be used to execute a QIR file (typically with a
+`.ll` extension).
 
 ```bash
 ./build/bin/mqt-core-qir-runner bell.ll
@@ -49,9 +47,8 @@ The runner supports the QIR Base Profile.
 
 ### QIR Support in the DDSIM QDMI Device
 
-The QDMI Device accepts jobs in the following program formats: QASM2, QASM3,
-QIR Base/Adaptive Profile Module
-(LLVM bitcode), and QIR Base/Adaptive Profile String (LLVM assembly).
-These QIR formats are only supported
-when the `BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` CMake option is enabled.
-It is enabled by default, but depends on `BUILD_MQT_CORE_MLIR` being set.
+The QDMI Device accepts jobs in the following program formats: QASM2, QASM3, QIR
+Base/Adaptive Profile Module (LLVM bitcode), and QIR Base/Adaptive Profile
+String (LLVM assembly). These QIR formats are only supported when the
+`BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR` CMake option is enabled. It is enabled by
+default, but depends on `BUILD_MQT_CORE_MLIR` being set.
