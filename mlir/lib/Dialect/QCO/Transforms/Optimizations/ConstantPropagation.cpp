@@ -28,6 +28,12 @@ namespace mlir::qco {
 
 namespace {
 
+/**
+ * This method checks whether the func::FuncOp is an entry point to the program.
+ *
+ * @param op The func::FuncOp to be checked.
+ * @return Whether the operation is an entry point to the program.
+ */
 bool isEntryPoint(const func::FuncOp op) {
   const auto passthroughAttr = op->getAttrOfType<ArrayAttr>("passthrough");
   if (!passthroughAttr) {
@@ -43,6 +49,9 @@ bool isEntryPoint(const func::FuncOp op) {
 /**
  * This method moves all measurements as far to the front as possible, in order
  * to execute constant propagation more efficiently.
+ *
+ * @param module The module which contains the operations
+ * @param ctx The MLIR context
  */
 bool moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
   bool changed = false;
@@ -63,6 +72,12 @@ bool moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
   return changed;
 }
 
+/**
+ * Removes a UnitaryOpInterface from the mlir context.
+ *
+ * @param op The qco::UnitaryOpInterface to be removed.
+ * @param rewriter The used rewriter.
+ */
 void removeOperation(UnitaryOpInterface* op, PatternRewriter& rewriter) {
   for (const auto outQubit : op->getOutputQubits()) {
     rewriter.replaceAllUsesWith(outQubit, op->getInputForOutput(outQubit));
@@ -70,14 +85,31 @@ void removeOperation(UnitaryOpInterface* op, PatternRewriter& rewriter) {
   rewriter.eraseOp(*op);
 }
 
-void removeCtrlOperation(CtrlOp* op, PatternRewriter& rewriter,
-                         std::span<Operation*>& worklist) {
+/**
+ * Removes a CtrlOp from the mlir context.
+ *
+ * @param op The qco::CtrlOp to be removed.
+ * @param rewriter The used rewriter.
+ */
+void removeCtrlOperation(CtrlOp* op, PatternRewriter& rewriter) {
   for (const auto outQubit : op->getOutputQubits()) {
     rewriter.replaceAllUsesWith(outQubit, op->getInputForOutput(outQubit));
   }
   rewriter.eraseOp(*op);
 }
 
+/**
+ * Handles a constant operation, meaning it is propagated through the union
+ * table.
+ *
+ * @param ut Union table which contains the current quantum state
+ * @param op The arith::ConstantOp which is propagated.
+ * @param posClassicalCtrls The positive classical controls considered in the
+ * operation.
+ * @param negClassicalCtrls The negative classical controls considered in the
+ * operation.
+ * @return Whether the handling was successfully or interrupted.
+ */
 WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
                           const std::span<Value> posClassicalCtrls,
                           const std::span<Value> negClassicalCtrls) {
@@ -105,6 +137,22 @@ WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
   return WalkResult::advance();
 }
 
+/**
+ * Checks if only a global phase is added to the quantum machine state. If yes
+ * and if the global phase is not = 1, it adds a global phase gate.
+ *
+ * @param ut Union table which contains the current quantum state
+ * @param op The qco::UnitaryOpInterface which is propagated.
+ * @param ctrlsQuantum The quantum control values considered in the operation.
+ * @param posClassicalCtrls The positive classical controls considered in the
+ * operation.
+ * @param negClassicalCtrls The negative classical controls considered in the
+ * operation.
+ * @param rewriter The used rewriter.
+ * @param targetValues The target values (non-empty if the method was called via
+ * a quantum control (qco::CtrlOp).
+ * @return Whether there is only a global phase added.
+ */
 bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
                          const std::span<Value> ctrlsQuantum,
                          const std::span<Value> posClassicalCtrls,
@@ -129,6 +177,23 @@ bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
   return addsGlobalPhase;
 }
 
+/**
+ * Handles a unitary gate, meaning it is propagated through the union table.
+ *
+ * @param ut Union table which contains the current quantum state
+ * @param op The qco::UnitaryOpInterface which is propagated.
+ * @param ctrlsQuantum The quantum control values considered in the operation.
+ * @param newCtrlsQuantum The values the quantum control values become after
+ * the operation.
+ * @param posClassicalCtrls The positive classical controls considered in the
+ * operation.
+ * @param negClassicalCtrls The negative classical controls considered in the
+ * operation.
+ * @param targetValues The target values (non-empty if the method was called via
+ * a quantum control (qco::CtrlOp).
+ * @param resultValues The values the target values become after the operation.
+ * @return Whether the handling was successfully or interrupted.
+ */
 WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
                          const std::span<Value> ctrlsQuantum,
                          const std::span<Value> newCtrlsQuantum,
@@ -159,6 +224,23 @@ WalkResult handleUnitary(UnionTable* ut, UnitaryOpInterface* op,
   return WalkResult::advance();
 }
 
+/**
+ * Handles an uncontrolled unitary gate. First, it is checked whether the gate
+ * only adds a global phase in case it is a diagonal gate. Then the gate is
+ * either propagated on the union table or removed/replaced by a gloal phase
+ * gate.
+ *
+ * @param ut Union table which contains the current quantum state
+ * @param op The qco::UnitaryOpInterface which is propagated.
+ * @param posClassicalCtrls The positive classical controls considered in the
+ * operation.
+ * @param negClassicalCtrls The negative classical controls considered in the
+ * operation.
+ * @param rewriter The used rewriter
+ * @param worklist The worklist which contains the operations that are iterated
+ * through.
+ * @return Whether the handling was successfully or interrupted.
+ */
 WalkResult handleUncontrolledUnitary(UnionTable* ut, UnitaryOpInterface* op,
                                      const std::span<Value> posClassicalCtrls,
                                      const std::span<Value> negClassicalCtrls,
@@ -179,6 +261,23 @@ WalkResult handleUncontrolledUnitary(UnionTable* ut, UnitaryOpInterface* op,
   return handleUnitary(ut, op, {}, {}, posClassicalCtrls, negClassicalCtrls);
 }
 
+/**
+ * Handles a CtrlOp. First, it is checked whether the CtrlOp is executable
+ * considering the current quantum machine state. Then the CtrlOp is either
+ * propagated on the union table or removed/replaced by an unconditional gate.
+ * If it is replaced by an unconditional gate, the gate is propagated.
+ *
+ * @param ut Union table which contains the current quantum state
+ * @param op The qco::CtrlOp which is propagated.
+ * @param posClassicalCtrls The positive classical controls considered in the
+ * operation.
+ * @param negClassicalCtrls The negative classical controls considered in the
+ * operation.
+ * @param rewriter The used rewriter
+ * @param worklist The worklist which contains the operations that are iterated
+ * through.
+ * @return Whether the handling was successfully or interrupted.
+ */
 WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
                         const std::span<Value> posClassicalCtrls,
                         const std::span<Value> negClassicalCtrls,
@@ -232,7 +331,7 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
                           negClassicalCtrls, rewriter, targetQubits);
   if (addsGlobalPhase) {
     std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
-    removeCtrlOperation(op, rewriter, worklist);
+    removeCtrlOperation(op, rewriter);
     return WalkResult::advance();
   }
 
@@ -241,6 +340,21 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
                        resultQubits);
 }
 
+/**
+ * Iterates through the worklist of operators and propagates the quantum machine
+ * state through the union table. The iteration can be called with specific
+ * classical controls which are considered in every propagation.
+ *
+ * @param rewriter The used rewriter
+ * @param ut The union table which contains the current quantum machine state.
+ * @param worklist The worklist which contains the operations that are iterated
+ * through.
+ * @param posClassicalCtrls The positive classical controls considered in every
+ * operation.
+ * @param negClassicalCtrls The negative classical controls considered in every
+ * operation.
+ * @return Whether the iteration was successfully or interrupted.
+ */
 LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
                                      std::span<Operation*>& worklist,
                                      const std::span<Value> posClassicalCtrls,
@@ -397,6 +511,8 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
  * (similarly to `walkAndApplyPatterns`). Consequently, a custom driver
  * would be required in any case, which adds unnecessary code to maintain.
  *
+ * @param module The module which contains the operations
+ * @param ctx The MLIR context
  * @return Success if constant propagation has been applied successfully
  */
 LogicalResult applyCP(ModuleOp module, MLIRContext* ctx) {
@@ -423,8 +539,8 @@ LogicalResult applyCP(ModuleOp module, MLIRContext* ctx) {
 }
 
 /**
- * @brief This pass applies constant propagation to a circuit. It assumes that
- * all states start in |0> and removes quantum instructions that are superfluous
+ * This pass applies constant propagation to a circuit. It assumes that all
+ * states start in |0> and removes quantum instructions that are superfluous
  * when the current state is considered. It also replaces quantum resources by
  * classical resources.
  */
