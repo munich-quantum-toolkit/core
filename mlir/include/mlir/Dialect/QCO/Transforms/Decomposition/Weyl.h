@@ -114,6 +114,11 @@ public:
   [[nodiscard]] static Matrix4x4 getCanonicalMatrix(double a, double b,
                                                     double c);
 
+  /**
+   * @brief Reconstructs `U = (K1l ⊗ K1r) · CAN(a,b,c) · (K2l ⊗ K2r) · e^{iφ}`.
+   */
+  [[nodiscard]] Matrix4x4 unitaryMatrix() const;
+
 private:
   bool applySpecialization(const std::optional<double>& requestedFidelity);
 
@@ -153,6 +158,17 @@ struct TwoQubitNativeDecomposition {
   SmallVector<Matrix2x2> singleQubitFactors;
   double globalPhase = 0.0;
 };
+
+/**
+ * @brief Reconstructs the target unitary from a native basis decomposition.
+ *
+ * Applies `singleQubitFactors` and `numBasisUses` copies of @p basisGate in the
+ * emission order documented on @ref TwoQubitNativeDecomposition, then the
+ * global phase.
+ */
+[[nodiscard]] Matrix4x4
+unitaryMatrix(const TwoQubitNativeDecomposition& decomposition,
+              const Matrix4x4& basisGate);
 
 /**
  * @brief Decomposer for a fixed two-qubit basis gate (e.g. CX/CZ).
