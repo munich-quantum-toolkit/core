@@ -12,7 +12,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -52,14 +51,22 @@ using namespace mqt::test;
 
 using QubitId = std::size_t;
 
-static constexpr double K_SANITY_CHECK_PRECISION = 1e-12;
-inline constexpr double FRAC1_SQRT2 =
-    0.707106781186547524400844362104849039284835937688474036588;
+static constexpr Matrix4x4 TWO_QUBIT_CONTROLLED_X01 =
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+                            0.0, 1.0, 0.0, 0.0, //
+                            0.0, 0.0, 0.0, 1.0, //
+                            0.0, 0.0, 1.0, 0.0);
 
-static const Matrix2x2& hGate() {
-  static const Matrix2x2 MATRIX = Matrix2x2::fromElements(
-      FRAC1_SQRT2, FRAC1_SQRT2, FRAC1_SQRT2, -FRAC1_SQRT2);
-  return MATRIX;
+static constexpr Matrix4x4 TWO_QUBIT_CONTROLLED_X10 =
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+                            0.0, 0.0, 0.0, 1.0, //
+                            0.0, 0.0, 1.0, 0.0, //
+                            0.0, 1.0, 0.0, 0.0);
+
+template <typename MatrixT>
+static bool isUnitaryMatrix(const MatrixT& matrix,
+                            const double tolerance = MATRIX_TOLERANCE) {
+  return (matrix.adjoint() * matrix).isIdentity(tolerance);
 }
 
 static Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
@@ -94,75 +101,58 @@ static Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
       columns[1][1], columns[2][1], columns[3][1], columns[0][2], columns[1][2],
       columns[2][2], columns[3][2], columns[0][3], columns[1][3], columns[2][3],
       columns[3][3]);
-  assert((unitary.adjoint() * unitary).isIdentity(1e-12));
+  assert(isUnitaryMatrix(unitary, WEYL_TOLERANCE));
   return unitary;
 }
 
-static Matrix4x4 restoreWeyl(const TwoQubitWeylDecomposition& decomposition) {
-  return Matrix4x4::kron(decomposition.k1l(), decomposition.k1r()) *
-         decomposition.getCanonicalMatrix() *
-         Matrix4x4::kron(decomposition.k2l(), decomposition.k2r()) *
-         std::exp(Complex{0.0, 1.0} * decomposition.globalPhase());
-}
-
-static Matrix4x4 restoreBasis(const TwoQubitNativeDecomposition& decomposition,
-                              const Matrix4x4& entangler) {
-  const auto& factors = decomposition.singleQubitFactors;
-  const auto layer = [&](std::size_t i) {
-    return Matrix4x4::kron(factors[(2 * i) + 1], factors[2 * i]);
-  };
-  Matrix4x4 matrix = layer(0);
-  for (std::uint8_t i = 0; i < decomposition.numBasisUses; ++i) {
-    matrix = entangler * matrix;
-    matrix = layer(static_cast<std::size_t>(i) + 1) * matrix;
-  }
-  return matrix * std::exp(Complex{0.0, 1.0} * decomposition.globalPhase);
-}
-
 static auto productMatrixCases() {
-  return ::testing::Values(
-      []() { return Matrix4x4::identity(); },
-      []() { return Matrix4x4::kron(rzMatrix(1.0), ryMatrix(3.1)); },
-      []() { return Matrix4x4::kron(Matrix2x2::identity(), rxMatrix(0.1)); });
+  return ::testing::Values([]() { return Matrix4x4::identity(); },
+                           []() {
+                             return Matrix4x4::kron(RZOp::unitaryMatrix(1.0),
+                                                    RYOp::unitaryMatrix(3.1));
+                           },
+                           []() {
+                             return Matrix4x4::kron(Matrix2x2::identity(),
+                                                    RXOp::unitaryMatrix(0.1));
+                           });
 }
 
 static auto entangledMatrixCases() {
   return ::testing::Values(
-      []() { return rzzMatrix(2.0); },
-      []() { return ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0); },
+      []() { return RZZOp::unitaryMatrix(2.0); },
+      []() {
+        return RYYOp::unitaryMatrix(1.0) * RZZOp::unitaryMatrix(3.0) *
+               RXXOp::unitaryMatrix(2.0);
+      },
       []() {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
-               Matrix4x4::kron(rxMatrix(1.0), Matrix2x2::identity());
+               Matrix4x4::kron(RXOp::unitaryMatrix(1.0), Matrix2x2::identity());
       },
       []() {
-        return Matrix4x4::kron(rxMatrix(1.0), ryMatrix(1.0)) *
+        return Matrix4x4::kron(RXOp::unitaryMatrix(1.0),
+                               RYOp::unitaryMatrix(1.0)) *
                TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
-               Matrix4x4::kron(rxMatrix(1.0), Matrix2x2::identity());
+               Matrix4x4::kron(RXOp::unitaryMatrix(1.0), Matrix2x2::identity());
       },
       []() {
-        return Matrix4x4::kron(hGate(), iPauliZ()) * twoQubitControlledX01() *
-               Matrix4x4::kron(iPauliX(), iPauliY());
+        return Matrix4x4::kron(HOp::getUnitaryMatrix(),
+                               Complex{0.0, 1.0} * ZOp::getUnitaryMatrix()) *
+               TWO_QUBIT_CONTROLLED_X01 *
+               Matrix4x4::kron(Complex{0.0, 1.0} * XOp::getUnitaryMatrix(),
+                               Complex{0.0, 1.0} * YOp::getUnitaryMatrix());
       });
 }
 
-static const Matrix4x4& twoQubitControlledX10() {
-  static const Matrix4x4 MATRIX = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
-                                                          0.0, 0.0, 0.0, 1.0, //
-                                                          0.0, 0.0, 1.0, 0.0, //
-                                                          0.0, 1.0, 0.0, 0.0);
-  return MATRIX;
-}
-
 static auto cxBasisCases() {
-  return ::testing::Values([]() { return twoQubitControlledX01(); },
-                           []() { return twoQubitControlledX10(); });
+  return ::testing::Values([]() { return TWO_QUBIT_CONTROLLED_X01; },
+                           []() { return TWO_QUBIT_CONTROLLED_X10; });
 }
 
 static auto specializedMatrixCases() {
   return ::testing::Values(
       []() {
-        return twoQubitControlledX01() * twoQubitControlledX10() *
-               twoQubitControlledX01();
+        return TWO_QUBIT_CONTROLLED_X01 * TWO_QUBIT_CONTROLLED_X10 *
+               TWO_QUBIT_CONTROLLED_X01;
       },
       []() {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.5);
@@ -170,7 +160,7 @@ static auto specializedMatrixCases() {
       []() {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, -0.5);
       },
-      []() { return twoQubitControlledX01() * twoQubitControlledX10(); },
+      []() { return TWO_QUBIT_CONTROLLED_X01 * TWO_QUBIT_CONTROLLED_X10; },
       []() {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.1);
       },
@@ -181,6 +171,262 @@ static auto specializedMatrixCases() {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, -0.1);
       });
 }
+
+TEST(DecompositionHelpersTest, MatrixUtilitySanity) {
+  EXPECT_NEAR(std::abs(std::polar(1.0, 1.25)), 1.0, 1e-14);
+  EXPECT_FALSE(isUnitaryMatrix(Matrix2x2::fromElements(2.0, 0.0, 0.0, 2.0)));
+  EXPECT_TRUE(isUnitaryMatrix(Matrix2x2::identity()));
+}
+
+TEST(DecompositionHelpersTest, GateMatrixFactoriesMatchCanonicalForm) {
+  for (const double theta : {0.0, 0.25, 1.0, 2.5, -1.3}) {
+    EXPECT_TRUE(RXXOp::unitaryMatrix(theta).isApprox(
+        TwoQubitWeylDecomposition::getCanonicalMatrix(-theta / 2.0, 0.0, 0.0),
+        WEYL_TOLERANCE));
+    EXPECT_TRUE(RYYOp::unitaryMatrix(theta).isApprox(
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.0, -theta / 2.0, 0.0),
+        WEYL_TOLERANCE));
+    EXPECT_TRUE(RZZOp::unitaryMatrix(theta).isApprox(
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.0, 0.0, -theta / 2.0),
+        WEYL_TOLERANCE));
+  }
+}
+
+TEST(DecompositionHelpersTest, CanonicalMatrixMatchesGateProduct) {
+  for (const auto [a, b, c] : {std::tuple{0.3, 0.2, 0.1},
+                               {0.5, 0.5, 0.5},
+                               {0.5, 0.1, -0.1},
+                               {1.1, 0.2, 3.0},
+                               {-0.2, 0.3, 0.4}}) {
+    const auto fromGates = RZZOp::unitaryMatrix(-2.0 * c) *
+                           RYYOp::unitaryMatrix(-2.0 * b) *
+                           RXXOp::unitaryMatrix(-2.0 * a);
+    EXPECT_TRUE(TwoQubitWeylDecomposition::getCanonicalMatrix(a, b, c).isApprox(
+        fromGates, WEYL_TOLERANCE));
+  }
+}
+
+namespace {
+
+class WeylDecompositionTest : public testing::TestWithParam<Matrix4x4 (*)()> {};
+
+class BasisDecomposerTest : public testing::TestWithParam<
+                                std::tuple<Matrix4x4 (*)(), Matrix4x4 (*)()>> {
+protected:
+  void SetUp() override {
+    basisMatrix = std::get<0>(GetParam())();
+    target = std::get<1>(GetParam())();
+    targetDecomposition = std::make_unique<TwoQubitWeylDecomposition>(
+        TwoQubitWeylDecomposition::create(target, 1.0));
+  }
+
+  Matrix4x4 target;
+  Matrix4x4 basisMatrix;
+  std::unique_ptr<TwoQubitWeylDecomposition> targetDecomposition;
+};
+
+} // namespace
+
+TEST_P(WeylDecompositionTest, ReconstructsWithinRequestedFidelity) {
+  const Matrix4x4 originalMatrix = GetParam()();
+  for (const double fidelity : {1.0, WEYL_DEFAULT_FIDELITY}) {
+    const auto decomposition =
+        TwoQubitWeylDecomposition::create(originalMatrix, fidelity);
+    EXPECT_TRUE(
+        decomposition.unitaryMatrix().isApprox(originalMatrix, WEYL_TOLERANCE));
+  }
+}
+
+TEST(WeylDecompositionStandalone,
+     CnotProducesValidWeylParametersAndUnitaryLocals) {
+  const Matrix4x4 cnot =
+      Matrix4x4::fromElements(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0);
+  const auto decomp = TwoQubitWeylDecomposition::create(cnot, std::nullopt);
+  constexpr double piOver4 = 0.7853981633974483;
+  for (const double angle : {decomp.a(), decomp.b(), decomp.c()}) {
+    EXPECT_GE(angle, -1e-10);
+    EXPECT_LE(angle, piOver4 + 1e-10);
+  }
+  EXPECT_TRUE(isUnitaryMatrix(decomp.k1l()));
+  EXPECT_TRUE(isUnitaryMatrix(decomp.k2l()));
+  EXPECT_TRUE(isUnitaryMatrix(decomp.k1r()));
+  EXPECT_TRUE(isUnitaryMatrix(decomp.k2r()));
+}
+
+TEST(WeylDecompositionStandalone, Random) {
+  std::mt19937 rng{1234567UL};
+  for (int i = 0; i < 5000; ++i) {
+    const Matrix4x4 originalMatrix = randomUnitary4x4(rng);
+    const auto decomposition = TwoQubitWeylDecomposition::create(
+        originalMatrix, std::optional<double>{WEYL_DEFAULT_FIDELITY});
+    EXPECT_TRUE(
+        decomposition.unitaryMatrix().isApprox(originalMatrix, WEYL_TOLERANCE));
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, WeylDecompositionTest,
+                         productMatrixCases());
+INSTANTIATE_TEST_SUITE_P(TwoQubitMatrices, WeylDecompositionTest,
+                         entangledMatrixCases());
+INSTANTIATE_TEST_SUITE_P(SpecializedMatrices, WeylDecompositionTest,
+                         specializedMatrixCases());
+
+TEST_P(BasisDecomposerTest, ReconstructsWithinRequestedFidelity) {
+  for (const double fidelity : {1.0, WEYL_DEFAULT_FIDELITY}) {
+    const auto decomposer =
+        TwoQubitBasisDecomposer::create(basisMatrix, fidelity);
+    const auto decomposed =
+        decomposer.twoQubitDecompose(*targetDecomposition, std::nullopt);
+    ASSERT_TRUE(decomposed.has_value());
+    EXPECT_TRUE(unitaryMatrix(*decomposed, basisMatrix)
+                    .isApprox(target, WEYL_TOLERANCE));
+  }
+}
+
+TEST(BasisDecomposerTest, Random) {
+  std::mt19937 rng{123456UL};
+  const mlir::SmallVector<Matrix4x4, 2> basisMatrices{TWO_QUBIT_CONTROLLED_X01,
+                                                      TWO_QUBIT_CONTROLLED_X10};
+  std::uniform_int_distribution<std::size_t> distBasisGate{0, 1};
+
+  for (int i = 0; i < 2000; ++i) {
+    const Matrix4x4 originalMatrix = randomUnitary4x4(rng);
+    const auto targetDecomposition = TwoQubitWeylDecomposition::create(
+        originalMatrix, std::optional<double>{1.0});
+    const Matrix4x4 basisMatrix = basisMatrices[distBasisGate(rng)];
+    const auto decomposer = TwoQubitBasisDecomposer::create(basisMatrix, 1.0);
+    const auto decomposed =
+        decomposer.twoQubitDecompose(targetDecomposition, std::nullopt);
+    ASSERT_TRUE(decomposed.has_value());
+    EXPECT_TRUE(unitaryMatrix(*decomposed, basisMatrix)
+                    .isApprox(originalMatrix, WEYL_TOLERANCE));
+  }
+}
+
+TEST(BasisDecomposerNumBasisTest, ForcesZeroBasisUsesForIdentityTarget) {
+  const Matrix4x4 basis = TWO_QUBIT_CONTROLLED_X01;
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const Matrix4x4 target = Matrix4x4::identity();
+  const auto weyl = TwoQubitWeylDecomposition::create(target, 1.0);
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{0});
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_EQ(decomposed->numBasisUses, 0);
+  EXPECT_TRUE(
+      unitaryMatrix(*decomposed, basis).isApprox(target, WEYL_TOLERANCE));
+}
+
+TEST(BasisDecomposerTest, DecomposeTwoQubitWithBasisReconstructsTarget) {
+  const Matrix4x4 basis = TWO_QUBIT_CONTROLLED_X01;
+  const Matrix4x4 target =
+      Matrix4x4::kron(RXOp::unitaryMatrix(0.4), RYOp::unitaryMatrix(0.6)) *
+      TwoQubitWeylDecomposition::getCanonicalMatrix(0.3, 0.2, 0.1) *
+      Matrix4x4::kron(RZOp::unitaryMatrix(0.2), Matrix2x2::identity());
+  const auto decomposed = decomposeTwoQubitWithBasis(target, basis);
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_TRUE(
+      unitaryMatrix(*decomposed, basis).isApprox(target, WEYL_TOLERANCE));
+}
+
+TEST(BasisDecomposerTest, CachedDecomposerMatchesOneShotAcrossTargets) {
+  const Matrix4x4 basis = TWO_QUBIT_CONTROLLED_X01;
+  const auto cachedDecomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const mlir::SmallVector<Matrix4x4, 3> targets{
+      Matrix4x4::identity(),
+      TWO_QUBIT_CONTROLLED_X01,
+      Matrix4x4::kron(RXOp::unitaryMatrix(0.2), RYOp::unitaryMatrix(0.3)) *
+          TwoQubitWeylDecomposition::getCanonicalMatrix(0.1, 0.2, 0.3) *
+          Matrix4x4::kron(RZOp::unitaryMatrix(0.1), Matrix2x2::identity()),
+  };
+  for (const Matrix4x4& target : targets) {
+    const auto oneShot = decomposeTwoQubitWithBasis(target, basis);
+    const auto cached = cachedDecomposer.decomposeTarget(target);
+    ASSERT_TRUE(oneShot.has_value());
+    ASSERT_TRUE(cached.has_value());
+    EXPECT_TRUE(
+        unitaryMatrix(*oneShot, basis).isApprox(target, WEYL_TOLERANCE));
+    EXPECT_TRUE(unitaryMatrix(*cached, basis).isApprox(target, WEYL_TOLERANCE));
+    EXPECT_EQ(cached->numBasisUses, oneShot->numBasisUses);
+    EXPECT_EQ(cached->singleQubitFactors.size(),
+              oneShot->singleQubitFactors.size());
+  }
+}
+
+TEST(BasisDecomposerTest, RejectsMultipleBasisUsesForNonSuperControlledBasis) {
+  const Matrix4x4 basis = RZZOp::unitaryMatrix(1.0);
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(Matrix4x4::identity(), 1.0);
+  EXPECT_FALSE(decomposer.twoQubitDecompose(weyl, std::uint8_t{2}).has_value());
+}
+
+TEST(BasisDecomposerTest, RejectsInvalidBasisGateUseCount) {
+  const Matrix4x4 basis = TWO_QUBIT_CONTROLLED_X01;
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(TWO_QUBIT_CONTROLLED_X01, 1.0);
+  EXPECT_FALSE(decomposer.twoQubitDecompose(weyl, std::uint8_t{4}).has_value());
+}
+
+TEST(BasisDecomposerForcedCountTest, OneBasisUseProducesFactors) {
+  const Matrix4x4 basis = TWO_QUBIT_CONTROLLED_X01;
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(TWO_QUBIT_CONTROLLED_X01, 1.0);
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{1});
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_EQ(decomposed->numBasisUses, 1);
+  EXPECT_EQ(decomposed->singleQubitFactors.size(), 4U);
+}
+
+TEST(BasisDecomposerForcedCountTest, TwoBasisUsesProducesFactors) {
+  const Matrix4x4 basis = TWO_QUBIT_CONTROLLED_X01;
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(TWO_QUBIT_CONTROLLED_X01, 1.0);
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{2});
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_EQ(decomposed->numBasisUses, 2);
+  EXPECT_EQ(decomposed->singleQubitFactors.size(), 6U);
+}
+
+TEST(BasisDecomposerForcedCountTest, ThreeBasisUsesProducesFactors) {
+  const Matrix4x4 basis = TWO_QUBIT_CONTROLLED_X01;
+  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
+  const auto weyl =
+      TwoQubitWeylDecomposition::create(TWO_QUBIT_CONTROLLED_X01, 1.0);
+  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{3});
+  ASSERT_TRUE(decomposed.has_value());
+  EXPECT_EQ(decomposed->numBasisUses, 3);
+  EXPECT_EQ(decomposed->singleQubitFactors.size(), 8U);
+}
+
+TEST(WeylDecompositionStandalone, SwapNegativeCSpecializationReconstructs) {
+  constexpr double piOver4 = std::numbers::pi / 4.0;
+  const Matrix4x4 swapNegativeC =
+      TwoQubitWeylDecomposition::getCanonicalMatrix(piOver4, piOver4, -piOver4);
+  const auto decomposition =
+      TwoQubitWeylDecomposition::create(swapNegativeC, 1.0);
+  EXPECT_TRUE(
+      decomposition.unitaryMatrix().isApprox(swapNegativeC, WEYL_TOLERANCE));
+}
+
+TEST(WeylDecompositionStandalone, ControlledSpecializationReconstructs) {
+  const Matrix4x4 controlledLike =
+      Matrix4x4::kron(RXOp::unitaryMatrix(0.3), RYOp::unitaryMatrix(0.4)) *
+      TwoQubitWeylDecomposition::getCanonicalMatrix(0.6, 0.0, 0.0) *
+      Matrix4x4::kron(Matrix2x2::identity(), RZOp::unitaryMatrix(0.2));
+  const auto decomposition =
+      TwoQubitWeylDecomposition::create(controlledLike, 1.0);
+  EXPECT_TRUE(
+      decomposition.unitaryMatrix().isApprox(controlledLike, WEYL_TOLERANCE));
+}
+
+INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, BasisDecomposerTest,
+                         testing::Combine(cxBasisCases(),
+                                          productMatrixCases()));
+INSTANTIATE_TEST_SUITE_P(TwoQubitMatrices, BasisDecomposerTest,
+                         testing::Combine(cxBasisCases(),
+                                          entangledMatrixCases()));
 
 static bool extractSingleQubitMatrix(UnitaryOpInterface op, Matrix2x2& out) {
   if (op.getUnitaryMatrix2x2(out)) {
@@ -273,8 +519,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
       if (!extractTwoQubitMatrix(op, twoQ)) {
         return std::nullopt;
       }
-      const SmallVector<QubitId, 2> ids{*q0id, *q1id};
-      unitary = twoQ.reorderForQubits(ids[0], ids[1]) * unitary;
+      unitary = twoQ.reorderForQubits(*q0id, *q1id) * unitary;
       wireIds[op->getResult(0)] = *q0id;
       wireIds[op->getResult(1)] = *q1id;
     }
@@ -321,30 +566,6 @@ static void expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
   EXPECT_TRUE(isEquivalentUpToGlobalPhase(*actual, target));
 }
 
-static bool isUnitaryMatrix(const Matrix2x2& matrix) {
-  return (matrix.adjoint() * matrix).isIdentity(WEYL_TOLERANCE);
-}
-
-TEST(DecompositionHelpersTest, MatrixUtilitySanity) {
-  EXPECT_NEAR(std::abs(std::exp(Complex{0.0, 1.0} * 1.25)), 1.0, 1e-14);
-  EXPECT_FALSE(isUnitaryMatrix(Matrix2x2::fromElements(2.0, 0.0, 0.0, 2.0)));
-  EXPECT_TRUE(isUnitaryMatrix(Matrix2x2::identity()));
-}
-
-TEST(DecompositionHelpersTest, GateMatrixFactoriesMatchCanonicalForm) {
-  for (const double theta : {0.0, 0.25, 1.0, 2.5, -1.3}) {
-    EXPECT_TRUE(rxxMatrix(theta).isApprox(
-        TwoQubitWeylDecomposition::getCanonicalMatrix(-theta / 2.0, 0.0, 0.0),
-        WEYL_TOLERANCE));
-    EXPECT_TRUE(ryyMatrix(theta).isApprox(
-        TwoQubitWeylDecomposition::getCanonicalMatrix(0.0, -theta / 2.0, 0.0),
-        WEYL_TOLERANCE));
-    EXPECT_TRUE(rzzMatrix(theta).isApprox(
-        TwoQubitWeylDecomposition::getCanonicalMatrix(0.0, 0.0, -theta / 2.0),
-        WEYL_TOLERANCE));
-  }
-}
-
 namespace {
 
 struct MlirTestContext {
@@ -361,23 +582,6 @@ struct MlirTestContext {
   [[nodiscard]] MLIRContext* ctx() const { return context.get(); }
 };
 
-class WeylDecompositionTest : public testing::TestWithParam<Matrix4x4 (*)()> {};
-
-class BasisDecomposerTest : public testing::TestWithParam<
-                                std::tuple<Matrix4x4 (*)(), Matrix4x4 (*)()>> {
-protected:
-  void SetUp() override {
-    basisMatrix = std::get<0>(GetParam())();
-    target = std::get<1>(GetParam())();
-    targetDecomposition = std::make_unique<TwoQubitWeylDecomposition>(
-        TwoQubitWeylDecomposition::create(target, 1.0));
-  }
-
-  Matrix4x4 target;
-  Matrix4x4 basisMatrix;
-  std::unique_ptr<TwoQubitWeylDecomposition> targetDecomposition;
-};
-
 struct WeylSynthesisCase {
   const char* name;
   const char* nativeGates;
@@ -387,203 +591,6 @@ struct WeylSynthesisCase {
 class WeylSynthesisTest : public testing::TestWithParam<WeylSynthesisCase> {};
 
 } // namespace
-
-TEST_P(WeylDecompositionTest, ReconstructsWithinRequestedFidelity) {
-  const Matrix4x4 originalMatrix = GetParam()();
-  for (const double fidelity : {1.0, 1.0 - 1e-12}) {
-    const auto decomposition =
-        TwoQubitWeylDecomposition::create(originalMatrix, fidelity);
-    EXPECT_TRUE(restoreWeyl(decomposition).isApprox(originalMatrix));
-  }
-}
-
-TEST(WeylDecompositionStandalone,
-     CnotProducesValidWeylParametersAndUnitaryLocals) {
-  const Matrix4x4 cnot = twoQubitControlledX01();
-  const auto decomp = TwoQubitWeylDecomposition::create(cnot, std::nullopt);
-  constexpr double piOver4 = 0.7853981633974483;
-  for (const double angle : {decomp.a(), decomp.b(), decomp.c()}) {
-    EXPECT_GE(angle, -1e-10);
-    EXPECT_LE(angle, piOver4 + 1e-10);
-  }
-  EXPECT_TRUE(isUnitaryMatrix(decomp.k1l()));
-  EXPECT_TRUE(isUnitaryMatrix(decomp.k2l()));
-  EXPECT_TRUE(isUnitaryMatrix(decomp.k1r()));
-  EXPECT_TRUE(isUnitaryMatrix(decomp.k2r()));
-}
-
-TEST(WeylDecompositionStandalone, Random) {
-  std::mt19937 rng{1234567UL};
-  for (int i = 0; i < 5000; ++i) {
-    const Matrix4x4 originalMatrix = randomUnitary4x4(rng);
-    const auto decomposition = TwoQubitWeylDecomposition::create(
-        originalMatrix, std::optional<double>{1.0 - 1e-12});
-    EXPECT_TRUE(restoreWeyl(decomposition)
-                    .isApprox(originalMatrix, K_SANITY_CHECK_PRECISION));
-  }
-}
-
-INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, WeylDecompositionTest,
-                         productMatrixCases());
-INSTANTIATE_TEST_SUITE_P(TwoQubitMatrices, WeylDecompositionTest,
-                         entangledMatrixCases());
-INSTANTIATE_TEST_SUITE_P(SpecializedMatrices, WeylDecompositionTest,
-                         specializedMatrixCases());
-
-TEST_P(BasisDecomposerTest, ReconstructsWithinRequestedFidelity) {
-  for (const double fidelity : {1.0, 1.0 - 1e-12}) {
-    const auto decomposer =
-        TwoQubitBasisDecomposer::create(basisMatrix, fidelity);
-    const auto decomposed =
-        decomposer.twoQubitDecompose(*targetDecomposition, std::nullopt);
-    ASSERT_TRUE(decomposed.has_value());
-    EXPECT_TRUE(restoreBasis(*decomposed, basisMatrix).isApprox(target));
-  }
-}
-
-TEST(BasisDecomposerTest, Random) {
-  std::mt19937 rng{123456UL};
-  const SmallVector<Matrix4x4, 2> basisMatrices{twoQubitControlledX01(),
-                                                twoQubitControlledX10()};
-  std::uniform_int_distribution<std::size_t> distBasisGate{0, 1};
-
-  for (int i = 0; i < 2000; ++i) {
-    const Matrix4x4 originalMatrix = randomUnitary4x4(rng);
-    const auto targetDecomposition = TwoQubitWeylDecomposition::create(
-        originalMatrix, std::optional<double>{1.0});
-    const Matrix4x4 basisMatrix = basisMatrices[distBasisGate(rng)];
-    const auto decomposer = TwoQubitBasisDecomposer::create(basisMatrix, 1.0);
-    const auto decomposed =
-        decomposer.twoQubitDecompose(targetDecomposition, std::nullopt);
-    ASSERT_TRUE(decomposed.has_value());
-    EXPECT_TRUE(restoreBasis(*decomposed, basisMatrix)
-                    .isApprox(originalMatrix, K_SANITY_CHECK_PRECISION));
-  }
-}
-
-TEST(BasisDecomposerNumBasisTest, ForcesZeroBasisUsesForIdentityTarget) {
-  const Matrix4x4 basis = twoQubitControlledX01();
-  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
-  const Matrix4x4 target = Matrix4x4::identity();
-  const auto weyl = TwoQubitWeylDecomposition::create(target, 1.0);
-  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{0});
-  ASSERT_TRUE(decomposed.has_value());
-  EXPECT_EQ(decomposed->numBasisUses, 0);
-  EXPECT_TRUE(
-      restoreBasis(*decomposed, basis).isApprox(target, WEYL_TOLERANCE));
-}
-
-TEST(BasisDecomposerTest, DecomposeTwoQubitWithBasisReconstructsTarget) {
-  const Matrix4x4 basis = twoQubitControlledX01();
-  const Matrix4x4 target =
-      Matrix4x4::kron(rxMatrix(0.4), ryMatrix(0.6)) *
-      TwoQubitWeylDecomposition::getCanonicalMatrix(0.3, 0.2, 0.1) *
-      Matrix4x4::kron(rzMatrix(0.2), Matrix2x2::identity());
-  const auto decomposed = decomposeTwoQubitWithBasis(target, basis);
-  ASSERT_TRUE(decomposed.has_value());
-  EXPECT_TRUE(
-      restoreBasis(*decomposed, basis).isApprox(target, WEYL_TOLERANCE));
-}
-
-TEST(BasisDecomposerTest, CachedDecomposerMatchesOneShotAcrossTargets) {
-  const Matrix4x4 basis = twoQubitControlledX01();
-  const auto cachedDecomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
-  const llvm::SmallVector<Matrix4x4, 3> targets{
-      Matrix4x4::identity(),
-      twoQubitControlledX01(),
-      Matrix4x4::kron(rxMatrix(0.2), ryMatrix(0.3)) *
-          TwoQubitWeylDecomposition::getCanonicalMatrix(0.1, 0.2, 0.3) *
-          Matrix4x4::kron(rzMatrix(0.1), Matrix2x2::identity()),
-  };
-  for (const Matrix4x4& target : targets) {
-    const auto oneShot = decomposeTwoQubitWithBasis(target, basis);
-    const auto cached = cachedDecomposer.decomposeTarget(target);
-    ASSERT_TRUE(oneShot.has_value());
-    ASSERT_TRUE(cached.has_value());
-    EXPECT_TRUE(restoreBasis(*oneShot, basis).isApprox(target, WEYL_TOLERANCE));
-    EXPECT_TRUE(restoreBasis(*cached, basis).isApprox(target, WEYL_TOLERANCE));
-    EXPECT_EQ(cached->numBasisUses, oneShot->numBasisUses);
-    EXPECT_EQ(cached->singleQubitFactors.size(),
-              oneShot->singleQubitFactors.size());
-  }
-}
-
-TEST(BasisDecomposerTest, RejectsMultipleBasisUsesForNonSuperControlledBasis) {
-  const Matrix4x4 basis = rzzMatrix(1.0);
-  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
-  const auto weyl =
-      TwoQubitWeylDecomposition::create(Matrix4x4::identity(), 1.0);
-  EXPECT_FALSE(decomposer.twoQubitDecompose(weyl, std::uint8_t{2}).has_value());
-}
-
-TEST(BasisDecomposerTest, RejectsInvalidBasisGateUseCount) {
-  const Matrix4x4 basis = twoQubitControlledX01();
-  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
-  const auto weyl =
-      TwoQubitWeylDecomposition::create(twoQubitControlledX01(), 1.0);
-  EXPECT_FALSE(decomposer.twoQubitDecompose(weyl, std::uint8_t{4}).has_value());
-}
-
-TEST(BasisDecomposerForcedCountTest, OneBasisUseProducesFactors) {
-  const Matrix4x4 basis = twoQubitControlledX01();
-  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
-  const auto weyl =
-      TwoQubitWeylDecomposition::create(twoQubitControlledX01(), 1.0);
-  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{1});
-  ASSERT_TRUE(decomposed.has_value());
-  EXPECT_EQ(decomposed->numBasisUses, 1);
-  EXPECT_EQ(decomposed->singleQubitFactors.size(), 4U);
-}
-
-TEST(BasisDecomposerForcedCountTest, TwoBasisUsesProducesFactors) {
-  const Matrix4x4 basis = twoQubitControlledX01();
-  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
-  const auto weyl =
-      TwoQubitWeylDecomposition::create(twoQubitControlledX01(), 1.0);
-  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{2});
-  ASSERT_TRUE(decomposed.has_value());
-  EXPECT_EQ(decomposed->numBasisUses, 2);
-  EXPECT_EQ(decomposed->singleQubitFactors.size(), 6U);
-}
-
-TEST(BasisDecomposerForcedCountTest, ThreeBasisUsesProducesFactors) {
-  const Matrix4x4 basis = twoQubitControlledX01();
-  const auto decomposer = TwoQubitBasisDecomposer::create(basis, 1.0);
-  const auto weyl =
-      TwoQubitWeylDecomposition::create(twoQubitControlledX01(), 1.0);
-  const auto decomposed = decomposer.twoQubitDecompose(weyl, std::uint8_t{3});
-  ASSERT_TRUE(decomposed.has_value());
-  EXPECT_EQ(decomposed->numBasisUses, 3);
-  EXPECT_EQ(decomposed->singleQubitFactors.size(), 8U);
-}
-
-TEST(WeylDecompositionStandalone, SwapNegativeCSpecializationReconstructs) {
-  constexpr double piOver4 = std::numbers::pi / 4.0;
-  const Matrix4x4 swapNegativeC =
-      TwoQubitWeylDecomposition::getCanonicalMatrix(piOver4, piOver4, -piOver4);
-  const auto decomposition =
-      TwoQubitWeylDecomposition::create(swapNegativeC, 1.0);
-  EXPECT_TRUE(
-      restoreWeyl(decomposition).isApprox(swapNegativeC, WEYL_TOLERANCE));
-}
-
-TEST(WeylDecompositionStandalone, ControlledSpecializationReconstructs) {
-  const Matrix4x4 controlledLike =
-      Matrix4x4::kron(rxMatrix(0.3), ryMatrix(0.4)) *
-      TwoQubitWeylDecomposition::getCanonicalMatrix(0.6, 0.0, 0.0) *
-      Matrix4x4::kron(Matrix2x2::identity(), rzMatrix(0.2));
-  const auto decomposition =
-      TwoQubitWeylDecomposition::create(controlledLike, 1.0);
-  EXPECT_TRUE(
-      restoreWeyl(decomposition).isApprox(controlledLike, WEYL_TOLERANCE));
-}
-
-INSTANTIATE_TEST_SUITE_P(ProductTwoQubitMatrices, BasisDecomposerTest,
-                         testing::Combine(cxBasisCases(),
-                                          productMatrixCases()));
-INSTANTIATE_TEST_SUITE_P(TwoQubitMatrices, BasisDecomposerTest,
-                         testing::Combine(cxBasisCases(),
-                                          entangledMatrixCases()));
 
 TEST_P(WeylSynthesisTest, PreservesTargetUnitary) {
   MlirTestContext fx;
@@ -595,23 +602,24 @@ TEST_P(WeylSynthesisTest, PreservesTargetUnitary) {
 
 INSTANTIATE_TEST_SUITE_P(
     Profiles, WeylSynthesisTest,
-    testing::Values(WeylSynthesisCase{"CxGeneric", "u,cx",
-                                      [] { return twoQubitControlledX01(); }},
-                    WeylSynthesisCase{"ProductGeneric", "u,cx",
-                                      [] {
-                                        return Matrix4x4::kron(rzMatrix(1.0),
-                                                               ryMatrix(0.3));
-                                      }},
-                    WeylSynthesisCase{
-                        "IbmBasic", "x,sx,rz,cx",
-                        [] {
-                          return Matrix4x4::kron(hGate(),
-                                                 Matrix2x2::identity()) *
-                                 twoQubitControlledX01() *
-                                 Matrix4x4::kron(rzMatrix(0.2), ryMatrix(0.1));
-                        }},
-                    WeylSynthesisCase{"CzGeneric", "u,cz",
-                                      [] { return twoQubitControlledZ(); }}),
+    testing::Values(
+        WeylSynthesisCase{"CxGeneric", "u,cx",
+                          [] { return twoQubitControlledX01(); }},
+        WeylSynthesisCase{"ProductGeneric", "u,cx",
+                          [] {
+                            return Matrix4x4::kron(RZOp::unitaryMatrix(1.0),
+                                                   RYOp::unitaryMatrix(0.3));
+                          }},
+        WeylSynthesisCase{"IbmBasic", "x,sx,rz,cx",
+                          [] {
+                            return Matrix4x4::kron(HOp::getUnitaryMatrix(),
+                                                   Matrix2x2::identity()) *
+                                   twoQubitControlledX01() *
+                                   Matrix4x4::kron(RZOp::unitaryMatrix(0.2),
+                                                   RYOp::unitaryMatrix(0.1));
+                          }},
+        WeylSynthesisCase{"CzGeneric", "u,cz",
+                          [] { return twoQubitControlledZ(); }}),
     [](const testing::TestParamInfo<WeylSynthesisCase>& info) {
       return info.param.name;
     });

@@ -47,7 +47,9 @@ struct Matrix1x1 {
    * @param m00 Element at row 0, column 0.
    * @return A new `Matrix1x1` with the given element.
    */
-  [[nodiscard]] static Matrix1x1 fromElements(Complex m00);
+  [[nodiscard]] static constexpr Matrix1x1 fromElements(Complex m00) {
+    return {m00};
+  }
 
   /**
    * @brief Mutable element access with `(row, col)` indexing.
@@ -128,10 +130,12 @@ struct Matrix2x2 {
    * @param m11 Element at row 1, column 1.
    * @return A new `Matrix2x2` with the given elements.
    */
-  [[nodiscard]] static Matrix2x2 fromElements(const Complex& m00,
-                                              const Complex& m01,
-                                              const Complex& m10,
-                                              const Complex& m11);
+  [[nodiscard]] static constexpr Matrix2x2 fromElements(const Complex& m00,
+                                                        const Complex& m01,
+                                                        const Complex& m10,
+                                                        const Complex& m11) {
+    return {{m00, m01, m10, m11}};
+  }
 
   /**
    * @brief Returns the 2x2 identity matrix.
@@ -296,13 +300,16 @@ struct Matrix4x4 {
    * @param m33 Element at row 3, column 3.
    * @return A new `Matrix4x4` with the given elements.
    */
-  [[nodiscard]] static Matrix4x4
+  [[nodiscard]] static constexpr Matrix4x4
   fromElements(const Complex& m00, const Complex& m01, const Complex& m02,
                const Complex& m03, const Complex& m10, const Complex& m11,
                const Complex& m12, const Complex& m13, const Complex& m20,
                const Complex& m21, const Complex& m22, const Complex& m23,
                const Complex& m30, const Complex& m31, const Complex& m32,
-               const Complex& m33);
+               const Complex& m33) {
+    return {{m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30,
+             m31, m32, m33}};
+  }
 
   /**
    * @brief Returns the 4x4 identity matrix.
