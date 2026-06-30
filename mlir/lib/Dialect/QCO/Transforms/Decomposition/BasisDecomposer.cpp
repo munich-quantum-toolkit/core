@@ -229,17 +229,17 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
 
 void TwoQubitBasisDecomposer::decomp0(SmallVector<Matrix2x2>& out,
                                       const TwoQubitWeylDecomposition& target) {
-  out.push_back(target.k1r() * target.k2r());
-  out.push_back(target.k1l() * target.k2l());
+  out.emplace_back(target.k1r() * target.k2r());
+  out.emplace_back(target.k1l() * target.k2l());
 }
 
 void TwoQubitBasisDecomposer::decomp1(
     SmallVector<Matrix2x2>& out,
     const TwoQubitWeylDecomposition& target) const {
-  out.push_back(basisWeyl.k2r().adjoint() * target.k2r());
-  out.push_back(basisWeyl.k2l().adjoint() * target.k2l());
-  out.push_back(target.k1r() * basisWeyl.k1r().adjoint());
-  out.push_back(target.k1l() * basisWeyl.k1l().adjoint());
+  out.emplace_back(basisWeyl.k2r().adjoint() * target.k2r());
+  out.emplace_back(basisWeyl.k2l().adjoint() * target.k2l());
+  out.emplace_back(target.k1r() * basisWeyl.k1r().adjoint());
+  out.emplace_back(target.k1l() * basisWeyl.k1l().adjoint());
 }
 
 void TwoQubitBasisDecomposer::decomp2Supercontrolled(
@@ -250,12 +250,12 @@ void TwoQubitBasisDecomposer::decomp2Supercontrolled(
         "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
         "- no guarantee for exact decomposition with two basis gates");
   }
-  out.push_back(smb.u3r * target.k2r());
-  out.push_back(smb.u3l * target.k2l());
-  out.push_back(smb.q1ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb);
-  out.push_back(smb.q1la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb);
-  out.push_back(target.k1r() * smb.q0r);
-  out.push_back(target.k1l() * smb.q0l);
+  out.emplace_back(smb.u3r * target.k2r());
+  out.emplace_back(smb.u3l * target.k2l());
+  out.emplace_back(smb.q1ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb);
+  out.emplace_back(smb.q1la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb);
+  out.emplace_back(target.k1r() * smb.q0r);
+  out.emplace_back(target.k1l() * smb.q0l);
 }
 
 void TwoQubitBasisDecomposer::decomp3Supercontrolled(
@@ -266,14 +266,14 @@ void TwoQubitBasisDecomposer::decomp3Supercontrolled(
         "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
         "- no guarantee for exact decomposition with three basis gates");
   }
-  out.push_back(smb.u3r * target.k2r());
-  out.push_back(smb.u3l * target.k2l());
-  out.push_back(smb.u2ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb);
-  out.push_back(smb.u2la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb);
-  out.push_back(smb.u1ra * RZOp::unitaryMatrix(-2. * target.c()) * smb.u1rb);
-  out.push_back(smb.u1l);
-  out.push_back(target.k1r() * smb.u0r);
-  out.push_back(target.k1l() * smb.u0l);
+  out.emplace_back(smb.u3r * target.k2r());
+  out.emplace_back(smb.u3l * target.k2l());
+  out.emplace_back(smb.u2ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb);
+  out.emplace_back(smb.u2la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb);
+  out.emplace_back(smb.u1ra * RZOp::unitaryMatrix(-2. * target.c()) * smb.u1rb);
+  out.emplace_back(smb.u1l);
+  out.emplace_back(target.k1r() * smb.u0r);
+  out.emplace_back(target.k1l() * smb.u0l);
 }
 
 std::array<std::complex<double>, 4>
