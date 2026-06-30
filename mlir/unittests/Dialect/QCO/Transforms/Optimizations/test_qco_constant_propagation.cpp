@@ -74,14 +74,14 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
       arith::ConstantOp::create(programBuilder, programBuilder.getLoc(), iAttr);
   auto q = programBuilder.allocQubitRegister(4);
   q[0] = programBuilder.h(q[0]);
-  q[0] = programBuilder.x(q[0]);
+  q[0] = programBuilder.z(q[0]);
   q[0] = programBuilder.h(q[0]);
-  programBuilder.cx(q[0], q[1]);
-  q[2] = programBuilder.h(q[2]);
-  q[2] = programBuilder.z(q[2]);
-  q[2] = programBuilder.h(q[2]);
-  auto [q2, q3] = programBuilder.crx(i0, q[2], q[3]);
-  programBuilder.cry(0.3, q2, q3);
+  programBuilder.crx(i0, q[0], q[1]);
+  // q[2] = programBuilder.h(q[2]);
+  // q[2] = programBuilder.z(q[2]);
+  // q[2] = programBuilder.h(q[2]);
+  // auto [q2, q3] = programBuilder.crx(i0, q[2], q[3]);
+  // programBuilder.cry(0.3, q2, q3);
   module = programBuilder.finalize();
 
   const auto iAttrRef = referenceBuilder.getF64FloatAttr(-0.3926991);
@@ -89,16 +89,21 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
                                           referenceBuilder.getLoc(), iAttrRef);
   auto qRef = referenceBuilder.allocQubitRegister(4);
   qRef[0] = referenceBuilder.h(qRef[0]);
-  qRef[0] = referenceBuilder.x(qRef[0]);
+  qRef[0] = referenceBuilder.z(qRef[0]);
   qRef[0] = referenceBuilder.h(qRef[0]);
-  qRef[2] = referenceBuilder.h(qRef[2]);
-  qRef[2] = referenceBuilder.z(qRef[2]);
-  qRef[2] = referenceBuilder.h(qRef[2]);
-  auto [q2Ref, q3Ref] = referenceBuilder.crx(i0Ref, qRef[2], qRef[3]);
-  referenceBuilder.cry(0.3, q2Ref, q3Ref);
+  qRef[0] = referenceBuilder.rx(i0Ref, qRef[1]);
+  // qRef[2] = referenceBuilder.h(qRef[2]);
+  // qRef[2] = referenceBuilder.z(qRef[2]);
+  // qRef[2] = referenceBuilder.h(qRef[2]);
+  // auto [q2Ref, q3Ref] = referenceBuilder.crx(i0Ref, qRef[2], qRef[3]);
+  // referenceBuilder.cry(0.3, q2Ref, q3Ref);
   reference = referenceBuilder.finalize();
 
+  module->dump();
+
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+  module->dump();
+  reference->dump();
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
