@@ -13,6 +13,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstdint>
 #include <string>
 
 namespace mlir {
@@ -49,6 +50,13 @@ struct QuantumCompilerConfig {
 
   /// Enable Hadamard lifting
   bool enableHadamardLifting = false;
+
+  /// Decompose multi-controlled X/Z gates into elementary one- and two-qubit
+  /// gates.
+  bool enableDecomposeMultiControlled = false;
+
+  /// Minimum control count for @ref enableDecomposeMultiControlled (default 2).
+  std::uint64_t decomposeMultiControlledMinControls = 2;
 };
 
 /**

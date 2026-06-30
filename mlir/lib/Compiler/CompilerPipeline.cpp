@@ -77,6 +77,13 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                     "enabled and the record pointer to be non-null.\n";
     return failure();
   }
+  if (config_.enableDecomposeMultiControlled &&
+      config_.decomposeMultiControlledMinControls < 2) {
+    llvm::errs()
+        << "decomposeMultiControlledMinControls must be at least 2 when "
+           "enableDecomposeMultiControlled is enabled.\n";
+    return failure();
+  }
 
   auto runStage = [&](auto&& populatePasses) -> LogicalResult {
     PassManager pm(module.getContext());
@@ -147,6 +154,11 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   // Stage 5: Optimization passes
   if (failed(runStage([&](PassManager& pm) {
+        if (config_.enableDecomposeMultiControlled) {
+          qco::DecomposeMultiControlledOptions options;
+          options.minControls = config_.decomposeMultiControlledMinControls;
+          pm.addPass(qco::createDecomposeMultiControlled(options));
+        }
         if (!config_.disableMergeSingleQubitRotationGates) {
           pm.addPass(qco::createMergeSingleQubitRotationGates());
         }

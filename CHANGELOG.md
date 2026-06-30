@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `decompose-multi-controlled` pass for decomposing multi-controlled X
+  and Z gates into one- and two-qubit gates ([#1810]) ([**@simon1hofmann**])
 - 🐳 Add dev container configuration for consistent local development
   environment ([#1786]) ([**@denialhaag**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
@@ -588,6 +590,7 @@ changelogs._
 
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
+[#1810]: https://github.com/munich-quantum-toolkit/core/pull/1810
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
 [#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
