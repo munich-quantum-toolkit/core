@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
@@ -81,12 +82,13 @@ static double traceToFidelity(const Complex& trace) {
   return (4.0 + (traceAbs * traceAbs)) / 20.0;
 }
 
-static const Matrix4x4 MAGIC_BASIS_NON_NORMALIZED = Matrix4x4::fromElements( //
-    1, 1i, 0, 0,                                                             //
-    0, 0, 1i, 1,                                                             //
-    0, 0, 1i, -1,                                                            //
-    1, -1i, 0, 0);
-static const Matrix4x4 MAGIC_BASIS_NON_NORMALIZED_DAGGER =
+static constexpr Matrix4x4 MAGIC_BASIS_NON_NORMALIZED =
+    Matrix4x4::fromElements( //
+        1, 1i, 0, 0,         //
+        0, 0, 1i, 1,         //
+        0, 0, 1i, -1,        //
+        1, -1i, 0, 0);
+static constexpr Matrix4x4 MAGIC_BASIS_NON_NORMALIZED_DAGGER =
     Matrix4x4::fromElements(                          //
         0.5, 0, 0, 0.5,                               //
         Complex{0.0, -0.5}, 0, 0, Complex{0.0, 0.5},  //
@@ -359,28 +361,28 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
 
   if (cs[0] > (PI / 2.0)) {
     cs[0] -= 3.0 * (PI / 2.0);
-    k1l = k1l * iPauliY();
-    k1r = k1r * iPauliY();
+    k1l = k1l * Complex{0.0, 1.0} * YOp::getUnitaryMatrix();
+    k1r = k1r * Complex{0.0, 1.0} * YOp::getUnitaryMatrix();
     globalPhase += (PI / 2.0);
   }
   if (cs[1] > (PI / 2.0)) {
     cs[1] -= 3.0 * (PI / 2.0);
-    k1l = k1l * iPauliX();
-    k1r = k1r * iPauliX();
+    k1l = k1l * Complex{0.0, 1.0} * XOp::getUnitaryMatrix();
+    k1r = k1r * Complex{0.0, 1.0} * XOp::getUnitaryMatrix();
     globalPhase += (PI / 2.0);
   }
   auto conjs = 0;
   if (cs[0] > PI_OVER_4) {
     cs[0] = (PI / 2.0) - cs[0];
-    k1l = k1l * iPauliY();
-    k2r = iPauliY() * k2r;
+    k1l = k1l * Complex{0.0, 1.0} * YOp::getUnitaryMatrix();
+    k2r = Complex{0.0, 1.0} * YOp::getUnitaryMatrix() * k2r;
     conjs += 1;
     globalPhase -= (PI / 2.0);
   }
   if (cs[1] > PI_OVER_4) {
     cs[1] = (PI / 2.0) - cs[1];
-    k1l = k1l * iPauliX();
-    k2r = iPauliX() * k2r;
+    k1l = k1l * Complex{0.0, 1.0} * XOp::getUnitaryMatrix();
+    k2r = Complex{0.0, 1.0} * XOp::getUnitaryMatrix() * k2r;
     conjs += 1;
     globalPhase += (PI / 2.0);
     if (conjs == 1) {
@@ -389,8 +391,8 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
   }
   if (cs[2] > (PI / 2.0)) {
     cs[2] -= 3.0 * (PI / 2.0);
-    k1l = k1l * iPauliZ();
-    k1r = k1r * iPauliZ();
+    k1l = k1l * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix();
+    k1r = k1r * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix();
     globalPhase += (PI / 2.0);
     if (conjs == 1) {
       globalPhase -= PI;
@@ -398,14 +400,14 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
   }
   if (conjs == 1) {
     cs[2] = (PI / 2.0) - cs[2];
-    k1l = k1l * iPauliZ();
-    k2r = iPauliZ() * k2r;
+    k1l = k1l * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix();
+    k2r = Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() * k2r;
     globalPhase += (PI / 2.0);
   }
   if (cs[2] > PI_OVER_4) {
     cs[2] -= (PI / 2.0);
-    k1l = k1l * iPauliZ();
-    k1r = k1r * iPauliZ();
+    k1l = k1l * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix();
+    k1r = k1r * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix();
     globalPhase -= (PI / 2.0);
   }
 
@@ -496,7 +498,8 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
 
 Matrix4x4 TwoQubitWeylDecomposition::getCanonicalMatrix(double a, double b,
                                                         double c) {
-  return rzzMatrix(-2.0 * c) * ryyMatrix(-2.0 * b) * rxxMatrix(-2.0 * a);
+  return RZZOp::unitaryMatrix(-2.0 * c) * RYYOp::unitaryMatrix(-2.0 * b) *
+         RXXOp::unitaryMatrix(-2.0 * a);
 }
 
 bool TwoQubitWeylDecomposition::applySpecialization(
@@ -526,8 +529,8 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     } else {
       flippedFromOriginal = true;
       globalPhase_ += (PI / 2.0);
-      k1l_ = k1l_ * iPauliZ() * k2r_;
-      k1r_ = k1r_ * iPauliZ() * k2l_;
+      k1l_ = k1l_ * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() * k2r_;
+      k1r_ = k1r_ * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() * k2l_;
       k2l_ = Matrix2x2::identity();
       k2r_ = Matrix2x2::identity();
     }
@@ -554,8 +557,10 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     b_ = closest;
     c_ = -closest;
     k1l_ = k1l_ * k2l_;
-    k1r_ = k1r_ * iPauliZ() * k2l_ * iPauliZ();
-    k2r_ = iPauliZ() * k2lDagger * iPauliZ() * k2r_;
+    k1r_ = k1r_ * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() * k2l_ *
+           Complex{0.0, 1.0} * ZOp::getUnitaryMatrix();
+    k2r_ = Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() * k2lDagger *
+           Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() * k2r_;
     k2l_ = Matrix2x2::identity();
     break;
   }
@@ -567,10 +572,10 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     b_ = 0.;
     c_ = 0.;
     globalPhase_ = globalPhase_ + k2lphase + k2rphase;
-    k1l_ = k1l_ * rxMatrix(k2lphi);
-    k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
-    k1r_ = k1r_ * rxMatrix(k2rphi);
-    k2r_ = ryMatrix(k2rtheta) * rxMatrix(k2rlambda);
+    k1l_ = k1l_ * RXOp::unitaryMatrix(k2lphi);
+    k2l_ = RYOp::unitaryMatrix(k2ltheta) * RXOp::unitaryMatrix(k2llambda);
+    k1r_ = k1r_ * RXOp::unitaryMatrix(k2rphi);
+    k2r_ = RYOp::unitaryMatrix(k2rtheta) * RXOp::unitaryMatrix(k2rlambda);
     break;
   }
   case Specialization::MirrorControlledEquiv: {
@@ -581,10 +586,10 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     a_ = PI_OVER_4;
     b_ = PI_OVER_4;
     globalPhase_ = globalPhase_ + k2lphase + k2rphase;
-    k1l_ = k1l_ * rzMatrix(k2rphi);
-    k2l_ = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
-    k1r_ = k1r_ * rzMatrix(k2lphi);
-    k2r_ = ryMatrix(k2rtheta) * rzMatrix(k2rlambda);
+    k1l_ = k1l_ * RZOp::unitaryMatrix(k2rphi);
+    k2l_ = RYOp::unitaryMatrix(k2ltheta) * RZOp::unitaryMatrix(k2llambda);
+    k1r_ = k1r_ * RZOp::unitaryMatrix(k2lphi);
+    k2r_ = RYOp::unitaryMatrix(k2rtheta) * RZOp::unitaryMatrix(k2rlambda);
     break;
   }
   case Specialization::FSimaabEquiv: {
@@ -594,10 +599,10 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     a_ = ab;
     b_ = ab;
     globalPhase_ *= k2lphase;
-    k1l_ = k1l_ * rzMatrix(k2lphi);
-    k2l_ = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
-    k1r_ = k1r_ * rzMatrix(k2lphi);
-    k2r_ = rzMatrix(-k2lphi) * k2r_;
+    k1l_ = k1l_ * RZOp::unitaryMatrix(k2lphi);
+    k2l_ = RYOp::unitaryMatrix(k2ltheta) * RZOp::unitaryMatrix(k2llambda);
+    k1r_ = k1r_ * RZOp::unitaryMatrix(k2lphi);
+    k2r_ = RZOp::unitaryMatrix(-k2lphi) * k2r_;
     break;
   }
   case Specialization::FSimabbEquiv: {
@@ -607,10 +612,10 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     b_ = bc;
     c_ = bc;
     globalPhase_ *= k2lphase;
-    k1l_ = k1l_ * rxMatrix(k2lphi);
-    k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
-    k1r_ = k1r_ * rxMatrix(k2lphi);
-    k2r_ = rxMatrix(-k2lphi) * k2r_;
+    k1l_ = k1l_ * RXOp::unitaryMatrix(k2lphi);
+    k2l_ = RYOp::unitaryMatrix(k2ltheta) * RXOp::unitaryMatrix(k2llambda);
+    k1r_ = k1r_ * RXOp::unitaryMatrix(k2lphi);
+    k2r_ = RXOp::unitaryMatrix(-k2lphi) * k2r_;
     break;
   }
   case Specialization::FSimabmbEquiv: {
@@ -620,10 +625,14 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     b_ = bc;
     c_ = -bc;
     globalPhase_ *= k2lphase;
-    k1l_ = k1l_ * rxMatrix(k2lphi);
-    k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
-    k1r_ = k1r_ * iPauliZ() * rxMatrix(k2lphi) * iPauliZ();
-    k2r_ = iPauliZ() * rxMatrix(-k2lphi) * iPauliZ() * k2r_;
+    k1l_ = k1l_ * RXOp::unitaryMatrix(k2lphi);
+    k2l_ = RYOp::unitaryMatrix(k2ltheta) * RXOp::unitaryMatrix(k2llambda);
+    k1r_ = k1r_ * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() *
+           RXOp::unitaryMatrix(k2lphi) * Complex{0.0, 1.0} *
+           ZOp::getUnitaryMatrix();
+    k2r_ = Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() *
+           RXOp::unitaryMatrix(-k2lphi) * Complex{0.0, 1.0} *
+           ZOp::getUnitaryMatrix() * k2r_;
     break;
   }
   case Specialization::General:

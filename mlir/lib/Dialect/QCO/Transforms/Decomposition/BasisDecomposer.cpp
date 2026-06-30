@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
@@ -33,14 +34,14 @@ static constexpr double PI = std::numbers::pi;
 static constexpr double PI_OVER_4 = PI / 4.0;
 static constexpr double INV_SQRT2 = 1.0 / std::numbers::sqrt2;
 
-static const Matrix2x2 K12_R_ARR = Matrix2x2::fromElements(
+static constexpr Matrix2x2 K12_R_ARR = Matrix2x2::fromElements(
     1i * INV_SQRT2, INV_SQRT2, -INV_SQRT2, -1i * INV_SQRT2);
-static const Matrix2x2 K12_L_ARR =
+static constexpr Matrix2x2 K12_L_ARR =
     Matrix2x2::fromElements(Complex{0.5, 0.5}, Complex{0.5, 0.5},
                             Complex{-0.5, 0.5}, Complex{0.5, -0.5});
-static const Matrix2x2 K22_L =
+static constexpr Matrix2x2 K22_L =
     Matrix2x2::fromElements(INV_SQRT2, -INV_SQRT2, INV_SQRT2, INV_SQRT2);
-static const Matrix2x2 K22_R = Matrix2x2::fromElements(0, 1, -1, 0);
+static constexpr Matrix2x2 K22_R = Matrix2x2::fromElements(0, 1, -1, 0);
 
 static double remEuclid(const double a, const double b) {
   if (b == 0.0) {
@@ -143,10 +144,12 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
       .u3l = k2lDagger * K12_L_ARR,
       .u3r = k2rDagger * K12_R_ARR,
       .q0l = K12_L_ARR.adjoint() * k1lDagger,
-      .q0r = K12_R_ARR.adjoint() * iPauliZ() * k1rDagger,
+      .q0r = K12_R_ARR.adjoint() * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() *
+             k1rDagger,
       .q1la = k2lDagger * k11l.adjoint(),
       .q1lb = k11l * k1lDagger,
-      .q1ra = k2rDagger * iPauliZ() * k11r.adjoint(),
+      .q1ra = k2rDagger * Complex{0.0, 1.0} * ZOp::getUnitaryMatrix() *
+              k11r.adjoint(),
       .q1rb = k11r * k1rDagger,
       .q2l = k2lDagger * K12_L_ARR,
       .q2r = k2rDagger * K12_R_ARR,
@@ -255,8 +258,8 @@ SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp2Supercontrolled(
   return SmallVector<Matrix2x2, 8>{
       smb.q2r * target.k2r(),
       smb.q2l * target.k2l(),
-      smb.q1ra * rzMatrix(2. * target.b()) * smb.q1rb,
-      smb.q1la * rzMatrix(-2. * target.a()) * smb.q1lb,
+      smb.q1ra * RZOp::unitaryMatrix(2. * target.b()) * smb.q1rb,
+      smb.q1la * RZOp::unitaryMatrix(-2. * target.a()) * smb.q1lb,
       target.k1r() * smb.q0r,
       target.k1l() * smb.q0l,
   };
@@ -272,9 +275,9 @@ SmallVector<Matrix2x2, 8> TwoQubitBasisDecomposer::decomp3Supercontrolled(
   return SmallVector<Matrix2x2, 8>{
       smb.u3r * target.k2r(),
       smb.u3l * target.k2l(),
-      smb.u2ra * rzMatrix(2. * target.b()) * smb.u2rb,
-      smb.u2la * rzMatrix(-2. * target.a()) * smb.u2lb,
-      smb.u1ra * rzMatrix(-2. * target.c()) * smb.u1rb,
+      smb.u2ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb,
+      smb.u2la * RZOp::unitaryMatrix(-2. * target.a()) * smb.u2lb,
+      smb.u1ra * RZOp::unitaryMatrix(-2. * target.c()) * smb.u1rb,
       smb.u1l,
       target.k1r() * smb.u0r,
       target.k1l() * smb.u0l,

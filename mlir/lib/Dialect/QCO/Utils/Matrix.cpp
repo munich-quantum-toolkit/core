@@ -224,8 +224,6 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
   return true;
 }
 
-Matrix1x1 Matrix1x1::fromElements(const Complex m00) { return {m00}; }
-
 Complex& Matrix1x1::operator()(const std::size_t row, const std::size_t col) {
   assert(row == 0 && col == 0);
   return value;
@@ -259,11 +257,6 @@ Matrix1x1& Matrix1x1::operator*=(const Complex& scalar) {
 }
 
 Matrix1x1 Matrix1x1::adjoint() const { return fromElements(std::conj(value)); }
-
-Matrix2x2 Matrix2x2::fromElements(const Complex& m00, const Complex& m01,
-                                  const Complex& m10, const Complex& m11) {
-  return {{m00, m01, m10, m11}};
-}
 
 Complex& Matrix2x2::operator()(const std::size_t row, const std::size_t col) {
   return data[(row * K_COLS) + col];
@@ -354,18 +347,6 @@ Matrix4x4 Matrix2x2::embedInTwoQubit(const std::size_t qubitIndex) const {
     return Matrix4x4::kron(Matrix2x2::identity(), *this);
   }
   llvm::reportFatalInternalError("Invalid qubit index for single-qubit embed");
-}
-
-Matrix4x4 Matrix4x4::fromElements(const Complex& m00, const Complex& m01,
-                                  const Complex& m02, const Complex& m03,
-                                  const Complex& m10, const Complex& m11,
-                                  const Complex& m12, const Complex& m13,
-                                  const Complex& m20, const Complex& m21,
-                                  const Complex& m22, const Complex& m23,
-                                  const Complex& m30, const Complex& m31,
-                                  const Complex& m32, const Complex& m33) {
-  return {{m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31,
-           m32, m33}};
 }
 
 Complex& Matrix4x4::operator()(const std::size_t row, const std::size_t col) {
@@ -1013,73 +994,6 @@ Matrix4x4 operator*(const Complex& scalar, const Matrix4x4& matrix) {
 
 DynamicMatrix operator*(const Complex& scalar, const DynamicMatrix& matrix) {
   return matrix * scalar;
-}
-
-Matrix2x2 rxMatrix(const double theta) {
-  const auto halfTheta = theta / 2.0;
-  const Complex cos{std::cos(halfTheta), 0.0};
-  const Complex isin{0.0, -std::sin(halfTheta)};
-  return Matrix2x2::fromElements(cos, isin, isin, cos);
-}
-
-Matrix2x2 ryMatrix(const double theta) {
-  const auto halfTheta = theta / 2.0;
-  const Complex cos{std::cos(halfTheta), 0.0};
-  const Complex sin{std::sin(halfTheta), 0.0};
-  return Matrix2x2::fromElements(cos, -sin, sin, cos);
-}
-
-Matrix2x2 rzMatrix(const double theta) {
-  return Matrix2x2::fromElements(
-      Complex{std::cos(theta / 2.0), -std::sin(theta / 2.0)}, 0.0, 0.0,
-      Complex{std::cos(theta / 2.0), std::sin(theta / 2.0)});
-}
-
-const Matrix2x2& iPauliX() {
-  static const Matrix2x2 MATRIX =
-      Matrix2x2::fromElements(0.0, Complex{0.0, 1.0}, Complex{0.0, 1.0}, 0.0);
-  return MATRIX;
-}
-
-const Matrix2x2& iPauliY() {
-  static const Matrix2x2 MATRIX = Matrix2x2::fromElements(0.0, 1.0, -1.0, 0.0);
-  return MATRIX;
-}
-
-const Matrix2x2& iPauliZ() {
-  static const Matrix2x2 MATRIX =
-      Matrix2x2::fromElements(Complex{0.0, 1.0}, 0.0, 0.0, Complex{0.0, -1.0});
-  return MATRIX;
-}
-
-Matrix4x4 rxxMatrix(const double theta) {
-  const auto cosTheta = std::cos(theta / 2.0);
-  const Complex misin{0.0, -std::sin(theta / 2.0)};
-  return Matrix4x4::fromElements(cosTheta, 0.0, 0.0, misin, //
-                                 0.0, cosTheta, misin, 0.0, //
-                                 0.0, misin, cosTheta, 0.0, //
-                                 misin, 0.0, 0.0, cosTheta);
-}
-
-Matrix4x4 ryyMatrix(const double theta) {
-  const auto cosTheta = std::cos(theta / 2.0);
-  const Complex isin{0.0, std::sin(theta / 2.0)};
-  const Complex misin{0.0, -std::sin(theta / 2.0)};
-  return Matrix4x4::fromElements(cosTheta, 0.0, 0.0, isin,  //
-                                 0.0, cosTheta, misin, 0.0, //
-                                 0.0, misin, cosTheta, 0.0, //
-                                 isin, 0.0, 0.0, cosTheta);
-}
-
-Matrix4x4 rzzMatrix(const double theta) {
-  const auto cosTheta = std::cos(theta / 2.0);
-  const auto sinTheta = std::sin(theta / 2.0);
-  const Complex em{cosTheta, -sinTheta};
-  const Complex ep{cosTheta, sinTheta};
-  return Matrix4x4::fromElements(em, 0.0, 0.0, 0.0, //
-                                 0.0, ep, 0.0, 0.0, //
-                                 0.0, 0.0, ep, 0.0, //
-                                 0.0, 0.0, 0.0, em);
 }
 
 } // namespace mlir::qco

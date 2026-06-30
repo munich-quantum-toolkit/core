@@ -107,8 +107,9 @@ class EulerSynthesisExactTest
 
 [[nodiscard]] static Matrix2x2 randomUnitaryMatrix(std::mt19937& rng) {
   std::uniform_real_distribution dist(-std::numbers::pi, std::numbers::pi);
-  const Matrix2x2 su2 =
-      rzMatrix(dist(rng)) * ryMatrix(dist(rng)) * rzMatrix(dist(rng));
+  const Matrix2x2 su2 = RZOp::unitaryMatrix(dist(rng)) *
+                        RYOp::unitaryMatrix(dist(rng)) *
+                        RZOp::unitaryMatrix(dist(rng));
   const Complex globalPhase = std::polar(1.0, dist(rng));
   return Matrix2x2::fromElements(
       globalPhase * su2(0, 0), globalPhase * su2(0, 1), globalPhase * su2(1, 0),
@@ -338,52 +339,59 @@ TEST_P(ZSXXShortcutTest, SynthesisMatchesGateCount) {
 
 INSTANTIATE_TEST_SUITE_P(
     ZSXXShortcuts, ZSXXShortcutTest,
-    testing::Values(
-        ZSXXShortcutCase{
-            "Identity",
-            [](MLIRContext*) -> Matrix2x2 { return Matrix2x2::identity(); }, 0,
-            0, 0},
-        ZSXXShortcutCase{
-            "PauliX",
-            [](MLIRContext*) -> Matrix2x2 { return XOp::getUnitaryMatrix(); },
-            0, 0, 1},
-        ZSXXShortcutCase{"PureZ",
-                         [](MLIRContext*) -> Matrix2x2 {
-                           return rzMatrix(0.3) * rzMatrix(0.7);
-                         },
-                         1, 0, 0},
-        ZSXXShortcutCase{"ZYZNearZeroTheta",
-                         [](MLIRContext*) -> Matrix2x2 {
-                           constexpr double tol = 0.5 * mlir::utils::TOLERANCE;
-                           return rzMatrix(0.4) * ryMatrix(tol) * rzMatrix(0.3);
-                         },
-                         1, 0, 0},
-        ZSXXShortcutCase{"RYHalfPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(ctx,
-                                                       std::numbers::pi / 2.0);
-                         },
-                         2, 1, 0},
-        ZSXXShortcutCase{"RYNearHalfPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, (std::numbers::pi / 2.0) +
-                                        (0.5 * mlir::utils::TOLERANCE));
-                         },
-                         2, 1, 0},
-        ZSXXShortcutCase{"RYNearZero",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, 0.5 * mlir::utils::TOLERANCE);
-                         },
-                         0, 0, 0},
-        ZSXXShortcutCase{"RYNearPi",
-                         [](MLIRContext* ctx) -> Matrix2x2 {
-                           return rotationMatrix<RYOp>(
-                               ctx, std::numbers::pi -
-                                        (0.5 * mlir::utils::TOLERANCE));
-                         },
-                         1, 0, 1}),
+    testing::Values(ZSXXShortcutCase{"Identity",
+                                     [](MLIRContext*) -> Matrix2x2 {
+                                       return Matrix2x2::identity();
+                                     },
+                                     0, 0, 0},
+                    ZSXXShortcutCase{"PauliX",
+                                     [](MLIRContext*) -> Matrix2x2 {
+                                       return XOp::getUnitaryMatrix();
+                                     },
+                                     0, 0, 1},
+                    ZSXXShortcutCase{"PureZ",
+                                     [](MLIRContext*) -> Matrix2x2 {
+                                       return RZOp::unitaryMatrix(0.3) *
+                                              RZOp::unitaryMatrix(0.7);
+                                     },
+                                     1, 0, 0},
+                    ZSXXShortcutCase{"ZYZNearZeroTheta",
+                                     [](MLIRContext*) -> Matrix2x2 {
+                                       constexpr double tol =
+                                           0.5 * mlir::utils::TOLERANCE;
+                                       return RZOp::unitaryMatrix(0.4) *
+                                              RYOp::unitaryMatrix(tol) *
+                                              RZOp::unitaryMatrix(0.3);
+                                     },
+                                     1, 0, 0},
+                    ZSXXShortcutCase{"RYHalfPi",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx, std::numbers::pi / 2.0);
+                                     },
+                                     2, 1, 0},
+                    ZSXXShortcutCase{"RYNearHalfPi",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx,
+                                           (std::numbers::pi / 2.0) +
+                                               (0.5 * mlir::utils::TOLERANCE));
+                                     },
+                                     2, 1, 0},
+                    ZSXXShortcutCase{"RYNearZero",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx, 0.5 * mlir::utils::TOLERANCE);
+                                     },
+                                     0, 0, 0},
+                    ZSXXShortcutCase{"RYNearPi",
+                                     [](MLIRContext* ctx) -> Matrix2x2 {
+                                       return rotationMatrix<RYOp>(
+                                           ctx,
+                                           std::numbers::pi -
+                                               (0.5 * mlir::utils::TOLERANCE));
+                                     },
+                                     1, 0, 1}),
     [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
       return std::string(info.param.label);
     });
@@ -443,7 +451,7 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
 }
 
 TEST(EulerAnglesCoverageTest, ParamsZYZUsesOffDiagonal01When10IsNearZero) {
-  Matrix2x2 matrix = rxMatrix(0.4);
+  Matrix2x2 matrix = RXOp::unitaryMatrix(0.4);
   matrix(1, 0) = Complex{0.0, 0.0};
   ASSERT_GT(std::abs(matrix(0, 1)), mlir::utils::TOLERANCE);
   const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
@@ -470,7 +478,7 @@ TEST(EulerAnglesCoverageTest, PhaseOnlyDecompositionSkipsRotationGates) {
 TEST(EulerAnglesCoverageTest, UBasisZeroThetaEmitsSingleUGate) {
   TestFixture fx;
   fx.setUp();
-  const Matrix2x2 matrix = rzMatrix(0.7);
+  const Matrix2x2 matrix = RZOp::unitaryMatrix(0.7);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
                             EXPECT_EQ(countOps<UOp>(funcOp), 1U);
@@ -481,7 +489,7 @@ TEST(EulerAnglesCoverageTest, UBasisZeroThetaEmitsSingleUGate) {
 TEST(EulerAnglesCoverageTest, UBasisNonzeroThetaEmitsSingleUGate) {
   TestFixture fx;
   fx.setUp();
-  const Matrix2x2 matrix = ryMatrix(1.2);
+  const Matrix2x2 matrix = RYOp::unitaryMatrix(1.2);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
                             EXPECT_EQ(countOps<UOp>(funcOp), 1U);
@@ -594,11 +602,11 @@ static void expectFusePreserved(func::FuncOp funcOp, const Matrix2x2& original,
 }
 
 [[nodiscard]] static Matrix2x2 splitFixtureRZSXSegmentMatrix() {
-  return SXOp::getUnitaryMatrix() * rzMatrix(0.321);
+  return SXOp::getUnitaryMatrix() * RZOp::unitaryMatrix(0.321);
 }
 
 [[nodiscard]] static Matrix2x2 overlongZSXXPureZRunMatrix() {
-  return SXOp::getUnitaryMatrix() * rzMatrix(std::numbers::pi) *
+  return SXOp::getUnitaryMatrix() * RZOp::unitaryMatrix(std::numbers::pi) *
          SXOp::getUnitaryMatrix();
 }
 template <typename OpTy, typename ParentOp>
