@@ -236,6 +236,34 @@ TEST_F(QCOMatrixTest, ControlledInverseHTOpMatrix) {
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
+
+TEST_F(QCOMatrixTest, StaticQubitControlledXOpMatrix) {
+  const auto matrix =
+      ctrlOpMatrixFromBuilder(context.get(), [](QCOProgramBuilder& b) {
+        auto q0 = b.staticQubit(0);
+        auto q1 = b.staticQubit(1);
+        b.ctrl(q0, q1, [&](ValueRange targets) {
+          return SmallVector{b.x(targets[0])};
+        });
+      });
+  ASSERT_TRUE(matrix);
+
+  const Matrix4x4 expected =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.cx(0, 1);
+      });
+  EXPECT_TRUE(matrix->isApprox(expected));
+}
+
+TEST_F(QCOMatrixTest, CtrlOpAllocOperandsReturnNullopt) {
+  EXPECT_FALSE(ctrlOpMatrixFromBuilder(context.get(), [](QCOProgramBuilder& b) {
+    auto ctrl = b.allocQubit();
+    auto tgt = b.allocQubit();
+    b.ctrl(ctrl, tgt,
+           [&](ValueRange targets) { return SmallVector{b.x(targets[0])}; });
+  }));
+}
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp
