@@ -4,28 +4,26 @@
 \begin{abstract}
 ```
 
-MQT Core is an open-source C++20 and Python library for quantum computing
-that forms the backbone of the quantum software tools developed
-as part of the _{doc}`Munich Quantum Toolkit (MQT) <mqt:index>`_.
-To this end, MQT Core consists of multiple components
-that are used throughout the MQT,
-including a fully fledged intermediate representation (IR)
-for quantum computations,
-a state-of-the-art decision diagram (DD) package for quantum computing,
-and a state-of-the-art ZX-diagram package for working with the ZX-calculus.
+MQT Core is an open-source C++20 and Python library for quantum computing that
+forms the backbone of the quantum software tools developed as part of the
+_{doc}`Munich Quantum Toolkit (MQT) <mqt:index>`_. To this end, MQT Core
+consists of multiple components that are used throughout the MQT, including a
+fully fledged intermediate representation (IR) for quantum computations, a
+state-of-the-art decision diagram (DD) package for quantum computing, and a
+state-of-the-art ZX-diagram package for working with the ZX-calculus.
 
 This documentation provides a comprehensive guide to the MQT Core library,
-including {doc}`installation instructions <installation>`,
-a {doc}`quickstart guide for the MQT Core IR <mqt_core_ir>`,
-its {doc}`decision diagram (DD) package <dd_package>`,
-and its {doc}`ZX-calculus package <zx_package>`,
-as well as detailed {doc}`API documentation <api/mqt/core/index>`.
-The source code of MQT Core is publicly available on GitHub at
+including {doc}`installation instructions <installation>`, a
+{doc}`quickstart guide for the MQT Core IR <mqt_core_ir>`, its
+{doc}`decision diagram (DD) package <dd_package>`, and its
+{doc}`ZX-calculus package <zx_package>`, as well as detailed
+{doc}`API documentation <api/mqt/core/index>`. The source code of MQT Core is
+publicly available on GitHub at
 [munich-quantum-toolkit/core](https://github.com/munich-quantum-toolkit/core),
 while pre-built binaries are available via
 [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and
-all modern Python versions.
-MQT Core is fully compatible with Qiskit 1.0 and above.
+all modern Python versions. MQT Core is fully compatible with Qiskit 1.0 and
+above.
 
 ````{only} latex
 ```{note}
@@ -125,7 +123,7 @@ Thank you to all the contributors who have helped make MQT Core a reality!
 </a>
 </p>
 
-The MQT will remain free, open-source, and permissively licensed—now and in the future.
+The MQT will remain free, open-source, and permissively licensed — now and in the future.
 We are firmly committed to keeping it open and actively maintained for the quantum computing community.
 
 To support this endeavor, please consider:
