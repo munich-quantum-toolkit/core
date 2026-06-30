@@ -13,16 +13,15 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <mlir/Dialect/QCO/IR/QCODialect.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cmath>
 #include <optional>
 
 namespace mlir::qco {
@@ -40,9 +39,14 @@ std::optional<Matrix2x2> composeSingleQubitBodyMatrix(Block& block) {
                  return false;
                }
                global *= (*matrix)(0, 0);
+               found = true;
                return true;
              })
              .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+               if (!unitary.isSingleQubit() ||
+                   !unitary.hasCompileTimeKnownUnitaryMatrix()) {
+                 return false;
+               }
                Matrix2x2 matrix;
                if (!unitary.getUnitaryMatrix2x2(matrix)) {
                  return false;
@@ -61,7 +65,7 @@ std::optional<Matrix2x2> composeSingleQubitBodyMatrix(Block& block) {
       return std::nullopt;
     }
   }
-  if (!found && std::abs(global - Complex{1.0, 0.0}) <= utils::TOLERANCE) {
+  if (!found) {
     return std::nullopt;
   }
   acc *= global;
