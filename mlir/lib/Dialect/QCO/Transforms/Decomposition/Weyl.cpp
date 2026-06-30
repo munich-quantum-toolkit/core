@@ -481,8 +481,6 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   decomposition.finalizeSpecializationPhase(flippedFromOriginal, chamber.a,
                                             chamber.b, chamber.c, fidelity);
 
-  assert(decomposition.unitaryMatrix().isApprox(unitaryMatrix, WEYL_TOLERANCE));
-
   return decomposition;
 }
 
@@ -493,6 +491,15 @@ Matrix4x4 TwoQubitWeylDecomposition::unitaryMatrix() const {
 
 Matrix4x4 unitaryMatrix(const TwoQubitNativeDecomposition& decomposition,
                         const Matrix4x4& basisGate) {
+  const auto requiredFactors =
+      singleQubitFactorCount(decomposition.numBasisUses);
+  if (decomposition.singleQubitFactors.size() < requiredFactors) {
+    llvm::reportFatalInternalError(llvm::formatv(
+        "unitaryMatrix: expected at least {0} single-qubit factors for "
+        "numBasisUses = {1}, got {2}",
+        requiredFactors, decomposition.numBasisUses,
+        decomposition.singleQubitFactors.size()));
+  }
   const auto& factors = decomposition.singleQubitFactors;
   const auto layer = [&](const std::size_t i) {
     return Matrix4x4::kron(factors[(2 * i) + 1], factors[2 * i]);

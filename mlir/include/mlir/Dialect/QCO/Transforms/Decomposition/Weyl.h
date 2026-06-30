@@ -90,6 +90,20 @@ inline constexpr double WEYL_SUPER_CONTROLLED_MAX_RELATIVE = 1e-9;
  */
 class TwoQubitWeylDecomposition {
 public:
+  /**
+   * @brief Decomposes a 2-qubit unitary into Weyl chamber coordinates and
+   *        single-qubit factors.
+   *
+   * @param unitaryMatrix Input 4x4 unitary (up to global phase).
+   * @param fidelity Optional average gate-fidelity floor in `[0, 1]`. When set,
+   *        @ref applySpecialization may replace `(a, b, c)` with an equivalent
+   *        specialized form whose overlap with the pre-specialization chamber
+   *        meets this bound; the result is fidelity-bounded, not necessarily
+   *        matrix-exact. When `std::nullopt`, no fidelity-driven specialization
+   *        is applied and the decomposition matches the input up to global
+   *        phase (modulo floating-point error). Invalid values (non-finite or
+   *        outside `[0, 1]`) trigger a fatal error.
+   */
   [[nodiscard]] static TwoQubitWeylDecomposition
   create(const Matrix4x4& unitaryMatrix, std::optional<double> fidelity);
 
