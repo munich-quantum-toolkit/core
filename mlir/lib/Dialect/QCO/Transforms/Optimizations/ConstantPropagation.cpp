@@ -127,8 +127,7 @@ WalkResult handleConstant(UnionTable* ut, arith::ConstantOp op,
     ut->propagateDoubleAlloc(res, doubleAttr.getValueAsDouble());
   }
   if (const auto boolAttr = dyn_cast<BoolAttr>(attr)) {
-    const bool v = boolAttr.getValue();
-    if (v) {
+    if (boolAttr.getValue()) {
       ut->propagateIntAlloc(res, 1);
     } else {
       ut->propagateIntAlloc(res, 0);
@@ -387,14 +386,17 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
                                                negClassicalCtrls, rewriter,
                                                worklist);
             })
-            //         .Case<ResetOp>([&](const ResetOp op) {
-            //           return handleReset(ut, op, posClassicalCtrls,
-            //           negClassicalCtrls);
-            //         })
-            //         .Case<MeasureOp>([&](const MeasureOp op) {
-            //           return handleMeasure(ut, op, posClassicalCtrls,
-            //                                negClassicalCtrls);
-            //         })
+            .Case<ResetOp>([&](const ResetOp op) {
+              ut->propagateReset(op->getOperand(0), op->getResult(0),
+                                 posClassicalCtrls, negClassicalCtrls);
+              return WalkResult::advance();
+            })
+            .Case<MeasureOp>([&](const MeasureOp op) {
+              ut->propagateMeasurement(op->getOperand(0), op->getResult(0),
+                                       op->getResult(1), posClassicalCtrls,
+                                       negClassicalCtrls);
+              return WalkResult::advance();
+            })
             .Case<AllocOp>([&](const AllocOp op) {
               addedAtLeastOneQubit = true;
               ut->propagateQubitAlloc(op->getOperand(0));
