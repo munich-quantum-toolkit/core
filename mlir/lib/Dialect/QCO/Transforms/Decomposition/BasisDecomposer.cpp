@@ -29,7 +29,6 @@ namespace mlir::qco::decomposition {
 
 using namespace std::complex_literals;
 
-static constexpr double DEFAULT_WEYL_FIDELITY = 1.0 - 1e-12;
 static constexpr double PI = std::numbers::pi;
 static constexpr double PI_OVER_4 = PI / 4.0;
 static constexpr double INV_SQRT2 = 1.0 / std::numbers::sqrt2;
@@ -92,10 +91,12 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
   }
 
   const auto basisWeyl =
-      TwoQubitWeylDecomposition::create(basisMatrix, DEFAULT_WEYL_FIDELITY);
+      TwoQubitWeylDecomposition::create(basisMatrix, WEYL_DEFAULT_FIDELITY);
   const auto isSuperControlled =
-      relativeEq(basisWeyl.a(), PI_OVER_4, 1e-13, 1e-09) &&
-      relativeEq(basisWeyl.c(), 0.0, 1e-13, 1e-09);
+      relativeEq(basisWeyl.a(), PI_OVER_4, WEYL_DIAGONALIZATION_TOLERANCE,
+                 WEYL_SUPER_CONTROLLED_MAX_RELATIVE) &&
+      relativeEq(basisWeyl.c(), 0.0, WEYL_DIAGONALIZATION_TOLERANCE,
+                 WEYL_SUPER_CONTROLLED_MAX_RELATIVE);
 
   const auto b = basisWeyl.b();
   const Complex expMinusB = std::exp(-1i * b);
@@ -168,7 +169,7 @@ TwoQubitBasisDecomposer::decomposeTarget(
     const Matrix4x4& targetUnitary,
     const std::optional<std::uint8_t> numBasisGateUses) const {
   const auto targetWeyl =
-      TwoQubitWeylDecomposition::create(targetUnitary, DEFAULT_WEYL_FIDELITY);
+      TwoQubitWeylDecomposition::create(targetUnitary, WEYL_DEFAULT_FIDELITY);
   return twoQubitDecompose(targetWeyl, numBasisGateUses);
 }
 

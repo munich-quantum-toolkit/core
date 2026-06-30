@@ -21,8 +21,25 @@
 
 namespace mlir::qco::decomposition {
 
-/** Numeric tolerance for Weyl internal matrix checks. */
-inline constexpr double WEYL_TOLERANCE = 100 * MATRIX_TOLERANCE;
+/**
+ * @brief Tolerance for complex symmetric `M2` diagonalization.
+ */
+inline constexpr double WEYL_DIAGONALIZATION_TOLERANCE = 1e-13;
+
+/**
+ * @brief Tolerance for Weyl round-trip reconstruction and orthogonality after
+ *        the full decomposition pipeline.
+ *
+ * Looser than @ref MATRIX_TOLERANCE because
+ * of accumulated 4x4 multiplications in the Weyl chamber algorithm.
+ */
+inline constexpr double WEYL_TOLERANCE = 1e-12;
+
+/** Default average-gate fidelity for @ref TwoQubitWeylDecomposition::create. */
+inline constexpr double WEYL_DEFAULT_FIDELITY = 1.0 - WEYL_TOLERANCE;
+
+/** Relative tolerance for super-controlled basis-gate checks. */
+inline constexpr double WEYL_SUPER_CONTROLLED_MAX_RELATIVE = 1e-9;
 
 /**
  * @brief Weyl decomposition of a 2-qubit unitary.

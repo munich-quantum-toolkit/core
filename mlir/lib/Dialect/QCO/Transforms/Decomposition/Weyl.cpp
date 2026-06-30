@@ -64,7 +64,6 @@ struct ChamberState {
 
 } // namespace
 
-static constexpr double DIAGONALIZATION_PRECISION = 1e-13;
 static constexpr double PI = std::numbers::pi;
 static constexpr double PI_OVER_4 = PI / 4.0;
 
@@ -113,7 +112,8 @@ static double closestPartialSwap(double a, double b, double c) {
 }
 
 static std::pair<Matrix4x4, std::array<Complex, 4>>
-diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
+diagonalizeComplexSymmetric(const Matrix4x4& m,
+                            double precision = WEYL_DIAGONALIZATION_TOLERANCE) {
   auto state = std::mt19937{2023};
   std::normal_distribution<double> dist;
 
@@ -155,9 +155,9 @@ diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
       bestErr = std::min(bestErr, err);
     }
     if (compare.isApprox(m, precision)) {
-      assert((p.transpose() * p).isIdentity(WEYL_TOLERANCE));
+      assert((p.transpose() * p).isIdentity(WEYL_DIAGONALIZATION_TOLERANCE));
       assert(std::abs(Matrix4x4::fromDiagonal(d).determinant() - 1.0) <
-             WEYL_TOLERANCE);
+             WEYL_DIAGONALIZATION_TOLERANCE);
       return {p, d};
     }
   }
@@ -274,7 +274,7 @@ static std::tuple<Matrix4x4, Matrix4x4, std::array<double, 3>,
 computeOrderedWeylCoordinates(const Matrix4x4& u) {
   const auto uP = magicBasisTransform(u, /*outOfMagicBasis=*/true);
   const Matrix4x4 m2 = uP.transpose() * uP;
-  auto [p, d] = diagonalizeComplexSymmetric(m2, DIAGONALIZATION_PRECISION);
+  auto [p, d] = diagonalizeComplexSymmetric(m2);
 
   std::array<double, 4> dReal{};
   for (std::size_t i = 0; i < d.size(); ++i) {
@@ -317,7 +317,7 @@ computeOrderedWeylCoordinates(const Matrix4x4& u) {
     }
     p.setColumn(3, lastColumn);
   }
-  assert(std::abs(p.determinant() - 1.0) < WEYL_TOLERANCE);
+  assert(std::abs(p.determinant() - 1.0) < WEYL_DIAGONALIZATION_TOLERANCE);
 
   return {uP, p, cs, dReal};
 }
@@ -333,7 +333,6 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
   const Matrix4x4 temp = Matrix4x4::fromDiagonal(tempDiag);
 
   Matrix4x4 k1 = uP * p * temp;
-  // Orthogonality checks use WEYL_TOLERANCE (diagonalization residual scale).
   assert((k1.transpose() * k1).isIdentity(WEYL_TOLERANCE));
   assert(k1.determinant().real() > 0.0);
   k1 = magicBasisTransform(k1, /*outOfMagicBasis=*/false);
@@ -439,7 +438,8 @@ void TwoQubitWeylDecomposition::finalizeSpecializationPhase(
           : getTrace(preSpecializationA, preSpecializationB, preSpecializationC,
                      a_, b_, c_);
   const double calculatedFidelity = traceToFidelity(trace);
-  if (fidelity && calculatedFidelity + 1.0e-13 < *fidelity) {
+  if (fidelity &&
+      calculatedFidelity + WEYL_DIAGONALIZATION_TOLERANCE < *fidelity) {
     llvm::reportFatalInternalError(llvm::formatv(
         "TwoQubitWeylDecomposition: Calculated fidelity of "
         "specialization is worse than requested fidelity ({0:F4} vs {1:F4})!",

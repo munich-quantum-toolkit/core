@@ -224,7 +224,7 @@ protected:
 
 TEST_P(WeylDecompositionTest, ReconstructsWithinRequestedFidelity) {
   const Matrix4x4 originalMatrix = GetParam()();
-  for (const double fidelity : {1.0, 1.0 - 1e-12}) {
+  for (const double fidelity : {1.0, WEYL_DEFAULT_FIDELITY}) {
     const auto decomposition =
         TwoQubitWeylDecomposition::create(originalMatrix, fidelity);
     EXPECT_TRUE(
@@ -253,7 +253,7 @@ TEST(WeylDecompositionStandalone, Random) {
   for (int i = 0; i < 5000; ++i) {
     const Matrix4x4 originalMatrix = randomUnitary4x4(rng);
     const auto decomposition = TwoQubitWeylDecomposition::create(
-        originalMatrix, std::optional<double>{1.0 - 1e-12});
+        originalMatrix, std::optional<double>{WEYL_DEFAULT_FIDELITY});
     EXPECT_TRUE(
         restoreWeyl(decomposition).isApprox(originalMatrix, WEYL_TOLERANCE));
   }
@@ -267,7 +267,7 @@ INSTANTIATE_TEST_SUITE_P(SpecializedMatrices, WeylDecompositionTest,
                          specializedMatrixCases());
 
 TEST_P(BasisDecomposerTest, ReconstructsWithinRequestedFidelity) {
-  for (const double fidelity : {1.0, 1.0 - 1e-12}) {
+  for (const double fidelity : {1.0, WEYL_DEFAULT_FIDELITY}) {
     const auto decomposer =
         TwoQubitBasisDecomposer::create(basisMatrix, fidelity);
     const auto decomposed =
