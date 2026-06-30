@@ -8,7 +8,18 @@
 
 # Build the compiler driver executable
 add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline SUPPORT_PLUGINS)
-target_link_libraries(mqt-cc PRIVATE MQTCompilerPipeline MLIRParser MLIRSupport MLIRQCTranslation)
+llvm_map_components_to_libnames(llvm_native_libs bitwriter)
+target_link_libraries(
+  mqt-cc
+  PRIVATE MQTCompilerPipeline
+          MLIRParser
+          MLIRSupport
+          MLIRQCTranslation
+          MLIRBytecodeWriter
+          MLIRTargetLLVMIRExport
+          MLIRBuiltinToLLVMIRTranslation
+          MLIRLLVMToLLVMIRTranslation
+          ${llvm_native_libs})
 
 mqt_mlir_target_use_project_options(mqt-cc)
 llvm_update_compile_flags(mqt-cc)
