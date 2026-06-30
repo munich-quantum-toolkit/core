@@ -166,7 +166,7 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
     std::optional<std::uint8_t> numBasisGateUses) const {
   const auto traceValues = traces(targetDecomposition);
 
-  std::uint8_t bestNbasis;
+  std::uint8_t bestNbasis = 0;
   if (numBasisGateUses) {
     bestNbasis = *numBasisGateUses;
   } else {
