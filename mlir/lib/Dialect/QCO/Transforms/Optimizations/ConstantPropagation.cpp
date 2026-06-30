@@ -284,7 +284,31 @@ Operation* removeCtrlsOfGate(CtrlOp* op,
 
     return newOp;
   }
-  return nullptr;
+  std::vector<Value> newControlIn;
+  for (const auto& ctrls : op->getInputControls()) {
+    if (!ctrlsToRemove.contains(ctrls)) {
+      newControlIn.push_back(ctrls);
+    }
+  }
+  const auto newCtrl =
+      CtrlOp::create(rewriter, op->getLoc(), newControlIn, op->getTargetsIn(),
+                     [&](const ValueRange target) {
+                       return SmallVector<Value>{
+                           XOp::create(rewriter, op->getLoc(), target[0])};
+                     });
+
+  auto newUnitary = static_cast<UnitaryOpInterface>(newCtrl);
+  for (const auto inTarget : newUnitary.getInputQubits()) {
+    rewriter.replaceAllUsesWith(op->getOutputForInput(inTarget),
+                                newUnitary.getOutputForInput(inTarget));
+  }
+  for (const auto ctrlQubit : op->getOutputControls()) {
+    rewriter.replaceAllUsesWith(ctrlQubit, op->getInputForOutput(ctrlQubit));
+  }
+  rewriter.eraseOp(*op);
+  std::ranges::replace(worklist, *op, newUnitary);
+
+  return newUnitary;
 }
 
 /**
