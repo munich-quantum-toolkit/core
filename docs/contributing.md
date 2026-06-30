@@ -8,9 +8,9 @@ the development guidelines and how to contribute.
 
 We use GitHub to [host code](https://github.com/munich-quantum-toolkit/core), to
 [track issues and feature requests][issues], as well as accept
-[pull requests](https://github.com/munich-quantum-toolkit/core/pulls).
-See <https://docs.github.com/en/get-started/quickstart> for a general
-introduction to working with GitHub and contributing to projects.
+[pull requests](https://github.com/munich-quantum-toolkit/core/pulls). See
+<https://docs.github.com/en/get-started/quickstart> for a general introduction
+to working with GitHub and contributing to projects.
 
 ## Types of Contributions
 
@@ -289,9 +289,9 @@ will also run the tests and check for any failures.
 Most IDEs like [CLion][clion] or [Visual Studio Code][vscode] provide a
 convenient way to run the tests directly from the IDE. If you prefer to run the
 tests from the command line, you can use CMake's test runner
-[CTest](https://cmake.org/cmake/help/latest/manual/ctest.1.html).
-To run the tests, run the following command from the main project directory
-after building the project as described above:
+[CTest](https://cmake.org/cmake/help/latest/manual/ctest.1.html). To run the
+tests, run the following command from the main project directory after building
+the project as described above:
 
 ```console
 ctest --preset release
