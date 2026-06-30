@@ -216,8 +216,6 @@ DynamicMatrix embedControlledUnitary(const std::size_t numQubits,
                                      const ArrayRef<std::size_t> targetQubits,
                                      const DynamicMatrix& targetUnitary) {
   assert(targetUnitary.rows() == targetUnitary.cols());
-  assert(static_cast<std::size_t>(targetUnitary.rows()) ==
-         (std::uint64_t{1} << targetQubits.size()));
   assert(numQubits < std::numeric_limits<std::size_t>::digits);
   for (const auto control : controlQubits) {
     assert(control < numQubits && "Control wire index out of range");
@@ -225,6 +223,26 @@ DynamicMatrix embedControlledUnitary(const std::size_t numQubits,
   for (const auto target : targetQubits) {
     assert(target < numQubits && "Target wire index out of range");
   }
+  for (std::size_t i = 0; i < controlQubits.size(); ++i) {
+    for (std::size_t j = i + 1; j < controlQubits.size(); ++j) {
+      assert(controlQubits[i] != controlQubits[j] &&
+             "Duplicate control wire index");
+    }
+  }
+  for (std::size_t i = 0; i < targetQubits.size(); ++i) {
+    for (std::size_t j = i + 1; j < targetQubits.size(); ++j) {
+      assert(targetQubits[i] != targetQubits[j] &&
+             "Duplicate target wire index");
+    }
+  }
+  for (const auto control : controlQubits) {
+    for (const auto target : targetQubits) {
+      assert(control != target &&
+             "Control and target wire indices must not overlap");
+    }
+  }
+  assert(static_cast<std::size_t>(targetUnitary.rows()) ==
+         (std::uint64_t{1} << targetQubits.size()));
 
   const auto dim = checkedHilbertDim(numQubits);
   DynamicMatrix out = DynamicMatrix::identity(dim);
@@ -242,7 +260,7 @@ DynamicMatrix embedControlledUnitary(const std::size_t numQubits,
   const std::size_t passiveMask =
       ((std::size_t{1} << numQubits) - 1) & ~activeMask;
 
-  llvm::SmallVector<std::int64_t, 64> targetIndexByState(udim);
+  SmallVector<std::int64_t, 64> targetIndexByState(udim);
   for (std::size_t state = 0; state < udim; ++state) {
     targetIndexByState[state] =
         static_cast<std::int64_t>(extractTargetSubIndex(state, targetQubits));

@@ -249,6 +249,21 @@ TEST(DynamicMatrix, EmbedControlledUnitaryRejectsOutOfRangeWire) {
                "Control wire index out of range");
 }
 
+TEST(DynamicMatrix, EmbedControlledUnitaryRejectsDuplicateControlWire) {
+  EXPECT_DEATH(embedControlledUnitary(2, {0, 0}, {1}, DynamicMatrix(pauliX())),
+               "Duplicate control wire index");
+}
+
+TEST(DynamicMatrix, EmbedControlledUnitaryRejectsDuplicateTargetWire) {
+  EXPECT_DEATH(embedControlledUnitary(2, {0}, {1, 1}, DynamicMatrix(pauliX())),
+               "Duplicate target wire index");
+}
+
+TEST(DynamicMatrix, EmbedControlledUnitaryRejectsOverlappingControlAndTarget) {
+  EXPECT_DEATH(embedControlledUnitary(2, {0}, {0}, DynamicMatrix(pauliX())),
+               "Control and target wire indices must not overlap");
+}
+
 TEST(DynamicMatrix, Adjoint) {
   DynamicMatrix matrix(2);
   matrix(0, 0) = 1.0;

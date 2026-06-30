@@ -741,18 +741,18 @@ private:
  * When every control qubit is \f$|1\rangle\f$, applies @p targetUnitary on
  * @p targetQubits; otherwise the identity.
  *
- * @param numQubits Size of the qubit register the matrix acts on.
- * @param controlQubits Program register indices of the control wires.
- * @param targetQubits Program register indices of the target wires, in the
- *        order used to index @p targetUnitary.
+ * @param numQubits Size of the embedding Hilbert space (number of local wires).
+ * @param controlQubits Local wire indices in \f$[0, \texttt{numQubits})\f$ for
+ *        the control wires (compact positions after remapping, not sparse
+ *        program-register indices).
+ * @param targetQubits Local wire indices in \f$[0, \texttt{numQubits})\f$ for
+ *        the target wires, in the order used to index @p targetUnitary.
  * @param targetUnitary Local unitary on the target subspace.
  * @return The controlled unitary on the @p numQubits-qubit Hilbert space.
  */
-[[nodiscard]] DynamicMatrix
-embedControlledUnitary(std::size_t numQubits,
-                       llvm::ArrayRef<std::size_t> controlQubits,
-                       llvm::ArrayRef<std::size_t> targetQubits,
-                       const DynamicMatrix& targetUnitary);
+[[nodiscard]] DynamicMatrix embedControlledUnitary(
+    std::size_t numQubits, ArrayRef<std::size_t> controlQubits,
+    ArrayRef<std::size_t> targetQubits, const DynamicMatrix& targetUnitary);
 
 /**
  * @brief Type trait for the four supported matrix types.

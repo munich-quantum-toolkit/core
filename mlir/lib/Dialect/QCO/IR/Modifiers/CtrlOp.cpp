@@ -45,8 +45,7 @@ using namespace mlir::qco;
  * Supports @c qco.static and @c qtensor.extract with an @c arith.constant
  * index. Dynamic or negative indices yield @c std::nullopt.
  */
-[[nodiscard]] static std::optional<std::size_t>
-programQubitIndex(const Value qubit) {
+[[nodiscard]] static std::optional<std::size_t> programQubitIndex(Value qubit) {
   auto* definingOp = qubit.getDefiningOp();
   if (definingOp == nullptr) {
     return std::nullopt;
@@ -80,7 +79,7 @@ programQubitIndex(const Value qubit) {
  *         resolved by @ref programQubitIndex.
  */
 [[nodiscard]] static std::optional<SmallVector<std::size_t>>
-resolveQubitIndices(const ValueRange qubits) {
+resolveQubitIndices(ValueRange qubits) {
   SmallVector<std::size_t> indices;
   indices.reserve(qubits.size());
   for (const auto qubit : qubits) {
@@ -387,7 +386,7 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   participating.append(*controlQubits);
   participating.append(*targetQubits);
   llvm::sort(participating);
-  participating.erase(std::ranges::unique(participating).end(),
+  participating.erase(std::unique(participating.begin(), participating.end()),
                       participating.end());
 
   const auto toLocal = [&](const std::size_t wire) {

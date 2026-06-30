@@ -144,7 +144,7 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
   // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
-  auto matrix = ctrlOp.getUnitaryMatrix();
+  const auto matrix = ctrlOp.getUnitaryMatrix();
 
   const Matrix4x4 expected =
       expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
@@ -152,6 +152,7 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
         comp.cx(0, 1);
       });
 
+  ASSERT_TRUE(matrix.has_value());
   ASSERT_TRUE(matrix->isApprox(expected));
 }
 
