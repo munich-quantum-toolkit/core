@@ -29,6 +29,10 @@ releases may include breaking changes.
 - ⬆️ Raise the minimum supported QDMI version to 1.3.2 ([#1897])
   ([**@burgholzer**])
 
+### Fixed
+
+- 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
+
 ## [3.7.0] - 2026-07-09
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#370)._
@@ -595,6 +599,7 @@ changelogs._
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
+[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
