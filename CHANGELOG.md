@@ -12,7 +12,8 @@ with the exception that minor releases may include breaking changes.
 
 ### Added
 
-- 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function ([#1826]) ([**@ystade])
+- 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
+  ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration
   for consistent local development environment ([#1786]) ([**@denialhaag**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass
