@@ -70,11 +70,6 @@ static bool relativeEq(double lhs, double rhs, double epsilon,
   return absDiff <= absLhs * maxRelative;
 }
 
-static double traceToFidelity(const Complex& trace) {
-  const auto traceAbs = std::abs(trace);
-  return (4.0 + (traceAbs * traceAbs)) / 20.0;
-}
-
 //===----------------------------------------------------------------------===//
 // TwoQubitBasisDecomposer
 //===----------------------------------------------------------------------===//

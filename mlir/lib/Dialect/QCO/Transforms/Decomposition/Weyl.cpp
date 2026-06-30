@@ -75,12 +75,6 @@ static double remEuclid(const double a, const double b) {
   return (r < 0.0) ? r + std::abs(b) : r;
 }
 
-/** Maps `|tr(U^dag V)|` to average two-qubit gate fidelity. */
-static double traceToFidelity(const Complex& trace) {
-  const auto traceAbs = std::abs(trace);
-  return (4.0 + (traceAbs * traceAbs)) / 20.0;
-}
-
 static constexpr Matrix4x4 MAGIC_BASIS_NON_NORMALIZED =
     Matrix4x4::fromElements( //
         1, 1i, 0, 0,         //

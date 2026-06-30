@@ -167,7 +167,7 @@ static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
 }
 
 /**
- * @brief `U`-basis angles (Z-Y-Z angles with a `U`-vs-`RZ·RY·RZ` phase fix).
+ * @brief `U`-basis angles (Z-Y-Z angles with a `U`-vs-`RZ*RY*RZ` phase fix).
  *
  * @param matrix Single-qubit unitary to decompose.
  * @return `U`-gate angles and global phase.

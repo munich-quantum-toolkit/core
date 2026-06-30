@@ -42,11 +42,27 @@ inline constexpr double WEYL_DEFAULT_FIDELITY = 1.0 - WEYL_TOLERANCE;
 inline constexpr double WEYL_SUPER_CONTROLLED_MAX_RELATIVE = 1e-9;
 
 /**
+ * @brief Maps `|Tr(U^dag V)|` to average gate fidelity for 2-qubit unitaries.
+ *
+ * Horodecki et al., Phys. Rev. A 60, 1888 (1999):
+ * `F_avg = (d + |Tr(U^dag V)|^2) / (d(d+1))`. @ref
+ * TwoQubitBasisDecomposer::traces supplies overlap traces (each scaled by 4)
+ * when ranking how many basis gates to use.
+ *
+ * @note Adapted from Qiskit's `trace_to_fid`.
+ */
+[[nodiscard]] inline double traceToFidelity(const Complex& trace) {
+  const auto traceAbs = std::abs(trace);
+  const auto dimension = 4.0;
+  return (dimension + (traceAbs * traceAbs)) / (dimension * (dimension + 1));
+}
+
+/**
  * @brief Weyl decomposition of a 2-qubit unitary.
  *
  * A 4x4 unitary is factored as
- * `(K1l ⊗ K1r) · U_canon(a,b,c) · (K2l ⊗ K2r)` up to global phase, where
- * `U_canon(a,b,c) = RXX(-2a) · RYY(-2b) · RZZ(-2c)`.
+ * `(K1l ⊗ K1r) * U_canon(a,b,c) * (K2l ⊗ K2r)` up to global phase, where
+ * `U_canon(a,b,c) = RXX(-2a) * RYY(-2b) * RZZ(-2c)`.
  *
  * @note Adapted from TwoQubitWeylDecomposition in the IBM Qiskit framework.
  *       (C) Copyright IBM 2026
@@ -187,7 +203,7 @@ private:
    * Naming: suffix `l` / `r` is the q0 / q1 factor in `kron(q0_factor,
    * q1_factor)`. Pairs `*la` / `*ra` and `*lb` / `*rb` sandwich an `RZ` on that
    * wire
-   * (`u1ra·RZ(-2c)·u1rb`, `u2la·RZ(-2a)·u2lb`, `u2ra·RZ(2b)·u2rb`, etc.).
+   * (`u1ra*RZ(-2c)*u1rb`, `u2la*RZ(-2a)*u2lb`, `u2ra*RZ(2b)*u2rb`, etc.).
    * `u3*` / `u2*` / `u1*` / `u0*` index layers from outside (post-`K2`) to
    * inside (pre-`K1`) in the three-basis layout; `q*` members are the
    * two-basis-only substitutes for the inner `u0*` and the `u2*a` halves of
