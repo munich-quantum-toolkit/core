@@ -75,9 +75,8 @@ void WireIterator::forward() {
         .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
           qubit_ = op.getTiedLoopResult(&*(qubit_.use_begin()));
         })
-        .Case<qco::IfOp>([&](qco::IfOp op) {
-          qubit_ = op.getTiedResult(&(*qubit_.use_begin()));
-        })
+        .Case<IfOp>(
+            [&](IfOp op) { qubit_ = op.getTiedResult(&(*qubit_.use_begin())); })
         .Default([&](Operation* op) {
           llvm::reportFatalInternalError("unknown op in def-use chain: " +
                                          op->getName().getStringRef());
@@ -125,7 +124,7 @@ void WireIterator::backward() {
         }
         llvm::reportFatalInternalError("expected result lookup");
       })
-      .Case<qco::IfOp>([&](qco::IfOp op) {
+      .Case<IfOp>([&](IfOp op) {
         if (auto result = dyn_cast<OpResult>(qubit_)) {
           qubit_ = op.getTiedQubit(result)->get();
           return;
