@@ -156,7 +156,7 @@ diagonalizeComplexSymmetric(const Matrix4x4& m, double precision) {
       assert((p.transpose() * p).isIdentity(WEYL_TOLERANCE));
       assert(std::abs(Matrix4x4::fromDiagonal(d).determinant() - 1.0) <
              WEYL_TOLERANCE);
-      return std::make_pair(p, d);
+      return {p, d};
     }
   }
   llvm::reportFatalInternalError(llvm::formatv(
@@ -593,7 +593,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     const auto ab = (a_ + b_) / 2.;
     a_ = ab;
     b_ = ab;
-    globalPhase_ = globalPhase_ + k2lphase;
+    globalPhase_ *= k2lphase;
     k1l_ = k1l_ * rzMatrix(k2lphi);
     k2l_ = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
     k1r_ = k1r_ * rzMatrix(k2lphi);
@@ -606,7 +606,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     const auto bc = (b_ + c_) / 2.;
     b_ = bc;
     c_ = bc;
-    globalPhase_ = globalPhase_ + k2lphase;
+    globalPhase_ *= k2lphase;
     k1l_ = k1l_ * rxMatrix(k2lphi);
     k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
     k1r_ = k1r_ * rxMatrix(k2lphi);
@@ -619,7 +619,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     const auto bc = (b_ - c_) / 2.;
     b_ = bc;
     c_ = -bc;
-    globalPhase_ = globalPhase_ + k2lphase;
+    globalPhase_ *= k2lphase;
     k1l_ = k1l_ * rxMatrix(k2lphi);
     k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
     k1r_ = k1r_ * iPauliZ() * rxMatrix(k2lphi) * iPauliZ();
