@@ -407,7 +407,7 @@ public:
 
 #define DECLARE_ONE_TARGET_ZERO_PARAMETER(OP_NAME, QIR_NAME)                   \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param qubit Target qubit                                                 \
    * @return Reference to this builder for method chaining                     \
@@ -469,7 +469,7 @@ public:
 
 #define DECLARE_ONE_TARGET_ZERO_PARAMETER_ADJOINT(OP_NAME, QIR_NAME)           \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply an adjoint QIR_NAME operation                                \
    *                                                                           \
    * @param qubit Target qubit                                                 \
    * @return Reference to this builder for method chaining                     \
@@ -484,7 +484,7 @@ public:
    */                                                                          \
   QIRProgramBuilder& OP_NAME(Value qubit);                                     \
   /**                                                                          \
-   * @brief Apply a controlled QIR_NAME operation                              \
+   * @brief Apply an adjoint controlled QIR_NAME operation                     \
    *                                                                           \
    * @param control Control qubit                                              \
    * @param target Target qubit                                                \
@@ -501,7 +501,7 @@ public:
    */                                                                          \
   QIRProgramBuilder& c##OP_NAME(Value control, Value target);                  \
   /**                                                                          \
-   * @brief Apply a multi-controlled QIR_NAME operation                        \
+   * @brief Apply an adjoint multi-controlled QIR_NAME operation               \
    *                                                                           \
    * @param controls Control qubits                                            \
    * @param target Target qubit                                                \
@@ -528,7 +528,7 @@ public:
 
 #define DECLARE_ONE_TARGET_ONE_PARAMETER(OP_NAME, QIR_NAME, PARAM)             \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM Rotation angle in radians                                    \
    * @param qubit Target qubit                                                 \
@@ -595,7 +595,7 @@ public:
 
 #define DECLARE_ONE_TARGET_TWO_PARAMETER(OP_NAME, QIR_NAME, PARAM1, PARAM2)    \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM1 Rotation angle in radians                                   \
    * @param PARAM2 Rotation angle in radians                                   \
@@ -667,7 +667,7 @@ public:
 #define DECLARE_ONE_TARGET_THREE_PARAMETER(OP_NAME, QIR_NAME, PARAM1, PARAM2,  \
                                            PARAM3)                             \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM1 Rotation angle in radians                                   \
    * @param PARAM2 Rotation angle in radians                                   \
@@ -745,7 +745,7 @@ public:
 
 #define DECLARE_TWO_TARGET_ZERO_PARAMETER(OP_NAME, QIR_NAME)                   \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param qubit0 Target qubit                                                \
    * @param qubit1 Target qubit                                                \
@@ -810,7 +810,7 @@ public:
 
 #define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_NAME, QIR_NAME, PARAM)             \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM Rotation angle in radians                                    \
    * @param qubit0 Target qubit                                                \
@@ -881,7 +881,7 @@ public:
 
 #define DECLARE_TWO_TARGET_TWO_PARAMETER(OP_NAME, QIR_NAME, PARAM1, PARAM2)    \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM1 Rotation angle in radians                                   \
    * @param PARAM2 Rotation angle in radians                                   \
