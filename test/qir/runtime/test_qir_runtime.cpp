@@ -91,13 +91,13 @@ TEST_F(QIRRuntimeTest, SXdgGate) {
 TEST_F(QIRRuntimeTest, SqrtXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sx__body(q0);
+  __quantum__qis__sqrtx__body(q0);
 }
 
 TEST_F(QIRRuntimeTest, SqrtXdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sx__adj(q0);
+  __quantum__qis__sqrtx__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, TGate) {
