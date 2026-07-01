@@ -12,7 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
-  ([#1826]) ([**@ystade])
+  ([#1831]) ([**@ystade])
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to configure builds ([#1660]) ([**@denialhaag**])
 
 ### Changed
@@ -389,55 +389,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
-<<<<<<< HEAD
-||||||| parent of 48e17f82 (🚸 Add const getOps func (#1826))
-[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
-[#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
-[#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
-[#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
-[#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
-[#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
-[#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
-[#1803]: https://github.com/munich-quantum-toolkit/core/pull/1803
-[#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
-[#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
-[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
-[#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
-[#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
-[#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
-[#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
-[#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
-[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
-[#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
-[#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
-[#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
-[#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
-[#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
-=======
-[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
-[#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
-[#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
-[#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
-[#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
-[#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
-[#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
-[#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
-[#1803]: https://github.com/munich-quantum-toolkit/core/pull/1803
-[#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
-[#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
-[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
-[#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
-[#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
-[#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
-[#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
-[#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
-[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
-[#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
-[#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
-[#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
-[#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
-[#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
->>>>>>> 48e17f82 (🚸 Add const getOps func (#1826))
+[#1831]: https://github.com/munich-quantum-toolkit/core/pull/1831
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
