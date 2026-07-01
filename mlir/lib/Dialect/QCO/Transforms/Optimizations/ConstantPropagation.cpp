@@ -302,8 +302,8 @@ UnitaryOpInterface removeAllCtrlsOfGate(CtrlOp* op, PatternRewriter& rewriter,
       op->getBodyUnitary(), rewriter, qubitsIn, params);
   auto newUnitary = static_cast<UnitaryOpInterface>(newOp);
   for (const auto inTarget : newUnitary.getInputQubits()) {
-    rewriter.replaceAllUsesWith(op->getOutputForInput(inTarget),
-                                newUnitary.getOutputForInput(inTarget));
+    rewriter.replaceAllUsesExcept(
+        inTarget, newUnitary.getOutputForInput(inTarget), newUnitary);
   }
   for (const auto ctrlQubit : op->getOutputControls()) {
     rewriter.replaceAllUsesWith(ctrlQubit, op->getInputForOutput(ctrlQubit));
