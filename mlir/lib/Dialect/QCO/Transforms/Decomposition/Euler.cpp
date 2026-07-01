@@ -91,7 +91,7 @@ namespace mlir::qco::decomposition {
  * @param loc Location of the operation.
  * @param phase Global phase in radians.
  */
-static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
+void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   if (isNearZeroRotationAngle(mod2pi(phase))) {
     return;
   }

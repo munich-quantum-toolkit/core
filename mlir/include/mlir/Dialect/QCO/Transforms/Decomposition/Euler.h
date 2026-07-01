@@ -89,4 +89,14 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
                          const Matrix2x2& composed, std::size_t runSize,
                          bool hasNonBasisGate, EulerBasis basis);
 
+/**
+ * @brief Emits `qco.gphase` when @p phase is outside tolerance (after
+ * `mod2pi`).
+ *
+ * @param builder Builder for the operation.
+ * @param loc Location of the operation.
+ * @param phase Global phase in radians.
+ */
+void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase);
+
 } // namespace mlir::qco::decomposition

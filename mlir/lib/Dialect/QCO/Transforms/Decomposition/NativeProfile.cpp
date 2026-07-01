@@ -147,14 +147,6 @@ decomposeForProfile(const Matrix4x4& target, const NativeProfileSpec& spec) {
   return cachedBasisDecomposer(*entangler).decomposeTarget(target);
 }
 
-static void emitGPhaseIfNonTrivial(OpBuilder& builder, Location loc,
-                                   double phase) {
-  constexpr double epsilon = 1e-12;
-  if (std::abs(phase) > epsilon) {
-    GPhaseOp::create(builder, loc, phase);
-  }
-}
-
 static Value emitSingleQubitMatrix(OpBuilder& builder, Location loc,
                                    Value inQubit, const Matrix2x2& matrix,
                                    EulerBasis basis) {
@@ -255,7 +247,7 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
   }
   const auto basis = spec.eulerBasis();
 
-  emitGPhaseIfNonTrivial(builder, loc, native->globalPhase);
+  emitGPhaseIfNeeded(builder, loc, native->globalPhase);
 
   Value wire0 = qubit0;
   Value wire1 = qubit1;
