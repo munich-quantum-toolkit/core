@@ -227,6 +227,58 @@ static LogicalResult cleanUp(Operation* op) {
   return success();
 }
 
+/**
+ * @brief Checks if a type is a linear type
+ */
+static bool isLinearType(Type t) {
+  return isa<jeff::QubitType, jeff::QuregType>(t);
+}
+
+/**
+ * @brief Moves a region from a jeff operation to a QCO/SCF operation
+ */
+template <typename YieldOpType>
+static LogicalResult
+moveRegion(Region& source, Region& dest, ConversionPatternRewriter& rewriter,
+           const TypeConverter* typeConverter, ValueRange inValues) {
+  auto* oldBlock = &source.back();
+  auto* newBlock = &dest.emplaceBlock();
+  rewriter.setInsertionPointToEnd(newBlock);
+
+  IRMapping mapping;
+  for (auto [oldArg, adapted] : llvm::zip(oldBlock->getArguments(), inValues)) {
+    if (isLinearType(oldArg.getType())) {
+      auto newArg = newBlock->addArgument(
+          typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
+      mapping.map(oldArg, newArg);
+    } else {
+      mapping.map(oldArg, adapted);
+    }
+  }
+
+  for (auto& op : oldBlock->without_terminator()) {
+    rewriter.clone(op, mapping);
+  }
+
+  auto* oldTerminator = oldBlock->getTerminator();
+  SmallVector<Value> yields;
+  for (auto value : oldTerminator->getOperands()) {
+    if (isLinearType(value.getType())) {
+      yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
+    }
+  }
+
+  if constexpr (std::is_same_v<YieldOpType, scf::ConditionOp>) {
+    auto condition =
+        rewriter.getRemappedValue(mapping.lookup(oldTerminator->getOperand(0)));
+    rewriter.replaceOpWithNewOp<YieldOpType>(oldTerminator, condition, yields);
+  } else {
+    rewriter.replaceOpWithNewOp<YieldOpType>(oldTerminator, yields);
+  }
+
+  return success();
+}
+
 namespace {
 
 /**
@@ -861,10 +913,6 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
           op, "qco.if requires exactly two branches");
     }
 
-    auto isLinearType = [](Type t) {
-      return isa<jeff::QubitType, jeff::QuregType>(t);
-    };
-
     auto inValues = adaptor.getInValues();
 
     SmallVector<Value> qubits;
@@ -877,43 +925,12 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
     auto qcoIf =
         IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(), qubits);
 
-    auto moveRegion = [&](Region& source, Region& dest) -> LogicalResult {
-      auto* oldBlock = &source.back();
-      auto* newBlock = &dest.emplaceBlock();
-      rewriter.setInsertionPointToEnd(newBlock);
-
-      IRMapping mapping;
-      for (auto [oldArg, adapted] :
-           llvm::zip(oldBlock->getArguments(), inValues)) {
-        if (isLinearType(oldArg.getType())) {
-          auto newArg = newBlock->addArgument(
-              typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
-          mapping.map(oldArg, newArg);
-        } else {
-          mapping.map(oldArg, adapted);
-        }
-      }
-
-      for (auto& op : oldBlock->without_terminator()) {
-        rewriter.clone(op, mapping);
-      }
-
-      auto* oldTerminator = oldBlock->getTerminator();
-      SmallVector<Value> yields;
-      for (auto value : oldTerminator->getOperands()) {
-        if (isLinearType(value.getType())) {
-          yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
-        }
-      }
-      rewriter.replaceOpWithNewOp<YieldOp>(oldTerminator, yields);
-
-      return success();
-    };
-
-    if (failed(moveRegion(op.getBranches()[0], qcoIf.getElseRegion()))) {
+    if (failed(moveRegion<YieldOp>(op.getBranches()[0], qcoIf.getElseRegion(),
+                                   rewriter, typeConverter, inValues))) {
       return failure();
     }
-    if (failed(moveRegion(op.getBranches()[1], qcoIf.getThenRegion()))) {
+    if (failed(moveRegion<YieldOp>(op.getBranches()[1], qcoIf.getThenRegion(),
+                                   rewriter, typeConverter, inValues))) {
       return failure();
     }
 
@@ -993,6 +1010,55 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
     rewriter.mergeBlocks(jeffBody, scfBody, args);
 
     rewriter.replaceOp(op, scfFor.getResults());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.while to scf.while
+ *
+ * @par Example:
+ * TODO
+ */
+struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::WhileOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto inValues = adaptor.getInValues();
+
+    SmallVector<Value> qubits;
+    SmallVector<Type> outTypes;
+    for (auto [value, adapted] : llvm::zip(op.getInValues(), inValues)) {
+      if (isLinearType(value.getType())) {
+        qubits.push_back(adapted);
+        outTypes.push_back(adapted.getType());
+      }
+    }
+
+    auto scfWhile =
+        scf::WhileOp::create(rewriter, op.getLoc(), outTypes, qubits);
+
+    if (failed(moveRegion<scf::ConditionOp>(op.getBefore(),
+                                            scfWhile.getBefore(), rewriter,
+                                            typeConverter, inValues))) {
+      return failure();
+    }
+    if (failed(moveRegion<scf::YieldOp>(op.getAfter(), scfWhile.getAfter(),
+                                        rewriter, typeConverter, inValues))) {
+      return failure();
+    }
+
+    SmallVector<Value> results;
+    size_t index = 0;
+    for (auto [value, adapted] : llvm::zip(op.getResults(), inValues)) {
+      results.push_back(isLinearType(value.getType())
+                            ? scfWhile.getResults()[index++]
+                            : adapted);
+    }
+    rewriter.replaceOp(op, results);
+
     return success();
   }
 };
@@ -1142,7 +1208,8 @@ protected:
         ConvertJeffOneTargetOneParameterToQCO<jeff::R1Op, POp>,
         ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO, ConvertJeffCustomOpToQCO,
         ConvertJeffPPROpToQCO, ConvertJeffSwitchOpToQCO, ConvertJeffForOpToQCO,
-        ConvertJeffYieldOpToQCO, ConvertJeffMainToQCO>(typeConverter, context);
+        ConvertJeffWhileOpToQCO, ConvertJeffYieldOpToQCO, ConvertJeffMainToQCO>(
+        typeConverter, context);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {

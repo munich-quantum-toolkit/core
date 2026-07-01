@@ -74,6 +74,59 @@ protected:
 
 } // namespace
 
+void forLoopWithAngle(qco::QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  auto theta = b.floatConstant(0.123);
+  b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
+    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+    auto q1 = b.rx(theta, q0);
+    auto insert = b.qtensorInsert(q1, t0, iv);
+    return SmallVector{insert};
+  });
+};
+
+void nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  auto q0 = b.allocQubit();
+  auto theta1 = b.floatConstant(0.123);
+  auto theta2 = b.floatConstant(0.456);
+  auto q1 = b.h(q0);
+  auto [q2, cond] = b.measure(q1);
+  b.qcoIf(
+      cond, {reg.value, q2},
+      [&](ValueRange args) {
+        auto q3 = b.rx(theta1, args[1]);
+        return SmallVector{args[0], q3};
+      },
+      [&](ValueRange args) {
+        auto scfFor =
+            b.scfFor(0, 3, 1, args[0], [&](Value iv, ValueRange iterArgs) {
+              auto [t0, q4] = b.qtensorExtract(iterArgs[0], iv);
+              auto q5 = b.rx(theta2, q4);
+              auto insert = b.qtensorInsert(q5, t0, iv);
+              return SmallVector{insert};
+            });
+        return SmallVector{scfFor[0], args[1]};
+      });
+}
+
+void whileWithAngle(qco::QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto theta = b.floatConstant(0.123);
+  auto q1 = b.h(q0);
+  b.scfWhile(
+      ValueRange{q1},
+      [&](ValueRange iterArgs) {
+        auto [q2, measureResult] = b.measure(iterArgs[0]);
+        b.scfCondition(measureResult, q2);
+        return SmallVector{q2};
+      },
+      [&](ValueRange iterArgs) {
+        auto q3 = b.rx(theta, iterArgs[0]);
+        return SmallVector{q3};
+      });
+}
+
 static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToJeff());
@@ -654,10 +707,9 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"NestedIfOpForLoop",
                               MQT_NAMED_BUILDER(qco::nestedIfOpForLoop),
                               MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)},
-        JeffRoundTripTestCase{
-            "NestedIfOpForLoopWithAngle",
-            MQT_NAMED_BUILDER(qco::nestedIfOpForLoopWithAngle),
-            MQT_NAMED_BUILDER(qco::nestedIfOpForLoopWithAngle)}));
+        JeffRoundTripTestCase{"NestedIfOpForLoopWithAngle",
+                              MQT_NAMED_BUILDER(nestedIfOpForLoopWithAngle),
+                              MQT_NAMED_BUILDER(nestedIfOpForLoopWithAngle)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/ForOp.cpp
@@ -669,11 +721,14 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::simpleForLoop),
                               MQT_NAMED_BUILDER(qco::simpleForLoop)},
         JeffRoundTripTestCase{"ForLoopWithAngle",
-                              MQT_NAMED_BUILDER(qco::forLoopWithAngle),
-                              MQT_NAMED_BUILDER(qco::forLoopWithAngle)},
+                              MQT_NAMED_BUILDER(forLoopWithAngle),
+                              MQT_NAMED_BUILDER(forLoopWithAngle)},
         JeffRoundTripTestCase{"NestedForLoopIfOp",
                               MQT_NAMED_BUILDER(qco::nestedForLoopIfOp),
                               MQT_NAMED_BUILDER(qco::nestedForLoopIfOp)},
+        JeffRoundTripTestCase{"NestedForLoopWhileOp",
+                              MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
+                              MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp)},
         JeffRoundTripTestCase{
             "nestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),
@@ -682,4 +737,20 @@ INSTANTIATE_TEST_SUITE_P(
             "nestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/WhileOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    SCFWhileOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"SimpleWhile",
+                              MQT_NAMED_BUILDER(qco::simpleWhileReset),
+                              MQT_NAMED_BUILDER(qco::simpleWhileReset)},
+        JeffRoundTripTestCase{"SimpleDoWhile",
+                              MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
+                              MQT_NAMED_BUILDER(qco::simpleDoWhileReset)},
+        JeffRoundTripTestCase{"WhileWithAngle",
+                              MQT_NAMED_BUILDER(whileWithAngle),
+                              MQT_NAMED_BUILDER(whileWithAngle)}));
 /// @}

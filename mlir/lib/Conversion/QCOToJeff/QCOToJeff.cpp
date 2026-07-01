@@ -343,7 +343,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
 }
 
 /**
- * @brief Move a region from QCO/SCF operation to a jeff operation
+ * @brief Moves a region from a QCO/SCF operation to a jeff operation
  */
 static LogicalResult moveRegion(Region& source, Region& dest,
                                 ConversionPatternRewriter& rewriter,
@@ -1190,6 +1190,57 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
 };
 
 /**
+ * @brief Converts scf.while to jeff.while
+ *
+ * @par Example:
+ * TODO
+ */
+struct ConvertSCFWhileOpToJeff final
+    : StatefulOpConversionPattern<scf::WhileOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    SetVector<Value> aboveValues;
+    getUsedValuesDefinedAbove(op.getBefore(), aboveValues);
+    getUsedValuesDefinedAbove(op.getAfter(), aboveValues);
+
+    SmallVector<Value> inits;
+    llvm::append_range(inits, adaptor.getInits());
+
+    SmallVector<Type> outTypes;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
+      return failure();
+    }
+
+    for (auto value : aboveValues) {
+      auto remappedValue = rewriter.getRemappedValue(value);
+      inits.push_back(remappedValue);
+      outTypes.push_back(remappedValue.getType());
+    }
+
+    auto jeffWhile =
+        jeff::WhileOp::create(rewriter, op.getLoc(), outTypes, inits);
+
+    if (failed(moveRegion(op.getBefore(), jeffWhile.getBefore(), rewriter,
+                          getTypeConverter(), aboveValues))) {
+      return failure();
+    }
+    if (failed(moveRegion(op.getAfter(), jeffWhile.getAfter(), rewriter,
+                          getTypeConverter(), aboveValues))) {
+      return failure();
+    }
+
+    rewriter.replaceOp(op,
+                       jeffWhile.getResults().take_front(op.getNumResults()));
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts the QCO-style main function to a jeff-style main function
  *
  * @par Example:
@@ -1467,11 +1518,11 @@ protected:
     addQCOToJeffGatePattern<JK::Custom, 2, 2, XXMinusYYOp, void, false>(
         patterns, typeConverter, context, state, "xx_minus_yy");
 
-    patterns
-        .add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
-             ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
-             ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff, ConvertQCOMainToJeff>(
-            typeConverter, context, &state);
+    patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
+                 ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
+                 ConvertQCOIfOpToJeff, ConvertSCFForOpToJeff,
+                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff>(
+        typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
