@@ -20,7 +20,6 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/Support/Casting.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -449,10 +448,6 @@ static bool extractSingleQubitMatrix(UnitaryOpInterface op, Matrix2x2& out) {
   return true;
 }
 
-static bool extractTwoQubitMatrix(UnitaryOpInterface op, Matrix4x4& out) {
-  return op.getUnitaryMatrix4x4(out);
-}
-
 static std::optional<Matrix4x4>
 computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
   Matrix4x4 unitary = Matrix4x4::identity();
@@ -538,11 +533,12 @@ static func::FuncOp synthesize2QIntoFunc(MLIRContext* ctx,
   builder.setInsertionPointToStart(entry);
   Value out0;
   Value out1;
-  if (failed(synthesizeUnitary2QWeyl(builder, loc, entry->getArgument(0),
-                                     entry->getArgument(1), target, spec, out0,
-                                     out1))) {
-    llvm::report_fatal_error(
-        "synthesizeUnitary2QWeyl failed during test synthesis");
+  const auto synthResult =
+      synthesizeUnitary2QWeyl(builder, loc, entry->getArgument(0),
+                              entry->getArgument(1), target, spec, out0, out1);
+  if (failed(synthResult)) {
+    ADD_FAILURE() << "synthesizeUnitary2QWeyl failed during test synthesis";
+    return func;
   }
   func::ReturnOp::create(builder, loc, ValueRange{out0, out1});
   return func;
@@ -630,13 +626,14 @@ TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
   EXPECT_EQ(*czCount, 0U);
 }
 
-TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
+TEST(WeylSynthesisTest, RejectsMenuWithoutEntangler) {
+  EXPECT_FALSE(parseNativeSpec("u").has_value());
+}
+
+TEST(WeylSynthesisTest, SynthesisFailsWithoutEntangler) {
   MlirTestContext fx;
   fx.setUp();
-  const auto spec = parseNativeSpec("u");
-  ASSERT_TRUE(spec);
-  EXPECT_FALSE(spec->gates.contains(NativeGateKind::CX));
-  EXPECT_FALSE(spec->gates.contains(NativeGateKind::CZ));
+  const NativeProfileSpec spec{.gates = {NativeGateKind::U}};
   OpBuilder builder(fx.ctx());
   const auto qubitTy = QubitType::get(fx.ctx());
   const auto funcTy =
@@ -649,7 +646,7 @@ TEST(WeylSynthesisTest, FailsWithoutEntanglerInSpec) {
   Value out1;
   EXPECT_TRUE(failed(synthesizeUnitary2QWeyl(
       builder, func.getLoc(), entry->getArgument(0), entry->getArgument(1),
-      TWO_QUBIT_CONTROLLED_X01, *spec, out0, out1)));
+      TWO_QUBIT_CONTROLLED_X01, spec, out0, out1)));
 }
 
 TEST(NativeSpecTest, ParsesAndRejectsMenus) {
@@ -659,6 +656,7 @@ TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::X));
   EXPECT_FALSE(ibm->gates.contains(NativeGateKind::RZZ));
   EXPECT_FALSE(parseNativeSpec("x,sx,rz,not-a-gate").has_value());
+  EXPECT_FALSE(parseNativeSpec("u").has_value());
 
   const auto pMenu = parseNativeSpec("x,sx,p,cx");
   const auto rzMenu = parseNativeSpec("x,sx,rz,cx");

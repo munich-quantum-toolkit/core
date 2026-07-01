@@ -134,12 +134,13 @@ template <typename RotationOp>
 }
 
 template <typename Fn> static void forEachBasis(Fn fn) {
-  const std::array<const char*, 6> bases = {"zyz", "zxz", "xzx",
-                                            "xyx", "u",   "zsxx"};
+  const std::array<const char*, 7> bases = {"zyz", "zxz",  "xzx", "xyx",
+                                            "u",   "zsxx", "r"};
   for (const char* basis : bases) {
     fn(StringRef{basis});
   }
 }
+
 [[nodiscard]] static WalkResult failMissingUnitaryMatrix(Operation* op,
                                                          bool& failed) {
   ADD_FAILURE() << "Expected constant unitary matrix for op: "

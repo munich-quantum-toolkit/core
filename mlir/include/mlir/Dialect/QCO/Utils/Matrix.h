@@ -14,7 +14,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <array>
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>

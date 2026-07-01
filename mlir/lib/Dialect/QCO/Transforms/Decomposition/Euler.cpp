@@ -84,13 +84,6 @@ namespace mlir::qco::decomposition {
   return std::abs(angle) <= utils::TOLERANCE;
 }
 
-/**
- * @brief Emits `qco.gphase` when `phase` is outside tolerance.
- *
- * @param builder Builder for the operation.
- * @param loc Location of the operation.
- * @param phase Global phase in radians.
- */
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   if (isNearZeroRotationAngle(mod2pi(phase))) {
     return;
