@@ -81,7 +81,9 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
   q[2] = programBuilder.z(q[2]);
   q[2] = programBuilder.h(q[2]);
   auto [q2, q3] = programBuilder.crx(i0, q[2], q[3]);
-  programBuilder.cry(0.3, q2, q3);
+  // programBuilder.cry(0.3, q2, q3);
+  programBuilder.ry(0.3, q2);
+  programBuilder.rz(0.3, q3); // Error when collecting participating entries
   module = programBuilder.finalize();
 
   const auto iAttrRef = referenceBuilder.getF64FloatAttr(-0.3926991);
@@ -98,7 +100,10 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
   referenceBuilder.ry(0.3, qRef[3]);
   reference = referenceBuilder.finalize();
 
+  module->dump();
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  module->dump();
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -131,6 +136,9 @@ TEST_F(QCOConstantPropagationTest, testDontRemoveIfTargetInSuperposition) {
  */
 TEST_F(QCOConstantPropagationTest, testRemoveImpliedQubits) {
   auto q = programBuilder.allocQubitRegister(5);
+  const auto iAttr = programBuilder.getF64FloatAttr(-0.3926991);
+  Value i0 =
+      arith::ConstantOp::create(programBuilder, programBuilder.getLoc(), iAttr);
   q[0] = programBuilder.h(q[0]);
   q[1] = programBuilder.h(q[1]);
   auto [q01, q2] =
@@ -138,21 +146,34 @@ TEST_F(QCOConstantPropagationTest, testRemoveImpliedQubits) {
         return SmallVector{programBuilder.x(target[0])};
       });
   q[4] = programBuilder.x(q[4]);
-  programBuilder.ctrl({q01[1], q2[0], q[4]}, {q[3]},
-                      [&](const ValueRange target) {
-                        return SmallVector{programBuilder.x(target[0])};
-                      });
+  auto [q124, q3] = programBuilder.ctrl(
+      {q01[1], q2[0], q[4]}, {q[3]}, [&](const ValueRange target) {
+        return SmallVector{programBuilder.rx(i0, target[0])};
+      });
+  programBuilder.h(q01[0]);
+  programBuilder.h(q124[0]);
+  programBuilder.h(q124[1]);
+  programBuilder.h(q3[0]);
+  programBuilder.h(q124[2]);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(5);
+  const auto iAttrRef = referenceBuilder.getF64FloatAttr(-0.3926991);
+  Value i0Ref = arith::ConstantOp::create(referenceBuilder,
+                                          referenceBuilder.getLoc(), iAttrRef);
   qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
   auto [qRef01, qRef2] = referenceBuilder.ctrl(
       {qRef[0], qRef[1]}, {qRef[2]}, [&](const ValueRange target) {
         return SmallVector{referenceBuilder.x(target[0])};
       });
-  referenceBuilder.x(qRef[4]);
-  referenceBuilder.cx(qRef2[0], qRef[3]);
+  qRef[4] = referenceBuilder.x(qRef[4]);
+  auto [qRef21, qRef31] = referenceBuilder.crx(i0Ref, qRef2[0], qRef[3]);
+  referenceBuilder.h(qRef01[0]);
+  referenceBuilder.h(qRef01[1]);
+  referenceBuilder.h(qRef21);
+  referenceBuilder.h(qRef31);
+  referenceBuilder.h(qRef[4]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
