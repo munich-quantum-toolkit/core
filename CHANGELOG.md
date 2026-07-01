@@ -12,7 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
-  ([#1831]) ([**@ystade])
+  ([#1826]) ([**@ystade])
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to configure builds ([#1660]) ([**@denialhaag**])
 
 ### Changed
@@ -389,7 +389,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
-[#1831]: https://github.com/munich-quantum-toolkit/core/pull/1831
+[#1826]: https://github.com/munich-quantum-toolkit/core/pull/1831
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
