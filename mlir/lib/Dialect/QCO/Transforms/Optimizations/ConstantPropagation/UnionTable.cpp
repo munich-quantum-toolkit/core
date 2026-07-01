@@ -66,6 +66,31 @@ std::string UnionTable::toString() const {
   return result;
 }
 
+void UnionTable::replaceValuesGlobally(const std::span<Value> replacedValues,
+                                       const std::span<Value> newValues) {
+  if (replacedValues.size() != newValues.size()) {
+    throw std::domain_error(
+        "replacedValues and newValues do not have the same size.");
+  }
+
+  for (unsigned int i = 0; i < replacedValues.size(); ++i) {
+    const auto rV = replacedValues[i];
+    const auto nV = newValues[i];
+    qubitsToGlobalIndices[nV] = qubitsToGlobalIndices.at(rV);
+    qubitsToGlobalIndices.erase(rV);
+    const auto ute = valuesToEntries.at(rV);
+    valuesToEntries.erase(rV);
+    valuesToEntries[nV] = ute;
+    if (ute->participatingQubits.contains(rV)) {
+      ute->participatingQubits.insert(nV);
+      ute->participatingQubits.erase(rV);
+    } else {
+      ute->participatingClassicalValues.insert(nV);
+      ute->participatingClassicalValues.erase(rV);
+    }
+  }
+}
+
 bool UnionTable::areStatesAllTop() {
   if (allTop) {
     return true;

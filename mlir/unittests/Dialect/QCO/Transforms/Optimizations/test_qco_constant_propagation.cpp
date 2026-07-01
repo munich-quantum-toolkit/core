@@ -490,6 +490,7 @@ TEST_F(QCOConstantPropagationTest, testPropagatingThroughClassicalBranching) {
         const auto qubit = referenceBuilder.x(args[0]);
         return SmallVector{qubit, args[1]};
       });
+  referenceBuilder.gphase(std::numbers::pi);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());

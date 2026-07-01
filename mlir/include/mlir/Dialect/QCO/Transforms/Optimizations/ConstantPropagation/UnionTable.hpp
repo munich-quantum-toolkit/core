@@ -81,37 +81,6 @@ class UnionTable {
   std::set<std::shared_ptr<UnionTableEntry>> entries;
   llvm::DenseMap<Value, unsigned int> qubitsToGlobalIndices;
 
-  /** @brief: Replaces values globally by new values
-   *
-   * @param replacedValues Values to be replaced
-   * @param newValues Values the first values are replaced with.
-   * @throws runtime_error if the size of the two parameters is not equal.
-   */
-  void replaceValuesGlobally(const std::span<Value> replacedValues,
-                             const std::span<Value> newValues) {
-    if (replacedValues.size() != newValues.size()) {
-      throw std::domain_error(
-          "replacedValues and newValues do not have the same size.");
-    }
-
-    for (unsigned int i = 0; i < replacedValues.size(); ++i) {
-      const auto rV = replacedValues[i];
-      const auto nV = newValues[i];
-      qubitsToGlobalIndices[nV] = qubitsToGlobalIndices.at(rV);
-      qubitsToGlobalIndices.erase(rV);
-      const auto ute = valuesToEntries.at(rV);
-      valuesToEntries.erase(rV);
-      valuesToEntries[nV] = ute;
-      if (ute->participatingQubits.contains(rV)) {
-        ute->participatingQubits.insert(nV);
-        ute->participatingQubits.erase(rV);
-      } else {
-        ute->participatingClassicalValues.insert(nV);
-        ute->participatingClassicalValues.erase(rV);
-      }
-    }
-  }
-
   /** @brief: Collects a set of all participating entries.
    *
    * @param targets An array of the Values of the target qubits.
@@ -312,6 +281,15 @@ public:
   [[nodiscard("UnionTable::toString called but ignored")]]
   std::string toString() const;
 
+  /** @brief: Replaces values globally by new values
+   *
+   * @param replacedValues Values to be replaced
+   * @param newValues Values the first values are replaced with.
+   * @throws runtime_error if the size of the two parameters is not equal.
+   */
+  void replaceValuesGlobally(std::span<Value> replacedValues,
+                             std::span<Value> newValues);
+
   [[nodiscard("UnionTable::allTop called but ignored")]]
   bool areStatesAllTop();
 
@@ -378,6 +356,15 @@ public:
   void propagateReset(Value quantumTarget, Value newQuantumValue,
                       std::span<Value> posCtrlsClassical = {},
                       std::span<Value> negCtrlsClassical = {});
+
+  /**
+   * This method replaces all instances of a value in the union table by
+   * another.
+   *
+   * @param from The Value that is being replaced.
+   * @param to The Value the replaced Value becomes.
+   */
+  void replaceValues(Value from, Value to);
 
   /**
    * @brief This method propagates a qubit alloc.
