@@ -32,6 +32,7 @@ enum class EulerBasis : std::uint8_t {
   XYX = 3,  ///< `RX(phi) * RY(theta) * RX(lambda)`.
   U = 4,    ///< `U(theta, phi, lambda)`.
   ZSXX = 5, ///< `RZ` / `SX` / `X` synthesis via ZYZ decomposition.
+  R = 6,    ///< `R(.,0) * R(.,pi/2) * R(.,0)` (XYX with `Rx`/`Ry` as `R`).
 };
 
 /**
