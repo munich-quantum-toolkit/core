@@ -81,9 +81,7 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
   q[2] = programBuilder.z(q[2]);
   q[2] = programBuilder.h(q[2]);
   auto [q2, q3] = programBuilder.crx(i0, q[2], q[3]);
-  // programBuilder.cry(0.3, q2, q3);
-  programBuilder.ry(0.3, q2);
-  programBuilder.rz(0.3, q3); // Error when collecting participating entries
+  programBuilder.cry(0.3, q2, q3);
   module = programBuilder.finalize();
 
   const auto iAttrRef = referenceBuilder.getF64FloatAttr(-0.3926991);
@@ -100,10 +98,7 @@ TEST_F(QCOConstantPropagationTest, reducePosCtrls) {
   referenceBuilder.ry(0.3, qRef[3]);
   reference = referenceBuilder.finalize();
 
-  module->dump();
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
-
-  module->dump();
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
@@ -540,8 +535,8 @@ TEST_F(QCOConstantPropagationTest, testRemoveMultiQubitPhaseGateMinusOne) {
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
-  qRef[0] = referenceBuilder.x(qRef[0]);
-  referenceBuilder.cx(qRef[0], qRef[1]);
+  referenceBuilder.x(qRef[0]);
+  referenceBuilder.x(qRef[1]);
   referenceBuilder.gphase(std::numbers::pi);
   reference = referenceBuilder.finalize();
 
@@ -559,15 +554,13 @@ TEST_F(QCOConstantPropagationTest, testDoNotRemoveMultiQubitPhaseGate) {
   auto q = programBuilder.allocQubitRegister(2);
   q[0] = programBuilder.h(q[0]);
   auto [q0, q1] = programBuilder.cx(q[0], q[1]);
-  auto [q01, b0] = programBuilder.measure(q0);
-  programBuilder.cz(q01, q1);
+  programBuilder.cz(q0, q1);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
   qRef[0] = referenceBuilder.h(qRef[0]);
   auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
-  auto [qRef01, bRef0] = referenceBuilder.measure(qRef0);
-  referenceBuilder.cz(qRef01, qRef1);
+  referenceBuilder.cz(qRef0, qRef1);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
