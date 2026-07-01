@@ -116,7 +116,7 @@ static Value scaleByExponent(Value param, PowOp op, PatternRewriter& rewriter) {
 
 namespace {
 
-/// pow(1.0) { g }  =>  g
+/// pow(1.0) { U }  =>  U
 struct InlinePow1 final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
@@ -133,7 +133,7 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
   }
 };
 
-/// pow(0.0) { g }  =>  identity (no-op)
+/// pow(0.0) { U }  =>  identity (no-op)
 struct ErasePow0 final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
@@ -146,7 +146,7 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
   }
 };
 
-/// pow(p) where p < 0  =>  pow(-p) { inv(q) { g } }
+/// pow(p) with p < 0  =>  pow(-p) { inv(q) { U } }
 struct NegPowToInvPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
@@ -177,7 +177,7 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
   }
 };
 
-/// pow(a) { pow(b) { g } }  =>  pow(a*b) { g }
+/// pow(a) { pow(b) { U } }  =>  pow(a*b) { U }
 struct MergeNestedPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
@@ -210,7 +210,7 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
   }
 };
 
-/// pow(p) { ctrl(c, t) { g } }  =>  ctrl(c, t) { pow(p) { g } }
+/// pow(p) { ctrl(q) { U } }  =>  ctrl(q) { pow(p) { U } }
 struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
