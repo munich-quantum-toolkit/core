@@ -35,11 +35,11 @@ namespace {
 
 using mlir::qco::Matrix4x4;
 
-constexpr Matrix4x4 kCanonicalControlledX =
+constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
     Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
                             0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
 
-constexpr Matrix4x4 kCanonicalControlledZ =
+constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
     Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
                             1.0, 0.0, 0.0, 0.0, 0.0, -1.0);
 
@@ -133,12 +133,12 @@ cachedBasisDecomposer(NativeGateKind entangler) {
   switch (entangler) {
   case NativeGateKind::CX: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(kCanonicalControlledX, 1.0);
+        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_X, 1.0);
     return DECOMPOSER;
   }
   case NativeGateKind::CZ: {
     static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(kCanonicalControlledZ, 1.0);
+        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_Z, 1.0);
     return DECOMPOSER;
   }
   default:

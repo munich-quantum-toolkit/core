@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "TestCaseUtils.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -47,7 +46,6 @@
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-using namespace mqt::test;
 
 using QubitId = std::size_t;
 
