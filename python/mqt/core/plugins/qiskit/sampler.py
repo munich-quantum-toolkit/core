@@ -65,7 +65,7 @@ class QDMISampler(BaseSamplerV2):
 
     @property
     def backend(self) -> QDMIBackend:
-        """Return the backend used by this sampler."""
+        """The backend used by the sampler."""
         return self._backend
 
     def run(
@@ -175,9 +175,9 @@ class QDMISampler(BaseSamplerV2):
         start_index = 0
         for creg in cregs:
             # Prepare list of counts for this specific register
-            creg_counts = []
+            creg_counts: list[dict[str | int, int]] = []
             for count_dict in counts:
-                new_dict = {}
+                new_dict: dict[str | int, int] = {}
                 for key, val in count_dict.items():
                     clean_key = key.replace(" ", "")
 
