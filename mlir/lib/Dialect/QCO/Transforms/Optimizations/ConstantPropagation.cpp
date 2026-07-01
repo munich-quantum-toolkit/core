@@ -76,6 +76,11 @@ struct controlsToModify {
   llvm::DenseSet<Value> classicalNegCtrlsToAdd;
 };
 
+LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
+                                     std::span<Operation*>& worklist,
+                                     const std::span<Value> posClassicalCtrls,
+                                     const std::span<Value> negClassicalCtrls);
+
 /**
  * This method checks whether the func::FuncOp is an entry point to the program.
  *
@@ -365,6 +370,107 @@ CtrlOp removeCtrlsOfGate(CtrlOp* op, const llvm::DenseSet<Value>& ctrlsToRemove,
 }
 
 /**
+ * Handles classical branching. Iterates through the body of the branching in a
+ * new loop and removes the body from the current iteration.
+ *
+ * @param ut Union table which contains the current quantum state
+ * @param op The qco::UnitaryOpInterface which is propagated.
+ * @param posClassicalCtrls The positive classical controls considered in the
+ * operation.
+ * @param negClassicalCtrls The negative classical controls considered in the
+ * operation.
+ * @param rewriter The used rewriter
+ * @param worklist The worklist which contains the operations that are iterated
+ * through.
+ * @return Whether the handling was successfully or interrupted.
+ */
+WalkResult handleIfOp(UnionTable* ut, IfOp* op,
+                      const std::span<Value> posClassicalCtrls,
+                      const std::span<Value> negClassicalCtrls,
+                      PatternRewriter& rewriter,
+                      std::span<Operation*>& worklist) {
+  const Value condition = op->getCondition();
+  // TODO: Always/Never executed
+
+  const auto& thenBlock = op->thenBlock();
+  const auto& elseBlock = op->elseBlock();
+  const bool thenEmpty = thenBlock->getOperations().size() <= 1;
+  const bool elseEmpty = elseBlock->getOperations().size() <= 1;
+
+  const auto targetQubits = op->getQubits();
+  std::vector<Value> targets = {targetQubits.begin(), targetQubits.end()};
+  std::vector<Value> args;
+
+  // propagate through then and else block
+  if (!thenEmpty) {
+    for (const Value arg : thenBlock->getArguments()) {
+      args.push_back(arg);
+    }
+    ut->replaceValuesGlobally(targets, args);
+    targets = args;
+    std::vector<Operation*> newWorklist;
+
+    op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      newWorklist.push_back(innerOp);
+      // Propagating values in order to assign the right values to the right
+      // result values
+      const auto input = innerOp->getOperands();
+      const auto output = innerOp->getResults();
+      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+        std::ranges::replace(targets, input[i], output[i]);
+      }
+      std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
+    });
+    std::span wl = {newWorklist.begin(), newWorklist.end()};
+    std::vector<Value> newPosClassicalCtrls = {posClassicalCtrls.begin(),
+                                               posClassicalCtrls.end()};
+    newPosClassicalCtrls.push_back(condition);
+    const auto resThen = iterateThroughWorklist(
+        rewriter, ut, wl, newPosClassicalCtrls, negClassicalCtrls);
+
+    if (resThen.failed()) {
+      return WalkResult::interrupt();
+    }
+    args.clear();
+  }
+  if (!elseEmpty) {
+    for (const Value arg : elseBlock->getArguments()) {
+      args.push_back(arg);
+    }
+    ut->replaceValuesGlobally(targets, args);
+    targets = args;
+    std::vector<Operation*> newWorklist;
+
+    op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      newWorklist.push_back(innerOp);
+      // Propagating values in order to assign the right values to the right
+      // result values
+      const auto input = innerOp->getOperands();
+      const auto output = innerOp->getResults();
+      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+        std::ranges::replace(targets, input[i], output[i]);
+      }
+      std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
+    });
+    std::span wl = {newWorklist.begin(), newWorklist.end()};
+    std::vector<Value> newNegClassicalCtrls = {negClassicalCtrls.begin(),
+                                               negClassicalCtrls.end()};
+    newNegClassicalCtrls.push_back(condition);
+    const auto resElse = iterateThroughWorklist(
+        rewriter, ut, wl, posClassicalCtrls, newNegClassicalCtrls);
+
+    if (resElse.failed()) {
+      return WalkResult::interrupt();
+    }
+  }
+  const auto resultQubits = op->getResults();
+  std::vector<Value> results = {resultQubits.begin(), resultQubits.end()};
+  ut->replaceValuesGlobally(targets, results);
+
+  return WalkResult::advance();
+}
+
+/**
  * Handles a unitary gate, meaning it is propagated through the union table.
  *
  * @param ut Union table which contains the current quantum state
@@ -644,13 +750,13 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
             .Case<SinkOp>([&]([[maybe_unused]] SinkOp op) {
               return WalkResult::advance();
             })
-            //         .Case<IfOp>([&](const IfOp op) {
-            //           return handleIf(qcp, op, worklist, posClassicalCtrls,
-            //                           negClassicalCtrls, rewriter);
-            //         })
-            //         .Case<YieldOp>([&]([[maybe_unused]] YieldOp op) {
-            //           return WalkResult::advance();
-            //         })
+            .Case<IfOp>([&](IfOp op) {
+              return handleIfOp(ut, &op, posClassicalCtrls, negClassicalCtrls,
+                                rewriter, worklist);
+            })
+            .Case<YieldOp>([&]([[maybe_unused]] YieldOp op) {
+              return WalkResult::advance();
+            })
             //         /// built-in Dialect
             //         .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
             //           return WalkResult::advance();
