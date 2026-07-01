@@ -108,20 +108,22 @@ void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<ReplaceRWithRX, ReplaceRWithRY, MergeSubsequentR>(context);
 }
 
+Matrix2x2 ROp::unitaryMatrix(const double theta, const double phi) {
+  using namespace std::complex_literals;
+  const auto halfTheta = theta / 2;
+  const auto c = std::cos(halfTheta);
+  const auto s = std::sin(halfTheta);
+  const auto m01 = s * std::exp(1i * (-phi - (std::numbers::pi / 2)));
+  const auto m10 = s * std::exp(1i * (phi - (std::numbers::pi / 2)));
+  return Matrix2x2::fromElements(c, m01,  // row 0
+                                 m10, c); // row 1
+}
+
 std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
   const auto theta = valueToDouble(getTheta());
   const auto phi = valueToDouble(getPhi());
   if (!theta || !phi) {
     return std::nullopt;
   }
-
-  using namespace std::complex_literals;
-  const auto halfTheta = *theta / 2;
-  const auto c = std::cos(halfTheta);
-  const auto s = std::sin(halfTheta);
-
-  const auto m01 = s * std::exp(1i * (-*phi - (std::numbers::pi / 2)));
-  const auto m10 = s * std::exp(1i * (*phi - (std::numbers::pi / 2)));
-  return Matrix2x2::fromElements(c, m01,  // row 0
-                                 m10, c); // row 1
+  return unitaryMatrix(*theta, *phi);
 }
