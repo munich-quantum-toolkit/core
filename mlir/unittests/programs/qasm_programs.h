@@ -370,5 +370,24 @@ extern const std::string ifEmptyThen;
 /// Creates a circuit with an if operation with an else branch.
 extern const std::string ifElse;
 
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+extern const std::string nestedForLoopIfOp;
+
+/// Creates a circuit with a while operation using a while loop.
+extern const std::string simpleWhileReset;
+
+/// Creates a circuit with a simple for operation with a register.
+extern const std::string simpleForLoop;
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is separately allocated from the
+/// register.
+extern const std::string nestedForLoopCtrlOpWithSeparateQubit;
+
+/// Creates a circuit with a for operation with a register and a qubit and a
+/// nested ctrl operation where the qubit is extracted from the register.
+extern const std::string nestedForLoopCtrlOpWithExtractedQubit;
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

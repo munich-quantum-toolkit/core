@@ -765,5 +765,57 @@ if (c) {
 }
 )qasm";
 
+const std::string nestedForLoopIfOp = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+qubit qCond;
+for uint i in [0:1] {
+  h qCond;
+  if (measure qCond) {
+    h q[i];
+  }
+}
+)qasm";
+
+const std::string simpleWhileReset = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+while (measure q) {
+  h q;
+}
+)qasm";
+
+const std::string simpleForLoop = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:1] {
+  h q[i];
+}
+)qasm";
+
+const std::string nestedForLoopCtrlOpWithSeparateQubit =
+    R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+qubit control;
+h control;
+for uint i in [0:2] {
+  h q[i];
+  cx control, q[i];
+}
+)qasm";
+
+const std::string nestedForLoopCtrlOpWithExtractedQubit =
+    R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[4] q;
+h q[0];
+for uint i in [1:3] {
+  h q[i];
+  cx q[0], q[i];
+}
+)qasm";
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

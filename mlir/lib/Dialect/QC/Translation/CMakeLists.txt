@@ -10,6 +10,7 @@ add_mlir_library(
   MLIRQCTranslation
   TranslateQuantumComputationToQC.cpp
   TranslateQASM3ToQC.cpp
+  QASM3Parser.cpp
   LINK_LIBS
   MLIRArithDialect
   MLIRFuncDialect
