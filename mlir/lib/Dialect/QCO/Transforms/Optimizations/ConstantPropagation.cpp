@@ -30,37 +30,41 @@ namespace {
 
 #define CREATE_OP_CASE_NO_PARAMS(opType)                                       \
   .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), targetInput);                \
+    return opType::create(rewriter, op->getLoc(), qubitsIn[0]);                \
+  })
+
+#define CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(opType)                            \
+  .Case<opType>([&](auto) {                                                    \
+    return opType::create(rewriter, op->getLoc(), qubitsIn[0], qubitsIn[1]);   \
   })
 
 #define CREATE_OP_CASE_ONE_PARAM(opType)                                       \
   .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), resultTypes, qubitIn[0],     \
-                          params[0]);                                          \
+    return opType::create(rewriter, op->getLoc(), qubitsIn[0], params[0]);     \
   })
 
 #define CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(opType)                            \
   .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), resultTypes, qubitIn[0],     \
-                          qubitIn[1], params[0]);                              \
+    return opType::create(rewriter, op->getLoc(), qubitsIn[0], qubitsIn[1],    \
+                          params[0]);                                          \
   })
 
 #define CREATE_OP_CASE_TWO_PARAMS(opType)                                      \
   .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), resultTypes, qubitIn[0],     \
-                          params[0], params[1]);                               \
+    return opType::create(rewriter, op->getLoc(), qubitsIn[0], params[0],      \
+                          params[1]);                                          \
   })
 
 #define CREATE_OP_CASE_TWO_PARAMS_TWO_QUBITS(opType)                           \
   .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), resultTypes, qubitIn[0],     \
-                          qubitIn[1], params[0], params[1]);                   \
+    return opType::create(rewriter, op->getLoc(), qubitsIn[0], qubitsIn[1],    \
+                          params[0], params[1]);                               \
   })
 
 #define CREATE_OP_CASE_THREE_PARAMS(opType)                                    \
   .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), resultTypes, qubitIn[0],     \
-                          params[0], params[1], params[2]);                    \
+    return opType::create(rewriter, op->getLoc(), qubitsIn[0], params[0],      \
+                          params[1], params[2]);                               \
   })
 
 /**
@@ -221,7 +225,97 @@ bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
 }
 
 /**
- * Removes the given quantum controls from a CtrlOp, potentially removing all
+ * Creates a new gate at the location of the given gate and of the type of the
+ * given gate.
+ *
+ * @param op The operation whose type and location is used.
+ * @param rewriter The used rewriter.
+ * @param qubitsIn A span of target inputs.
+ * @param params A span of parameters for the new gate.
+ * @return The newly created gate.
+ */
+Operation* createOperationFromUnitaryOperation(Operation* op,
+                                               PatternRewriter& rewriter,
+                                               const std::span<Value> qubitsIn,
+                                               const std::span<Value> params) {
+  const auto newOp =
+      mlir::TypeSwitch<Operation*, Operation*>(op) CREATE_OP_CASE_NO_PARAMS(
+          IdOp) CREATE_OP_CASE_NO_PARAMS(HOp) CREATE_OP_CASE_NO_PARAMS(XOp)
+          CREATE_OP_CASE_NO_PARAMS(YOp) CREATE_OP_CASE_NO_PARAMS(
+              ZOp) CREATE_OP_CASE_NO_PARAMS(SOp) CREATE_OP_CASE_NO_PARAMS(SdgOp)
+              CREATE_OP_CASE_NO_PARAMS(TOp) CREATE_OP_CASE_NO_PARAMS(
+                  TdgOp) CREATE_OP_CASE_NO_PARAMS(SXOp)
+                  CREATE_OP_CASE_NO_PARAMS(SXdgOp) CREATE_OP_CASE_ONE_PARAM(
+                      RXOp) CREATE_OP_CASE_ONE_PARAM(RYOp)
+                      CREATE_OP_CASE_ONE_PARAM(RZOp) CREATE_OP_CASE_ONE_PARAM(
+                          POp) CREATE_OP_CASE_TWO_PARAMS(ROp)
+                          CREATE_OP_CASE_TWO_PARAMS(U2Op) CREATE_OP_CASE_THREE_PARAMS(
+                              UOp) CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(SWAPOp)
+                              CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(
+                                  iSWAPOp) CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(DCXOp)
+                                  CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(
+                                      ECROp) CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RXXOp)
+                                      CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RYYOp)
+                                          CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
+                                              RZXOp)
+                                              CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
+                                                  RZZOp)
+                                                  CREATE_OP_CASE_TWO_PARAMS_TWO_QUBITS(
+                                                      XXPlusYYOp)
+                                                      CREATE_OP_CASE_TWO_PARAMS_TWO_QUBITS(
+                                                          XXMinusYYOp)
+                                                          .Default(
+                                                              [&](auto)
+                                                                  -> Operation* {
+                                                                throw std::
+                                                                    runtime_error(
+                                                                        "Unsu"
+                                                                        "ppor"
+                                                                        "ted "
+                                                                        "oper"
+                                                                        "atio"
+                                                                        "n");
+                                                              });
+
+  return newOp;
+}
+
+/**
+ * Removes all controls from a gate and returns an uncontrolled operation.
+ *
+ * @param op The qco::CtrlOp whose controls are removed.
+ * @param rewriter The used rewriter
+ * @param worklist The worklist which contains the operations that are iterated
+ * through.
+ * @return The operation without the controls.
+ */
+UnitaryOpInterface removeAllCtrlsOfGate(CtrlOp* op, PatternRewriter& rewriter,
+                                        std::span<Operation*>& worklist) {
+  for (const auto& qubitCtrl : op->getInputQubits()) {
+    rewriter.replaceAllUsesWith(op->getOutputForInput(qubitCtrl), qubitCtrl);
+  }
+  const auto targetInput = op->getInputTargets();
+  const auto paramsRange = op->getParameters();
+  std::vector<Value> qubitsIn = {targetInput.begin(), targetInput.end()};
+  std::vector<Value> params = {paramsRange.begin(), paramsRange.end()};
+  const auto newOp = createOperationFromUnitaryOperation(
+      op->getBodyUnitary(), rewriter, qubitsIn, params);
+  auto newUnitary = static_cast<UnitaryOpInterface>(newOp);
+  for (const auto inTarget : newUnitary.getInputQubits()) {
+    rewriter.replaceAllUsesWith(op->getOutputForInput(inTarget),
+                                newUnitary.getOutputForInput(inTarget));
+  }
+  for (const auto ctrlQubit : op->getOutputControls()) {
+    rewriter.replaceAllUsesWith(ctrlQubit, op->getInputForOutput(ctrlQubit));
+  }
+  rewriter.eraseOp(*op);
+  std::ranges::replace(worklist, *op, newOp);
+
+  return newUnitary;
+}
+
+/**
+ * Removes the given quantum controls from a CtrlOp, but not removing all
  * controls and only leaving the (formerly controlled) gate in the body.
  *
  * @param op The qco::CtrlOp whose controls are removed.
@@ -231,69 +325,14 @@ bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
  * through.
  * @return The operation without given controls.
  */
-Operation* removeCtrlsOfGate(CtrlOp* op,
-                             const llvm::DenseSet<Value>& ctrlsToRemove,
-                             PatternRewriter& rewriter,
-                             std::span<Operation*>& worklist) {
+CtrlOp removeCtrlsOfGate(CtrlOp* op, const llvm::DenseSet<Value>& ctrlsToRemove,
+                         PatternRewriter& rewriter,
+                         std::span<Operation*>& worklist) {
   for (const auto& qubitCtrl : ctrlsToRemove) {
     rewriter.replaceAllUsesWith(op->getOutputForInput(qubitCtrl), qubitCtrl);
   }
   if (ctrlsToRemove.size() == op->getNumControls()) {
-    // Remove Ctrl completely
-    const auto targetInput = op->getInputTargets();
-    const TypeRange resultTypes(op->getOutputTargets());
-    const auto paramsRange = op->getParameters();
-    const std::vector<Value> qubitIn = {targetInput.begin(), targetInput.end()};
-    const std::vector<Value> params = {paramsRange.begin(), paramsRange.end()};
-    const auto newOp =
-        mlir::TypeSwitch<Operation*, Operation*>(op->getBodyUnitary()) CREATE_OP_CASE_NO_PARAMS(
-            IdOp) CREATE_OP_CASE_NO_PARAMS(HOp) CREATE_OP_CASE_NO_PARAMS(XOp)
-            CREATE_OP_CASE_NO_PARAMS(YOp) CREATE_OP_CASE_NO_PARAMS(
-                ZOp) CREATE_OP_CASE_NO_PARAMS(SOp) CREATE_OP_CASE_NO_PARAMS(SdgOp)
-                CREATE_OP_CASE_NO_PARAMS(TOp) CREATE_OP_CASE_NO_PARAMS(
-                    TdgOp) CREATE_OP_CASE_NO_PARAMS(SXOp) CREATE_OP_CASE_NO_PARAMS(SXdgOp)
-                    CREATE_OP_CASE_ONE_PARAM(RXOp) CREATE_OP_CASE_ONE_PARAM(
-                        RYOp) CREATE_OP_CASE_ONE_PARAM(RZOp)
-                        CREATE_OP_CASE_ONE_PARAM(POp) CREATE_OP_CASE_TWO_PARAMS(
-                            ROp) CREATE_OP_CASE_TWO_PARAMS(U2Op)
-                            CREATE_OP_CASE_THREE_PARAMS(UOp) CREATE_OP_CASE_NO_PARAMS(
-                                SWAPOp) CREATE_OP_CASE_NO_PARAMS(iSWAPOp)
-                                CREATE_OP_CASE_NO_PARAMS(
-                                    DCXOp) CREATE_OP_CASE_NO_PARAMS(ECROp)
-                                    CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
-                                        RXXOp) CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RYYOp)
-                                        CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
-                                            RZXOp)
-                                            CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
-                                                RZZOp)
-                                                CREATE_OP_CASE_TWO_PARAMS_TWO_QUBITS(
-                                                    XXPlusYYOp)
-                                                    CREATE_OP_CASE_TWO_PARAMS_TWO_QUBITS(
-                                                        XXMinusYYOp)
-                                                        .Default(
-                                                            [&](auto)
-                                                                -> Operation* {
-                                                              throw std::
-                                                                  runtime_error(
-                                                                      "Unsu"
-                                                                      "ppor"
-                                                                      "ted "
-                                                                      "oper"
-                                                                      "atio"
-                                                                      "n");
-                                                            });
-    auto newUnitary = static_cast<UnitaryOpInterface>(newOp);
-    for (const auto inTarget : newUnitary.getInputQubits()) {
-      rewriter.replaceAllUsesWith(op->getOutputForInput(inTarget),
-                                  newUnitary.getOutputForInput(inTarget));
-    }
-    for (const auto ctrlQubit : op->getOutputControls()) {
-      rewriter.replaceAllUsesWith(ctrlQubit, op->getInputForOutput(ctrlQubit));
-    }
-    rewriter.eraseOp(*op);
-    std::ranges::replace(worklist, *op, newOp);
-
-    return newOp;
+    throw std::runtime_error("Cannot remove all controls of a CtrlOp");
   }
   std::vector<Value> newControlIn;
   for (const auto& ctrls : op->getInputControls()) {
@@ -301,25 +340,28 @@ Operation* removeCtrlsOfGate(CtrlOp* op,
       newControlIn.push_back(ctrls);
     }
   }
-  const auto newCtrl =
-      CtrlOp::create(rewriter, op->getLoc(), newControlIn, op->getTargetsIn(),
-                     [&](const ValueRange target) {
-                       return SmallVector<Value>{
-                           XOp::create(rewriter, op->getLoc(), target[0])};
-                     });
+  CtrlOp newCtrl = CtrlOp::create(
+      rewriter, op->getLoc(), newControlIn, op->getTargetsIn(),
+      [&](const ValueRange target) {
+        const auto paramsRange = op->getParameters();
+        std::vector<Value> qubitsIn = {target.begin(), target.end()};
+        std::vector<Value> params = {paramsRange.begin(), paramsRange.end()};
+        const auto newOp = createOperationFromUnitaryOperation(
+            op->getBodyUnitary(), rewriter, qubitsIn, params);
+        return SmallVector<Value>{newOp->getResults()};
+      });
 
-  auto newUnitary = static_cast<UnitaryOpInterface>(newCtrl);
-  for (const auto inTarget : newUnitary.getInputQubits()) {
+  for (const auto inTarget : newCtrl.getInputQubits()) {
     rewriter.replaceAllUsesWith(op->getOutputForInput(inTarget),
-                                newUnitary.getOutputForInput(inTarget));
+                                newCtrl.getOutputForInput(inTarget));
   }
   for (const auto ctrlQubit : op->getOutputControls()) {
     rewriter.replaceAllUsesWith(ctrlQubit, op->getInputForOutput(ctrlQubit));
   }
   rewriter.eraseOp(*op);
-  std::ranges::replace(worklist, *op, newUnitary);
+  std::ranges::replace(worklist, *op, newCtrl);
 
-  return newUnitary;
+  return newCtrl;
 }
 
 /**
@@ -475,9 +517,14 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
   }
 
   if (!ctrlsToMod.quantumCtrlsToRemove.empty()) {
-    auto newOp = removeCtrlsOfGate(op, ctrlsToMod.quantumCtrlsToRemove,
-                                   rewriter, worklist);
-    return WalkResult::advance();
+    if (ctrlsToMod.quantumCtrlsToRemove.size() == op->getNumControls()) {
+      auto newOp = removeAllCtrlsOfGate(op, rewriter, worklist);
+      return handleUncontrolledUnitary(ut, &newOp, posClassicalCtrls,
+                                       negClassicalCtrls, rewriter, worklist);
+    }
+
+    *op = removeCtrlsOfGate(op, ctrlsToMod.quantumCtrlsToRemove, rewriter,
+                            worklist);
   }
 
   auto body = op->getBodyUnitary();
