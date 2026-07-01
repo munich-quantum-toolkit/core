@@ -111,7 +111,7 @@ TEST(JobLifecycle, FreeWhileRunningWaitsForCompletion) {
   ASSERT_EQ(MQT_DDSIM_QDMI_device_session_create_device_job(s.session, &job),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setProgram(job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_HEAVY_SAMPLING5),
+                                  qdmi_test::QASM3_HEAVY_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(job, 4096), QDMI_SUCCESS);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(job), QDMI_SUCCESS);

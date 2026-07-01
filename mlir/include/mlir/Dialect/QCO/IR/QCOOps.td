@@ -200,6 +200,7 @@ def GPhaseOp
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "gphase"; }
+        [[nodiscard]] static Matrix1x1 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix1x1> getUnitaryMatrix();
     }];
 
@@ -494,6 +495,7 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rx"; }
+        [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
@@ -523,6 +525,7 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ry"; }
+        [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
@@ -552,6 +555,7 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rz"; }
+        [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
@@ -581,6 +585,7 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "p"; }
+        [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
@@ -611,6 +616,7 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "r"; }
+        [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta, double phi);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
@@ -641,6 +647,7 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "u2"; }
+        [[nodiscard]] static Matrix2x2 unitaryMatrix(double phi, double lambda);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
@@ -672,6 +679,8 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "u"; }
+        [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta, double phi,
+                                                     double lambda);
         [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
@@ -815,6 +824,7 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rxx"; }
+        [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
@@ -847,6 +857,7 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "ryy"; }
+        [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
@@ -879,6 +890,7 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzx"; }
+        [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
@@ -911,6 +923,7 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzz"; }
+        [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
@@ -945,6 +958,7 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_plus_yy"; }
+        [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta, double beta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
@@ -980,6 +994,7 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy",
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_minus_yy"; }
+        [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta, double beta);
         [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
@@ -1030,6 +1045,8 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
         static OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix() const { return true; }
+        [[nodiscard]] DynamicMatrix getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits)>];
@@ -1126,6 +1143,7 @@ def CtrlOp : QCOOp<"ctrl",
         Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
         OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
@@ -1199,6 +1217,7 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
         Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
         OperandRange getParameters() { return {nullptr, 0}; }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
+        [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 

@@ -35,7 +35,6 @@
 #include <mlir/IR/Region.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
 #include <cassert>
@@ -84,9 +83,6 @@ struct ConvertMemRefAllocOp final
     }
 
     auto& state = getState();
-    state.useDynamicQubit = true;
-    state.useArrays = true;
-
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
@@ -235,7 +231,6 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
                                           op.getOperation()))) {
       return failure();
     }
-    state.useDynamicQubit = true;
 
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
@@ -363,8 +358,6 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    state.useDynamicResult = true;
-
     auto& resultArrays = state.resultArrays;
     auto& loadedResults = state.loadedResults;
     auto& resultPtrs = state.resultPtrs;
@@ -381,7 +374,6 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     // Get result pointer
     Value result;
     if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
-      state.useArrays = true;
       const auto registerName = op.getRegisterName().value();
       const auto registerSize =
           static_cast<int64_t>(op.getRegisterSize().value());
@@ -425,7 +417,6 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       rewriter.setInsertionPoint(state.entryBlock->getTerminator());
       result = createPointerFromIndex(rewriter, op.getLoc(), resultPtrs.size());
       resultPtrs.try_emplace(resultPtrs.size(), result);
-      state.numResults++;
     }
 
     rewriter.restoreInsertionPoint(savedInsertionPoint);
@@ -573,22 +564,6 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
     }
   }
 
-  /**
-   * @brief Iterates through the module to find any scf.while or scf.for
-   * operation to set the backward branching flag before they are converted to
-   * cf operations.
-   */
-  static void setSCFFlags(Operation* op, LoweringState* state) {
-    op->walk([&](scf::ForOp) {
-      state->backwardsBranching += 1;
-      return WalkResult::interrupt();
-    });
-    op->walk([&](scf::WhileOp) {
-      state->backwardsBranching += 2;
-      return WalkResult::interrupt();
-    });
-  }
-
 protected:
   /**
    * @brief Executes the QC to QIR conversion pass
@@ -614,15 +589,11 @@ protected:
    * Convert QC dialect operations and memref operations to QIR calls and add
    * output recording to the output block.
    *
-   * **Stage 6: QIR Attributes**
-   * Add QIR Profile metadata to the main function, including qubit/result
-   * counts and version information.
-   *
-   * **Stage 7: Standard dialects to LLVM**
+   * **Stage 6: Standard dialects to LLVM**
    * Convert arith and control flow dialects to LLVM (for index arithmetic and
    * function control flow).
    *
-   * **Stage 8: Reconcile casts**
+   * **Stage 7: Reconcile casts**
    * Clean up any unrealized cast operations introduced during type
    * conversion.
    */
@@ -632,15 +603,11 @@ protected:
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
     LoweringState state;
-    state.useAdaptive = true;
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 
     // Stage 1: Convert scf dialect to cf
     {
-      // Find the required flags before the scf operations are converted
-      setSCFFlags(moduleOp, &state);
-
       RewritePatternSet scfPatterns(ctx);
       target.addIllegalDialect<scf::SCFDialect>();
       target.addLegalDialect<cf::ControlFlowDialect>();
@@ -696,10 +663,7 @@ protected:
       releaseResults(main, ctx, &state);
     }
 
-    // Stage 6: Set QIR metadata attributes
-    setQIRAttributes(main, state);
-
-    // Stage 7: Convert standard dialects to LLVM
+    // Stage 6: Convert standard dialects to LLVM
     {
       RewritePatternSet stdPatterns(ctx);
       target.addIllegalDialect<arith::ArithDialect>();
@@ -716,7 +680,7 @@ protected:
       }
     }
 
-    // Stage 8: Reconcile unrealized casts
+    // Stage 7: Reconcile unrealized casts
     PassManager passManager(ctx);
     passManager.addPass(createReconcileUnrealizedCastsPass());
     if (passManager.run(moduleOp).failed()) {

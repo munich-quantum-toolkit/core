@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -29,6 +30,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
 #include <cstddef>
 #include <numbers>
 #include <optional>
@@ -403,15 +405,34 @@ void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
               CancelNestedInv, EraseEmptyInv>(context);
 }
 
+bool InvOp::hasCompileTimeKnownUnitaryMatrix() {
+  return all_of(getBody()->getOps<UnitaryOpInterface>(),
+                [](UnitaryOpInterface op) {
+                  return op.hasCompileTimeKnownUnitaryMatrix();
+                });
+}
+
 std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
-  auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
-  if (!bodyUnitary) {
-    return std::nullopt;
+  if (getNumBodyUnitaries() == 0) {
+    return DynamicMatrix::identity(1LL << getNumTargets());
   }
-  const auto targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
-  if (!targetMatrix) {
+
+  // Single inner unitary (e.g. `inv { h }`, `inv { cx }`).
+  if (auto bodyUnitary =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
+    if (const auto targetMatrix =
+            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
+      return targetMatrix->adjoint();
+    }
     return std::nullopt;
   }
 
-  return targetMatrix->adjoint();
+  // Composed single-qubit body (e.g. `inv { h; t }`).
+  if (getNumTargets() != 1) {
+    return std::nullopt;
+  }
+  if (const auto composed = composeSingleQubitBodyMatrix(*getBody())) {
+    return DynamicMatrix::fromAdjoint(*composed);
+  }
+  return std::nullopt;
 }

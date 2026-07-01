@@ -39,20 +39,7 @@ struct MergeSubsequentRZZ final : OpRewritePattern<RZZOp> {
 
   LogicalResult matchAndRewrite(RZZOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameter(op, rewriter);
-  }
-};
-
-/**
- * @brief Merge subsequent RZZ operations with swapped targets by adding their
- * angles.
- */
-struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RZZOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+    return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
 
@@ -79,17 +66,21 @@ LogicalResult RZZOp::fold(FoldAdaptor /*adaptor*/,
 
 void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ>(context);
+  results.add<MergeSubsequentRZZ>(context);
+}
+
+Matrix4x4 RZZOp::unitaryMatrix(const double theta) {
+  const auto mp = std::polar(1.0, theta / 2);
+  const auto mm = std::polar(1.0, -theta / 2);
+  return Matrix4x4::fromElements(mm, 0, 0, 0,  // row 0
+                                 0, mp, 0, 0,  // row 1
+                                 0, 0, mp, 0,  // row 2
+                                 0, 0, 0, mm); // row 3
 }
 
 std::optional<Matrix4x4> RZZOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto mp = std::polar(1.0, *theta / 2);
-    const auto mm = std::polar(1.0, -*theta / 2);
-    return Matrix4x4::fromElements(mm, 0, 0, 0,  // row 0
-                                   0, mp, 0, 0,  // row 1
-                                   0, 0, mp, 0,  // row 2
-                                   0, 0, 0, mm); // row 3
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

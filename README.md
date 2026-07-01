@@ -18,7 +18,9 @@
 
 # MQT Core - The Backbone of the Munich Quantum Toolkit (MQT)
 
-MQT Core is an open-source C++20 and Python library for quantum computing that forms the backbone of the quantum software tools developed as part of the [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
+MQT Core is an open-source C++20 and Python library for quantum computing that
+forms the backbone of the quantum software tools developed as part of the
+[_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
 
 <p align="center">
   <a href="https://mqt.readthedocs.io/projects/core">
@@ -33,12 +35,20 @@ MQT Core is an open-source C++20 and Python library for quantum computing that f
 - A dedicated ZX-diagram package for working with the ZX-calculus.
 - A QIR runtime based on the decision diagram package.
 
-If you have any questions, feel free to create a [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an [issue](https://github.com/munich-quantum-toolkit/core/issues) on [GitHub](https://github.com/munich-quantum-toolkit/core).
+If you have any questions, feel free to create a
+[discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an
+[issue](https://github.com/munich-quantum-toolkit/core/issues) on
+[GitHub](https://github.com/munich-quantum-toolkit/core).
 
 ## Contributors and Supporters
 
-MQT Core is developed by the [Chair for Design Automation](https://www.cda.cit.tum.de/) at the [Technical University of Munich](https://www.tum.de/) and [MQSC](https://mq.sc).
-Among others, it is part of the [Munich Quantum Software Stack (MQSS)](https://www.munich-quantum-valley.de/research/research-areas/mqss) ecosystem, which is being developed as part of the [Munich Quantum Valley (MQV)](https://www.munich-quantum-valley.de) initiative.
+MQT Core is developed by the
+[Chair for Design Automation](https://www.cda.cit.tum.de/) at the
+[Technical University of Munich](https://www.tum.de/) and [MQSC](https://mq.sc).
+Among others, it is part of the
+[Munich Quantum Software Stack (MQSS)](https://www.munich-quantum-valley.de/research/research-areas/mqss)
+ecosystem, which is being developed as part of the
+[Munich Quantum Valley (MQV)](https://www.munich-quantum-valley.de) initiative.
 
 <p align="center">
   <picture>
@@ -55,17 +65,21 @@ Thank you to all the contributors who have helped make MQT Core a reality!
   </a>
 </p>
 
-The MQT will remain free, open-source, and permissively licensed—now and in the future.
-We are firmly committed to keeping it open and actively maintained for the quantum computing community.
+The MQT will remain free, open-source, and permissively licensed — now and in
+the future. We are firmly committed to keeping it open and actively maintained
+for the quantum computing community.
 
 To support this endeavor, please consider:
 
-- Starring and sharing our repositories: https://github.com/munich-quantum-toolkit
-- Contributing code, documentation, tests, or examples via issues and pull requests
+- Starring and sharing our repositories:
+  <https://github.com/munich-quantum-toolkit>
+- Contributing code, documentation, tests, or examples via issues and pull
+  requests
 - Citing the MQT in your publications (see [Cite This](#cite-this))
-- Citing our research in your publications (see [References](https://mqt.readthedocs.io/projects/core/en/latest/references.html))
+- Citing our research in your publications (see
+  [References](https://mqt.readthedocs.io/projects/core/en/latest/references.html))
 - Using the MQT in research and teaching, and sharing feedback and use cases
-- Sponsoring us on GitHub: https://github.com/sponsors/munich-quantum-toolkit
+- Sponsoring us on GitHub: <https://github.com/sponsors/munich-quantum-toolkit>
 
 <p align="center">
   <a href="https://github.com/sponsors/munich-quantum-toolkit">
@@ -94,26 +108,39 @@ qc.measure(range(2), range(2))
 print(qc)
 ```
 
-**Detailed documentation and examples are available at [ReadTheDocs](https://mqt.readthedocs.io/projects/core).**
+**Detailed documentation and examples are available at
+[ReadTheDocs](https://mqt.readthedocs.io/projects/core).**
 
 ## System Requirements
 
-Building the project requires a C++ compiler with support for C++20 and CMake 3.24 or newer.
-For details on how to build the project, please refer to the [documentation](https://mqt.readthedocs.io/projects/core).
-Building (and running) is continuously tested under Linux, macOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-MQT Core is compatible with all [officially supported Python versions](https://devguide.python.org/versions/).
+Building the project requires a C++ compiler with support for C++20 and CMake
+3.24 or newer. For details on how to build the project, please refer to the
+[documentation](https://mqt.readthedocs.io/projects/core). Building (and
+running) is continuously tested under Linux, macOS, and Windows using the
+[latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
+MQT Core is compatible with all
+[officially supported Python versions](https://devguide.python.org/versions/).
 
 The project relies on some external dependencies:
 
-- [boost/multiprecision](https://github.com/boostorg/multiprecision): A library for multiprecision arithmetic (used in the ZX package).
-- [nlohmann/json](https://github.com/nlohmann/json): A JSON library for modern C++.
-- [google/googletest](https://github.com/google/googletest): A testing framework for C++ (only used in tests).
+- [boost/multiprecision](https://github.com/boostorg/multiprecision):
+  A library for multiprecision arithmetic (used in the ZX package).
+- [nlohmann/json](https://github.com/nlohmann/json):
+  A JSON library for modern C++.
+- [google/googletest](https://github.com/google/googletest):
+  A testing framework for C++ (only used in tests).
 
-CMake will automatically look for installed versions of these libraries. If it does not find them, they will be fetched automatically at configure time via the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module (check out the documentation for more information on how to customize this behavior).
+CMake will automatically look for installed versions of these libraries. If it
+does not find them, they will be fetched automatically at configure time via the
+[FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html)
+module (check out the documentation for more information on how to customize
+this behavior).
 
-It is recommended (although not required) to have [GraphViz](https://www.graphviz.org) installed for visualization purposes.
+It is recommended (although not required) to have
+[GraphViz](https://www.graphviz.org) installed for visualization purposes.
 
-If you want to use the ZX library, it is recommended (although not strictly necessary) to have [GMP](https://gmplib.org/) installed in your system.
+If you want to use the ZX library, it is recommended (although not strictly
+necessary) to have [GMP](https://gmplib.org/) installed in your system.
 
 ## Cite This
 
@@ -121,7 +148,8 @@ Please cite the work that best fits your use case.
 
 ### MQT Core (the tool)
 
-When citing the software itself or results produced with it, cite the MQT Core paper:
+When citing the software itself or results produced with it, cite the MQT Core
+paper:
 
 ```bibtex
 @article{burgholzer2025MQTCore,
@@ -140,7 +168,8 @@ When citing the software itself or results produced with it, cite the MQT Core p
 
 ### The MQT Compiler Collection
 
-When citing the compilation framework built on MLIR, cite the MQT Compiler Collection paper:
+When citing the compilation framework built on MLIR, cite the MQT Compiler
+Collection paper:
 
 ```bibtex
 @article{MQTCompilerCollection2026,
@@ -176,7 +205,12 @@ When discussing the overall MQT project or its ecosystem, cite the MQT Handbook:
 
 ## Acknowledgements
 
-The Munich Quantum Toolkit has been supported by the European Research Council (ERC) under the European Union's Horizon 2020 research and innovation program (grant agreement No. 101001318), the Bavarian State Ministry for Science and Arts through the Distinguished Professorship Program, as well as the Munich Quantum Valley, which is supported by the Bavarian state government with funds from the Hightech Agenda Bayern Plus.
+The Munich Quantum Toolkit has been supported by the European Research Council
+(ERC) under the European Union's Horizon 2020 research and innovation program
+(grant agreement No. 101001318), the Bavarian State Ministry for Science and
+Arts through the Distinguished Professorship Program, as well as the Munich
+Quantum Valley, which is supported by the Bavarian state government with funds
+from the Hightech Agenda Bayern Plus.
 
 <p align="center">
   <picture>

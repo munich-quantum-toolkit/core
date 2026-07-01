@@ -8,20 +8,23 @@
  * Licensed under the MIT License
  */
 
-#include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
+#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "qasm3/Exception.hpp"
-#include "qasm3/Importer.hpp"
 
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/SystemUtils.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Bytecode/BytecodeWriter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -33,10 +36,14 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/FileUtilities.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Export.h>
 
-#include <exception>
 #include <optional>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -97,32 +104,10 @@ static llvm::cl::opt<std::optional<std::string>>
          llvm::cl::init(std::nullopt));
 
 /**
- * @brief Load and parse a .qasm file
+ * @brief Load and parse a `.qasm` file
  */
-static OwningOpRef<ModuleOp> loadQASMFile(llvm::StringRef filename,
+static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
                                           MLIRContext* context) {
-  try {
-    // Parse the input QASM file
-    const ::qc::QuantumComputation qc =
-        qasm3::Importer::importf(filename.str());
-    // Translate to MLIR dialect QC
-    return translateQuantumComputationToQC(context, qc);
-  } catch (const qasm3::CompilerError& exception) {
-    llvm::errs() << "Failed to parse QASM file '" << filename << "': '"
-                 << exception.what() << "'\n";
-  } catch (const std::exception& exception) {
-    llvm::errs() << "Failed to load QASM file '" << filename << "': '"
-                 << exception.what() << "'\n";
-  }
-  return nullptr;
-}
-
-/**
- * @brief Load and parse a .mlir file
- */
-static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
-                                          MLIRContext* context) {
-  // Set up the input file
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
@@ -131,17 +116,34 @@ static OwningOpRef<ModuleOp> loadMLIRFile(llvm::StringRef filename,
     return nullptr;
   }
 
-  // Parse the input MLIR
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
+  return qc::translateQASM3ToQC(sourceMgr, context);
+}
+
+/**
+ * @brief Load and parse an `.mlir` file
+ */
+static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
+                                          MLIRContext* context) {
+  std::string errorMessage;
+  auto file = openInputFile(filename, &errorMessage);
+  if (!file) {
+    llvm::errs() << "Failed to load file '" << filename << "': '"
+                 << errorMessage << "'\n";
+    return nullptr;
+  }
+
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
   return parseSourceFile<ModuleOp>(sourceMgr, context);
 }
 
 /**
- * @brief Write the module to the output file
+ * @brief Write a module to an output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module,
-                                       llvm::StringRef filename) {
+template <typename ModuleType>
+static mlir::LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -149,7 +151,28 @@ static mlir::LogicalResult writeOutput(ModuleOp module,
     return mlir::failure();
   }
 
-  module.print(output->os());
+  if constexpr (std::is_same_v<ModuleType, mlir::ModuleOp>) {
+    if (filename == "-") {
+      mod.print(output->os());
+    } else {
+      writeBytecodeToFile(mod, output->os());
+    }
+  } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
+    if (filename == "-") {
+      mod->print(output->os(), nullptr);
+    } else {
+      llvm::WriteBitcodeToFile(*mod, output->os());
+    }
+  } else {
+    llvm_unreachable("Unsupported module type");
+  }
+
+  output->os().flush();
+  if (output->os().has_error()) {
+    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
+    return mlir::failure();
+  }
+
   output->keep();
   return mlir::success();
 }
@@ -158,26 +181,29 @@ int main(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   // Parse command-line options; exit on error and print to stderr
-  llvm::cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
+  llvm::cl::ParseCommandLineOptions(argc, argv,
+                                    "MQT Compiler Collection Driver\n");
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
   registry
       .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
-              LLVM::LLVMDialect, memref::MemRefDialect, mlir::qc::QCDialect,
+              LLVM::LLVMDialect, memref::MemRefDialect, qc::QCDialect,
               qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
+  registerBuiltinDialectTranslation(registry);
+  registerLLVMDialectTranslation(registry);
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
   // Load the input .mlir file
-  OwningOpRef<ModuleOp> module;
+  OwningOpRef<ModuleOp> mod;
   if (inputFilename.getValue().ends_with(".qasm")) {
-    module = loadQASMFile(inputFilename, &context);
+    mod = loadQASMFile(inputFilename, &context);
   } else {
-    module = loadMLIRFile(inputFilename, &context);
+    mod = loadMLIRFile(inputFilename, &context);
   }
-  if (!module) {
+  if (!mod) {
     return 1;
   }
 
@@ -208,8 +234,7 @@ int main(int argc, char** argv) {
   // Run the compilation pipeline
   CompilationRecord record;
   if (const QuantumCompilerPipeline pipeline(config);
-      pipeline
-          .runPipeline(module.get(), recordIntermediates ? &record : nullptr)
+      pipeline.runPipeline(mod.get(), recordIntermediates ? &record : nullptr)
           .failed()) {
     llvm::errs() << "Compilation pipeline failed\n";
     return 1;
@@ -238,8 +263,18 @@ int main(int argc, char** argv) {
   }
 
   // Write the output
-  if (writeOutput(module.get(), outputFilename).failed()) {
-    llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
+  if (convertToQIRBase || convertToQIRAdaptive) {
+    llvm::LLVMContext llvmContext;
+    std::unique_ptr<llvm::Module> llvmMod =
+        translateModuleToLLVMIR(*mod, llvmContext);
+    if (!llvmMod) {
+      llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
+      return 1;
+    }
+    if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
+      return 1;
+    }
+  } else if (writeOutput<ModuleOp>(mod.get(), outputFilename).failed()) {
     return 1;
   }
 

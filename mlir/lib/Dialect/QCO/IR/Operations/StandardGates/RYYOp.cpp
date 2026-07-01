@@ -39,20 +39,7 @@ struct MergeSubsequentRYY final : OpRewritePattern<RYYOp> {
 
   LogicalResult matchAndRewrite(RYYOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameter(op, rewriter);
-  }
-};
-
-/**
- * @brief Merge subsequent RYY operations with swapped targets by adding their
- * angles.
- */
-struct MergeSwappedTargetsRYY final : OpRewritePattern<RYYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RYYOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+    return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
 
@@ -79,19 +66,23 @@ LogicalResult RYYOp::fold(FoldAdaptor /*adaptor*/,
 
 void RYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRYY, MergeSwappedTargetsRYY>(context);
+  results.add<MergeSubsequentRYY>(context);
+}
+
+Matrix4x4 RYYOp::unitaryMatrix(const double theta) {
+  using namespace std::complex_literals;
+
+  const auto mc = std::cos(theta / 2);
+  const auto ms = 1i * std::sin(theta / 2);
+  return Matrix4x4::fromElements(mc, 0, 0, ms,  // row 0
+                                 0, mc, -ms, 0, // row 1
+                                 0, -ms, mc, 0, // row 2
+                                 ms, 0, 0, mc); // row 3
 }
 
 std::optional<Matrix4x4> RYYOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto mc = std::cos(*theta / 2);
-    const auto ms = 1i * std::sin(*theta / 2);
-    return Matrix4x4::fromElements(mc, 0, 0, ms,  // row 0
-                                   0, mc, -ms, 0, // row 1
-                                   0, -ms, mc, 0, // row 2
-                                   ms, 0, 0, mc); // row 3
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

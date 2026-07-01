@@ -146,7 +146,7 @@ void __quantum__qis__s__body(Qubit* qubit) {
   runtime.apply<qc::S>(qubit);
 }
 
-void __quantum__qis__sdg__body(Qubit* qubit) {
+void __quantum__qis__s__adj(Qubit* qubit) {
   auto& runtime = qir::Runtime::getInstance();
   runtime.apply<qc::Sdg>(qubit);
 }
@@ -156,7 +156,7 @@ void __quantum__qis__sx__body(Qubit* qubit) {
   runtime.apply<qc::SX>(qubit);
 }
 
-void __quantum__qis__sxdg__body(Qubit* qubit) {
+void __quantum__qis__sx__adj(Qubit* qubit) {
   auto& runtime = qir::Runtime::getInstance();
   runtime.apply<qc::SXdg>(qubit);
 }
@@ -166,7 +166,7 @@ void __quantum__qis__sqrtx__body(Qubit* qubit) {
   runtime.apply<qc::SX>(qubit);
 }
 
-void __quantum__qis__sqrtxdg__body(Qubit* qubit) {
+void __quantum__qis__sqrtx__adj(Qubit* qubit) {
   auto& runtime = qir::Runtime::getInstance();
   runtime.apply<qc::SXdg>(qubit);
 }
@@ -176,7 +176,7 @@ void __quantum__qis__t__body(Qubit* qubit) {
   runtime.apply<qc::T>(qubit);
 }
 
-void __quantum__qis__tdg__body(Qubit* qubit) {
+void __quantum__qis__t__adj(Qubit* qubit) {
   auto& runtime = qir::Runtime::getInstance();
   runtime.apply<qc::Tdg>(qubit);
 }
@@ -381,8 +381,10 @@ bool __quantum__rt__read_result(Result* result) {
 }
 
 void __quantum__rt__result_record_output(Result* result, const char* label) {
-  std::cout << label << ": " << (__quantum__rt__read_result(result) ? 1 : 0)
-            << "\n";
+  auto& runtime = qir::Runtime::getInstance();
+  runtime.recordOutput(result);
+  runtime.getOstream() << label << ": "
+                       << (__quantum__rt__read_result(result) ? 1 : 0) << "\n";
 }
 
 } // extern "C"

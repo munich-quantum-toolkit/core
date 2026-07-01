@@ -22,6 +22,15 @@
 #include <cstddef>
 #include <vector>
 
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+#include "qir/helpers/test_utils.hpp"
+#include "qir/runtime/Runtime.hpp"
+
+#include <cmath>
+#include <numbers>
+#include <sstream>
+#endif
+
 TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
@@ -103,3 +112,37 @@ TEST(ResultsStatevector, HistogramRequestsInvalidWithShotsZero) {
                 j.job, QDMI_JOB_RESULT_HIST_VALUES, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
+
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+namespace {
+
+class QIRStateExtractionTest : public testing::Test {
+protected:
+  std::ostringstream sink;
+  void SetUp() override { qir::Runtime::getInstance().setOstream(sink); }
+  void TearDown() override { qir::Runtime::getInstance().resetOstream(); }
+};
+
+TEST_F(QIRStateExtractionTest, BellPairStaticBaseStringYieldsBellState) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  const auto program = qir_test::getProgram("BellPairStatic.ll");
+  ASSERT_EQ(
+      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QIRBASESTRING, program),
+      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  const auto vec = qdmi_test::getDenseState(j.job);
+  ASSERT_EQ(vec.size(), 4U);
+
+  // Bell pair: amplitudes at |00> and |11> are 1/sqrt(2), |01> and |10> are 0.
+  constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
+  EXPECT_NEAR(std::abs(vec[0]), invSqrt2, 1e-6);
+  EXPECT_NEAR(std::abs(vec[1]), 0.0, 1e-6);
+  EXPECT_NEAR(std::abs(vec[2]), 0.0, 1e-6);
+  EXPECT_NEAR(std::abs(vec[3]), invSqrt2, 1e-6);
+}
+
+} // namespace
+#endif
