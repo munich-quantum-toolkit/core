@@ -54,7 +54,7 @@ repos:
 
   ## Ensure uv.lock is up to date
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.23
+    rev: 0.11.24
     hooks:
       - id: uv-lock
         priority: 0
@@ -145,7 +145,7 @@ repos:
 
   ## Format and lint Python files with ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.18
+    rev: v0.15.19
     hooks:
       - id: ruff-format
         types_or: [python, pyi, jupyter, markdown]
@@ -156,7 +156,7 @@ repos:
 
   ## Check Python types with ty
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: v0.0.52
+    rev: v0.0.53
     hooks:
       - id: ty
         args: [--only-dev]
