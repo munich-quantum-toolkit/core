@@ -35,14 +35,6 @@ Additionally, we support the free-threading version of Python that is no longer
 marked experimental as of Python 3.14. The corresponding wheels are built
 separately since there is no stable ABI for free-threading Python yet.
 
-## MLIR
-
-| Tool                        | Description                                                                       | Links / Notes                                                                               |
-| --------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| **MLIR**                    | Compiler infrastructure for building domain-specific compilers.                   | [Documentation](https://mlir.llvm.org/). We generally track the latest stable LLVM release. |
-| **portable-mlir-toolchain** | Pre-built binaries for MLIR and LLVM on all supported platforms.                  | [Documentation](https://github.com/munich-quantum-software/portable-mlir-toolchain).        |
-| **setup-mlir**              | Installation scripts and a GitHub action for installing pre-built MLIR toolchain. | [Documentation](https://github.com/munich-quantum-software/setup-mlir).                     |
-
 ## Python
 
 | Tool       | Description                                                                              | Links / Notes                                                                                                                                          |
