@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
+  ([#1826]) ([**@ystade])
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to
   configure builds ([#1660]) ([**@denialhaag**])
 
@@ -548,6 +550,7 @@ changelogs._
 <!-- PR links -->
 
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
+[#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
