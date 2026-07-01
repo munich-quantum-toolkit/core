@@ -78,7 +78,7 @@ using namespace mlir::utils;
  * @return `success()` if replaced, `failure()` if a general `P` gate should be
  * used.
  */
-static LogicalResult tryReplaceWithNamedPhaseGate(double angle, PowOp op,
+static LogicalResult tryReplacePOpWithNamedGate(double angle, PowOp op,
                                                   PatternRewriter& rewriter) {
   const double norm = normalizeAngle(angle);
   const double pi = std::numbers::pi;
@@ -384,7 +384,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             .Case<ZOp>([&](auto) {
               const double angle = r * std::numbers::pi;
               if (succeeded(
-                      tryReplaceWithNamedPhaseGate(angle, op, rewriter))) {
+                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -399,7 +399,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             .Case<SOp>([&](auto) {
               const double angle = r * std::numbers::pi / 2.0;
               if (succeeded(
-                      tryReplaceWithNamedPhaseGate(angle, op, rewriter))) {
+                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -412,7 +412,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             .Case<SdgOp>([&](auto) {
               const double angle = r * -std::numbers::pi / 2.0;
               if (succeeded(
-                      tryReplaceWithNamedPhaseGate(angle, op, rewriter))) {
+                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -425,7 +425,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             .Case<TOp>([&](auto) {
               const double angle = r * std::numbers::pi / 4.0;
               if (succeeded(
-                      tryReplaceWithNamedPhaseGate(angle, op, rewriter))) {
+                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -438,7 +438,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             .Case<TdgOp>([&](auto) {
               const double angle = r * -std::numbers::pi / 4.0;
               if (succeeded(
-                      tryReplaceWithNamedPhaseGate(angle, op, rewriter))) {
+                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
