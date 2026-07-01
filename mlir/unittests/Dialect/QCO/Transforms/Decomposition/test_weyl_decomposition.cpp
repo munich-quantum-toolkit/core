@@ -555,7 +555,7 @@ static void expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
   ASSERT_TRUE(succeeded(verify(module.get())));
   const auto actual = computeTwoQubitUnitaryFromFunc(func);
   ASSERT_TRUE(actual.has_value());
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(*actual, target));
+  EXPECT_TRUE(actual->isApprox(target, WEYL_TOLERANCE));
 }
 
 namespace {

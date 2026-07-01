@@ -595,11 +595,3 @@ TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
   const Matrix4x4& v = result.eigenvectors;
   EXPECT_TRUE((v.transpose() * v).isIdentity());
 }
-
-TEST(GlobalPhaseEquivalence, IsEquivalentUpToGlobalPhase) {
-  const Matrix2x2 pauliX = Matrix2x2::fromElements(0, 1, 1, 0);
-  const Complex phase{0.0, 1.0};
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(pauliX, phase * pauliX));
-  EXPECT_TRUE(isEquivalentUpToGlobalPhase(pauliX, pauliX));
-  EXPECT_FALSE(isEquivalentUpToGlobalPhase(pauliX, Matrix2x2::identity()));
-}
