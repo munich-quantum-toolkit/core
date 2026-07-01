@@ -23,15 +23,6 @@ ctest --preset release
 
 If you are on Windows, use the `debug-windows` and `release-windows` presets.
 
-### Dev container
-
-A [dev container](https://containers.dev/) configuration is available to provide
-a consistent local development environment. Common IDEs like
-[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
-and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
-open the repository directly inside the container. If you are on Windows, we
-recommend using Docker Desktop with the WSL 2 backend.
-
 ## [3.6.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.5` to `3.6`.

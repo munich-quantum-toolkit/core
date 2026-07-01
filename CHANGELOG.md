@@ -12,8 +12,6 @@ releases may include breaking changes.
 
 ### Added
 
-- 🐳 Add dev container configuration for consistent local development
-  environment ([#1786]) ([**@denialhaag**])
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to
   configure builds ([#1660]) ([**@denialhaag**])
 
@@ -550,7 +548,6 @@ changelogs._
 <!-- PR links -->
 
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
-[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
