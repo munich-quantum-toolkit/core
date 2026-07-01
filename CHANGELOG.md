@@ -11,7 +11,79 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+<<<<<<< HEAD
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to configure builds ([#1660]) ([**@denialhaag**])
+||||||| parent of 48e17f82 (🚸 Add const getOps func (#1826))
+- 🐳 Add dev container configuration for consistent local development
+  environment ([#1786]) ([**@denialhaag**])
+- ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
+  single-qubit unitary runs via Euler resynthesis ([#1672])
+  ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766])
+  ([**@rturrado**])
+- 🚸 Add [CMake presets] to provide a standardized and reproducible way to
+  configure builds ([#1660]) ([**@denialhaag**])
+- ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations
+  containing quantum operations ([#1718]) ([**@MatthiasReumann**])
+- ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
+  ([#1605]) ([**@lirem101**], [**@burgholzer**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive
+  rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**],
+  [**@denialhaag**], [**@MatthiasReumann**])
+- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
+  [#1676], [#1706], [#1776]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with
+  restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
+  [#1600], [#1664], [#1709], [#1716], [#1748]) ([**@MatthiasReumann**],
+  [**@burgholzer**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
+  [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
+  [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
+  [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569],
+  [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624],
+  [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1710],
+  [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1774],
+  [#1780], [#1781], [#1782], [#1787], [#1802], [#1803], [#1806], [#1807],
+  [#1808], [#1809], [#1823], [#1830]) ([**@burgholzer**], [**@denialhaag**],
+  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
+  [**@MatthiasReumann**], [**@simon1hofmann**])
+=======
+- 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
+  ([#1826]) ([**@ystade])
+- 🐳 Add dev container configuration for consistent local development
+  environment ([#1786]) ([**@denialhaag**])
+- ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
+  single-qubit unitary runs via Euler resynthesis ([#1672])
+  ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766])
+  ([**@rturrado**])
+- 🚸 Add [CMake presets] to provide a standardized and reproducible way to
+  configure builds ([#1660]) ([**@denialhaag**])
+- ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations
+  containing quantum operations ([#1718]) ([**@MatthiasReumann**])
+- ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
+  ([#1605]) ([**@lirem101**], [**@burgholzer**])
+- ✨ Add a `merge-single-qubit-rotation-gates` pass for merging consecutive
+  rotation gates using quaternions ([#1407], [#1674]) ([**@J4MMlE**],
+  [**@denialhaag**], [**@MatthiasReumann**])
+- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
+  [#1676], [#1706], [#1776]) ([**@denialhaag**], [**@burgholzer**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with
+  restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
+  [#1600], [#1664], [#1709], [#1716], [#1748]) ([**@MatthiasReumann**],
+  [**@burgholzer**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
+  [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
+  [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510],
+  [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1567], [#1569],
+  [#1570], [#1572], [#1573], [#1580], [#1602], [#1620], [#1623], [#1624],
+  [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1710],
+  [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1774],
+  [#1780], [#1781], [#1782], [#1787], [#1802], [#1803], [#1806], [#1807],
+  [#1808], [#1809], [#1823], [#1830]) ([**@burgholzer**], [**@denialhaag**],
+  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
+  [**@MatthiasReumann**], [**@simon1hofmann**])
+>>>>>>> 48e17f82 (🚸 Add const getOps func (#1826))
 
 ### Changed
 
@@ -387,6 +459,55 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+<<<<<<< HEAD
+||||||| parent of 48e17f82 (🚸 Add const getOps func (#1826))
+[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
+[#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
+[#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
+[#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
+[#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
+[#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
+[#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
+[#1803]: https://github.com/munich-quantum-toolkit/core/pull/1803
+[#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
+[#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
+[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
+[#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
+[#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
+[#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
+[#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
+[#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
+[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
+[#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
+[#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
+[#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
+[#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
+[#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
+=======
+[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
+[#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
+[#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
+[#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
+[#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
+[#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
+[#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
+[#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
+[#1803]: https://github.com/munich-quantum-toolkit/core/pull/1803
+[#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
+[#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
+[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
+[#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
+[#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
+[#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
+[#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
+[#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
+[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
+[#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
+[#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
+[#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
+[#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
+[#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
+>>>>>>> 48e17f82 (🚸 Add const getOps func (#1826))
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
