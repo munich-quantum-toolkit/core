@@ -27,8 +27,10 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 
@@ -74,7 +76,7 @@ protected:
 
 } // namespace
 
-void forLoopWithAngle(qco::QCOProgramBuilder& b) {
+static void forLoopWithAngle(qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto theta = b.floatConstant(0.123);
   b.scfFor(0, 2, 1, {reg.value}, [&](Value iv, ValueRange iterArgs) {
@@ -85,7 +87,7 @@ void forLoopWithAngle(qco::QCOProgramBuilder& b) {
   });
 };
 
-void nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
+static void nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto q0 = b.allocQubit();
   auto theta1 = b.floatConstant(0.123);
@@ -110,7 +112,7 @@ void nestedIfOpForLoopWithAngle(qco::QCOProgramBuilder& b) {
       });
 }
 
-void whileWithAngle(qco::QCOProgramBuilder& b) {
+static void whileWithAngle(qco::QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto theta = b.floatConstant(0.123);
   auto q1 = b.h(q0);
