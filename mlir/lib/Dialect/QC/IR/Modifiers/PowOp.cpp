@@ -38,8 +38,6 @@
 using namespace mlir;
 using namespace mlir::qc;
 using namespace mlir::utils;
-using llvm::make_early_inc_range;
-using llvm::reportFatalUsageError;
 
 /**
  * @brief If the computed P-gate angle corresponds to a named gate, emit it
@@ -303,7 +301,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive PowOp erasure.
-    for (auto& bodyOp : make_early_inc_range(*op.getBody())) {
+    for (auto& bodyOp : llvm::make_early_inc_range(*op.getBody())) {
       if (&bodyOp != innerOp && !isa<YieldOp>(&bodyOp)) {
         rewriter.moveOpBefore(&bodyOp, op);
       }
@@ -557,7 +555,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
 double PowOp::getExponentValue() {
   FloatAttr attr;
   if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    reportFatalUsageError("PowOp exponent must be a constant");
+    llvm::reportFatalUsageError("PowOp exponent must be a constant");
   }
   return attr.getValueAsDouble();
 }

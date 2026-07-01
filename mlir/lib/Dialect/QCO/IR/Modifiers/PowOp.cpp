@@ -39,8 +39,6 @@
 using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::utils;
-using llvm::reportFatalUsageError;
-using llvm::to_vector;
 
 /**
  * @brief If the computed P-gate angle corresponds to a named gate, emit it
@@ -173,7 +171,7 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
                                      op.getBody(), invBody, invBody->begin(),
                                      invArgs);
                                  auto yieldedValues =
-                                     to_vector(invBody->back().getOperands());
+                                     llvm::to_vector(invBody->back().getOperands());
                                  rewriter.eraseOp(&invBody->back());
                                  return yieldedValues;
                                })
@@ -246,7 +244,7 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
                                      innerCtrlOp.getBody(), powBody,
                                      powBody->begin(), powArgs);
                                  auto yieldedValues =
-                                     to_vector(powBody->back().getOperands());
+                                     llvm::to_vector(powBody->back().getOperands());
                                  rewriter.eraseOp(&powBody->back());
                                  return yieldedValues;
                                })
@@ -559,7 +557,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
 double PowOp::getExponentValue() {
   FloatAttr attr;
   if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    reportFatalUsageError("PowOp exponent must be a constant");
+    llvm::reportFatalUsageError("PowOp exponent must be a constant");
   }
   return attr.getValueAsDouble();
 }
@@ -574,14 +572,14 @@ UnitaryOpInterface PowOp::getBodyUnitary(const size_t i) {
 
 Value PowOp::getInputQubit(const size_t i) {
   if (i >= getNumTargets()) {
-    reportFatalUsageError("Qubit index out of bounds");
+    llvm::reportFatalUsageError("Qubit index out of bounds");
   }
   return getQubitsIn()[i];
 }
 
 Value PowOp::getOutputQubit(const size_t i) {
   if (i >= getNumTargets()) {
-    reportFatalUsageError("Qubit index out of bounds");
+    llvm::reportFatalUsageError("Qubit index out of bounds");
   }
   return getQubitsOut()[i];
 }
@@ -591,7 +589,7 @@ Value PowOp::getInputForOutput(Value output) {
       result && result.getOwner() == getOperation()) {
     return getInputQubit(result.getResultNumber());
   }
-  reportFatalUsageError("Given qubit is not an output of the operation");
+  llvm::reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
 Value PowOp::getOutputForInput(Value input) {
@@ -600,7 +598,7 @@ Value PowOp::getOutputForInput(Value input) {
       return out;
     }
   }
-  reportFatalUsageError("Given qubit is not an input of the operation");
+  llvm::reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
 void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
