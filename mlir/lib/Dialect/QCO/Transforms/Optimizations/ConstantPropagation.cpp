@@ -220,6 +220,17 @@ bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
   return addsGlobalPhase;
 }
 
+/**
+ * Removes the given quantum controls from a CtrlOp, potentially removing all
+ * controls and only leaving the (formerly controlled) gate in the body.
+ *
+ * @param op The qco::CtrlOp whose controls are removed.
+ * @param ctrlsToRemove The controls which should be removed from the CtrlOp.
+ * @param rewriter The used rewriter
+ * @param worklist The worklist which contains the operations that are iterated
+ * through.
+ * @return The operation without given controls.
+ */
 Operation* removeCtrlsOfGate(CtrlOp* op,
                              const llvm::DenseSet<Value>& ctrlsToRemove,
                              PatternRewriter& rewriter,
