@@ -15,9 +15,11 @@
 
 #include <array>
 #include <complex>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 namespace mlir::qco {
@@ -31,6 +33,9 @@ inline constexpr double MATRIX_TOLERANCE = 1e-14;
 class DynamicMatrix;
 struct Matrix4x4;
 struct SymmetricEigen4;
+struct ComplexEigen;
+struct ComplexEigen2;
+struct ComplexEigen4;
 
 /**
  * @brief 1x1 matrix for global-phase gates.
@@ -237,6 +242,14 @@ struct Matrix2x2 {
    * @return `true` when @p src is 2x2.
    */
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
+
+  /**
+   * @brief Computes the eigendecomposition of this complex matrix.
+   *
+   * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
+   * non-finite eigenvalues.
+   */
+  [[nodiscard]] std::optional<ComplexEigen2> complexEigen() const;
 
   /**
    * @brief Embed this single-qubit matrix into an @p numQubits-qubit Hilbert
@@ -536,6 +549,13 @@ struct Matrix4x4 {
    */
   [[nodiscard]] static SymmetricEigen4
   symmetricEigen4(const std::array<double, 16>& symmetric);
+
+  /**
+   * @brief Computes the eigendecomposition of this complex matrix.
+   *
+   * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
+   */
+  [[nodiscard]] std::optional<ComplexEigen4> complexEigen() const;
 };
 
 /**
@@ -756,10 +776,35 @@ public:
    */
   [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
 
+  /**
+   * @brief Computes the eigendecomposition of this square matrix.
+   *
+   * Uses EISPACK `corth` followed by `comqr2` (complex Hessenberg reduction
+   * and QR eigenanalysis). `pythag` and `csroot` follow John Burkardt's
+   * MIT-licensed EISPACK C port; `cdiv`, `corth`, and `comqr2` follow NETLIB
+   * EISPACK Fortran (https://netlib.org/eispack/cdiv.f,
+   * https://netlib.org/eispack/corth.f, https://netlib.org/eispack/comqr2.f).
+   * Dimensions `1` and `2` use closed-form formulas;
+   * dimension `4` delegates to @ref Matrix4x4::complexEigen; all other sizes
+   * use the general EISPACK path.
+   *
+   * @return Eigenpairs, or `std::nullopt` if this matrix is empty or the
+   * solver does not converge.
+   */
+  [[nodiscard]] std::optional<ComplexEigen> complexEigen() const;
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+/**
+ * @brief Concept for the four supported matrix types.
+ */
+template <typename T>
+concept SupportedMatrix =
+    std::same_as<T, Matrix1x1> || std::same_as<T, Matrix2x2> ||
+    std::same_as<T, Matrix4x4> || std::same_as<T, DynamicMatrix>;
 
 /**
  * @brief Type trait for the four supported matrix types.
@@ -772,9 +817,7 @@ private:
 template <typename T>
 inline constexpr bool
     is_supported_matrix_v = // NOLINT(readability-identifier-naming)
-    std::disjunction_v<std::is_same<T, Matrix1x1>, std::is_same<T, Matrix2x2>,
-                       std::is_same<T, Matrix4x4>,
-                       std::is_same<T, DynamicMatrix>>;
+    SupportedMatrix<T>;
 
 /// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
 /// `matrix * scalar`). Provided so generic code can scale a matrix from
@@ -800,6 +843,45 @@ struct SymmetricEigen4 {
   std::array<double, 4> eigenvalues{};
   /// Orthonormal eigenvectors as columns (column `j` matches `eigenvalues[j]`).
   Matrix4x4 eigenvectors{};
+};
+
+/**
+ * @brief Eigenvalues and eigenvectors of a complex `4x4` matrix.
+ *
+ * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+ * eigenvector for `eigenvalues[j]`).
+ */
+struct ComplexEigen4 {
+  /// Eigenvalues in no particular order.
+  std::array<Complex, 4> eigenvalues{};
+  /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
+  Matrix4x4 eigenvectors{};
+};
+
+/**
+ * @brief Eigenvalues and eigenvectors of a complex `2x2` matrix.
+ *
+ * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+ * eigenvector for `eigenvalues[j]`).
+ */
+struct ComplexEigen2 {
+  /// Eigenvalues in no particular order.
+  std::array<Complex, 2> eigenvalues{};
+  /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
+  Matrix2x2 eigenvectors{};
+};
+
+/**
+ * @brief Eigenvalues and eigenvectors of a square complex matrix.
+ *
+ * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+ * eigenvector for `eigenvalues[j]`).
+ */
+struct ComplexEigen {
+  /// Eigenvalues in no particular order.
+  SmallVector<Complex, 8> eigenvalues;
+  /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
+  DynamicMatrix eigenvectors;
 };
 
 } // namespace mlir::qco

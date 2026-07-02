@@ -10,12 +10,13 @@
 
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include "mlir/Dialect/QCO/Utils/Eigensolver.h"
+
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -24,6 +25,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace mlir::qco {
@@ -63,7 +65,7 @@ static void assignFixedImpl(std::int64_t& dim, SmallVector<Complex>& data,
 
 template <std::size_t Dim, std::size_t Size>
 [[nodiscard]] static bool
-isApproxFixedImpl(const std::int64_t dim, const SmallVector<Complex>& data,
+isApproxFixedImpl(const std::int64_t dim, ArrayRef<Complex> data,
                   const std::array<Complex, Size>& other, const double tol) {
   if (std::cmp_not_equal(dim, Dim)) {
     return false;
@@ -146,8 +148,26 @@ static void multiply4x4(const ArrayRef<Complex> lhs,
 [[nodiscard]] static std::size_t checkedDim(const std::int64_t dim) {
   assert(dim >= 0 && "DynamicMatrix dimension must be non-negative");
   const auto udim = static_cast<std::size_t>(dim);
-  assert(udim == 0 || udim <= std::numeric_limits<std::size_t>::max() / udim);
+  assert(
+      (udim == 0 || udim <= std::numeric_limits<std::size_t>::max() / udim) &&
+      "DynamicMatrix dimension is too large to allocate storage");
   return udim;
+}
+
+/// Returns the flat row-major index for `(row, col)` after bounds checking.
+[[nodiscard]] static std::size_t checkedFlatIndex(const std::size_t row,
+                                                  const std::size_t col,
+                                                  const std::size_t dim) {
+  assert(row < dim && col < dim && "matrix index out of bounds");
+  return (row * dim) + col;
+}
+
+[[nodiscard]] static std::int64_t checkedFlatIndex(const std::int64_t row,
+                                                   const std::int64_t col,
+                                                   const std::int64_t dim) {
+  assert(row >= 0 && col >= 0 && row < dim && col < dim &&
+         "matrix index out of bounds");
+  return (row * dim) + col;
 }
 
 [[nodiscard]] static std::size_t checkedStorageSize(const std::int64_t dim) {
@@ -225,13 +245,13 @@ static void copyBottomRightCorner(const std::int64_t matrixDim,
 }
 
 Complex& Matrix1x1::operator()(const std::size_t row, const std::size_t col) {
-  assert(row == 0 && col == 0);
+  assert(row == 0 && col == 0 && "matrix index out of bounds");
   return value;
 }
 
 Complex Matrix1x1::operator()(const std::size_t row,
                               const std::size_t col) const {
-  assert(row == 0 && col == 0);
+  assert(row == 0 && col == 0 && "matrix index out of bounds");
   return value;
 }
 
@@ -259,12 +279,12 @@ Matrix1x1& Matrix1x1::operator*=(const Complex& scalar) {
 Matrix1x1 Matrix1x1::adjoint() const { return fromElements(std::conj(value)); }
 
 Complex& Matrix2x2::operator()(const std::size_t row, const std::size_t col) {
-  return data[(row * K_COLS) + col];
+  return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
 Complex Matrix2x2::operator()(const std::size_t row,
                               const std::size_t col) const {
-  return data[(row * K_COLS) + col];
+  return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
 Matrix2x2 Matrix2x2::operator*(const Matrix2x2& rhs) const {
@@ -350,12 +370,12 @@ Matrix4x4 Matrix2x2::embedInTwoQubit(const std::size_t qubitIndex) const {
 }
 
 Complex& Matrix4x4::operator()(const std::size_t row, const std::size_t col) {
-  return data[(row * K_COLS) + col];
+  return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
 Complex Matrix4x4::operator()(const std::size_t row,
                               const std::size_t col) const {
-  return data[(row * K_COLS) + col];
+  return data[checkedFlatIndex(row, col, K_COLS)];
 }
 
 Matrix4x4 Matrix4x4::operator*(const Matrix4x4& rhs) const {
@@ -442,14 +462,14 @@ Matrix4x4 Matrix4x4::kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
 
 std::array<Complex, Matrix4x4::K_ROWS>
 Matrix4x4::column(const std::size_t col) const {
-  assert(col < K_COLS);
+  assert(col < K_COLS && "matrix index out of bounds");
   return {data[col], data[K_COLS + col], data[(2 * K_COLS) + col],
           data[(3 * K_COLS) + col]};
 }
 
 void Matrix4x4::setColumn(const std::size_t col,
                           const ArrayRef<Complex> values) {
-  assert(col < K_COLS);
+  assert(col < K_COLS && "matrix index out of bounds");
   assert(values.size() == K_ROWS &&
          "setColumn requires exactly K_ROWS entries");
   data[col] = values[0];
@@ -459,12 +479,12 @@ void Matrix4x4::setColumn(const std::size_t col,
 }
 
 ArrayRef<const Complex> Matrix4x4::row(const std::size_t row) const {
-  assert(row < K_ROWS);
+  assert(row < K_ROWS && "matrix index out of bounds");
   return ArrayRef(data).slice(row * K_COLS, K_COLS);
 }
 
 void Matrix4x4::setRow(const std::size_t row, const ArrayRef<Complex> values) {
-  assert(row < K_ROWS);
+  assert(row < K_ROWS && "matrix index out of bounds");
   assert(values.size() == K_COLS && "setRow requires exactly K_COLS entries");
   const std::size_t rowBase = row * K_COLS;
   data[rowBase + 0] = values[0];
@@ -540,260 +560,20 @@ Matrix4x4 Matrix4x4::reorderForQubits(const std::size_t q0Index,
 }
 
 SymmetricEigen4 Matrix4x4::symmetricEigen4() const {
-  return symmetricEigen4(realPart());
-}
-
-// Adapted from John Burkardt's MIT-licensed EISPACK C port (`tred2` / `tql2`):
-// https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
-// Specialized to `n = 4`; input is row-major, accumulator `z` is column-major.
-
-/// EISPACK `tred2` for `n = 4` (column-major `z[row + col*n]`).
-static void symmetricTred24(const std::array<double, 16>& input,
-                            std::array<double, 16>& z,
-                            std::array<double, 4>& diag,
-                            std::array<double, 4>& subdiag) {
-  constexpr std::size_t n = 4;
-  const auto zAt = [&z](const std::size_t row,
-                        const std::size_t col) -> double& {
-    return z[row + (col * n)];
-  };
-  double h = 0.0;
-
-  for (std::size_t col = 0; col < n; ++col) {
-    for (std::size_t row = col; row < n; ++row) {
-      zAt(row, col) = input[(row * n) + col];
-    }
-    diag[col] = input[((n - 1) * n) + col];
-  }
-
-  for (int i = static_cast<int>(n) - 1; i >= 1; --i) {
-    const auto ui = static_cast<std::size_t>(i);
-    const std::size_t l = ui - 1;
-    h = 0.0;
-    double scale = 0.0;
-    for (std::size_t k = 0; k <= l; ++k) {
-      scale += std::abs(diag[k]);
-    }
-    if (scale == 0.0) {
-      subdiag[ui] = diag[l];
-      for (std::size_t j = 0; j <= l; ++j) {
-        diag[j] = zAt(l, j);
-        zAt(ui, j) = 0.0;
-        zAt(j, ui) = 0.0;
-      }
-      diag[ui] = 0.0;
-      continue;
-    }
-    for (std::size_t k = 0; k <= l; ++k) {
-      diag[k] /= scale;
-    }
-    for (std::size_t k = 0; k <= l; ++k) {
-      h += diag[k] * diag[k];
-    }
-    const double f = diag[l];
-    const double g = -std::sqrt(h) * std::copysign(1.0, f);
-    subdiag[ui] = scale * g;
-    h -= f * g;
-    diag[l] = f - g;
-
-    for (std::size_t k = 0; k <= l; ++k) {
-      subdiag[k] = 0.0;
-    }
-    for (std::size_t j = 0; j <= l; ++j) {
-      const double fj = diag[j];
-      zAt(j, ui) = fj;
-      double gj = subdiag[j] + (zAt(j, j) * fj);
-      for (std::size_t k = j + 1; k <= l; ++k) {
-        gj += zAt(k, j) * diag[k];
-        subdiag[k] += zAt(k, j) * fj;
-      }
-      subdiag[j] = gj;
-    }
-    double ff = 0.0;
-    for (std::size_t k = 0; k <= l; ++k) {
-      subdiag[k] /= h;
-      ff += subdiag[k] * diag[k];
-    }
-    const double hh = 0.5 * ff / h;
-    for (std::size_t k = 0; k <= l; ++k) {
-      subdiag[k] -= hh * diag[k];
-    }
-    for (std::size_t j = 0; j <= l; ++j) {
-      const double fj = diag[j];
-      const double gj = subdiag[j];
-      for (std::size_t k = j; k <= l; ++k) {
-        zAt(k, j) -= (fj * subdiag[k]) + (gj * diag[k]);
-      }
-      diag[j] = zAt(l, j);
-      zAt(ui, j) = 0.0;
-    }
-    diag[ui] = h;
-  }
-
-  for (std::size_t i = 1; i < n; ++i) {
-    const std::size_t l = i - 1;
-    zAt(n - 1, l) = zAt(l, l);
-    zAt(l, l) = 1.0;
-    h = diag[i];
-    if (h != 0.0) {
-      for (std::size_t k = 0; k <= l; ++k) {
-        diag[k] = zAt(k, i) / h;
-      }
-      for (std::size_t j = 0; j <= l; ++j) {
-        double g = 0.0;
-        for (std::size_t k = 0; k <= l; ++k) {
-          g += zAt(k, i) * zAt(k, j);
-        }
-        for (std::size_t k = 0; k <= l; ++k) {
-          zAt(k, j) -= g * diag[k];
-        }
-      }
-    }
-    for (std::size_t k = 0; k <= l; ++k) {
-      zAt(k, i) = 0.0;
-    }
-  }
-
-  for (std::size_t j = 0; j < n; ++j) {
-    diag[j] = zAt(n - 1, j);
-  }
-  for (std::size_t j = 0; j < n - 1; ++j) {
-    zAt(n - 1, j) = 0.0;
-  }
-  zAt(n - 1, n - 1) = 1.0;
-  subdiag[0] = 0.0;
-}
-
-/// EISPACK `tql2` for `n = 4` (column-major `z[row + col*n]`).
-static void symmetricTql24(std::array<double, 4>& diag,
-                           std::array<double, 4>& subdiag,
-                           std::array<double, 16>& z) {
-  constexpr std::size_t n = 4;
-  const auto zAt = [&z](const std::size_t row,
-                        const std::size_t col) -> double& {
-    return z[row + (col * n)];
-  };
-
-  for (std::size_t i = 1; i < n; ++i) {
-    subdiag[i - 1] = subdiag[i];
-  }
-  double f = 0.0;
-  double tst1 = 0.0;
-  subdiag[n - 1] = 0.0;
-
-  for (std::size_t l = 0; l < n; ++l) {
-    int j = 0;
-    const double h = std::abs(diag[l]) + std::abs(subdiag[l]);
-    tst1 = std::max(tst1, h);
-
-    std::size_t m = l;
-    for (; m < n; ++m) {
-      const double tst2 = tst1 + std::abs(subdiag[m]);
-      if (tst2 == tst1) {
-        break;
-      }
-    }
-
-    if (m != l) {
-      while (true) {
-        if (j == 30) {
-          llvm::reportFatalInternalError("symmetricTql2_4: failed to converge");
-        }
-        ++j;
-
-        const std::size_t l1 = l + 1;
-        const std::size_t l2 = l1 + 1;
-        const double g = diag[l];
-        const double p = (diag[l1] - g) / (2.0 * subdiag[l]);
-        const double r = std::hypot(p, 1.0);
-        diag[l] = subdiag[l] / (p + std::copysign(std::abs(r), p));
-        diag[l1] = subdiag[l] * (p + std::copysign(std::abs(r), p));
-        const double dl1 = diag[l1];
-        const double hh = g - diag[l];
-        for (std::size_t i = l2; i < n; ++i) {
-          diag[i] -= hh;
-        }
-        f += hh;
-
-        double pv = diag[m];
-        double c = 1.0;
-        double c2 = c;
-        const double el1 = subdiag[l1];
-        double s = 0.0;
-        double c3 = 1.0;
-        double s2 = 0.0;
-        const std::size_t mml = m - l;
-        for (std::size_t ii = 1; ii <= mml; ++ii) {
-          c3 = c2;
-          c2 = c;
-          s2 = s;
-          const std::size_t i = m - ii;
-          const double gi = c * subdiag[i];
-          const double hi = c * pv;
-          const double ri = std::hypot(pv, subdiag[i]);
-          subdiag[i + 1] = s * ri;
-          s = subdiag[i] / ri;
-          c = pv / ri;
-          pv = (c * diag[i]) - (s * gi);
-          diag[i + 1] = hi + (s * ((c * gi) + (s * diag[i])));
-          for (std::size_t k = 0; k < n; ++k) {
-            const double zkI1 = zAt(k, i + 1);
-            zAt(k, i + 1) = (s * zAt(k, i)) + (c * zkI1);
-            zAt(k, i) = (c * zAt(k, i)) - (s * zkI1);
-          }
-        }
-        pv = -s * s2 * c3 * el1 * subdiag[l] / dl1;
-        subdiag[l] = s * pv;
-        diag[l] = c * pv;
-        const double tst2 = tst1 + std::abs(subdiag[l]);
-        if (tst2 > tst1) {
-          continue;
-        }
-        break;
-      }
-    }
-    diag[l] += f;
-  }
-
-  for (std::size_t ii = 1; ii < n; ++ii) {
-    const std::size_t i = ii - 1;
-    std::size_t k = i;
-    double p = diag[i];
-    for (std::size_t j = ii; j < n; ++j) {
-      if (diag[j] < p) {
-        k = j;
-        p = diag[j];
-      }
-    }
-    if (k == i) {
-      continue;
-    }
-    diag[k] = diag[i];
-    diag[i] = p;
-    for (std::size_t j = 0; j < n; ++j) {
-      const double tmp = zAt(j, i);
-      zAt(j, i) = zAt(j, k);
-      zAt(j, k) = tmp;
-    }
-  }
+  return decomposeSymmetricEigen4(*this);
 }
 
 SymmetricEigen4
 Matrix4x4::symmetricEigen4(const std::array<double, 16>& symmetric) {
-  constexpr std::size_t n = 4;
+  return decomposeSymmetricEigen4(symmetric);
+}
 
-  SymmetricEigen4 result;
-  std::array<double, 16> z{};
-  std::array<double, 4> subdiag{};
-  symmetricTred24(symmetric, z, result.eigenvalues, subdiag);
-  symmetricTql24(result.eigenvalues, subdiag, z);
+std::optional<ComplexEigen2> Matrix2x2::complexEigen() const {
+  return decomposeComplexEigen2(*this);
+}
 
-  for (std::size_t col = 0; col < n; ++col) {
-    for (std::size_t row = 0; row < n; ++row) {
-      result.eigenvectors(row, col) = z[row + (col * n)];
-    }
-  }
-  return result;
+std::optional<ComplexEigen4> Matrix4x4::complexEigen() const {
+  return decomposeComplexEigen4(*this);
 }
 
 struct DynamicMatrix::Impl {
@@ -855,12 +635,14 @@ DynamicMatrix DynamicMatrix::fromAdjoint(const Matrix2x2& src) {
 
 Complex& DynamicMatrix::operator()(const std::int64_t row,
                                    const std::int64_t col) {
-  return impl_->data[static_cast<std::size_t>((row * impl_->dim) + col)];
+  return impl_
+      ->data[static_cast<std::size_t>(checkedFlatIndex(row, col, impl_->dim))];
 }
 
 Complex DynamicMatrix::operator()(const std::int64_t row,
                                   const std::int64_t col) const {
-  return impl_->data[static_cast<std::size_t>((row * impl_->dim) + col)];
+  return impl_
+      ->data[static_cast<std::size_t>(checkedFlatIndex(row, col, impl_->dim))];
 }
 
 void DynamicMatrix::setBottomRightCorner(const Matrix2x2& block) {
@@ -932,8 +714,9 @@ bool DynamicMatrix::isApprox(const DynamicMatrix& other,
 Complex DynamicMatrix::trace() const {
   Complex sum{0.0, 0.0};
   const auto udim = checkedDim(impl_->dim);
+  const ArrayRef<Complex> storage = impl_->data;
   for (std::size_t i = 0; i < udim; ++i) {
-    sum += impl_->data[(i * udim) + i];
+    sum += storage[(i * udim) + i];
   }
   return sum;
 }
@@ -994,6 +777,39 @@ Matrix4x4 operator*(const Complex& scalar, const Matrix4x4& matrix) {
 
 DynamicMatrix operator*(const Complex& scalar, const DynamicMatrix& matrix) {
   return matrix * scalar;
+}
+
+std::optional<ComplexEigen> DynamicMatrix::complexEigen() const {
+  const std::size_t dim = checkedDim(impl_->dim);
+  if (dim == 0) {
+    return std::nullopt;
+  }
+  if (dim == 1) {
+    return decomposeComplexEigen1x1(*this);
+  }
+  if (dim == 2) {
+    Matrix2x2 fixed;
+    if (!fixed.assignFrom(*this)) {
+      return std::nullopt;
+    }
+    const std::optional<ComplexEigen2> eigen2 = fixed.complexEigen();
+    if (!eigen2) {
+      return std::nullopt;
+    }
+    return fromComplexEigen(*eigen2);
+  }
+  if (dim == 4) {
+    Matrix4x4 fixed;
+    if (!fixed.assignFrom(*this)) {
+      return std::nullopt;
+    }
+    const std::optional<ComplexEigen4> eigen4 = fixed.complexEigen();
+    if (!eigen4) {
+      return std::nullopt;
+    }
+    return fromComplexEigen(*eigen4);
+  }
+  return decomposeComplexEigenDynamic(*this);
 }
 
 } // namespace mlir::qco
