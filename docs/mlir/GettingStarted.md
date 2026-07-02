@@ -89,7 +89,7 @@ X|1\rangle &= |0\rangle
 A quantum gate may target multiple qubits.
 The controlled-X gate acts on two qubits
 and applies an X gate to the target qubit
-when the control qubit is in the $|1\rangle$ state:
+when the control (first) qubit is in the $|1\rangle$ state:
 
 ```{math}
 :label: cx_gate_action
@@ -100,8 +100,6 @@ when the control qubit is in the $|1\rangle$ state:
 {CX}|11\rangle &= |10\rangle
 \end{aligned},
 ```
-
-where the first qubit is the control qubit.
 
 Quantum _circuits_ describe a quantum computation graphically:
 
@@ -1384,17 +1382,10 @@ equality.
 Now that your quantum program is optimized,
 you may want to simulate it using a classical simulator via the MQT QIR Runtime.
 To transform the program into QIR,
-you can supply the `--emit-qir` command-line option:
+you can supply the `--emit-qir-base` (or `--emit-qir-adaptive`) command-line option:
 
 ```console
-mqt-cc ghz.qasm --emit-qir
-```
-
-Using the `mlir-translate` tool,
-store the output as an LLVM IR file (`.ll`) as follows.
-
-```console
-$ mqt-cc ghz.qasm --emit-qir | mlir-translate --mlir-to-llvmir > ghz.ll
+mqt-cc ghz.qasm --emit-qir-base > ghz.ll
 ```
 
 Next, refer to the [QIR Runtime Guide](../qir/index.md) on how to run the
