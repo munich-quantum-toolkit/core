@@ -973,7 +973,7 @@ For instance, a unit test might want to build a quantum program,
 perform some actions, and then verify
 that the resulting quantum program matches the expected outcome.
 
-To create quantum programs,
+To create quantum programs in the MLIR representation,
 the MQT Compiler Collection provides the `QCProgramBuilder`
 and `QCOProgramBuilder` classes, respectively.
 The following code snippets illustrate their usage.
@@ -1059,12 +1059,12 @@ pipeline:
 
 - First, a program in a front-end quantum language
   (e.g., OpenQASM) is translated to the QC dialect.
-- Next, the compiler transforms the program to the QCO dialect
+- Next, the compiler converts the program to the QCO dialect
   and subsequently applies hardware-agnostic
   and optionally hardware-dependent passes.
-  Finally, the program is transformed back to the QC dialect.
+  Finally, the program is converted back to the QC dialect.
 - Optionally, the optimized
-  and transpiled program can be transformed into a target representation such
+  and transpiled program can be translated into a target representation such
   as LLVM using the Quantum Intermediate Representation (QIR) extension.
 
 The figure below illustrates the compilation flow graphically.
@@ -1164,7 +1164,7 @@ Compiler Collection.
 By doing so, everyone using the MQT Compiler Collection
 as a backend benefits from the work we put into the optimization pass.
 
-First, we need to define the pass in one of QCO's TableGen files.
+First, we need to define the pass in the QCO's TableGen file responsible for transformations.
 
 ```{code-block} cpp
 // file: mlir/include/mlir/Dialect/QCO/Transforms/Passes.td
@@ -1296,14 +1296,14 @@ void runOnOperation() override {
 Congratulations, you have written your first optimization pass in MLIR!
 🎉
 
-The MQT Compiler Collection implements a generic version of this pass.
+The MQT Compiler Collection implements a generic version of this pass not only for the Hadamard gate but for many hermitian gates at once.
 If you are curious about how this is achieved using C++ templates, see
 [QCOUtils.h](https://github.com/munich-quantum-toolkit/core/blob/main/mlir/include/mlir/Dialect/QCO/QCOUtils.h).
 To see the pass in action, continue with the next section.
 
 ## Using the MQT Compiler Collection Tool
 
-This section shows you how to use the MQT Compiler Collection tool (`mqt-cc`).
+Finally, to run your optimization, this section shows you how to use the MQT Compiler Collection tool (`mqt-cc`).
 
 ### Optimizing an OpenQASM Program
 
