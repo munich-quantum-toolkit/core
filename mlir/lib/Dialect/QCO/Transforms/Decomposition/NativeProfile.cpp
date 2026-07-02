@@ -200,6 +200,10 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
   if (!native) {
     return failure();
   }
+  const auto basis = resolveEulerBasis(spec.gates);
+  if (!basis) {
+    return failure();
+  }
 
   emitGPhaseIfNeeded(builder, loc, native->globalPhase);
 
@@ -207,12 +211,11 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
   Value wire1 = qubit1;
   const auto& factors = native->singleQubitFactors;
   const std::uint8_t numBasisUses = native->numBasisUses;
-  const EulerBasis basis = spec.eulerBasis();
   const bool emitCz = (*entangler == NativeGateKind::CZ);
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
-        /*hasNonBasisGate=*/true, basis);
+        /*hasNonBasisGate=*/true, *basis);
     if (!synthesized) {
       llvm_unreachable("forced full synthesis must succeed");
     }
