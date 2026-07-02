@@ -19,7 +19,6 @@
 #include <mlir/IR/Value.h>
 
 #include <memory>
-#include <mlir/Dialect/Func/IR/FuncOpsDialect.h.inc>
 #include <vector>
 
 using namespace mlir::qco;

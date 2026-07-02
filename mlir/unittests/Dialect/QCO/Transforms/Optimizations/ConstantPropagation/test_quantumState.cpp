@@ -17,8 +17,6 @@
 #include <mlir/IR/DialectRegistry.h>
 
 #include <memory>
-#include <mlir/Dialect/Arith/IR/ArithOpsDialect.h.inc>
-#include <mlir/Dialect/Func/IR/FuncOpsDialect.h.inc>
 #include <stdexcept>
 #include <utility>
 #include <vector>
