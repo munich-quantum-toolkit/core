@@ -392,6 +392,24 @@ WalkResult handleIfOp(UnionTable* ut, IfOp* op,
   const Value condition = op->getCondition();
   // TODO: Always/Never executed
 
+  if (ut->isClassicalValueAlwaysTrue(condition)) {
+    op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
+    });
+
+    const auto operation = op->getOperation();
+    Block* block = &op->getThenRegion().front();
+    Operation* terminator = block->getTerminator();
+    const auto results = terminator->getOperands();
+    rewriter.inlineBlockBefore(block, operation, op->getQubits());
+    rewriter.replaceOp(operation, results);
+    rewriter.eraseOp(terminator);
+    std::ranges::replace(worklist, terminator,
+                         static_cast<Operation*>(nullptr));
+
+    return WalkResult::advance();
+  }
+
   const auto& thenBlock = op->thenBlock();
   const auto& elseBlock = op->elseBlock();
   const bool thenEmpty = thenBlock->getOperations().size() <= 1;
