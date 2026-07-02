@@ -98,6 +98,11 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::desc("Apply Hadamard lifting during optimization"),
     llvm::cl::init(false));
 
+static cl::opt<bool> enableConstantPropagation(
+    "constant-propagation",
+    cl::desc("Apply constant propagation during optimization"),
+    cl::init(false));
+
 /**
  * @brief Load and parse a `.qasm` file
  */
@@ -213,6 +218,7 @@ int main(int argc, char** argv) {
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
+  config.enableConstantPropagation = enableConstantPropagation;
 
   // Run the compilation pipeline
   CompilationRecord record;

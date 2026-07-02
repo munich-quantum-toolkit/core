@@ -153,6 +153,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
         if (config_.enableHadamardLifting) {
           pm.addPass(qco::createHadamardLifting());
         }
+        if (config_.enableConstantPropagation) {
+          pm.addPass(qco::createConstantPropagation());
+        }
       }))) {
     return failure();
   }
