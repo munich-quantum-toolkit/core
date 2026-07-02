@@ -43,6 +43,31 @@ enum class EulerBasis : std::uint8_t {
 [[nodiscard]] std::optional<EulerBasis> parseEulerBasis(StringRef basis);
 
 /**
+ * @brief Euler angles `(theta, phi, lambda)` and global phase for a 2x2
+ * unitary.
+ *
+ * The decomposition obeys `matrix == e^{i*phase} * K(phi) * A(theta) *
+ * K(lambda)` where `(K, A)` are the rotation axes of the chosen @ref
+ * EulerBasis.
+ */
+struct EulerAngles {
+  double theta = 0.0;  ///< Middle rotation angle.
+  double phi = 0.0;    ///< First outer rotation angle.
+  double lambda = 0.0; ///< Second outer rotation angle.
+  double phase = 0.0;  ///< Global phase in radians.
+};
+
+/**
+ * @brief Extracts `(theta, phi, lambda, phase)` of @p matrix in @p basis.
+ *
+ * @param matrix The single-qubit unitary to decompose.
+ * @param basis The target Euler basis.
+ * @return The extracted Euler angles and global phase.
+ */
+[[nodiscard]] EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
+                                            EulerBasis basis);
+
+/**
  * @brief Synthesizes a composed single-qubit unitary as gates in @p basis.
  *
  * Returns `std::nullopt` when @p hasNonBasisGate is false and resynthesis
