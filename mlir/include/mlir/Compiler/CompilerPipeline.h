@@ -10,9 +10,12 @@
 
 #pragma once
 
+#include "fomac/FoMaC.hpp"
+
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <memory>
 #include <string>
 
 namespace mlir {
@@ -50,8 +53,8 @@ struct QuantumCompilerConfig {
   /// Enable Hadamard lifting
   bool enableHadamardLifting = false;
 
-  /// (TODO:) Pointer to a QDMI device
-  void* device = nullptr;
+  /// Pointer to QDMI Device to compile to.
+  std::shared_ptr<fomac::Session::Device> device;
 };
 
 /**

@@ -19,6 +19,13 @@ target_link_libraries(
           MLIRTargetLLVMIRExport
           MLIRBuiltinToLLVMIRTranslation
           MLIRLLVMToLLVMIRTranslation
+
+          # TODO: Dependency management
+          qdmi::qdmi 
+          MQT::CoreQDMICommon 
+          MQT::CoreQDMIDriver
+          MQT::CoreFoMaC
+          
           ${llvm_native_libs})
 
 mqt_mlir_target_use_project_options(mqt-cc)

@@ -10,6 +10,7 @@
 add_mlir_library(
   MQTCompilerPipeline
   CompilerPipeline.cpp
+  Qdmi.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
   LINK_LIBS
@@ -22,7 +23,8 @@ add_mlir_library(
   MLIRQCToQIRBase
   MLIRQCToQIRAdaptive
   MLIRQCOTransforms
-  MQT::MLIRSupport)
+  MQT::MLIRSupport
+  MQT::CoreFoMaC)
 
 mqt_mlir_target_use_project_options(MQTCompilerPipeline)
 
