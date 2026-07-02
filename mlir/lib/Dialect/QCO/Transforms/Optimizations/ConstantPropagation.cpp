@@ -152,6 +152,28 @@ void removeCtrlOperation(CtrlOp* op, PatternRewriter& rewriter) {
 }
 
 /**
+ * Moves either the then or else block of an if operation out of the operation.
+ * Removes the terminator of the block both from the block and the worklist.
+ *
+ * @param ifOperation The operation whose then or else block gets inlined.
+ * @param block The block that gets inlined.
+ * @param worklist The worklist which contains the operations that are iterated
+ * through.
+ * @param rewriter The used rewriter.
+ */
+void inlineBranchBlock(IfOp* ifOperation, Block* block,
+                       std::span<Operation*>& worklist,
+                       PatternRewriter& rewriter) {
+  const auto operation = ifOperation->getOperation();
+  Operation* terminator = block->getTerminator();
+  const auto results = terminator->getOperands();
+  rewriter.inlineBlockBefore(block, operation, ifOperation->getQubits());
+  rewriter.replaceOp(operation, results);
+  rewriter.eraseOp(terminator);
+  std::ranges::replace(worklist, terminator, static_cast<Operation*>(nullptr));
+}
+
+/**
  * Handles a constant operation, meaning it is propagated through the union
  * table.
  *
@@ -390,53 +412,50 @@ WalkResult handleIfOp(UnionTable* ut, IfOp* op,
                       PatternRewriter& rewriter,
                       std::span<Operation*>& worklist) {
   const Value condition = op->getCondition();
-  // TODO: Always/Never executed
 
+  // Remove branching if value is always or never true
   if (ut->isClassicalValueAlwaysTrue(condition)) {
     op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
       std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
     });
 
-    const auto operation = op->getOperation();
     Block* block = &op->getThenRegion().front();
-    Operation* terminator = block->getTerminator();
-    const auto results = terminator->getOperands();
-    rewriter.inlineBlockBefore(block, operation, op->getQubits());
-    rewriter.replaceOp(operation, results);
-    rewriter.eraseOp(terminator);
-    std::ranges::replace(worklist, terminator,
-                         static_cast<Operation*>(nullptr));
+    inlineBranchBlock(op, block, worklist, rewriter);
+
+    return WalkResult::advance();
+  }
+  if (ut->isClassicalValueAlwaysFalse(condition)) {
+    op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
+    });
+
+    Block* block = &op->getElseRegion().front();
+    inlineBranchBlock(op, block, worklist, rewriter);
 
     return WalkResult::advance();
   }
 
-  const auto& thenBlock = op->thenBlock();
-  const auto& elseBlock = op->elseBlock();
-  const bool thenEmpty = thenBlock->getOperations().size() <= 1;
-  const bool elseEmpty = elseBlock->getOperations().size() <= 1;
+  Block* thenBlock = op->thenBlock();
+  Block* elseBlock = op->elseBlock();
+  bool thenEmpty = thenBlock->getOperations().size() <= 1;
+  bool elseEmpty = elseBlock->getOperations().size() <= 1;
 
   const auto targetQubits = op->getQubits();
   std::vector<Value> targets = {targetQubits.begin(), targetQubits.end()};
-  std::vector<Value> args;
+  std::vector<Value> thenArgs;
+  std::vector<Value> elseArgs;
 
   // propagate through then and else block
   if (!thenEmpty) {
     for (const Value arg : thenBlock->getArguments()) {
-      args.push_back(arg);
+      thenArgs.push_back(arg);
     }
-    ut->replaceValuesGlobally(targets, args);
-    targets = args;
+    ut->replaceValuesGlobally(targets, thenArgs);
     std::vector<Operation*> newWorklist;
 
+    // Create a new worklist to iterate over the inner instructions
     op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
       newWorklist.push_back(innerOp);
-      // Propagating values in order to assign the right values to the right
-      // result values
-      const auto input = innerOp->getOperands();
-      const auto output = innerOp->getResults();
-      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-        std::ranges::replace(targets, input[i], output[i]);
-      }
       std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
     });
     std::span wl = {newWorklist.begin(), newWorklist.end()};
@@ -449,25 +468,23 @@ WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     if (resThen.failed()) {
       return WalkResult::interrupt();
     }
-    args.clear();
+    op->thenBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      const auto input = innerOp->getOperands();
+      const auto output = innerOp->getResults();
+      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+        std::ranges::replace(thenArgs, input[i], output[i]);
+      }
+    });
   }
   if (!elseEmpty) {
     for (const Value arg : elseBlock->getArguments()) {
-      args.push_back(arg);
+      elseArgs.push_back(arg);
     }
-    ut->replaceValuesGlobally(targets, args);
-    targets = args;
+    ut->replaceValuesGlobally(thenArgs.empty() ? targets : thenArgs, elseArgs);
     std::vector<Operation*> newWorklist;
 
     op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
       newWorklist.push_back(innerOp);
-      // Propagating values in order to assign the right values to the right
-      // result values
-      const auto input = innerOp->getOperands();
-      const auto output = innerOp->getResults();
-      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
-        std::ranges::replace(targets, input[i], output[i]);
-      }
       std::ranges::replace(worklist, innerOp, static_cast<Operation*>(nullptr));
     });
     std::span wl = {newWorklist.begin(), newWorklist.end()};
@@ -480,10 +497,71 @@ WalkResult handleIfOp(UnionTable* ut, IfOp* op,
     if (resElse.failed()) {
       return WalkResult::interrupt();
     }
+    op->elseBlock()->walk<WalkOrder::PreOrder>([&](Operation* innerOp) {
+      // Propagating values in order to assign the right values to the right
+      // result values
+      const auto input = innerOp->getOperands();
+      const auto output = innerOp->getResults();
+      for (unsigned int i = 0; i < std::min(input.size(), output.size()); ++i) {
+        std::ranges::replace(elseArgs, input[i], output[i]);
+      }
+    });
   }
   const auto resultQubits = op->getResults();
   std::vector<Value> results = {resultQubits.begin(), resultQubits.end()};
-  ut->replaceValuesGlobally(targets, results);
+
+  thenBlock = op->thenBlock();
+  elseBlock = op->elseBlock();
+  thenEmpty = thenBlock->getOperations().size() <= 1;
+  elseEmpty = elseBlock->getOperations().size() <= 1;
+
+  // Remove if operation completely if both branches are empty after propagation
+  if (thenEmpty && elseEmpty) {
+    // Check that there is no implicit swap in one branch by re-ordered yield
+    // operands and get order of returned qubits
+    std::vector<unsigned int> order;
+    bool implicitSwap = false;
+    if (!thenArgs.empty()) {
+      for (unsigned int i = 0; i < thenBlock->getArguments().size(); ++i) {
+        auto it = std::ranges::find(thenArgs, thenBlock->getArguments()[i]);
+        if (it != thenArgs.end()) {
+          const unsigned int pos = std::distance(thenArgs.begin(), it);
+          order.push_back(pos);
+        }
+      }
+    }
+    if (!elseArgs.empty()) {
+      for (unsigned int i = 0; i < elseBlock->getArguments().size(); ++i) {
+        auto it = std::ranges::find(elseArgs, elseBlock->getArguments()[i]);
+        if (it != elseArgs.end()) {
+          const unsigned int pos = std::distance(thenArgs.begin(), it);
+          if (!thenArgs.empty()) {
+            implicitSwap |= order.at(i) == pos;
+          } else {
+            order.push_back(pos);
+          }
+        }
+      }
+    }
+    if (implicitSwap) {
+      throw std::runtime_error("Constant propagation does not allow implicit "
+                               "swapping of qubits in branching.");
+    }
+    // remove if Op and replace the values in the module and union table
+    std::ranges::replace(worklist, *op, static_cast<Operation*>(nullptr));
+    for (unsigned int inputQubitIndex = 0;
+         inputQubitIndex < op->getQubits().size(); ++inputQubitIndex) {
+      rewriter.replaceAllUsesWith(op->getResults()[order.at(inputQubitIndex)],
+                                  op->getQubits()[inputQubitIndex]);
+    }
+    std::vector<Value> inputQubitVec = {op->getQubits().begin(),
+                                        op->getQubits().end()};
+    ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs,
+                              inputQubitVec);
+    rewriter.eraseOp(*op);
+  } else {
+    ut->replaceValuesGlobally(elseArgs.empty() ? thenArgs : elseArgs, results);
+  }
 
   return WalkResult::advance();
 }
