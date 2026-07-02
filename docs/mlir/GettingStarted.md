@@ -1069,8 +1069,8 @@ Each dialect follows a consistent structure:
 | `Transforms/` | Defines transformations on the dialect.                 |
 | `Utils/`      | Defines utilities.                                      |
 
-TableGen is a tool to describe operations (and types) in a declarative schema file. 
-MLIR uses these specifications to generates the boilerplate C++ code.
+TableGen is a tool to describe operations (and types) in a declarative schema
+file. MLIR uses these specifications to generates the boilerplate C++ code.
 
 **`mlir/lib/`**
 
