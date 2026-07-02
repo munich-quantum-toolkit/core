@@ -97,14 +97,11 @@ static Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
       columns[j][i] /= norm;
     }
   }
-  const Matrix4x4 unitary = [&] {
-    Matrix4x4 matrix;
-    for (std::size_t col = 0; col < 4; ++col) {
-      matrix.setColumn(col, {columns[0][col], columns[1][col], columns[2][col],
-                             columns[3][col]});
-    }
-    return matrix;
-  }();
+  const auto unitary = Matrix4x4::fromElements(
+      columns[0][0], columns[1][0], columns[2][0], columns[3][0], columns[0][1],
+      columns[1][1], columns[2][1], columns[3][1], columns[0][2], columns[1][2],
+      columns[2][2], columns[3][2], columns[0][3], columns[1][3], columns[2][3],
+      columns[3][3]);
   assert(isUnitaryMatrix(unitary, WEYL_TOLERANCE));
   return unitary;
 }
@@ -443,21 +440,23 @@ lookupWireId(const llvm::DenseMap<Value, QubitId>& wireIds, Value wire) {
 }
 
 [[nodiscard]] static std::optional<Matrix4x4>
-embedded1QOnWires(UnitaryOpInterface op, QubitId q0) {
-  Matrix2x2 matrix;
-  if (!op.getUnitaryMatrix2x2(matrix)) {
+embeddedStepOnWires(UnitaryOpInterface op, QubitId q0,
+                    std::optional<QubitId> q1) {
+  if (op.isSingleQubit()) {
+    Matrix2x2 matrix;
+    if (!op.getUnitaryMatrix2x2(matrix)) {
+      return std::nullopt;
+    }
+    return matrix.embedInTwoQubit(q0);
+  }
+  if (!q1.has_value()) {
     return std::nullopt;
   }
-  return matrix.embedInTwoQubit(q0);
-}
-
-[[nodiscard]] static std::optional<Matrix4x4>
-embedded2QOnWires(UnitaryOpInterface op, QubitId q0, QubitId q1) {
   Matrix4x4 matrix;
   if (!op.getUnitaryMatrix4x4(matrix)) {
     return std::nullopt;
   }
-  return matrix.reorderForQubits(q0, q1);
+  return matrix.reorderForQubits(q0, *q1);
 }
 
 static std::optional<Matrix4x4>
@@ -477,12 +476,9 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
       if (returnOp.getNumOperands() != 2) {
         return std::nullopt;
       }
-      if (const auto out0 = lookupWireId(wireIds, returnOp.getOperand(0));
-          !out0.has_value()) {
-        return std::nullopt;
-      } else if (const auto out1 =
-                     lookupWireId(wireIds, returnOp.getOperand(1));
-                 !out1.has_value() || *out0 != 0 || *out1 != 1) {
+      const auto out0 = lookupWireId(wireIds, returnOp.getOperand(0));
+      const auto out1 = lookupWireId(wireIds, returnOp.getOperand(1));
+      if (!out0.has_value() || !out1.has_value() || *out0 != 0 || *out1 != 1) {
         return std::nullopt;
       }
       continue;
@@ -500,35 +496,30 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
       return std::nullopt;
     }
 
-    std::optional<Matrix4x4> step;
-    if (unitaryOp.isSingleQubit()) {
-      if (const auto qid = lookupWireId(wireIds, unitaryOp.getInputQubit(0));
-          !qid.has_value()) {
-        return std::nullopt;
-      } else {
-        step = embedded1QOnWires(unitaryOp, *qid);
-        wireIds[unitaryOp.getOutputQubit(0)] = *qid;
-      }
-    } else if (unitaryOp.isTwoQubit()) {
-      if (const auto q0id = lookupWireId(wireIds, unitaryOp.getInputQubit(0));
-          !q0id.has_value()) {
-        return std::nullopt;
-      } else if (const auto q1id =
-                     lookupWireId(wireIds, unitaryOp.getInputQubit(1));
-                 !q1id.has_value()) {
-        return std::nullopt;
-      } else {
-        step = embedded2QOnWires(unitaryOp, *q0id, *q1id);
-        wireIds[unitaryOp.getOutputQubit(0)] = *q0id;
-        wireIds[unitaryOp.getOutputQubit(1)] = *q1id;
-      }
-    } else {
+    const auto q0 = lookupWireId(wireIds, unitaryOp.getInputQubit(0));
+    if (!q0.has_value()) {
       return std::nullopt;
     }
-    if (!step) {
+    std::optional<QubitId> q1;
+    if (unitaryOp.isTwoQubit()) {
+      q1 = lookupWireId(wireIds, unitaryOp.getInputQubit(1));
+      if (!q1.has_value()) {
+        return std::nullopt;
+      }
+    } else if (!unitaryOp.isSingleQubit()) {
+      return std::nullopt;
+    }
+
+    const auto step = embeddedStepOnWires(unitaryOp, *q0, q1);
+    if (!step.has_value()) {
       return std::nullopt;
     }
     unitary.premultiplyBy(*step);
+
+    wireIds[unitaryOp.getOutputQubit(0)] = *q0;
+    if (q1.has_value()) {
+      wireIds[unitaryOp.getOutputQubit(1)] = *q1;
+    }
   }
 
   unitary *= global;
