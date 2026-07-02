@@ -246,6 +246,31 @@ TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
   EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
 }
 
+/**
+ * @brief Test: Constant propagation pass is invoked during the optimization
+ * stage
+ *
+ * We run the pipeline with enabled constant propagation and check whether the
+ * outputs differ, i.e. that the pipeline ran and changed the IR.
+ * Correctness of the pass is tested in a dedicated test.
+ */
+TEST_F(CompilerPipelineTest, ConstantPropagationPass) {
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), [&](mlir::qc::QCProgramBuilder& b) {
+        auto q0 = b.allocQubit();
+        auto q1 = b.allocQubit();
+        b.x(q0);
+        b.cx(q0, q1);
+      });
+  ASSERT_TRUE(module);
+
+  mlir::CompilationRecord record;
+  runPipeline(module.get(), false, true, false, true, record);
+
+  // The outputs must differ, proving the pass ran and transformed the IR
+  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     QuantumComputationPipelineProgramsTest, CompilerPipelineTest,
     testing::Values(

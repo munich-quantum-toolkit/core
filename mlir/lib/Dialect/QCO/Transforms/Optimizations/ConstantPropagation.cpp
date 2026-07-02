@@ -922,7 +922,7 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
             })
             .Case<AllocOp>([&](const AllocOp op) {
               addedAtLeastOneQubit = true;
-              ut->propagateQubitAlloc(op->getOperand(0));
+              ut->propagateQubitAlloc(op->getResult(0));
               return WalkResult::advance();
             })
             .Case<SinkOp>([&]([[maybe_unused]] SinkOp op) {
