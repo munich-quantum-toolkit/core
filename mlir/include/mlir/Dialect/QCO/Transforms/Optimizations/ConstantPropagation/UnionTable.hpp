@@ -494,7 +494,7 @@ public:
    * posCtrl (negCtrl) qubits/values that are always true (false) are
    * superfluous.
    *
-   * @param qubitCtrls The valuess of the positively controlling qubits.
+   * @param qubitCtrls The values of the positively controlling qubits.
    * @param posCtrlsClassical The values of the positively controlling classical
    * values.
    * @param negCtrlsClassical The values of the negatively controlling classical

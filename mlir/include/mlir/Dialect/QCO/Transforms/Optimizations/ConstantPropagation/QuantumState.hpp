@@ -158,7 +158,7 @@ class QuantumState {
    * measured is set to 0.
    *
    * @param target The global index of the qubit to be measured.
-   * @param reset True if target should be resetted in addition to measured.
+   * @param reset True if target should be reset in addition to measured.
    * @return MeasurementResult, containing the probability for the result and
    * the QuantumStates after measurement.
    */

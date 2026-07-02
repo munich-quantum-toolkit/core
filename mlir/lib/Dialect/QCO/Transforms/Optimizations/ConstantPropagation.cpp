@@ -1020,7 +1020,7 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
  * @param maxNonzeroAmplitudes The maximum number of non-zero amplitudes in the
  * tracted quantum states before reaching top.
  * @param maxHybridStates The maximum number of hybrid states which have a
- * non-zero probabilty.
+ * non-zero probability.
  * @return Success if constant propagation has been applied successfully
  */
 LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
