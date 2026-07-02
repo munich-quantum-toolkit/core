@@ -18,7 +18,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -41,6 +40,7 @@
 #include <optional>
 #include <random>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 using namespace mlir;
@@ -431,6 +431,15 @@ INSTANTIATE_TEST_SUITE_P(TwoQubitMatrices, BasisDecomposerTest,
                          testing::Combine(cxBasisCases(),
                                           entangledMatrixCases()));
 
+namespace {
+
+struct Synthesized2QCircuit {
+  OwningOpRef<ModuleOp> mlirModule;
+  func::FuncOp func;
+};
+
+} // namespace
+
 [[nodiscard]] static std::optional<QubitId>
 lookupWireId(const llvm::DenseMap<Value, QubitId>& wireIds, Value wire) {
   if (const auto it = wireIds.find(wire); it != wireIds.end()) {
@@ -525,11 +534,6 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
   unitary *= global;
   return unitary;
 }
-
-struct Synthesized2QCircuit {
-  OwningOpRef<ModuleOp> mlirModule;
-  func::FuncOp func;
-};
 
 [[nodiscard]] static Synthesized2QCircuit
 synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
