@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add a `constant propagation` pass for reducing superfluous quantum resources by propagating the quantum
+  machine state ([#1845]) ([**@lirem101])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
   ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration for consistent local development
@@ -594,6 +596,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1845]: https://github.com/munich-quantum-toolkit/core/pull/1845
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
 [#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
