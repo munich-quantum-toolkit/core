@@ -647,6 +647,11 @@ TEST(WeylSynthesisTest, SynthesisFailsWithoutEntangler) {
       TWO_QUBIT_CONTROLLED_X01, spec, out0, out1)));
 }
 
+TEST(WeylSynthesisTest, EntanglerCountFailsWithoutEntangler) {
+  const NativeProfileSpec spec{.gates = {NativeGateKind::U}};
+  EXPECT_FALSE(twoQubitEntanglerCount(Matrix4x4::identity(), spec).has_value());
+}
+
 TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   const auto ibm = parseNativeSpec("x,sx,rz,cx");
   ASSERT_TRUE(ibm);
@@ -655,6 +660,11 @@ TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   EXPECT_FALSE(ibm->gates.contains(NativeGateKind::RZZ));
   EXPECT_FALSE(parseNativeSpec("x,sx,rz,not-a-gate").has_value());
   EXPECT_FALSE(parseNativeSpec("u").has_value());
+
+  const auto whitespaceToken = parseNativeSpec("u, ,cx");
+  ASSERT_TRUE(whitespaceToken);
+  EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::U));
+  EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::CX));
 
   const auto pMenu = parseNativeSpec("x,sx,p,cx");
   const auto rzMenu = parseNativeSpec("x,sx,rz,cx");
@@ -676,6 +686,12 @@ TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   ASSERT_TRUE(generic);
   EXPECT_TRUE(generic->gates.contains(NativeGateKind::U));
   EXPECT_FALSE(generic->gates.contains(NativeGateKind::X));
+}
+
+TEST(NativeSpecTest, RejectsMenuWithoutSingleQubitStrategy) {
+  EXPECT_FALSE(parseNativeSpec("cx").has_value());
+  EXPECT_FALSE(parseNativeSpec("cz,rzz").has_value());
+  EXPECT_FALSE(parseNativeSpec("rx,cx").has_value());
 }
 
 TEST(NativeSpecTest, ResolvesEulerBasisFromMenu) {
@@ -747,6 +763,35 @@ TEST(NativeSpecTest, AllowsOpMatchesMenu) {
   EXPECT_FALSE(allowsOp(cxWithInterleavedH.getOperation(), *spec));
 
   EXPECT_FALSE(allowsOp(XOp::create(builder, loc, q0).getOperation(), *spec));
+  EXPECT_FALSE(
+      allowsOp(RXXOp::create(builder, loc, q0, q1, 0.2).getOperation(), *spec));
+
+  const auto pSpec = parseNativeSpec("x,sx,p,cx");
+  ASSERT_TRUE(pSpec);
+  EXPECT_TRUE(
+      allowsOp(POp::create(builder, loc, q0, 0.3).getOperation(), *pSpec));
+
+  auto hCtrl = CtrlOp::create(
+      builder, loc, ValueRange{q0}, ValueRange{q1},
+      [&](ValueRange targets) -> SmallVector<Value> {
+        return {HOp::create(builder, loc, targets[0]).getOutputQubit(0)};
+      });
+  EXPECT_FALSE(allowsOp(hCtrl.getOperation(), *spec));
+
+  const auto funcTy3 = builder.getFunctionType({qubitTy, qubitTy, qubitTy},
+                                               {qubitTy, qubitTy, qubitTy});
+  auto func3 = func::FuncOp::create(builder, loc, "allows_op_ccx", funcTy3);
+  auto* entry3 = func3.addEntryBlock();
+  builder.setInsertionPointToStart(entry3);
+  Value c0 = entry3->getArgument(0);
+  Value c1 = entry3->getArgument(1);
+  Value target = entry3->getArgument(2);
+  auto ccx = CtrlOp::create(
+      builder, loc, ValueRange{c0, c1}, ValueRange{target},
+      [&](ValueRange targets) -> SmallVector<Value> {
+        return {XOp::create(builder, loc, targets[0]).getOutputQubit(0)};
+      });
+  EXPECT_FALSE(allowsOp(ccx.getOperation(), *spec));
 
   const auto czSpec = parseNativeSpec("u,cz");
   ASSERT_TRUE(czSpec);
