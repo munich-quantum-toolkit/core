@@ -535,7 +535,7 @@ WalkResult handleIfOp(UnionTable* ut, IfOp* op,
       for (unsigned int i = 0; i < elseBlock->getArguments().size(); ++i) {
         auto it = std::ranges::find(elseArgs, elseBlock->getArguments()[i]);
         if (it != elseArgs.end()) {
-          const unsigned int pos = std::distance(thenArgs.begin(), it);
+          const unsigned int pos = std::distance(elseArgs.begin(), it);
           if (!thenArgs.empty()) {
             implicitSwap |= order.at(i) == pos;
           } else {
@@ -565,6 +565,57 @@ WalkResult handleIfOp(UnionTable* ut, IfOp* op,
   }
 
   return WalkResult::advance();
+}
+
+/**
+ * Puts the given operation into a classical branch and propagates the branch.
+ *
+ * @param ut Union table which contains the current quantum state.
+ * @param op The operation to be put in a classical branch.
+ * @param posClassicalCtrls The positive classical controls considered in the
+ * operation.
+ * @param negClassicalCtrls The negative classical controls considered in the
+ * operation.
+ * @param ctrlsToMod The controls which need to be used in the branch.
+ * @param rewriter The used rewriter.
+ * @param worklist The worklist which contains the operations that are iterated
+ * through.
+ * @return Whether the propagation of the new operations in a branch succeeded.
+ */
+WalkResult putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
+                                  const std::span<Value> posClassicalCtrls,
+                                  const std::span<Value> negClassicalCtrls,
+                                  controlsToModify ctrlsToMod,
+                                  PatternRewriter& rewriter,
+                                  std::span<Operation*>& worklist) {
+  const Value condition = *ctrlsToMod.classicalPosCtrlsToAdd.begin();
+  ValueRange insertedQubits = op.getInputQubits();
+  const SmallVector locs(insertedQubits.size(), op->getLoc());
+  auto newIfOp =
+      IfOp::create(rewriter, op->getLoc(), condition, insertedQubits);
+
+  auto* thenBlock = rewriter.createBlock(&newIfOp.getThenRegion(), {},
+                                         newIfOp->getResultTypes(), locs);
+
+  rewriter.setInsertionPointToStart(thenBlock);
+  IRMapping map;
+  for (auto [originalInput, ifArgs] :
+       llvm::zip(insertedQubits, thenBlock->getArguments())) {
+    map.map(originalInput, ifArgs);
+  }
+  auto thenClone = rewriter.clone(*op.getOperation(), map);
+
+  YieldOp::create(rewriter, op->getLoc(), thenClone->getResults());
+
+  auto* elseBlock = rewriter.createBlock(&newIfOp.getElseRegion(), {},
+                                         newIfOp->getResultTypes(), locs);
+  YieldOp::create(rewriter, op->getLoc(), elseBlock->getArguments());
+
+  rewriter.replaceAllUsesWith(op.getOutputQubits(), newIfOp.getResults());
+  rewriter.replaceOp(op.getOperation(), newIfOp.getResults());
+
+  return handleIfOp(ut, &newIfOp, posClassicalCtrls, negClassicalCtrls,
+                    rewriter, worklist);
 }
 
 /**
@@ -714,6 +765,7 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
         } else {
           ctrlsToMod.classicalNegCtrlsToAdd.insert(value);
         }
+        ctrlsToMod.quantumCtrlsToRemove.insert(qCtrl);
         break;
       }
     }
@@ -722,41 +774,23 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
   if (!ctrlsToMod.quantumCtrlsToRemove.empty()) {
     if (ctrlsToMod.quantumCtrlsToRemove.size() == op->getNumControls()) {
       auto newOp = removeAllCtrlsOfGate(op, rewriter, worklist);
+      if (!ctrlsToMod.classicalPosCtrlsToAdd.empty() ||
+          !ctrlsToMod.classicalNegCtrlsToAdd.empty()) {
+        return putOperationIntoBranch(ut, newOp, posClassicalCtrls,
+                                      negClassicalCtrls, ctrlsToMod, rewriter,
+                                      worklist);
+      }
       return handleUncontrolledUnitary(ut, &newOp, posClassicalCtrls,
                                        negClassicalCtrls, rewriter, worklist);
     }
-
     *op = removeCtrlsOfGate(op, ctrlsToMod.quantumCtrlsToRemove, rewriter,
                             worklist);
-  }
-  if (!ctrlsToMod.classicalPosCtrlsToAdd.empty() ||
-      !ctrlsToMod.classicalNegCtrlsToAdd.empty()) {
-    Value condition = *ctrlsToMod.classicalPosCtrlsToAdd.begin();
-    ValueRange insertedQubits = op->getInputQubits();
-    const SmallVector locs(insertedQubits.size(), op->getLoc());
-    auto newIfOp =
-        IfOp::create(rewriter, op->getLoc(), condition, insertedQubits);
-
-    auto* thenBlock = rewriter.createBlock(&newIfOp.getThenRegion(), {},
-                                           newIfOp->getResultTypes(), locs);
-
-    rewriter.setInsertionPointToStart(thenBlock);
-    IRMapping map;
-    for (auto [originalInput, ifArgs] :
-         llvm::zip(insertedQubits, thenBlock->getArguments())) {
-      map.map(originalInput, ifArgs);
+    if (!ctrlsToMod.classicalPosCtrlsToAdd.empty() ||
+        !ctrlsToMod.classicalNegCtrlsToAdd.empty()) {
+      return putOperationIntoBranch(ut, *op, posClassicalCtrls,
+                                    negClassicalCtrls, ctrlsToMod, rewriter,
+                                    worklist);
     }
-    auto thenClone = rewriter.clone(*op->getOperation(), map);
-
-    YieldOp::create(rewriter, op->getLoc(), thenClone->getResults());
-
-    auto* elseBlock = rewriter.createBlock(&newIfOp.getElseRegion(), {},
-                                           newIfOp->getResultTypes(), locs);
-    YieldOp::create(rewriter, op->getLoc(), elseBlock->getArguments());
-
-    rewriter.replaceOp(op->getOperation(), newIfOp.getResults());
-
-    return WalkResult::advance();
   }
 
   auto body = op->getBodyUnitary();
