@@ -215,40 +215,47 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    auto bodyUnitary =
-        utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
-    if (!bodyUnitary) {
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
       return failure();
     }
-    auto innerCtrlOp = dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    auto innerCtrlOp = dyn_cast<CtrlOp>(inner.getOperation());
     if (!innerCtrlOp) {
       return failure();
     }
 
-    const auto numControls = innerCtrlOp.getNumControls();
-    const auto numTargets = innerCtrlOp.getNumTargets();
-    auto inputQubits = op.getInputQubits();
-    auto controls = inputQubits.take_front(numControls);
-    auto targets = inputQubits.take_back(numTargets);
-    const double exponent = op.getExponentValue();
-
-    rewriter.replaceOpWithNewOp<CtrlOp>(
-        op, controls, targets,
-        [&](ValueRange ctrlTargetArgs) -> SmallVector<Value> {
-          return PowOp::create(rewriter, op.getLoc(), ctrlTargetArgs, exponent,
-                               [&](ValueRange powArgs) -> SmallVector<Value> {
-                                 auto* powBody = rewriter.getInsertionBlock();
-                                 rewriter.inlineBlockBefore(
-                                     innerCtrlOp.getBody(), powBody,
-                                     powBody->begin(), powArgs);
-                                 auto yieldedValues =
-                                     llvm::to_vector(powBody->back().getOperands());
-                                 rewriter.eraseOp(&powBody->back());
-                                 return yieldedValues;
-                               })
-              .getResults();
+    // pow(p) { ctrl(x) } == ctrl(pow(p) { x }). The inner control's controls and
+    // targets are block arguments aliasing the power modifier's qubits. Pull the
+    // controls out to a new control modifier and wrap the inner body in a power
+    // modifier whose block arguments match the inner targets, so the inner body
+    // is reused verbatim.
+    auto outerQubits = op.getQubitsIn();
+    const auto controls =
+        llvm::map_to_vector(innerCtrlOp.getControlsIn(), [&](Value c) {
+          return utils::getValueFromBlockArgument(c, outerQubits);
+        });
+    const auto targets =
+        llvm::map_to_vector(innerCtrlOp.getTargetsIn(), [&](Value t) {
+          return utils::getValueFromBlockArgument(t, outerQubits);
         });
 
+    auto newCtrl = CtrlOp::create(
+        rewriter, op.getLoc(), controls, targets,
+        [&](ValueRange targetArgs) -> SmallVector<Value> {
+          auto innerPow =
+              PowOp::create(rewriter, op.getLoc(), targetArgs, op.getExponent());
+          rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
+                                      innerPow.getRegion(),
+                                      innerPow.getRegion().end());
+          return innerPow.getResults();
+        });
+
+    // Each qubit output of the power modifier follows its input qubit to the
+    // corresponding output of the new control modifier.
+    rewriter.replaceOp(op,
+                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
+                         return newCtrl.getOutputForInput(in);
+                       }));
     return success();
   }
 };

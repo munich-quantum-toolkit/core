@@ -220,37 +220,34 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
     if (!inner) {
       return failure();
     }
-    auto innerCtrl = dyn_cast<CtrlOp>(inner.getOperation());
-    if (!innerCtrl) {
+    auto innerCtrlOp = dyn_cast<CtrlOp>(inner.getOperation());
+    if (!innerCtrlOp) {
       return failure();
     }
-    // The inner ctrl's operands alias the outer pow's block args; translate
-    // them back to the outer pow's operands so the hoisted ctrl is valid in
-    // the pow's parent scope.
+
+    // The inner control's controls and targets are block arguments aliasing the
+    // power modifier's qubits. Pull the controls out to a new control
+    // modifier and wrap the inner body in a power modifier whose block
+    // arguments match the inner targets, so the inner body is reused verbatim.
     auto outerQubits = op.getQubits();
     const auto controls =
-        llvm::map_to_vector(innerCtrl.getControls(), [&](Value c) {
+        llvm::map_to_vector(innerCtrlOp.getControls(), [&](Value c) {
           return utils::getValueFromBlockArgument(c, outerQubits);
         });
     const auto targets =
-        llvm::map_to_vector(innerCtrl.getTargets(), [&](Value t) {
+        llvm::map_to_vector(innerCtrlOp.getTargets(), [&](Value t) {
           return utils::getValueFromBlockArgument(t, outerQubits);
         });
+
     rewriter.replaceOpWithNewOp<CtrlOp>(
-        op, controls, targets, [&](ValueRange ctrlArgs) {
-          // ctrlArgs are the new ctrl's target block args; the pow wraps the
-          // body gate acting on those targets.
-          PowOp::create(
-              rewriter, op.getLoc(), op.getExponentValue(), ctrlArgs,
-              [&](ValueRange powArgs) {
-                auto* powBody = rewriter.getInsertionBlock();
-                // Inline the old CtrlOp's body, remapping its (target) block
-                // args to the new pow's block args.
-                rewriter.inlineBlockBefore(innerCtrl.getBody(), powBody,
-                                           powBody->begin(), powArgs);
-                rewriter.eraseOp(&powBody->back()); // erase the inlined YieldOp
-              });
+        op, controls, targets, [&](ValueRange targetArgs) {
+          auto innerPow =
+              PowOp::create(rewriter, op.getLoc(), op.getExponent(), targetArgs);
+          rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
+                                      innerPow.getRegion(),
+                                      innerPow.getRegion().end());
         });
+
     return success();
   }
 };
