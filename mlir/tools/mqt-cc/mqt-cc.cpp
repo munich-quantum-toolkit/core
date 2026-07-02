@@ -191,11 +191,29 @@ int main(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
-  // Setup QDMI Session.
-  fomac::Session session; // Config?
+  // Configure the compiler pipeline
+  QuantumCompilerConfig config;
+  config.convertToQIRBase = convertToQIRBase;
+  config.convertToQIRAdaptive = convertToQIRAdaptive;
+  config.recordIntermediates = recordIntermediates;
+  config.enableTiming = enableTiming;
+  config.enableStatistics = enableStatistics;
+  config.printIRAfterAllStages = printIRAfterAllStages;
+  config.disableMergeSingleQubitRotationGates =
+      disableMergeSingleQubitRotationGates;
+  config.enableHadamardLifting = enableHadamardLifting;
+
+  fomac::Session session; // TODO: Config?
   if (qdmiListDevices) {
     listAvailableQDMIDevices(session);
     return 0;
+  }
+  if (qdmiDevice != std::nullopt) {
+    config.device = getQDMIDevice(session, *qdmiDevice);
+    if (!config.device) {
+      llvm::errs() << "Device not found!\n";
+      listAvailableQDMIDevices(session, llvm::errs());
+    }
   }
 
   // Set up MLIR context with all required dialects
@@ -219,26 +237,6 @@ int main(int argc, char** argv) {
   }
   if (!mod) {
     return 1;
-  }
-
-  // Configure the compiler pipeline
-  QuantumCompilerConfig config;
-  config.convertToQIRBase = convertToQIRBase;
-  config.convertToQIRAdaptive = convertToQIRAdaptive;
-  config.recordIntermediates = recordIntermediates;
-  config.enableTiming = enableTiming;
-  config.enableStatistics = enableStatistics;
-  config.printIRAfterAllStages = printIRAfterAllStages;
-  config.disableMergeSingleQubitRotationGates =
-      disableMergeSingleQubitRotationGates;
-  config.enableHadamardLifting = enableHadamardLifting;
-
-  if (qdmiDevice != std::nullopt) {
-    config.device = getQDMIDevice(session, *qdmiDevice);
-    if (!config.device) {
-      llvm::errs() << "Device not found!\n";
-      listAvailableQDMIDevices(session, llvm::errs());
-    }
   }
 
   // Run the compilation pipeline
