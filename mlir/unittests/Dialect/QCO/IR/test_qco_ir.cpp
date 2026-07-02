@@ -318,11 +318,13 @@ TEST_F(QCOTest, NegPowHNoFold) {
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
 }
 
-/// Regression: pow(sx) must not expand inside a ctrl modifier. The fold emits a
-/// separate GPhase, which under a control becomes an observable controlled
-/// phase, resolvable only when the GPhase is the ctrl body's sole op.
-/// Verify that both CtrlOp and its nested PowOp survive.
-TEST_F(QCOTest, CtrlPowSxNoExpansion) {
+/// pow(sx) expands inside a ctrl modifier. The fold emits a separate GPhase
+/// alongside the rotation; keeping both inside the ctrl body preserves the
+/// controlled global phase (under a control the GPhase is an observable
+/// controlled phase). The controlled GPhase is later pulled out and resolved
+/// once the multi-op modifier is unrolled (see #1758). Verify the CtrlOp
+/// survives and the nested PowOp is expanded into a GPhase + RX.
+TEST_F(QCOTest, CtrlPowSxExpands) {
   auto program =
       QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(ctrlPowSx).fn);
   ASSERT_TRUE(program);
@@ -332,10 +334,16 @@ TEST_F(QCOTest, CtrlPowSxNoExpansion) {
 
   int ctrlCount = 0;
   int powCount = 0;
+  int gphaseCount = 0;
+  int rxCount = 0;
   program->walk([&](CtrlOp) { ++ctrlCount; });
   program->walk([&](PowOp) { ++powCount; });
+  program->walk([&](GPhaseOp) { ++gphaseCount; });
+  program->walk([&](RXOp) { ++rxCount; });
   EXPECT_EQ(ctrlCount, 1) << "CtrlOp must survive the pipeline";
-  EXPECT_EQ(powCount, 1) << "PowOp inside ctrl must not be expanded";
+  EXPECT_EQ(powCount, 0) << "PowOp inside ctrl must be expanded";
+  EXPECT_EQ(gphaseCount, 1) << "SX fold must emit a GPhase";
+  EXPECT_EQ(rxCount, 1) << "SX fold must emit an RX";
 }
 
 /// \name QCO/Operations/StandardGates/BarrierOp.cpp

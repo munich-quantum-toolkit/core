@@ -284,15 +284,6 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     auto* innerOp = bodyUnitary.getOperation();
     const double r = op.getExponentValue();
     auto loc = op.getLoc();
-    const bool insideCtrl = op->getParentOfType<CtrlOp>() != nullptr;
-
-    // These folds emit a separate GPhase alongside the rotation. Under a Ctrl
-    // (at any nesting depth) a GPhase becomes an observable controlled phase
-    // that is only resolved (ctrl{ gphase } => P) when it is the ctrl body's
-    // sole op, so don't fold X/Y/SX/SXdg anywhere inside a control.
-    if (isa<XOp, YOp, SXOp, SXdgOp>(innerOp) && insideCtrl) {
-      return failure();
-    }
 
     // Pre-check: only proceed for gate types we can fold.
     // HOp, ECROp, SWAPOp additionally require an integer exponent.
