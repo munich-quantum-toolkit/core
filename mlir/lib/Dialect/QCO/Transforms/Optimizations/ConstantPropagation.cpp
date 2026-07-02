@@ -570,6 +570,8 @@ WalkResult handleIfOp(UnionTable* ut, IfOp* op,
 
 /**
  * Puts the given operation into a classical branch and propagates the branch.
+ * Only supports one new condition, i.e. only considers the first positive or
+ * negative new controls.
  *
  * @param ut Union table which contains the current quantum state.
  * @param op The operation to be put in a classical branch.
@@ -589,28 +591,46 @@ WalkResult putOperationIntoBranch(UnionTable* ut, UnitaryOpInterface op,
                                   controlsToModify ctrlsToMod,
                                   PatternRewriter& rewriter,
                                   std::span<Operation*>& worklist) {
-  const Value condition = *ctrlsToMod.classicalPosCtrlsToAdd.begin();
+  const bool createThenBranch = !ctrlsToMod.classicalPosCtrlsToAdd.empty();
+  const Value condition = createThenBranch
+                              ? *ctrlsToMod.classicalPosCtrlsToAdd.begin()
+                              : *ctrlsToMod.classicalNegCtrlsToAdd.begin();
   ValueRange insertedQubits = op.getInputQubits();
   const SmallVector locs(insertedQubits.size(), op->getLoc());
   auto newIfOp =
       IfOp::create(rewriter, op->getLoc(), condition, insertedQubits);
 
-  auto* thenBlock = rewriter.createBlock(&newIfOp.getThenRegion(), {},
-                                         newIfOp->getResultTypes(), locs);
-
-  rewriter.setInsertionPointToStart(thenBlock);
   IRMapping map;
-  for (auto [originalInput, ifArgs] :
-       llvm::zip(insertedQubits, thenBlock->getArguments())) {
-    map.map(originalInput, ifArgs);
+
+  if (createThenBranch) {
+    auto* thenBlock = rewriter.createBlock(&newIfOp.getThenRegion(), {},
+                                           newIfOp->getResultTypes(), locs);
+    rewriter.setInsertionPointToStart(thenBlock);
+    for (auto [originalInput, ifArgs] :
+         llvm::zip(insertedQubits, thenBlock->getArguments())) {
+      map.map(originalInput, ifArgs);
+    }
+    auto thenClone = rewriter.clone(*op.getOperation(), map);
+    YieldOp::create(rewriter, op->getLoc(), thenClone->getResults());
+
+    auto* elseBlock = rewriter.createBlock(&newIfOp.getElseRegion(), {},
+                                           newIfOp->getResultTypes(), locs);
+    YieldOp::create(rewriter, op->getLoc(), elseBlock->getArguments());
+  } else {
+    auto* elseBlock = rewriter.createBlock(&newIfOp.getElseRegion(), {},
+                                           newIfOp->getResultTypes(), locs);
+    rewriter.setInsertionPointToStart(elseBlock);
+    for (auto [originalInput, ifArgs] :
+         llvm::zip(insertedQubits, elseBlock->getArguments())) {
+      map.map(originalInput, ifArgs);
+    }
+    auto elseClone = rewriter.clone(*op.getOperation(), map);
+    YieldOp::create(rewriter, op->getLoc(), elseClone->getResults());
+
+    auto* thenBlock = rewriter.createBlock(&newIfOp.getThenRegion(), {},
+                                           newIfOp->getResultTypes(), locs);
+    YieldOp::create(rewriter, op->getLoc(), thenBlock->getArguments());
   }
-  auto thenClone = rewriter.clone(*op.getOperation(), map);
-
-  YieldOp::create(rewriter, op->getLoc(), thenClone->getResults());
-
-  auto* elseBlock = rewriter.createBlock(&newIfOp.getElseRegion(), {},
-                                         newIfOp->getResultTypes(), locs);
-  YieldOp::create(rewriter, op->getLoc(), elseBlock->getArguments());
 
   rewriter.replaceAllUsesWith(op.getOutputQubits(), newIfOp.getResults());
   rewriter.replaceOp(op.getOperation(), newIfOp.getResults());

@@ -391,10 +391,13 @@ TEST_F(QCOConstantPropagationTest, testEquivalentClassicalAndQuantumControl) {
   auto q = programBuilder.allocQubitRegister(3);
   q[0] = programBuilder.h(q[0]);
   auto [q0, q1] = programBuilder.cx(q[0], q[1]);
-  programBuilder.measure(q0);
+  auto [q01, b0] = programBuilder.measure(q0);
   auto [q11, q2] = programBuilder.cx(q1, q[2]);
   q[1] = programBuilder.x(q11);
-  programBuilder.cy(q[1], q2);
+  auto [q12, q21] = programBuilder.cy(q[1], q2);
+  programBuilder.x(q01);
+  programBuilder.y(q12);
+  programBuilder.h(q21);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
@@ -406,14 +409,17 @@ TEST_F(QCOConstantPropagationTest, testEquivalentClassicalAndQuantumControl) {
         const auto qi0 = referenceBuilder.x(args[0]);
         return SmallVector{qi0};
       });
-  referenceBuilder.x(qRef1);
-  referenceBuilder.qcoIf(
+  qRef[1] = referenceBuilder.x(qRef1);
+  const auto qRange21 = referenceBuilder.qcoIf(
       bRef0, qRange2,
       [&](const ValueRange args) { return SmallVector{args[0]}; },
       [&](const ValueRange args) {
         const auto qi0 = referenceBuilder.y(args[0]);
         return SmallVector{qi0};
       });
+  referenceBuilder.x(qRef01);
+  referenceBuilder.y(qRef[1]);
+  referenceBuilder.h(qRange21[0]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
@@ -433,10 +439,13 @@ TEST_F(QCOConstantPropagationTest, testClassicalImpliesQuantum) {
   q[1] = programBuilder.x(q[1]);
   auto [q01, q1] = programBuilder.cx(q0, q[1]);
   auto [q11, q02] = programBuilder.ch(q1, q01);
-  programBuilder.qcoIf(b0, {q02, q11}, [&](const ValueRange args) {
-    const auto [qi0, qi1] = programBuilder.cx(args[0], args[1]);
-    return SmallVector{qi0, qi1};
-  });
+  const auto qRange =
+      programBuilder.qcoIf(b0, {q02, q11}, [&](const ValueRange args) {
+        const auto [qi0, qi1] = programBuilder.cx(args[0], args[1]);
+        return SmallVector{qi0, qi1};
+      });
+  programBuilder.x(qRange[0]);
+  programBuilder.y(qRange[1]);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(2);
@@ -448,17 +457,20 @@ TEST_F(QCOConstantPropagationTest, testClassicalImpliesQuantum) {
         const auto qi0 = referenceBuilder.x(args[0]);
         return SmallVector{qi0};
       });
-  referenceBuilder.qcoIf(
+  const auto qRefRange0 = referenceBuilder.qcoIf(
       bRef0, {qRef0},
       [&](const ValueRange args) { return SmallVector{args[0]}; },
       [&](const ValueRange args) {
         const auto qi0 = referenceBuilder.h(args[0]);
         return SmallVector{qi0};
       });
-  referenceBuilder.qcoIf(bRef0, qRefRange1, [&](const ValueRange args) {
-    const auto qi0 = referenceBuilder.x(args[0]);
-    return SmallVector{qi0};
-  });
+  const auto qRefRange = referenceBuilder.qcoIf(
+      bRef0, {qRefRange0[0], qRefRange1[0]}, [&](const ValueRange args) {
+        const auto qi0 = referenceBuilder.x(args[1]);
+        return SmallVector{args[0], qi0};
+      });
+  referenceBuilder.x(qRefRange[0]);
+  referenceBuilder.y(qRefRange[1]);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
