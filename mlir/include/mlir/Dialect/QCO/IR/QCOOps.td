@@ -1280,14 +1280,45 @@ def IfOp
                            "nullptr">:$elseBuilder)>];
 
   let extraClassDeclaration = [{
+        /// Return the then-block.
         Block *thenBlock() {
-           return &getThenRegion().back();
+          return &getThenRegion().back();
         }
+
+        /// Return the yield of the else-block.
         YieldOp thenYield();
+
+        /// Return the else-block.
         Block* elseBlock() {
-           return &getElseRegion().back();
+          return &getElseRegion().back();
         }
+
+        /// Return the yield of the else-block.
         YieldOp elseYield();
+
+        /// Return the result that corresponds to the given qubit operand,
+        /// or "empty" OpResult on failure.
+        OpResult getTiedResult(OpOperand* qubit);
+
+        /// Return the qubit operand that corresponds to the given result,
+        /// or `nullptr` on failure.
+        OpOperand* getTiedQubit(OpResult result);
+
+        /// Return the argument that corresponds to the given qubit operand
+        /// for the then-block, or "empty" BlockArgument on failure.
+        BlockArgument getTiedThenBlockArgument(OpOperand* qubit);
+
+        /// Return the argument that corresponds to the given qubit operand
+        /// for the else-block, or "empty" BlockArgument on failure.
+        BlockArgument getTiedElseBlockArgument(OpOperand* qubit);
+
+        /// Return the yielded value that corresponds to the given argument
+        /// for the then-block, or `nullptr` on failure.
+        OpOperand* getTiedThenYieldedValue(BlockArgument bbArg);
+
+        /// Return the yielded value that corresponds to the given argument
+        /// for the else-block, or `nullptr` on failure.
+        OpOperand* getTiedElseYieldedValue(BlockArgument bbArg);
     }];
 
   let extraClassDefinition = [{
