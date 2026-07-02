@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -36,12 +35,16 @@ namespace {
 using mlir::qco::Matrix4x4;
 
 constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
-    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,  // row 0
+                            0.0, 1.0, 0.0, 0.0,  // row 1
+                            0.0, 0.0, 0.0, 1.0,  // row 2
+                            0.0, 0.0, 1.0, 0.0); // row 3
 
 constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
-    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                            1.0, 0.0, 0.0, 0.0, 0.0, -1.0);
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,   // row 0
+                            0.0, 1.0, 0.0, 0.0,   // row 1
+                            0.0, 0.0, 1.0, 0.0,   // row 2
+                            0.0, 0.0, 0.0, -1.0); // row 3
 
 } // namespace
 
@@ -160,16 +163,12 @@ static std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
 }
 
 static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
-  if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
-    return std::nullopt;
-  }
-  auto bodyUnitary =
-      utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrl.getBody());
-  if (!bodyUnitary) {
+  if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1 ||
+      ctrl.getNumBodyUnitaries() != 1) {
     return std::nullopt;
   }
   return TypeSwitch<Operation*, std::optional<NativeGateKind>>(
-             bodyUnitary.getOperation())
+             ctrl.getBodyUnitary(0).getOperation())
       .Case<XOp>([](XOp) { return NativeGateKind::CX; })
       .Case<ZOp>([](ZOp) { return NativeGateKind::CZ; })
       .Default([](Operation*) { return std::nullopt; });
@@ -232,13 +231,13 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
     wire1 = ctrlOp.getOutputTarget(0);
   };
 
-  for (std::uint8_t i = 0; i < numBasisUses; ++i) {
-    emitFactor(wire1, static_cast<std::size_t>(2 * i));
-    emitFactor(wire0, static_cast<std::size_t>((2 * i) + 1));
-    emitEntangler();
+  for (std::uint8_t layer = 0; layer <= numBasisUses; ++layer) {
+    emitFactor(wire1, static_cast<std::size_t>(2 * layer));
+    emitFactor(wire0, static_cast<std::size_t>((2 * layer) + 1));
+    if (layer < numBasisUses) {
+      emitEntangler();
+    }
   }
-  emitFactor(wire1, static_cast<std::size_t>(2 * numBasisUses));
-  emitFactor(wire0, static_cast<std::size_t>((2 * numBasisUses) + 1));
 
   outQubit0 = wire0;
   outQubit1 = wire1;
