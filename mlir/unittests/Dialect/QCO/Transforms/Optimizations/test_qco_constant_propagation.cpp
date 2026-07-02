@@ -213,10 +213,17 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
   q[1] = programBuilder.x(q[1]);
   auto [q0, q1] = programBuilder.cx(q[0], q[1]);
   auto [q01, b0] = programBuilder.measure(q0);
-  programBuilder.qcoIf(b0, {q01, q1}, [&](const ValueRange args) {
-    const auto [qi0, qi1] = programBuilder.cx(args[0], args[1]);
-    return SmallVector{qi0, qi1};
-  });
+  auto qRange01 = programBuilder.qcoIf(
+      b0, {q01, q1},
+      [&](const ValueRange args) {
+        const auto [qi0, qi1] = programBuilder.cx(args[0], args[1]);
+        return SmallVector{qi0, qi1};
+      },
+      [&](const ValueRange args) {
+        const auto [qi0, qi1] = programBuilder.ch(args[0], args[1]);
+        return SmallVector{qi0, qi1};
+      });
+  programBuilder.y(qRange01[1]);
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
@@ -224,6 +231,44 @@ TEST_F(QCOConstantPropagationTest, testUnsatisfiableHybridCombination) {
   qRef[1] = referenceBuilder.x(qRef[1]);
   auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
   referenceBuilder.measure(qRef0);
+  referenceBuilder.y(qRef1);
+  reference = referenceBuilder.finalize();
+
+  ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
+
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(module.get(), reference.get()));
+}
+
+/**
+ * @brief Test: This test checks that a swap of the qubits in a branch is
+ * considered during propagation.
+ */
+TEST_F(QCOConstantPropagationTest, testBranchHasASwap) {
+  auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.h(q[0]);
+  q[1] = programBuilder.x(q[1]);
+  auto [q0, q1] = programBuilder.cx(q[0], q[1]);
+  auto [q01, b0] = programBuilder.measure(q0);
+  auto qRange01 = programBuilder.qcoIf(
+      b0, {q01, q1},
+      [&](const ValueRange args) {
+        const auto [qi0, qi1] = programBuilder.cx(args[0], args[1]);
+        return SmallVector{qi1, qi0};
+      },
+      [&](const ValueRange args) {
+        const auto [qi0, qi1] = programBuilder.ch(args[0], args[1]);
+        return SmallVector{qi1, qi0};
+      });
+  programBuilder.y(qRange01[0]);
+  module = programBuilder.finalize();
+
+  auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.h(qRef[0]);
+  qRef[1] = referenceBuilder.x(qRef[1]);
+  auto [qRef0, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  auto [qRef01, bRef0] = referenceBuilder.measure(qRef0);
+  referenceBuilder.y(qRef01);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
@@ -327,7 +372,7 @@ TEST_F(QCOConstantPropagationTest, testDoNotRemoveClassicalConditional) {
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(1);
-  qRef[0] = referenceBuilder.x(qRef[0]);
+  qRef[0] = referenceBuilder.h(qRef[0]);
   auto [qRef0, bRef0] = referenceBuilder.measure(qRef[0]);
   referenceBuilder.qcoIf(
       bRef0, {qRef0},
