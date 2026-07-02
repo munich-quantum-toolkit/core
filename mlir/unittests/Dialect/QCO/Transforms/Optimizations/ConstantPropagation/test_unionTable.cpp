@@ -759,21 +759,21 @@ TEST_F(UnionTablePropertiesTest, hasAlwaysZeroProbabilityTest) {
   ut.propagateMeasurement(v4, v6, i0);
 
   llvm::DenseMap<mlir::Value, bool> qubits0;
-  llvm::DenseMap<mlir::Value, bool> classicals0;
+  llvm::DenseMap<mlir::Value, bool> classics0;
   llvm::DenseMap<mlir::Value, bool> qubits1;
-  llvm::DenseMap<mlir::Value, bool> classicals1;
+  llvm::DenseMap<mlir::Value, bool> classics1;
   qubits0[v5] = true;
   qubits0[v6] = true;
   qubits0[v2] = false;
-  classicals0[i0] = true;
-  classicals0[i1] = true;
+  classics0[i0] = true;
+  classics0[i1] = true;
   qubits1[v5] = false;
   qubits1[v6] = false;
   qubits1[v2] = true;
-  classicals1[i1] = false;
+  classics1[i1] = false;
 
-  ASSERT_FALSE(ut.hasAlwaysZeroProbability(qubits0, classicals0));
-  ASSERT_TRUE(ut.hasAlwaysZeroProbability(qubits1, classicals1));
+  ASSERT_FALSE(ut.hasAlwaysZeroProbability(qubits0, classics0));
+  ASSERT_TRUE(ut.hasAlwaysZeroProbability(qubits1, classics1));
 }
 
 TEST_F(UnionTablePropertiesTest, ZeroIsAlwaysAntecedent) {

@@ -7,13 +7,15 @@
 # Licensed under the MIT License
 
 set(target_name mqt-core-mlir-unittest-optimizations)
-add_executable(${target_name} test_qco_hadamard_lifting.cpp
-        test_qco_merge_single_qubit_rotation.cpp
-        test_quantum_loop_unroll.cpp
-        test_qco_constant_propagation.cpp
-        ConstantPropagation/test_quantumState.cpp
-        ConstantPropagation/test_hybridState.cpp
-        ConstantPropagation/test_unionTable.cpp)
+add_executable(
+  ${target_name}
+  ConstantPropagation/test_hybridState.cpp
+  ConstantPropagation/test_quantumState.cpp
+  ConstantPropagation/test_unionTable.cpp
+  test_qco_constant_propagation.cpp
+  test_qco_hadamard_lifting.cpp
+  test_qco_merge_single_qubit_rotation.cpp
+  test_quantum_loop_unroll.cpp)
 
 target_link_libraries(
   ${target_name}
