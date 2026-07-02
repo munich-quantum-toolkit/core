@@ -319,6 +319,23 @@ public:
                      std::span<Value> params = {});
 
   /**
+   * @brief This method propagates a classical operation.
+   *
+   *
+   * @param op The operation to be applied.
+   * @param targets An array of the Values of the target classical values.
+   * @param results The value of the result.
+   * @param posCtrlsClassical An array of the values of the ctrl bits.
+   * @param negCtrlsClassical An array of the values of the negative ctrl bits.
+   * @throws invalid_argument if a value is given, but is not found in the
+   * existing ones.
+   */
+  void propagateClassicalOperation(Operation* op, std::span<Value> targets,
+                                   std::span<Value> results,
+                                   std::span<Value> posCtrlsClassical = {},
+                                   std::span<Value> negCtrlsClassical = {});
+
+  /**
    * @brief This method applies a measurement.
    *
    * This method applies a measurement, changing the qubits and the classical
@@ -356,15 +373,6 @@ public:
   void propagateReset(Value quantumTarget, Value newQuantumValue,
                       std::span<Value> posCtrlsClassical = {},
                       std::span<Value> negCtrlsClassical = {});
-
-  /**
-   * This method replaces all instances of a value in the union table by
-   * another.
-   *
-   * @param from The Value that is being replaced.
-   * @param to The Value the replaced Value becomes.
-   */
-  void replaceValues(Value from, Value to);
 
   /**
    * @brief This method propagates a qubit alloc.
