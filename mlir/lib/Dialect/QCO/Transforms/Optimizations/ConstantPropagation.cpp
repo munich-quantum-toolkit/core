@@ -16,6 +16,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 
@@ -727,6 +728,35 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
 
     *op = removeCtrlsOfGate(op, ctrlsToMod.quantumCtrlsToRemove, rewriter,
                             worklist);
+  }
+  if (!ctrlsToMod.classicalPosCtrlsToAdd.empty() ||
+      !ctrlsToMod.classicalNegCtrlsToAdd.empty()) {
+    Value condition = *ctrlsToMod.classicalPosCtrlsToAdd.begin();
+    ValueRange insertedQubits = op->getInputQubits();
+    const SmallVector locs(insertedQubits.size(), op->getLoc());
+    auto newIfOp =
+        IfOp::create(rewriter, op->getLoc(), condition, insertedQubits);
+
+    auto* thenBlock = rewriter.createBlock(&newIfOp.getThenRegion(), {},
+                                           newIfOp->getResultTypes(), locs);
+
+    rewriter.setInsertionPointToStart(thenBlock);
+    IRMapping map;
+    for (auto [originalInput, ifArgs] :
+         llvm::zip(insertedQubits, thenBlock->getArguments())) {
+      map.map(originalInput, ifArgs);
+    }
+    auto thenClone = rewriter.clone(*op->getOperation(), map);
+
+    YieldOp::create(rewriter, op->getLoc(), thenClone->getResults());
+
+    auto* elseBlock = rewriter.createBlock(&newIfOp.getElseRegion(), {},
+                                           newIfOp->getResultTypes(), locs);
+    YieldOp::create(rewriter, op->getLoc(), elseBlock->getArguments());
+
+    rewriter.replaceOp(op->getOperation(), newIfOp.getResults());
+
+    return WalkResult::advance();
   }
 
   auto body = op->getBodyUnitary();

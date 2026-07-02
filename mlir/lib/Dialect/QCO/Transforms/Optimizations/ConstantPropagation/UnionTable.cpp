@@ -518,9 +518,6 @@ UnionTable::getSuperfluousControls(const std::span<Value> qubitCtrls,
     bool alwaysOne = true;
     bool alwaysZero = true;
     for (const auto& hs : valuesToEntries.at(qCtrl)->states) {
-      if (!alwaysOne) {
-        break;
-      }
       if (alwaysZero && !hs.isQubitAlwaysZero(qIndex)) {
         alwaysZero = false;
       }
