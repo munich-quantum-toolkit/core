@@ -30,42 +30,49 @@ namespace mlir::qco {
 namespace {
 
 #define CREATE_OP_CASE_NO_PARAMS(opType)                                       \
-  .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), qubitsIn[0]);                \
+  .Case<opType>([&](opType gate) {                                             \
+    return opType::create(rewriter, gate.getLoc(), qubitsIn[0]);               \
   })
 
 #define CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(opType)                            \
-  .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), qubitsIn[0], qubitsIn[1]);   \
+  .Case<opType>([&](opType gate) {                                             \
+    return opType::create(rewriter, gate.getLoc(), qubitsIn[0], qubitsIn[1]);  \
   })
 
 #define CREATE_OP_CASE_ONE_PARAM(opType)                                       \
-  .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), qubitsIn[0], params[0]);     \
+  .Case<opType>([&](opType gate) {                                             \
+    return opType::create(rewriter, gate.getLoc(), qubitsIn[0],                \
+                          gate.getTheta());                                    \
   })
 
 #define CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(opType)                            \
-  .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), qubitsIn[0], qubitsIn[1],    \
-                          params[0]);                                          \
+  .Case<opType>([&](opType gate) {                                             \
+    return opType::create(rewriter, gate.getLoc(), qubitsIn[0], qubitsIn[1],   \
+                          gate.getTheta());                                    \
   })
 
 #define CREATE_OP_CASE_TWO_PARAMS(opType)                                      \
-  .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), qubitsIn[0], params[0],      \
-                          params[1]);                                          \
+  .Case<opType>([&](opType gate) {                                             \
+    return opType::create(rewriter, gate.getLoc(), qubitsIn[0],                \
+                          gate.getTheta(), gate.getPhi());                     \
   })
 
 #define CREATE_OP_CASE_TWO_PARAMS_TWO_QUBITS(opType)                           \
-  .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), qubitsIn[0], qubitsIn[1],    \
-                          params[0], params[1]);                               \
+  .Case<opType>([&](opType gate) {                                             \
+    return opType::create(rewriter, gate.getLoc(), qubitsIn[0], qubitsIn[1],   \
+                          gate.getTheta(), gate.getPhi());                     \
+  })
+
+#define CREATE_OP_CASE_PLUS_MINUS_OPS(opType)                                  \
+  .Case<opType>([&](opType gate) {                                             \
+    return opType::create(rewriter, gate.getLoc(), qubitsIn[0], qubitsIn[1],   \
+                          gate.getTheta(), gate.getBeta());                    \
   })
 
 #define CREATE_OP_CASE_THREE_PARAMS(opType)                                    \
-  .Case<opType>([&](auto) {                                                    \
-    return opType::create(rewriter, op->getLoc(), qubitsIn[0], params[0],      \
-                          params[1], params[2]);                               \
+  .Case<opType>([&](opType gate) {                                             \
+    return opType::create(rewriter, gate.getLoc(), qubitsIn[0],                \
+                          gate.getTheta(), gate.getPhi(), gate.getLambda());   \
   })
 
 /**
@@ -260,51 +267,49 @@ bool addsOnlyGlobalPhase(UnionTable* ut, UnitaryOpInterface* op,
  * @param op The operation whose type and location is used.
  * @param rewriter The used rewriter.
  * @param qubitsIn A span of target inputs.
- * @param params A span of parameters for the new gate.
  * @return The newly created gate.
  */
-Operation* createOperationFromUnitaryOperation(Operation* op,
-                                               PatternRewriter& rewriter,
-                                               const std::span<Value> qubitsIn,
-                                               const std::span<Value> params) {
+Operation*
+createOperationFromUnitaryOperation(Operation* op, PatternRewriter& rewriter,
+                                    const std::span<Value> qubitsIn) {
   const auto newOp =
-      mlir::TypeSwitch<Operation*, Operation*>(op) CREATE_OP_CASE_NO_PARAMS(
-          IdOp) CREATE_OP_CASE_NO_PARAMS(HOp) CREATE_OP_CASE_NO_PARAMS(XOp)
-          CREATE_OP_CASE_NO_PARAMS(YOp) CREATE_OP_CASE_NO_PARAMS(
-              ZOp) CREATE_OP_CASE_NO_PARAMS(SOp) CREATE_OP_CASE_NO_PARAMS(SdgOp)
-              CREATE_OP_CASE_NO_PARAMS(TOp) CREATE_OP_CASE_NO_PARAMS(
-                  TdgOp) CREATE_OP_CASE_NO_PARAMS(SXOp)
-                  CREATE_OP_CASE_NO_PARAMS(SXdgOp) CREATE_OP_CASE_ONE_PARAM(
-                      RXOp) CREATE_OP_CASE_ONE_PARAM(RYOp)
-                      CREATE_OP_CASE_ONE_PARAM(RZOp) CREATE_OP_CASE_ONE_PARAM(
-                          POp) CREATE_OP_CASE_TWO_PARAMS(ROp)
-                          CREATE_OP_CASE_TWO_PARAMS(U2Op) CREATE_OP_CASE_THREE_PARAMS(
-                              UOp) CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(SWAPOp)
-                              CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(
-                                  iSWAPOp) CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(DCXOp)
+      mlir::TypeSwitch<Operation*, Operation*>(op)
+          .Case<U2Op>([&](U2Op gate) {
+            return U2Op::create(rewriter, gate.getLoc(), qubitsIn[0],
+                                gate.getPhi(), gate.getLambda());
+          }) CREATE_OP_CASE_NO_PARAMS(IdOp) CREATE_OP_CASE_NO_PARAMS(HOp)
+              CREATE_OP_CASE_NO_PARAMS(XOp) CREATE_OP_CASE_NO_PARAMS(
+                  YOp) CREATE_OP_CASE_NO_PARAMS(ZOp) CREATE_OP_CASE_NO_PARAMS(SOp)
+                  CREATE_OP_CASE_NO_PARAMS(SdgOp) CREATE_OP_CASE_NO_PARAMS(
+                      TOp) CREATE_OP_CASE_NO_PARAMS(TdgOp)
+                      CREATE_OP_CASE_NO_PARAMS(SXOp) CREATE_OP_CASE_NO_PARAMS(
+                          SXdgOp) CREATE_OP_CASE_ONE_PARAM(RXOp)
+                          CREATE_OP_CASE_ONE_PARAM(RYOp) CREATE_OP_CASE_ONE_PARAM(
+                              RZOp) CREATE_OP_CASE_ONE_PARAM(POp)
+                              CREATE_OP_CASE_TWO_PARAMS(ROp) CREATE_OP_CASE_THREE_PARAMS(
+                                  UOp) CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(SWAPOp)
                                   CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(
-                                      ECROp) CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RXXOp)
-                                      CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RYYOp)
+                                      iSWAPOp) CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(DCXOp)
+                                      CREATE_OP_CASE_NO_PARAMS_TWO_QUBITS(
+                                          ECROp) CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(RXXOp)
                                           CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
-                                              RZXOp)
+                                              RYYOp)
                                               CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
-                                                  RZZOp)
-                                                  CREATE_OP_CASE_TWO_PARAMS_TWO_QUBITS(
-                                                      XXPlusYYOp)
-                                                      CREATE_OP_CASE_TWO_PARAMS_TWO_QUBITS(
-                                                          XXMinusYYOp)
-                                                          .Default(
-                                                              [&](auto)
-                                                                  -> Operation* {
-                                                                throw std::
-                                                                    runtime_error(
-                                                                        "Unsu"
-                                                                        "ppor"
-                                                                        "ted "
-                                                                        "oper"
-                                                                        "atio"
-                                                                        "n");
-                                                              });
+                                                  RZXOp)
+                                                  CREATE_OP_CASE_ONE_PARAM_TWO_QUBITS(
+                                                      RZZOp)
+                                                      CREATE_OP_CASE_PLUS_MINUS_OPS(
+                                                          XXPlusYYOp)
+                                                          CREATE_OP_CASE_PLUS_MINUS_OPS(
+                                                              XXMinusYYOp)
+          .Default([&](auto) -> Operation* {
+            throw std::runtime_error("Unsu"
+                                     "ppor"
+                                     "ted "
+                                     "oper"
+                                     "atio"
+                                     "n");
+          });
 
   return newOp;
 }
@@ -323,19 +328,18 @@ UnitaryOpInterface removeAllCtrlsOfGate(CtrlOp* op, PatternRewriter& rewriter,
   for (const auto& qubitCtrl : op->getInputQubits()) {
     rewriter.replaceAllUsesWith(op->getOutputForInput(qubitCtrl), qubitCtrl);
   }
+
+  const auto innerUnitary =
+      utils::getSoleBodyUnitary<UnitaryOpInterface>(*op->getBody());
+
   const auto targetInput = op->getInputTargets();
-  const auto paramsRange = op->getParameters();
   std::vector<Value> qubitsIn = {targetInput.begin(), targetInput.end()};
-  std::vector<Value> params = {paramsRange.begin(), paramsRange.end()};
-  const auto newOp = createOperationFromUnitaryOperation(
-      op->getBodyUnitary(), rewriter, qubitsIn, params);
+  const auto newOp =
+      createOperationFromUnitaryOperation(innerUnitary, rewriter, qubitsIn);
   auto newUnitary = static_cast<UnitaryOpInterface>(newOp);
   for (const auto inTarget : newUnitary.getInputQubits()) {
     rewriter.replaceAllUsesExcept(
         inTarget, newUnitary.getOutputForInput(inTarget), newUnitary);
-  }
-  for (const auto ctrlQubit : op->getOutputControls()) {
-    rewriter.replaceAllUsesWith(ctrlQubit, op->getInputForOutput(ctrlQubit));
   }
   rewriter.eraseOp(*op);
   std::ranges::replace(worklist, *op, newOp);
@@ -369,14 +373,14 @@ CtrlOp removeCtrlsOfGate(CtrlOp* op, const llvm::DenseSet<Value>& ctrlsToRemove,
       newControlIn.push_back(ctrls);
     }
   }
+  const auto innerUnitary =
+      utils::getSoleBodyUnitary<UnitaryOpInterface>(*op->getBody());
   CtrlOp newCtrl = CtrlOp::create(
       rewriter, op->getLoc(), newControlIn, op->getTargetsIn(),
       [&](const ValueRange target) {
-        const auto paramsRange = op->getParameters();
         std::vector<Value> qubitsIn = {target.begin(), target.end()};
-        std::vector<Value> params = {paramsRange.begin(), paramsRange.end()};
         const auto newOp = createOperationFromUnitaryOperation(
-            op->getBodyUnitary(), rewriter, qubitsIn, params);
+            innerUnitary, rewriter, qubitsIn);
         return SmallVector<Value>{newOp->getResults()};
       });
 
@@ -814,7 +818,7 @@ WalkResult handleCtrlOp(UnionTable* ut, CtrlOp* op,
     }
   }
 
-  auto body = op->getBodyUnitary();
+  auto body = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op->getBody());
   // Make sure that the right qubits in the right order are passed to the
   // propagation of the body unitary
   std::vector<Value> targetQubits;
@@ -890,10 +894,10 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
     if (curr == nullptr) {
       continue; // Skip erased ops.
     }
-    auto n = curr->getName().stripDialect().str();
-    std::string oName =
-        "Op: " + curr->getName().getStringRef().str() +
-        " dialect: " + curr->getName().getDialectNamespace().str();
+    // auto n = curr->getName().stripDialect().str();
+    // std::string oName =
+    //     "Op: " + curr->getName().getStringRef().str() +
+    //     " dialect: " + curr->getName().getDialectNamespace().str();
 
     rewriter.setInsertionPoint(curr);
 
@@ -909,8 +913,8 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
                                                negClassicalCtrls, rewriter,
                                                worklist);
             })
-            .Case<ResetOp>([&](const ResetOp op) {
-              ut->propagateReset(op->getOperand(0), op->getResult(0),
+            .Case<ResetOp>([&](ResetOp op) {
+              ut->propagateReset(op.getOperand(), op.getResult(),
                                  posClassicalCtrls, negClassicalCtrls);
               return WalkResult::advance();
             })
@@ -920,9 +924,9 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
                                        negClassicalCtrls);
               return WalkResult::advance();
             })
-            .Case<AllocOp>([&](const AllocOp op) {
+            .Case<AllocOp>([&](AllocOp op) {
               addedAtLeastOneQubit = true;
-              ut->propagateQubitAlloc(op->getResult(0));
+              ut->propagateQubitAlloc(op.getResult());
               return WalkResult::advance();
             })
             .Case<SinkOp>([&]([[maybe_unused]] SinkOp op) {

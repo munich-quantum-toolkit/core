@@ -17,8 +17,6 @@
 #include <gtest/gtest.h>
 #include <mlir/IR/Value.h>
 
-#include <mlir/Dialect/Func/IR/FuncOpsDialect.h.inc>
-
 using namespace mlir::qco;
 
 class UnionTableTest : public testing::Test {
