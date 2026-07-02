@@ -88,8 +88,9 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
       QDMI_DEVICE_PULSE_SUPPORT_LEVEL_NONE, prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_SC_QDMI_Site, sites_, prop,
                     size, value, sizeRet)
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_COUPLINGMAP, MQT_SC_QDMI_Site,
-                    couplingMap_, prop, size, value, sizeRet)
+  #define SITE_PAIR std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>
+  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_COUPLINGMAP, SITE_PAIR, couplingMap_,
+                    prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_SC_QDMI_Operation,
                     operations_, prop, size, value, sizeRet)
   if (prop == QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS) {
