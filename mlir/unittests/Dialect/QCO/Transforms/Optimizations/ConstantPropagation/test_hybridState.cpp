@@ -195,7 +195,7 @@ TEST_F(HybridStateTest, handleErrorIfTwoManyAmplitudesAreNonzero) {
   auto hState = HybridState(fourQubits, 2);
   hState.propagateGate(hOp.getOperation(), vectorThree);
   hState.propagateGate(xOp.getOperation(), vectorTwo, vectorThree);
-  // Error occures here
+  // Error occurs here
   hState.propagateGate(hOp.getOperation(), vectorTwo);
   // Should leave state in TOP
   hState.propagateGate(sOp.getOperation(), vectorZero);
@@ -346,7 +346,7 @@ TEST_F(HybridStateTest, doResetOnTop) {
   auto hState = HybridState(fourQubits, 2);
   hState.propagateGate(hOp.getOperation(), vectorThree);
   hState.propagateGate(xOp.getOperation(), vectorTwo, vectorThree);
-  // Error occures here
+  // Error occurs here
   hState.propagateGate(hOp.getOperation(), vectorTwo);
   // Should leave state in TOP
   hState.addIntegerValue(v1, 3);

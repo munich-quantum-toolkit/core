@@ -202,16 +202,17 @@ def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
 
 def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "This pass applies constant propagation to a circuit. It "
-                "assumes that all input qubits are |0>. It propagates the "
-                "state of the qubits up to a given complexity threshold and "
-                "removes gates which are superfluous considering the current "
-                "state. It also replaces quantum control with classical control "
-                "if possible and moves measurements as far to the front as possible.";
+  let summary =
+      "This pass applies constant propagation to a circuit. It "
+      "assumes that all input qubits are |0>. It propagates the "
+      "state of the qubits up to a given complexity threshold and "
+      "removes gates which are superfluous considering the current "
+      "state. It also replaces quantum control with classical control "
+      "if possible and moves measurements as far to the front as possible.";
   let description = [{
      This pass applies quantum constant propagation. This optimization routines assumes that the input qubits of the
      circuits are |0>. It propagates the qubit states and the state of additional classical values through the circuit.
-     All quantum instructions are removed which are superfluous considering the current state. Additionaly, quantum
+     All quantum instructions are removed which are superfluous considering the current state. Additionally, quantum
      controls can be replaced by equivalent classical control. To do this most efficiently, the measurements are moved
      as far to the front of a circuit as possible.
 
@@ -246,10 +247,14 @@ def ConstantPropagation : Pass<"constant-propagation", "mlir::ModuleOp"> {
      phase gate is removed and replaced by a global phase gate instead.
 
   }];
-  let options = [Option<"maximumNonzeroAmplitudes", "maximumNonzeroAmplitudes", "std::size_t", "4",
-                         "The maximum number of non-zero amplitudes in the tracted quantum states before reaching top.">,
-                   Option<"maximumHybridStates", "maximumHybridStates", "std::size_t", "4",
-                          "The maximum number of hybrid states which have a non-zero probabilty.">];
+  let options = [Option<"maximumNonzeroAmplitudes", "maximumNonzeroAmplitudes",
+                        "std::size_t", "4",
+                        "The maximum number of non-zero amplitudes in the "
+                        "tracted quantum states before reaching top.">,
+                 Option<"maximumHybridStates", "maximumHybridStates",
+                        "std::size_t", "4",
+                        "The maximum number of hybrid states which have a "
+                        "non-zero probability.">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
