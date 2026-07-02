@@ -22,6 +22,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <limits>
 #include <map>
@@ -30,6 +31,8 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <variant>
+#include <vector>
 
 namespace qdmi::dd {
 class Device final : public Singleton<Device> {
@@ -189,8 +192,11 @@ private:
   /// The program format
   QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_QASM3;
 
-  /// The quantum program associated with the job
-  std::string program_;
+  /// The quantum program associated with the job.
+  /// Text formats (QASM2/3, QIR Base/Adaptive String) are stored as
+  /// @c std::string; binary formats (QIR Base/Adaptive Module) are stored as
+  /// @c std::vector<std::byte>.
+  std::variant<std::string, std::vector<std::byte>> program_;
 
   /// The number of shots for the job
   size_t numShots_ = 1024U;
@@ -234,6 +240,41 @@ private:
   auto getProbabilities(size_t size, void* data, size_t* sizeRet)
       -> QDMI_STATUS;
 
+  /// Run @p body on a worker thread with the standard job lifecycle:
+  /// - increase the running-job count,
+  /// - set status to RUNNING,
+  /// - run @p body,
+  /// - set status to DONE or FAILED, and
+  /// - decrease the running-job count.
+  /// Typically, @p body will:
+  /// - parse the program,
+  /// - run or simulate it, and
+  /// - store the results in the job's output fields.
+  /// @returns @c QDMI_SUCCESS once the worker has been spawned.
+  /// Failures inside @p body are reported through the job status (FAILED),
+  /// not through the return value.
+  auto submitProgramAsync(std::function<void()> body) -> QDMI_STATUS;
+
+  /// Submit a QASM 2 or QASM 3 program.
+  /// Dispatches to the sampling or the state-extraction helper depending on
+  /// @c numShots_.
+  auto submitQASMProgram() -> QDMI_STATUS;
+  /// Sampling path for a QASM program (@c numShots_ > 0).
+  auto submitQASMProgramSampling() -> QDMI_STATUS;
+  /// State-extraction path for a QASM program (@c numShots_ == 0).
+  auto submitQASMProgramStateExtraction() -> QDMI_STATUS;
+
+#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
+  /// Submit a QIR Base/Adaptive Module or String program.
+  /// Dispatches to the sampling or the state-extraction helper depending on
+  /// @c numShots_.
+  auto submitQIRProgram() -> QDMI_STATUS;
+  /// Sampling path for a QIR program (@c numShots_ > 0).
+  auto submitQIRProgramSampling() -> QDMI_STATUS;
+  /// State-extraction path for a QIR Base Profile program (@c numShots_ == 0).
+  auto submitQIRProgramStateExtraction() -> QDMI_STATUS;
+#endif
+
 public:
   /// Constructor for the MQT_DDSIM_QDMI_Device_Job_impl_d.
   explicit MQT_DDSIM_QDMI_Device_Job_impl_d(
@@ -251,6 +292,15 @@ public:
 
   /**
    * @brief Sets a parameter for the job.
+   * @note When setting @c QDMI_DEVICE_JOB_PARAMETER_PROGRAM, the device uses
+   * the current @c QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT to decide whether
+   * the payload's wire @p size:
+   * - includes a trailing @c '\0' (text formats: QASM2, QASM3,
+   *   QIR Base/Adaptive String) or
+   * - is the exact byte count (binary formats: QIR Base/Adaptive Module).
+   * Callers should therefore set @c PROGRAMFORMAT before @c PROGRAM.
+   * The default of @c QDMI_PROGRAM_FORMAT_QASM3 is assumed if @c PROGRAMFORMAT
+   * is not set.
    * @see MQT_DDSIM_QDMI_device_job_set_parameter
    */
   auto setParameter(QDMI_Device_Job_Parameter param, size_t size,

@@ -143,6 +143,20 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::allocSinkPair)}));
 /// @}
 
+/// \name QCToQCO/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCCtrlOpTest, QCToQCOTest,
+    testing::Values(QCToQCOTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                                    MQT_NAMED_BUILDER(qco::ctrlTwo)},
+                    QCToQCOTestCase{"CtrlTwoMixed",
+                                    MQT_NAMED_BUILDER(qc::ctrlTwoMixed),
+                                    MQT_NAMED_BUILDER(qco::ctrlTwoMixed)},
+                    QCToQCOTestCase{"CtrlInvTwo",
+                                    MQT_NAMED_BUILDER(qc::ctrlInvTwo),
+                                    MQT_NAMED_BUILDER(qco::ctrlInvTwo)}));
+/// @}
+
 /// \name QCToQCO/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -151,10 +165,11 @@ INSTANTIATE_TEST_SUITE_P(
         // iSWAP cannot be inverted with current canonicalization
         QCToQCOTestCase{"InverseiSWAP", MQT_NAMED_BUILDER(qc::inverseIswap),
                         MQT_NAMED_BUILDER(qco::inverseIswap)},
-        QCToQCOTestCase{
-            "InverseMultipleControllediSWAP",
-            MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap),
-            MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)}));
+        QCToQCOTestCase{"InverseMultipleControllediSWAP",
+                        MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap),
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)},
+        QCToQCOTestCase{"InvTwo", MQT_NAMED_BUILDER(qc::invTwo),
+                        MQT_NAMED_BUILDER(qco::invTwo)}));
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/BarrierOp.cpp
@@ -525,15 +540,19 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCXOpTest, QCToQCOTest,
-    testing::Values(QCToQCOTestCase{"X", MQT_NAMED_BUILDER(qc::x),
-                                    MQT_NAMED_BUILDER(qco::x)},
-                    QCToQCOTestCase{"SingleControlledX",
-                                    MQT_NAMED_BUILDER(qc::singleControlledX),
-                                    MQT_NAMED_BUILDER(qco::singleControlledX)},
-                    QCToQCOTestCase{
-                        "MultipleControlledX",
+    testing::Values(
+        QCToQCOTestCase{"X", MQT_NAMED_BUILDER(qc::x),
+                        MQT_NAMED_BUILDER(qco::x)},
+        QCToQCOTestCase{"SingleControlledX",
+                        MQT_NAMED_BUILDER(qc::singleControlledX),
+                        MQT_NAMED_BUILDER(qco::singleControlledX)},
+        QCToQCOTestCase{"MultipleControlledX",
                         MQT_NAMED_BUILDER(qc::multipleControlledX),
-                        MQT_NAMED_BUILDER(qco::multipleControlledX)}));
+                        MQT_NAMED_BUILDER(qco::multipleControlledX)},
+        QCToQCOTestCase{"RepeatedControlledX",
+                        MQT_NAMED_BUILDER(qc::repeatedControlledX),
+                        MQT_NAMED_BUILDER(qco::repeatedControlledX)}));
+
 /// @}
 
 /// \name QCToQCO/Operations/StandardGates/XxMinusYyOp.cpp
@@ -663,6 +682,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"SimpleDoWhile",
                         MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
                         MQT_NAMED_BUILDER(qco::simpleDoWhileReset)}));
+/// @}
 
 /// \name QCToQCO/Operations/ForOp.cpp
 /// @{
@@ -677,6 +697,12 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"NestedForLoopWhileOp",
                         MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
                         MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp)},
-        QCToQCOTestCase{"NestedForLoopCtrlOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOp),
-                        MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOp)}));
+        QCToQCOTestCase{
+            "nestedForLoopCtrlOpWithSeparateQubit",
+            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit)},
+        QCToQCOTestCase{
+            "nestedForLoopCtrlOpWithExtractedQubit",
+            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
+/// @}

@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
-
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>
@@ -51,6 +49,7 @@ inline constexpr auto QIR_RESULT_RELEASE = "__quantum__rt__result_release";
 
 inline constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
 inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
+inline constexpr auto QIR_READ_RESULT = "__quantum__rt__read_result";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__result_array_record_output";
@@ -74,11 +73,8 @@ ADD_STANDARD_GATE(Y, y)
 ADD_STANDARD_GATE(Z, z)
 ADD_STANDARD_GATE(H, h)
 ADD_STANDARD_GATE(S, s)
-ADD_STANDARD_GATE(SDG, sdg)
 ADD_STANDARD_GATE(T, t)
-ADD_STANDARD_GATE(TDG, tdg)
 ADD_STANDARD_GATE(SX, sx)
-ADD_STANDARD_GATE(SXDG, sxdg)
 ADD_STANDARD_GATE(RX, rx)
 ADD_STANDARD_GATE(RY, ry)
 ADD_STANDARD_GATE(RZ, rz)
@@ -98,6 +94,22 @@ ADD_STANDARD_GATE(XXPLUSYY, xx_plus_yy)
 ADD_STANDARD_GATE(XXMINUSYY, xx_minus_yy)
 
 #undef ADD_STANDARD_GATE
+
+#define ADD_ADJOINT_GATE(NAME_BIG, NAME_SMALL)                                 \
+  inline constexpr auto QIR_##NAME_BIG##_ADJ =                                 \
+      "__quantum__qis__" #NAME_SMALL "__adj";                                  \
+  inline constexpr auto QIR_C##NAME_BIG##_ADJ =                                \
+      "__quantum__qis__c" #NAME_SMALL "__adj";                                 \
+  inline constexpr auto QIR_CC##NAME_BIG##_ADJ =                               \
+      "__quantum__qis__cc" #NAME_SMALL "__adj";                                \
+  inline constexpr auto QIR_CCC##NAME_BIG##_ADJ =                              \
+      "__quantum__qis__ccc" #NAME_SMALL "__adj";
+
+ADD_ADJOINT_GATE(S, s)
+ADD_ADJOINT_GATE(T, t)
+ADD_ADJOINT_GATE(SX, sx)
+
+#undef ADD_ADJOINT_GATE
 
 // Functions for getting QIR function names
 
@@ -131,11 +143,8 @@ DEFINE_GETTER(Y)
 DEFINE_GETTER(Z)
 DEFINE_GETTER(H)
 DEFINE_GETTER(S)
-DEFINE_GETTER(SDG)
 DEFINE_GETTER(T)
-DEFINE_GETTER(TDG)
 DEFINE_GETTER(SX)
-DEFINE_GETTER(SXDG)
 DEFINE_GETTER(RX)
 DEFINE_GETTER(RY)
 DEFINE_GETTER(RZ)
@@ -156,6 +165,36 @@ DEFINE_GETTER(XXMINUSYY)
 
 #undef DEFINE_GETTER
 
+#define DEFINE_ADJOINT_GETTER(NAME)                                            \
+  /**                                                                          \
+   * @brief Gets the QIR function name for NAME                                \
+   *                                                                           \
+   * @param numControls Number of control qubits                               \
+   * @return The QIR function name                                             \
+   */                                                                          \
+  inline StringRef getFnName##NAME##DG(size_t numControls) {                   \
+    switch (numControls) {                                                     \
+    case 0:                                                                    \
+      return QIR_##NAME##_ADJ;                                                 \
+    case 1:                                                                    \
+      return QIR_C##NAME##_ADJ;                                                \
+    case 2:                                                                    \
+      return QIR_CC##NAME##_ADJ;                                               \
+    case 3:                                                                    \
+      return QIR_CCC##NAME##_ADJ;                                              \
+    default:                                                                   \
+      llvm::reportFatalUsageError(                                             \
+          "Multi-controlled with more than 3 controls are currently not "      \
+          "supported");                                                        \
+    }                                                                          \
+  }
+
+DEFINE_ADJOINT_GETTER(S)
+DEFINE_ADJOINT_GETTER(T)
+DEFINE_ADJOINT_GETTER(SX)
+
+#undef DEFINE_ADJOINT_GETTER
+
 /**
  * @brief Find the main LLVM function with entry_point attribute
  *
@@ -167,29 +206,6 @@ DEFINE_GETTER(XXMINUSYY)
  * @return The main LLVM function, or nullptr if not found
  */
 LLVM::LLVMFuncOp getMainFunction(Operation* op);
-
-/**
- * @brief Set QIR base profile metadata attributes on the main function
- *
- * @details
- * Adds the required metadata attributes for QIR base profile compliance:
- * - `entry_point`: Marks the main entry point function
- * - `output_labeling_schema`: labeled
- * - `qir_profiles`: base_profile
- * - `required_num_qubits`: Number of qubits used
- * - `required_num_results`: Number of measurement results
- * - `qir_major_version`: 2
- * - `qir_minor_version`: 1
- * - `dynamic_qubit_management`: true/false
- * - `dynamic_result_management`: true/false
- *
- * These attributes are required by the QIR specification and inform QIR
- * consumers about the module's resource requirements and capabilities.
- *
- * @param main The main LLVM function to annotate
- * @param metadata The QIR metadata containing qubit/result counts
- */
-void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata);
 
 /**
  * @brief Get or create a QIR function declaration

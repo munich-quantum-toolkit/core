@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
-
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
@@ -80,6 +78,8 @@ namespace qir {
  */
 class QIRProgramBuilder final : public ImplicitLocOpBuilder {
 public:
+  enum class Profile : uint8_t { Base, Adaptive };
+
   /**
    * @brief Construct a new QIRProgramBuilder
    * @param context The MLIR context to use for building operations
@@ -171,9 +171,42 @@ public:
   Value staticQubit(int64_t index);
 
   /**
+   * @brief Get a static result by index
+   * @param index The result index (must be non-negative)
+   * @return An LLVM pointer representing the result
+   *
+   * @par Example:
+   *
+   */
+  Value staticResult(int64_t index);
+
+  /**
+   * @brief Represents a qubit register with its qubits.
+   */
+  struct QubitRegister {
+    /// The llvm.ptr value representing the qubit register
+    Value value;
+    /// The allocated qubit values
+    SmallVector<Value> qubits;
+
+    /**
+     * @brief Access a specific qubit in the register
+     * @param index The index of the qubit to access
+     * @return The specified qubit value
+     */
+    Value operator[](size_t index) const;
+
+    /**
+     * @brief Conversion to the backing MemRef value
+     * @return The llvm.ptr value representing the qubit register
+     */
+    explicit operator Value() const { return value; }
+  };
+
+  /**
    * @brief Allocate an array of qubits
    * @param size Number of qubits (must be positive)
-   * @return Vector of LLVM pointers representing the qubits
+   * @return A `QubitRegister` structure
    *
    * @par Example:
    * ```c++
@@ -191,7 +224,26 @@ public:
    * %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size);
+  QubitRegister allocQubitRegister(int64_t size);
+
+  /**
+   * @brief Loads a qubit from a register
+   *
+   * @param reg Source register
+   * @param index The index from where the qubit is loaded
+   * @return The loaded qubit
+   *
+   * @par Example:
+   * ```c++
+   * auto q0 = builder.load(register, index);
+   * ```
+   * ```mlir
+   * %gep = llvm.getelementptr %alloc[%index] : (!llvm.ptr, i64) -> !llvm.ptr,
+   * !llvm.ptr
+   * %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   * ```
+   */
+  Value load(Value reg, Value index);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -285,7 +337,7 @@ public:
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
-   * @return Reference to this builder for method chaining
+   * @return An LLVM pointer to the measurement result
    *
    * @par Example:
    * ```c++
@@ -308,7 +360,7 @@ public:
    * : (i64, !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  QIRProgramBuilder& measure(Value qubit, const Bit& bit);
+  Value measure(Value qubit, const Bit& bit);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -355,7 +407,7 @@ public:
 
 #define DECLARE_ONE_TARGET_ZERO_PARAMETER(OP_NAME, QIR_NAME)                   \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param qubit Target qubit                                                 \
    * @return Reference to this builder for method chaining                     \
@@ -410,19 +462,73 @@ public:
   DECLARE_ONE_TARGET_ZERO_PARAMETER(z, z)
   DECLARE_ONE_TARGET_ZERO_PARAMETER(h, h)
   DECLARE_ONE_TARGET_ZERO_PARAMETER(s, s)
-  DECLARE_ONE_TARGET_ZERO_PARAMETER(sdg, sdg)
   DECLARE_ONE_TARGET_ZERO_PARAMETER(t, t)
-  DECLARE_ONE_TARGET_ZERO_PARAMETER(tdg, tdg)
   DECLARE_ONE_TARGET_ZERO_PARAMETER(sx, sx)
-  DECLARE_ONE_TARGET_ZERO_PARAMETER(sxdg, sxdg)
 
 #undef DECLARE_ONE_TARGET_ZERO_PARAMETER
+
+#define DECLARE_ONE_TARGET_ZERO_PARAMETER_ADJOINT(OP_NAME, QIR_NAME)           \
+  /**                                                                          \
+   * @brief Apply an adjoint QIR_NAME operation                                \
+   *                                                                           \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q);                                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__##QIR_NAME##__adj(%q) : !llvm.ptr -> ()        \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& OP_NAME(Value qubit);                                     \
+  /**                                                                          \
+   * @brief Apply an adjoint controlled QIR_NAME operation                     \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1);                                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__adj(%q0, %q1) : (!llvm.ptr,     \
+   * !llvm.ptr) -> ()                                                          \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& c##OP_NAME(Value control, Value target);                  \
+  /**                                                                          \
+   * @brief Apply an adjoint multi-controlled QIR_NAME operation               \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2);                                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__adj(%q0, %q1, %q2) :           \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                                   \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& mc##OP_NAME(ValueRange controls, Value target);
+
+  DECLARE_ONE_TARGET_ZERO_PARAMETER_ADJOINT(sdg, s)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER_ADJOINT(tdg, t)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER_ADJOINT(sxdg, sx)
+
+#undef DECLARE_ONE_TARGET_ZERO_PARAMETER_ADJOINT
 
   // OneTargetOneParameter
 
 #define DECLARE_ONE_TARGET_ONE_PARAMETER(OP_NAME, QIR_NAME, PARAM)             \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM Rotation angle in radians                                    \
    * @param qubit Target qubit                                                 \
@@ -489,7 +595,7 @@ public:
 
 #define DECLARE_ONE_TARGET_TWO_PARAMETER(OP_NAME, QIR_NAME, PARAM1, PARAM2)    \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM1 Rotation angle in radians                                   \
    * @param PARAM2 Rotation angle in radians                                   \
@@ -561,7 +667,7 @@ public:
 #define DECLARE_ONE_TARGET_THREE_PARAMETER(OP_NAME, QIR_NAME, PARAM1, PARAM2,  \
                                            PARAM3)                             \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM1 Rotation angle in radians                                   \
    * @param PARAM2 Rotation angle in radians                                   \
@@ -639,7 +745,7 @@ public:
 
 #define DECLARE_TWO_TARGET_ZERO_PARAMETER(OP_NAME, QIR_NAME)                   \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param qubit0 Target qubit                                                \
    * @param qubit1 Target qubit                                                \
@@ -704,7 +810,7 @@ public:
 
 #define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_NAME, QIR_NAME, PARAM)             \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM Rotation angle in radians                                    \
    * @param qubit0 Target qubit                                                \
@@ -775,7 +881,7 @@ public:
 
 #define DECLARE_TWO_TARGET_TWO_PARAMETER(OP_NAME, QIR_NAME, PARAM1, PARAM2)    \
   /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
+   * @brief Apply a QIR_NAME operation                                         \
    *                                                                           \
    * @param PARAM1 Rotation angle in radians                                   \
    * @param PARAM2 Rotation angle in radians                                   \
@@ -848,6 +954,114 @@ public:
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 
   //===--------------------------------------------------------------------===//
+  // SCF Operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Construct a for construct in LLVM dialect
+   *
+   * @param lowerbound Lower bound of the loop
+   * @param upperbound Upper bound of the loop
+   * @param step Step size of the loop
+   * @param body Function that builds the body of the for operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfFor(lb, ub, step, [&](Value iv) {
+   *   auto q0 = builder.load(register, iv);
+   *   builder.h(q0);
+   * });
+   * ```
+   * ```mlir
+   *   llvm.br ^condition(%lowerbound : i64)
+   * ^condition(%iv: i64):
+   *   %condition = llvm.icmp "slt" %iv, %upperbound : i64
+   *   llvm.cond_br %condition, ^loop, ^next
+   * ^loop:
+   *   %gep = llvm.getelementptr %alloc[%iv] : (!llvm.ptr, i64) -> !llvm.ptr,
+   *   !llvm.ptr
+   *   %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+   *   llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
+   *   %nextIv = llvm.add %iv, %step : i64
+   *   llvm.br ^condition(%nextIv : i64)
+   * ^next:
+   * ```
+   */
+  QIRProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
+                            const std::variant<int64_t, Value>& upperbound,
+                            const std::variant<int64_t, Value>& step,
+                            const function_ref<void(Value)>& body);
+
+  /**
+   * @brief Construct an if construct in LLVM dialect
+   *
+   * @param condition Condition for the if operation
+   * @param thenBody Function that builds the then body of the if construct
+   * @param elseBody Function that builds the else body of the if construct
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfIf(condition, [&] {
+   *   builder.x(q0);
+   * }, [&] {
+   *   builder.z(q0);
+   * });
+   * ```
+   * ```mlir
+   *   %condition = llvm.call @__quantum__rt__read_result(%result) : (!llvm.ptr)
+   *   -> i1
+   *   llvm.cond_br %condition, ^then, ^else
+   * ^then:
+   *   llvm.call @__quantum__qis__x__body(%q0) : (!llvm.ptr) -> ()
+   *   llvm.br ^next
+   * ^else:
+   *   llvm.call @__quantum__qis__z__body(%q0) : (!llvm.ptr) -> ()
+   *   llvm.br ^next
+   * ^next:
+   * ```
+   */
+  QIRProgramBuilder& scfIf(const std::variant<bool, Value>& condition,
+                           const function_ref<void()>& thenBody,
+                           const function_ref<void()>& elseBody = nullptr);
+
+  /**
+   * @brief Construct a while construct in LLVM dialect
+   *
+   * @param beforeBody Function that builds the before body of the while
+   * construct
+   * @param afterBody Function that builds the after body of the while construct
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfWhile([&] {
+   *   auto res = builder.measure(q0);
+   *   return res;
+   * }, [&] {
+   *   builder.h(q0);
+   * });
+   * ```
+   * ```mlir
+   *   llvm.br ^before
+   * ^before:
+   *   llvm.call @__quantum__qis__mz__body(%q0, %result) : (!llvm.ptr,
+   * !llvm.ptr)
+   *   -> ()
+   *   %condition = llvm.call @__quantum__rt__read_result(%result) : (!llvm.ptr)
+   *   -> i1
+   *   llvm.cond_br %condition, ^after, ^next
+   * ^after:
+   *   llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
+   *   llvm.br ^bb2
+   * ^next:
+   * ```
+   */
+  QIRProgramBuilder& scfWhile(const function_ref<Value()>& beforeBody,
+                              const function_ref<void()>& afterBody = nullptr);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
@@ -875,7 +1089,8 @@ public:
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const function_ref<void(QIRProgramBuilder&)>& buildFunc);
+        const function_ref<void(QIRProgramBuilder&)>& buildFunc,
+        Profile profile = Profile::Adaptive);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
@@ -920,14 +1135,20 @@ private:
   /// Map from result index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
 
-  /// Track qubit and result counts for QIR metadata
-  QIRMetadata metadata_;
+  /// Map from register to their loaded indices
+  DenseMap<Value, DenseSet<Value>> loadedQubits;
 
   /// Helper variable for storing the LLVM pointer type
   Type ptrType;
 
   /// Helper variable for storing the LLVM void type
   Type voidType;
+
+  /// The number of used qubits.
+  size_t numQubits{0};
+
+  /// The number of result values.
+  size_t numResults{0};
 
   /**
    * @brief Helper to create a LLVM CallOp
@@ -955,11 +1176,28 @@ private:
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
 
+  /// Track whether Base or Adaptive Profile is used.
+  Profile profile = Profile::Adaptive;
+
   /// Check if the builder has been finalized
   void checkFinalized() const;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
   void ensureAllocationMode(AllocationMode requestedMode);
+
+  /**
+   * @brief Helper to resolve a variant of either int64_t type or Value Type to
+   * a Value
+   *
+   * @details Helper function to resolve a given variant to a Value. Creates a
+   * LLVM ConstantOp from the int value. The created LLVM Constant is of type
+   * I64 and has an IndexAttr as its value. If the variant holds a Value, return
+   * it directly.
+   *
+   * @param variant The variant to resolve
+   * @return The resolved Value
+   */
+  Value resolveIntVariant(const std::variant<int64_t, Value>& variant);
 };
 
 } // namespace qir

@@ -12,7 +12,8 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
@@ -60,6 +61,15 @@ void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
 LogicalResult
 QuantumCompilerPipeline::runPipeline(ModuleOp module,
                                      CompilationRecord* record) const {
+  if (config_.convertToQIRBase && config_.convertToQIRAdaptive) {
+    llvm::errs()
+        << "convertToQIRBase and convertToQIRAdaptive are mutually "
+           "exclusive; only one QIR profile can be targeted at a time.\n";
+    return failure();
+  }
+  const auto convertToQIR =
+      config_.convertToQIRAdaptive || config_.convertToQIRBase;
+
   // Ensure printIRAfterAllStages implies recordIntermediates
   if (config_.printIRAfterAllStages &&
       (!config_.recordIntermediates || record == nullptr)) {
@@ -87,7 +97,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // 9. QC-to-QIR conversion (optional)
   // 10. QIR cleanup (optional)
   auto totalStages = 8;
-  if (config_.convertToQIR) {
+  if (convertToQIR) {
     totalStages += 2;
   }
   auto currentStage = 0;
@@ -191,9 +201,14 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
   }
   // Stage 9: QC-to-QIR conversion (optional)
-  if (config_.convertToQIR) {
-    if (failed(
-            runStage([&](PassManager& pm) { pm.addPass(createQCToQIR()); }))) {
+  if (convertToQIR) {
+    if (failed(runStage([&](PassManager& pm) {
+          if (config_.convertToQIRAdaptive) {
+            pm.addPass(createQCToQIRAdaptive());
+          } else {
+            pm.addPass(createQCToQIRBase());
+          }
+        }))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {
@@ -204,8 +219,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
       }
     }
     // Stage 10: QIR cleanup (optional)
-    if (failed(runStage(
-            [&](PassManager& pm) { populateQIRCleanupPipeline(pm); }))) {
+    if (failed(runStage([&](PassManager& pm) {
+          populateQIRCleanupPipeline(pm, config_.convertToQIRAdaptive);
+        }))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {

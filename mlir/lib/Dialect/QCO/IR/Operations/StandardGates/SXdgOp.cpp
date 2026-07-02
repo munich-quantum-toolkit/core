@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -56,8 +56,9 @@ void SXdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSXdgAfterSX, MergeSubsequentSXdg>(context);
 }
 
-Eigen::Matrix2cd SXdgOp::getUnitaryMatrix() {
-  constexpr auto m00 = std::complex<double>{0.5, -0.5};
-  constexpr auto m01 = std::complex<double>{0.5, 0.5};
-  return Eigen::Matrix2cd{{m00, m01}, {m01, m00}};
+Matrix2x2 SXdgOp::getUnitaryMatrix() {
+  constexpr auto diag = std::complex{0.5, -0.5};
+  constexpr auto offDiag = std::complex{0.5, 0.5};
+  return Matrix2x2::fromElements(diag, offDiag,  // row 0
+                                 offDiag, diag); // row 1
 }

@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -20,7 +20,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
-#include <complex>
 #include <optional>
 #include <variant>
 
@@ -65,11 +64,16 @@ void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRY>(context);
 }
 
-std::optional<Eigen::Matrix2cd> RYOp::getUnitaryMatrix() {
+Matrix2x2 RYOp::unitaryMatrix(const double theta) {
+  const auto m00 = std::cos(theta / 2);
+  const auto m01 = -std::sin(theta / 2);
+  return Matrix2x2::fromElements(m00, m01,   // row 0
+                                 -m01, m00); // row 1
+}
+
+std::optional<Matrix2x2> RYOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m00 = std::complex<double>{std::cos(*theta / 2.0)};
-    const auto m01 = std::complex<double>{-std::sin(*theta / 2.0)};
-    return Eigen::Matrix2cd{{m00, m01}, {-m01, m00}};
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

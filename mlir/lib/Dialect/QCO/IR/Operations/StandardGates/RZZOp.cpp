@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -39,20 +39,7 @@ struct MergeSubsequentRZZ final : OpRewritePattern<RZZOp> {
 
   LogicalResult matchAndRewrite(RZZOp op,
                                 PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameter(op, rewriter);
-  }
-};
-
-/**
- * @brief Merge subsequent RZZ operations with swapped targets by adding their
- * angles.
- */
-struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RZZOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+    return mergeTwoTargetOneParameter(op, rewriter, true);
   }
 };
 
@@ -79,20 +66,21 @@ LogicalResult RZZOp::fold(FoldAdaptor /*adaptor*/,
 
 void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ>(context);
+  results.add<MergeSubsequentRZZ>(context);
 }
 
-std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
+Matrix4x4 RZZOp::unitaryMatrix(const double theta) {
+  const auto mp = std::polar(1.0, theta / 2);
+  const auto mm = std::polar(1.0, -theta / 2);
+  return Matrix4x4::fromElements(mm, 0, 0, 0,  // row 0
+                                 0, mp, 0, 0,  // row 1
+                                 0, 0, mp, 0,  // row 2
+                                 0, 0, 0, mm); // row 3
+}
 
+std::optional<Matrix4x4> RZZOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m0 = 0i;
-    const auto mp = std::polar(1.0, *theta / 2.0);
-    const auto mm = std::polar(1.0, -*theta / 2.0);
-    return Eigen::Matrix4cd{{mm, m0, m0, m0},  // row 0
-                            {m0, mp, m0, m0},  // row 1
-                            {m0, m0, mp, m0},  // row 2
-                            {m0, m0, m0, mm}}; // row 3
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

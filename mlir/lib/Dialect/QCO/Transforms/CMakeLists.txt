@@ -15,10 +15,14 @@ add_mlir_library(
   PRIVATE
   MLIRQCODialect
   MLIRQCOUtils
+  MLIRQTensorUtils
   MLIRArithDialect
   MLIRMathDialect
+  MLIRSCFUtils
   DEPENDS
   MLIRQCOTransformsIncGen)
+
+mqt_mlir_target_use_project_options(MLIRQCOTransforms)
 
 # collect header files
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE

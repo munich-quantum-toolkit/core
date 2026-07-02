@@ -10,8 +10,6 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
-
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
@@ -26,7 +24,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
-#include <string>
 
 namespace mlir::qir {
 
@@ -53,52 +50,6 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
     }
   }
   return nullptr;
-}
-
-void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata) {
-  if (metadata.useDynamicQubit && metadata.numQubits != 0) {
-    llvm::reportFatalUsageError(
-        "Cannot use dynamic qubit allocation if static qubits are allocated");
-  }
-
-  OpBuilder builder(main.getBody());
-  SmallVector<Attribute> attributes;
-
-  // Core QIR attributes
-  attributes.emplace_back(builder.getStringAttr("entry_point"));
-  attributes.emplace_back(
-      builder.getStrArrayAttr({"output_labeling_schema", "labeled"}));
-  attributes.emplace_back(
-      builder.getStrArrayAttr({"qir_profiles", "base_profile"}));
-
-  // Resource requirements
-  attributes.emplace_back(builder.getStrArrayAttr(
-      {"required_num_qubits", std::to_string(metadata.numQubits)}));
-  attributes.emplace_back(builder.getStrArrayAttr(
-      {"required_num_results", std::to_string(metadata.numResults)}));
-
-  // Management model or resource requirements
-  if (metadata.useDynamicQubit) {
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"dynamic_qubit_management", "true"}));
-  } else {
-    attributes.emplace_back(builder.getStrArrayAttr(
-        {"required_num_qubits", std::to_string(metadata.numQubits)}));
-  }
-
-  if (metadata.useDynamicResult) {
-    attributes.emplace_back(
-        builder.getStrArrayAttr({"dynamic_result_management", "true"}));
-  } else {
-    attributes.emplace_back(builder.getStrArrayAttr(
-        {"required_num_results", std::to_string(metadata.numResults)}));
-  }
-
-  // QIR version (Base Profile spec requires version 2.1)
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_major_version", "2"}));
-  attributes.emplace_back(builder.getStrArrayAttr({"qir_minor_version", "1"}));
-
-  main->setAttr("passthrough", builder.getArrayAttr(attributes));
 }
 
 LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,

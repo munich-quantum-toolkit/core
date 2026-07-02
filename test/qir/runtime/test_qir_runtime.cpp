@@ -10,6 +10,7 @@
 
 #include "ir/Definitions.hpp"
 #include "qir/runtime/QIR.h"
+#include "qir/runtime/Runtime.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -18,9 +19,7 @@
 #include <array>
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <sstream>
-#include <streambuf>
 
 #ifdef _WIN32
 #define SYSTEM _wsystem
@@ -34,10 +33,9 @@ namespace {
 
 class QIRRuntimeTest : public testing::Test {
 protected:
-  std::stringstream buffer;
-  std::streambuf* old = nullptr;
-  void SetUp() override { old = std::cout.rdbuf(buffer.rdbuf()); }
-  void TearDown() override { std::cout.rdbuf(old); }
+  std::ostringstream sink;
+  void SetUp() override { Runtime::getInstance().setOstream(sink); }
+  void TearDown() override { Runtime::getInstance().resetOstream(); }
 };
 
 } // namespace
@@ -75,7 +73,7 @@ TEST_F(QIRRuntimeTest, SGate) {
 TEST_F(QIRRuntimeTest, SdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sdg__body(q0);
+  __quantum__qis__s__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, SXGate) {
@@ -87,7 +85,7 @@ TEST_F(QIRRuntimeTest, SXGate) {
 TEST_F(QIRRuntimeTest, SXdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sxdg__body(q0);
+  __quantum__qis__sx__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, SqrtXGate) {
@@ -99,7 +97,7 @@ TEST_F(QIRRuntimeTest, SqrtXGate) {
 TEST_F(QIRRuntimeTest, SqrtXdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__sqrtxdg__body(q0);
+  __quantum__qis__sqrtx__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, TGate) {
@@ -111,7 +109,7 @@ TEST_F(QIRRuntimeTest, TGate) {
 TEST_F(QIRRuntimeTest, TdgGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
-  __quantum__qis__tdg__body(q0);
+  __quantum__qis__t__adj(q0);
 }
 
 TEST_F(QIRRuntimeTest, RGate) {
@@ -263,7 +261,7 @@ TEST_F(QIRRuntimeTest, SwapGate) {
   __quantum__qis__mz__body(q1, r1);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_EQ(buffer.str(), "r0: 0\nr1: 1\n");
+  EXPECT_EQ(sink.str(), "r0: 0\nr1: 1\n");
 }
 
 TEST_F(QIRRuntimeTest, CSwapGate) {
@@ -366,7 +364,7 @@ TEST_F(QIRRuntimeTest, BellPairStatic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
 }
 
 TEST_F(QIRRuntimeTest, BellPairDynamic) {
@@ -384,7 +382,7 @@ TEST_F(QIRRuntimeTest, BellPairDynamic) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
   __quantum__rt__result_update_reference_count(r0, -1);
   __quantum__rt__result_update_reference_count(r1, -1);
 }
@@ -404,7 +402,7 @@ TEST_F(QIRRuntimeTest, BellPairStaticReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
 }
 
 TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
@@ -422,7 +420,7 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
   EXPECT_EQ(m1, m2);
   __quantum__rt__result_record_output(r0, "r0");
   __quantum__rt__result_record_output(r1, "r1");
-  EXPECT_THAT(buffer.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
+  EXPECT_THAT(sink.str(), testing::AnyOf("r0: 0\nr1: 0\n", "r0: 1\nr1: 1\n"));
   __quantum__rt__result_update_reference_count(r0, -1);
   __quantum__rt__result_update_reference_count(r1, -1);
 }
@@ -503,6 +501,30 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__rt__result_update_reference_count(r[2], -1);
   __quantum__rt__result_update_reference_count(r[3], -1);
   __quantum__rt__array_update_reference_count(rArr, -1);
+}
+
+TEST_F(QIRRuntimeTest, PackageResizeWhenEnlargingState) {
+  // dd::Package starts at 32 qubits.
+  // Acting on qubit 32 forces qState.dd->resize.
+  auto* q32 = reinterpret_cast<Qubit*>(32UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__h__body(q32);
+}
+
+TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
+  // Drive a small program through the runtime: H on q0.
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__h__body(q0);
+
+  auto state = Runtime::getInstance().takeState();
+  EXPECT_NE(state.dd, nullptr);
+  EXPECT_FALSE(state.edge.isTerminal());
+  EXPECT_EQ(state.numQubits, 1);
+
+  // After takeState the runtime is reset and usable again.
+  EXPECT_NO_THROW(__quantum__rt__initialize(nullptr));
+  EXPECT_NO_THROW(__quantum__qis__h__body(q0));
 }
 
 namespace {

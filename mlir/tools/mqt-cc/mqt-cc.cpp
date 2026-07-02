@@ -8,20 +8,23 @@
  * Licensed under the MIT License
  */
 
-#include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
+#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "qasm3/Exception.hpp"
-#include "qasm3/Importer.hpp"
 
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/SystemUtils.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Bytecode/BytecodeWriter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -33,151 +36,181 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/FileUtilities.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Export.h>
 
-#include <exception>
+#include <memory>
 #include <string>
 #include <utility>
 
-using namespace llvm;
 using namespace mlir;
 
 // Command-line options
-static cl::opt<std::string> inputFilename(cl::Positional,
-                                          cl::desc("<input .mlir/.qasm file>"),
-                                          cl::init("-"));
+static llvm::cl::opt<std::string>
+    inputFilename(llvm::cl::Positional,
+                  llvm::cl::desc("<input .mlir/.qasm file>"),
+                  llvm::cl::init("-"));
 
-static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
-                                           cl::value_desc("filename"),
-                                           cl::init("-"));
+static llvm::cl::opt<std::string>
+    outputFilename("o", llvm::cl::desc("Output filename"),
+                   llvm::cl::value_desc("filename"), llvm::cl::init("-"));
 
-static cl::opt<bool> convertToQIR("emit-qir",
-                                  cl::desc("Convert to QIR at the end"),
-                                  cl::init(false));
+static llvm::cl::opt<bool>
+    convertToQIRBase("emit-qir-base",
+                     llvm::cl::desc("Convert to QIR Base Profile at the end"),
+                     llvm::cl::init(false));
 
-static cl::opt<bool> recordIntermediates(
+static llvm::cl::opt<bool> convertToQIRAdaptive(
+    "emit-qir-adaptive",
+    llvm::cl::desc("Convert to QIR Adaptive Profile at the end"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<bool> recordIntermediates(
     "record-intermediates",
-    cl::desc("Record intermediate IR after each compiler stage"),
-    cl::init(false));
+    llvm::cl::desc("Record intermediate IR after each compiler stage"),
+    llvm::cl::init(false));
 
-static cl::opt<bool> enableTiming("mlir-timing",
-                                  cl::desc("Enable pass timing statistics"),
-                                  cl::init(false));
+static llvm::cl::opt<bool>
+    enableTiming("mlir-timing", llvm::cl::desc("Enable pass timing statistics"),
+                 llvm::cl::init(false));
 
-static cl::opt<bool> enableStatistics("mlir-statistics",
-                                      cl::desc("Enable pass statistics"),
-                                      cl::init(false));
+static llvm::cl::opt<bool>
+    enableStatistics("mlir-statistics",
+                     llvm::cl::desc("Enable pass statistics"),
+                     llvm::cl::init(false));
 
-static cl::opt<bool>
+static llvm::cl::opt<bool>
     printIRAfterAllStages("mlir-print-ir-after-all-stages",
-                          cl::desc("Print IR after each compiler stage"),
-                          cl::init(false));
+                          llvm::cl::desc("Print IR after each compiler stage"),
+                          llvm::cl::init(false));
 
-static cl::opt<bool> disableMergeSingleQubitRotationGates(
+static llvm::cl::opt<bool> disableMergeSingleQubitRotationGates(
     "disable-merge-single-qubit-rotation-gates",
-    cl::desc("Disable quaternion-based single-qubit rotation gate merging"),
-    cl::init(false));
+    llvm::cl::desc(
+        "Disable quaternion-based single-qubit rotation gate merging"),
+    llvm::cl::init(false));
 
-static cl::opt<bool> enableHadamardLifting(
-    "hadamard-lifting", cl::desc("Apply Hadamard lifting during optimization"),
-    cl::init(false));
+static llvm::cl::opt<bool> enableHadamardLifting(
+    "hadamard-lifting",
+    llvm::cl::desc("Apply Hadamard lifting during optimization"),
+    llvm::cl::init(false));
+
 static cl::opt<bool> enableConstantPropagation(
     "constant-propagation",
     cl::desc("Apply constant propagation during optimization"),
     cl::init(false));
 
 /**
- * @brief Load and parse a .qasm file
+ * @brief Load and parse a `.qasm` file
  */
 static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
                                           MLIRContext* context) {
-  try {
-    // Parse the input QASM file
-    const ::qc::QuantumComputation qc =
-        qasm3::Importer::importf(filename.str());
-    // Translate to MLIR dialect QC
-    return translateQuantumComputationToQC(context, qc);
-  } catch (const qasm3::CompilerError& exception) {
-    errs() << "Failed to parse QASM file '" << filename << "': '"
-           << exception.what() << "'\n";
-  } catch (const std::exception& exception) {
-    errs() << "Failed to load QASM file '" << filename << "': '"
-           << exception.what() << "'\n";
-  }
-  return nullptr;
-}
-
-/**
- * @brief Load and parse a .mlir file
- */
-static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
-                                          MLIRContext* context) {
-  // Set up the input file
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
-    errs() << "Failed to load file '" << filename << "': '" << errorMessage
-           << "'\n";
+    llvm::errs() << "Failed to load file '" << filename << "': '"
+                 << errorMessage << "'\n";
     return nullptr;
   }
 
-  // Parse the input MLIR
-  SourceMgr sourceMgr;
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
+  return qc::translateQASM3ToQC(sourceMgr, context);
+}
+
+/**
+ * @brief Load and parse an `.mlir` file
+ */
+static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
+                                          MLIRContext* context) {
+  std::string errorMessage;
+  auto file = openInputFile(filename, &errorMessage);
+  if (!file) {
+    llvm::errs() << "Failed to load file '" << filename << "': '"
+                 << errorMessage << "'\n";
+    return nullptr;
+  }
+
+  llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
   return parseSourceFile<ModuleOp>(sourceMgr, context);
 }
 
 /**
- * @brief Write the module to the output file
+ * @brief Write a module to an output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
+template <typename ModuleType>
+static mlir::LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
-    errs() << errorMessage << "\n";
+    llvm::errs() << errorMessage << "\n";
     return mlir::failure();
   }
 
-  module.print(output->os());
+  if constexpr (std::is_same_v<ModuleType, mlir::ModuleOp>) {
+    if (filename == "-") {
+      mod.print(output->os());
+    } else {
+      writeBytecodeToFile(mod, output->os());
+    }
+  } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
+    if (filename == "-") {
+      mod->print(output->os(), nullptr);
+    } else {
+      llvm::WriteBitcodeToFile(*mod, output->os());
+    }
+  } else {
+    llvm_unreachable("Unsupported module type");
+  }
+
+  output->os().flush();
+  if (output->os().has_error()) {
+    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
+    return mlir::failure();
+  }
+
   output->keep();
   return mlir::success();
 }
 
 int main(int argc, char** argv) {
-  const InitLLVM y(argc, argv);
+  const llvm::InitLLVM y(argc, argv);
 
   // Parse command-line options; exit on error and print to stderr
-  cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
+  llvm::cl::ParseCommandLineOptions(argc, argv,
+                                    "MQT Compiler Collection Driver\n");
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry.insert<mlir::qc::QCDialect>();
-  registry.insert<qco::QCODialect>();
-  registry.insert<arith::ArithDialect>();
-  registry.insert<cf::ControlFlowDialect>();
-  registry.insert<func::FuncDialect>();
-  registry.insert<scf::SCFDialect>();
-  registry.insert<LLVM::LLVMDialect>();
-  registry.insert<mlir::memref::MemRefDialect>();
-  registry.insert<qtensor::QTensorDialect>();
+  registry
+      .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+              LLVM::LLVMDialect, memref::MemRefDialect, qc::QCDialect,
+              qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
+  registerBuiltinDialectTranslation(registry);
+  registerLLVMDialectTranslation(registry);
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
   // Load the input .mlir file
-  OwningOpRef<ModuleOp> module;
+  OwningOpRef<ModuleOp> mod;
   if (inputFilename.getValue().ends_with(".qasm")) {
-    module = loadQASMFile(inputFilename, &context);
+    mod = loadQASMFile(inputFilename, &context);
   } else {
-    module = loadMLIRFile(inputFilename, &context);
+    mod = loadMLIRFile(inputFilename, &context);
   }
-  if (!module) {
+  if (!mod) {
     return 1;
   }
 
   // Configure the compiler pipeline
   QuantumCompilerConfig config;
-  config.convertToQIR = convertToQIR;
+  config.convertToQIRBase = convertToQIRBase;
+  config.convertToQIRAdaptive = convertToQIRAdaptive;
   config.recordIntermediates = recordIntermediates;
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;
@@ -190,37 +223,47 @@ int main(int argc, char** argv) {
   // Run the compilation pipeline
   CompilationRecord record;
   if (const QuantumCompilerPipeline pipeline(config);
-      pipeline
-          .runPipeline(module.get(), recordIntermediates ? &record : nullptr)
+      pipeline.runPipeline(mod.get(), recordIntermediates ? &record : nullptr)
           .failed()) {
-    errs() << "Compilation pipeline failed\n";
+    llvm::errs() << "Compilation pipeline failed\n";
     return 1;
   }
 
   if (recordIntermediates) {
-    outs() << "=== Compilation Record ===\n";
-    outs() << "After QC Import:\n" << record.afterQCImport << "\n";
-    outs() << "After Initial QC Canonicalization:\n"
-           << record.afterInitialCanon << "\n";
-    outs() << "After QC-to-QCO Conversion:\n"
-           << record.afterQCOConversion << "\n";
-    outs() << "After Initial QCO Canonicalization:\n"
-           << record.afterQCOCanon << "\n";
-    outs() << "After Optimization:\n" << record.afterOptimization << "\n";
-    outs() << "After Final QCO Canonicalization:\n"
-           << record.afterOptimizationCanon << "\n";
-    outs() << "After QCO-to-QC Conversion:\n"
-           << record.afterQCConversion << "\n";
-    outs() << "After Final QC Canonicalization:\n"
-           << record.afterQCCanon << "\n";
-    outs() << "After QC-to-QIR Conversion:\n"
-           << record.afterQIRConversion << "\n";
-    outs() << "After QIR Canonicalization:\n" << record.afterQIRCanon << "\n";
+    llvm::outs() << "=== Compilation Record ===\n";
+    llvm::outs() << "After QC Import:\n" << record.afterQCImport << "\n";
+    llvm::outs() << "After Initial QC Canonicalization:\n"
+                 << record.afterInitialCanon << "\n";
+    llvm::outs() << "After QC-to-QCO Conversion:\n"
+                 << record.afterQCOConversion << "\n";
+    llvm::outs() << "After Initial QCO Canonicalization:\n"
+                 << record.afterQCOCanon << "\n";
+    llvm::outs() << "After Optimization:\n" << record.afterOptimization << "\n";
+    llvm::outs() << "After Final QCO Canonicalization:\n"
+                 << record.afterOptimizationCanon << "\n";
+    llvm::outs() << "After QCO-to-QC Conversion:\n"
+                 << record.afterQCConversion << "\n";
+    llvm::outs() << "After Final QC Canonicalization:\n"
+                 << record.afterQCCanon << "\n";
+    llvm::outs() << "After QC-to-QIR Conversion:\n"
+                 << record.afterQIRConversion << "\n";
+    llvm::outs() << "After QIR Canonicalization:\n"
+                 << record.afterQIRCanon << "\n";
   }
 
   // Write the output
-  if (writeOutput(module.get(), outputFilename).failed()) {
-    errs() << "Failed to write output file: " << outputFilename << "\n";
+  if (convertToQIRBase || convertToQIRAdaptive) {
+    llvm::LLVMContext llvmContext;
+    std::unique_ptr<llvm::Module> llvmMod =
+        translateModuleToLLVMIR(*mod, llvmContext);
+    if (!llvmMod) {
+      llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
+      return 1;
+    }
+    if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
+      return 1;
+    }
+  } else if (writeOutput<ModuleOp>(mod.get(), outputFilename).failed()) {
     return 1;
   }
 

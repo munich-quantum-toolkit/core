@@ -144,6 +144,20 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::allocDeallocPair)}));
 /// @}
 
+/// \name QCOToQC/Modifiers/CtrlOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOCtrlOpTest, QCOToQCTest,
+    testing::Values(QCOToQCTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qco::ctrlTwo),
+                                    MQT_NAMED_BUILDER(qc::ctrlTwo)},
+                    QCOToQCTestCase{"CtrlTwoMixed",
+                                    MQT_NAMED_BUILDER(qco::ctrlTwoMixed),
+                                    MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
+                    QCOToQCTestCase{"CtrlInvTwo",
+                                    MQT_NAMED_BUILDER(qco::ctrlInvTwo),
+                                    MQT_NAMED_BUILDER(qc::ctrlInvTwo)}));
+/// @}
+
 /// \name QCOToQC/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -160,7 +174,9 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::dcx)},
         QCOToQCTestCase{"InverseMultipleControlledDCX",
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
-                        MQT_NAMED_BUILDER(qc::multipleControlledDcx)}));
+                        MQT_NAMED_BUILDER(qc::multipleControlledDcx)},
+        QCOToQCTestCase{"InvTwo", MQT_NAMED_BUILDER(qco::invTwo),
+                        MQT_NAMED_BUILDER(qc::invTwo)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/BarrierOp.cpp
@@ -527,10 +543,13 @@ INSTANTIATE_TEST_SUITE_P(
                     QCOToQCTestCase{"SingleControlledX",
                                     MQT_NAMED_BUILDER(qco::singleControlledX),
                                     MQT_NAMED_BUILDER(qc::singleControlledX)},
+                    QCOToQCTestCase{"MultipleControlledX",
+                                    MQT_NAMED_BUILDER(qco::multipleControlledX),
+                                    MQT_NAMED_BUILDER(qc::multipleControlledX)},
                     QCOToQCTestCase{
-                        "MultipleControlledX",
-                        MQT_NAMED_BUILDER(qco::multipleControlledX),
-                        MQT_NAMED_BUILDER(qc::multipleControlledX)}));
+                        "RepeatedControlledX",
+                        MQT_NAMED_BUILDER(qco::repeatedControlledX),
+                        MQT_NAMED_BUILDER(qc::repeatedControlledX)}));
 /// @}
 
 /// \name QCOToQC/Operations/StandardGates/XxMinusYyOp.cpp
@@ -661,6 +680,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{"SimpleDoWhile",
                         MQT_NAMED_BUILDER(qco::simpleDoWhileReset),
                         MQT_NAMED_BUILDER(qc::simpleDoWhileReset)}));
+/// @}
 
 /// \name QCOToQC/Operations/ForOp.cpp
 /// @{
@@ -675,6 +695,12 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{"NestedForLoopWhileOp",
                         MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp),
                         MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp)},
-        QCOToQCTestCase{"NestedForLoopCtrlOp",
-                        MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOp),
-                        MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOp)}));
+        QCOToQCTestCase{
+            "nestedForLoopCtrlOpWithSeparateQubit",
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit),
+            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit)},
+        QCOToQCTestCase{
+            "nestedForLoopCtrlOpWithExtractedQubit",
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
+            MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)}));
+/// @}

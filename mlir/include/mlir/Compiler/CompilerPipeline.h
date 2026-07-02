@@ -26,8 +26,11 @@ class ModuleOp;
  * diagnostic options for profiling and debugging.
  */
 struct QuantumCompilerConfig {
-  /// Convert to QIR at the end of the pipeline
-  bool convertToQIR = false;
+  /// Convert to QIR Base Profile at the end of the pipeline
+  bool convertToQIRBase = false;
+
+  /// Convert to QIR Adaptive Profile at the end of the pipeline
+  bool convertToQIRAdaptive = false;
 
   /// Record intermediate IR at each stage for debugging/testing
   bool recordIntermediates = false;

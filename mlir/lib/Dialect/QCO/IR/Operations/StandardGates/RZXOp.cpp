@@ -10,9 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -69,17 +69,20 @@ void RZXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRZX>(context);
 }
 
-std::optional<Eigen::Matrix4cd> RZXOp::getUnitaryMatrix() {
+Matrix4x4 RZXOp::unitaryMatrix(const double theta) {
   using namespace std::complex_literals;
 
+  const auto mc = std::cos(theta / 2);
+  const auto ms = 1i * std::sin(theta / 2);
+  return Matrix4x4::fromElements(mc, -ms, 0, 0, // row 0
+                                 -ms, mc, 0, 0, // row 1
+                                 0, 0, mc, ms,  // row 2
+                                 0, 0, ms, mc); // row 3
+}
+
+std::optional<Matrix4x4> RZXOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m0 = 0i;
-    const auto mc = std::complex<double>{std::cos(*theta / 2.0)};
-    const auto ms = std::complex<double>{0.0, std::sin(*theta / 2.0)};
-    return Eigen::Matrix4cd{{mc, -ms, m0, m0}, // row 0
-                            {-ms, mc, m0, m0}, // row 1
-                            {m0, m0, mc, ms},  // row 2
-                            {m0, m0, ms, mc}}; // row 3
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

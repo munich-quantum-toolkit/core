@@ -10,17 +10,22 @@
 
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 
+#include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
+#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
+#include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -28,6 +33,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <ranges>
@@ -54,6 +60,47 @@ struct QregInfo {
 // (register ref, localIdx)
 using BitMemInfo = std::pair<QCProgramBuilder::ClassicalRegister, size_t>;
 using BitIndexVec = SmallVector<BitMemInfo>;
+
+/**
+ * @brief Structure to maintain state during translation
+ */
+struct TranslationState {
+  /// Flat vector of qubit values indexed by physical qubit index
+  SmallVector<Value> qubits;
+
+  /// Mapping from global bit index to (register, local_index)
+  BitIndexVec bitMap;
+
+  /// Flat vector of measurement results
+  SmallVector<Value> results;
+
+  /// Whether the translation is currently processing an IfElseOperation
+  bool inIfElse = false;
+
+  /// Whether the translation is currently within a control modifier
+  bool inCtrlOp = false;
+
+  /// Mapping from physical qubit index to block argument
+  DenseMap<size_t, Value> targetArgs;
+
+  /// Control qubits of the current CompoundOperation
+  DenseSet<::qc::Qubit> compoundControls;
+
+  [[nodiscard]] Value getQubit(size_t index) const {
+    if (inCtrlOp) {
+      auto it = targetArgs.find(index);
+      if (it == targetArgs.end()) {
+        llvm::reportFatalInternalError("Qubit index out of bounds");
+      }
+      return it->second;
+    }
+
+    if (index >= qubits.size()) {
+      llvm::reportFatalInternalError("Qubit index out of bounds");
+    }
+    return qubits[index];
+  };
+};
 
 } // namespace
 
@@ -185,25 +232,28 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
  *
  * @param builder The QCProgramBuilder used to create operations
  * @param operation The measurement operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- * @param bitMap Mapping from global bit index to (register, local_index)
+ * @param state The translation state
  */
 static void addMeasureOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
-                         const SmallVector<Value>& qubits,
-                         const BitIndexVec& bitMap) {
+                         TranslationState& state) {
+  if (state.inIfElse) {
+    llvm::reportFatalInternalError(
+        "Measurement operations inside IfElseOperations cannot be translated "
+        "to QC at the moment");
+  }
+
   const auto& measureOp =
       dynamic_cast<const ::qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
   const auto& classics = measureOp.getClassics();
 
   for (size_t i = 0; i < targets.size(); ++i) {
-    const auto& qubit = qubits[targets[i]];
+    const auto& qubit = state.getQubit(targets[i]);
     const auto bitIdx = static_cast<size_t>(classics[i]);
-    const auto& [mem, localIdx] = bitMap[bitIdx];
-
-    // Use builder's measure method which keeps output record
-    builder.measure(qubit, mem[static_cast<int64_t>(localIdx)]);
+    const auto& [mem, localIdx] = state.bitMap[bitIdx];
+    const auto& bit = mem[static_cast<int64_t>(localIdx)];
+    state.results[bitIdx] = builder.measure(qubit, bit);
   }
 }
 
@@ -216,13 +266,13 @@ static void addMeasureOp(QCProgramBuilder& builder,
  *
  * @param builder The QCProgramBuilder used to create operations
  * @param operation The reset operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
+ * @param state The translation state
  */
 static void addResetOp(QCProgramBuilder& builder,
                        const ::qc::Operation& operation,
-                       const SmallVector<Value>& qubits) {
+                       TranslationState& state) {
   for (const auto& target : operation.getTargets()) {
-    auto qubit = qubits[target];
+    auto qubit = state.getQubit(target);
     builder.reset(qubit);
   }
 }
@@ -235,18 +285,21 @@ static void addResetOp(QCProgramBuilder& builder,
  * the qubit values corresponding to positive controls.
  *
  * @param operation The operation containing controls
- * @param qubits Flat vector of qubit values indexed by physical qubit index
+ * @param state The translation state
  * @return Vector of qubit values corresponding to positive controls
  */
 static SmallVector<Value> getControls(const ::qc::Operation& operation,
-                                      const SmallVector<Value>& qubits) {
+                                      TranslationState& state) {
   SmallVector<Value> controls;
   for (const auto& [control, type] : operation.getControls()) {
+    if (state.compoundControls.contains(control)) {
+      continue;
+    }
     if (type == ::qc::Control::Type::Neg) {
       llvm::reportFatalInternalError(
           "Negative controls cannot be translated to QC at the moment");
     }
-    controls.push_back(qubits[control]);
+    controls.push_back(state.getQubit(control));
   }
   return controls;
 }
@@ -263,13 +316,13 @@ static SmallVector<Value> getControls(const ::qc::Operation& operation,
    *                                                                           \
    * @param builder The QCProgramBuilder used to create operations             \
    * @param operation The OP_CORE operation to translate                       \
-   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   * @param state The translation state                                        \
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const SmallVector<Value>& qubits) {             \
-    const auto& target = qubits[operation.getTargets()[0]];                    \
-    if (const auto& controls = getControls(operation, qubits);                 \
+                               TranslationState& state) {                      \
+    const auto& target = state.getQubit(operation.getTargets()[0]);            \
+    if (const auto& controls = getControls(operation, state);                  \
         controls.empty()) {                                                    \
       builder.OP_QC(target);                                                   \
     } else {                                                                   \
@@ -303,14 +356,14 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdg, sxdg)
    *                                                                           \
    * @param builder The QCProgramBuilder used to create operations             \
    * @param operation The OP_CORE operation to translate                       \
-   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   * @param state The translation state                                        \
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const SmallVector<Value>& qubits) {             \
+                               TranslationState& state) {                      \
     const auto& param = operation.getParameter()[0];                           \
-    const auto& target = qubits[operation.getTargets()[0]];                    \
-    if (const auto& controls = getControls(operation, qubits);                 \
+    const auto& target = state.getQubit(operation.getTargets()[0]);            \
+    if (const auto& controls = getControls(operation, state);                  \
         controls.empty()) {                                                    \
       builder.OP_QC(param, target);                                            \
     } else {                                                                   \
@@ -335,15 +388,15 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p)
    *                                                                           \
    * @param builder The QCProgramBuilder used to create operations             \
    * @param operation The OP_CORE operation to translate                       \
-   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   * @param state The translation state                                        \
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const SmallVector<Value>& qubits) {             \
+                               TranslationState& state) {                      \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
-    const auto& target = qubits[operation.getTargets()[0]];                    \
-    if (const auto& controls = getControls(operation, qubits);                 \
+    const auto& target = state.getQubit(operation.getTargets()[0]);            \
+    if (const auto& controls = getControls(operation, state);                  \
         controls.empty()) {                                                    \
       builder.OP_QC(param1, param2, target);                                   \
     } else {                                                                   \
@@ -368,16 +421,16 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2)
    *                                                                           \
    * @param builder The QCProgramBuilder used to create operations             \
    * @param operation The OP_CORE operation to translate                       \
-   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   * @param state The translation state                                        \
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const SmallVector<Value>& qubits) {             \
+                               TranslationState& state) {                      \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& param3 = operation.getParameter()[2];                          \
-    const auto& target = qubits[operation.getTargets()[0]];                    \
-    if (const auto& controls = getControls(operation, qubits);                 \
+    const auto& target = state.getQubit(operation.getTargets()[0]);            \
+    if (const auto& controls = getControls(operation, state);                  \
         controls.empty()) {                                                    \
       builder.OP_QC(param1, param2, param3, target);                           \
     } else {                                                                   \
@@ -401,14 +454,14 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u)
    *                                                                           \
    * @param builder The QCProgramBuilder used to create operations             \
    * @param operation The OP_CORE operation to translate                       \
-   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   * @param state The translation state                                        \
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const SmallVector<Value>& qubits) {             \
-    const auto& target0 = qubits[operation.getTargets()[0]];                   \
-    const auto& target1 = qubits[operation.getTargets()[1]];                   \
-    if (const auto& controls = getControls(operation, qubits);                 \
+                               TranslationState& state) {                      \
+    const auto& target0 = state.getQubit(operation.getTargets()[0]);           \
+    const auto& target1 = state.getQubit(operation.getTargets()[1]);           \
+    if (const auto& controls = getControls(operation, state);                  \
         controls.empty()) {                                                    \
       builder.OP_QC(target0, target1);                                         \
     } else {                                                                   \
@@ -423,6 +476,24 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
+static void addISWAPdgOp(QCProgramBuilder& builder,
+                         const ::qc::Operation& operation,
+                         TranslationState& state) {
+  auto target0 = state.getQubit(operation.getTargets()[0]);
+  auto target1 = state.getQubit(operation.getTargets()[1]);
+  if (const auto& controls = getControls(operation, state); controls.empty()) {
+    builder.inv({target0, target1}, [&](ValueRange qubits) {
+      builder.iswap(qubits[0], qubits[1]);
+    });
+  } else {
+    builder.ctrl(controls, {target0, target1}, [&](ValueRange targets) {
+      builder.inv(targets, [&](ValueRange qubits) {
+        builder.iswap(qubits[0], qubits[1]);
+      });
+    });
+  }
+}
+
 // TwoTargetOneParameter
 
 #define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CORE, OP_QC)                        \
@@ -435,15 +506,15 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
    *                                                                           \
    * @param builder The QCProgramBuilder used to create operations             \
    * @param operation The OP_CORE operation to translate                       \
-   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   * @param state The translation state                                        \
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const SmallVector<Value>& qubits) {             \
+                               TranslationState& state) {                      \
     const auto& param = operation.getParameter()[0];                           \
-    const auto& target0 = qubits[operation.getTargets()[0]];                   \
-    const auto& target1 = qubits[operation.getTargets()[1]];                   \
-    if (const auto& controls = getControls(operation, qubits);                 \
+    const auto& target0 = state.getQubit(operation.getTargets()[0]);           \
+    const auto& target1 = state.getQubit(operation.getTargets()[1]);           \
+    if (const auto& controls = getControls(operation, state);                  \
         controls.empty()) {                                                    \
       builder.OP_QC(param, target0, target1);                                  \
     } else {                                                                   \
@@ -470,16 +541,16 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz)
    *                                                                           \
    * @param builder The QCProgramBuilder used to create operations             \
    * @param operation The OP_CORE operation to translate                       \
-   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   * @param state The translation state                                        \
    */                                                                          \
   static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
                                const ::qc::Operation& operation,               \
-                               const SmallVector<Value>& qubits) {             \
+                               TranslationState& state) {                      \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
-    const auto& target0 = qubits[operation.getTargets()[0]];                   \
-    const auto& target1 = qubits[operation.getTargets()[1]];                   \
-    if (const auto& controls = getControls(operation, qubits);                 \
+    const auto& target0 = state.getQubit(operation.getTargets()[0]);           \
+    const auto& target1 = state.getQubit(operation.getTargets()[1]);           \
+    if (const auto& controls = getControls(operation, state);                  \
         controls.empty()) {                                                    \
       builder.OP_QC(param1, param2, target0, target1);                         \
     } else {                                                                   \
@@ -496,18 +567,229 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXminusYY, xx_minus_yy)
 
 static void addBarrierOp(QCProgramBuilder& builder,
                          const ::qc::Operation& operation,
-                         const SmallVector<Value>& qubits) {
+                         TranslationState& state) {
   SmallVector<Value> targets;
   for (const auto& targetIdx : operation.getTargets()) {
-    targets.push_back(qubits[targetIdx]);
+    targets.push_back(state.getQubit(targetIdx));
   }
   builder.barrier(targets);
 }
 
+// Forward declaration
+static LogicalResult translateOperation(QCProgramBuilder& builder,
+                                        const ::qc::Operation& operation,
+                                        TranslationState& state);
+
+// CompoundOp
+
+static LogicalResult addCompoundOp(QCProgramBuilder& builder,
+                                   const ::qc::Operation& operation,
+                                   TranslationState& state) {
+  const auto& compoundOp =
+      dynamic_cast<const ::qc::CompoundOperation&>(operation);
+  if (const auto& controls = getControls(operation, state); controls.empty()) {
+    for (const auto& op : compoundOp) {
+      if (failed(translateOperation(builder, *op, state))) {
+        return failure();
+      }
+    }
+  } else {
+    // Collect targets
+    DenseMap<uint32_t, Value> targetMap;
+    for (const auto& op : compoundOp) {
+      if (dynamic_cast<const ::qc::CompoundOperation*>(op.get()) != nullptr) {
+        llvm::reportFatalInternalError("Nested CompoundOperations cannot be "
+                                       "translated to QC at the moment");
+      }
+      for (const auto& target : op->getTargets()) {
+        if (!targetMap.contains(target)) {
+          targetMap[target] = state.getQubit(target);
+        }
+      }
+      for (const auto& control : op->getControls()) {
+        if (compoundOp.getControls().contains(control)) {
+          continue;
+        }
+        const auto& qubit = control.qubit;
+        if (!targetMap.contains(qubit)) {
+          targetMap[qubit] = state.getQubit(qubit);
+        }
+      }
+    }
+    for (const auto& [control, _] : compoundOp.getControls()) {
+      state.compoundControls.insert(control);
+    }
+    SmallVector<std::pair<uint32_t, Value>> sortedPairs(targetMap.begin(),
+                                                        targetMap.end());
+    llvm::sort(sortedPairs.begin(), sortedPairs.end(),
+               [](const auto& a, const auto& b) { return a.first < b.first; });
+    SmallVector<Value> targets;
+    for (const auto& pair : sortedPairs) {
+      targets.push_back(pair.second);
+    }
+    // Build control modifier
+    builder.ctrl(controls, targets, [&](ValueRange targetArgs) {
+      state.inCtrlOp = true;
+      for (size_t i = 0; i < sortedPairs.size(); ++i) {
+        state.targetArgs[sortedPairs[i].first] = targetArgs[i];
+      }
+      for (const auto& op : compoundOp) {
+        if (failed(translateOperation(builder, *op, state))) {
+          llvm::reportFatalInternalError("Failed to translate operation inside "
+                                         "controlled CompoundOperation");
+        }
+      }
+      state.targetArgs.clear();
+      state.inCtrlOp = false;
+    });
+  }
+  return success();
+}
+
+// IfElseOp
+
+static LogicalResult addIfElseOp(QCProgramBuilder& builder,
+                                 const ::qc::Operation& operation,
+                                 TranslationState& state) {
+  const auto& ifElse = dynamic_cast<const ::qc::IfElseOperation&>(operation);
+
+  if (ifElse.getControlRegister().has_value()) {
+    llvm::errs() << "IfElseOperations controlled by registers cannot be "
+                    "translated to QC at the moment\n";
+    return failure();
+  }
+
+  assert(ifElse.getControlBit().has_value());
+  const auto bitIdx = static_cast<size_t>(*ifElse.getControlBit());
+  auto controlValue = state.results[bitIdx];
+  if (controlValue == nullptr) {
+    llvm::errs() << "Control bit does not contain a measurement result\n";
+    return failure();
+  }
+  auto expectedValue = builder.boolConstant(ifElse.getExpectedValueBit());
+
+  // Define comparison predicate
+  const auto comparisonKind = ifElse.getComparisonKind();
+  auto predicate = arith::CmpIPredicate::eq;
+  switch (comparisonKind) {
+  case ::qc::ComparisonKind::Eq:
+    predicate = arith::CmpIPredicate::eq;
+    break;
+  case ::qc::ComparisonKind::Neq:
+    predicate = arith::CmpIPredicate::ne;
+    break;
+  default:
+    llvm::errs() << "Unsupported comparison kind in IfElseOperation\n";
+    return failure();
+  }
+
+  // Define condition
+  auto condition =
+      arith::CmpIOp::create(builder, predicate, controlValue, expectedValue);
+
+  // Define if-else operation
+  auto thenResult = success();
+  auto thenBuilder = [&] {
+    state.inIfElse = true;
+    thenResult = translateOperation(builder, *ifElse.getThenOp(), state);
+    state.inIfElse = false;
+  };
+
+  auto elseResult = success();
+  auto elseBuilder = [&] {
+    state.inIfElse = true;
+    elseResult = translateOperation(builder, *ifElse.getElseOp(), state);
+    state.inIfElse = false;
+  };
+
+  if (ifElse.getElseOp() != nullptr) {
+    builder.scfIf(condition.getResult(), thenBuilder, elseBuilder);
+  } else {
+    builder.scfIf(condition.getResult(), thenBuilder);
+  }
+
+  if (failed(thenResult)) {
+    llvm::errs() << "Failed to translate then branch of IfElseOperation\n";
+    return failure();
+  }
+  if (failed(elseResult)) {
+    llvm::errs() << "Failed to translate else branch of IfElseOperation\n";
+    return failure();
+  }
+
+  return success();
+}
+
 #define ADD_OP_CASE(OP_CORE)                                                   \
   case ::qc::OpType::OP_CORE:                                                  \
-    add##OP_CORE##Op(builder, *operation, qubits);                             \
-    break;
+    add##OP_CORE##Op(builder, operation, state);                               \
+    return success();
+
+/**
+ * @brief Translates an operation from QuantumComputation to QC dialect
+ *
+ * @param builder The QCProgramBuilder used to create operations
+ * @param quantumComputation The quantum computation to translate
+ * @param state The translation state
+ * @return Success if all supported operations were translated
+ */
+static LogicalResult translateOperation(QCProgramBuilder& builder,
+                                        const ::qc::Operation& operation,
+                                        TranslationState& state) {
+  switch (operation.getType()) {
+  case ::qc::OpType::Measure:
+    addMeasureOp(builder, operation, state);
+    return success();
+    ADD_OP_CASE(Reset)
+    ADD_OP_CASE(I)
+    ADD_OP_CASE(X)
+    ADD_OP_CASE(Y)
+    ADD_OP_CASE(Z)
+    ADD_OP_CASE(H)
+    ADD_OP_CASE(S)
+    ADD_OP_CASE(Sdg)
+    ADD_OP_CASE(T)
+    ADD_OP_CASE(Tdg)
+    ADD_OP_CASE(SX)
+    ADD_OP_CASE(SXdg)
+    ADD_OP_CASE(RX)
+    ADD_OP_CASE(RY)
+    ADD_OP_CASE(RZ)
+    ADD_OP_CASE(P)
+    ADD_OP_CASE(R)
+    ADD_OP_CASE(U2)
+    ADD_OP_CASE(U)
+    ADD_OP_CASE(SWAP)
+    ADD_OP_CASE(iSWAP)
+    ADD_OP_CASE(DCX)
+    ADD_OP_CASE(ECR)
+    ADD_OP_CASE(RXX)
+    ADD_OP_CASE(RYY)
+    ADD_OP_CASE(RZX)
+    ADD_OP_CASE(RZZ)
+    ADD_OP_CASE(XXplusYY)
+    ADD_OP_CASE(XXminusYY)
+    ADD_OP_CASE(Barrier)
+  case ::qc::OpType::iSWAPdg:
+    addISWAPdgOp(builder, operation, state);
+    return success();
+  case ::qc::OpType::Compound:
+    if (failed(addCompoundOp(builder, operation, state))) {
+      return failure();
+    }
+    return success();
+  case ::qc::OpType::IfElse:
+    if (failed(addIfElseOp(builder, operation, state))) {
+      return failure();
+    }
+    return success();
+  default:
+    llvm::errs() << operation.getName() << " cannot be translated to QC\n";
+    return failure();
+  }
+}
+
+#undef ADD_OP_CASE
 
 /**
  * @brief Translates operations from QuantumComputation to QC dialect
@@ -518,76 +800,25 @@ static void addBarrierOp(QCProgramBuilder& builder,
  *
  * @param builder The QCProgramBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- * @param bitMap Mapping from global bit index to (register, local_index)
+ * @param state The translation state
  * @return Success if all supported operations were translated
  */
 static LogicalResult
 translateOperations(QCProgramBuilder& builder,
                     const ::qc::QuantumComputation& quantumComputation,
-                    const SmallVector<Value>& qubits,
-                    const BitIndexVec& bitMap) {
+                    TranslationState& state) {
   if (quantumComputation.hasGlobalPhase()) {
     builder.gphase(quantumComputation.getGlobalPhase());
   }
   for (const auto& operation : quantumComputation) {
-    switch (operation->getType()) {
-    case ::qc::OpType::Measure:
-      addMeasureOp(builder, *operation, qubits, bitMap);
-      break;
-      ADD_OP_CASE(Reset)
-      ADD_OP_CASE(I)
-      ADD_OP_CASE(X)
-      ADD_OP_CASE(Y)
-      ADD_OP_CASE(Z)
-      ADD_OP_CASE(H)
-      ADD_OP_CASE(S)
-      ADD_OP_CASE(Sdg)
-      ADD_OP_CASE(T)
-      ADD_OP_CASE(Tdg)
-      ADD_OP_CASE(SX)
-      ADD_OP_CASE(SXdg)
-      ADD_OP_CASE(RX)
-      ADD_OP_CASE(RY)
-      ADD_OP_CASE(RZ)
-      ADD_OP_CASE(P)
-      ADD_OP_CASE(R)
-      ADD_OP_CASE(U2)
-      ADD_OP_CASE(U)
-      ADD_OP_CASE(SWAP)
-      ADD_OP_CASE(iSWAP)
-      ADD_OP_CASE(DCX)
-      ADD_OP_CASE(ECR)
-      ADD_OP_CASE(RXX)
-      ADD_OP_CASE(RYY)
-      ADD_OP_CASE(RZX)
-      ADD_OP_CASE(RZZ)
-      ADD_OP_CASE(XXplusYY)
-      ADD_OP_CASE(XXminusYY)
-      ADD_OP_CASE(Barrier)
-    case ::qc::OpType::iSWAPdg: {
-      const auto& target0 = qubits[operation->getTargets()[0]];
-      const auto& target1 = qubits[operation->getTargets()[1]];
-      if (const auto& controls = getControls(*operation, qubits);
-          controls.empty()) {
-        builder.inv([&] { builder.iswap(target0, target1); });
-      } else {
-        builder.ctrl(controls, [&] {
-          builder.inv([&] { builder.iswap(target0, target1); });
-        });
-      }
-      break;
-    }
-    default:
-      llvm::errs() << operation->getName() << " cannot be translated to QC\n";
+    if (translateOperation(builder, *operation, state).failed()) {
+      llvm::errs() << "Failed to translate operation: " << operation->getName()
+                   << "\n";
       return failure();
     }
   }
-
   return success();
 }
-
-#undef ADD_OP_CASE
 
 /**
  * @brief Translates a QuantumComputation to an MLIR module with QC
@@ -629,9 +860,16 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
   // Allocate classical registers using the builder
   const auto bitMap = allocateClassicalRegisters(builder, quantumComputation);
 
+  // Allocate result map
+  SmallVector<Value> results(quantumComputation.getNcbits(), nullptr);
+
+  TranslationState state{.qubits = qubits,
+                         .bitMap = bitMap,
+                         .results = std::move(results),
+                         .targetArgs = DenseMap<size_t, Value>{}};
+
   // Translate operations
-  if (translateOperations(builder, quantumComputation, qubits, bitMap)
-          .failed()) {
+  if (translateOperations(builder, quantumComputation, state).failed()) {
     llvm::reportFatalInternalError(
         "Failed to translate QuantumComputation to QC");
   }

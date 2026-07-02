@@ -794,13 +794,13 @@ void QuantumComputation::stripIdleQubits(bool force) {
 
 QuantumRegister&
 QuantumComputation::getQubitRegister(const Qubit physicalQubitIndex) {
-  for (auto& [_, reg] : quantumRegisters) {
+  for (auto& reg : quantumRegisters | std::views::values) {
     if (reg.contains(physicalQubitIndex)) {
       return reg;
     }
   }
 
-  for (auto& [_, reg] : ancillaRegisters) {
+  for (auto& reg : ancillaRegisters | std::views::values) {
     if (reg.contains(physicalQubitIndex)) {
       return reg;
     }

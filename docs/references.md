@@ -1,16 +1,10 @@
-```{raw} latex
-\begingroup
-\renewcommand\section[1]{\endgroup}
-\phantomsection
-```
-
-````{only} html
 # References
 
-*MQT Core* has a strong foundation in peer‑reviewed research.
-Many of its built‑in algorithms are based on methods published in scientific journals and conferences.
-For an overview of *MQT Core* and its features, see {cite:p}`burgholzer2025MQTCore`.
-If you want to cite this article, please use the following BibTeX entry:
+*MQT Core* has a strong foundation in peer‑reviewed research. Many of its
+built‑in algorithms are based on methods published in scientific journals and
+conferences. For an overview of *MQT Core* and its features, see
+{cite:p}`burgholzer2025MQTCore`. If you want to cite this article, please use
+the following BibTeX entry:
 
 ```bibtex
 @article{burgholzer2025MQTCore,
@@ -27,8 +21,9 @@ If you want to cite this article, please use the following BibTeX entry:
 }
 ```
 
-For an overview of the compilation framework built on MLIR, see {cite:p}`MQTCompilerCollection2026`.
-If you want to cite the MQT Compiler Collection, please use the following BibTeX entry:
+For an overview of the compilation framework built on MLIR, see
+{cite:p}`MQTCompilerCollection2026`. If you want to cite the MQT Compiler
+Collection, please use the following BibTeX entry:
 
 ```bibtex
 @article{MQTCompilerCollection2026,
@@ -36,13 +31,15 @@ If you want to cite the MQT Compiler Collection, please use the following BibTeX
   author       = {Burgholzer, Lukas and Haag, Daniel and Stade, Yannick and Rovara, Damian and Hopf, Patrick and Wille, Robert},
   year         = {2026},
   booktitle    = {Design, Automation and Test in Europe},
+  doi          = {10.23919/DATE69613.2026.11539504},
   eprint       = {2604.08674},
   eprinttype   = {arxiv},
 }
 ```
 
-*MQT Core* is part of the Munich Quantum Toolkit, which is described in {cite:p}`mqt`.
-If you want to cite the Munich Quantum Toolkit, please use the following BibTeX entry:
+*MQT Core* is part of the Munich Quantum Toolkit, which is described in
+{cite:p}`mqt`. If you want to cite the Munich Quantum Toolkit, please use the
+following BibTeX entry:
 
 ```bibtex
 @inproceedings{mqt,
@@ -59,7 +56,6 @@ If you want to cite the Munich Quantum Toolkit, please use the following BibTeX 
 ```
 
 A full list of references is given below.
-````
 
 ```{bibliography}
 
