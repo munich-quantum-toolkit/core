@@ -719,14 +719,15 @@ Session& Session::operator=(Session&& other) noexcept {
 }
 
 auto Session::getDevices() -> std::vector<Device> {
-
   const auto& qdmiDevices =
       queryProperty<std::vector<QDMI_Device>>(QDMI_SESSION_PROPERTY_DEVICES);
   std::vector<Device> devices;
   devices.reserve(qdmiDevices.size());
-  std::ranges::transform(
-      qdmiDevices, std::back_inserter(devices),
-      [](const QDMI_Device& dev) -> Device { return {Token{}, dev}; });
+  std::ranges::transform(qdmiDevices, std::back_inserter(devices),
+                         [](const QDMI_Device& dev) -> Device {
+                           return Device::fromQDMIDevice(dev);
+                         });
+
   return devices;
 }
 } // namespace fomac

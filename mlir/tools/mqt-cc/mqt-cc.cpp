@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/CompilerPipeline.h"
+#include "mlir/Compiler/qdmi.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -43,6 +44,7 @@
 #include <mlir/Target/LLVMIR/Export.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -97,6 +99,16 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     "hadamard-lifting",
     llvm::cl::desc("Apply Hadamard lifting during optimization"),
     llvm::cl::init(false));
+
+static llvm::cl::opt<bool>
+    qdmiListDevices("qdmi-list-devices",
+                    llvm::cl::desc("List all available devices via QDMI"),
+                    llvm::cl::init(false));
+
+static llvm::cl::opt<std::optional<std::string>>
+    qdmiDevice("qdmi-device",
+               llvm::cl::desc("Specify a target device via QDMI"),
+               llvm::cl::init(std::nullopt));
 
 /**
  * @brief Load and parse a `.qasm` file
@@ -179,6 +191,13 @@ int main(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
+  // Setup QDMI Session.
+  fomac::Session session; // Config?
+  if (qdmiListDevices) {
+    listAvailableQDMIDevices(session);
+    return 0;
+  }
+
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
   registry
@@ -213,6 +232,14 @@ int main(int argc, char** argv) {
   config.disableMergeSingleQubitRotationGates =
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
+
+  if (qdmiDevice != std::nullopt) {
+    config.device = getQDMIDevice(session, *qdmiDevice);
+    if (!config.device) {
+      llvm::errs() << "Device not found!\n";
+      listAvailableQDMIDevices(session, llvm::errs());
+    }
+  }
 
   // Run the compilation pipeline
   CompilationRecord record;

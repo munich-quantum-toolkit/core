@@ -19,10 +19,8 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <iterator>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -621,7 +619,7 @@ public:
      * construction is not accessible.
      */
     [[nodiscard]] static auto fromQDMIDevice(QDMI_Device device) -> Device {
-      return Device(Session::Token{}, device);
+      return {Session::Token{}, device};
     }
     /// @returns the underlying QDMI_Device object.
     [[nodiscard]] auto getQDMIDevice() const -> QDMI_Device { return device_; }

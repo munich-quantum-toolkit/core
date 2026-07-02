@@ -10,9 +10,12 @@
 
 #pragma once
 
+#include "fomac/FoMaC.hpp"
+
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <memory>
 #include <string>
 
 namespace mlir {
@@ -49,6 +52,9 @@ struct QuantumCompilerConfig {
 
   /// Enable Hadamard lifting
   bool enableHadamardLifting = false;
+
+  /// Pointer to QDMI Device to compile to.
+  std::shared_ptr<fomac::Session::Device> device;
 };
 
 /**
@@ -66,6 +72,8 @@ struct CompilationRecord {
   std::string afterQCOCanon;
   std::string afterOptimization;
   std::string afterOptimizationCanon;
+  std::string afterTranspilation;
+  std::string afterTranspilationCanon;
   std::string afterQCConversion;
   std::string afterQCCanon;
   std::string afterQIRConversion;
@@ -86,10 +94,12 @@ struct CompilationRecord {
  * 4. QCO cleanup pipeline
  * 5. Quantum optimization passes
  * 6. QCO cleanup pipeline
- * 7. QC dialect - converted back for backend lowering
- * 8. QC cleanup pipeline
- * 9. QIR (Quantum Intermediate Representation) - optional final lowering
- * 10. QIR cleanup pipeline
+ * 7. Quantum transpilation passes - optional fit to hardware constraints
+ * 8. QCO cleanup pipeline
+ * 9. QC dialect - converted back for backend lowering
+ * 10. QC cleanup pipeline
+ * 11. QIR (Quantum Intermediate Representation) - optional final lowering
+ * 12. QIR cleanup pipeline
  *
  * Following MLIR best practices, simplification and dead-value cleanup are
  * run after each major transformation stage.
