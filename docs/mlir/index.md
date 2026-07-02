@@ -25,6 +25,7 @@ interoperability, we provide {doc}`conversions <Conversions>` between dialects.
 ```{toctree}
 :maxdepth: 2
 
+python_compiler
 QC
 QCO
 QTensor

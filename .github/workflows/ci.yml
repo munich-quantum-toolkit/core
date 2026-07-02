@@ -186,6 +186,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      llvm-version: 22.1.7
 
   python-coverage:
     name: 🐍 Coverage
@@ -208,6 +210,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      llvm-version: 22.1.7
 
   python-linter:
     name: 🐍 Lint
@@ -218,6 +222,8 @@ jobs:
       check-stubs: true
       enable-ty: true
       enable-mypy: false
+      setup-mlir: true
+      llvm-version: 22.1.7
 
   build-sdist:
     name: 🚀 CD
@@ -244,6 +250,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      llvm-version: 22.1.7
 
   # this job does nothing and is only used for branch protection
   required-checks-pass:
