@@ -69,8 +69,8 @@ releases may include breaking changes.
 ### Fixed
 
 - 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
-- 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC Device ([#1842])
-  ([**@MatthiasReumann**])
+- 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
+  Device ([#1842]) ([**@MatthiasReumann**])
 
 ## [3.6.1] - 2026-05-20
 
