@@ -1013,9 +1013,15 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
  *
  * @param module The module which contains the operations
  * @param ctx The MLIR context
+ * @param maxNonzeroAmplitudes The maximum number of non-zero amplitudes in the
+ * tracted quantum states before reaching top.
+ * @param maxHybridStates The maximum number of hybrid states which have a
+ * non-zero probabilty.
  * @return Success if constant propagation has been applied successfully
  */
-LogicalResult applyCP(ModuleOp module, MLIRContext* ctx) {
+LogicalResult applyCP(ModuleOp module, MLIRContext* ctx,
+                      const size_t maxNonzeroAmplitudes,
+                      const size_t maxHybridStates) {
   moveMeasurementsToFront(module, ctx);
 
   PatternRewriter rewriter(ctx);
@@ -1033,7 +1039,7 @@ LogicalResult applyCP(ModuleOp module, MLIRContext* ctx) {
   }
 
   // TODO: Take maximum from params
-  auto ut = UnionTable(16, 4);
+  auto ut = UnionTable(maxNonzeroAmplitudes, maxHybridStates);
 
   std::span wl = {worklist.begin(), worklist.end()};
 
@@ -1051,7 +1057,8 @@ struct ConstantPropagation final
   using ConstantPropagationBase::ConstantPropagationBase;
 
   void runOnOperation() override {
-    if (failed(applyCP(getOperation(), &getContext()))) {
+    if (failed(applyCP(getOperation(), &getContext(), maximumNonzeroAmplitudes,
+                       maximumHybridStates))) {
       signalPassFailure();
     }
   }
