@@ -1,0 +1,7 @@
+# The C-API registration translation unit includes the dialect, conversion, and
+# transformation headers solely to invoke their registration entry points. The
+# include-cleaner check cannot trace these uses through the registration
+# functions and reports false positives, so it is disabled here.
+InheritParentConfig: true
+Checks: |
+  -misc-include-cleaner

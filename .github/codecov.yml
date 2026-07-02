@@ -2,6 +2,8 @@ ignore:
   - "**/python"
   - "test/**/*"
   - "mlir/unittests/**/*"
+  # The MLIR Python bindings require an MLIR toolchain built with Python
+  - "python/mqt/core/mlir/**"
 
 coverage:
   range: 60..90

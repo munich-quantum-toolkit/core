@@ -11,6 +11,7 @@ cmake-build-*
 # Distribution / packaging
 .Python
 /build/
+/build_*/
 /test/*/build
 develop-eggs/
 dist/

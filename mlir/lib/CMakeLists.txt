@@ -10,3 +10,8 @@ add_subdirectory(Conversion)
 add_subdirectory(Compiler)
 add_subdirectory(Dialect)
 add_subdirectory(Support)
+
+# The C-API library backs the Python bindings.
+if(BUILD_MQT_CORE_BINDINGS)
+  add_subdirectory(CAPI)
+endif()

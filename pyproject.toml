@@ -180,6 +180,8 @@ testpaths = ["test/python"]
 run.source = ["mqt.core"]
 run.omit = [
     '*/_compat/*',
+    # The MLIR bindings require an MLIR toolchain built with Python bindings.
+    '*/mqt/core/mlir/*',
 ]
 run.disable_warnings = [
   "no-sysmon",

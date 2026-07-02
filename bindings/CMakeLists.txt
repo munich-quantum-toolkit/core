@@ -10,3 +10,8 @@ add_subdirectory(ir)
 add_subdirectory(dd)
 add_subdirectory(fomac)
 add_subdirectory(na)
+
+# The MLIR bindings require the MLIR submodule to be built.
+if(BUILD_MQT_CORE_MLIR)
+  add_subdirectory(mlir)
+endif()
