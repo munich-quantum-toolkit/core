@@ -107,23 +107,24 @@ bool isEntryPoint(const func::FuncOp op) {
  * @param module The module which contains the operations
  * @param ctx The MLIR context
  */
-bool moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
+void moveMeasurementsToFront(ModuleOp module, MLIRContext* ctx) {
   bool changed = false;
-  PatternRewriter rewriter(ctx);
-  module.walk([&](MeasureOp op) {
-    Operation* previousInstruction = op.getQubitIn().getDefiningOp();
-    Operation* previousNode = op->getPrevNode();
-    while (isa<MeasureOp>(previousNode) &&
-           previousInstruction != previousNode) {
-      previousNode = previousNode->getPrevNode();
-    }
-    if (previousNode != previousInstruction) {
-      rewriter.moveOpAfter(op, previousInstruction);
-      changed = true;
-    }
-  });
-
-  return changed;
+  do {
+    changed = false;
+    PatternRewriter rewriter(ctx);
+    module.walk([&](MeasureOp op) {
+      Operation* previousInstruction = op.getQubitIn().getDefiningOp();
+      Operation* previousNode = op->getPrevNode();
+      while (isa<MeasureOp>(previousNode) &&
+             previousInstruction != previousNode) {
+        previousNode = previousNode->getPrevNode();
+      }
+      if (previousNode != previousInstruction) {
+        rewriter.moveOpAfter(op, previousInstruction);
+        changed = true;
+      }
+    });
+  } while (changed);
 }
 
 /**
@@ -1020,6 +1021,8 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
  * @return Success if constant propagation has been applied successfully
  */
 LogicalResult applyCP(ModuleOp module, MLIRContext* ctx) {
+  moveMeasurementsToFront(module, ctx);
+
   PatternRewriter rewriter(ctx);
 
   /// Prepare work-list.
