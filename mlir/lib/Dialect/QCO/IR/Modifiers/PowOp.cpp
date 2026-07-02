@@ -198,13 +198,11 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
       return failure();
     }
 
-    const double merged = op.getExponentValue() * innerPow.getExponentValue();
-    auto mergedConst = arith::ConstantFloatOp::create(
-        rewriter, op.getLoc(), rewriter.getF64Type(), APFloat(merged));
+    auto merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
 
     rewriter.moveOpBefore(innerPow, op);
     rewriter.modifyOpInPlace(innerPow, [&]() {
-      innerPow.getExponentMutable().assign(mergedConst.getResult());
+      innerPow.getExponentMutable().assign(merged);
       innerPow.getQubitsInMutable().assign(op.getInputQubits());
     });
     rewriter.replaceOp(op, innerPow->getResults());

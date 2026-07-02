@@ -197,8 +197,9 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     const auto qubits = llvm::map_to_vector(innerPow.getQubits(), [&](Value v) {
       return utils::getValueFromBlockArgument(v, outerQubits);
     });
+    auto merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
     rewriter.replaceOpWithNewOp<PowOp>(
-        op, op.getExponentValue() * innerPow.getExponentValue(), qubits,
+        op, merged, qubits,
         [&](ValueRange powArgs) {
           auto* newBody = rewriter.getInsertionBlock();
           // Inner pow body args now match the new pow's args positionally.
