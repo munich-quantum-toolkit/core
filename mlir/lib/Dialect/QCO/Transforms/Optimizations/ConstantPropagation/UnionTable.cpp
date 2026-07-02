@@ -157,6 +157,42 @@ void UnionTable::propagateGate(Operation* gate, const std::span<Value> targets,
   replaceValuesGlobally(ctrlsQuantum, newCtrlsQuantum);
 }
 
+void UnionTable::propagateClassicalOperation(
+    Operation* op, std::span<Value> targets, std::span<Value> results,
+    std::span<Value> posCtrlsClassical, std::span<Value> negCtrlsClassical) {
+  const auto result = results[0];
+  if (!valuesToEntries.contains(result)) {
+    if (op->getResult(0).getType().isFloat()) {
+      propagateDoubleAlloc(result, 0.0);
+    } else {
+      propagateIntAlloc(result, 0);
+    }
+  }
+  const std::set<UnionTableEntry> participatingEntries =
+      collectParticipatingEntries(targets, results, posCtrlsClassical,
+                                  negCtrlsClassical);
+
+  try {
+    unifyEntries(participatingEntries);
+  } catch (std::domain_error&) {
+    putEntriesToTop(participatingEntries);
+    return;
+  }
+  const Value operand1 = targets[0];
+  const Value operand2 = targets.size() > 1 ? targets[1] : nullptr;
+  const Value operand3 = targets.size() > 2 ? targets[2] : nullptr;
+
+  const auto ute = valuesToEntries.at(*targets.begin());
+  for (auto hs : ute->states) {
+    hs.propagateClassicalOperation(op, result, operand1, operand2, operand3,
+                                   posCtrlsClassical, negCtrlsClassical);
+    if (hs.isHybridStateTop()) {
+      putEntriesToTop({*ute});
+      break;
+    }
+  }
+}
+
 void UnionTable::propagateMeasurement(
     const Value quantumTarget, const Value newQuantumValue,
     const Value classicalTarget, const std::span<Value> posCtrlsClassical,

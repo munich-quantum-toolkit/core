@@ -905,9 +905,6 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
               ut->propagateQubitAlloc(op->getOperand(0));
               return WalkResult::advance();
             })
-            //         .Case<StaticOp>(
-            //             [&](const StaticOp op) { return handleStaticOp(ut,
-            //             op); })
             .Case<SinkOp>([&]([[maybe_unused]] SinkOp op) {
               return WalkResult::advance();
             })
@@ -918,10 +915,6 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
             .Case<YieldOp>([&]([[maybe_unused]] YieldOp op) {
               return WalkResult::advance();
             })
-            //         /// built-in Dialect
-            //         .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
-            //           return WalkResult::advance();
-            //         })
             // qtensor dialect
             .Case<qtensor::AllocOp>([&]([[maybe_unused]] qtensor::AllocOp op) {
               return WalkResult::advance();
@@ -939,40 +932,11 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
                 [&]([[maybe_unused]] qtensor::InsertOp op) {
                   return WalkResult::advance();
                 })
-            // memref Dialect
-            // .Case<memref::AllocOp>([&](const memref::AllocOp op) {
-            //   addedAtLeastOneQubit = true;
-            //   ut->propagateQubitAlloc(op->getOpResult(0));
-            //   return WalkResult::advance();
-            // })
-            //         .Case<memref::AllocaOp>([&](const memref::AllocaOp op) {
-            //           return handleAlloca(ut, op);
-            //         })
-            //         .Case<memref::DeallocOp>(
-            //             [&]([[maybe_unused]] const memref::DeallocOp op) {
-            //               return WalkResult::advance();
-            //             })
-            //         .Case<memref::LoadOp>([&](const memref::LoadOp op) {
-            //           addedAtLeastOneQubit = true;
-            //           return handleLoad(ut, op);
-            //         })
-            //         .Case<memref::StoreOp>([&](const memref::StoreOp op) {
-            //           return handleStore(ut, op, posClassicalCtrls,
-            //           negClassicalCtrls);
-            //         })
             // arith dialect
             .Case<arith::ConstantOp>([&](const arith::ConstantOp op) {
               return handleConstant(ut, op, posClassicalCtrls,
                                     negClassicalCtrls);
             })
-            //         .Case<arith::XOrIOp>(
-            //             [&](const arith::XOrIOp op) { return
-            //             handleXOrIOp(qcp, op);
-            //             })
-            //         .Case<arith::AndIOp>(
-            //             [&](const arith::AndIOp op) { return
-            //             handleAndIOp(qcp, op);
-            //             })
             // func Dialect
             .Case<func::FuncOp>([&](const func::FuncOp op) {
               if (!isEntryPoint(op)) {
@@ -985,7 +949,18 @@ LogicalResult iterateThroughWorklist(PatternRewriter& rewriter, UnionTable* ut,
             .Case<func::ReturnOp>([&]([[maybe_unused]] func::ReturnOp op) {
               return WalkResult::advance();
             })
-            .Default([](auto) {
+            .Default([ut, posClassicalCtrls, negClassicalCtrls](Operation* op) {
+              if (llvm::isa<arith::ArithDialect>(op->getDialect())) {
+                std::vector<Value> operands = {op->getOperands().begin(),
+                                               op->getOperands().end()};
+                std::vector<Value> results = {op->getResults().begin(),
+                                              op->getResults().end()};
+                ut->propagateClassicalOperation(op, operands, results,
+                                                posClassicalCtrls,
+                                                negClassicalCtrls);
+                return WalkResult::advance();
+              }
+
               throw std::runtime_error("Unsupported operation");
               return WalkResult::interrupt();
             });
