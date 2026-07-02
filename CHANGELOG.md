@@ -69,6 +69,8 @@ releases may include breaking changes.
 ### Fixed
 
 - 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
+- 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
+  Device ([#1842]) ([**@MatthiasReumann**])
 
 ## [3.6.1] - 2026-05-20
 
@@ -592,6 +594,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
 [#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
