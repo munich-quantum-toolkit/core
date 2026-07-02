@@ -12,8 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Add a `constant propagation` pass for reducing superfluous quantum resources by propagating the quantum
-  machine state ([#1845]) ([**@lirem101])
+- ✨ Add a `constant propagation` pass for reducing superfluous quantum
+  resources by propagating the quantum machine state ([#1845]) ([**@lirem101])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
   ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration for consistent local development
