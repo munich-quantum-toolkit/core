@@ -12,6 +12,7 @@ releases may include breaking changes.
 
 ### Added
 
+- 📝 Add _Getting Started With MLIR_ guide ([#1555]) ([**@MatthiasReumann**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
   ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration for consistent local development
@@ -665,6 +666,7 @@ changelogs._
 [#1567]: https://github.com/munich-quantum-toolkit/core/pull/1567
 [#1565]: https://github.com/munich-quantum-toolkit/core/pull/1565
 [#1564]: https://github.com/munich-quantum-toolkit/core/pull/1564
+[#1555]: https://github.com/munich-quantum-toolkit/core/pull/1555
 [#1554]: https://github.com/munich-quantum-toolkit/core/pull/1554
 [#1550]: https://github.com/munich-quantum-toolkit/core/pull/1550
 [#1549]: https://github.com/munich-quantum-toolkit/core/pull/1549
