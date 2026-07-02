@@ -271,25 +271,33 @@ TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionalIfItsZero) {
  * bit they depend on is always one.
  */
 TEST_F(QCOConstantPropagationTest, testRemoveClassicalConditionalIfItsOne) {
-  auto q = programBuilder.allocQubitRegister(1);
+  auto q = programBuilder.allocQubitRegister(2);
   q[0] = programBuilder.x(q[0]);
   auto [q0, b0] = programBuilder.measure(q[0]);
-  programBuilder.qcoIf(
-      b0, {q0},
+  const auto qRange01 = programBuilder.qcoIf(
+      b0, {q0, q[1]},
       [&](const ValueRange args) {
-        const auto qi0 = programBuilder.x(args[0]);
-        return SmallVector{qi0};
+        const auto qi0 = programBuilder.h(args[0]);
+        const auto qi1 = programBuilder.h(args[1]);
+        const auto qi11 = programBuilder.z(qi1);
+        const auto [qi2, qi3] = programBuilder.cx(qi0, qi11);
+        return SmallVector{qi2, qi3};
       },
       [&](const ValueRange args) {
         const auto qi0 = programBuilder.h(args[0]);
-        return SmallVector{qi0};
+        return SmallVector{qi0, args[1]};
       });
+  programBuilder.h(qRange01[1]);
   module = programBuilder.finalize();
 
-  auto qRef = referenceBuilder.allocQubitRegister(1);
+  auto qRef = referenceBuilder.allocQubitRegister(2);
   qRef[0] = referenceBuilder.x(qRef[0]);
   auto [qRef0, bRef0] = referenceBuilder.measure(qRef[0]);
-  referenceBuilder.x(qRef0);
+  qRef[0] = referenceBuilder.h(qRef0);
+  qRef[1] = referenceBuilder.h(qRef[1]);
+  qRef[1] = referenceBuilder.z(qRef[1]);
+  const auto [qRef01, qRef1] = referenceBuilder.cx(qRef[0], qRef[1]);
+  referenceBuilder.h(qRef1);
   reference = referenceBuilder.finalize();
 
   ASSERT_TRUE(runConstantPropagationPass(module.get()).succeeded());
