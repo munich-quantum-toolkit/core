@@ -184,16 +184,21 @@ struct QubitBinding {
 using QubitScope = llvm::StringMap<QubitBinding>;
 
 /// Look up a well-known OpenQASM 3 numeric constant (`pi`, `tau`, `euler`,
-/// and their Unicode aliases) by identifier.
-std::optional<double> lookupBuiltinConstant(llvm::StringRef name) {
+/// and their Unicode aliases) by identifier and emit it as an `f64` MLIR value.
+std::optional<Value> lookupBuiltinConstant(llvm::StringRef name,
+                                           QCProgramBuilder& builder) {
+  const auto constant = [&](double value) -> Value {
+    return arith::ConstantOp::create(builder, builder.getF64FloatAttr(value))
+        .getResult();
+  };
   if (name == "pi" || name == "π") {
-    return ::qc::PI;
+    return constant(::qc::PI);
   }
   if (name == "tau" || name == "τ") {
-    return ::qc::TAU;
+    return constant(::qc::TAU);
   }
   if (name == "euler" || name == "ℇ") {
-    return ::qc::E;
+    return constant(::qc::E);
   }
   return std::nullopt;
 }
@@ -206,54 +211,47 @@ std::optional<double> lookupBuiltinConstant(llvm::StringRef name) {
 /// structural (integer) positions, and stored verbatim inside compound-gate
 /// bodies so a gate body can be parsed once and replayed at every call site.
 struct ParsedExpr {
-  enum class Kind : uint8_t { Literal, Ident, Unary, Binary };
+  enum class Kind : uint8_t { IntLiteral, FloatLiteral, Ident, Unary, Binary };
 
-  Kind kind{Kind::Literal};
+  Kind kind{Kind::IntLiteral};
 
   // Literal
-  double fpValue{};
+  double floatValue{};
   int64_t intValue{};
-  bool isFloatLiteral{false};
 
   // Ident
   std::string name;
 
-  // Operator token. Unary: Minus (negation). Binary: Plus, Minus, Asterisk,
-  // Slash.
+  // Unary or Binary
   Token::Kind op{};
   std::vector<ParsedExpr> children;
 
   static ParsedExpr makeInt(int64_t value) {
     ParsedExpr e;
-    e.kind = Kind::Literal;
+    e.kind = Kind::IntLiteral;
     e.intValue = value;
-    e.isFloatLiteral = false;
     return e;
   }
 };
 
-/// A single gate modifier (ctrl/negctrl/inv/pow) in the order written.
+/// A gate modifier.
 struct ParsedModifier {
-  enum class Kind : uint8_t { Inv, Pow, Ctrl, NegCtrl } kind{Kind::Inv};
+  Token::Kind kind{Token::Kind::Inv};
   std::optional<ParsedExpr> expression;
 };
 
-/// A gate operand: either a hardware qubit, or a (possibly indexed) named
-/// qubit. The index expression is kept unresolved so the same operand can be
-/// resolved against different scopes (top-level vs. compound-gate-local) and
-/// so a for-loop induction variable can be recognised at resolution time.
+/// A gate operand: either a (possibly indexed) named qubit, or a hardware
+/// qubit.
 struct ParsedOperand {
-  bool isHardwareQubit{false};
-  uint64_t hardwareQubit{};
   std::string name;
   std::optional<ParsedExpr> index;
+  std::optional<uint64_t> hardwareQubit;
 };
 
 /// A parsed gate-call statement (front half only): its modifiers, parameter
 /// expressions and operands, ready to be resolved and emitted.
 struct ParsedGateCall {
   std::string identifier;
-  bool operandsOptional{false};
   std::vector<ParsedModifier> modifiers;
   std::vector<ParsedExpr> parameters;
   std::vector<ParsedOperand> operands;
@@ -318,11 +316,10 @@ public:
   OwningOpRef<ModuleOp> parse(std::string_view source) {
     input = std::make_unique<std::istringstream>(std::string(source));
     scanner = std::make_unique<qasm3::Scanner>(input.get());
-    // Prime the token window: the first advance loads the first token into the
-    // lookahead, the second moves it into `current()`. Two calls are needed
-    // because both `current()` and `peek()` start empty.
-    advance();
-    advance();
+
+    // Initialize the token windows
+    currentToken = scanner->next();
+    nextToken = scanner->next();
 
     builder.initialize();
     parseProgram();
@@ -391,17 +388,20 @@ private:
     return std::make_shared<DebugInfo>(t.line, t.col, "<input>");
   }
 
-  [[noreturn]] void error(const Token& t, const std::string& msg) const {
+  void error(const Token& t, const std::string& msg) const {
     throw CompilerError(msg, makeDebugInfo(t));
   }
 
+  void error(const DebugInfo& debugInfo, const std::string& msg) const {
+    throw CompilerError(msg, std::make_shared<DebugInfo>(debugInfo));
+  }
+
   Token expect(const Token::Kind expected) {
-    if (current().kind != expected) {
-      error(current(), "Expected '" + Token::kindToString(expected) +
-                           "', got '" + Token::kindToString(current().kind) +
-                           "'.");
-    }
     auto token = current();
+    if (token.kind != expected) {
+      error(token, "Expected '" + Token::kindToString(expected) + "', got '" +
+                       Token::kindToString(token.kind) + "'.");
+    }
     advance();
     return token;
   }
@@ -410,37 +410,15 @@ private:
 
   void parseProgram() {
     while (!isAtEnd()) {
-      if (current().kind == Token::Kind::OpenQasm) {
-        parseVersionDeclaration();
-        continue;
-      }
       parseStatement();
     }
   }
 
-  void parseVersionDeclaration() {
-    expect(Token::Kind::OpenQasm);
-    double version = 0.0;
-    if (current().kind == Token::Kind::FloatLiteral) {
-      version = current().valReal;
-      advance();
-    } else if (current().kind == Token::Kind::IntegerLiteral) {
-      version = static_cast<double>(current().val);
-      advance();
-    } else {
-      error(current(),
-            "Version declaration must be a float or integer literal.");
-    }
-    expect(Token::Kind::Semicolon);
-    if (version < 3) {
-      openQASM2CompatMode = true;
-    }
-  }
-
-  /// The "big switch": parse one statement, emit MLIR for it, move on. Also
-  /// used to emit statements nested in an if/for/while body.
   void parseStatement() {
     switch (current().kind) {
+    case Token::Kind::OpenQasm:
+      parseVersionDeclaration();
+      return;
     case Token::Kind::Include:
       parseInclude();
       return;
@@ -461,14 +439,14 @@ private:
       parseDeclaration(/*isConst=*/false);
       return;
     case Token::Kind::Gate:
-      parseGateDeclaration(/*isOpaque=*/false);
+      parseGateDeclaration();
       return;
     case Token::Kind::Opaque:
-      parseGateDeclaration(/*isOpaque=*/true);
+      error(current(), "Opaque gate declarations are not supported.");
       return;
     case Token::Kind::InitialLayout:
     case Token::Kind::OutputPermutation:
-      // Not relevant for the QC translation.
+      // No counterparts in QC
       advance();
       return;
     case Token::Kind::Barrier:
@@ -536,6 +514,27 @@ private:
     }
   }
 
+  //===--- Version ------------------------------------------------------===//
+
+  void parseVersionDeclaration() {
+    expect(Token::Kind::OpenQasm);
+    double version = 0.0;
+    if (current().kind == Token::Kind::FloatLiteral) {
+      version = current().valReal;
+      advance();
+    } else if (current().kind == Token::Kind::IntegerLiteral) {
+      version = static_cast<double>(current().val);
+      advance();
+    } else {
+      error(current(),
+            "Version declaration must be a float or integer literal.");
+    }
+    expect(Token::Kind::Semicolon);
+    if (version < 3) {
+      openQASM2CompatMode = true;
+    }
+  }
+
   //===--- Include ------------------------------------------------------===//
 
   void parseInclude() {
@@ -553,25 +552,33 @@ private:
 
   //===--- Declarations -------------------------------------------------===//
 
+  // TODO: Can this function be broken up into several ones? Maybe one for
+  // qubits and registers thereof, one for classical bits and registers thereof,
+  // and one for "numbers"?
   void parseDeclaration(bool isConst) {
-    const auto beginToken = current();
-    const auto debugInfo = makeDebugInfo(beginToken);
-
-    const auto typeKind = current().kind;
-    const bool oldStyle =
-        typeKind == Token::Kind::Qreg || typeKind == Token::Kind::CReg;
+    const auto declaration = current();
+    const auto debugInfo = makeDebugInfo(declaration);
     advance();
+
+    const bool oldStyle = declaration.kind == Token::Kind::Qreg ||
+                          declaration.kind == Token::Kind::CReg;
 
     std::optional<int64_t> designator;
     if (!oldStyle && current().kind == Token::Kind::LBracket) {
-      designator = parseTypeDesignator(debugInfo);
+      expect(Token::Kind::LBracket);
+      const auto expr = parseExpression();
+      expect(Token::Kind::RBracket);
+      designator = evaluateIntegerConstant(expr, debugInfo);
     }
 
     const auto id = expect(Token::Kind::Identifier).str;
 
     if (current().kind == Token::Kind::LBracket) {
       if (oldStyle) {
-        designator = parseTypeDesignator(debugInfo);
+        expect(Token::Kind::LBracket);
+        const auto expr = parseExpression();
+        expect(Token::Kind::RBracket);
+        designator = evaluateIntegerConstant(expr, debugInfo);
       } else {
         error(current(), "In OpenQASM 3.0, the designator has been changed to "
                          "`type[designator] identifier;`");
@@ -593,13 +600,13 @@ private:
     expect(Token::Kind::Semicolon);
 
     if (declaredNames.contains(id)) {
-      error(beginToken, "Identifier '" + id + "' already declared.");
+      error(declaration, "Identifier '" + id + "' already declared.");
     }
     declaredNames[id] = isConst;
 
     if (isConst) {
       if (!initExpr) {
-        error(beginToken,
+        error(declaration,
               "Constant declaration initialization expression must be "
               "initialized.");
       }
@@ -608,17 +615,19 @@ private:
     }
 
     // The type must be a sized register type.
-    const bool sized =
-        typeKind == Token::Kind::Qubit || typeKind == Token::Kind::Qreg ||
-        typeKind == Token::Kind::Bit || typeKind == Token::Kind::CReg ||
-        typeKind == Token::Kind::Int || typeKind == Token::Kind::Uint;
+    const bool sized = declaration.kind == Token::Kind::Qubit ||
+                       declaration.kind == Token::Kind::Qreg ||
+                       declaration.kind == Token::Kind::Bit ||
+                       declaration.kind == Token::Kind::CReg ||
+                       declaration.kind == Token::Kind::Int ||
+                       declaration.kind == Token::Kind::Uint;
     if (!sized) {
-      error(beginToken, "Only sized types are supported.");
+      error(declaration, "Only sized types are supported.");
     }
 
     const auto size = designator.value_or(1);
 
-    switch (typeKind) {
+    switch (declaration.kind) {
     case Token::Kind::Qubit:
     case Token::Kind::Qreg: {
       if (size == 1 && !designator) {
@@ -639,7 +648,7 @@ private:
       classicalRegisters[id] = builder.allocClassicalBitRegister(size, id);
       break;
     default:
-      error(beginToken, "Unsupported declaration type.");
+      error(declaration, "Unsupported declaration type.");
     }
 
     if (measureInit) {
@@ -648,44 +657,39 @@ private:
       return;
     }
     if (initExpr) {
-      error(beginToken, "Only measure expressions can declare variables.");
+      error(declaration, "Only measure expressions can declare variables.");
     }
   }
 
-  int64_t parseTypeDesignator(const std::shared_ptr<DebugInfo>& debugInfo) {
-    expect(Token::Kind::LBracket);
-    const auto expr = parseExpression();
-    expect(Token::Kind::RBracket);
-    return evaluateIntegerConstant(expr, debugInfo);
-  }
+  //===--- Assignments --------------------------------------------------===//
 
-  //===--- Measurement --------------------------------------------------===//
-
+  /// Parse a `c = measure q` statement.
   void parseAssignment() {
-    const auto beginToken = current();
-    const auto debugInfo = makeDebugInfo(beginToken);
+    const auto debugInfo = makeDebugInfo(current());
     const auto target = parseBitRef();
 
-    // Consume the assignment operator; only plain `=` with a measure RHS is
-    // supported (classical computation is out of scope).
     if (current().kind != Token::Kind::Equals) {
-      error(current(), "Classical computations are not supported.");
+      error(current(), "Classical computations are not supported yet.");
     }
     advance();
 
     if (current().kind != Token::Kind::Measure) {
-      error(current(), "Classical computations are not supported.");
+      error(current(), "Classical computations are not supported yet.");
     }
     advance();
+
     const auto operand = parseGateOperand();
     expect(Token::Kind::Semicolon);
 
     emitMeasureAssignment(target, operand, debugInfo);
   }
 
+  //===--- Measurement --------------------------------------------------===//
+
+  /// Parse a `measure q -> c;` statement.
   void parseMeasure() {
-    const auto beginToken = expect(Token::Kind::Measure);
-    const auto debugInfo = makeDebugInfo(beginToken);
+    const auto measure = expect(Token::Kind::Measure);
+    const auto debugInfo = makeDebugInfo(measure);
     const auto operand = parseGateOperand();
     expect(Token::Kind::Arrow);
     const auto target = parseBitRef();
@@ -709,25 +713,28 @@ private:
                         "have the same width.");
     }
     for (const auto& [bit, qubit] : llvm::zip_equal(bits, qubits)) {
-      auto result = MeasureOp::create(
-                        builder, qubit, builder.getStringAttr(bit.registerName),
-                        builder.getI64IntegerAttr(bit.registerSize),
-                        builder.getI64IntegerAttr(bit.registerIndex))
-                        .getResult();
-      auto& regBits = bitValues[bit.registerName];
-      const auto index = static_cast<size_t>(bit.registerIndex);
-      if (regBits.size() <= index) {
-        regBits.resize(index + 1);
+      const auto& registerName = bit.registerName;
+      const auto registerSize = bit.registerSize;
+      const auto registerIndex = bit.registerIndex;
+      auto result =
+          MeasureOp::create(builder, qubit, builder.getStringAttr(registerName),
+                            builder.getI64IntegerAttr(registerSize),
+                            builder.getI64IntegerAttr(registerIndex))
+              .getResult();
+      auto& registerBits = bitValues[registerName];
+      const auto index = static_cast<size_t>(registerIndex);
+      if (registerBits.size() <= index) {
+        registerBits.resize(index + 1);
       }
-      regBits[index] = result;
+      registerBits[index] = result;
     }
   }
 
   //===--- Barrier ------------------------------------------------------===//
 
   void parseBarrier() {
-    const auto beginToken = expect(Token::Kind::Barrier);
-    const auto debugInfo = makeDebugInfo(beginToken);
+    const auto barrier = expect(Token::Kind::Barrier);
+    const auto debugInfo = makeDebugInfo(barrier);
     SmallVector<Value> qubits;
     while (current().kind != Token::Kind::Semicolon) {
       const auto operand = parseGateOperand();
@@ -748,10 +755,9 @@ private:
   //===--- Reset --------------------------------------------------------===//
 
   void parseReset() {
-    const auto beginToken = expect(Token::Kind::Reset);
-    const auto debugInfo = makeDebugInfo(beginToken);
+    const auto reset = expect(Token::Kind::Reset);
+    const auto debugInfo = makeDebugInfo(reset);
     const auto operand = parseGateOperand();
-    expect(Token::Kind::Semicolon);
     const auto resolved = resolveGateOperand(operand, debugInfo);
     if (std::holds_alternative<Value>(resolved)) {
       builder.reset(std::get<Value>(resolved));
@@ -760,58 +766,55 @@ private:
         builder.reset(qubit);
       }
     }
+    expect(Token::Kind::Semicolon);
   }
 
-  //===--- Control flow -------------------------------------------------===//
+  //===--- SCF ----------------------------------------------------------===//
 
   void parseIf() {
-    const auto beginToken = expect(Token::Kind::If);
+    expect(Token::Kind::If);
     expect(Token::Kind::LParen);
     auto condition = parseCondition();
     expect(Token::Kind::RParen);
 
-    // Empty `{}` then-block (detectable with a single-token lookahead).
+    // Empty then block
     if (current().kind == Token::Kind::LBrace &&
         peek().kind == Token::Kind::RBrace) {
       expect(Token::Kind::LBrace);
       expect(Token::Kind::RBrace);
       if (current().kind != Token::Kind::Else) {
-        error(beginToken,
-              "If statements with empty then and else blocks are not "
-              "supported.");
+        return;
       }
       expect(Token::Kind::Else);
-      // Emit the else block under the negated condition.
       auto trueValue = builder.boolConstant(true);
       condition =
           arith::XOrIOp::create(builder, condition, trueValue).getResult();
       auto ifOp = scf::IfOp::create(builder, condition,
                                     /*withElseRegion=*/false);
       OpBuilder::InsertionGuard guard(builder);
-      builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+      auto* thenBlock = &ifOp.getThenRegion().front();
+      builder.setInsertionPointToStart(thenBlock);
       parseBlockOrStatement();
       return;
     }
 
-    // Non-empty then-block. The else region only comes into being once we see
-    // an `else`, which appears after the then-block; build it lazily.
     auto ifOp = scf::IfOp::create(builder, condition, /*withElseRegion=*/false);
-    {
-      OpBuilder::InsertionGuard guard(builder);
-      builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-      parseBlockOrStatement();
-    }
+
+    OpBuilder::InsertionGuard guard(builder);
+
+    auto* thenBlock = &ifOp.getThenRegion().front();
+    builder.setInsertionPointToStart(thenBlock);
+    parseBlockOrStatement();
 
     if (current().kind == Token::Kind::Else) {
       expect(Token::Kind::Else);
-      // An empty else block is treated as no else at all.
       if (current().kind == Token::Kind::LBrace &&
           peek().kind == Token::Kind::RBrace) {
         expect(Token::Kind::LBrace);
         expect(Token::Kind::RBrace);
         return;
       }
-      OpBuilder::InsertionGuard guard(builder);
+
       auto* elseBlock = builder.createBlock(&ifOp.getElseRegion());
       builder.setInsertionPointToStart(elseBlock);
       parseBlockOrStatement();
@@ -819,13 +822,9 @@ private:
     }
   }
 
-  /// Translate a for-loop into an `scf.for` loop. The bounds and step must
-  /// resolve to constants, since they decide the shape of the emitted loop.
-  /// OpenQASM 3's range is inclusive of the stop value while `scf.for`'s upper
-  /// bound is exclusive, hence the `+ 1`.
   void parseFor() {
-    const auto beginToken = expect(Token::Kind::For);
-    const auto debugInfo = makeDebugInfo(beginToken);
+    const auto forToken = expect(Token::Kind::For);
+    const auto debugInfo = makeDebugInfo(forToken);
 
     // The loop-variable type is not tracked further: the loop variable is
     // always treated as an unsigned integer index.
@@ -840,6 +839,8 @@ private:
     expect(Token::Kind::In);
     expect(Token::Kind::LBracket);
 
+    // TODO: Related to my comment below, I'd like to directly use
+    // `mlir::Value`s for start, top, and step.
     const auto start = parseExpression();
     expect(Token::Kind::Colon);
     const auto second = parseExpression();
@@ -856,9 +857,9 @@ private:
 
     expect(Token::Kind::RBracket);
 
-    const auto startVal = evaluatePositiveConstant(start, debugInfo);
-    const auto stepVal = evaluatePositiveConstant(step, debugInfo, 1);
-    const auto stopVal = evaluatePositiveConstant(stop, debugInfo);
+    const auto startVal = evaluateNonNegativeConstant(start, debugInfo);
+    const auto stepVal = evaluateNonNegativeConstant(step, debugInfo, 1);
+    const auto stopVal = evaluateNonNegativeConstant(stop, debugInfo);
 
     loopVariables.push();
     loadedDynamicElements.push();
@@ -874,8 +875,6 @@ private:
     loopVariables.pop();
   }
 
-  /// Translate a while-loop into an `scf.while` loop: the condition is
-  /// (re-)computed in the "before" region on every iteration.
   void parseWhile() {
     expect(Token::Kind::While);
     expect(Token::Kind::LParen);
@@ -889,7 +888,7 @@ private:
         [&] { parseBlockOrStatement(); });
   }
 
-  /// Translate an OpenQASM 3 if/while condition to an `i1` MLIR value.
+  /// Translate a 3 condition to an `i1` MLIR value
   [[nodiscard]] Value parseCondition() {
     const auto debugInfo = makeDebugInfo(current());
 
@@ -942,32 +941,33 @@ private:
   [[nodiscard]] Value
   lookupBitValue(const ParsedBitRef& bit,
                  const std::shared_ptr<DebugInfo>& debugInfo) const {
-    const auto& regName = bit.name;
-    auto it = bitValues.find(regName);
+    const auto& registerName = bit.name;
+    auto it = bitValues.find(registerName);
     if (it == bitValues.end()) {
-      error(*debugInfo, "No classical bit of register '" + regName +
+      error(*debugInfo, "No classical bit of register '" + registerName +
                             "' has been measured yet.");
     }
-    const auto& regBits = it->second;
+    const auto& registerBits = it->second;
 
     if (!bit.index) {
-      assert(regBits.size() == 1);
-      return regBits[0];
+      assert(registerBits.size() == 1);
+      return registerBits[0];
     }
 
-    const auto index = evaluatePositiveConstant(*bit.index, debugInfo);
-    if (index >= regBits.size() || !regBits[index]) {
+    const auto index = evaluateNonNegativeConstant(*bit.index, debugInfo);
+    if (index >= registerBits.size() || !registerBits[index]) {
       error(*debugInfo, "Bit " + std::to_string(index) + " of register '" +
-                            regName + "' has been not measured yet.");
+                            registerName + "' has been not measured yet.");
     }
-    return regBits[index];
+    return registerBits[index];
   }
 
   //===--- Gate declarations --------------------------------------------===//
 
-  void parseGateDeclaration(bool isOpaque) {
-    const auto beginToken = current();
-    advance(); // `gate` or `opaque`
+  void parseGateDeclaration() {
+    const auto gate = current();
+    advance();
+
     const auto id = expect(Token::Kind::Identifier).str;
 
     std::vector<std::string> parameters;
@@ -976,15 +976,8 @@ private:
       parameters = parseIdentifierList();
       expect(Token::Kind::RParen);
     }
-    const auto targets = parseIdentifierList();
 
-    if (isOpaque) {
-      expect(Token::Kind::Semicolon);
-      if (!gates.contains(id)) {
-        error(beginToken, "Unsupported opaque gate '" + id + "'.");
-      }
-      return;
-    }
+    const auto targets = parseIdentifierList();
 
     expect(Token::Kind::LBrace);
     std::vector<ParsedGateCall> body;
@@ -994,20 +987,23 @@ private:
     expect(Token::Kind::RBrace);
 
     if (gates.contains(id)) {
-      error(beginToken, "Gate '" + id + "' already declared.");
+      error(gate, "Gate '" + id + "' already declared.");
     }
 
+    // Verify parameters
     for (size_t i = 0; i < parameters.size(); ++i) {
       for (size_t j = i + 1; j < parameters.size(); ++j) {
         if (parameters[i] == parameters[j]) {
-          error(beginToken, "Parameter is already declared in compound gate.");
+          error(gate, "Parameter is already declared in compound gate.");
         }
       }
     }
+
+    // Verify targets
     for (size_t i = 0; i < targets.size(); ++i) {
       for (size_t j = i + 1; j < targets.size(); ++j) {
         if (targets[i] == targets[j]) {
-          error(beginToken, "Target is already declared in compound gate.");
+          error(gate, "Target is already declared in compound gate.");
         }
       }
     }
@@ -1032,6 +1028,7 @@ private:
     ParsedGateCall call;
     call.debugInfo = makeDebugInfo(current());
 
+    // Parse modifiers
     while (current().kind == Token::Kind::Inv ||
            current().kind == Token::Kind::Pow ||
            current().kind == Token::Kind::Ctrl ||
@@ -1043,11 +1040,11 @@ private:
     if (current().kind == Token::Kind::Gphase) {
       advance();
       call.identifier = "gphase";
-      call.operandsOptional = true;
     } else {
       call.identifier = expect(Token::Kind::Identifier).str;
     }
 
+    // Parse parameters
     if (current().kind == Token::Kind::LParen) {
       advance();
       while (current().kind != Token::Kind::RParen) {
@@ -1060,18 +1057,16 @@ private:
     }
 
     if (current().kind == Token::Kind::LBracket) {
-      error(current(), "Designator not yet supported for gate call statements");
+      error(current(),
+            "`gateCallStatement`s with designators are not supported yet");
     }
 
+    // Parse operands
     while (current().kind != Token::Kind::Semicolon) {
       call.operands.push_back(parseGateOperand());
       if (current().kind != Token::Kind::Semicolon) {
         expect(Token::Kind::Comma);
       }
-    }
-
-    if (!call.operandsOptional && call.operands.empty()) {
-      error(current(), "Expected gate operands");
     }
 
     expect(Token::Kind::Semicolon);
@@ -1080,36 +1075,34 @@ private:
 
   ParsedModifier parseGateModifier() {
     ParsedModifier mod;
-    if (current().kind == Token::Kind::Inv) {
+    mod.kind = current().kind;
+    switch (current().kind) {
+    case Token::Kind::Inv:
       advance();
-      mod.kind = ParsedModifier::Kind::Inv;
       return mod;
-    }
-    if (current().kind == Token::Kind::Pow) {
+    case Token::Kind::Pow:
       advance();
       expect(Token::Kind::LParen);
-      mod.kind = ParsedModifier::Kind::Pow;
       mod.expression = parseExpression();
       expect(Token::Kind::RParen);
       return mod;
-    }
-    // ctrl / negctrl
-    mod.kind = current().kind == Token::Kind::Ctrl
-                   ? ParsedModifier::Kind::Ctrl
-                   : ParsedModifier::Kind::NegCtrl;
-    advance();
-    if (current().kind == Token::Kind::LParen) {
+    case Token::Kind::Ctrl:
+    case Token::Kind::NegCtrl:
       advance();
-      mod.expression = parseExpression();
-      expect(Token::Kind::RParen);
+      if (current().kind == Token::Kind::LParen) {
+        advance();
+        mod.expression = parseExpression();
+        expect(Token::Kind::RParen);
+      }
+      return mod;
+    default:
+      llvm_unreachable("Unknown gate modifier");
     }
-    return mod;
   }
 
   ParsedOperand parseGateOperand() {
     ParsedOperand operand;
     if (current().kind == Token::Kind::HardwareQubit) {
-      operand.isHardwareQubit = true;
       operand.hardwareQubit = static_cast<uint64_t>(current().val);
       advance();
       return operand;
@@ -1143,7 +1136,7 @@ private:
     auto it = gates.find(id);
 
     // OpenQASM 2 compatibility: strip leading `c` characters and treat them as
-    // implicit control modifiers.
+    // implicit control modifiers
     auto resolvedId = id;
     size_t numCompatControls = 0;
     if (openQASM2CompatMode && it == gates.end()) {
@@ -1160,15 +1153,14 @@ private:
       error(*debugInfo, "No OpenQASM definition found for gate '" + id + "'.");
     }
 
-    // Translate parameters into MLIR values. Constant folding of the resulting
-    // `arith` computation is left to MLIR's own canonicalizer.
+    // Evaluate parameters
     SmallVector<Value> params;
     params.reserve(call.parameters.size());
     for (const auto& arg : call.parameters) {
       params.push_back(emitFloatExpression(arg, debugInfo));
     }
 
-    // Expand operands to MLIR values.
+    // Evaluate operands
     SmallVector<Value> operands;
     SmallVector<SmallVector<Value>> operandsBroadcasting;
     auto broadcasting = false;
@@ -1212,15 +1204,20 @@ private:
     SmallVector<SmallVector<Value>> posControlsBroadcasting;
     SmallVector<SmallVector<Value>> negControlsBroadcasting;
 
-    // Parse modifiers.
+    // Evaluate modifiers
     for (const auto& mod : call.modifiers) {
-      if (mod.kind == ParsedModifier::Kind::Inv) {
+      switch (mod.kind) {
+      case Token::Kind::Inv:
         invert = !invert;
-      } else if (mod.kind == ParsedModifier::Kind::Ctrl ||
-                 mod.kind == ParsedModifier::Kind::NegCtrl) {
-        const auto n = evaluatePositiveConstant(mod.expression, debugInfo, 1);
+        break;
+      case Token::Kind::Pow:
+        error(*debugInfo, "Power modifiers are not supported yet.");
+      case Token::Kind::Ctrl:
+      case Token::Kind::NegCtrl: {
+        const auto n =
+            evaluateNonNegativeConstant(mod.expression, debugInfo, 1);
+        const auto positive = mod.kind == Token::Kind::Ctrl;
         for (size_t i = 0; i < n; ++i, ++numControls) {
-          const auto positive = mod.kind == ParsedModifier::Kind::Ctrl;
           if (!broadcasting) {
             if (numControls >= operands.size()) {
               error(*debugInfo, "Control index out of bounds.");
@@ -1243,13 +1240,14 @@ private:
             }
           }
         }
-      } else {
-        error(*debugInfo,
-              "Only ctrl, negctrl, and inv modifiers are supported.");
+        break;
+      }
+      default:
+        llvm_unreachable("Unknown gate modifier");
       }
     }
 
-    // OpenQASM 2 compatibility: append implicit control qubits.
+    // OpenQASM 2 compatibility: append implicit control qubits
     for (size_t i = 0; i < numCompatControls; ++i, ++numControls) {
       if (numControls >= operands.size()) {
         error(*debugInfo, "Control index out of bounds.");
@@ -1257,7 +1255,7 @@ private:
       posControls.push_back(operands[numControls]);
     }
 
-    // Remaining operands are target qubits.
+    // Remaining operands are target qubits
     SmallVector<Value> targets;
     SmallVector<SmallVector<Value>> targetsBroadcasting;
     if (!broadcasting) {
@@ -1267,7 +1265,7 @@ private:
           llvm::to_vector(llvm::drop_begin(operandsBroadcasting, numControls));
     }
 
-    // Inline compound gate.
+    // Inline compound gate
     if (const auto* compound = std::get_if<ParsedCompoundGate>(&it->second)) {
       if (broadcasting) {
         error(*debugInfo, "Broadcasted compound gates are not supported.");
@@ -1277,7 +1275,7 @@ private:
       return;
     }
 
-    // Emit standard gate.
+    // Emit standard gate
     const auto dispIt = GATE_DISPATCH.find(resolvedId);
     if (dispIt == GATE_DISPATCH.end()) {
       error(*debugInfo, "No MLIR definition found for gate '" + id + "'.");
@@ -1313,7 +1311,7 @@ private:
     }
   }
 
-  /// Emit a gate body wrapped in its ctrl/negctrl/inv modifiers.
+  /// Emit a gate body wrapped in its modifiers.
   void emitModifiedGate(function_ref<void(ValueRange)> bodyFn,
                         ValueRange targets, ValueRange posControls,
                         ValueRange negControls, bool invert) {
@@ -1413,8 +1411,8 @@ private:
   resolveGateOperandInScope(const ParsedOperand& operand,
                             const QubitScope& scope,
                             const std::shared_ptr<DebugInfo>& debugInfo) {
-    if (operand.isHardwareQubit) {
-      return builder.staticQubit(operand.hardwareQubit);
+    if (operand.hardwareQubit) {
+      return builder.staticQubit(*operand.hardwareQubit);
     }
 
     const auto& name = operand.name;
@@ -1450,7 +1448,7 @@ private:
       }
     }
 
-    const auto index = evaluatePositiveConstant(indexExpr, debugInfo);
+    const auto index = evaluateNonNegativeConstant(indexExpr, debugInfo);
     if (index >= binding.qubits.size()) {
       error(*debugInfo, "Qubit index out of bounds.");
     }
@@ -1476,7 +1474,7 @@ private:
       return bits;
     }
 
-    const auto index = evaluatePositiveConstant(*operand.index, debugInfo);
+    const auto index = evaluateNonNegativeConstant(*operand.index, debugInfo);
     if (std::cmp_greater_equal(index, creg.size)) {
       error(*debugInfo, "Classical bit index out of bounds.");
     }
@@ -1539,25 +1537,26 @@ private:
   ParsedExpr parsePrimary() {
     ParsedExpr e;
     switch (current().kind) {
-    case Token::Kind::FloatLiteral:
-      e.kind = ParsedExpr::Kind::Literal;
-      e.isFloatLiteral = true;
-      e.fpValue = current().valReal;
-      advance();
+    case Token::Kind::FloatLiteral: {
+      const auto value = expect(Token::Kind::FloatLiteral);
+      e.kind = ParsedExpr::Kind::FloatLiteral;
+      e.floatValue = value.valReal;
       return e;
-    case Token::Kind::IntegerLiteral:
-      e.kind = ParsedExpr::Kind::Literal;
-      e.isFloatLiteral = false;
-      e.intValue = current().val;
-      advance();
+    }
+    case Token::Kind::IntegerLiteral: {
+      const auto value = expect(Token::Kind::IntegerLiteral);
+      e.kind = ParsedExpr::Kind::IntLiteral;
+      e.intValue = value.val;
       return e;
-    case Token::Kind::Identifier:
+    }
+    case Token::Kind::Identifier: {
+      const auto value = expect(Token::Kind::Identifier);
       e.kind = ParsedExpr::Kind::Ident;
-      e.name = current().str;
-      advance();
+      e.name = value.str;
       return e;
+    }
     case Token::Kind::LParen: {
-      advance();
+      expect(Token::Kind::LParen);
       auto inner = parseExpression();
       expect(Token::Kind::RParen);
       return inner;
@@ -1570,19 +1569,19 @@ private:
 
   //===--- Expression evaluation ----------------------------------------===//
 
-  /// Emit the `arith` ops for a scalar gate-parameter expression and return the
-  /// resulting f64 value; constant folding is left to MLIR's canonicalizer.
+  /// Translate a `ParsedExpr` to an `f64` MLIR value.
   [[nodiscard]] Value
   emitFloatExpression(const ParsedExpr& expr,
                       const std::shared_ptr<DebugInfo>& debugInfo) {
     switch (expr.kind) {
-    case ParsedExpr::Kind::Literal: {
-      const auto value = expr.isFloatLiteral
-                             ? expr.fpValue
-                             : static_cast<double>(expr.intValue);
-      return arith::ConstantOp::create(builder, builder.getF64FloatAttr(value))
+    case ParsedExpr::Kind::IntLiteral:
+      return arith::ConstantOp::create(builder,
+                                       builder.getF64FloatAttr(expr.intValue))
           .getResult();
-    }
+    case ParsedExpr::Kind::FloatLiteral:
+      return arith::ConstantOp::create(builder,
+                                       builder.getF64FloatAttr(expr.floatValue))
+          .getResult();
     case ParsedExpr::Kind::Ident:
       return resolveParameterIdentifier(expr.name, debugInfo);
     case ParsedExpr::Kind::Unary: {
@@ -1614,21 +1613,19 @@ private:
     error(*debugInfo, "Unsupported gate parameter expression.");
   }
 
-  /// Resolve an identifier referenced in a gate-parameter expression: either a
-  /// `const`-declared/compound-gate-parameter name, or a builtin constant.
   [[nodiscard]] Value
   resolveParameterIdentifier(const std::string& name,
                              const std::shared_ptr<DebugInfo>& debugInfo) {
     if (const auto value = parameterConstants.find(name)) {
       return *value;
     }
-    if (const auto value = lookupBuiltinConstant(name)) {
-      return arith::ConstantOp::create(builder, builder.getF64FloatAttr(*value))
-          .getResult();
+    if (const auto value = lookupBuiltinConstant(name, builder)) {
+      return *value;
     }
     error(*debugInfo, "Unknown identifier '" + name + "'.");
   }
 
+  // TODO: Define emitIntExpression
   /// Statically evaluate an integer-constant expression. These positions
   /// (register sizes, loop bounds/step, control counts, literal indices) need a
   /// concrete `int64_t` at build time, so a genuinely dynamic value is an
@@ -1637,10 +1634,7 @@ private:
   evaluateIntegerConstant(const ParsedExpr& expr,
                           const std::shared_ptr<DebugInfo>& debugInfo) const {
     switch (expr.kind) {
-    case ParsedExpr::Kind::Literal:
-      if (expr.isFloatLiteral) {
-        error(*debugInfo, "Expected a constant integer expression.");
-      }
+    case ParsedExpr::Kind::IntLiteral:
       return expr.intValue;
     case ParsedExpr::Kind::Unary:
       if (expr.op == Token::Kind::Minus) {
@@ -1666,6 +1660,7 @@ private:
         error(*debugInfo, "Expected a constant integer expression.");
       }
     }
+    case ParsedExpr::Kind::FloatLiteral:
     case ParsedExpr::Kind::Ident:
     default:
       error(*debugInfo, "Expected a constant integer expression.");
@@ -1673,28 +1668,22 @@ private:
   }
 
   /// Evaluate an expression to a non-negative integer.
-  [[nodiscard]] size_t
-  evaluatePositiveConstant(const ParsedExpr& expr,
-                           const std::shared_ptr<DebugInfo>& debugInfo) const {
+  [[nodiscard]] size_t evaluateNonNegativeConstant(
+      const ParsedExpr& expr,
+      const std::shared_ptr<DebugInfo>& debugInfo) const {
     return static_cast<size_t>(evaluateIntegerConstant(expr, debugInfo));
   }
 
   /// Evaluate an optional expression to a non-negative integer, using
   /// @p defaultValue when the expression is absent.
   [[nodiscard]] size_t
-  evaluatePositiveConstant(const std::optional<ParsedExpr>& expr,
-                           const std::shared_ptr<DebugInfo>& debugInfo,
-                           size_t defaultValue) const {
+  evaluateNonNegativeConstant(const std::optional<ParsedExpr>& expr,
+                              const std::shared_ptr<DebugInfo>& debugInfo,
+                              size_t defaultValue) const {
     if (!expr) {
       return defaultValue;
     }
-    return evaluatePositiveConstant(*expr, debugInfo);
-  }
-
-  /// error() overload taking an already-built DebugInfo.
-  [[noreturn]] void error(const DebugInfo& debugInfo,
-                          const std::string& msg) const {
-    throw CompilerError(msg, std::make_shared<DebugInfo>(debugInfo));
+    return evaluateNonNegativeConstant(*expr, debugInfo);
   }
 };
 
