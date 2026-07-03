@@ -62,7 +62,7 @@ embedUnitaryInBody(UnitaryOpInterface unitary, std::size_t numTargets,
     }
     if (numTargets == 1) {
       auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
-      if (!matrix || std::cmp_not_equal(matrix->rows(), Matrix2x2::K_ROWS)) {
+      if (!matrix) {
         return std::nullopt;
       }
       return matrix;
@@ -81,7 +81,7 @@ embedUnitaryInBody(UnitaryOpInterface unitary, std::size_t numTargets,
   }
   if (numTargets == 2 && *q0 == 0 && *q1 == 1) {
     auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
-    if (!matrix || std::cmp_not_equal(matrix->rows(), Matrix4x4::K_ROWS)) {
+    if (!matrix) {
       return std::nullopt;
     }
     return matrix;

@@ -164,6 +164,24 @@ static void inverseThreeWireNestedTwoInv(QCOProgramBuilder& b) {
   });
 }
 
+static void inverseWithThreeQubitOpInBody(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
+    auto [controls, innerTargets] =
+        b.ctrl({targets[0], targets[1]}, ValueRange{targets[2]},
+               [&](ValueRange inner) { return SmallVector{b.x(inner[0])}; });
+    return SmallVector<Value>{controls[0], controls[1], innerTargets[0]};
+  });
+}
+
+static void inverseWithUntrackedQubitInBody(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1]}, [&](ValueRange targets) {
+    std::ignore = b.x(q[2]);
+    return SmallVector{targets[0], targets[1]};
+  });
+}
+
 [[nodiscard]] static InvOp firstInvOp(ModuleOp module) {
   auto funcOp = cast<func::FuncOp>(module.getBody()->front());
   return *funcOp.getBody().getOps<InvOp>().begin();
@@ -186,6 +204,16 @@ static void assertInvBodyAdjoint(MLIRContext* ctx, Builder&& build,
   const auto matrix = invMatrix(*moduleOp);
   ASSERT_TRUE(matrix);
   ASSERT_TRUE(matrix->isApprox(body.adjoint()));
+}
+
+template <typename Builder>
+static void expectComposeNTargetFails(MLIRContext* ctx, Builder&& build,
+                                      std::size_t numTargets) {
+  auto moduleOp = QCOProgramBuilder::build(ctx, std::forward<Builder>(build));
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(
+      composeNTargetBodyMatrix(*firstInvOp(*moduleOp).getBody(), numTargets)
+          .has_value());
 }
 
 namespace {
@@ -353,6 +381,60 @@ TEST_F(QCOMatrixTest, ComposeNTargetRejectsExcessiveTargets) {
   ASSERT_TRUE(moduleOp);
   EXPECT_FALSE(composeNTargetBodyMatrix(*firstInvOp(*moduleOp).getBody(),
                                         kMaxModifierTargetQubits + 1)
+                   .has_value());
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsThreeQubitOp) {
+  expectComposeNTargetFails(context.get(), inverseWithThreeQubitOpInBody, 3);
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsUntrackedOneQubit) {
+  expectComposeNTargetFails(context.get(), inverseWithUntrackedQubitInBody, 2);
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsUntrackedTwoQubit) {
+  constexpr auto mlirCode = R"(
+    module {
+      func.func @test() {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %out0, %out1 = qco.inv (%t0 = %q0, %t1 = %q1) {
+          %u0, %u1 = qco.swap %q2, %t0 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %t0, %t1 : !qco.qubit, !qco.qubit
+        } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+        qco.sink %out0 : !qco.qubit
+        qco.sink %out1 : !qco.qubit
+        qco.sink %q2 : !qco.qubit
+        return
+      }
+    }
+  )";
+
+  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(composeNTargetBodyMatrix(*firstInvOp(*moduleOp).getBody(), 2)
+                   .has_value());
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsRuntimeGphase) {
+  constexpr auto mlirCode = R"(
+    module {
+      func.func @test(%theta: f64) -> !qco.qubit {
+        %q_in = qco.alloc : !qco.qubit
+        %q_out = qco.inv (%q = %q_in) {
+          qco.gphase(%theta)
+          %q_1 = qco.x %q : !qco.qubit -> !qco.qubit
+          qco.yield %q_1 : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %q_out : !qco.qubit
+      }
+    }
+  )";
+
+  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(composeNTargetBodyMatrix(*firstInvOp(*moduleOp).getBody(), 1)
                    .has_value());
 }
 /// @}
