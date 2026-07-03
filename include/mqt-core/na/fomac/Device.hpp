@@ -120,8 +120,7 @@ public:
      * @return An optional containing the instantiated device if compatible,
      * std::nullopt otherwise.
      */
-    [[nodiscard]] static auto
-    tryCreateFromDevice(const fomac::Device& device)
+    [[nodiscard]] static auto tryCreateFromDevice(const fomac::Device& device)
         -> std::optional<Device> {
       Device d(device);
       // The sequence of the following method calls does not matter.

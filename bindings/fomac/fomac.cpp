@@ -144,8 +144,7 @@ Returns:
           "Returns the dense statevector from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_dense_probabilities",
-          &fomac::Job::getDenseProbabilities,
+  job.def("get_dense_probabilities", &fomac::Job::getDenseProbabilities,
           "Returns the dense probabilities from the job (typically only "
           "available from simulator devices).");
 
@@ -153,8 +152,7 @@ Returns:
           "Returns the sparse statevector from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_sparse_probabilities",
-          &fomac::Job::getSparseProbabilities,
+  job.def("get_sparse_probabilities", &fomac::Job::getSparseProbabilities,
           "Returns the sparse probabilities from the job (typically only "
           "available from simulator devices).");
 
@@ -163,8 +161,7 @@ Returns:
   job.def_prop_ro("program_format", &fomac::Job::getProgramFormat,
                   "The format of the submitted program.");
 
-  job.def_prop_ro("program", &fomac::Job::getProgram,
-                  "The submitted program.");
+  job.def_prop_ro("program", &fomac::Job::getProgram, "The submitted program.");
 
   job.def_prop_ro("num_shots", &fomac::Job::getNumShots,
                   "The number of shots.");
@@ -256,15 +253,13 @@ Returns:
   device.def("length_unit", &fomac::Device::getLengthUnit,
              "Returns the unit of length used by the device.");
 
-  device.def("length_scale_factor",
-             &fomac::Device::getLengthScaleFactor,
+  device.def("length_scale_factor", &fomac::Device::getLengthScaleFactor,
              "Returns the scale factor for length used by the device.");
 
   device.def("duration_unit", &fomac::Device::getDurationUnit,
              "Returns the unit of duration used by the device.");
 
-  device.def("duration_scale_factor",
-             &fomac::Device::getDurationScaleFactor,
+  device.def("duration_scale_factor", &fomac::Device::getDurationScaleFactor,
              "Returns the scale factor for duration used by the device.");
 
   device.def("min_atom_distance", &fomac::Device::getMinAtomDistance,
@@ -292,8 +287,7 @@ Returns:
       device, "Site",
       "A site represents a potential qubit location on a quantum device.");
 
-  site.def("index", &fomac::Site::getIndex,
-           "Returns the index of the site.");
+  site.def("index", &fomac::Site::getIndex, "Returns the index of the site.");
 
   site.def("t1", &fomac::Site::getT1,
            "Returns the T1 coherence time of the site.");
@@ -301,8 +295,7 @@ Returns:
   site.def("t2", &fomac::Site::getT2,
            "Returns the T2 coherence time of the site.");
 
-  site.def("name", &fomac::Site::getName,
-           "Returns the name of the site.");
+  site.def("name", &fomac::Site::getName, "Returns the name of the site.");
 
   site.def("x_coordinate", &fomac::Site::getXCoordinate,
            "Returns the x coordinate of the site.");
@@ -347,53 +340,44 @@ Returns:
       "quantum device.");
 
   operation.def("name", &fomac::Operation::getName,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Site>{},
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the name of the operation.");
 
   operation.def("qubits_num", &fomac::Operation::getQubitsNum,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Site>{},
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the number of qubits the operation acts on.");
 
-  operation.def(
-      "parameters_num", &fomac::Operation::getParametersNum,
-      "sites"_a.sig("...") = std::vector<fomac::Site>{},
-      "params"_a.sig("...") = std::vector<double>{},
-      "Returns the number of parameters the operation has.");
+  operation.def("parameters_num", &fomac::Operation::getParametersNum,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
+                "Returns the number of parameters the operation has.");
 
   operation.def("duration", &fomac::Operation::getDuration,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Site>{},
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the duration of the operation.");
 
   operation.def("fidelity", &fomac::Operation::getFidelity,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Site>{},
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the fidelity of the operation.");
 
-  operation.def("interaction_radius",
-                &fomac::Operation::getInteractionRadius,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Site>{},
+  operation.def("interaction_radius", &fomac::Operation::getInteractionRadius,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the interaction radius of the operation.");
 
-  operation.def(
-      "blocking_radius", &fomac::Operation::getBlockingRadius,
-      "sites"_a.sig("...") = std::vector<fomac::Site>{},
-      "params"_a.sig("...") = std::vector<double>{},
-      "Returns the blocking radius of the operation.");
+  operation.def("blocking_radius", &fomac::Operation::getBlockingRadius,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
+                "Returns the blocking radius of the operation.");
 
-  operation.def(
-      "idling_fidelity", &fomac::Operation::getIdlingFidelity,
-      "sites"_a.sig("...") = std::vector<fomac::Site>{},
-      "params"_a.sig("...") = std::vector<double>{},
-      "Returns the idling fidelity of the operation.");
+  operation.def("idling_fidelity", &fomac::Operation::getIdlingFidelity,
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
+                "Returns the idling fidelity of the operation.");
 
   operation.def("is_zoned", &fomac::Operation::isZoned,
                 "Returns whether the operation is zoned.");
@@ -407,8 +391,7 @@ Returns:
 
   operation.def("mean_shuttling_speed",
                 &fomac::Operation::getMeanShuttlingSpeed,
-                "sites"_a.sig("...") =
-                    std::vector<fomac::Site>{},
+                "sites"_a.sig("...") = std::vector<fomac::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the mean shuttling speed of the operation.");
 
