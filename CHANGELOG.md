@@ -13,7 +13,7 @@ releases may include breaking changes.
 ### Added
 
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
-  ([#1826]) ([**@ystade])
+  ([#1826]) ([**@ystade**])
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to
   configure builds ([#1660]) ([**@denialhaag**])
 
@@ -26,28 +26,11 @@ releases may include breaking changes.
 
 - 📝 Remove support for generating LaTeX documentation ([#1828])
   ([**@denialhaag**])
-<<<<<<< HEAD
-||||||| parent of 7de61340 (🐛 Fix invalid prop_type in QDMI device (#1842))
-- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
-  ([**@burgholzer**])
-- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
-  ([**@burgholzer**])
 
-### Fixed
+### Fixed 
 
-- 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
-=======
-- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
-  ([**@burgholzer**])
-- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
-  ([**@burgholzer**])
-
-### Fixed
-
-- 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
 - 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
-  Device ([#1842]) ([**@MatthiasReumann**])
->>>>>>> 7de61340 (🐛 Fix invalid prop_type in QDMI device (#1842))
+  Device ([#1843]) ([**@MatthiasReumann**])
 
 ## [3.6.1] - 2026-05-20
 
@@ -571,13 +554,7 @@ changelogs._
 
 <!-- PR links -->
 
-<<<<<<< HEAD
-||||||| parent of 7de61340 (🐛 Fix invalid prop_type in QDMI device (#1842))
-[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
-=======
-[#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
-[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
->>>>>>> 7de61340 (🐛 Fix invalid prop_type in QDMI device (#1842))
+[#1843]: https://github.com/munich-quantum-toolkit/core/pull/1843
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
