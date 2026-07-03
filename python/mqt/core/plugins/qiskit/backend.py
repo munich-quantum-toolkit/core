@@ -19,7 +19,7 @@ import warnings
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
-from qiskit.circuit import QuantumCircuit
+from qiskit.circuit import Gate, QuantumCircuit
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
@@ -58,6 +58,17 @@ def __dir__() -> list[str]:
     return __all__
 
 
+class MoveGate(Gate):
+    """MOVE gate for IQM devices.
+
+    The gate is intentionally kept opaque so Qiskit does not decompose it.
+    """
+
+    def __init__(self, label: str | None = None) -> None:
+        """Initialize MOVE gate."""
+        super().__init__("move", 2, [], label=label)
+
+
 def _build_gate_mappings_for_backend(
     gate_aliases: dict[str, set[str]],
 ) -> tuple[dict[str, set[str]], dict[str, Instruction | type[Instruction]]]:
@@ -81,6 +92,7 @@ def _build_gate_mappings_for_backend(
         "mcphase": MCPhaseGate,
         "mcp": MCPhaseGate,
         "mcx_gray": MCXGate,
+        "move": MoveGate(),
     })
 
     qiskit_to_qdmi: dict[str, set[str]] = {}
