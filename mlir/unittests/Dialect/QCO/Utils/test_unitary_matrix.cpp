@@ -214,6 +214,16 @@ TEST(DynamicMatrix, ScalarMultiplyAssign) {
                               std::exp(Complex{0.0, 0.5})));
 }
 
+TEST(DynamicMatrix, PremultiplyBy) {
+  const DynamicMatrix x(pauliX());
+  const auto y =
+      DynamicMatrix(Matrix2x2::fromElements(1, 0, 0, std::exp(1i * 0.5)));
+  DynamicMatrix acc = DynamicMatrix::identity(2);
+  acc.premultiplyBy(x);
+  acc.premultiplyBy(y);
+  EXPECT_TRUE(acc.isApprox(y * x));
+}
+
 TEST(DynamicMatrix, AssignFrom) {
   DynamicMatrix dynamic;
 

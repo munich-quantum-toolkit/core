@@ -735,6 +735,18 @@ public:
   [[nodiscard]] DynamicMatrix operator*(const DynamicMatrix& rhs) const;
 
   /**
+   * @brief Premultiplies by a matrix: `*this = lhs * *this`.
+   * @param lhs Left-hand factor.
+   */
+  void premultiplyBy(const DynamicMatrix& lhs);
+
+  /**
+   * @brief Premultiplies by a matrix, consuming @p lhs.
+   * @param lhs Left-hand factor.
+   */
+  void premultiplyBy(DynamicMatrix&& lhs);
+
+  /**
    * @brief Element-wise scaling by a complex scalar.
    * @param scalar Factor applied to every matrix entry.
    * @return Scaled copy of this matrix.

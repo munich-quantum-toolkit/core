@@ -332,11 +332,11 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  // Composed single-qubit body (e.g. `ctrl { h; x }`); embed the 2x2 directly.
-  if (getNumTargets() == 1) {
-    if (const auto composed = composeSingleQubitBodyMatrix(*getBody())) {
-      return controlledMatrix(2, *composed);
-    }
+  // Composed single- or multi-qubit body (e.g. `ctrl { h; x }`, `ctrl { rx; ry
+  // }` on two targets).
+  if (const auto composed =
+          composeNTargetBodyMatrix(*getBody(), getNumTargets())) {
+    return controlledMatrix(composed->rows(), *composed);
   }
 
   return std::nullopt;

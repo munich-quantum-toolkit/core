@@ -965,6 +965,14 @@ DynamicMatrix DynamicMatrix::operator*(const DynamicMatrix& rhs) const {
   return out;
 }
 
+void DynamicMatrix::premultiplyBy(const DynamicMatrix& lhs) {
+  *this = lhs * *this;
+}
+
+void DynamicMatrix::premultiplyBy(DynamicMatrix&& lhs) {
+  *this = std::move(lhs) * *this;
+}
+
 DynamicMatrix DynamicMatrix::operator*(const Complex& scalar) const {
   DynamicMatrix out(impl_->dim);
   for (std::size_t i = 0; i < impl_->data.size(); ++i) {
