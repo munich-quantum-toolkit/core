@@ -27,7 +27,7 @@ releases may include breaking changes.
 - 📝 Remove support for generating LaTeX documentation ([#1828])
   ([**@denialhaag**])
 
-### Fixed 
+### Fixed
 
 - 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
   Device ([#1843]) ([**@MatthiasReumann**])
