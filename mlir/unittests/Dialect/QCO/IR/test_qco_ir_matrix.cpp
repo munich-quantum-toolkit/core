@@ -32,10 +32,13 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace qco;
@@ -161,6 +164,30 @@ static void inverseThreeWireNestedTwoInv(QCOProgramBuilder& b) {
   });
 }
 
+[[nodiscard]] static InvOp firstInvOp(ModuleOp module) {
+  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
+  return *funcOp.getBody().getOps<InvOp>().begin();
+}
+
+[[nodiscard]] static CtrlOp firstCtrlOp(ModuleOp module) {
+  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
+  return *funcOp.getBody().getOps<CtrlOp>().begin();
+}
+
+[[nodiscard]] static std::optional<DynamicMatrix> invMatrix(ModuleOp module) {
+  return firstInvOp(module).getUnitaryMatrix();
+}
+
+template <typename Builder>
+static void assertInvBodyAdjoint(MLIRContext* ctx, Builder&& build,
+                                 const DynamicMatrix& body) {
+  auto moduleOp = QCOProgramBuilder::build(ctx, std::forward<Builder>(build));
+  ASSERT_TRUE(moduleOp);
+  const auto matrix = invMatrix(*moduleOp);
+  ASSERT_TRUE(matrix);
+  ASSERT_TRUE(matrix->isApprox(body.adjoint()));
+}
+
 namespace {
 
 struct QCOMatrixTestCase {
@@ -181,30 +208,6 @@ protected:
     context->loadAllAvailableDialects();
   }
 };
-
-[[nodiscard]] InvOp firstInvOp(ModuleOp module) {
-  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
-  return *funcOp.getBody().getOps<InvOp>().begin();
-}
-
-[[nodiscard]] CtrlOp firstCtrlOp(ModuleOp module) {
-  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
-  return *funcOp.getBody().getOps<CtrlOp>().begin();
-}
-
-[[nodiscard]] std::optional<DynamicMatrix> invMatrix(ModuleOp module) {
-  return firstInvOp(module).getUnitaryMatrix();
-}
-
-template <typename Builder>
-void assertInvBodyAdjoint(MLIRContext* ctx, Builder&& build,
-                          const DynamicMatrix& body) {
-  auto moduleOp = QCOProgramBuilder::build(ctx, std::forward<Builder>(build));
-  ASSERT_TRUE(moduleOp);
-  const auto matrix = invMatrix(*moduleOp);
-  ASSERT_TRUE(matrix);
-  ASSERT_TRUE(matrix->isApprox(body.adjoint()));
-}
 
 } // namespace
 

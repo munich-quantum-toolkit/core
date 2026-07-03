@@ -24,7 +24,9 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
+#include <utility>
 
 namespace mlir::qco {
 
@@ -59,11 +61,11 @@ embedUnitaryInBody(UnitaryOpInterface unitary, std::size_t numTargets,
       return std::nullopt;
     }
     if (numTargets == 1) {
-      const auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
-      if (!matrix || matrix->rows() != Matrix2x2::K_ROWS) {
+      auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
+      if (!matrix || std::cmp_not_equal(matrix->rows(), Matrix2x2::K_ROWS)) {
         return std::nullopt;
       }
-      return *matrix;
+      return matrix;
     }
     const auto matrix = unitary.getUnitaryMatrix<Matrix2x2>();
     if (!matrix) {
@@ -78,11 +80,11 @@ embedUnitaryInBody(UnitaryOpInterface unitary, std::size_t numTargets,
     return std::nullopt;
   }
   if (numTargets == 2 && *q0 == 0 && *q1 == 1) {
-    const auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
-    if (!matrix || matrix->rows() != Matrix4x4::K_ROWS) {
+    auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
+    if (!matrix || std::cmp_not_equal(matrix->rows(), Matrix4x4::K_ROWS)) {
       return std::nullopt;
     }
-    return *matrix;
+    return matrix;
   }
   const auto matrix = unitary.getUnitaryMatrix<Matrix4x4>();
   if (!matrix) {
