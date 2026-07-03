@@ -485,7 +485,6 @@ public:
    * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
    * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
    */
-
   [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
 
 private:
