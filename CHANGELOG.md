@@ -13,7 +13,7 @@ releases may include breaking changes.
 ### Added
 
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
-  ([#1826]) ([**@ystade])
+  ([#1826]) ([**@ystade**])
 - 🚸 Add [CMake presets] to provide a standardized and reproducible way to
   configure builds ([#1660]) ([**@denialhaag**])
 
@@ -26,6 +26,11 @@ releases may include breaking changes.
 
 - 📝 Remove support for generating LaTeX documentation ([#1828])
   ([**@denialhaag**])
+
+### Fixed
+
+- 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
+  Device ([#1843]) ([**@MatthiasReumann**])
 
 ## [3.6.1] - 2026-05-20
 
@@ -549,6 +554,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1843]: https://github.com/munich-quantum-toolkit/core/pull/1843
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
