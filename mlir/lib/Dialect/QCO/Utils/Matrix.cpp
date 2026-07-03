@@ -121,6 +121,31 @@ static void multiply4x4(const ArrayRef<Complex> lhs,
   }
 }
 
+/// Left-applies a 2x2 gate to a row pair (`out = gate * [a; b]`).
+static void apply2x2LeftToRowPair(const ArrayRef<Complex> gate, Complex& a,
+                                  Complex& b) {
+  assert(gate.size() == Matrix2x2::K_SIZE_AT_COMPILE_TIME);
+  const Complex newA = gate[0] * a + gate[1] * b;
+  const Complex newB = gate[2] * a + gate[3] * b;
+  a = newA;
+  b = newB;
+}
+
+/// Left-applies a 4x4 gate to a column 4-vector (`out = gate * rows`).
+static void apply4x4LeftToColumn(const ArrayRef<Complex> gate,
+                                 const std::array<Complex, 4>& rows,
+                                 std::array<Complex, 4>& out) {
+  assert(gate.size() == Matrix4x4::K_SIZE_AT_COMPILE_TIME);
+  out[0] = gate[0] * rows[0] + gate[1] * rows[1] + gate[2] * rows[2] +
+           gate[3] * rows[3];
+  out[1] = gate[4] * rows[0] + gate[5] * rows[1] + gate[6] * rows[2] +
+           gate[7] * rows[3];
+  out[2] = gate[8] * rows[0] + gate[9] * rows[1] + gate[10] * rows[2] +
+           gate[11] * rows[3];
+  out[3] = gate[12] * rows[0] + gate[13] * rows[1] + gate[14] * rows[2] +
+           gate[15] * rows[3];
+}
+
 /// Returns true if @p data is approximately the @p dim x @p dim identity
 /// matrix.
 [[nodiscard]] static bool isIdentityEntries(ArrayRef<Complex> data,
@@ -983,30 +1008,19 @@ void DynamicMatrix::premultiplyByEmbedded1Q(const Matrix2x2& gate,
     impl_->data.assign(tmp.begin(), tmp.end());
     return;
   }
-  if (std::cmp_equal(impl_->dim, Matrix4x4::K_ROWS) && numQubits == 2) {
-    const Matrix4x4 embedded =
-        (qubitIndex == 0) ? Matrix4x4::kron(gate, Matrix2x2::identity())
-                          : Matrix4x4::kron(Matrix2x2::identity(), gate);
-    std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME> tmp{};
-    multiply4x4(embedded.data, impl_->data, tmp);
-    impl_->data.assign(tmp.begin(), tmp.end());
-    return;
-  }
   const auto udim = checkedDim(impl_->dim);
   const std::size_t mask = std::size_t{1} << (numQubits - 1 - qubitIndex);
+  const std::size_t step = mask << 1;
   auto& data = impl_->data;
-  for (std::size_t base = 0; base < udim; ++base) {
-    if ((base & mask) != 0) {
-      continue;
-    }
-    const std::size_t row1 = base | mask;
-    for (std::size_t col = 0; col < udim; ++col) {
-      const std::size_t idx0 = (base * udim) + col;
-      const std::size_t idx1 = (row1 * udim) + col;
-      const Complex a = data[idx0];
-      const Complex b = data[idx1];
-      data[idx0] = gate.data[0] * a + gate.data[1] * b;
-      data[idx1] = gate.data[2] * a + gate.data[3] * b;
+  for (std::size_t chunk = 0; chunk < udim; chunk += step) {
+    for (std::size_t inner = 0; inner < mask; ++inner) {
+      const std::size_t base = chunk | inner;
+      const std::size_t row1 = base | mask;
+      for (std::size_t col = 0; col < udim; ++col) {
+        const std::size_t idx0 = (base * udim) + col;
+        const std::size_t idx1 = (row1 * udim) + col;
+        apply2x2LeftToRowPair(gate.data, data[idx0], data[idx1]);
+      }
     }
   }
 }
@@ -1032,9 +1046,17 @@ void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
   std::array<Complex, Matrix4x4::K_ROWS> rows{};
   std::array<Complex, Matrix4x4::K_ROWS> newRows{};
   auto& data = impl_->data;
-  for (std::size_t base = 0; base < udim; ++base) {
-    if ((base & mask0) != 0 || (base & mask1) != 0) {
-      continue;
+  for (std::size_t block = 0; block < (udim >> 2); ++block) {
+    std::size_t base = 0;
+    std::size_t rest = block;
+    for (std::size_t q = 0; q < numQubits; ++q) {
+      if (q == q0Index || q == q1Index) {
+        continue;
+      }
+      if ((rest & 1U) != 0) {
+        base |= std::size_t{1} << (numQubits - 1 - q);
+      }
+      rest >>= 1U;
     }
     const std::array<std::size_t, Matrix4x4::K_ROWS> rowIdx = {
         base, base | mask1, base | mask0, base | mask0 | mask1};
@@ -1042,13 +1064,7 @@ void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
       for (std::size_t i = 0; i < Matrix4x4::K_ROWS; ++i) {
         rows[i] = data[(rowIdx[i] * udim) + col];
       }
-      for (std::size_t i = 0; i < Matrix4x4::K_ROWS; ++i) {
-        Complex sum{0.0, 0.0};
-        for (std::size_t j = 0; j < Matrix4x4::K_ROWS; ++j) {
-          sum += gate.data[(i * Matrix4x4::K_COLS) + j] * rows[j];
-        }
-        newRows[i] = sum;
-      }
+      apply4x4LeftToColumn(gate.data, rows, newRows);
       for (std::size_t i = 0; i < Matrix4x4::K_ROWS; ++i) {
         data[(rowIdx[i] * udim) + col] = newRows[i];
       }
