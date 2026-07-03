@@ -187,8 +187,7 @@ class Session {
    * @brief Private token class.
    * @details Only the Session class can create instances of this class.
    */
-  class Token {
-  public:
+  struct Token {
     Token() = default;
   };
 
@@ -329,6 +328,9 @@ static_assert(!std::is_copy_assignable<Job>());
 static_assert(std::is_move_constructible<Job>());
 static_assert(std::is_move_assignable<Job>());
 
+class Site;
+class Operation;
+
 /**
  * @brief Class representing a quantum device.
  * @details This class provides methods to query properties of the device,
@@ -341,328 +343,9 @@ class Device {
    * @brief Private token class.
    * @details Only the Device class can create instances of this class.
    */
-  class Token {
-  public:
+  struct Token {
     Token() = default;
   };
-
-public:
-  /**
-   * @brief Class representing a site (qubit) on the device.
-   * @details This class provides methods to query properties of the site.
-   * @see QDMI_Site
-   */
-  class Site {
-  public:
-    /**
-     * @brief Constructs a Site object from a QDMI_Site handle.
-     * @param device The associated QDMI_Device handle.
-     * @param site The QDMI_Site handle to wrap.
-     */
-    Site(Token /* unused */, QDMI_Device device, QDMI_Site site)
-        : device_(device), site_(site) {}
-
-    /// @returns the underlying QDMI_Site object.
-    [[nodiscard]] QDMI_Site getQDMISite() const { return site_; }
-
-    // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
-    operator QDMI_Site() const { return site_; }
-
-    auto operator<=>(const Site&) const = default;
-
-    /// @see QDMI_SITE_PROPERTY_INDEX
-    [[nodiscard]] size_t getIndex() const;
-
-    /// @see QDMI_SITE_PROPERTY_T1
-    [[nodiscard]] std::optional<uint64_t> getT1() const;
-
-    /// @see QDMI_SITE_PROPERTY_T2
-    [[nodiscard]] std::optional<uint64_t> getT2() const;
-
-    /// @see QDMI_SITE_PROPERTY_NAME
-    [[nodiscard]] std::optional<std::string> getName() const;
-
-    /// @see QDMI_SITE_PROPERTY_XCOORDINATE
-    [[nodiscard]] std::optional<int64_t> getXCoordinate() const;
-
-    /// @see QDMI_SITE_PROPERTY_YCOORDINATE
-    [[nodiscard]] std::optional<int64_t> getYCoordinate() const;
-
-    /// @see QDMI_SITE_PROPERTY_ZCOORDINATE
-    [[nodiscard]] std::optional<int64_t> getZCoordinate() const;
-
-    /// @see QDMI_SITE_PROPERTY_ISZONE
-    [[nodiscard]] bool isZone() const;
-
-    /// @see QDMI_SITE_PROPERTY_XEXTENT
-    [[nodiscard]] std::optional<uint64_t> getXExtent() const;
-
-    /// @see QDMI_SITE_PROPERTY_YEXTENT
-    [[nodiscard]] std::optional<uint64_t> getYExtent() const;
-
-    /// @see QDMI_SITE_PROPERTY_ZEXTENT
-    [[nodiscard]] std::optional<uint64_t> getZExtent() const;
-
-    /// @see QDMI_SITE_PROPERTY_MODULEINDEX
-    [[nodiscard]] std::optional<uint64_t> getModuleIndex() const;
-
-    /// @see QDMI_SITE_PROPERTY_SUBMODULEINDEX
-    [[nodiscard]] std::optional<uint64_t> getSubmoduleIndex() const;
-
-  private:
-    template <maybe_optional_value_or_string T>
-    [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
-      std::string msg = "Querying ";
-      msg += qdmi::toString(prop);
-      if constexpr (string_or_optional_string<T>) {
-        size_t size = 0;
-        auto result = QDMI_device_query_site_property(device_, site_, prop, 0,
-                                                      nullptr, &size);
-        if constexpr (is_optional<T>) {
-          if (result == QDMI_ERROR_NOTSUPPORTED) {
-            return std::nullopt;
-          }
-        }
-        qdmi::throwIfError(result, msg);
-        std::string value(size - 1, '\0');
-        result = QDMI_device_query_site_property(device_, site_, prop, size,
-                                                 value.data(), nullptr);
-        qdmi::throwIfError(result, msg);
-        return value;
-      } else {
-        remove_optional_t<T> value{};
-        const auto result = QDMI_device_query_site_property(
-            device_, site_, prop, sizeof(remove_optional_t<T>), &value,
-            nullptr);
-        if constexpr (is_optional<T>) {
-          if (result == QDMI_ERROR_NOTSUPPORTED) {
-            return std::nullopt;
-          }
-        }
-        qdmi::throwIfError(result, msg);
-        return value;
-      }
-    }
-
-    /// @brief The associated QDMI_Device object.
-    QDMI_Device device_;
-    
-    /// @brief The underlying QDMI_Site object.
-    QDMI_Site site_;
-  };
-
-  /**
-   * @brief Class representing an operation (gate) supported by the device.
-   * @details This class provides methods to query properties of the
-   * operation.
-   * @see QDMI_Operation
-   */
-  class Operation {
-  public:
-    /**
-     * @brief Constructs an Operation object from a QDMI_Operation handle.
-     * @param device The associated QDMI_Device handle.
-     * @param operation The QDMI_Operation handle to wrap.
-     */
-    Operation(Token /* unused */, QDMI_Device device, QDMI_Operation operation)
-        : device_(device), operation_(operation) {}
-
-    /// @returns the underlying QDMI_Operation object.
-    [[nodiscard]] QDMI_Operation getQDMIOperation() const { return operation_; }
-
-    // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
-    operator QDMI_Operation() const { return operation_; }
-
-    auto operator<=>(const Operation&) const = default;
-
-    /// @see QDMI_OPERATION_PROPERTY_NAME
-    [[nodiscard]] std::string
-    getName(const std::vector<Site>& sites = {},
-            const std::vector<double>& params = {}) const;
-
-    /// @see QDMI_OPERATION_PROPERTY_QUBITSNUM
-    [[nodiscard]] std::optional<size_t>
-    getQubitsNum(const std::vector<Site>& sites = {},
-                 const std::vector<double>& params = {}) const;
-
-    /// @see QDMI_OPERATION_PROPERTY_PARAMETERSNUM
-    [[nodiscard]] size_t
-    getParametersNum(const std::vector<Site>& sites = {},
-                     const std::vector<double>& params = {}) const;
-
-    /// @see QDMI_OPERATION_PROPERTY_DURATION
-    [[nodiscard]] std::optional<uint64_t>
-    getDuration(const std::vector<Site>& sites = {},
-                const std::vector<double>& params = {}) const;
-
-    /// @see QDMI_OPERATION_PROPERTY_FIDELITY
-    [[nodiscard]] std::optional<double>
-    getFidelity(const std::vector<Site>& sites = {},
-                const std::vector<double>& params = {}) const;
-
-    /// @see QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS
-    [[nodiscard]] std::optional<uint64_t>
-    getInteractionRadius(const std::vector<Site>& sites = {},
-                         const std::vector<double>& params = {}) const;
-
-    /// @see QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS
-    [[nodiscard]] std::optional<uint64_t>
-    getBlockingRadius(const std::vector<Site>& sites = {},
-                      const std::vector<double>& params = {}) const;
-
-    /// @see QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
-    [[nodiscard]] std::optional<double>
-    getIdlingFidelity(const std::vector<Site>& sites = {},
-                      const std::vector<double>& params = {}) const;
-
-    /// @see QDMI_OPERATION_PROPERTY_ISZONED
-    [[nodiscard]] bool isZoned() const;
-
-    /// @see QDMI_OPERATION_PROPERTY_SITES
-    [[nodiscard]] std::optional<std::vector<Site>> getSites() const;
-
-    /**
-     * @brief Returns the list of site pairs the local 2-qubit operation can
-     * be performed on.
-     * @details For local 2-qubit operations, this function interprets the
-     * returned list of sites by QDMI as site pairs according to the QDMI
-     * specification. Hence, this function facilitates easier iteration over
-     * supported site pairs.
-     * @return Optional vector of site pairs if this is a local 2-qubit
-     * operation, std::nullopt otherwise.
-     * @see QDMI_OPERATION_PROPERTY_SITES
-     */
-    [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
-    getSitePairs() const;
-
-    /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
-    [[nodiscard]] std::optional<uint64_t>
-    getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
-                          const std::vector<double>& params = {}) const;
-
-  private:
-    template <maybe_optional_value_or_string_or_vector T>
-    [[nodiscard]] T queryProperty(const QDMI_Operation_Property prop,
-                                  const std::vector<Site>& sites,
-                                  const std::vector<double>& params) const {
-      std::string msg = "Querying ";
-      msg += qdmi::toString(prop);
-      std::vector<QDMI_Site> qdmiSites;
-      qdmiSites.reserve(sites.size());
-      std::ranges::transform(
-          sites, std::back_inserter(qdmiSites),
-          [](const Site& site) -> QDMI_Site { return site; });
-      if constexpr (string_or_optional_string<T>) {
-        size_t size = 0;
-        auto result = QDMI_device_query_operation_property(
-            device_, operation_, sites.size(), qdmiSites.data(), params.size(),
-            params.data(), prop, 0, nullptr, &size);
-        if constexpr (is_optional<T>) {
-          if (result == QDMI_ERROR_NOTSUPPORTED) {
-            return std::nullopt;
-          }
-        }
-        qdmi::throwIfError(result, msg);
-        std::string value(size - 1, '\0');
-        result = QDMI_device_query_operation_property(
-            device_, operation_, sites.size(), qdmiSites.data(), params.size(),
-            params.data(), prop, size, value.data(), nullptr);
-        qdmi::throwIfError(result, msg);
-        return value;
-      } else if constexpr (maybe_optional_size_constructible_contiguous_range<
-                               T>) {
-        size_t size = 0;
-        auto result = QDMI_device_query_operation_property(
-            device_, operation_, sites.size(), qdmiSites.data(), params.size(),
-            params.data(), prop, 0, nullptr, &size);
-        if constexpr (is_optional<T>) {
-          if (result == QDMI_ERROR_NOTSUPPORTED) {
-            return std::nullopt;
-          }
-        }
-        qdmi::throwIfError(result, msg);
-        remove_optional_t<T> value(
-            size / sizeof(typename remove_optional_t<T>::value_type));
-        result = QDMI_device_query_operation_property(
-            device_, operation_, sites.size(), qdmiSites.data(), params.size(),
-            params.data(), prop, size, value.data(), nullptr);
-        qdmi::throwIfError(result, msg);
-        return value;
-      } else {
-        remove_optional_t<T> value{};
-        const auto result = QDMI_device_query_operation_property(
-            device_, operation_, sites.size(), qdmiSites.data(), params.size(),
-            params.data(), prop, sizeof(remove_optional_t<T>), &value, nullptr);
-        if constexpr (is_optional<T>) {
-          if (result == QDMI_ERROR_NOTSUPPORTED) {
-            return std::nullopt;
-          }
-        }
-        qdmi::throwIfError(result, msg);
-        return value;
-      }
-    }
-
-    /// @brief The associated QDMI_Device object.
-    QDMI_Device device_;
-
-    /// @brief The underlying QDMI_Operation object.
-    QDMI_Operation operation_;
-  };
-
-private:
-  /// @brief The underlying QDMI_Device object.
-  QDMI_Device device_;
-
-  template <maybe_optional_value_or_string_or_vector T>
-  [[nodiscard]] T queryProperty(const QDMI_Device_Property prop) const {
-    std::string msg = "Querying ";
-    msg += qdmi::toString(prop);
-    if constexpr (string_or_optional_string<T>) {
-      size_t size = 0;
-      auto result =
-          QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-      qdmi::throwIfError(result, msg);
-      std::string value(size - 1, '\0');
-      result = QDMI_device_query_device_property(device_, prop, size,
-                                                 value.data(), nullptr);
-      qdmi::throwIfError(result, msg);
-      return value;
-    } else if constexpr (maybe_optional_size_constructible_contiguous_range<
-                             T>) {
-      size_t size = 0;
-      auto result =
-          QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-      qdmi::throwIfError(result, msg);
-      remove_optional_t<T> value(
-          size / sizeof(typename remove_optional_t<T>::value_type));
-      result = QDMI_device_query_device_property(device_, prop, size,
-                                                 value.data(), nullptr);
-      qdmi::throwIfError(result, msg);
-      return value;
-    } else {
-      remove_optional_t<T> value{};
-      const auto result = QDMI_device_query_device_property(
-          device_, prop, sizeof(remove_optional_t<T>), &value, nullptr);
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-      qdmi::throwIfError(result, msg);
-      return value;
-    }
-  }
 
 public:
   /**
@@ -707,6 +390,7 @@ public:
 
   /// @see QDMI_DEVICE_PROPERTY_SITES
   [[nodiscard]] std::vector<Site> getSites() const;
+
   /**
    * @brief Returns the list of regular sites (without zone sites) available
    * on the device.
@@ -762,5 +446,325 @@ public:
   [[nodiscard]] Job submitJob(const std::string& program,
                               QDMI_Program_Format format,
                               size_t numShots) const;
+
+private:
+  template <maybe_optional_value_or_string_or_vector T>
+  [[nodiscard]] T queryProperty(const QDMI_Device_Property prop) const {
+    std::string msg = "Querying ";
+    msg += qdmi::toString(prop);
+    if constexpr (string_or_optional_string<T>) {
+      size_t size = 0;
+      auto result =
+          QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
+      if constexpr (is_optional<T>) {
+        if (result == QDMI_ERROR_NOTSUPPORTED) {
+          return std::nullopt;
+        }
+      }
+      qdmi::throwIfError(result, msg);
+      std::string value(size - 1, '\0');
+      result = QDMI_device_query_device_property(device_, prop, size,
+                                                 value.data(), nullptr);
+      qdmi::throwIfError(result, msg);
+      return value;
+    } else if constexpr (maybe_optional_size_constructible_contiguous_range<
+                             T>) {
+      size_t size = 0;
+      auto result =
+          QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
+      if constexpr (is_optional<T>) {
+        if (result == QDMI_ERROR_NOTSUPPORTED) {
+          return std::nullopt;
+        }
+      }
+      qdmi::throwIfError(result, msg);
+      remove_optional_t<T> value(
+          size / sizeof(typename remove_optional_t<T>::value_type));
+      result = QDMI_device_query_device_property(device_, prop, size,
+                                                 value.data(), nullptr);
+      qdmi::throwIfError(result, msg);
+      return value;
+    } else {
+      remove_optional_t<T> value{};
+      const auto result = QDMI_device_query_device_property(
+          device_, prop, sizeof(remove_optional_t<T>), &value, nullptr);
+      if constexpr (is_optional<T>) {
+        if (result == QDMI_ERROR_NOTSUPPORTED) {
+          return std::nullopt;
+        }
+      }
+      qdmi::throwIfError(result, msg);
+      return value;
+    }
+  }
+
+  /// @brief The underlying QDMI_Device object.
+  QDMI_Device device_;
+
+  friend class Site;
+  friend class Operation;
 };
+
+/**
+ * @brief Class representing a site (qubit) on the device.
+ * @details This class provides methods to query properties of the site.
+ * @see QDMI_Site
+ */
+class Site {
+public:
+  /**
+   * @brief Constructs a Site object from a QDMI_Site handle.
+   * @param device The associated QDMI_Device handle.
+   * @param site The QDMI_Site handle to wrap.
+   */
+  Site(Device::Token /* unused */, QDMI_Device device, QDMI_Site site)
+      : device_(device), site_(site) {}
+
+  /// @returns the underlying QDMI_Site object.
+  [[nodiscard]] QDMI_Site getQDMISite() const { return site_; }
+
+  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  operator QDMI_Site() const { return site_; }
+
+  auto operator<=>(const Site&) const = default;
+
+  /// @see QDMI_SITE_PROPERTY_INDEX
+  [[nodiscard]] size_t getIndex() const;
+
+  /// @see QDMI_SITE_PROPERTY_T1
+  [[nodiscard]] std::optional<uint64_t> getT1() const;
+
+  /// @see QDMI_SITE_PROPERTY_T2
+  [[nodiscard]] std::optional<uint64_t> getT2() const;
+
+  /// @see QDMI_SITE_PROPERTY_NAME
+  [[nodiscard]] std::optional<std::string> getName() const;
+
+  /// @see QDMI_SITE_PROPERTY_XCOORDINATE
+  [[nodiscard]] std::optional<int64_t> getXCoordinate() const;
+
+  /// @see QDMI_SITE_PROPERTY_YCOORDINATE
+  [[nodiscard]] std::optional<int64_t> getYCoordinate() const;
+
+  /// @see QDMI_SITE_PROPERTY_ZCOORDINATE
+  [[nodiscard]] std::optional<int64_t> getZCoordinate() const;
+
+  /// @see QDMI_SITE_PROPERTY_ISZONE
+  [[nodiscard]] bool isZone() const;
+
+  /// @see QDMI_SITE_PROPERTY_XEXTENT
+  [[nodiscard]] std::optional<uint64_t> getXExtent() const;
+
+  /// @see QDMI_SITE_PROPERTY_YEXTENT
+  [[nodiscard]] std::optional<uint64_t> getYExtent() const;
+
+  /// @see QDMI_SITE_PROPERTY_ZEXTENT
+  [[nodiscard]] std::optional<uint64_t> getZExtent() const;
+
+  /// @see QDMI_SITE_PROPERTY_MODULEINDEX
+  [[nodiscard]] std::optional<uint64_t> getModuleIndex() const;
+
+  /// @see QDMI_SITE_PROPERTY_SUBMODULEINDEX
+  [[nodiscard]] std::optional<uint64_t> getSubmoduleIndex() const;
+
+private:
+  template <maybe_optional_value_or_string T>
+  [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
+    std::string msg = "Querying ";
+    msg += qdmi::toString(prop);
+    if constexpr (string_or_optional_string<T>) {
+      size_t size = 0;
+      auto result = QDMI_device_query_site_property(device_, site_, prop, 0,
+                                                    nullptr, &size);
+      if constexpr (is_optional<T>) {
+        if (result == QDMI_ERROR_NOTSUPPORTED) {
+          return std::nullopt;
+        }
+      }
+      qdmi::throwIfError(result, msg);
+      std::string value(size - 1, '\0');
+      result = QDMI_device_query_site_property(device_, site_, prop, size,
+                                               value.data(), nullptr);
+      qdmi::throwIfError(result, msg);
+      return value;
+    } else {
+      remove_optional_t<T> value{};
+      const auto result = QDMI_device_query_site_property(
+          device_, site_, prop, sizeof(remove_optional_t<T>), &value, nullptr);
+      if constexpr (is_optional<T>) {
+        if (result == QDMI_ERROR_NOTSUPPORTED) {
+          return std::nullopt;
+        }
+      }
+      qdmi::throwIfError(result, msg);
+      return value;
+    }
+  }
+
+  /// @brief The associated QDMI_Device object.
+  QDMI_Device device_;
+
+  /// @brief The underlying QDMI_Site object.
+  QDMI_Site site_;
+};
+
+/**
+ * @brief Class representing an operation (gate) supported by the device.
+ * @details This class provides methods to query properties of the
+ * operation.
+ * @see QDMI_Operation
+ */
+class Operation {
+public:
+  /**
+   * @brief Constructs an Operation object from a QDMI_Operation handle.
+   * @param device The associated QDMI_Device handle.
+   * @param operation The QDMI_Operation handle to wrap.
+   */
+  Operation(Device::Token /* unused */, QDMI_Device device,
+            QDMI_Operation operation)
+      : device_(device), operation_(operation) {}
+
+  /// @returns the underlying QDMI_Operation object.
+  [[nodiscard]] QDMI_Operation getQDMIOperation() const { return operation_; }
+
+  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  operator QDMI_Operation() const { return operation_; }
+
+  auto operator<=>(const Operation&) const = default;
+
+  /// @see QDMI_OPERATION_PROPERTY_NAME
+  [[nodiscard]] std::string
+  getName(const std::vector<Site>& sites = {},
+          const std::vector<double>& params = {}) const;
+
+  /// @see QDMI_OPERATION_PROPERTY_QUBITSNUM
+  [[nodiscard]] std::optional<size_t>
+  getQubitsNum(const std::vector<Site>& sites = {},
+               const std::vector<double>& params = {}) const;
+
+  /// @see QDMI_OPERATION_PROPERTY_PARAMETERSNUM
+  [[nodiscard]] size_t
+  getParametersNum(const std::vector<Site>& sites = {},
+                   const std::vector<double>& params = {}) const;
+
+  /// @see QDMI_OPERATION_PROPERTY_DURATION
+  [[nodiscard]] std::optional<uint64_t>
+  getDuration(const std::vector<Site>& sites = {},
+              const std::vector<double>& params = {}) const;
+
+  /// @see QDMI_OPERATION_PROPERTY_FIDELITY
+  [[nodiscard]] std::optional<double>
+  getFidelity(const std::vector<Site>& sites = {},
+              const std::vector<double>& params = {}) const;
+
+  /// @see QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS
+  [[nodiscard]] std::optional<uint64_t>
+  getInteractionRadius(const std::vector<Site>& sites = {},
+                       const std::vector<double>& params = {}) const;
+
+  /// @see QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS
+  [[nodiscard]] std::optional<uint64_t>
+  getBlockingRadius(const std::vector<Site>& sites = {},
+                    const std::vector<double>& params = {}) const;
+
+  /// @see QDMI_OPERATION_PROPERTY_IDLINGFIDELITY
+  [[nodiscard]] std::optional<double>
+  getIdlingFidelity(const std::vector<Site>& sites = {},
+                    const std::vector<double>& params = {}) const;
+
+  /// @see QDMI_OPERATION_PROPERTY_ISZONED
+  [[nodiscard]] bool isZoned() const;
+
+  /// @see QDMI_OPERATION_PROPERTY_SITES
+  [[nodiscard]] std::optional<std::vector<Site>> getSites() const;
+
+  /**
+   * @brief Returns the list of site pairs the local 2-qubit operation can
+   * be performed on.
+   * @details For local 2-qubit operations, this function interprets the
+   * returned list of sites by QDMI as site pairs according to the QDMI
+   * specification. Hence, this function facilitates easier iteration over
+   * supported site pairs.
+   * @return Optional vector of site pairs if this is a local 2-qubit
+   * operation, std::nullopt otherwise.
+   * @see QDMI_OPERATION_PROPERTY_SITES
+   */
+  [[nodiscard]] std::optional<std::vector<std::pair<Site, Site>>>
+  getSitePairs() const;
+
+  /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
+  [[nodiscard]] std::optional<uint64_t>
+  getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
+                        const std::vector<double>& params = {}) const;
+
+private:
+  template <maybe_optional_value_or_string_or_vector T>
+  [[nodiscard]] T queryProperty(const QDMI_Operation_Property prop,
+                                const std::vector<Site>& sites,
+                                const std::vector<double>& params) const {
+    std::string msg = "Querying ";
+    msg += qdmi::toString(prop);
+    std::vector<QDMI_Site> qdmiSites;
+    qdmiSites.reserve(sites.size());
+    std::ranges::transform(sites, std::back_inserter(qdmiSites),
+                           [](const Site& site) -> QDMI_Site { return site; });
+    if constexpr (string_or_optional_string<T>) {
+      size_t size = 0;
+      auto result = QDMI_device_query_operation_property(
+          device_, operation_, sites.size(), qdmiSites.data(), params.size(),
+          params.data(), prop, 0, nullptr, &size);
+      if constexpr (is_optional<T>) {
+        if (result == QDMI_ERROR_NOTSUPPORTED) {
+          return std::nullopt;
+        }
+      }
+      qdmi::throwIfError(result, msg);
+      std::string value(size - 1, '\0');
+      result = QDMI_device_query_operation_property(
+          device_, operation_, sites.size(), qdmiSites.data(), params.size(),
+          params.data(), prop, size, value.data(), nullptr);
+      qdmi::throwIfError(result, msg);
+      return value;
+    } else if constexpr (maybe_optional_size_constructible_contiguous_range<
+                             T>) {
+      size_t size = 0;
+      auto result = QDMI_device_query_operation_property(
+          device_, operation_, sites.size(), qdmiSites.data(), params.size(),
+          params.data(), prop, 0, nullptr, &size);
+      if constexpr (is_optional<T>) {
+        if (result == QDMI_ERROR_NOTSUPPORTED) {
+          return std::nullopt;
+        }
+      }
+      qdmi::throwIfError(result, msg);
+      remove_optional_t<T> value(
+          size / sizeof(typename remove_optional_t<T>::value_type));
+      result = QDMI_device_query_operation_property(
+          device_, operation_, sites.size(), qdmiSites.data(), params.size(),
+          params.data(), prop, size, value.data(), nullptr);
+      qdmi::throwIfError(result, msg);
+      return value;
+    } else {
+      remove_optional_t<T> value{};
+      const auto result = QDMI_device_query_operation_property(
+          device_, operation_, sites.size(), qdmiSites.data(), params.size(),
+          params.data(), prop, sizeof(remove_optional_t<T>), &value, nullptr);
+      if constexpr (is_optional<T>) {
+        if (result == QDMI_ERROR_NOTSUPPORTED) {
+          return std::nullopt;
+        }
+      }
+      qdmi::throwIfError(result, msg);
+      return value;
+    }
+  }
+
+  /// @brief The associated QDMI_Device object.
+  QDMI_Device device_;
+
+  /// @brief The underlying QDMI_Operation object.
+  QDMI_Operation operation_;
+};
+
 } // namespace fomac

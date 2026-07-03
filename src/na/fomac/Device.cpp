@@ -43,8 +43,8 @@ namespace {
  * @param sites is a vector of Session sites
  * @return the extent covering all given sites
  */
-auto calculateExtentFromSites(
-    const std::vector<fomac::Device::Site>& sites) -> Device::Region {
+auto calculateExtentFromSites(const std::vector<fomac::Site>& sites)
+    -> Device::Region {
   auto minX = std::numeric_limits<int64_t>::max();
   auto maxX = std::numeric_limits<int64_t>::min();
   auto minY = std::numeric_limits<int64_t>::max();
@@ -68,8 +68,7 @@ auto calculateExtentFromSites(
  * @return the extent covering all sites in the pairs
  */
 auto calculateExtentFromSites(
-    const std::vector<std::pair<fomac::Device::Site,
-                                fomac::Device::Site>>& sitePairs)
+    const std::vector<std::pair<fomac::Site, fomac::Site>>& sitePairs)
     -> Device::Region {
   auto minX = std::numeric_limits<int64_t>::max();
   auto maxX = std::numeric_limits<int64_t>::min();
@@ -298,7 +297,7 @@ auto Session::Device::initTrapsfromDevice() -> bool {
 auto Session::Device::initOperationsFromDevice() -> bool {
   std::map<size_t, std::pair<ShuttlingUnit, std::array<bool, 3>>>
       shuttlingUnitsPerId;
-  for (const fomac::Device::Operation& op : getOperations()) {
+  for (const fomac::Operation& op : getOperations()) {
     const auto zoned = op.isZoned();
     const auto& nq = op.getQubitsNum();
     const auto& opName = op.getName();
@@ -308,10 +307,9 @@ auto Session::Device::initOperationsFromDevice() -> bool {
       return false;
     }
     if (zoned) {
-      if (std::ranges::any_of(
-              *sitesOpt, [](const fomac::Device::Site& site) -> bool {
-                return !site.isZone();
-              })) {
+      if (std::ranges::any_of(*sitesOpt, [](const fomac::Site& site) -> bool {
+            return !site.isZone();
+          })) {
         SPDLOG_INFO("Operation marked as zoned but has non-zone sites");
         return false;
       }
@@ -577,8 +575,7 @@ auto Session::Device::initOperationsFromDevice() -> bool {
   }
   return true;
 }
-Session::Device::Device(const fomac::Device& device)
-    : fomac::Device(device) {}
+Session::Device::Device(const fomac::Device& device) : fomac::Device(device) {}
 auto Session::getDevices() -> std::vector<Device> {
   std::vector<Device> devices;
   fomac::Session session;

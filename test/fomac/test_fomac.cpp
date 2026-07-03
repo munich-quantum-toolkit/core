@@ -41,14 +41,14 @@ protected:
 
 class SiteTest : public DeviceTest {
 protected:
-  std::vector<Device::Site> sites;
+  std::vector<Site> sites;
 
   void SetUp() override { sites = device.getSites(); }
 };
 
 class OperationTest : public DeviceTest {
 protected:
-  std::vector<Device::Operation> operations;
+  std::vector<Operation> operations;
 
   void SetUp() override { operations = device.getOperations(); }
 };

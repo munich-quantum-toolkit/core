@@ -31,115 +31,114 @@
 #include <vector>
 
 namespace fomac {
-size_t Device::Site::getIndex() const {
+size_t Site::getIndex() const {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
-std::optional<uint64_t> Device::Site::getT1() const {
+std::optional<uint64_t> Site::getT1() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T1);
 }
-std::optional<uint64_t> Device::Site::getT2() const {
+std::optional<uint64_t> Site::getT2() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T2);
 }
-std::optional<std::string> Device::Site::getName() const {
+std::optional<std::string> Site::getName() const {
   return queryProperty<std::optional<std::string>>(QDMI_SITE_PROPERTY_NAME);
 }
-std::optional<int64_t> Device::Site::getXCoordinate() const {
+std::optional<int64_t> Site::getXCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_XCOORDINATE);
 }
-std::optional<int64_t> Device::Site::getYCoordinate() const {
+std::optional<int64_t> Site::getYCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_YCOORDINATE);
 }
-std::optional<int64_t> Device::Site::getZCoordinate() const {
+std::optional<int64_t> Site::getZCoordinate() const {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
-bool Device::Site::isZone() const {
+bool Site::isZone() const {
   return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE)
       .value_or(false);
 }
-std::optional<uint64_t> Device::Site::getXExtent() const {
+std::optional<uint64_t> Site::getXExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_XEXTENT);
 }
-std::optional<uint64_t> Device::Site::getYExtent() const {
+std::optional<uint64_t> Site::getYExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_YEXTENT);
 }
-std::optional<uint64_t> Device::Site::getZExtent() const {
+std::optional<uint64_t> Site::getZExtent() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_ZEXTENT);
 }
-std::optional<uint64_t> Device::Site::getModuleIndex() const {
+std::optional<uint64_t> Site::getModuleIndex() const {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_MODULEINDEX);
 }
-std::optional<uint64_t> Device::Site::getSubmoduleIndex() const {
+std::optional<uint64_t> Site::getSubmoduleIndex() const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_SITE_PROPERTY_SUBMODULEINDEX);
 }
-std::string
-Device::Operation::getName(const std::vector<Site>& sites,
-                           const std::vector<double>& params) const {
+std::string Operation::getName(const std::vector<Site>& sites,
+                               const std::vector<double>& params) const {
   return queryProperty<std::string>(QDMI_OPERATION_PROPERTY_NAME, sites,
                                     params);
 }
 std::optional<size_t>
-Device::Operation::getQubitsNum(const std::vector<Site>& sites,
-                                const std::vector<double>& params) const {
+Operation::getQubitsNum(const std::vector<Site>& sites,
+                        const std::vector<double>& params) const {
   return queryProperty<std::optional<size_t>>(QDMI_OPERATION_PROPERTY_QUBITSNUM,
                                               sites, params);
 }
-size_t
-Device::Operation::getParametersNum(const std::vector<Site>& sites,
-                                    const std::vector<double>& params) const {
+size_t Operation::getParametersNum(const std::vector<Site>& sites,
+                                   const std::vector<double>& params) const {
   return queryProperty<size_t>(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sites,
                                params);
 }
 std::optional<uint64_t>
-Device::Operation::getDuration(const std::vector<Site>& sites,
-                               const std::vector<double>& params) const {
+Operation::getDuration(const std::vector<Site>& sites,
+                       const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_DURATION, sites, params);
 }
 std::optional<double>
-Device::Operation::getFidelity(const std::vector<Site>& sites,
-                               const std::vector<double>& params) const {
+Operation::getFidelity(const std::vector<Site>& sites,
+                       const std::vector<double>& params) const {
   return queryProperty<std::optional<double>>(QDMI_OPERATION_PROPERTY_FIDELITY,
                                               sites, params);
 }
-std::optional<uint64_t> Device::Operation::getInteractionRadius(
-    const std::vector<Site>& sites, const std::vector<double>& params) const {
+std::optional<uint64_t>
+Operation::getInteractionRadius(const std::vector<Site>& sites,
+                                const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, sites, params);
 }
 std::optional<uint64_t>
-Device::Operation::getBlockingRadius(const std::vector<Site>& sites,
-                                     const std::vector<double>& params) const {
+Operation::getBlockingRadius(const std::vector<Site>& sites,
+                             const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sites, params);
 }
 std::optional<double>
-Device::Operation::getIdlingFidelity(const std::vector<Site>& sites,
-                                     const std::vector<double>& params) const {
+Operation::getIdlingFidelity(const std::vector<Site>& sites,
+                             const std::vector<double>& params) const {
   return queryProperty<std::optional<double>>(
       QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites, params);
 }
-bool Device::Operation::isZoned() const {
+bool Operation::isZoned() const {
   return queryProperty<std::optional<bool>>(QDMI_OPERATION_PROPERTY_ISZONED, {},
                                             {})
       .value_or(false);
 }
-std::optional<std::vector<Device::Site>> Device::Operation::getSites() const {
+std::optional<std::vector<Site>> Operation::getSites() const {
   const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
       QDMI_OPERATION_PROPERTY_SITES, {}, {});
   if (!qdmiSites.has_value()) {
     return std::nullopt;
   }
-  std::vector<Device::Site> returnedSites;
+  std::vector<Site> returnedSites;
   returnedSites.reserve(qdmiSites->size());
   std::ranges::transform(*qdmiSites, std::back_inserter(returnedSites),
                          [device = device_](const QDMI_Site& site) -> Site {
-                           return {Token{}, device, site};
+                           return {Device::Token{}, device, site};
                          });
   return returnedSites;
 }
-std::optional<std::vector<std::pair<Device::Site, Device::Site>>>
-Device::Operation::getSitePairs() const {
+std::optional<std::vector<std::pair<Site, Site>>>
+Operation::getSitePairs() const {
   if (const auto qubitsNum = getQubitsNum({}, {});
       !qubitsNum.has_value() || *qubitsNum != 2 || isZoned()) {
     return std::nullopt; // Not a 2-qubit operation or operation is zoned
@@ -155,7 +154,7 @@ Device::Operation::getSitePairs() const {
     return std::nullopt; // Invalid: no sites or odd number of sites
   }
 
-  std::vector<std::pair<Device::Site, Device::Site>> pairs;
+  std::vector<std::pair<Site, Site>> pairs;
   pairs.reserve(sitesVec.size() / 2);
 
   for (size_t i = 0; i < sitesVec.size(); i += 2) {
@@ -164,9 +163,9 @@ Device::Operation::getSitePairs() const {
 
   return pairs;
 }
-std::optional<uint64_t> Device::Operation::getMeanShuttlingSpeed(
-    const std::vector<Device::Site>& sites,
-    const std::vector<double>& params) const {
+std::optional<uint64_t>
+Operation::getMeanShuttlingSpeed(const std::vector<Site>& sites,
+                                 const std::vector<double>& params) const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED, sites, params);
 }
@@ -185,10 +184,10 @@ std::string Device::getLibraryVersion() const {
 size_t Device::getQubitsNum() const {
   return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_QUBITSNUM);
 }
-std::vector<Device::Site> Device::getSites() const {
+std::vector<Site> Device::getSites() const {
   const auto& qdmiSites =
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
-  std::vector<Device::Site> sites;
+  std::vector<Site> sites;
   sites.reserve(qdmiSites.size());
   std::ranges::transform(qdmiSites, std::back_inserter(sites),
                          [device = device_](const QDMI_Site& site) -> Site {
@@ -196,25 +195,25 @@ std::vector<Device::Site> Device::getSites() const {
                          });
   return sites;
 }
-std::vector<Device::Site> Device::getRegularSites() const {
+std::vector<Site> Device::getRegularSites() const {
   auto allSites = getSites();
   const auto newEnd = std::ranges::remove_if(
       allSites, [](const auto& s) { return s.isZone(); });
   allSites.erase(newEnd.begin(), newEnd.end());
   return allSites;
 }
-std::vector<Device::Site> Device::getZones() const {
+std::vector<Site> Device::getZones() const {
   const auto& allSites = getSites();
-  std::vector<Device::Site> zones;
+  std::vector<Site> zones;
   zones.reserve(3); // Reserve space for a typical max number of zones
   std::ranges::copy_if(allSites, std::back_inserter(zones),
                        [](const auto& s) { return s.isZone(); });
   return zones;
 }
-std::vector<Device::Operation> Device::getOperations() const {
+std::vector<Operation> Device::getOperations() const {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
-  std::vector<Device::Operation> operations;
+  std::vector<Operation> operations;
   operations.reserve(qdmiOperations.size());
   std::ranges::transform(
       qdmiOperations, std::back_inserter(operations),
@@ -223,7 +222,7 @@ std::vector<Device::Operation> Device::getOperations() const {
       });
   return operations;
 }
-std::optional<std::vector<std::pair<Device::Site, Device::Site>>>
+std::optional<std::vector<std::pair<Site, Site>>>
 Device::getCouplingMap() const {
   const auto& qdmiCouplingMap = queryProperty<
       std::optional<std::vector<std::pair<QDMI_Site, QDMI_Site>>>>(
@@ -231,11 +230,11 @@ Device::getCouplingMap() const {
   if (!qdmiCouplingMap.has_value()) {
     return std::nullopt;
   }
-  std::vector<std::pair<Device::Site, Device::Site>> couplingMap;
+  std::vector<std::pair<Site, Site>> couplingMap;
   couplingMap.reserve(qdmiCouplingMap->size());
   std::ranges::transform(*qdmiCouplingMap, std::back_inserter(couplingMap),
                          [this](const std::pair<QDMI_Site, QDMI_Site>& pair)
-                             -> std::pair<Device::Site, Device::Site> {
+                             -> std::pair<Site, Site> {
                            return {Site{Token{}, device_, pair.first},
                                    Site{Token{}, device_, pair.second}};
                          });
