@@ -44,7 +44,7 @@ namespace {
  * @return the extent covering all given sites
  */
 auto calculateExtentFromSites(
-    const std::vector<fomac::Session::Device::Site>& sites) -> Device::Region {
+    const std::vector<fomac::Device::Site>& sites) -> Device::Region {
   auto minX = std::numeric_limits<int64_t>::max();
   auto maxX = std::numeric_limits<int64_t>::min();
   auto minY = std::numeric_limits<int64_t>::max();
@@ -68,8 +68,8 @@ auto calculateExtentFromSites(
  * @return the extent covering all sites in the pairs
  */
 auto calculateExtentFromSites(
-    const std::vector<std::pair<fomac::Session::Device::Site,
-                                fomac::Session::Device::Site>>& sitePairs)
+    const std::vector<std::pair<fomac::Device::Site,
+                                fomac::Device::Site>>& sitePairs)
     -> Device::Region {
   auto minX = std::numeric_limits<int64_t>::max();
   auto maxX = std::numeric_limits<int64_t>::min();
@@ -125,7 +125,7 @@ auto Session::Device::initQubitsNumFromDevice() -> void {
   numQubits = getQubitsNum();
 }
 auto Session::Device::initLengthUnitFromDevice() -> bool {
-  const auto& u = fomac::Session::Device::getLengthUnit();
+  const auto& u = fomac::Device::getLengthUnit();
   if (!u.has_value()) {
     SPDLOG_INFO("Length unit not set");
     return false;
@@ -135,7 +135,7 @@ auto Session::Device::initLengthUnitFromDevice() -> bool {
   return true;
 }
 auto Session::Device::initDurationUnitFromDevice() -> bool {
-  const auto& u = fomac::Session::Device::getDurationUnit();
+  const auto& u = fomac::Device::getDurationUnit();
   if (!u.has_value()) {
     SPDLOG_INFO("Duration unit not set");
     return false;
@@ -298,7 +298,7 @@ auto Session::Device::initTrapsfromDevice() -> bool {
 auto Session::Device::initOperationsFromDevice() -> bool {
   std::map<size_t, std::pair<ShuttlingUnit, std::array<bool, 3>>>
       shuttlingUnitsPerId;
-  for (const fomac::Session::Device::Operation& op : getOperations()) {
+  for (const fomac::Device::Operation& op : getOperations()) {
     const auto zoned = op.isZoned();
     const auto& nq = op.getQubitsNum();
     const auto& opName = op.getName();
@@ -309,7 +309,7 @@ auto Session::Device::initOperationsFromDevice() -> bool {
     }
     if (zoned) {
       if (std::ranges::any_of(
-              *sitesOpt, [](const fomac::Session::Device::Site& site) -> bool {
+              *sitesOpt, [](const fomac::Device::Site& site) -> bool {
                 return !site.isZone();
               })) {
         SPDLOG_INFO("Operation marked as zoned but has non-zone sites");
@@ -577,8 +577,8 @@ auto Session::Device::initOperationsFromDevice() -> bool {
   }
   return true;
 }
-Session::Device::Device(const fomac::Session::Device& device)
-    : fomac::Session::Device(device) {}
+Session::Device::Device(const fomac::Device& device)
+    : fomac::Device(device) {}
 auto Session::getDevices() -> std::vector<Device> {
   std::vector<Device> devices;
   fomac::Session session;

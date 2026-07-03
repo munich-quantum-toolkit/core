@@ -32,7 +32,7 @@ public:
    * @note Since it inherits from @ref na::Device, Device objects can be
    * converted to `nlohmann::json` objects.
    */
-  class Device : public fomac::Session::Device, na::Device {
+  class Device : public fomac::Device, na::Device {
 
     /**
      * @brief Initializes the name from the underlying QDMI device.
@@ -86,7 +86,7 @@ public:
      * class. For their initialization, the corresponding `init*FromDevice`
      * methods must be called, see @ref tryCreateFromDevice.
      */
-    explicit Device(const fomac::Session::Device& device);
+    explicit Device(const fomac::Device& device);
 
   public:
     /// @returns the length unit of the device.
@@ -121,7 +121,7 @@ public:
      * std::nullopt otherwise.
      */
     [[nodiscard]] static auto
-    tryCreateFromDevice(const fomac::Session::Device& device)
+    tryCreateFromDevice(const fomac::Device& device)
         -> std::optional<Device> {
       Device d(device);
       // The sequence of the following method calls does not matter.
