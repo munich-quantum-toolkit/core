@@ -24,7 +24,7 @@ namespace na {
  * @brief Class representing the Session library with neutral atom extensions.
  * @see fomac::Session
  */
-class Session : public fomac::Session {
+class Session {
 public:
   /**
    * @brief Class representing a quantum device with neutral atom extensions.

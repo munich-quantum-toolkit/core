@@ -223,7 +223,7 @@ private:
   std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)> session_{
       nullptr, QDMI_session_free};
 
-  friend class Device; // Share Secret Token.
+  friend class Device;
 };
 
 static_assert(!std::is_copy_constructible<Session>());
@@ -253,6 +253,7 @@ public:
 
   /// @see QDMI_job_check
   [[nodiscard]] QDMI_Job_Status check() const;
+  
   /**
    * @brief @see QDMI_job_wait
    * @param timeout The maximum time to wait in seconds. 0 (default) means
@@ -260,6 +261,7 @@ public:
    * @return true if the job completed successfully, false if it timed out
    */
   [[nodiscard]] bool wait(size_t timeout = 0) const;
+  
   /// @see QDMI_job_cancel
   void cancel() const;
 
