@@ -969,8 +969,91 @@ void DynamicMatrix::premultiplyBy(const DynamicMatrix& lhs) {
   *this = lhs * *this;
 }
 
-void DynamicMatrix::premultiplyBy(DynamicMatrix&& lhs) {
-  *this = std::move(lhs) * *this;
+void DynamicMatrix::premultiplyByEmbedded1Q(const Matrix2x2& gate,
+                                            const std::size_t numQubits,
+                                            const std::size_t qubitIndex) {
+  assert(qubitIndex < numQubits &&
+         static_cast<std::uint64_t>(impl_->dim) ==
+             (std::uint64_t{1} << numQubits) &&
+         "Matrix dimension must match numQubits");
+  if (std::cmp_equal(impl_->dim, Matrix2x2::K_ROWS)) {
+    assert(qubitIndex == 0);
+    std::array<Complex, Matrix2x2::K_SIZE_AT_COMPILE_TIME> tmp{};
+    multiply2x2(gate.data, impl_->data, tmp);
+    impl_->data.assign(tmp.begin(), tmp.end());
+    return;
+  }
+  if (std::cmp_equal(impl_->dim, Matrix4x4::K_ROWS) && numQubits == 2) {
+    const Matrix4x4 embedded =
+        (qubitIndex == 0) ? Matrix4x4::kron(gate, Matrix2x2::identity())
+                          : Matrix4x4::kron(Matrix2x2::identity(), gate);
+    std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME> tmp{};
+    multiply4x4(embedded.data, impl_->data, tmp);
+    impl_->data.assign(tmp.begin(), tmp.end());
+    return;
+  }
+  const auto udim = checkedDim(impl_->dim);
+  const std::size_t mask = std::size_t{1} << (numQubits - 1 - qubitIndex);
+  auto& data = impl_->data;
+  for (std::size_t base = 0; base < udim; ++base) {
+    if ((base & mask) != 0) {
+      continue;
+    }
+    const std::size_t row1 = base | mask;
+    for (std::size_t col = 0; col < udim; ++col) {
+      const std::size_t idx0 = (base * udim) + col;
+      const std::size_t idx1 = (row1 * udim) + col;
+      const Complex a = data[idx0];
+      const Complex b = data[idx1];
+      data[idx0] = gate.data[0] * a + gate.data[1] * b;
+      data[idx1] = gate.data[2] * a + gate.data[3] * b;
+    }
+  }
+}
+
+void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
+                                            const std::size_t numQubits,
+                                            const std::size_t q0Index,
+                                            const std::size_t q1Index) {
+  assert(q0Index < numQubits && q1Index < numQubits && q0Index != q1Index &&
+         static_cast<std::uint64_t>(impl_->dim) ==
+             (std::uint64_t{1} << numQubits) &&
+         "Matrix dimension must match numQubits");
+  if (std::cmp_equal(impl_->dim, Matrix4x4::K_ROWS)) {
+    assert(q0Index == 0 && q1Index == 1);
+    std::array<Complex, Matrix4x4::K_SIZE_AT_COMPILE_TIME> tmp{};
+    multiply4x4(gate.data, impl_->data, tmp);
+    impl_->data.assign(tmp.begin(), tmp.end());
+    return;
+  }
+  const auto udim = checkedDim(impl_->dim);
+  const std::size_t mask0 = std::size_t{1} << (numQubits - 1 - q0Index);
+  const std::size_t mask1 = std::size_t{1} << (numQubits - 1 - q1Index);
+  std::array<Complex, Matrix4x4::K_ROWS> rows{};
+  std::array<Complex, Matrix4x4::K_ROWS> newRows{};
+  auto& data = impl_->data;
+  for (std::size_t base = 0; base < udim; ++base) {
+    if ((base & mask0) != 0 || (base & mask1) != 0) {
+      continue;
+    }
+    const std::array<std::size_t, Matrix4x4::K_ROWS> rowIdx = {
+        base, base | mask1, base | mask0, base | mask0 | mask1};
+    for (std::size_t col = 0; col < udim; ++col) {
+      for (std::size_t i = 0; i < Matrix4x4::K_ROWS; ++i) {
+        rows[i] = data[(rowIdx[i] * udim) + col];
+      }
+      for (std::size_t i = 0; i < Matrix4x4::K_ROWS; ++i) {
+        Complex sum{0.0, 0.0};
+        for (std::size_t j = 0; j < Matrix4x4::K_ROWS; ++j) {
+          sum += gate.data[(i * Matrix4x4::K_COLS) + j] * rows[j];
+        }
+        newRows[i] = sum;
+      }
+      for (std::size_t i = 0; i < Matrix4x4::K_ROWS; ++i) {
+        data[(rowIdx[i] * udim) + col] = newRows[i];
+      }
+    }
+  }
 }
 
 DynamicMatrix DynamicMatrix::operator*(const Complex& scalar) const {

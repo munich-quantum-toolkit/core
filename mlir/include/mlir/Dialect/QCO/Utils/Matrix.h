@@ -741,10 +741,32 @@ public:
   void premultiplyBy(const DynamicMatrix& lhs);
 
   /**
-   * @brief Premultiplies by a matrix, consuming @p lhs.
-   * @param lhs Left-hand factor.
+   * @brief Premultiplies by a single-qubit gate embedded on @p qubitIndex.
+   *
+   * Uses the same MSB-first wire convention as @ref Matrix2x2::embedInNqubit.
+   *
+   * @param gate Single-qubit unitary.
+   * @param numQubits Number of qubits in this matrix.
+   * @param qubitIndex Target wire index.
    */
-  void premultiplyBy(DynamicMatrix&& lhs);
+  void premultiplyByEmbedded1Q(const Matrix2x2& gate, std::size_t numQubits,
+                               std::size_t qubitIndex);
+
+  /**
+   * @brief Premultiplies by a two-qubit gate embedded on @p q0Index and @p
+   * q1Index.
+   *
+   * @p gate must already be reordered for wires @p q0Index and @p q1Index when
+   * @p numQubits is 2. Uses the same MSB-first convention as @ref
+   * Matrix4x4::embedInNqubit.
+   *
+   * @param gate Two-qubit unitary.
+   * @param numQubits Number of qubits in this matrix.
+   * @param q0Index First target wire index.
+   * @param q1Index Second target wire index.
+   */
+  void premultiplyByEmbedded2Q(const Matrix4x4& gate, std::size_t numQubits,
+                               std::size_t q0Index, std::size_t q1Index);
 
   /**
    * @brief Element-wise scaling by a complex scalar.

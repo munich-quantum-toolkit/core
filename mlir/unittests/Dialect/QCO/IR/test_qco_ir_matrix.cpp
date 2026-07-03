@@ -246,6 +246,7 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
   ASSERT_TRUE(moduleOp);
 
   const auto matrix = firstCtrlOp(*moduleOp).getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
 
   const Matrix4x4 expected =
       expectedMatrixFromComputation([](qc::QuantumComputation& comp) {

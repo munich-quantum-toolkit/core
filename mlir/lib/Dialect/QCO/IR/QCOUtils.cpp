@@ -26,10 +26,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <utility>
 
 namespace mlir::qco {
 
+/// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
+/// untracked.
 [[nodiscard]] static std::optional<std::size_t>
 lookupWireId(const DenseMap<Value, std::size_t>& wireIds, Value wire) {
   if (const auto it = wireIds.find(wire); it != wireIds.end()) {
@@ -38,6 +39,7 @@ lookupWireId(const DenseMap<Value, std::size_t>& wireIds, Value wire) {
   return std::nullopt;
 }
 
+/// Propagates wire indices from unitary inputs to outputs via @p wireIds.
 static void propagateWireIds(UnitaryOpInterface unitary,
                              DenseMap<Value, std::size_t>& wireIds) {
   for (Value input : unitary.getInputQubits()) {
@@ -47,36 +49,39 @@ static void propagateWireIds(UnitaryOpInterface unitary,
   }
 }
 
-[[nodiscard]] static std::optional<DynamicMatrix>
-embedUnitaryInBody(UnitaryOpInterface unitary, std::size_t numTargets,
-                   const DenseMap<Value, std::size_t>& wireIds) {
+/// Embeds a compile-time 1Q/2Q @p unitary into @p acc on @p numTargets modifier
+/// wires using @p wireIds.
+static bool applyUnitaryInBody(UnitaryOpInterface unitary,
+                               std::size_t numTargets,
+                               const DenseMap<Value, std::size_t>& wireIds,
+                               DynamicMatrix& acc) {
   const auto numOpQubits = unitary.getNumQubits();
   if (numOpQubits == 0 || numOpQubits > 2) {
-    return std::nullopt;
+    return false;
   }
 
   if (numOpQubits == 1) {
     const auto wire = lookupWireId(wireIds, unitary.getInputQubit(0));
     if (!wire.has_value()) {
-      return std::nullopt;
+      return false;
     }
-    if (numTargets == 1) {
-      return unitary.getUnitaryMatrix<DynamicMatrix>();
-    }
-    return unitary.getUnitaryMatrix<Matrix2x2>()->embedInNqubit(numTargets,
-                                                                *wire);
+    acc.premultiplyByEmbedded1Q(*unitary.getUnitaryMatrix<Matrix2x2>(),
+                                numTargets, *wire);
+    return true;
   }
 
   const auto q0 = lookupWireId(wireIds, unitary.getInputQubit(0));
   const auto q1 = lookupWireId(wireIds, unitary.getInputQubit(1));
   if (!q0.has_value() || !q1.has_value()) {
-    return std::nullopt;
+    return false;
   }
-  if (numTargets == 2 && *q0 == 0 && *q1 == 1) {
-    return unitary.getUnitaryMatrix<DynamicMatrix>();
+  Matrix4x4 gate = *unitary.getUnitaryMatrix<Matrix4x4>();
+  if (numTargets == 2) {
+    gate = gate.reorderForQubits(*q0, *q1);
   }
-  return unitary.getUnitaryMatrix<Matrix4x4>()->embedInNqubit(numTargets, *q0,
-                                                              *q1);
+  acc.premultiplyByEmbedded2Q(gate, numTargets, numTargets == 2 ? 0 : *q0,
+                              numTargets == 2 ? 1 : *q1);
+  return true;
 }
 
 std::optional<DynamicMatrix> composeNTargetBodyMatrix(Block& block,
@@ -115,15 +120,12 @@ std::optional<DynamicMatrix> composeNTargetBodyMatrix(Block& block,
               if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
                 return false;
               }
-              std::optional<DynamicMatrix> step =
-                  embedUnitaryInBody(unitary, numTargets, wireIds);
-              if (!step.has_value()) {
-                return false;
+              if (!acc.has_value()) {
+                acc = DynamicMatrix::identity(
+                    static_cast<std::int64_t>(1ULL << numTargets));
               }
-              if (acc.has_value()) {
-                acc->premultiplyBy(std::move(*step));
-              } else {
-                acc = std::move(step);
+              if (!applyUnitaryInBody(unitary, numTargets, wireIds, *acc)) {
+                return false;
               }
               found = true;
               propagateWireIds(unitary, wireIds);
