@@ -61,17 +61,10 @@ embedUnitaryInBody(UnitaryOpInterface unitary, std::size_t numTargets,
       return std::nullopt;
     }
     if (numTargets == 1) {
-      auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
-      if (!matrix) {
-        return std::nullopt;
-      }
-      return matrix;
+      return unitary.getUnitaryMatrix<DynamicMatrix>();
     }
-    const auto matrix = unitary.getUnitaryMatrix<Matrix2x2>();
-    if (!matrix) {
-      return std::nullopt;
-    }
-    return matrix->embedInNqubit(numTargets, *wire);
+    return unitary.getUnitaryMatrix<Matrix2x2>()->embedInNqubit(numTargets,
+                                                                *wire);
   }
 
   const auto q0 = lookupWireId(wireIds, unitary.getInputQubit(0));
@@ -80,17 +73,10 @@ embedUnitaryInBody(UnitaryOpInterface unitary, std::size_t numTargets,
     return std::nullopt;
   }
   if (numTargets == 2 && *q0 == 0 && *q1 == 1) {
-    auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
-    if (!matrix) {
-      return std::nullopt;
-    }
-    return matrix;
+    return unitary.getUnitaryMatrix<DynamicMatrix>();
   }
-  const auto matrix = unitary.getUnitaryMatrix<Matrix4x4>();
-  if (!matrix) {
-    return std::nullopt;
-  }
-  return matrix->embedInNqubit(numTargets, *q0, *q1);
+  return unitary.getUnitaryMatrix<Matrix4x4>()->embedInNqubit(numTargets, *q0,
+                                                              *q1);
 }
 
 std::optional<DynamicMatrix> composeNTargetBodyMatrix(Block& block,
