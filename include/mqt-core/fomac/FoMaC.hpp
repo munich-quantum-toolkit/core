@@ -11,6 +11,7 @@
 #pragma once
 
 #include "qdmi/common/Common.hpp"
+#include "qdmi/types.h"
 
 #include <qdmi/client.h>
 
@@ -21,6 +22,7 @@
 #include <cstdint>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -38,8 +40,7 @@ namespace fomac {
  */
 template <typename T>
 concept size_constructible_contiguous_range =
-    std::ranges::contiguous_range<T> &&
-    std::constructible_from<T, std::size_t> &&
+    std::ranges::contiguous_range<T> && std::constructible_from<T, size_t> &&
     requires { typename T::value_type; } && requires(T t) {
       { t.data() } -> std::same_as<typename T::value_type*>;
     };
@@ -52,8 +53,8 @@ concept size_constructible_contiguous_range =
  */
 template <typename T>
 concept value_or_string =
-    std::integral<T> || std::floating_point<T> || std::is_same_v<T, bool> ||
-    std::is_same_v<T, std::string> || std::is_same_v<T, QDMI_Device_Status>;
+    std::integral<T> || std::floating_point<T> || std::same_as<T, bool> ||
+    std::same_as<T, std::string> || std::same_as<T, QDMI_Device_Status>;
 
 /**
  * @brief Concept for types that are either value_or_string or
@@ -74,7 +75,7 @@ concept value_or_string_or_vector =
  */
 template <typename T>
 concept is_optional = requires { typename T::value_type; } &&
-                      std::is_same_v<T, std::optional<typename T::value_type>>;
+                      std::same_as<T, std::optional<typename T::value_type>>;
 
 /**
  * @brief Concept for types that are either std::string or std::optional of
@@ -85,8 +86,8 @@ concept is_optional = requires { typename T::value_type; } &&
  */
 template <typename T>
 concept string_or_optional_string =
-    std::is_same_v<T, std::string> ||
-    (is_optional<T> && std::is_same_v<typename T::value_type, std::string>);
+    std::same_as<T, std::string> ||
+    (is_optional<T> && std::same_as<typename T::value_type, std::string>);
 
 /// @see remove_optional_t
 template <typename T> struct remove_optional {
@@ -173,7 +174,10 @@ struct SessionConfig {
   std::optional<std::string> custom5;
 };
 
+class Job;
+class Site;
 class Device;
+class Operation;
 
 /**
  * @brief Class representing the Session library.
@@ -182,15 +186,6 @@ class Device;
  * @see QDMI_Session
  */
 class Session {
-
-  /**
-   * @brief Private token class.
-   * @details Only the Session class can create instances of this class.
-   */
-  struct Token {
-    Token() = default;
-  };
-
 public:
   /**
    * @brief Constructs a new QDMI Session with optional authentication.
@@ -204,6 +199,7 @@ public:
   [[nodiscard]] std::vector<Device> getDevices();
 
 private:
+  /// Query a session property.
   template <size_constructible_contiguous_range T>
   [[nodiscard]] T queryProperty(const QDMI_Session_Property prop) const {
     std::string msg = "Querying ";
@@ -222,8 +218,6 @@ private:
 
   std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)> session_{
       nullptr, QDMI_session_free};
-
-  friend class Device;
 };
 
 static_assert(!std::is_copy_constructible<Session>());
@@ -232,130 +226,17 @@ static_assert(std::is_move_constructible<Session>());
 static_assert(std::is_move_assignable<Session>());
 
 /**
- * @brief Class representing a submitted job.
- * @details This class provides methods to query job status and retrieve
- * results.
- * @see QDMI_Job
- */
-class Job {
-public:
-  /**
-   * @brief Constructs a Job object from a QDMI_Job handle.
-   * @param job The QDMI_Job handle to wrap.
-   */
-  explicit Job(QDMI_Job job) : job_(job, QDMI_job_free) {}
-
-  /// @returns the underlying QDMI_Job object.
-  [[nodiscard]] QDMI_Job getQDMIJob() const { return job_.get(); }
-
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
-  operator QDMI_Job() const { return job_.get(); }
-
-  /// @see QDMI_job_check
-  [[nodiscard]] QDMI_Job_Status check() const;
-  
-  /**
-   * @brief @see QDMI_job_wait
-   * @param timeout The maximum time to wait in seconds. 0 (default) means
-   * wait indefinitely.
-   * @return true if the job completed successfully, false if it timed out
-   */
-  [[nodiscard]] bool wait(size_t timeout = 0) const;
-  
-  /// @see QDMI_job_cancel
-  void cancel() const;
-
-  /// Get the job ID
-  [[nodiscard]] std::string getId() const;
-
-  /// Get the program format
-  [[nodiscard]] QDMI_Program_Format getProgramFormat() const;
-
-  /// Get the program to be executed
-  [[nodiscard]] std::string getProgram() const;
-
-  /// Get the number of shots
-  [[nodiscard]] size_t getNumShots() const;
-
-  /**
-   * @brief Returns the measurement shots as a vector of bitstrings.
-   * @see QDMI_JOB_RESULT_SHOTS
-   */
-  [[nodiscard]] std::vector<std::string> getShots() const;
-
-  /**
-   * @brief Returns a map of measurement outcomes to their respective counts.
-   * @see QDMI_JOB_RESULT_HIST_KEYS
-   * @see QDMI_JOB_RESULT_HIST_VALUES
-   */
-  [[nodiscard]] std::map<std::string, size_t> getCounts() const;
-
-  /**
-   * @brief Returns the dense state vector as a vector of complex numbers.
-   * @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
-   */
-  [[nodiscard]] std::vector<std::complex<double>> getDenseStateVector() const;
-
-  /**
-   * @brief Returns the dense probabilities as a vector of doubles.
-   * @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
-   */
-  [[nodiscard]] std::vector<double> getDenseProbabilities() const;
-
-  /**
-   * @brief Returns the sparse state vector as a map of bitstrings to complex
-   * amplitudes.
-   * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
-   * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
-   */
-  [[nodiscard]] std::map<std::string, std::complex<double>>
-  getSparseStateVector() const;
-
-  /**
-   * @brief Returns the sparse probabilities as a map of bitstrings to
-   * probabilities.
-   * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
-   * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
-   */
-
-  [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
-
-private:
-  std::unique_ptr<QDMI_Job_impl_d, decltype(&QDMI_job_free)> job_{
-      nullptr, QDMI_job_free};
-};
-
-static_assert(!std::is_copy_constructible<Job>());
-static_assert(!std::is_copy_assignable<Job>());
-static_assert(std::is_move_constructible<Job>());
-static_assert(std::is_move_assignable<Job>());
-
-class Site;
-class Operation;
-
-/**
  * @brief Class representing a quantum device.
- * @details This class provides methods to query properties of the device,
+ * @details
+ * This class provides methods to query properties of the device,
  * its sites, and its operations.
+ *
+ * The class can only be constructed by Session instances.
+ *
  * @see QDMI_Device
  */
 class Device {
-
-  /**
-   * @brief Private token class.
-   * @details Only the Device class can create instances of this class.
-   */
-  struct Token {
-    Token() = default;
-  };
-
 public:
-  /**
-   * @brief Constructs a Device object from a QDMI_Device handle.
-   * @param device The QDMI_Device handle to wrap.
-   */
-  Device(Session::Token /* unused */, QDMI_Device device) : device_(device) {}
-
   /**
    * @brief Creates a Device object from a QDMI_Device handle.
    * @param device The QDMI_Device handle to wrap.
@@ -364,7 +245,7 @@ public:
    * construction is not accessible.
    */
   [[nodiscard]] static Device fromQDMIDevice(QDMI_Device device) {
-    return {Session::Token{}, device};
+    return Device(device);
   }
 
   /// @returns the underlying QDMI_Device object.
@@ -372,8 +253,6 @@ public:
 
   // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
   operator QDMI_Device() const { return device_; }
-
-  auto operator<=>(const Device&) const = default;
 
   /// @see QDMI_DEVICE_PROPERTY_NAME
   [[nodiscard]] std::string getName() const;
@@ -449,7 +328,16 @@ public:
                               QDMI_Program_Format format,
                               size_t numShots) const;
 
+  auto operator<=>(const Device&) const noexcept = default;
+
 private:
+  /**
+   * @brief Constructs a Device object from a QDMI_Device handle.
+   * @param device The QDMI_Device handle to wrap.
+   */
+  explicit Device(QDMI_Device device) : device_(device) {}
+
+  /// Query a device property.
   template <maybe_optional_value_or_string_or_vector T>
   [[nodiscard]] T queryProperty(const QDMI_Device_Property prop) const {
     std::string msg = "Querying ";
@@ -458,11 +346,13 @@ private:
       size_t size = 0;
       auto result =
           QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
+
       if constexpr (is_optional<T>) {
         if (result == QDMI_ERROR_NOTSUPPORTED) {
           return std::nullopt;
         }
       }
+
       qdmi::throwIfError(result, msg);
       std::string value(size - 1, '\0');
       result = QDMI_device_query_device_property(device_, prop, size,
@@ -474,11 +364,13 @@ private:
       size_t size = 0;
       auto result =
           QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
+
       if constexpr (is_optional<T>) {
         if (result == QDMI_ERROR_NOTSUPPORTED) {
           return std::nullopt;
         }
       }
+
       qdmi::throwIfError(result, msg);
       remove_optional_t<T> value(
           size / sizeof(typename remove_optional_t<T>::value_type));
@@ -490,11 +382,13 @@ private:
       remove_optional_t<T> value{};
       const auto result = QDMI_device_query_device_property(
           device_, prop, sizeof(remove_optional_t<T>), &value, nullptr);
+
       if constexpr (is_optional<T>) {
         if (result == QDMI_ERROR_NOTSUPPORTED) {
           return std::nullopt;
         }
       }
+      
       qdmi::throwIfError(result, msg);
       return value;
     }
@@ -503,32 +397,130 @@ private:
   /// @brief The underlying QDMI_Device object.
   QDMI_Device device_;
 
-  friend class Site;
-  friend class Operation;
+  friend std::vector<Device> Session::getDevices();
 };
 
 /**
+ * @brief Class representing a submitted job.
+ * @details
+ * This class provides methods to query job status and retrieve
+ * results.
+ *
+ * The class can only be constructed by Device instances.
+ *
+ * @see QDMI_Job
+ */
+class Job {
+public:
+  /// @returns the underlying QDMI_Job object.
+  [[nodiscard]] QDMI_Job getQDMIJob() const { return job_.get(); }
+
+  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  operator QDMI_Job() const { return job_.get(); }
+
+  /// @see QDMI_job_check
+  [[nodiscard]] QDMI_Job_Status check() const;
+
+  /**
+   * @brief @see QDMI_job_wait
+   * @param timeout The maximum time to wait in seconds. 0 (default) means
+   * wait indefinitely.
+   * @return true if the job completed successfully, false if it timed out
+   */
+  [[nodiscard]] bool wait(size_t timeout = 0) const;
+
+  /// @see QDMI_job_cancel
+  void cancel() const;
+
+  /// Get the job ID
+  [[nodiscard]] std::string getId() const;
+
+  /// Get the program format
+  [[nodiscard]] QDMI_Program_Format getProgramFormat() const;
+
+  /// Get the program to be executed
+  [[nodiscard]] std::string getProgram() const;
+
+  /// Get the number of shots
+  [[nodiscard]] size_t getNumShots() const;
+
+  /**
+   * @brief Returns the measurement shots as a vector of bitstrings.
+   * @see QDMI_JOB_RESULT_SHOTS
+   */
+  [[nodiscard]] std::vector<std::string> getShots() const;
+
+  /**
+   * @brief Returns a map of measurement outcomes to their respective counts.
+   * @see QDMI_JOB_RESULT_HIST_KEYS
+   * @see QDMI_JOB_RESULT_HIST_VALUES
+   */
+  [[nodiscard]] std::map<std::string, size_t> getCounts() const;
+
+  /**
+   * @brief Returns the dense state vector as a vector of complex numbers.
+   * @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
+   */
+  [[nodiscard]] std::vector<std::complex<double>> getDenseStateVector() const;
+
+  /**
+   * @brief Returns the dense probabilities as a vector of doubles.
+   * @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
+   */
+  [[nodiscard]] std::vector<double> getDenseProbabilities() const;
+
+  /**
+   * @brief Returns the sparse state vector as a map of bitstrings to complex
+   * amplitudes.
+   * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
+   * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
+   */
+  [[nodiscard]] std::map<std::string, std::complex<double>>
+  getSparseStateVector() const;
+
+  /**
+   * @brief Returns the sparse probabilities as a map of bitstrings to
+   * probabilities.
+   * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
+   * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
+   */
+
+  [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
+
+private:
+  /**
+   * @brief Constructs a Job object from a QDMI_Job handle.
+   * @param job The QDMI_Job handle to wrap.
+   */
+  explicit Job(QDMI_Job job) : job_(job, QDMI_job_free) {}
+
+  std::unique_ptr<QDMI_Job_impl_d, decltype(&QDMI_job_free)> job_{
+      nullptr, QDMI_job_free};
+
+  friend class Device;
+};
+
+static_assert(!std::is_copy_constructible<Job>());
+static_assert(!std::is_copy_assignable<Job>());
+static_assert(std::is_move_constructible<Job>());
+static_assert(std::is_move_assignable<Job>());
+
+/**
  * @brief Class representing a site (qubit) on the device.
- * @details This class provides methods to query properties of the site.
+ * @details
+ * This class provides methods to query properties of the site.
+ *
+ * The class can only be constructed by Device and Operation instances.
+ *
  * @see QDMI_Site
  */
 class Site {
 public:
-  /**
-   * @brief Constructs a Site object from a QDMI_Site handle.
-   * @param device The associated QDMI_Device handle.
-   * @param site The QDMI_Site handle to wrap.
-   */
-  Site(Device::Token /* unused */, QDMI_Device device, QDMI_Site site)
-      : device_(device), site_(site) {}
-
   /// @returns the underlying QDMI_Site object.
   [[nodiscard]] QDMI_Site getQDMISite() const { return site_; }
 
   // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
   operator QDMI_Site() const { return site_; }
-
-  auto operator<=>(const Site&) const = default;
 
   /// @see QDMI_SITE_PROPERTY_INDEX
   [[nodiscard]] size_t getIndex() const;
@@ -569,7 +561,17 @@ public:
   /// @see QDMI_SITE_PROPERTY_SUBMODULEINDEX
   [[nodiscard]] std::optional<uint64_t> getSubmoduleIndex() const;
 
+  auto operator<=>(const Site&) const noexcept = default;
+
 private:
+  /**
+   * @brief Constructs a Site object from a QDMI_Site handle.
+   * @param device The associated QDMI_Device handle.
+   * @param site The QDMI_Site handle to wrap.
+   */
+  Site(QDMI_Device device, QDMI_Site site) : device_(device), site_(site) {}
+
+  /// Query a site property.
   template <maybe_optional_value_or_string T>
   [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
     std::string msg = "Querying ";
@@ -608,32 +610,28 @@ private:
 
   /// @brief The underlying QDMI_Site object.
   QDMI_Site site_;
+
+  friend class Device;
+  friend class Operation;
 };
 
 /**
  * @brief Class representing an operation (gate) supported by the device.
- * @details This class provides methods to query properties of the
+ * @details
+ * This class provides methods to query properties of the
  * operation.
+ *
+ * The class can only be constructed by Device instances.
+ *
  * @see QDMI_Operation
  */
 class Operation {
 public:
-  /**
-   * @brief Constructs an Operation object from a QDMI_Operation handle.
-   * @param device The associated QDMI_Device handle.
-   * @param operation The QDMI_Operation handle to wrap.
-   */
-  Operation(Device::Token /* unused */, QDMI_Device device,
-            QDMI_Operation operation)
-      : device_(device), operation_(operation) {}
-
   /// @returns the underlying QDMI_Operation object.
   [[nodiscard]] QDMI_Operation getQDMIOperation() const { return operation_; }
 
   // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
   operator QDMI_Operation() const { return operation_; }
-
-  auto operator<=>(const Operation&) const = default;
 
   /// @see QDMI_OPERATION_PROPERTY_NAME
   [[nodiscard]] std::string
@@ -700,7 +698,18 @@ public:
   getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
                         const std::vector<double>& params = {}) const;
 
+  auto operator<=>(const Operation&) const noexcept = default;
+
 private:
+  /**
+   * @brief Constructs an Operation object from a QDMI_Operation handle.
+   * @param device The associated QDMI_Device handle.
+   * @param operation The QDMI_Operation handle to wrap.
+   */
+  Operation(QDMI_Device device, QDMI_Operation operation)
+      : device_(device), operation_(operation) {}
+
+  /// Query a operation property.
   template <maybe_optional_value_or_string_or_vector T>
   [[nodiscard]] T queryProperty(const QDMI_Operation_Property prop,
                                 const std::vector<Site>& sites,
@@ -767,6 +776,7 @@ private:
 
   /// @brief The underlying QDMI_Operation object.
   QDMI_Operation operation_;
-};
 
+  friend class Device;
+};
 } // namespace fomac

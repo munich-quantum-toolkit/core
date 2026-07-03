@@ -24,6 +24,7 @@
 #include <map>
 #include <optional>
 #include <regex>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -133,7 +134,7 @@ std::optional<std::vector<Site>> Operation::getSites() const {
   returnedSites.reserve(qdmiSites->size());
   std::ranges::transform(*qdmiSites, std::back_inserter(returnedSites),
                          [device = device_](const QDMI_Site& site) -> Site {
-                           return {Device::Token{}, device, site};
+                           return {device, site};
                          });
   return returnedSites;
 }
@@ -172,18 +173,23 @@ Operation::getMeanShuttlingSpeed(const std::vector<Site>& sites,
 std::string Device::getName() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_NAME);
 }
+
 std::string Device::getVersion() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_VERSION);
 }
+
 QDMI_Device_Status Device::getStatus() const {
   return queryProperty<QDMI_Device_Status>(QDMI_DEVICE_PROPERTY_STATUS);
 }
+
 std::string Device::getLibraryVersion() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_LIBRARYVERSION);
 }
+
 size_t Device::getQubitsNum() const {
   return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_QUBITSNUM);
 }
+
 std::vector<Site> Device::getSites() const {
   const auto& qdmiSites =
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
@@ -191,10 +197,11 @@ std::vector<Site> Device::getSites() const {
   sites.reserve(qdmiSites.size());
   std::ranges::transform(qdmiSites, std::back_inserter(sites),
                          [device = device_](const QDMI_Site& site) -> Site {
-                           return {Token{}, device, site};
+                           return {device, site};
                          });
   return sites;
 }
+
 std::vector<Site> Device::getRegularSites() const {
   auto allSites = getSites();
   const auto newEnd = std::ranges::remove_if(
@@ -202,6 +209,7 @@ std::vector<Site> Device::getRegularSites() const {
   allSites.erase(newEnd.begin(), newEnd.end());
   return allSites;
 }
+
 std::vector<Site> Device::getZones() const {
   const auto& allSites = getSites();
   std::vector<Site> zones;
@@ -210,6 +218,7 @@ std::vector<Site> Device::getZones() const {
                        [](const auto& s) { return s.isZone(); });
   return zones;
 }
+
 std::vector<Operation> Device::getOperations() const {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
@@ -218,10 +227,11 @@ std::vector<Operation> Device::getOperations() const {
   std::ranges::transform(
       qdmiOperations, std::back_inserter(operations),
       [device = device_](const QDMI_Operation& op) -> Operation {
-        return {Token{}, device, op};
+        return {device, op};
       });
   return operations;
 }
+
 std::optional<std::vector<std::pair<Site, Site>>>
 Device::getCouplingMap() const {
   const auto& qdmiCouplingMap = queryProperty<
@@ -235,31 +245,37 @@ Device::getCouplingMap() const {
   std::ranges::transform(*qdmiCouplingMap, std::back_inserter(couplingMap),
                          [this](const std::pair<QDMI_Site, QDMI_Site>& pair)
                              -> std::pair<Site, Site> {
-                           return {Site{Token{}, device_, pair.first},
-                                   Site{Token{}, device_, pair.second}};
+                           return {Site{device_, pair.first},
+                                   Site{device_, pair.second}};
                          });
   return couplingMap;
 }
+
 std::optional<size_t> Device::getNeedsCalibration() const {
   return queryProperty<std::optional<size_t>>(
       QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
 }
+
 std::optional<std::string> Device::getLengthUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_LENGTHUNIT);
 }
+
 std::optional<double> Device::getLengthScaleFactor() const {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR);
 }
+
 std::optional<std::string> Device::getDurationUnit() const {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_DURATIONUNIT);
 }
+
 std::optional<double> Device::getDurationScaleFactor() const {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR);
 }
+
 std::optional<uint64_t> Device::getMinAtomDistance() const {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
@@ -701,7 +717,7 @@ std::vector<Device> Session::getDevices() {
   devices.reserve(qdmiDevices.size());
   std::ranges::transform(
       qdmiDevices, std::back_inserter(devices),
-      [](const QDMI_Device& dev) -> Device { return {Token{}, dev}; });
+      [](const QDMI_Device& dev) -> Device { return Device(dev); });
   return devices;
 }
 } // namespace fomac
