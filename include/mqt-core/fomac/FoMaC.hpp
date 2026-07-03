@@ -241,8 +241,8 @@ public:
    * @brief Creates a Device object from a QDMI_Device handle.
    * @param device The QDMI_Device handle to wrap.
    * @return A Device object wrapping the given handle.
-   * @note This is a factory method for use in bindings where Token
-   * construction is not accessible.
+   * @note This is a factory method for use in bindings where a
+   * session is not accessible.
    */
   [[nodiscard]] static Device fromQDMIDevice(QDMI_Device device) {
     return Device(device);
@@ -342,6 +342,7 @@ private:
   [[nodiscard]] T queryProperty(const QDMI_Device_Property prop) const {
     std::string msg = "Querying ";
     msg += qdmi::toString(prop);
+
     if constexpr (string_or_optional_string<T>) {
       size_t size = 0;
       auto result =
@@ -388,7 +389,7 @@ private:
           return std::nullopt;
         }
       }
-      
+
       qdmi::throwIfError(result, msg);
       return value;
     }
