@@ -556,16 +556,8 @@ changelogs._
 
 <!-- PR links -->
 
-<<<<<<< HEAD
-[#1843]: https://github.com/munich-quantum-toolkit/core/pull/1843
-||||||| parent of 26a0d98b (✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter (#1844))
-[#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
-[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
-=======
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
-[#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
-[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
->>>>>>> 26a0d98b (✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter (#1844))
+[#1843]: https://github.com/munich-quantum-toolkit/core/pull/1843
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
