@@ -21,6 +21,7 @@ import numpy as np
 from qiskit.circuit.library import Barrier, CZGate, Measure, RGate
 
 from .exceptions import TranslationError, UnsupportedOperationError
+from .gates import MoveGate
 
 if TYPE_CHECKING:
     from qiskit.circuit import QuantumCircuit
@@ -114,6 +115,19 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
                 qubit_index2 = circuit.find_bit(qargs[1]).index
                 instructions.append({
                     "name": "cz",
+                    "locus": [
+                        sites[qubit_index1].name(),
+                        sites[qubit_index2].name(),
+                    ],
+                    "args": {},
+                })
+
+            # MOVE gate (IQM star-topology architectures)
+            elif isinstance(operation, MoveGate):
+                qubit_index1 = circuit.find_bit(qargs[0]).index
+                qubit_index2 = circuit.find_bit(qargs[1]).index
+                instructions.append({
+                    "name": "move",
                     "locus": [
                         sites[qubit_index1].name(),
                         sites[qubit_index2].name(),
