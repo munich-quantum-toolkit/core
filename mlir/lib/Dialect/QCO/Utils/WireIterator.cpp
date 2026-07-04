@@ -75,12 +75,8 @@ void WireIterator::forward() {
         .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
           qubit_ = op.getTiedLoopResult(&*(qubit_.use_begin()));
         })
-        .Case<qco::IfOp>([&](qco::IfOp op) {
-          auto it = llvm::find(op.getQubits(), qubit_);
-          assert(it != op.getQubits().end());
-          const auto idx = std::distance(op.getQubits().begin(), it);
-          qubit_ = op.getResults()[idx];
-        })
+        .Case<IfOp>(
+            [&](IfOp op) { qubit_ = op.getTiedResult(&(*qubit_.use_begin())); })
         .Default([&](Operation* op) {
           llvm::reportFatalInternalError("unknown op in def-use chain: " +
                                          op->getName().getStringRef());
@@ -122,26 +118,18 @@ void WireIterator::backward() {
       .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
       .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
       .Case<scf::ForOp, scf::WhileOp>([&](auto op) {
-        if (auto res = dyn_cast<OpResult>(qubit_)) {
-          OpOperand* operand = op.getTiedLoopInit(res);
-          qubit_ = operand->get();
+        if (auto result = dyn_cast<OpResult>(qubit_)) {
+          qubit_ = op.getTiedLoopInit(result)->get();
           return;
         }
-
-        llvm::reportFatalInternalError(
-            "expected scf.for result for tied init lookup");
+        llvm::reportFatalInternalError("expected result lookup");
       })
-      .Case<qco::IfOp>([&](qco::IfOp op) {
-        if (auto res = dyn_cast<OpResult>(qubit_)) {
-          auto it = llvm::find(op.getResults(), res);
-          assert(it != op.getResults().end());
-          const auto idx = std::distance(op.getResults().begin(), it);
-          qubit_ = op.getQubits()[idx];
+      .Case<IfOp>([&](IfOp op) {
+        if (auto result = dyn_cast<OpResult>(qubit_)) {
+          qubit_ = op.getTiedQubit(result)->get();
           return;
         }
-
-        llvm::reportFatalInternalError(
-            "expected scf.if result for tied init lookup");
+        llvm::reportFatalInternalError("expected result lookup");
       })
       .Default([&](Operation* op) {
         llvm::reportFatalInternalError("unknown op in def-use chain: " +

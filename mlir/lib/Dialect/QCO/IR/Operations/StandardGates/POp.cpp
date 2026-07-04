@@ -65,10 +65,14 @@ void POp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentP>(context);
 }
 
+Matrix2x2 POp::unitaryMatrix(const double theta) {
+  return Matrix2x2::fromElements(1, 0,                       // row 0
+                                 0, std::polar(1.0, theta)); // row 1
+}
+
 std::optional<Matrix2x2> POp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    return Matrix2x2::fromElements(1, 0,                        // row 0
-                                   0, std::polar(1.0, *theta)); // row 1
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }
