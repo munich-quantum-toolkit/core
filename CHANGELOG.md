@@ -14,6 +14,10 @@ releases may include breaking changes.
 
 - ✨ Add a `decompose-multi-controlled` pass for decomposing multi-controlled X
   and Z gates into one- and two-qubit gates ([#1810]) ([**@simon1hofmann**])
+- ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
+  ([#1844]) ([**@burgholzer**])
+- 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
+  ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration for consistent local development
   environment ([#1786]) ([**@denialhaag**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
@@ -44,9 +48,9 @@ releases may include breaking changes.
   [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1710],
   [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1774],
   [#1780], [#1781], [#1782], [#1787], [#1802], [#1803], [#1806], [#1807],
-  [#1808], [#1809], [#1823]) ([**@burgholzer**], [**@denialhaag**],
-  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
-  [**@MatthiasReumann**], [**@simon1hofmann**])
+  [#1808], [#1809], [#1823], [#1824], [#1830]) ([**@burgholzer**],
+  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
+  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
 
 ### Changed
 
@@ -65,6 +69,12 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
   ([**@burgholzer**])
+
+### Fixed
+
+- 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
+- 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
+  Device ([#1842]) ([**@MatthiasReumann**])
 
 ## [3.6.1] - 2026-05-20
 
@@ -588,7 +598,12 @@ changelogs._
 
 <!-- PR links -->
 
+[#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
+[#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
+[#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
+[#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
+[#1824]: https://github.com/munich-quantum-toolkit/core/pull/1824
 [#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
 [#1810]: https://github.com/munich-quantum-toolkit/core/pull/1810
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
