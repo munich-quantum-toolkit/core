@@ -208,6 +208,11 @@ void JitSession::registerRuntimeSymbols() {
     REGISTER_SYMBOL(__quantum__rt__initialize);
     REGISTER_SYMBOL(__quantum__rt__read_result);
     REGISTER_SYMBOL(__quantum__rt__result_record_output);
+    REGISTER_SYMBOL(__quantum__rt__bool_record_output);
+    REGISTER_SYMBOL(__quantum__rt__int_record_output);
+    REGISTER_SYMBOL(__quantum__rt__float_record_output);
+    REGISTER_SYMBOL(__quantum__rt__tuple_record_output);
+    REGISTER_SYMBOL(__quantum__rt__array_record_output);
   });
 }
 

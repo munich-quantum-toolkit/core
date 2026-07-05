@@ -491,7 +491,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
             llvm::formatv("QIR program failed with error: {}", rc));
       }
       // Update the measurement counts.
-      ++counts_[runtime.getRecordedOutputs()];
+      ++counts_[runtime.getMeasurements()];
     }
   });
 }
