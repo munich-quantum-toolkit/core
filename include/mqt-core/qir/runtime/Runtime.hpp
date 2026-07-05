@@ -228,6 +228,8 @@ public:
     }
   };
 
+  enum class LabelingSchema : uint8_t { Labeled, Ordered };
+
 private:
   static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS = 0x10000;
   enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
@@ -245,6 +247,7 @@ private:
   QState qState;
   std::mt19937_64 mt;
   std::ostream* os = &std::cout;
+  LabelingSchema labelingSchema = LabelingSchema::Labeled;
 
   Runtime();
   explicit Runtime(uint64_t randomSeed);
@@ -289,6 +292,12 @@ private:
     const auto targets = qc::Targets(addresses.data(), addresses.data() + t);
     return {targets, Op, paramVec};
   }
+
+  // Emit an OUTPUT record honoring the active labeling schema.
+  // The label is included only in Labeled mode.
+  // Tab separator between fields, newline at end.
+  void emitOutput(const char* type, std::string_view value,
+                  const char* label) const;
 
 public:
   [[nodiscard]] static auto generateRandomSeed() -> uint64_t;
@@ -398,12 +407,6 @@ public:
   /// @returns the accumulated measurement string.
   auto getMeasurements() const -> const std::string&;
 
-  /// Emit `label:\n` to the output stream.
-  auto outputContainer(int64_t elementCount, const char* label) const -> void;
-
-  /// Emit `label: valueStr\n` to the output stream.
-  auto outputValue(std::string_view valueStr, const char* label) const -> void;
-
   /// Move the quantum state out of the runtime.
   /// Then reset the runtime to a clean state ready for the next job.
   /// Intended for use after a @c JitSession constructed with
@@ -414,6 +417,39 @@ public:
   auto getOstream() const -> std::ostream&;
   auto setOstream(std::ostream& other) -> void;
   auto resetOstream() -> void;
+
+  /// Emit `OUTPUT\tRESULT\t<0|1>[\tlabel]\n` to the output stream.
+  auto outputResult(bool value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tBOOL\t<true|false>[\tlabel]\n` to the output stream.
+  auto outputBool(bool value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tINT\t<value>[\tlabel]\n` to the output stream.
+  auto outputInt(int64_t value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tDOUBLE\t<value>[\tlabel]\n` to the output stream.
+  auto outputFloat(double value, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tTUPLE\t<elementCount>[\tlabel]\n` to the output stream.
+  auto outputTuple(int64_t elementCount, const char* label) const -> void;
+
+  /// Emit `OUTPUT\tARRAY\t<elementCount>[\tlabel]\n` to the output stream.
+  auto outputArray(int64_t elementCount, const char* label) const -> void;
+
+  /// Emit the HEADER records (once per submitted program):
+  /// `HEADER\tschema_id\t<labeled|ordered>`
+  /// `HEADER\tschema_version\t2.1`
+  auto outputProgramHeader() const -> void;
+
+  /// Emit `START\n` (one per shot).
+  auto outputShotStart() const -> void;
+
+  /// Emit `END\t0\n` (one per shot).
+  /// The trailing `0` is a spec literal, not a runtime exit code.
+  auto outputShotEnd() const -> void;
+
+  [[nodiscard]] auto getLabelingSchema() const -> LabelingSchema;
+  auto setLabelingSchema(LabelingSchema schema) -> void;
 };
 
 } // namespace qir
