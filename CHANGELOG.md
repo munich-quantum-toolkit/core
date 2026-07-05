@@ -12,6 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
+  ([#1844]) ([**@burgholzer**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
   ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration for consistent local development
@@ -69,6 +71,8 @@ releases may include breaking changes.
 ### Fixed
 
 - 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
+- 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
+  Device ([#1842]) ([**@MatthiasReumann**])
 
 ## [3.6.1] - 2026-05-20
 
@@ -592,6 +596,8 @@ changelogs._
 
 <!-- PR links -->
 
+[#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
+[#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
 [#1832]: https://github.com/munich-quantum-toolkit/core/pull/1832
 [#1830]: https://github.com/munich-quantum-toolkit/core/pull/1830
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
