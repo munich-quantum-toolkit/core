@@ -1175,85 +1175,136 @@ private:
       params.push_back(emitFloatExpression(arg, debugInfo));
     }
 
-    // Evaluate operands
+    // Resolve operands
     SmallVector<Value> operands;
     SmallVector<SmallVector<Value>> operandsBroadcasting;
-    auto broadcasting = false;
     for (const auto& operand : call.operands) {
       const auto resolved =
           resolveGateOperandInScope(operand, scope, debugInfo);
       if (const auto* value = std::get_if<Value>(&resolved)) {
         operands.push_back(*value);
-      } else if (const auto* values =
-                     std::get_if<SmallVector<Value>>(&resolved)) {
-        operandsBroadcasting.push_back(*values);
-        broadcasting = true;
+      } else {
+        operandsBroadcasting.push_back(std::get<SmallVector<Value>>(resolved));
       }
     }
 
-    if (broadcasting && !operands.empty()) {
+    if (!operandsBroadcasting.empty() && !operands.empty()) {
       error(*debugInfo, "Gate operands must be single qubits or quantum "
                         "registers and not a mix of both.");
     }
 
-    if (broadcasting && numCompatControls != 0) {
-      error(*debugInfo, "OpenQASM 2 gates cannot be broadcasted.");
+    // Handle broadcasted calls
+    if (!operandsBroadcasting.empty()) {
+      if (numCompatControls != 0) {
+        error(*debugInfo, "OpenQASM 2 gates cannot be broadcasted.");
+      }
+      emitBroadcastGateCall(it->second, resolvedId, id, params, call.modifiers,
+                            operandsBroadcasting, debugInfo);
+      return;
     }
 
-    size_t broadcastWidth = 0;
-    if (broadcasting) {
-      for (const auto& operand : operandsBroadcasting) {
-        if (broadcastWidth == 0) {
-          broadcastWidth = operand.size();
-        } else if (broadcastWidth != operand.size()) {
-          error(*debugInfo,
-                "All broadcasting operands must have the same width.");
-        }
+    const auto split = splitControlsAndTargets<Value>(
+        call.modifiers, numCompatControls, operands, debugInfo);
+
+    // Inline compound gate
+    if (const auto* compound = std::get_if<ParsedCompoundGate>(&it->second)) {
+      emitCompoundGate(*compound, params, split.targets, split.posControls,
+                       split.negControls, split.invert, debugInfo);
+      return;
+    }
+
+    // Emit standard gate
+    const auto& gateFn =
+        resolveStandardGate(it->second, resolvedId, id, params, debugInfo);
+    emitStandardGate(gateFn, params, split.targets, split.posControls,
+                     split.negControls, split.invert);
+  }
+
+  /// Emit a broadcasting gate call: every operand is a register of the same
+  /// width, and the gate is emitted once per register index.
+  void
+  emitBroadcastGateCall(const std::variant<GateInfo, ParsedCompoundGate>& gate,
+                        llvm::StringRef resolvedId, const std::string& id,
+                        ValueRange params,
+                        const std::vector<ParsedModifier>& modifiers,
+                        const SmallVector<SmallVector<Value>>& operands,
+                        const std::shared_ptr<DebugInfo>& debugInfo) {
+    if (std::holds_alternative<ParsedCompoundGate>(gate)) {
+      error(*debugInfo, "Broadcasted compound gates are not supported yet.");
+    }
+
+    const auto broadcastWidth = operands.front().size();
+    for (const auto& operand : operands) {
+      if (operand.size() != broadcastWidth) {
+        error(*debugInfo,
+              "All broadcasting operands must have the same width.");
       }
     }
 
-    auto invert = false;
-    size_t numControls = 0;
-    SmallVector<Value> posControls;
-    SmallVector<Value> negControls;
-    SmallVector<SmallVector<Value>> posControlsBroadcasting;
-    SmallVector<SmallVector<Value>> negControlsBroadcasting;
+    // OpenQASM 2 gates cannot be broadcasted
+    const auto split = splitControlsAndTargets<SmallVector<Value>>(
+        modifiers, /*numCompatControls=*/0, operands, debugInfo);
 
-    // Evaluate modifiers
-    for (const auto& mod : call.modifiers) {
+    const auto& gateFn =
+        resolveStandardGate(gate, resolvedId, id, params, debugInfo);
+
+    for (size_t b = 0; b < broadcastWidth; ++b) {
+      const auto slice = [&](const SmallVector<SmallVector<Value>>& lists) {
+        SmallVector<Value> qubits;
+        qubits.reserve(lists.size());
+        for (const auto& list : lists) {
+          qubits.push_back(list[b]);
+        }
+        return qubits;
+      };
+      emitStandardGate(gateFn, params, slice(split.targets),
+                       slice(split.posControls), slice(split.negControls),
+                       split.invert);
+    }
+  }
+
+  template <typename T> struct ControlsAndTargets {
+    bool invert = false;
+    SmallVector<T> posControls;
+    SmallVector<T> negControls;
+    SmallVector<T> targets;
+  };
+
+  /// Partition @p operands into controls and targets.
+  template <typename T>
+  ControlsAndTargets<T>
+  splitControlsAndTargets(const std::vector<ParsedModifier>& modifiers,
+                          size_t numCompatControls,
+                          const SmallVector<T>& operands,
+                          const std::shared_ptr<DebugInfo>& debugInfo) const {
+    ControlsAndTargets<T> result;
+    size_t numControls = 0;
+    for (const auto& mod : modifiers) {
       switch (mod.kind) {
       case Token::Kind::Inv:
-        invert = !invert;
+        result.invert = !result.invert;
         break;
       case Token::Kind::Pow:
         error(*debugInfo, "Power modifiers are not supported yet.");
-      case Token::Kind::Ctrl:
+      case Token::Kind::Ctrl: {
+        const auto n =
+            evaluateNonNegativeConstant(mod.expression, debugInfo, 1);
+        for (size_t i = 0; i < n; ++i, ++numControls) {
+          if (numControls >= operands.size()) {
+            error(*debugInfo, "Control index out of bounds.");
+          }
+          result.posControls.push_back(operands[numControls]);
+        }
+        break;
+      }
       case Token::Kind::NegCtrl: {
         const auto n =
             evaluateNonNegativeConstant(mod.expression, debugInfo, 1);
-        const auto positive = mod.kind == Token::Kind::Ctrl;
         for (size_t i = 0; i < n; ++i, ++numControls) {
-          if (!broadcasting) {
-            if (numControls >= operands.size()) {
-              error(*debugInfo, "Control index out of bounds.");
-            }
-            auto operand = operands[numControls];
-            if (positive) {
-              posControls.push_back(operand);
-            } else {
-              negControls.push_back(operand);
-            }
-          } else {
-            if (numControls >= operandsBroadcasting.size()) {
-              error(*debugInfo, "Control index out of bounds.");
-            }
-            const auto& operand = operandsBroadcasting[numControls];
-            if (positive) {
-              posControlsBroadcasting.push_back(operand);
-            } else {
-              negControlsBroadcasting.push_back(operand);
-            }
+          if (numControls >= operands.size()) {
+            error(*debugInfo, "Control index out of bounds.");
           }
+          result.negControls.push_back(operands[numControls]);
         }
         break;
       }
@@ -1267,63 +1318,28 @@ private:
       if (numControls >= operands.size()) {
         error(*debugInfo, "Control index out of bounds.");
       }
-      posControls.push_back(operands[numControls]);
+      result.posControls.push_back(operands[numControls]);
     }
 
-    // Remaining operands are target qubits
-    SmallVector<Value> targets;
-    SmallVector<SmallVector<Value>> targetsBroadcasting;
-    if (!broadcasting) {
-      targets = llvm::to_vector(llvm::drop_begin(operands, numControls));
-    } else {
-      targetsBroadcasting =
-          llvm::to_vector(llvm::drop_begin(operandsBroadcasting, numControls));
-    }
+    result.targets = llvm::to_vector(llvm::drop_begin(operands, numControls));
+    return result;
+  }
 
-    // Inline compound gate
-    if (const auto* compound = std::get_if<ParsedCompoundGate>(&it->second)) {
-      if (broadcasting) {
-        error(*debugInfo, "Broadcasted compound gates are not supported.");
-      }
-      emitCompoundGate(*compound, params, targets, posControls, negControls,
-                       invert, debugInfo);
-      return;
-    }
-
-    // Emit standard gate
+  /// Look up a standard gate's emitter, checking it exists and that the given
+  /// number of parameters matches its signature.
+  const GateFn&
+  resolveStandardGate(const std::variant<GateInfo, ParsedCompoundGate>& gate,
+                      llvm::StringRef resolvedId, const std::string& id,
+                      ValueRange params,
+                      const std::shared_ptr<DebugInfo>& debugInfo) const {
     const auto dispIt = GATE_DISPATCH.find(resolvedId);
     if (dispIt == GATE_DISPATCH.end()) {
       error(*debugInfo, "No MLIR definition found for gate '" + id + "'.");
     }
-
-    if (std::get<GateInfo>(it->second).nParameters != params.size()) {
+    if (std::get<GateInfo>(gate).nParameters != params.size()) {
       error(*debugInfo, "Invalid number of parameters for gate '" + id + "'.");
     }
-
-    if (!broadcasting) {
-      emitStandardGate(dispIt->second, params, targets, posControls,
-                       negControls, invert);
-    } else {
-      for (size_t b = 0; b < broadcastWidth; ++b) {
-        SmallVector<Value> bTargets;
-        bTargets.reserve(targetsBroadcasting.size());
-        for (const auto& target : targetsBroadcasting) {
-          bTargets.push_back(target[b]);
-        }
-        SmallVector<Value> bPosControls;
-        bPosControls.reserve(posControlsBroadcasting.size());
-        for (const auto& ctrl : posControlsBroadcasting) {
-          bPosControls.push_back(ctrl[b]);
-        }
-        SmallVector<Value> bNegControls;
-        bNegControls.reserve(negControlsBroadcasting.size());
-        for (const auto& ctrl : negControlsBroadcasting) {
-          bNegControls.push_back(ctrl[b]);
-        }
-        emitStandardGate(dispIt->second, params, bTargets, bPosControls,
-                         bNegControls, invert);
-      }
-    }
+    return dispIt->second;
   }
 
   /// Emit a gate body wrapped in its modifiers.
