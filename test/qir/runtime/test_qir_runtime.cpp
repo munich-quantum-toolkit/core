@@ -37,7 +37,10 @@ class QIRRuntimeTest : public testing::Test {
 protected:
   std::ostringstream sink;
   void SetUp() override { Runtime::getInstance().setOstream(sink); }
-  void TearDown() override { Runtime::getInstance().resetOstream(); }
+  void TearDown() override {
+    Runtime::getInstance().resetOstream();
+    Runtime::getInstance().setLabelingSchema(Runtime::LabelingSchema::Labeled);
+  }
 };
 
 } // namespace
@@ -53,6 +56,32 @@ TEST_F(QIRRuntimeTest, OutputFraming) {
   expected << "HEADER\tschema_id\tlabeled\n"
            << "HEADER\tschema_version\t2.1\n"
            << "START\n"
+           << "END\t0\n";
+  EXPECT_EQ(sink.str(), expected.str());
+}
+
+// In Ordered mode, the HEADER announces `ordered` and OUTPUT records drop the
+// label column per spec.
+TEST_F(QIRRuntimeTest, OutputFramingOrdered) {
+  auto& runtime = Runtime::getInstance();
+  runtime.setLabelingSchema(Runtime::LabelingSchema::Ordered);
+  runtime.outputProgramHeader();
+  runtime.outputShotStart();
+  runtime.outputBool(true, "bool_label");
+  runtime.outputInt(42, "int_label");
+  runtime.outputFloat(3.14, "double_label");
+  runtime.outputTuple(2, "tuple_label");
+  runtime.outputArray(3, "array_label");
+  runtime.outputShotEnd();
+  std::ostringstream expected;
+  expected << "HEADER\tschema_id\tordered\n"
+           << "HEADER\tschema_version\t2.1\n"
+           << "START\n"
+           << "OUTPUT\tBOOL\ttrue\n"
+           << "OUTPUT\tINT\t42\n"
+           << "OUTPUT\tDOUBLE\t3.14\n"
+           << "OUTPUT\tTUPLE\t2\n"
+           << "OUTPUT\tARRAY\t3\n"
            << "END\t0\n";
   EXPECT_EQ(sink.str(), expected.str());
 }
