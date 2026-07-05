@@ -184,7 +184,8 @@ struct QubitBinding {
 using QubitScope = llvm::StringMap<QubitBinding>;
 
 /// Look up a well-known OpenQASM 3 numeric constant (`pi`, `tau`, `euler`,
-/// and their Unicode aliases) by identifier and emit it as an `f64` MLIR value.
+/// and their Unicode aliases) by identifier and emit it as an `f64`-typed MLIR
+/// value.
 std::optional<Value> lookupBuiltinConstant(llvm::StringRef name,
                                            QCProgramBuilder& builder) {
   const auto constant = [&](double value) -> Value {
@@ -839,8 +840,6 @@ private:
     expect(Token::Kind::In);
     expect(Token::Kind::LBracket);
 
-    // TODO: Related to my comment below, I'd like to directly use
-    // `mlir::Value`s for start, top, and step.
     const auto start = parseExpression();
     expect(Token::Kind::Colon);
     const auto second = parseExpression();
@@ -857,19 +856,23 @@ private:
 
     expect(Token::Kind::RBracket);
 
-    const auto startVal = evaluateNonNegativeConstant(start, debugInfo);
-    const auto stepVal = evaluateNonNegativeConstant(step, debugInfo, 1);
-    const auto stopVal = evaluateNonNegativeConstant(stop, debugInfo);
+    auto startVal = emitIntegerExpression(start, debugInfo);
+    auto stepVal = emitIntegerExpression(step, debugInfo);
+    auto stopVal = emitIntegerExpression(stop, debugInfo);
+
+    // OpenQASM 3's range is inclusive of the stop value while `scf.for`'s upper
+    // bound is exclusive, hence the `+ 1`.
+    auto one =
+        arith::ConstantOp::create(builder, builder.getIndexAttr(1)).getResult();
+    stopVal = arith::AddIOp::create(builder, stopVal, one).getResult();
 
     loopVariables.push();
     loadedDynamicElements.push();
 
-    builder.scfFor(static_cast<int64_t>(startVal),
-                   static_cast<int64_t>(stopVal + 1),
-                   static_cast<int64_t>(stepVal), [&](Value iv) {
-                     loopVariables.emplace(loopVariable, iv);
-                     parseBlockOrStatement();
-                   });
+    builder.scfFor(startVal, stopVal, stepVal, [&](Value iv) {
+      loopVariables.emplace(loopVariable, iv);
+      parseBlockOrStatement();
+    });
 
     loadedDynamicElements.pop();
     loopVariables.pop();
@@ -888,7 +891,7 @@ private:
         [&] { parseBlockOrStatement(); });
   }
 
-  /// Translate a 3 condition to an `i1` MLIR value
+  /// Translate a 3 condition to an `i1`-typed MLIR value.
   [[nodiscard]] Value parseCondition() {
     const auto debugInfo = makeDebugInfo(current());
 
@@ -1569,7 +1572,7 @@ private:
 
   //===--- Expression evaluation ----------------------------------------===//
 
-  /// Translate a `ParsedExpr` to an `f64` MLIR value.
+  /// Translate a `ParsedExpr` to an `f64`-typed MLIR value.
   [[nodiscard]] Value
   emitFloatExpression(const ParsedExpr& expr,
                       const std::shared_ptr<DebugInfo>& debugInfo) {
@@ -1613,6 +1616,48 @@ private:
     error(*debugInfo, "Unsupported gate parameter expression.");
   }
 
+  /// Translate a `ParsedExpr` to an `index`-typed MLIR value.
+  [[nodiscard]] Value
+  emitIntegerExpression(const ParsedExpr& expr,
+                        const std::shared_ptr<DebugInfo>& debugInfo) {
+    switch (expr.kind) {
+    case ParsedExpr::Kind::IntLiteral:
+      return arith::ConstantOp::create(builder,
+                                       builder.getIndexAttr(expr.intValue))
+          .getResult();
+    case ParsedExpr::Kind::Unary: {
+      if (expr.op == Token::Kind::Minus) {
+        const auto operand = emitIntegerExpression(expr.children[0], debugInfo);
+        const auto zero =
+            arith::ConstantOp::create(builder, builder.getIndexAttr(0))
+                .getResult();
+        return arith::SubIOp::create(builder, zero, operand).getResult();
+      }
+      error(*debugInfo, "Unsupported unary operator in integer expression.");
+    }
+    case ParsedExpr::Kind::Binary: {
+      const auto lhs = emitIntegerExpression(expr.children[0], debugInfo);
+      const auto rhs = emitIntegerExpression(expr.children[1], debugInfo);
+      switch (expr.op) {
+      case Token::Kind::Plus:
+        return arith::AddIOp::create(builder, lhs, rhs).getResult();
+      case Token::Kind::Minus:
+        return arith::SubIOp::create(builder, lhs, rhs).getResult();
+      case Token::Kind::Asterisk:
+        return arith::MulIOp::create(builder, lhs, rhs).getResult();
+      case Token::Kind::Slash:
+        return arith::DivSIOp::create(builder, lhs, rhs).getResult();
+      default:
+        error(*debugInfo, "Unsupported binary operator in integer expression.");
+      }
+    }
+    case ParsedExpr::Kind::FloatLiteral:
+    case ParsedExpr::Kind::Ident:
+    default:
+      error(*debugInfo, "Expected an integer expression.");
+    }
+  }
+
   [[nodiscard]] Value
   resolveParameterIdentifier(const std::string& name,
                              const std::shared_ptr<DebugInfo>& debugInfo) {
@@ -1625,7 +1670,6 @@ private:
     error(*debugInfo, "Unknown identifier '" + name + "'.");
   }
 
-  // TODO: Define emitIntExpression
   /// Statically evaluate an integer-constant expression. These positions
   /// (register sizes, loop bounds/step, control counts, literal indices) need a
   /// concrete `int64_t` at build time, so a genuinely dynamic value is an
