@@ -424,20 +424,23 @@ private:
       parseInclude();
       return;
     case Token::Kind::Const:
-      advance();
-      parseDeclaration(/*isConst=*/true);
+      parseConstantDeclaration();
       return;
     case Token::Kind::Qubit:
     case Token::Kind::Qreg:
+      parseQuantumDeclaration();
+      return;
     case Token::Kind::Bit:
     case Token::Kind::CReg:
     case Token::Kind::Int:
     case Token::Kind::Uint:
+      parseClassicalDeclaration();
+      return;
+    case Token::Kind::Bool:
     case Token::Kind::Float:
     case Token::Kind::Angle:
-    case Token::Kind::Bool:
     case Token::Kind::Duration:
-      parseDeclaration(/*isConst=*/false);
+      error(current(), "Declaration type is not supported yet.");
       return;
     case Token::Kind::Gate:
       parseGateDeclaration();
@@ -553,112 +556,121 @@ private:
 
   //===--- Declarations -------------------------------------------------===//
 
-  // TODO: Can this function be broken up into several ones? Maybe one for
-  // qubits and registers thereof, one for classical bits and registers thereof,
-  // and one for "numbers"?
-  void parseDeclaration(bool isConst) {
-    const auto declaration = current();
-    const auto debugInfo = makeDebugInfo(declaration);
-    advance();
+  /// Parse a `[<expression>]` designator and evaluate it to a constant.
+  int64_t parseDesignator(const std::shared_ptr<DebugInfo>& debugInfo) {
+    expect(Token::Kind::LBracket);
+    const auto expr = parseExpression();
+    expect(Token::Kind::RBracket);
+    return evaluateIntegerConstant(expr, debugInfo);
+  }
 
-    const bool oldStyle = declaration.kind == Token::Kind::Qreg ||
-                          declaration.kind == Token::Kind::CReg;
-
-    std::optional<int64_t> designator;
-    if (!oldStyle && current().kind == Token::Kind::LBracket) {
-      expect(Token::Kind::LBracket);
-      const auto expr = parseExpression();
-      expect(Token::Kind::RBracket);
-      designator = evaluateIntegerConstant(expr, debugInfo);
+  void registerDeclaredName(const Token& keyword, const std::string& id,
+                            bool isConst) {
+    if (declaredNames.contains(id)) {
+      error(keyword, "Identifier '" + id + "' already declared.");
     }
+    declaredNames[id] = isConst;
+  }
 
-    const auto id = expect(Token::Kind::Identifier).str;
+  /// `const <type> <id> = <expression>;`
+  void parseConstantDeclaration() {
+    const auto keyword = expect(Token::Kind::Const);
+    const auto debugInfo = makeDebugInfo(keyword);
+    advance(); // type keyword
 
     if (current().kind == Token::Kind::LBracket) {
-      if (oldStyle) {
-        expect(Token::Kind::LBracket);
-        const auto expr = parseExpression();
-        expect(Token::Kind::RBracket);
-        designator = evaluateIntegerConstant(expr, debugInfo);
-      } else {
+      parseDesignator(debugInfo);
+    }
+    const auto id = expect(Token::Kind::Identifier).str;
+
+    std::optional<ParsedExpr> initExpr;
+    if (current().kind == Token::Kind::Equals) {
+      advance();
+      initExpr = parseExpression();
+    }
+    expect(Token::Kind::Semicolon);
+
+    registerDeclaredName(keyword, id, /*isConst=*/true);
+    if (!initExpr) {
+      error(keyword, "Constant declaration initialization expression must be "
+                     "initialized.");
+    }
+    parameterConstants.emplace(id, emitFloatExpression(*initExpr, debugInfo));
+  }
+
+  /// `qubit <id>;`, `qubit[<n>] <id>;`, or `qreg <id>[<n>];`.
+  void parseQuantumDeclaration() {
+    const auto keyword = current();
+    const auto debugInfo = makeDebugInfo(keyword);
+    const bool oldStyle = keyword.kind == Token::Kind::Qreg;
+    advance();
+
+    std::optional<int64_t> size;
+    if (!oldStyle && current().kind == Token::Kind::LBracket) {
+      size = parseDesignator(debugInfo);
+    }
+    const auto id = expect(Token::Kind::Identifier).str;
+    if (current().kind == Token::Kind::LBracket) {
+      if (!oldStyle) {
         error(current(), "In OpenQASM 3.0, the designator has been changed to "
                          "`type[designator] identifier;`");
       }
+      size = parseDesignator(debugInfo);
+    }
+    expect(Token::Kind::Semicolon);
+
+    registerDeclaredName(keyword, id, /*isConst=*/false);
+
+    if (size) {
+      const auto reg = builder.allocQubitRegister(*size);
+      qubitRegisters[id] = {reg.value, reg.qubits};
+    } else {
+      // `qubit q;` (no register syntax): allocate a bare qubit rather than a
+      // size-1 register, matching how such declarations are naturally built
+      // directly with the QCProgramBuilder.
+      qubitRegisters[id] = {Value{}, {builder.allocQubit()}};
+    }
+  }
+
+  /// `bit <id>;`, `bit[<n>] <id>;`, `creg <id>[<n>];`, or the analogous
+  /// integer forms, optionally initialized from a measurement.
+  void parseClassicalDeclaration() {
+    const auto keyword = current();
+    const auto debugInfo = makeDebugInfo(keyword);
+    const bool oldStyle = keyword.kind == Token::Kind::CReg;
+    advance();
+
+    std::optional<int64_t> size;
+    if (!oldStyle && current().kind == Token::Kind::LBracket) {
+      size = parseDesignator(debugInfo);
+    }
+    const auto id = expect(Token::Kind::Identifier).str;
+    if (current().kind == Token::Kind::LBracket) {
+      if (!oldStyle) {
+        error(current(), "In OpenQASM 3.0, the designator has been changed to "
+                         "`type[designator] identifier;`");
+      }
+      size = parseDesignator(debugInfo);
     }
 
-    std::optional<ParsedExpr> initExpr;
     std::optional<ParsedOperand> measureInit;
     if (current().kind == Token::Kind::Equals) {
       advance();
-      if (current().kind == Token::Kind::Measure) {
-        advance();
-        measureInit = parseGateOperand();
-      } else {
-        initExpr = parseExpression();
+      if (current().kind != Token::Kind::Measure) {
+        error(keyword, "Only measure expressions can declare variables.");
       }
+      advance();
+      measureInit = parseGateOperand();
     }
-
     expect(Token::Kind::Semicolon);
 
-    if (declaredNames.contains(id)) {
-      error(declaration, "Identifier '" + id + "' already declared.");
-    }
-    declaredNames[id] = isConst;
-
-    if (isConst) {
-      if (!initExpr) {
-        error(declaration,
-              "Constant declaration initialization expression must be "
-              "initialized.");
-      }
-      parameterConstants.emplace(id, emitFloatExpression(*initExpr, debugInfo));
-      return;
-    }
-
-    // The type must be a sized register type.
-    const bool sized = declaration.kind == Token::Kind::Qubit ||
-                       declaration.kind == Token::Kind::Qreg ||
-                       declaration.kind == Token::Kind::Bit ||
-                       declaration.kind == Token::Kind::CReg ||
-                       declaration.kind == Token::Kind::Int ||
-                       declaration.kind == Token::Kind::Uint;
-    if (!sized) {
-      error(declaration, "Only sized types are supported.");
-    }
-
-    const auto size = designator.value_or(1);
-
-    switch (declaration.kind) {
-    case Token::Kind::Qubit:
-    case Token::Kind::Qreg: {
-      if (size == 1 && !designator) {
-        // `qubit q;` (no register syntax): allocate a bare qubit rather than a
-        // size-1 register, matching how such declarations are naturally built
-        // directly with the QCProgramBuilder.
-        qubitRegisters[id] = {Value{}, {builder.allocQubit()}};
-      } else {
-        const auto reg = builder.allocQubitRegister(size);
-        qubitRegisters[id] = {reg.value, reg.qubits};
-      }
-      break;
-    }
-    case Token::Kind::Bit:
-    case Token::Kind::CReg:
-    case Token::Kind::Int:
-    case Token::Kind::Uint:
-      classicalRegisters[id] = builder.allocClassicalBitRegister(size, id);
-      break;
-    default:
-      error(declaration, "Unsupported declaration type.");
-    }
+    registerDeclaredName(keyword, id, /*isConst=*/false);
+    classicalRegisters[id] =
+        builder.allocClassicalBitRegister(size.value_or(1), id);
 
     if (measureInit) {
       emitMeasureAssignment(ParsedBitRef{id, std::nullopt}, *measureInit,
                             debugInfo);
-      return;
-    }
-    if (initExpr) {
-      error(declaration, "Only measure expressions can declare variables.");
     }
   }
 
