@@ -47,8 +47,8 @@ constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
 
 namespace mlir::qco::decomposition {
 
-static std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
-  return llvm::StringSwitch<std::optional<NativeGateKind>>(name)
+static std::optional<NativeGateKind> parseGateToken(StringRef name) {
+  return StringSwitch<std::optional<NativeGateKind>>(name)
       .Case("u", NativeGateKind::U)
       .Case("x", NativeGateKind::X)
       .Case("sx", NativeGateKind::SX)
@@ -62,12 +62,12 @@ static std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
       .Default(std::nullopt);
 }
 
-static std::optional<llvm::DenseSet<NativeGateKind>>
-parseGateSet(llvm::StringRef nativeGates) {
-  llvm::DenseSet<NativeGateKind> gates;
-  SmallVector<llvm::StringRef> parts;
+static std::optional<DenseSet<NativeGateKind>>
+parseGateSet(StringRef nativeGates) {
+  DenseSet<NativeGateKind> gates;
+  SmallVector<StringRef> parts;
   nativeGates.split(parts, ',', /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-  for (llvm::StringRef part : parts) {
+  for (StringRef part : parts) {
     const auto token = part.trim().lower();
     if (token.empty()) {
       continue;
@@ -88,7 +88,7 @@ parseGateSet(llvm::StringRef nativeGates) {
  * present. Priority matches @ref NativeProfileSpec::eulerBasis.
  */
 [[nodiscard]] static std::optional<EulerBasis>
-resolveEulerBasis(const llvm::DenseSet<NativeGateKind>& gates) {
+resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
   const auto has = [&](NativeGateKind kind) { return gates.contains(kind); };
   if (has(NativeGateKind::U)) {
     return EulerBasis::U;
@@ -118,7 +118,7 @@ resolveEulerBasis(const llvm::DenseSet<NativeGateKind>& gates) {
  * When both `cx` and `cz` appear in the menu, `cx` is preferred.
  */
 [[nodiscard]] static std::optional<NativeGateKind>
-selectEntangler(const llvm::DenseSet<NativeGateKind>& gates) {
+selectEntangler(const DenseSet<NativeGateKind>& gates) {
   if (gates.contains(NativeGateKind::CX)) {
     return NativeGateKind::CX;
   }
@@ -176,7 +176,7 @@ EulerBasis NativeProfileSpec::eulerBasis() const {
   return *resolveEulerBasis(gates);
 }
 
-std::optional<NativeProfileSpec> parseNativeSpec(llvm::StringRef nativeGates) {
+std::optional<NativeProfileSpec> parseNativeSpec(StringRef nativeGates) {
   auto gates = parseGateSet(nativeGates);
   if (!gates || !resolveEulerBasis(*gates) || !selectEntangler(*gates)) {
     return std::nullopt;
