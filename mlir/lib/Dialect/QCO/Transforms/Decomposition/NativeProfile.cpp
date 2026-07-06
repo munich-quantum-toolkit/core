@@ -41,10 +41,7 @@ constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
                             0.0, 0.0, 1.0, 0.0); // row 3
 
 constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
-    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,   // row 0
-                            0.0, 1.0, 0.0, 0.0,   // row 1
-                            0.0, 0.0, 1.0, 0.0,   // row 2
-                            0.0, 0.0, 0.0, -1.0); // row 3
+    Matrix4x4::fromDiagonal(1., 1., 1., -1.);
 
 } // namespace
 

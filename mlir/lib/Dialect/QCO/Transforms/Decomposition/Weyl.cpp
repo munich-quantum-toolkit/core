@@ -329,11 +329,9 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
                                       Matrix4x4 p, std::array<double, 3> cs,
                                       const std::array<double, 4>& dReal,
                                       double globalPhase) {
-  std::array<Complex, 4> tempDiag{};
-  for (std::size_t k = 0; k < tempDiag.size(); ++k) {
-    tempDiag[k] = std::exp(1i * dReal[k]);
-  }
-  const Matrix4x4 temp = Matrix4x4::fromDiagonal(tempDiag);
+  const Matrix4x4 temp =
+      Matrix4x4::fromDiagonal(std::exp(1i * dReal[0]), std::exp(1i * dReal[1]),
+                              std::exp(1i * dReal[2]), std::exp(1i * dReal[3]));
 
   Matrix4x4 k1 = uP * p * temp;
   assert((k1.transpose() * k1).isIdentity(WEYL_TOLERANCE));
@@ -345,12 +343,11 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
   assert(k2.determinant().real() > 0.0);
   k2 = magicBasisTransform(k2, /*outOfMagicBasis=*/false);
 
-  std::array<Complex, 4> tempConjDiag{};
-  for (std::size_t k = 0; k < tempConjDiag.size(); ++k) {
-    tempConjDiag[k] = std::conj(tempDiag[k]);
-  }
   assert((k1 *
-          magicBasisTransform(Matrix4x4::fromDiagonal(tempConjDiag),
+          magicBasisTransform(Matrix4x4::fromDiagonal(std::exp(-1i * dReal[0]),
+                                                      std::exp(-1i * dReal[1]),
+                                                      std::exp(-1i * dReal[2]),
+                                                      std::exp(-1i * dReal[3])),
                               /*outOfMagicBasis=*/false) *
           k2)
              .isApprox(u, WEYL_TOLERANCE));
