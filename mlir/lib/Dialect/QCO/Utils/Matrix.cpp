@@ -716,7 +716,7 @@ static void symmetricTql24(std::array<double, 4>& diag,
     if (m != l) {
       while (true) {
         if (j == 30) {
-          llvm::report_fatal_error("symmetricTql2_4: failed to converge");
+          llvm::reportFatalInternalError("symmetricTql2_4: failed to converge");
         }
         ++j;
 
