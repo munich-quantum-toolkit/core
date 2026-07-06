@@ -42,7 +42,7 @@ from .gates import MoveGate
 from .job import QDMIJob
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, MutableSet, Sequence
 
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
@@ -256,7 +256,9 @@ class QDMIBackend(BackendV2):
 
         return target
 
-    def _add_operation_to_target(self, target: Target, op: fomac.Device.Operation, seen_gate_names: set[str]) -> None:
+    def _add_operation_to_target(
+        self, target: Target, op: fomac.Device.Operation, seen_gate_names: MutableSet[str]
+    ) -> None:
         """Add a single device operation to the Target, if it maps to a Qiskit gate.
 
         Subclasses may override this to customize how an individual device
