@@ -758,6 +758,7 @@ private:
   /// Return the sequence of SWAPs to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
+
     Layout curr(from);
     Graph f(device->qubits());
     SmallVector<IndexPairType> swaps;
@@ -767,13 +768,6 @@ private:
       const auto hwGoal = to.getHardwareIndex(prog);
       return device->distanceBetween(v, hwGoal) <
              device->distanceBetween(u, hwGoal);
-    };
-
-    const auto printLayout = [](const Layout& l) {
-      for (const auto j : l.getProgramToHardware()) {
-        llvm::dbgs() << j << " ";
-      }
-      llvm::dbgs() << '\n';
     };
 
     while (true) {
@@ -1110,19 +1104,19 @@ private:
 
             const auto swaps = restore(child.layout, parent.layout);
 
-            // if constexpr (Mode == RoutingMode::Hot) {
+            if constexpr (Mode == RoutingMode::Hot) {
 
-            //   // After routing the loop body, all iterators point to
-            //   // std::default_sentinel. To move the iterators to the
-            //   // correct qubit SSA values for the epilogue SWAPs,
-            //   // decrement each twice: (sentinel → yield →
-            //   // unitary/block arg).
+              // After routing the loop body, all iterators point to
+              // std::default_sentinel. To move the iterators to the
+              // correct qubit SSA values for the epilogue SWAPs,
+              // decrement each twice: (sentinel → yield →
+              // unitary/block arg).
 
-            //   llvm::for_each(child.wires,
-            //                  [](auto& it) { std::advance(it, -2); });
-            // }
+              llvm::for_each(child.wires,
+                             [](auto& it) { std::advance(it, -2); });
+            }
 
-            // insertSWAPs<Mode>(swaps, child, stats, rewriter);
+            insertSWAPs<Mode>(swaps, child, stats, rewriter);
           }
 
           if constexpr (Mode == RoutingMode::Hot) {

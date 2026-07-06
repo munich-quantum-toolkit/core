@@ -86,32 +86,73 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
             m.try_emplace(succ, hw);
           }
         })
-        .Case<scf::ForOp>([&](scf::ForOp op) {
+        .Case<scf::ForOp>([&](scf::ForOp forOp) {
           DenseMap<Value, size_t> loopM;
           for (const auto [init, arg] :
-               llvm::zip_equal(op.getInits(), op.getRegionIterArgs())) {
+               llvm::zip_equal(forOp.getInits(), forOp.getRegionIterArgs())) {
             const auto hw = m.at(init);
             loopM.try_emplace(arg, hw);
           }
 
-          for (OpOperand& operand : op.getInitsMutable()) {
+          for (OpOperand& operand : forOp.getInitsMutable()) {
             const auto pred = operand.get();
-            const auto succ = op.getTiedLoopResult(&operand);
+            const auto succ = forOp.getTiedLoopResult(&operand);
             const auto hw = m.at(pred);
             m.try_emplace(succ, hw);
           }
 
-          if (!isExecutable(op.getRegion(), loopM, couplingSet)) {
+          if (!isExecutable(forOp.getRegion(), loopM, couplingSet)) {
             executable = false;
             return;
           }
 
-          for (const auto& [arg, yielded] :
-               llvm::zip_equal(op.getRegionIterArgs(), op.getYieldedValues())) {
+          for (const auto& [arg, yielded] : llvm::zip_equal(
+                   forOp.getRegionIterArgs(), forOp.getYieldedValues())) {
             if (loopM.at(arg) != loopM.at(yielded)) {
-              llvm::dbgs() << "for loop layout not restored!\n";
+              llvm::dbgs() << "scf::forOp: layout not restored!\n";
               executable = false;
               return;
+            }
+          }
+        })
+        .Case<qco::IfOp>([&](qco::IfOp ifOp) {
+          std::array mappings{DenseMap<Value, size_t>{},
+                              DenseMap<Value, size_t>{}};
+
+          const std::array regions{&ifOp.getThenRegion(),
+                                   &ifOp.getElseRegion()};
+
+          for (size_t i = 0; i < 2; ++i) {
+            for (const auto [init, arg] : llvm::zip_equal(
+                     ifOp.getQubits(), regions[i]->getArguments())) {
+              const auto hw = m.at(init);
+              mappings[i].try_emplace(arg, hw);
+            }
+          }
+
+          for (OpOperand& operand : ifOp.getQubitsMutable()) {
+            const auto pred = operand.get();
+            const auto succ = ifOp.getTiedResult(&operand);
+            const auto hw = m.at(pred);
+            m.try_emplace(succ, hw);
+          }
+
+          for (size_t i = 0; i < 2; ++i) {
+            Region* body = regions[i];
+            if (!isExecutable(*body, mappings[i], couplingSet)) {
+              executable = false;
+              return;
+            }
+
+            Block& block = body->getBlocks().front();
+            auto yield = cast<qco::YieldOp>(block.getTerminator());
+            for (const auto& [arg, yielded] :
+                 llvm::zip_equal(body->getArguments(), yield.getTargets())) {
+              if (mappings[i].at(arg) != mappings[i].at(yielded)) {
+                llvm::dbgs() << "qco::IfOp: layout not restored!\n";
+                executable = false;
+                return;
+              }
             }
           }
         })
