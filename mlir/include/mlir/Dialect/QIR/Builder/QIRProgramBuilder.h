@@ -323,6 +323,7 @@ public:
    *
    * @param qubit The qubit to measure
    * @param resultIndex The classical bit index for result pointer
+   * @param record Whether the measurement should be recorded in the output
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
@@ -343,7 +344,7 @@ public:
    * !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, int64_t resultIndex);
+  Value measure(Value qubit, int64_t resultIndex, bool record = true);
 
   /**
    * @brief Measure a qubit into a classical register
@@ -356,6 +357,7 @@ public:
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
+   * @param record Whether the measurement should be recorded in the output
    * @return An LLVM pointer to the measurement result
    *
    * @par Example:
@@ -379,7 +381,7 @@ public:
    * : (i64, !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
-  Value measure(Value qubit, const Bit& bit);
+  Value measure(Value qubit, const Bit& bit, bool record = true);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -1137,6 +1139,12 @@ private:
 
   /// Map from result index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
+
+  /// Set of array register names that should be recorded in the output.
+  DenseSet<StringRef> recordedArrays;
+
+  /// Set of unnamed result indices that should be recorded in the output.
+  DenseSet<int64_t> recordedIndices;
 
   /// Map from register to their loaded indices
   DenseMap<Value, DenseSet<Value>> loadedQubits;

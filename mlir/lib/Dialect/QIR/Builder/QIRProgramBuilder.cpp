@@ -357,7 +357,8 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   return {.name = name, .size = size};
 }
 
-Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
+Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex,
+                                 bool record) {
   checkFinalized();
 
   if (resultIndex < 0) {
@@ -386,10 +387,14 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
       getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, mzSig);
   LLVM::CallOp::create(*this, mzDec, ValueRange{qubit, result});
 
+  if (record) {
+    recordedIndices.insert(resultIndex);
+  }
+
   return result;
 }
 
-Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QIRProgramBuilder::measure(Value qubit, const Bit& bit, bool record) {
   checkFinalized();
   const InsertionGuard guard(*this);
 
@@ -409,6 +414,21 @@ Value QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   auto fnDec =
       getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, fnSig);
   LLVM::CallOp::create(*this, fnDec, ValueRange{qubit, result});
+
+  if (record) {
+    if (profile == Profile::Adaptive) {
+      recordedArrays.insert(stringSaver.save(bit.registerName));
+    } else {
+      // In the base profile we don't have recorded arrays, so we need to
+      // find the index of the result and record that instead.
+      for (const auto& [index, ptr] : resultPtrs) {
+        if (ptr == result) {
+          recordedIndices.insert(index);
+          break;
+        }
+      }
+    }
+  }
 
   return result;
 }
@@ -976,6 +996,9 @@ void QIRProgramBuilder::generateOutputRecording() {
         getOrCreateFunctionDeclaration(*this, module, QIR_RECORD_OUTPUT, fnSig);
     // Create output recording for each result pointer
     for (const auto& [index, ptr] : resultPtrs) {
+      if (!recordedIndices.contains(index)) {
+        continue;
+      }
       auto label = createResultLabel(*this, module,
                                      "__unnamed__" + std::to_string(index))
                        .getResult();
@@ -990,6 +1013,9 @@ void QIRProgramBuilder::generateOutputRecording() {
                                                 QIR_ARRAY_RECORD_OUTPUT, fnSig);
     // Create output recording for each register
     for (const auto& [name, results] : resultArrays) {
+      if (!recordedArrays.contains(name)) {
+        continue;
+      }
       auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
       auto label = createResultLabel(*this, module, name).getResult();
       LLVM::CallOp::create(*this, fnDec, ValueRange{size, results, label});

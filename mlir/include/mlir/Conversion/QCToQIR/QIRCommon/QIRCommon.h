@@ -70,6 +70,15 @@ struct LoweringState : QIRMetadata {
   Block* measurementsBlock{};
   Block* outputBlock{};
 
+  /// Set of MeasureOps whose results should be recorded in the output.
+  DenseSet<Operation*> returnedMeasurements;
+
+  /// Set of array register names that should be recorded in the output.
+  DenseSet<StringRef> recordedArrays;
+
+  /// Set of unnamed result indices that should be recorded in the output.
+  DenseSet<int64_t> recordedIndices;
+
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
 
@@ -154,5 +163,29 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
  */
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
+
+/**
+ * @brief Strips returned measurement results from function return statements
+ *
+ * @details
+ * Walks all `func::ReturnOp` operations in the module to identify operands
+ * that are directly defined by a `qc::MeasureOp`. For each such operand:
+ * - The defining `MeasureOp` is added to `state.returnedMeasurements` so that
+ *   it will be included in the QIR output recording.
+ * - The operand is removed from the return statement.
+ *
+ * Non-measurement return values are preserved. After stripping, the enclosing
+ * `func::FuncOp` function type is updated to match the new return operands.
+ *
+ * This must be called **before** func-to-LLVM conversion, while
+ * `func::ReturnOp` and `qc::MeasureOp` are still in the IR.
+ *
+ * Return values that are indirectly computed from measurement outcomes remain
+ * unaffected.
+ *
+ * @param moduleOp The top-level module operation to walk
+ * @param state The lowering state; `returnedMeasurements` is populated
+ */
+void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state);
 
 } // namespace mlir
