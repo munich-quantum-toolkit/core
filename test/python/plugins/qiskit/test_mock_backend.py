@@ -24,6 +24,7 @@ from qiskit.circuit import Clbit, Parameter, QuantumCircuit
 
 from mqt.core import fomac
 from mqt.core.plugins.qiskit import (
+    MoveGate,
     QDMIBackend,
     QDMIProvider,
     TranslationError,
@@ -401,6 +402,27 @@ def test_backend_warns_on_missing_measurement_operation(
         )
 
 
+def test_backend_exposes_move_gate(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+) -> None:
+    """Backend exposes a device's 'move' operation as an opaque MoveGate in the Target."""
+    mock_device = mock_qdmi_device_factory(
+        name="Test Device with MOVE",
+        num_qubits=2,
+        operations=["move", "cz", "measure"],
+    )
+
+    _patch_session_devices(monkeypatch, [mock_device])
+
+    provider = QDMIProvider()
+    backend = provider.get_backend("Test Device with MOVE")
+
+    assert "move" in backend.target.operation_names
+    move_instruction = backend.target.operation_from_name("move")
+    assert isinstance(move_instruction, MoveGate)
+    assert move_instruction.num_qubits == 2
+
+
 def test_backend_qasm_conversion_no_supported_formats(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Backend should raise UnsupportedFormatError when no supported program formats exist."""
     qc = QuantumCircuit(2)
@@ -739,6 +761,22 @@ def test_qiskit_to_iqm_json_cz_gate(mock_qdmi_device_factory: type[MockQDMIDevic
     assert cz_instr["name"] == "cz"
     assert len(cz_instr["locus"]) == 2
     assert cz_instr["args"] == {}
+
+
+def test_qiskit_to_iqm_json_move_gate(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """Test that MOVE gates are correctly converted to IQM JSON."""
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["move"])
+
+    qc = QuantumCircuit(2)
+    qc.append(MoveGate(), [0, 1])
+
+    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
+    program = json.loads(json_str)
+
+    move_instr = program["instructions"][0]
+    assert move_instr["name"] == "move"
+    assert move_instr["locus"] == ["site_0", "site_1"]
+    assert move_instr["args"] == {}
 
 
 def test_qiskit_to_iqm_json_measure_keys(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
