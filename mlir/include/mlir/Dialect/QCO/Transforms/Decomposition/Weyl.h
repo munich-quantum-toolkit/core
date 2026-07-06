@@ -343,13 +343,13 @@ decomposeTwoQubitWithBasis(
     double basisFidelity = 1.0,
     std::optional<std::uint8_t> numBasisUses = std::nullopt);
 
-struct NativeProfileSpec;
+struct NativeGateset;
 
 /** @brief Synthesizes a two-qubit unitary as gates allowed by @p spec. */
 [[nodiscard]] LogicalResult
 synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
                         Value qubit1, const Matrix4x4& target,
-                        const NativeProfileSpec& spec, Value& outQubit0,
+                        const NativeGateset& spec, Value& outQubit0,
                         Value& outQubit1);
 
 } // namespace mlir::qco::decomposition

@@ -12,7 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/ErrorHandling.h>
@@ -669,9 +669,9 @@ bool TwoQubitWeylDecomposition::applySpecialization(
 LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
                                       Value qubit0, Value qubit1,
                                       const Matrix4x4& target,
-                                      const NativeProfileSpec& spec,
+                                      const NativeGateset& spec,
                                       Value& outQubit0, Value& outQubit1) {
-  const auto native = detail::decomposeNativeTarget(target, spec);
+  const auto native = spec.decomposeTarget(target);
   if (!native || !spec.eulerBasis) {
     return failure();
   }

@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
@@ -60,7 +60,7 @@ parseGateSet(StringRef nativeGates) {
  * @brief Resolves the preferred single-qubit Euler basis for a parsed gateset.
  *
  * Returns `std::nullopt` when no supported single-qubit synthesis strategy is
- * present. Cached on @ref NativeProfileSpec by @ref NativeProfileSpec::parse.
+ * present. Cached on @ref NativeGateset by @ref NativeGateset::parse.
  */
 [[nodiscard]] static std::optional<EulerBasis>
 resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
@@ -133,20 +133,15 @@ cachedNativeBasisDecomposer(NativeGateKind entangler) {
   }
 }
 
-namespace detail {
-
 std::optional<TwoQubitNativeDecomposition>
-decomposeNativeTarget(const Matrix4x4& target, const NativeProfileSpec& spec) {
-  if (!spec.entangler) {
+NativeGateset::decomposeTarget(const Matrix4x4& target) const {
+  if (!entangler) {
     return std::nullopt;
   }
-  return cachedNativeBasisDecomposer(*spec.entangler).decomposeTarget(target);
+  return cachedNativeBasisDecomposer(*entangler).decomposeTarget(target);
 }
 
-} // namespace detail
-
-std::optional<NativeProfileSpec>
-NativeProfileSpec::parse(StringRef nativeGates) {
+std::optional<NativeGateset> NativeGateset::parse(StringRef nativeGates) {
   auto gates = parseGateSet(nativeGates);
   if (!gates) {
     return std::nullopt;
@@ -156,7 +151,7 @@ NativeProfileSpec::parse(StringRef nativeGates) {
   if (!euler || !entangler) {
     return std::nullopt;
   }
-  return NativeProfileSpec{
+  return NativeGateset{
       .gates = std::move(*gates),
       .eulerBasis = euler,
       .entangler = entangler,

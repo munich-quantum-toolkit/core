@@ -12,7 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
@@ -537,7 +537,7 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
 
 [[nodiscard]] static Synthesized2QCircuit
 synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
-                   const NativeProfileSpec& spec) {
+                   const NativeGateset& spec) {
   OwningOpRef mlirModule = ModuleOp::create(UnknownLoc::get(ctx));
   OpBuilder builder(ctx);
   builder.setInsertionPointToStart(mlirModule->getBody());
@@ -562,7 +562,7 @@ synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
 }
 
 static void expectSynthesized2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
-                                      const NativeProfileSpec& spec) {
+                                      const NativeGateset& spec) {
   const auto circuit = synthesize2QMatrix(ctx, target, spec);
   ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
   const auto actual = computeTwoQubitUnitaryFromFunc(circuit.func);
@@ -599,7 +599,7 @@ protected:
   void SetUp() override { mlir.setUp(); }
 };
 
-class NativeProfileMlirTest : public testing::Test {
+class NativeGatesetMlirTest : public testing::Test {
 protected:
   MlirTestContext mlir;
 
@@ -609,13 +609,13 @@ protected:
 } // namespace
 
 TEST_P(WeylSynthesisTest, PreservesTargetUnitary) {
-  const auto spec = NativeProfileSpec::parse(GetParam().nativeGates);
+  const auto spec = NativeGateset::parse(GetParam().nativeGates);
   ASSERT_TRUE(spec);
   expectSynthesized2QMatrix(mlir.ctx(), GetParam().target(), *spec);
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Profiles, WeylSynthesisTest,
+    Gatesets, WeylSynthesisTest,
     testing::Values(
         WeylSynthesisCase{"CxGeneric", "u,cx",
                           [] { return TWO_QUBIT_CONTROLLED_X01; }},
@@ -640,20 +640,19 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
   for (const char* gateset : {"u,cx", "u,cz"}) {
-    const auto spec = NativeProfileSpec::parse(gateset);
+    const auto spec = NativeGateset::parse(gateset);
     ASSERT_TRUE(spec) << gateset;
-    const auto native = decomposition::detail::decomposeNativeTarget(
-        Matrix4x4::identity(), *spec);
+    const auto native = spec->decomposeTarget(Matrix4x4::identity());
     ASSERT_TRUE(native.has_value()) << gateset;
     EXPECT_EQ(native->numBasisUses, 0U) << gateset;
   }
 }
 
 TEST(WeylSynthesisTest, RejectsGatesetWithoutEntangler) {
-  EXPECT_FALSE(NativeProfileSpec::parse("u").has_value());
+  EXPECT_FALSE(NativeGateset::parse("u").has_value());
 }
 
-TEST_F(NativeProfileMlirTest, ReconstructionRejectsUnhandledOps) {
+TEST_F(NativeGatesetMlirTest, ReconstructionRejectsUnhandledOps) {
   OpBuilder builder(mlir.ctx());
   const Location loc = UnknownLoc::get(mlir.ctx());
   const auto qubitTy = QubitType::get(mlir.ctx());
@@ -669,8 +668,8 @@ TEST_F(NativeProfileMlirTest, ReconstructionRejectsUnhandledOps) {
   EXPECT_FALSE(computeTwoQubitUnitaryFromFunc(func).has_value());
 }
 
-TEST_F(NativeProfileMlirTest, SynthesisFailsWithoutEulerBasis) {
-  const NativeProfileSpec spec{.gates = {NativeGateKind::CX}};
+TEST_F(NativeGatesetMlirTest, SynthesisFailsWithoutEulerBasis) {
+  const NativeGateset spec{.gates = {NativeGateKind::CX}};
   OpBuilder builder(mlir.ctx());
   const auto qubitTy = QubitType::get(mlir.ctx());
   const auto funcTy =
@@ -686,8 +685,8 @@ TEST_F(NativeProfileMlirTest, SynthesisFailsWithoutEulerBasis) {
       TWO_QUBIT_CONTROLLED_X01, spec, out0, out1)));
 }
 
-TEST_F(NativeProfileMlirTest, SynthesisFailsWithoutEntangler) {
-  const NativeProfileSpec spec{.gates = {NativeGateKind::U}};
+TEST_F(NativeGatesetMlirTest, SynthesisFailsWithoutEntangler) {
+  const NativeGateset spec{.gates = {NativeGateKind::U}};
   OpBuilder builder(mlir.ctx());
   const auto qubitTy = QubitType::get(mlir.ctx());
   const auto funcTy =
@@ -704,36 +703,34 @@ TEST_F(NativeProfileMlirTest, SynthesisFailsWithoutEntangler) {
 }
 
 TEST(WeylSynthesisTest, EntanglerCountFailsWithoutEntangler) {
-  const NativeProfileSpec spec{.gates = {NativeGateKind::U}};
-  EXPECT_FALSE(
-      decomposition::detail::decomposeNativeTarget(Matrix4x4::identity(), spec)
-          .has_value());
+  const NativeGateset spec{.gates = {NativeGateKind::U}};
+  EXPECT_FALSE(spec.decomposeTarget(Matrix4x4::identity()).has_value());
 }
 
 TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
-  const auto ibm = NativeProfileSpec::parse("x,sx,rz,cx");
+  const auto ibm = NativeGateset::parse("x,sx,rz,cx");
   ASSERT_TRUE(ibm);
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::X));
-  EXPECT_FALSE(NativeProfileSpec::parse("x,sx,rz,not-a-gate").has_value());
-  EXPECT_FALSE(NativeProfileSpec::parse("u").has_value());
+  EXPECT_FALSE(NativeGateset::parse("x,sx,rz,not-a-gate").has_value());
+  EXPECT_FALSE(NativeGateset::parse("u").has_value());
 
-  const auto whitespaceToken = NativeProfileSpec::parse("u, ,cx");
+  const auto whitespaceToken = NativeGateset::parse("u, ,cx");
   ASSERT_TRUE(whitespaceToken);
   EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::U));
   EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::CX));
 
-  EXPECT_FALSE(NativeProfileSpec::parse("x,sx,p,cx").has_value());
-  EXPECT_FALSE(NativeProfileSpec::parse("ry,p,cz").has_value());
+  EXPECT_FALSE(NativeGateset::parse("x,sx,p,cx").has_value());
+  EXPECT_FALSE(NativeGateset::parse("ry,p,cz").has_value());
 
-  const auto cxOnly = NativeProfileSpec::parse("u,cx");
+  const auto cxOnly = NativeGateset::parse("u,cx");
   ASSERT_TRUE(cxOnly);
   EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::U));
   EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::CX));
   EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::CZ));
   EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::X));
 
-  const auto both = NativeProfileSpec::parse("u,cx,cz");
+  const auto both = NativeGateset::parse("u,cx,cz");
   ASSERT_TRUE(both);
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CZ));
@@ -741,33 +738,33 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
 }
 
 TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
-  EXPECT_FALSE(NativeProfileSpec::parse("cx").has_value());
-  EXPECT_FALSE(NativeProfileSpec::parse("cz").has_value());
-  EXPECT_FALSE(NativeProfileSpec::parse("rx,cx").has_value());
+  EXPECT_FALSE(NativeGateset::parse("cx").has_value());
+  EXPECT_FALSE(NativeGateset::parse("cz").has_value());
+  EXPECT_FALSE(NativeGateset::parse("rx,cx").has_value());
 }
 
 TEST(NativeSpecTest, ResolvesEulerBasisFromGateset) {
-  const auto uGateset = NativeProfileSpec::parse("u,cx");
+  const auto uGateset = NativeGateset::parse("u,cx");
   ASSERT_TRUE(uGateset);
   EXPECT_EQ(*uGateset->eulerBasis, EulerBasis::U);
 
-  const auto zsxx = NativeProfileSpec::parse("x,sx,rz,cx");
+  const auto zsxx = NativeGateset::parse("x,sx,rz,cx");
   ASSERT_TRUE(zsxx);
   EXPECT_EQ(*zsxx->eulerBasis, EulerBasis::ZSXX);
 
-  const auto rGateset = NativeProfileSpec::parse("r,cz");
+  const auto rGateset = NativeGateset::parse("r,cz");
   ASSERT_TRUE(rGateset);
   EXPECT_EQ(*rGateset->eulerBasis, EulerBasis::R);
 
-  const auto xzx = NativeProfileSpec::parse("rx,rz,cz");
+  const auto xzx = NativeGateset::parse("rx,rz,cz");
   ASSERT_TRUE(xzx);
   EXPECT_EQ(*xzx->eulerBasis, EulerBasis::XZX);
 
-  const auto xyx = NativeProfileSpec::parse("rx,ry,cz");
+  const auto xyx = NativeGateset::parse("rx,ry,cz");
   ASSERT_TRUE(xyx);
   EXPECT_EQ(*xyx->eulerBasis, EulerBasis::XYX);
 
-  const auto zyz = NativeProfileSpec::parse("ry,rz,cz");
+  const auto zyz = NativeGateset::parse("ry,rz,cz");
   ASSERT_TRUE(zyz);
   EXPECT_EQ(*zyz->eulerBasis, EulerBasis::ZYZ);
 }
@@ -797,7 +794,7 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
       .Default([](Operation*) { return std::nullopt; });
 }
 
-static bool allowsOp(Operation* op, const NativeProfileSpec& spec) {
+static bool allowsOp(Operation* op, const NativeGateset& spec) {
   return llvm::TypeSwitch<Operation*, bool>(op)
       .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
       .Case<CtrlOp>([&](CtrlOp ctrl) {
@@ -814,8 +811,8 @@ static bool allowsOp(Operation* op, const NativeProfileSpec& spec) {
       .Default([](Operation*) { return false; });
 }
 
-TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {
-  const auto spec = NativeProfileSpec::parse("u,cx");
+TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
+  const auto spec = NativeGateset::parse("u,cx");
   ASSERT_TRUE(spec);
 
   OpBuilder builder(mlir.ctx());
@@ -856,7 +853,7 @@ TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {
   EXPECT_FALSE(
       allowsOp(RXXOp::create(builder, loc, q0, q1, 0.2).getOperation(), *spec));
 
-  const auto rzSpec = NativeProfileSpec::parse("x,sx,rz,cx");
+  const auto rzSpec = NativeGateset::parse("x,sx,rz,cx");
   ASSERT_TRUE(rzSpec);
   EXPECT_TRUE(
       allowsOp(RZOp::create(builder, loc, q0, 0.3).getOperation(), *rzSpec));
@@ -885,7 +882,7 @@ TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {
       });
   EXPECT_FALSE(allowsOp(ccx.getOperation(), *spec));
 
-  const auto czSpec = NativeProfileSpec::parse("u,cz");
+  const auto czSpec = NativeGateset::parse("u,cz");
   ASSERT_TRUE(czSpec);
   auto cz = CtrlOp::create(
       builder, loc, ValueRange{q0}, ValueRange{q1},

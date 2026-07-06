@@ -35,14 +35,16 @@ enum class NativeGateKind : std::uint8_t {
   CZ,
 };
 
+struct TwoQubitNativeDecomposition;
+
 /**
  * @brief Resolved native gateset for two-qubit Weyl synthesis.
  *
- * Use @ref parse to obtain a profile with @p eulerBasis and @p entangler
+ * Use @ref parse to obtain a gateset with @p eulerBasis and @p entangler
  * resolved from @p gates. When both `cx` and `cz` appear, `cx` is preferred as
  * the entangler.
  */
-struct NativeProfileSpec {
+struct NativeGateset {
   llvm::DenseSet<NativeGateKind> gates;
   std::optional<EulerBasis> eulerBasis;
   std::optional<NativeGateKind> entangler;
@@ -51,20 +53,16 @@ struct NativeProfileSpec {
    * @brief Parses a comma-separated native gateset (e.g. `"u,cx"`).
    *
    * @param nativeGates Comma-separated gate tokens.
-   * @return Parsed profile, or `std::nullopt` when the gateset is unsupported.
+   * @return Parsed gateset, or `std::nullopt` when the gateset is unsupported.
    */
-  [[nodiscard]] static std::optional<NativeProfileSpec>
+  [[nodiscard]] static std::optional<NativeGateset>
   parse(StringRef nativeGates);
+
+  /**
+   * @brief Basis decomposition of @p target under this gateset, if supported.
+   */
+  [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
+  decomposeTarget(const Matrix4x4& target) const;
 };
-
-struct TwoQubitNativeDecomposition;
-
-namespace detail {
-
-/** @brief Basis decomposition of @p target under @p spec, if supported. */
-[[nodiscard]] std::optional<TwoQubitNativeDecomposition>
-decomposeNativeTarget(const Matrix4x4& target, const NativeProfileSpec& spec);
-
-} // namespace detail
 
 } // namespace mlir::qco::decomposition
