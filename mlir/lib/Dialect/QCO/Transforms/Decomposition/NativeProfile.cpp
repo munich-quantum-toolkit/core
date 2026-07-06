@@ -52,7 +52,7 @@ static std::optional<NativeGateKind> parseGateToken(llvm::StringRef name) {
       .Case("u", NativeGateKind::U)
       .Case("x", NativeGateKind::X)
       .Case("sx", NativeGateKind::SX)
-      .Cases("rz", "p", NativeGateKind::RZ)
+      .Cases({"rz", "p"}, NativeGateKind::RZ)
       .Case("rx", NativeGateKind::RX)
       .Case("ry", NativeGateKind::RY)
       .Case("r", NativeGateKind::R)
