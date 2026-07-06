@@ -32,10 +32,10 @@ inline constexpr double MATRIX_TOLERANCE = 1e-14;
 
 class DynamicMatrix;
 struct Matrix4x4;
-struct SymmetricEigen4;
-struct ComplexEigen;
-struct ComplexEigen2;
-struct ComplexEigen4;
+struct SymmetricEigenDecomposition4x4;
+struct EigenDecomposition;
+struct EigenDecomposition2x2;
+struct EigenDecomposition4x4;
 
 /**
  * @brief 1x1 matrix for global-phase gates.
@@ -108,6 +108,13 @@ struct Matrix1x1 {
    * @return `true` when @p src is 1x1.
    */
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
+
+  /**
+   * @brief Computes the eigendecomposition of this matrix.
+   *
+   * @return The single eigenpair.
+   */
+  [[nodiscard]] EigenDecomposition eigenDecomposition() const;
 };
 
 /**
@@ -249,7 +256,7 @@ struct Matrix2x2 {
    * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
    * non-finite eigenvalues.
    */
-  [[nodiscard]] std::optional<ComplexEigen2> complexEigen() const;
+  [[nodiscard]] std::optional<EigenDecomposition2x2> eigenDecomposition() const;
 
   /**
    * @brief Embed this single-qubit matrix into an @p numQubits-qubit Hilbert
@@ -499,6 +506,32 @@ struct Matrix4x4 {
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 
   /**
+   * @brief Constructs a matrix from row-major real entries (imaginary part
+   * zero).
+   *
+   * @param entries Row-major storage with length `16`.
+   * @return A new `Matrix4x4` with the given real entries.
+   */
+  [[nodiscard]] static Matrix4x4 fromRealRowMajor(ArrayRef<double> entries);
+
+  /**
+   * @brief Computes the eigendecomposition of this complex matrix.
+   *
+   * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
+   */
+  [[nodiscard]] std::optional<EigenDecomposition4x4> eigenDecomposition() const;
+
+  /**
+   * @brief Computes the eigendecomposition of this real symmetric matrix.
+   *
+   * Uses the real parts of @p *this; imaginary parts must be negligible.
+   *
+   * @pre The real parts form a symmetric matrix.
+   * @return Ascending eigenvalues and matching eigenvectors (as columns).
+   */
+  [[nodiscard]] SymmetricEigenDecomposition4x4 symmetricEigen() const;
+
+  /**
    * @brief Embed this two-qubit matrix into an @p numQubits-qubit Hilbert
    * space.
    *
@@ -523,39 +556,6 @@ struct Matrix4x4 {
    */
   [[nodiscard]] Matrix4x4 reorderForQubits(std::size_t q0Index,
                                            std::size_t q1Index) const;
-
-  /**
-   * @brief Computes the eigendecomposition of this real symmetric matrix.
-   *
-   * @copydoc Matrix4x4::symmetricEigen4(const std::array<double, 16>&)
-   *
-   * @pre Entries are real (imaginary parts must be negligible). The real parts
-   * must form a symmetric matrix; imaginary parts are ignored.
-   */
-  [[nodiscard]] SymmetricEigen4 symmetricEigen4() const;
-
-  /**
-   * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
-   *
-   * Uses Householder tridiagonalization (EISPACK `tred2`) followed by implicit
-   * QL iteration (`tql2`) on the tridiagonal form.
-   *
-   * @pre @p symmetric is real and symmetric: `symmetric[i,j] == symmetric[j,i]`
-   * for all `i, j`. Only the lower triangle (including the diagonal) is read,
-   * but supplying a non-symmetric matrix yields undefined numerical results.
-   *
-   * @param symmetric Row-major real symmetric `4x4` matrix.
-   * @return Ascending eigenvalues and matching eigenvectors (as columns).
-   */
-  [[nodiscard]] static SymmetricEigen4
-  symmetricEigen4(const std::array<double, 16>& symmetric);
-
-  /**
-   * @brief Computes the eigendecomposition of this complex matrix.
-   *
-   * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
-   */
-  [[nodiscard]] std::optional<ComplexEigen4> complexEigen() const;
 };
 
 /**
@@ -779,19 +779,15 @@ public:
   /**
    * @brief Computes the eigendecomposition of this square matrix.
    *
-   * Uses EISPACK `corth` followed by `comqr2` (complex Hessenberg reduction
-   * and QR eigenanalysis). `pythag` and `csroot` follow John Burkardt's
-   * MIT-licensed EISPACK C port; `cdiv`, `corth`, and `comqr2` follow NETLIB
-   * EISPACK Fortran (https://netlib.org/eispack/cdiv.f,
-   * https://netlib.org/eispack/corth.f, https://netlib.org/eispack/comqr2.f).
-   * Dimensions `1` and `2` use closed-form formulas;
-   * dimension `4` delegates to @ref Matrix4x4::complexEigen; all other sizes
-   * use the general EISPACK path.
+   * Dispatches by dimension: empty matrices return `std::nullopt`; `1x1`,
+   * `2x2`, and `4x4` delegate to the corresponding fixed-size @ref
+   * eigenDecomposition members (lifting to @ref EigenDecomposition where
+   * needed); all other square sizes use @ref detail::eigenDecompositionDynamic.
    *
    * @return Eigenpairs, or `std::nullopt` if this matrix is empty or the
    * solver does not converge.
    */
-  [[nodiscard]] std::optional<ComplexEigen> complexEigen() const;
+  [[nodiscard]] std::optional<EigenDecomposition> eigenDecomposition() const;
 
 private:
   struct Impl;
@@ -825,7 +821,7 @@ concept SupportedMatrix =
  * corresponding orthonormal eigenvectors as columns (column `j` is the
  * eigenvector for `eigenvalues[j]`).
  */
-struct SymmetricEigen4 {
+struct SymmetricEigenDecomposition4x4 {
   /// Eigenvalues in ascending order.
   std::array<double, 4> eigenvalues{};
   /// Orthonormal eigenvectors as columns (column `j` matches `eigenvalues[j]`).
@@ -838,7 +834,7 @@ struct SymmetricEigen4 {
  * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
  * eigenvector for `eigenvalues[j]`).
  */
-struct ComplexEigen4 {
+struct EigenDecomposition4x4 {
   /// Eigenvalues in no particular order.
   std::array<Complex, 4> eigenvalues{};
   /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
@@ -851,7 +847,7 @@ struct ComplexEigen4 {
  * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
  * eigenvector for `eigenvalues[j]`).
  */
-struct ComplexEigen2 {
+struct EigenDecomposition2x2 {
   /// Eigenvalues in no particular order.
   std::array<Complex, 2> eigenvalues{};
   /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
@@ -864,11 +860,107 @@ struct ComplexEigen2 {
  * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
  * eigenvector for `eigenvalues[j]`).
  */
-struct ComplexEigen {
+struct EigenDecomposition {
   /// Eigenvalues in no particular order.
   SmallVector<Complex, 8> eigenvalues;
   /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
   DynamicMatrix eigenvectors;
+
+  /**
+   * @brief Lifts a fixed `2x2` eigendecomposition to dynamic storage.
+   *
+   * @param eigen2 Fixed-size eigenpairs from @ref
+   * Matrix2x2::eigenDecomposition.
+   * @return Dynamic-matrix eigenvector storage with the same eigenvalues.
+   */
+  [[nodiscard]] static EigenDecomposition
+  from(const EigenDecomposition2x2& eigen2);
+
+  /**
+   * @brief Lifts a fixed `4x4` eigendecomposition to dynamic storage.
+   *
+   * @param eigen4 Fixed-size eigenpairs from @ref
+   * Matrix4x4::eigenDecomposition.
+   * @return Dynamic-matrix eigenvector storage with the same eigenvalues.
+   */
+  [[nodiscard]] static EigenDecomposition
+  from(const EigenDecomposition4x4& eigen4);
 };
+
+namespace detail {
+
+/**
+ * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
+ *
+ * Uses Householder tridiagonalization (EISPACK `tred2`) followed by implicit
+ * QL iteration (`tql2`) on the tridiagonal form. Adapted from John Burkardt's
+ * MIT-licensed EISPACK C port (`tred2`, `tql2`):
+ * https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
+ * Original Fortran: https://netlib.org/eispack/tred2.f,
+ * https://netlib.org/eispack/tql2.f
+ *
+ * @pre @p symmetric has length `16` and forms a real symmetric matrix in
+ * row-major order: `symmetric[(i * 4) + j] == symmetric[(j * 4) + i]` for all
+ * `i, j`. Only the lower triangle (including the diagonal) is read, but
+ * supplying a non-symmetric matrix yields undefined numerical results.
+ *
+ * @param symmetric Row-major real symmetric `4x4` matrix (`16` entries).
+ * @return Ascending eigenvalues and matching eigenvectors (as columns).
+ */
+[[nodiscard]] SymmetricEigenDecomposition4x4
+symmetricEigenDecomposition4x4(ArrayRef<double> symmetric);
+
+/**
+ * @brief Computes the eigendecomposition of a `2x2` complex matrix using a
+ * closed-form formula.
+ *
+ * @param matrix Source matrix.
+ * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
+ * non-finite eigenvalues.
+ */
+[[nodiscard]] std::optional<EigenDecomposition2x2>
+eigenDecomposition2x2(const Matrix2x2& matrix);
+
+/**
+ * @brief Computes the eigendecomposition of a `4x4` complex matrix.
+ *
+ * Stack-specialized variant of @ref eigenDecompositionDynamic for `n = 4`.
+ *
+ * @param matrix Source matrix.
+ * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
+ */
+[[nodiscard]] std::optional<EigenDecomposition4x4>
+eigenDecomposition4x4(const Matrix4x4& matrix);
+
+/**
+ * @brief Closed-form eigendecomposition of a `1x1` matrix.
+ *
+ * @param matrix Source matrix.
+ * @return The single eigenpair.
+ */
+[[nodiscard]] EigenDecomposition eigenDecomposition1x1(const Matrix1x1& matrix);
+
+/**
+ * @brief EISPACK eigendecomposition for square dynamic matrices.
+ *
+ * For dimensions other than `1`, `2`, and `4`, which have specialized paths in
+ * @ref DynamicMatrix::eigenDecomposition. Uses EISPACK `corth` followed by
+ * `comqr2` (complex Hessenberg reduction and QR eigenanalysis). `pythag` and
+ * `csroot` follow John Burkardt's MIT-licensed EISPACK C port; `cdiv`,
+ * `corth`, and `comqr2` follow NETLIB EISPACK Fortran
+ * (https://netlib.org/eispack/cdiv.f, https://netlib.org/eispack/corth.f,
+ * https://netlib.org/eispack/comqr2.f). See also
+ * https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
+ *
+ * @pre @p matrix has dimension at least `3` and not equal to `4`.
+ *
+ * @param matrix Square source matrix.
+ * @return Eigenpairs, or `std::nullopt` if the matrix is not square, its
+ * dimension exceeds `INT_MAX`, or the solver does not converge.
+ */
+[[nodiscard]] std::optional<EigenDecomposition>
+eigenDecompositionDynamic(const DynamicMatrix& matrix);
+
+} // namespace detail
 
 } // namespace mlir::qco

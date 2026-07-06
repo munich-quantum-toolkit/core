@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Eigensolver.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <gtest/gtest.h>
@@ -60,9 +59,9 @@ complexesAreApprox(const Complex& lhs, const Complex& rhs, const double tol) {
 static void verifyMatrix2x2FixedMatchesDynamic() {
   const Matrix2x2 gate =
       Matrix2x2::fromElements(std::exp(1i * 0.3), 0.1, 0.0, std::exp(1i * 1.1));
-  const std::optional<ComplexEigen2> fixed = gate.complexEigen();
-  const std::optional<ComplexEigen> dynamic =
-      DynamicMatrix(gate).complexEigen();
+  const std::optional<EigenDecomposition2x2> fixed = gate.eigenDecomposition();
+  const std::optional<EigenDecomposition> dynamic =
+      DynamicMatrix(gate).eigenDecomposition();
   ASSERT_TRUE(fixed.has_value());
   ASSERT_TRUE(dynamic.has_value());
   EXPECT_TRUE(DynamicMatrix(fixed->eigenvectors)
@@ -77,9 +76,9 @@ static void verifyMatrix4x4FixedMatchesDynamic() {
   const Matrix4x4 gate =
       Matrix4x4::fromDiagonal({std::exp(1i * 0.2), std::exp(1i * 0.5),
                                std::exp(1i * 1.1), std::exp(1i * -0.7)});
-  const std::optional<ComplexEigen4> fixed = gate.complexEigen();
-  const std::optional<ComplexEigen> dynamic =
-      DynamicMatrix(gate).complexEigen();
+  const std::optional<EigenDecomposition4x4> fixed = gate.eigenDecomposition();
+  const std::optional<EigenDecomposition> dynamic =
+      DynamicMatrix(gate).eigenDecomposition();
   ASSERT_TRUE(fixed.has_value());
   ASSERT_TRUE(dynamic.has_value());
   EXPECT_TRUE(DynamicMatrix(fixed->eigenvectors)
@@ -92,7 +91,7 @@ static void verifyMatrix4x4FixedMatchesDynamic() {
 
 [[nodiscard]] static bool
 eigenpairsSatisfy(const DynamicMatrix& matrix,
-                  const ComplexEigen& decomposition,
+                  const EigenDecomposition& decomposition,
                   const double tol = MATRIX_TOLERANCE) {
   const std::int64_t dim = matrix.rows();
   for (std::size_t colIdx = 0; colIdx < decomposition.eigenvalues.size();
@@ -127,7 +126,7 @@ eigenpairsSatisfy(const DynamicMatrix& matrix,
 
 [[nodiscard]] static double
 maxEigenpairResidual(const DynamicMatrix& matrix,
-                     const ComplexEigen& decomposition) {
+                     const EigenDecomposition& decomposition) {
   const std::int64_t dim = matrix.rows();
   double worst = 0.0;
   for (std::size_t colIdx = 0; colIdx < decomposition.eigenvalues.size();
@@ -156,10 +155,12 @@ generalEigenpairTolerance(const DynamicMatrix& matrix) {
   return std::max(1e-10, 1e-11 * dim * scale);
 }
 
-static void expectComplexEigen(const DynamicMatrix& matrix) {
-  const std::optional<ComplexEigen> decomposition = matrix.complexEigen();
+static void expectEigenDecomposition(const DynamicMatrix& matrix) {
+  const std::optional<EigenDecomposition> decomposition =
+      matrix.eigenDecomposition();
   ASSERT_TRUE(decomposition.has_value())
-      << "complexEigen failed for " << matrix.rows() << "x" << matrix.cols();
+      << "eigenDecomposition failed for " << matrix.rows() << "x"
+      << matrix.cols();
   ASSERT_EQ(decomposition->eigenvalues.size(),
             static_cast<std::size_t>(matrix.rows()));
   ASSERT_EQ(decomposition->eigenvectors.rows(), matrix.rows());
@@ -170,10 +171,12 @@ static void expectComplexEigen(const DynamicMatrix& matrix) {
   EXPECT_TRUE(eigenpairsSatisfy(matrix, *decomposition));
 }
 
-static void expectGeneralComplexEigen(const DynamicMatrix& matrix) {
-  const std::optional<ComplexEigen> decomposition = matrix.complexEigen();
+static void expectGeneralEigenDecomposition(const DynamicMatrix& matrix) {
+  const std::optional<EigenDecomposition> decomposition =
+      matrix.eigenDecomposition();
   ASSERT_TRUE(decomposition.has_value())
-      << "complexEigen failed for " << matrix.rows() << "x" << matrix.cols();
+      << "eigenDecomposition failed for " << matrix.rows() << "x"
+      << matrix.cols();
   ASSERT_EQ(decomposition->eigenvalues.size(),
             static_cast<std::size_t>(matrix.rows()));
   ASSERT_EQ(decomposition->eigenvectors.rows(), matrix.rows());
@@ -219,7 +222,7 @@ static void expectGeneralComplexEigen(const DynamicMatrix& matrix) {
 
 namespace {
 
-struct ComplexEigenMatrixCase {
+struct EigenDecompositionMatrixCase {
   std::string name;
   DynamicMatrix matrix;
 };
@@ -229,10 +232,10 @@ struct FixedDynamicEigenCase {
   void (*verify)();
 };
 
-class ComplexEigenMatrixTest
-    : public testing::TestWithParam<ComplexEigenMatrixCase> {};
+class EigenDecompositionMatrixTest
+    : public testing::TestWithParam<EigenDecompositionMatrixCase> {};
 
-class ComplexEigenFixedDynamicTest
+class EigenDecompositionFixedDynamicTest
     : public testing::TestWithParam<FixedDynamicEigenCase> {};
 
 } // namespace
@@ -719,7 +722,8 @@ TEST(SymmetricEigensolver, DiagonalMatrix) {
   a[5] = 1.0;
   a[10] = 4.0;
   a[15] = 2.0;
-  const SymmetricEigen4 result = Matrix4x4::symmetricEigen4(a);
+  const SymmetricEigenDecomposition4x4 result =
+      Matrix4x4::fromRealRowMajor(a).symmetricEigen();
   EXPECT_NEAR(result.eigenvalues[0], 1.0, MATRIX_TOLERANCE);
   EXPECT_NEAR(result.eigenvalues[1], 2.0, MATRIX_TOLERANCE);
   EXPECT_NEAR(result.eigenvalues[2], 3.0, MATRIX_TOLERANCE);
@@ -736,8 +740,9 @@ TEST(SymmetricEigensolver, Matrix4x4Overload) {
                                                    0.0, 1.0, 0.0, 0.0,  // row 1
                                                    0.0, 0.0, 4.0, 0.0,  // row 2
                                                    0.0, 0.0, 0.0, 2.0); // row 3
-  const SymmetricEigen4 fromArray = Matrix4x4::symmetricEigen4(a);
-  const SymmetricEigen4 fromMatrix = matrix.symmetricEigen4();
+  const SymmetricEigenDecomposition4x4 fromArray =
+      Matrix4x4::fromRealRowMajor(a).symmetricEigen();
+  const SymmetricEigenDecomposition4x4 fromMatrix = matrix.symmetricEigen();
   for (std::size_t i = 0; i < 4; ++i) {
     EXPECT_NEAR(fromMatrix.eigenvalues[i], fromArray.eigenvalues[i],
                 MATRIX_TOLERANCE);
@@ -757,7 +762,8 @@ TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
         a[(j * 4) + i] = value;
       }
     }
-    const SymmetricEigen4 result = Matrix4x4::symmetricEigen4(a);
+    const SymmetricEigenDecomposition4x4 result =
+        Matrix4x4::fromRealRowMajor(a).symmetricEigen();
 
     // Eigenvalues are ascending.
     for (std::size_t i = 0; i + 1 < 4; ++i) {
@@ -790,7 +796,8 @@ TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
   for (std::size_t i = 0; i < 4; ++i) {
     a[(i * 4) + i] = 2.5;
   }
-  const SymmetricEigen4 result = Matrix4x4::symmetricEigen4(a);
+  const SymmetricEigenDecomposition4x4 result =
+      Matrix4x4::fromRealRowMajor(a).symmetricEigen();
   for (const double value : result.eigenvalues) {
     EXPECT_NEAR(value, 2.5, MATRIX_TOLERANCE);
   }
@@ -799,26 +806,26 @@ TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
 }
 
 TEST(Eigensolver, EmptyMatrixReturnsNullopt) {
-  EXPECT_FALSE(DynamicMatrix{}.complexEigen().has_value());
+  EXPECT_FALSE(DynamicMatrix{}.eigenDecomposition().has_value());
 }
 
 TEST(Eigensolver, Scalar1x1) {
   DynamicMatrix matrix(1);
   matrix(0, 0) = std::exp(1i * 0.7);
-  expectComplexEigen(matrix);
+  expectEigenDecomposition(matrix);
 }
 
 TEST(Eigensolver, DiagonalReal4x4GeneralEigenpairs) {
-  expectGeneralComplexEigen(
+  expectGeneralEigenDecomposition(
       DynamicMatrix(Matrix4x4::fromDiagonal({1.0, 2.0, 3.0, 4.0})));
 }
 
 TEST(Eigensolver, SwapMatrixGeneralEigenpairs) {
-  expectGeneralComplexEigen(DynamicMatrix(swapMatrix()));
+  expectGeneralEigenDecomposition(DynamicMatrix(swapMatrix()));
 }
 
 TEST(Eigensolver, GeneralComplex2x2ClosedForm) {
-  expectGeneralComplexEigen(DynamicMatrix(
+  expectGeneralEigenDecomposition(DynamicMatrix(
       Matrix2x2::fromElements(Complex{1.0, 1.0}, Complex{2.0, -1.0}, // row 0
                               Complex{3.0, 0.5}, Complex{4.0, -2.0}  // row 1
                               )));
@@ -827,7 +834,8 @@ TEST(Eigensolver, GeneralComplex2x2ClosedForm) {
 TEST(Eigensolver, GeneralComplex4x4EispackEigenvalues) {
   const Matrix4x4 matrix = nonDiagonalTestMatrix4x4();
 
-  const std::optional<ComplexEigen4> decomposition = matrix.complexEigen();
+  const std::optional<EigenDecomposition4x4> decomposition =
+      matrix.eigenDecomposition();
   ASSERT_TRUE(decomposition.has_value());
 
   const std::array<Complex, 4> expectedEigenvalues = {
@@ -846,19 +854,19 @@ TEST(Eigensolver, GeneralComplex4x4EispackEigenvalues) {
 }
 
 TEST(Eigensolver, GeneralComplex4x4EispackEigenpairs) {
-  expectGeneralComplexEigen(DynamicMatrix(nonDiagonalTestMatrix4x4()));
+  expectGeneralEigenDecomposition(DynamicMatrix(nonDiagonalTestMatrix4x4()));
 }
 
 TEST(Eigensolver, Matrix2x2DiagonalClosedForm) {
-  expectGeneralComplexEigen(
+  expectGeneralEigenDecomposition(
       DynamicMatrix(Matrix2x2::fromElements(1.0, 0.0, // row 0
                                             0.0, 2.0  // row 1
                                             )));
 }
 
 TEST(Eigensolver, Matrix2x2IdentityFullBasis) {
-  const std::optional<ComplexEigen2> eigen =
-      decomposeComplexEigen2(Matrix2x2::identity());
+  const std::optional<EigenDecomposition2x2> eigen =
+      Matrix2x2::identity().eigenDecomposition();
   ASSERT_TRUE(eigen.has_value());
   EXPECT_TRUE(
       eigen->eigenvectors.isApprox(Matrix2x2::identity(), MATRIX_TOLERANCE));
@@ -870,63 +878,67 @@ TEST(Eigensolver, Matrix2x2LowerTriangularClosedForm) {
   const Matrix2x2 matrix = Matrix2x2::fromElements(1.0, 0.0, // row 0
                                                    2.0, 3.0  // row 1
   );
-  expectGeneralComplexEigen(DynamicMatrix(matrix));
+  expectGeneralEigenDecomposition(DynamicMatrix(matrix));
 }
 
 TEST(Eigensolver, Matrix2x2PauliXDirect) {
-  const std::optional<ComplexEigen2> direct = pauliX().complexEigen();
+  const std::optional<EigenDecomposition2x2> direct =
+      pauliX().eigenDecomposition();
   ASSERT_TRUE(direct.has_value());
-  expectGeneralComplexEigen(DynamicMatrix(pauliX()));
+  expectGeneralEigenDecomposition(DynamicMatrix(pauliX()));
 }
 
 TEST(Eigensolver, Matrix4x4SwapDirect) {
-  const std::optional<ComplexEigen4> direct = swapMatrix().complexEigen();
+  const std::optional<EigenDecomposition4x4> direct =
+      swapMatrix().eigenDecomposition();
   ASSERT_TRUE(direct.has_value());
-  expectGeneralComplexEigen(DynamicMatrix(swapMatrix()));
+  expectGeneralEigenDecomposition(DynamicMatrix(swapMatrix()));
 }
 
 TEST(Eigensolver, GeneralComplex3x3DynamicPath) {
   std::mt19937 rng(0x33U); // NOLINT(cert-msc51-cpp)
-  expectGeneralComplexEigen(randomComplexMatrix(3, rng));
+  expectGeneralEigenDecomposition(randomComplexMatrix(3, rng));
 }
 
 TEST(Eigensolver, GeneralComplex8x8DynamicPath) {
   std::mt19937 rng(0x88U); // NOLINT(cert-msc51-cpp)
-  expectGeneralComplexEigen(randomComplexMatrix(8, rng));
+  expectGeneralEigenDecomposition(randomComplexMatrix(8, rng));
 }
 
 TEST(Eigensolver, RandomComplex4x4Eispack) {
   std::mt19937 rng(0x44U); // NOLINT(cert-msc51-cpp)
   for (int trial = 0; trial < 20; ++trial) {
-    expectGeneralComplexEigen(randomComplexMatrix(4, rng));
+    expectGeneralEigenDecomposition(randomComplexMatrix(4, rng));
   }
 }
 
 TEST(Eigensolver, DirectDecomposeHelpers) {
   const Matrix4x4 diagonal = Matrix4x4::fromDiagonal({1.0, 2.0, 3.0, 4.0});
-  const SymmetricEigen4 symmetric = decomposeSymmetricEigen4(diagonal);
+  const SymmetricEigenDecomposition4x4 symmetric = diagonal.symmetricEigen();
   EXPECT_NEAR(symmetric.eigenvalues[0], 1.0, MATRIX_TOLERANCE);
   EXPECT_NEAR(symmetric.eigenvalues[3], 4.0, MATRIX_TOLERANCE);
 
   DynamicMatrix scalar(1);
   scalar(0, 0) = Complex{2.0, -1.0};
-  const std::optional<ComplexEigen> oneByOne = decomposeComplexEigen1x1(scalar);
+  const std::optional<EigenDecomposition> oneByOne =
+      scalar.eigenDecomposition();
   ASSERT_TRUE(oneByOne.has_value());
   EXPECT_TRUE(complexesAreApprox(oneByOne->eigenvalues[0], scalar(0, 0),
                                  MATRIX_TOLERANCE));
 
   const Matrix2x2 twoByTwo = pauliX();
-  const std::optional<ComplexEigen2> eigen2 = decomposeComplexEigen2(twoByTwo);
+  const std::optional<EigenDecomposition2x2> eigen2 =
+      twoByTwo.eigenDecomposition();
   ASSERT_TRUE(eigen2.has_value());
-  const ComplexEigen lifted2 = fromComplexEigen(*eigen2);
-  expectGeneralComplexEigen(DynamicMatrix(twoByTwo));
+  const EigenDecomposition lifted2 = EigenDecomposition::from(*eigen2);
+  expectGeneralEigenDecomposition(DynamicMatrix(twoByTwo));
   EXPECT_TRUE(
       lifted2.eigenvectors.isApprox(DynamicMatrix(eigen2->eigenvectors)));
 
-  const std::optional<ComplexEigen4> eigen4 =
-      decomposeComplexEigen4(nonDiagonalTestMatrix4x4());
+  const std::optional<EigenDecomposition4x4> eigen4 =
+      nonDiagonalTestMatrix4x4().eigenDecomposition();
   ASSERT_TRUE(eigen4.has_value());
-  const ComplexEigen lifted4 = fromComplexEigen(*eigen4);
+  const EigenDecomposition lifted4 = EigenDecomposition::from(*eigen4);
   EXPECT_TRUE(
       lifted4.eigenvectors.isApprox(DynamicMatrix(eigen4->eigenvectors)));
 }
@@ -934,7 +946,8 @@ TEST(Eigensolver, DirectDecomposeHelpers) {
 TEST(SymmetricEigensolver, SparseCornerElement) {
   std::array<double, 16> sparse{};
   sparse[15] = 7.0;
-  const SymmetricEigen4 fromArray = decomposeSymmetricEigen4(sparse);
+  const SymmetricEigenDecomposition4x4 fromArray =
+      Matrix4x4::fromRealRowMajor(sparse).symmetricEigen();
   EXPECT_NEAR(fromArray.eigenvalues[3], 7.0, MATRIX_TOLERANCE);
   for (std::size_t i = 0; i + 1 < 4; ++i) {
     EXPECT_NEAR(fromArray.eigenvalues[i], 0.0, MATRIX_TOLERANCE);
@@ -944,20 +957,20 @@ TEST(SymmetricEigensolver, SparseCornerElement) {
 TEST(Eigensolver, RandomComplex2x2ClosedForm) {
   std::mt19937 rng(0xE1E1E1U); // NOLINT(cert-msc51-cpp)
   for (int trial = 0; trial < 50; ++trial) {
-    expectGeneralComplexEigen(randomComplexMatrix(2, rng));
+    expectGeneralEigenDecomposition(randomComplexMatrix(2, rng));
   }
 }
 
-TEST_P(ComplexEigenFixedDynamicTest, SpecializedPathMatchesDynamic) {
+TEST_P(EigenDecompositionFixedDynamicTest, SpecializedPathMatchesDynamic) {
   GetParam().verify();
 }
 
-TEST_P(ComplexEigenMatrixTest, UnitaryMatrix) {
-  expectComplexEigen(GetParam().matrix);
+TEST_P(EigenDecompositionMatrixTest, UnitaryMatrix) {
+  expectEigenDecomposition(GetParam().matrix);
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Eigensolver, ComplexEigenFixedDynamicTest,
+    Eigensolver, EigenDecompositionFixedDynamicTest,
     testing::Values(
         FixedDynamicEigenCase{"Matrix2x2", verifyMatrix2x2FixedMatchesDynamic},
         FixedDynamicEigenCase{"Matrix4x4", verifyMatrix4x4FixedMatchesDynamic}),
@@ -966,19 +979,19 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 INSTANTIATE_TEST_SUITE_P(
-    Diagonal, ComplexEigenMatrixTest,
-    testing::Values(ComplexEigenMatrixCase{"2x2", diagonalUnitary(2)},
-                    ComplexEigenMatrixCase{"4x4", diagonalUnitary(4)},
-                    ComplexEigenMatrixCase{"8x8", diagonalUnitary(8)}),
-    [](const testing::TestParamInfo<ComplexEigenMatrixCase>& info) {
+    Diagonal, EigenDecompositionMatrixTest,
+    testing::Values(EigenDecompositionMatrixCase{"2x2", diagonalUnitary(2)},
+                    EigenDecompositionMatrixCase{"4x4", diagonalUnitary(4)},
+                    EigenDecompositionMatrixCase{"8x8", diagonalUnitary(8)}),
+    [](const testing::TestParamInfo<EigenDecompositionMatrixCase>& info) {
       return info.param.name;
     });
 
 INSTANTIATE_TEST_SUITE_P(
-    NonDiagonal, ComplexEigenMatrixTest,
-    testing::Values(ComplexEigenMatrixCase{"4x4Swap",
-                                           DynamicMatrix(swapMatrix())},
-                    ComplexEigenMatrixCase{"8x8Cyclic", cyclicPermutation(8)}),
-    [](const testing::TestParamInfo<ComplexEigenMatrixCase>& info) {
+    NonDiagonal, EigenDecompositionMatrixTest,
+    testing::Values(
+        EigenDecompositionMatrixCase{"4x4Swap", DynamicMatrix(swapMatrix())},
+        EigenDecompositionMatrixCase{"8x8Cyclic", cyclicPermutation(8)}),
+    [](const testing::TestParamInfo<EigenDecompositionMatrixCase>& info) {
       return info.param.name;
     });
