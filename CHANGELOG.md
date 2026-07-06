@@ -13,7 +13,7 @@ releases may include breaking changes.
 ### Added
 
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
-  ([#1844]) ([**@burgholzer**])
+  ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
   ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration for consistent local development
@@ -596,6 +596,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
 [#1832]: https://github.com/munich-quantum-toolkit/core/pull/1832
