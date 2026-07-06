@@ -27,19 +27,21 @@
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSet.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <istream>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -61,9 +63,11 @@ using qasm3::Token;
 /// Signature: (builder, gate operands, gate parameters).
 using GateFn = std::function<void(QCProgramBuilder&, ValueRange, ValueRange)>;
 
+} // namespace
+
 /// Build the table mapping each gate identifier to a lambda that emits the
 /// corresponding QC operation via the `QCProgramBuilder`.
-llvm::StringMap<GateFn> buildGateDispatch() {
+static llvm::StringMap<GateFn> buildGateDispatch() {
   llvm::StringMap<GateFn> d;
 
   // ZeroTargetOneParameter
@@ -165,6 +169,8 @@ llvm::StringMap<GateFn> buildGateDispatch() {
   return d;
 }
 
+namespace {
+
 /// Map from gate identifier to `QCProgramBuilder` emitter.
 const llvm::StringMap<GateFn> GATE_DISPATCH = buildGateDispatch();
 
@@ -184,10 +190,12 @@ struct QubitBinding {
 /// Map of qubits in the current scope.
 using QubitScope = llvm::StringMap<QubitBinding>;
 
+} // namespace
+
 /// Look up a built-in numeric constant and emit it as an `f64`-typed MLIR
 /// value.
-std::optional<Value> lookupBuiltinConstant(llvm::StringRef name,
-                                           QCProgramBuilder& builder) {
+static std::optional<Value> lookupBuiltinConstant(llvm::StringRef name,
+                                                  QCProgramBuilder& builder) {
   auto constant = [&](double value) -> Value {
     return arith::ConstantOp::create(builder, builder.getF64FloatAttr(value))
         .getResult();
@@ -207,6 +215,8 @@ std::optional<Value> lookupBuiltinConstant(llvm::StringRef name,
 //===----------------------------------------------------------------------===//
 // Parsed representations
 //===----------------------------------------------------------------------===//
+
+namespace {
 
 /// A parsed expression.
 struct ParsedExpr {
@@ -262,8 +272,11 @@ struct ParsedBitRef {
   std::optional<ParsedExpr> index;
 };
 
+} // namespace
+
 /// Build the table mapping a gate identifier to its metadata.
-llvm::StringMap<std::variant<GateInfo, ParsedCompoundGate>> buildGateTable() {
+static llvm::StringMap<std::variant<GateInfo, ParsedCompoundGate>>
+buildGateTable() {
   llvm::StringMap<std::variant<GateInfo, ParsedCompoundGate>> t;
   for (const auto& [name, gate] : qasm3::STANDARD_GATES) {
     const auto* standard = dynamic_cast<qasm3::StandardGate*>(gate.get());
@@ -287,6 +300,8 @@ llvm::StringMap<std::variant<GateInfo, ParsedCompoundGate>> buildGateTable() {
 //===----------------------------------------------------------------------===//
 // QASM3Parser
 //===----------------------------------------------------------------------===//
+
+namespace {
 
 /**
  * @brief OpenQASM 3 parser that builds a QC program.
@@ -376,18 +391,18 @@ private:
   }
 
   /// Create a `DebugInfo` object from @p token.
-  [[nodiscard]] std::shared_ptr<DebugInfo>
-  makeDebugInfo(const Token& token) const {
+  [[nodiscard]] static std::shared_ptr<DebugInfo>
+  makeDebugInfo(const Token& token) {
     return std::make_shared<DebugInfo>(token.line, token.col, "<input>");
   }
 
   /// Throw a `CompilerError` at the position of @p token.
-  void error(const Token& token, const std::string& msg) const {
+  static void error(const Token& token, const std::string& msg) {
     throw CompilerError(msg, makeDebugInfo(token));
   }
 
   /// Throw a `CompilerError` using an existing @p debugInfo.
-  void error(const DebugInfo& debugInfo, const std::string& msg) const {
+  static void error(const DebugInfo& debugInfo, const std::string& msg) {
     throw CompilerError(msg, std::make_shared<DebugInfo>(debugInfo));
   }
 
@@ -587,9 +602,10 @@ private:
     registerDeclaredName(qubit, id);
     if (size) {
       const auto reg = builder.allocQubitRegister(*size);
-      qubitRegisters[id] = {reg.value, reg.qubits};
+      qubitRegisters[id] = {.memref = reg.value, .qubits = reg.qubits};
     } else {
-      qubitRegisters[id] = {nullptr, {builder.allocQubit()}};
+      qubitRegisters[id] = {.memref = nullptr,
+                            .qubits = {builder.allocQubit()}};
     }
   }
 
@@ -606,9 +622,10 @@ private:
     registerDeclaredName(qreg, id);
     if (size) {
       const auto reg = builder.allocQubitRegister(*size);
-      qubitRegisters[id] = {reg.value, reg.qubits};
+      qubitRegisters[id] = {.memref = reg.value, .qubits = reg.qubits};
     } else {
-      qubitRegisters[id] = {nullptr, {builder.allocQubit()}};
+      qubitRegisters[id] = {.memref = nullptr,
+                            .qubits = {builder.allocQubit()}};
     }
   }
 
@@ -638,8 +655,8 @@ private:
         builder.allocClassicalBitRegister(size.value_or(1), id);
 
     if (operand) {
-      emitMeasureAssignment(ParsedBitRef{id, std::nullopt}, *operand,
-                            debugInfo);
+      emitMeasureAssignment(ParsedBitRef{.name = id, .index = std::nullopt},
+                            *operand, debugInfo);
     }
   }
 
@@ -1024,8 +1041,9 @@ private:
       }
     }
 
-    gates[id] = ParsedCompoundGate{std::move(parameters), std::move(targets),
-                                   std::move(body)};
+    gates[id] = ParsedCompoundGate{.parameterNames = std::move(parameters),
+                                   .targetNames = targets,
+                                   .body = std::move(body)};
   }
 
   std::vector<std::string> parseIdentifierList() {
@@ -1272,7 +1290,7 @@ private:
 
   /// Partition @p operands into controls and targets.
   template <typename T>
-  ControlsAndTargets<T>
+  [[nodiscard]] ControlsAndTargets<T>
   splitControlsAndTargets(const std::vector<ParsedModifier>& modifiers,
                           size_t numCompatControls,
                           const SmallVector<T>& operands,
@@ -1326,10 +1344,10 @@ private:
   }
 
   /// Look up the `QCProgramBuilder` emitter of a @p gate.
-  const GateFn&
+  [[nodiscard]] static const GateFn&
   resolveStandardGate(const GateInfo& gate, const std::string& fullId,
                       llvm::StringRef resolvedId, ValueRange params,
-                      const std::shared_ptr<DebugInfo>& debugInfo) const {
+                      const std::shared_ptr<DebugInfo>& debugInfo) {
     const auto dispIt = GATE_DISPATCH.find(resolvedId);
     if (dispIt == GATE_DISPATCH.end()) {
       error(*debugInfo, "No MLIR definition found for gate '" + fullId + "'.");
@@ -1417,7 +1435,7 @@ private:
         for (auto index : indices) {
           args.push_back(qubits[index]);
         }
-        localScope[name] = {nullptr, std::move(args)};
+        localScope[name] = {.memref = nullptr, .qubits = std::move(args)};
       }
       for (const auto& bodyCall : gate.body) {
         emitGateCall(bodyCall, localScope);
@@ -1655,8 +1673,9 @@ private:
                       const std::shared_ptr<DebugInfo>& debugInfo) {
     switch (expr.kind) {
     case ParsedExpr::Kind::IntLiteral:
-      return arith::ConstantOp::create(builder,
-                                       builder.getF64FloatAttr(expr.intValue))
+      return arith::ConstantOp::create(
+                 builder,
+                 builder.getF64FloatAttr(static_cast<double>(expr.intValue)))
           .getResult();
     case ParsedExpr::Kind::FloatLiteral:
       return arith::ConstantOp::create(builder,

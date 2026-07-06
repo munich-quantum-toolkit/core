@@ -31,7 +31,7 @@ namespace qc::detail {
  *
  * @param source String containing the OpenQASM3 program.
  * @param context The MLIRContext to create the module in.
- * @return A module containing the QC program
+ * @return A module containing the QC program.
  */
 [[nodiscard]] OwningOpRef<ModuleOp> parseQASM3(std::string_view source,
                                                MLIRContext* context);
