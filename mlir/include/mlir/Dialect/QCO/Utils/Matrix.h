@@ -517,6 +517,9 @@ struct Matrix4x4 {
   /**
    * @brief Computes the eigendecomposition of this complex matrix.
    *
+   * Uses the same EISPACK `corth`/`comqr2` path as @ref
+   * DynamicMatrix::eigenDecomposition, specialized for `4x4`.
+   *
    * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
    */
   [[nodiscard]] std::optional<EigenDecomposition4x4> eigenDecomposition() const;
@@ -525,11 +528,14 @@ struct Matrix4x4 {
    * @brief Computes the eigendecomposition of this real symmetric matrix.
    *
    * Uses the real parts of @p *this; imaginary parts must be negligible.
+   * Householder tridiagonalization (EISPACK `tred2`) followed by implicit QL
+   * iteration (`tql2`).
    *
    * @pre The real parts form a symmetric matrix.
    * @return Ascending eigenvalues and matching eigenvectors (as columns).
    */
-  [[nodiscard]] SymmetricEigenDecomposition4x4 symmetricEigen() const;
+  [[nodiscard]] SymmetricEigenDecomposition4x4
+  symmetricEigenDecomposition() const;
 
   /**
    * @brief Embed this two-qubit matrix into an @p numQubits-qubit Hilbert
@@ -782,7 +788,8 @@ public:
    * Dispatches by dimension: empty matrices return `std::nullopt`; `1x1`,
    * `2x2`, and `4x4` delegate to the corresponding fixed-size @ref
    * eigenDecomposition members (lifting to @ref EigenDecomposition where
-   * needed); all other square sizes use @ref detail::eigenDecompositionDynamic.
+   * needed); all other square sizes use an internal EISPACK-based solver
+   * (`corth`/`comqr2`).
    *
    * @return Eigenpairs, or `std::nullopt` if this matrix is empty or the
    * solver does not converge.
@@ -886,81 +893,5 @@ struct EigenDecomposition {
   [[nodiscard]] static EigenDecomposition
   from(const EigenDecomposition4x4& eigen4);
 };
-
-namespace detail {
-
-/**
- * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
- *
- * Uses Householder tridiagonalization (EISPACK `tred2`) followed by implicit
- * QL iteration (`tql2`) on the tridiagonal form. Adapted from John Burkardt's
- * MIT-licensed EISPACK C port (`tred2`, `tql2`):
- * https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
- * Original Fortran: https://netlib.org/eispack/tred2.f,
- * https://netlib.org/eispack/tql2.f
- *
- * @pre @p symmetric has length `16` and forms a real symmetric matrix in
- * row-major order: `symmetric[(i * 4) + j] == symmetric[(j * 4) + i]` for all
- * `i, j`. Only the lower triangle (including the diagonal) is read, but
- * supplying a non-symmetric matrix yields undefined numerical results.
- *
- * @param symmetric Row-major real symmetric `4x4` matrix (`16` entries).
- * @return Ascending eigenvalues and matching eigenvectors (as columns).
- */
-[[nodiscard]] SymmetricEigenDecomposition4x4
-symmetricEigenDecomposition4x4(ArrayRef<double> symmetric);
-
-/**
- * @brief Computes the eigendecomposition of a `2x2` complex matrix using a
- * closed-form formula.
- *
- * @param matrix Source matrix.
- * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
- * non-finite eigenvalues.
- */
-[[nodiscard]] std::optional<EigenDecomposition2x2>
-eigenDecomposition2x2(const Matrix2x2& matrix);
-
-/**
- * @brief Computes the eigendecomposition of a `4x4` complex matrix.
- *
- * Stack-specialized variant of @ref eigenDecompositionDynamic for `n = 4`.
- *
- * @param matrix Source matrix.
- * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
- */
-[[nodiscard]] std::optional<EigenDecomposition4x4>
-eigenDecomposition4x4(const Matrix4x4& matrix);
-
-/**
- * @brief Closed-form eigendecomposition of a `1x1` matrix.
- *
- * @param matrix Source matrix.
- * @return The single eigenpair.
- */
-[[nodiscard]] EigenDecomposition eigenDecomposition1x1(const Matrix1x1& matrix);
-
-/**
- * @brief EISPACK eigendecomposition for square dynamic matrices.
- *
- * For dimensions other than `1`, `2`, and `4`, which have specialized paths in
- * @ref DynamicMatrix::eigenDecomposition. Uses EISPACK `corth` followed by
- * `comqr2` (complex Hessenberg reduction and QR eigenanalysis). `pythag` and
- * `csroot` follow John Burkardt's MIT-licensed EISPACK C port; `cdiv`,
- * `corth`, and `comqr2` follow NETLIB EISPACK Fortran
- * (https://netlib.org/eispack/cdiv.f, https://netlib.org/eispack/corth.f,
- * https://netlib.org/eispack/comqr2.f). See also
- * https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
- *
- * @pre @p matrix has dimension at least `3` and not equal to `4`.
- *
- * @param matrix Square source matrix.
- * @return Eigenpairs, or `std::nullopt` if the matrix is not square, its
- * dimension exceeds `INT_MAX`, or the solver does not converge.
- */
-[[nodiscard]] std::optional<EigenDecomposition>
-eigenDecompositionDynamic(const DynamicMatrix& matrix);
-
-} // namespace detail
 
 } // namespace mlir::qco

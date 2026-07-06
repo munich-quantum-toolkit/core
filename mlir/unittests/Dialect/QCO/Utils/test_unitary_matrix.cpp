@@ -723,7 +723,7 @@ TEST(SymmetricEigensolver, DiagonalMatrix) {
   a[10] = 4.0;
   a[15] = 2.0;
   const SymmetricEigenDecomposition4x4 result =
-      Matrix4x4::fromRealRowMajor(a).symmetricEigen();
+      Matrix4x4::fromRealRowMajor(a).symmetricEigenDecomposition();
   EXPECT_NEAR(result.eigenvalues[0], 1.0, MATRIX_TOLERANCE);
   EXPECT_NEAR(result.eigenvalues[1], 2.0, MATRIX_TOLERANCE);
   EXPECT_NEAR(result.eigenvalues[2], 3.0, MATRIX_TOLERANCE);
@@ -741,8 +741,9 @@ TEST(SymmetricEigensolver, Matrix4x4Overload) {
                                                    0.0, 0.0, 4.0, 0.0,  // row 2
                                                    0.0, 0.0, 0.0, 2.0); // row 3
   const SymmetricEigenDecomposition4x4 fromArray =
-      Matrix4x4::fromRealRowMajor(a).symmetricEigen();
-  const SymmetricEigenDecomposition4x4 fromMatrix = matrix.symmetricEigen();
+      Matrix4x4::fromRealRowMajor(a).symmetricEigenDecomposition();
+  const SymmetricEigenDecomposition4x4 fromMatrix =
+      matrix.symmetricEigenDecomposition();
   for (std::size_t i = 0; i < 4; ++i) {
     EXPECT_NEAR(fromMatrix.eigenvalues[i], fromArray.eigenvalues[i],
                 MATRIX_TOLERANCE);
@@ -763,7 +764,7 @@ TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
       }
     }
     const SymmetricEigenDecomposition4x4 result =
-        Matrix4x4::fromRealRowMajor(a).symmetricEigen();
+        Matrix4x4::fromRealRowMajor(a).symmetricEigenDecomposition();
 
     // Eigenvalues are ascending.
     for (std::size_t i = 0; i + 1 < 4; ++i) {
@@ -797,7 +798,7 @@ TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
     a[(i * 4) + i] = 2.5;
   }
   const SymmetricEigenDecomposition4x4 result =
-      Matrix4x4::fromRealRowMajor(a).symmetricEigen();
+      Matrix4x4::fromRealRowMajor(a).symmetricEigenDecomposition();
   for (const double value : result.eigenvalues) {
     EXPECT_NEAR(value, 2.5, MATRIX_TOLERANCE);
   }
@@ -914,7 +915,8 @@ TEST(Eigensolver, RandomComplex4x4Eispack) {
 
 TEST(Eigensolver, DirectDecomposeHelpers) {
   const Matrix4x4 diagonal = Matrix4x4::fromDiagonal({1.0, 2.0, 3.0, 4.0});
-  const SymmetricEigenDecomposition4x4 symmetric = diagonal.symmetricEigen();
+  const SymmetricEigenDecomposition4x4 symmetric =
+      diagonal.symmetricEigenDecomposition();
   EXPECT_NEAR(symmetric.eigenvalues[0], 1.0, MATRIX_TOLERANCE);
   EXPECT_NEAR(symmetric.eigenvalues[3], 4.0, MATRIX_TOLERANCE);
 
@@ -947,7 +949,7 @@ TEST(SymmetricEigensolver, SparseCornerElement) {
   std::array<double, 16> sparse{};
   sparse[15] = 7.0;
   const SymmetricEigenDecomposition4x4 fromArray =
-      Matrix4x4::fromRealRowMajor(sparse).symmetricEigen();
+      Matrix4x4::fromRealRowMajor(sparse).symmetricEigenDecomposition();
   EXPECT_NEAR(fromArray.eigenvalues[3], 7.0, MATRIX_TOLERANCE);
   for (std::size_t i = 0; i + 1 < 4; ++i) {
     EXPECT_NEAR(fromArray.eigenvalues[i], 0.0, MATRIX_TOLERANCE);

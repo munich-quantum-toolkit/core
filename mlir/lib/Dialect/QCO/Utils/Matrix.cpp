@@ -797,8 +797,26 @@ static void symmetricTql24(std::array<double, 4>& diag,
   }
 }
 
-[[nodiscard]] SymmetricEigenDecomposition4x4
-detail::symmetricEigenDecomposition4x4(const ArrayRef<double> symmetric) {
+/**
+ * @brief Computes the eigendecomposition of a real symmetric `4x4` matrix.
+ *
+ * Uses Householder tridiagonalization (EISPACK `tred2`) followed by implicit
+ * QL iteration (`tql2`) on the tridiagonal form. Adapted from John Burkardt's
+ * MIT-licensed EISPACK C port (`tred2`, `tql2`):
+ * https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
+ * Original Fortran: https://netlib.org/eispack/tred2.f,
+ * https://netlib.org/eispack/tql2.f
+ *
+ * @pre @p symmetric has length `16` and forms a real symmetric matrix in
+ * row-major order: `symmetric[(i * 4) + j] == symmetric[(j * 4) + i]` for all
+ * `i, j`. Only the lower triangle (including the diagonal) is read, but
+ * supplying a non-symmetric matrix yields undefined numerical results.
+ *
+ * @param symmetric Row-major real symmetric `4x4` matrix (`16` entries).
+ * @return Ascending eigenvalues and matching eigenvectors (as columns).
+ */
+[[nodiscard]] static SymmetricEigenDecomposition4x4
+symmetricEigenDecomposition4x4(const ArrayRef<double> symmetric) {
   if (symmetric.size() != 16) {
     llvm::reportFatalInternalError(
         "symmetricEigenDecomposition4x4 expects 16 row-major entries");
@@ -1547,8 +1565,16 @@ static void splitMatrix4x4ToRealImag(
   }
 }
 
-[[nodiscard]] std::optional<EigenDecomposition4x4>
-detail::eigenDecomposition4x4(const Matrix4x4& matrix) {
+/**
+ * @brief Computes the eigendecomposition of a `4x4` complex matrix.
+ *
+ * Stack-specialized variant of the dynamic-matrix EISPACK solver for `n = 4`.
+ *
+ * @param matrix Source matrix.
+ * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
+ */
+[[nodiscard]] static std::optional<EigenDecomposition4x4>
+eigenDecomposition4x4(const Matrix4x4& matrix) {
   constexpr int order = K_COMPLEX_EIGEN4_SIZE;
   constexpr int leadingDim = order;
   constexpr int rowLow = 0;
@@ -1579,8 +1605,14 @@ detail::eigenDecomposition4x4(const Matrix4x4& matrix) {
                                        eigenvectorReal, eigenvectorImag);
 }
 
-[[nodiscard]] EigenDecomposition
-detail::eigenDecomposition1x1(const Matrix1x1& matrix) {
+/**
+ * @brief Closed-form eigendecomposition of a `1x1` matrix.
+ *
+ * @param matrix Source matrix.
+ * @return The single eigenpair.
+ */
+[[nodiscard]] static EigenDecomposition
+eigenDecomposition1x1(const Matrix1x1& matrix) {
   EigenDecomposition result;
   result.eigenvalues.push_back(matrix.value);
   result.eigenvectors = DynamicMatrix(1);
@@ -1588,8 +1620,16 @@ detail::eigenDecomposition1x1(const Matrix1x1& matrix) {
   return result;
 }
 
-[[nodiscard]] std::optional<EigenDecomposition2x2>
-detail::eigenDecomposition2x2(const Matrix2x2& matrix) {
+/**
+ * @brief Computes the eigendecomposition of a `2x2` complex matrix using a
+ * closed-form formula.
+ *
+ * @param matrix Source matrix.
+ * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
+ * non-finite eigenvalues.
+ */
+[[nodiscard]] static std::optional<EigenDecomposition2x2>
+eigenDecomposition2x2(const Matrix2x2& matrix) {
   const Complex a = matrix(0, 0);
   const Complex b = matrix(0, 1);
   const Complex c = matrix(1, 0);
@@ -1638,8 +1678,26 @@ detail::eigenDecomposition2x2(const Matrix2x2& matrix) {
   return result;
 }
 
-[[nodiscard]] std::optional<EigenDecomposition>
-detail::eigenDecompositionDynamic(const DynamicMatrix& matrix) {
+/**
+ * @brief EISPACK eigendecomposition for square dynamic matrices.
+ *
+ * For dimensions other than `1`, `2`, and `4`, which have specialized paths in
+ * @ref DynamicMatrix::eigenDecomposition. Uses EISPACK `corth` followed by
+ * `comqr2` (complex Hessenberg reduction and QR eigenanalysis). `pythag` and
+ * `csroot` follow John Burkardt's MIT-licensed EISPACK C port; `cdiv`,
+ * `corth`, and `comqr2` follow NETLIB EISPACK Fortran
+ * (https://netlib.org/eispack/cdiv.f, https://netlib.org/eispack/corth.f,
+ * https://netlib.org/eispack/comqr2.f). See also
+ * https://people.sc.fsu.edu/~jburkardt/c_src/eispack/eispack.c
+ *
+ * @pre @p matrix has dimension at least `3` and not equal to `4`.
+ *
+ * @param matrix Square source matrix.
+ * @return Eigenpairs, or `std::nullopt` if the matrix is not square, its
+ * dimension exceeds `INT_MAX`, or the solver does not converge.
+ */
+[[nodiscard]] static std::optional<EigenDecomposition>
+eigenDecompositionDynamic(const DynamicMatrix& matrix) {
   const std::int64_t dim = matrix.rows();
   if (dim != matrix.cols()) {
     return std::nullopt;
@@ -1706,11 +1764,11 @@ detail::eigenDecompositionDynamic(const DynamicMatrix& matrix) {
 }
 
 EigenDecomposition Matrix1x1::eigenDecomposition() const {
-  return detail::eigenDecomposition1x1(*this);
+  return eigenDecomposition1x1(*this);
 }
 
 std::optional<EigenDecomposition2x2> Matrix2x2::eigenDecomposition() const {
-  return detail::eigenDecomposition2x2(*this);
+  return eigenDecomposition2x2(*this);
 }
 
 Matrix4x4 Matrix4x4::fromRealRowMajor(const ArrayRef<double> entries) {
@@ -1726,11 +1784,11 @@ Matrix4x4 Matrix4x4::fromRealRowMajor(const ArrayRef<double> entries) {
 }
 
 std::optional<EigenDecomposition4x4> Matrix4x4::eigenDecomposition() const {
-  return detail::eigenDecomposition4x4(*this);
+  return eigenDecomposition4x4(*this);
 }
 
-SymmetricEigenDecomposition4x4 Matrix4x4::symmetricEigen() const {
-  return detail::symmetricEigenDecomposition4x4(realPart());
+SymmetricEigenDecomposition4x4 Matrix4x4::symmetricEigenDecomposition() const {
+  return symmetricEigenDecomposition4x4(realPart());
 }
 
 struct DynamicMatrix::Impl {
@@ -1990,7 +2048,7 @@ std::optional<EigenDecomposition> DynamicMatrix::eigenDecomposition() const {
     }
     return EigenDecomposition::from(*eigen4);
   }
-  return detail::eigenDecompositionDynamic(*this);
+  return eigenDecompositionDynamic(*this);
 }
 
 } // namespace mlir::qco
