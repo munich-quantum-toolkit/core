@@ -68,6 +68,17 @@ struct NativeProfileSpec {
    */
   [[nodiscard]] static std::optional<NativeProfileSpec>
   parse(StringRef nativeGates);
+
+  /**
+   * @brief Entangling basis gates needed to synthesize @p target.
+   *
+   * @return Count, or `std::nullopt` when synthesis is impossible.
+   */
+  [[nodiscard]] std::optional<std::uint8_t>
+  twoQubitEntanglerCount(const Matrix4x4& target) const;
+
+  /** @brief Returns true when @p op is already in this native gateset. */
+  [[nodiscard]] bool allowsOp(Operation* op) const;
 };
 
 /** @brief Synthesizes a two-qubit unitary as gates allowed by @p spec. */
@@ -76,16 +87,5 @@ synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
                         Value qubit1, const Matrix4x4& target,
                         const NativeProfileSpec& spec, Value& outQubit0,
                         Value& outQubit1);
-
-/**
- * @brief Entangling basis gates needed to synthesize @p target under @p spec.
- *
- * @return Count for @p spec, or `std::nullopt` when synthesis is impossible.
- */
-[[nodiscard]] std::optional<std::uint8_t>
-twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec);
-
-/** @brief Returns true when @p op is already in the resolved native gateset. */
-[[nodiscard]] bool allowsOp(Operation* op, const NativeProfileSpec& spec);
 
 } // namespace mlir::qco::decomposition

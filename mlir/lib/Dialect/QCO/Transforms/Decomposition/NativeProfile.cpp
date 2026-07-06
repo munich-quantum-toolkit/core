@@ -246,8 +246,8 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
 }
 
 std::optional<std::uint8_t>
-twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec) {
-  const auto entangler = selectEntangler(spec.gates);
+NativeProfileSpec::twoQubitEntanglerCount(const Matrix4x4& target) const {
+  const auto entangler = selectEntangler(gates);
   if (!entangler) {
     return std::nullopt;
   }
@@ -258,19 +258,19 @@ twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec) {
   return native->numBasisUses;
 }
 
-bool allowsOp(Operation* op, const NativeProfileSpec& spec) {
+bool NativeProfileSpec::allowsOp(Operation* op) const {
   return TypeSwitch<Operation*, bool>(op)
       .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
       .Case<CtrlOp>([&](CtrlOp ctrl) {
         const auto kind = entanglerKindFor(ctrl);
-        return kind && spec.gates.contains(*kind);
+        return kind && gates.contains(*kind);
       })
       .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
         if (!unitary.isSingleQubit()) {
           return false;
         }
         const auto gate = gateKindFor(unitary);
-        return gate && spec.gates.contains(*gate);
+        return gate && gates.contains(*gate);
       })
       .Default([](Operation*) { return false; });
 }
