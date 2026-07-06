@@ -313,14 +313,14 @@ BlockArgument IfOp::getTiedElseBlockArgument(OpOperand* qubit) {
 }
 
 OpOperand* IfOp::getTiedThenYieldedValue(BlockArgument bbArg) {
-  if (bbArg.getDefiningOp() != getOperation()) {
+  if (bbArg.getOwner()->getParentOp() != getOperation()) {
     return nullptr;
   }
   return &thenYield().getTargetsMutable()[bbArg.getArgNumber()];
 }
 
 OpOperand* IfOp::getTiedElseYieldedValue(BlockArgument bbArg) {
-  if (bbArg.getDefiningOp() != getOperation()) {
+  if (bbArg.getOwner()->getParentOp() != getOperation()) {
     return nullptr;
   }
   return &elseYield().getTargetsMutable()[bbArg.getArgNumber()];

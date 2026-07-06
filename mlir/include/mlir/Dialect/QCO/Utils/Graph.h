@@ -56,6 +56,11 @@ public:
     for_each(edges, [this](const auto& e) { addEdge(e.first, e.second); });
   }
 
+  /// Construct graph from edge set.
+  explicit Graph(ArrayRef<size_t> nodes) {
+    for_each(nodes, [this](const auto& u) { std::ignore = adj_[u]; });
+  }
+
   /// Add a directed edge to the internal representation of the graph.
   /// Implicitly adds nodes.
   void addEdge(size_t u, size_t v);
@@ -79,7 +84,10 @@ public:
   [[nodiscard]] bool empty() const { return adj_.empty(); }
 
   /// Clear the graph.
-  [[nodiscard]] void clear() { adj_.clear(); }
+  void clear() { adj_.clear(); }
+
+  /// Remove all edges from the graph. Keep nodes.
+  void clearEdges();
 
   /// Return the minimum distance matrix of the graph by implementing the
   /// Floyd-Warshall Algorithm
