@@ -220,7 +220,7 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
   };
   const auto emitEntangler = [&]() {
     auto ctrlOp = CtrlOp::create(
-        builder, loc, ValueRange{wire0}, ValueRange{wire1},
+        builder, loc, wire0, wire1,
         [&](ValueRange targetArgs) -> SmallVector<Value> {
           if (emitCz) {
             return {ZOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
