@@ -24,9 +24,7 @@ from .exceptions import TranslationError, UnsupportedOperationError
 from .gates import MoveGate
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from qiskit.circuit import QuantumCircuit, Qubit
+    from qiskit.circuit import QuantumCircuit
 
     from ... import fomac
 
@@ -94,11 +92,6 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
         sites = device.sites()
         instructions: list[dict[str, Any]] = []
 
-        def _two_qubit_locus(two_qargs: Sequence[Qubit]) -> list[str | None]:
-            qubit_index1: int = circuit.find_bit(two_qargs[0]).index
-            qubit_index2: int = circuit.find_bit(two_qargs[1]).index
-            return [sites[qubit_index1].name(), sites[qubit_index2].name()]
-
         for instruction in circuit.data:
             operation, qargs, cargs = instruction.operation, instruction.qubits, instruction.clbits
 
@@ -118,9 +111,14 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
 
             # CZ or Move gate
             elif isinstance(operation, CZGate | MoveGate):
+                qubit_index1: int = circuit.find_bit(qargs[0]).index
+                qubit_index2: int = circuit.find_bit(qargs[1]).index
                 instructions.append({
                     "name": operation.name,
-                    "locus": _two_qubit_locus(qargs),
+                    "locus": [
+                        sites[qubit_index1].name(),
+                        sites[qubit_index2].name(),
+                    ],
                     "args": {},
                 })
 
