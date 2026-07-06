@@ -27,12 +27,10 @@
 using namespace mlir::qco;
 using namespace std::complex_literals;
 
-static_assert(is_supported_matrix_v<Matrix1x1>);
-static_assert(is_supported_matrix_v<Matrix2x2>);
-static_assert(is_supported_matrix_v<Matrix4x4>);
-static_assert(is_supported_matrix_v<DynamicMatrix>);
-static_assert(!is_supported_matrix_v<int>);
+static_assert(SupportedMatrix<Matrix1x1>);
 static_assert(SupportedMatrix<Matrix2x2>);
+static_assert(SupportedMatrix<Matrix4x4>);
+static_assert(SupportedMatrix<DynamicMatrix>);
 static_assert(!SupportedMatrix<int>);
 
 [[nodiscard]] static constexpr Matrix2x2 pauliX() {

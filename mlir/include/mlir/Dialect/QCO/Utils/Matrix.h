@@ -806,19 +806,6 @@ concept SupportedMatrix =
     std::same_as<T, Matrix1x1> || std::same_as<T, Matrix2x2> ||
     std::same_as<T, Matrix4x4> || std::same_as<T, DynamicMatrix>;
 
-/**
- * @brief Type trait for the four supported matrix types.
- *
- * True for @ref Matrix1x1, @ref Matrix2x2, @ref Matrix4x4, and @ref
- * DynamicMatrix.
- *
- * @tparam T Candidate type.
- */
-template <typename T>
-inline constexpr bool
-    is_supported_matrix_v = // NOLINT(readability-identifier-naming)
-    SupportedMatrix<T>;
-
 /// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
 /// `matrix * scalar`). Provided so generic code can scale a matrix from
 /// either side.
