@@ -39,6 +39,10 @@ size_t Graph::getMaxDegree() const {
   return deg;
 }
 
+void Graph::clearEdges() {
+  for_each(adj_, [](auto& kv) { kv.second.clear(); });
+}
+
 Graph::DistanceMatrix Graph::getDistMatrix() const {
   const auto n = getNumNodes();
 

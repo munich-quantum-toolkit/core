@@ -51,6 +51,11 @@ public:
   /// Construct an empty graph.
   Graph() = default;
 
+  /// Construct graph from node identifiers.
+  explicit Graph(ArrayRef<size_t> nodes) {
+    for_each(nodes, [this](const auto u) { std::ignore = adj_[u]; });
+  }
+
   /// Construct graph from edge set.
   explicit Graph(const llvm::DenseSet<std::pair<size_t, size_t>>& edges) {
     for_each(edges, [this](const auto& e) { addEdge(e.first, e.second); });
@@ -79,7 +84,10 @@ public:
   [[nodiscard]] bool empty() const { return adj_.empty(); }
 
   /// Clear the graph.
-  [[nodiscard]] void clear() { adj_.clear(); }
+  void clear() { adj_.clear(); }
+
+  /// Remove the edges from the graph. Keep the nodes.
+  void clearEdges();
 
   /// Return the minimum distance matrix of the graph by implementing the
   /// Floyd-Warshall Algorithm

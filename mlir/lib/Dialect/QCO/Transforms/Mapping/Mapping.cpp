@@ -667,10 +667,9 @@ private:
   /// Return the sequence of SWAPs to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
-    static constexpr size_t MIN_CYCLE_LENGTH = 2;
 
-    Graph f;
     Layout curr(from);
+    Graph f(device->qubits());
     SmallVector<IndexPairType> swaps;
 
     const auto shouldAddEdge = [&](size_t u, size_t v) {
@@ -686,7 +685,7 @@ private:
       // Note that this assumes that the coupling graph is directed, but
       // symmetric (essentially: undirected).
 
-      f.clear();
+      f.clearEdges();
       for (const auto u : device->qubits()) {
         for (const auto v : device->neighboursOf(u)) {
           if (shouldAddEdge(u, v)) {
@@ -695,21 +694,16 @@ private:
         }
       }
 
-      if (f.empty()) {
-        break;
-      }
-
       // Try to find a directed cycle in the F graph. If there is one,
       // we can apply a happy swap chain. Note that this happy swap chain
       // does not include the final back edge closing the cycle because the
       // first SWAP changes the token (the qubit) on the target, invalidating
       // the edge in F.
 
-      const auto cycle = f.findCycle();
-      if (cycle && cycle->size() >= MIN_CYCLE_LENGTH) {
-        for (size_t i = 0; i + 1 < cycle->size(); ++i) {
-          curr.swap((*cycle)[i], (*cycle)[i + 1]);
-          swaps.emplace_back((*cycle)[i], (*cycle)[i + 1]);
+      if (const auto cycle = f.findCycle(); cycle) {
+        for (size_t i = cycle->size() - 1; i > 0; --i) {
+          curr.swap((*cycle)[i], (*cycle)[i - 1]);
+          swaps.emplace_back((*cycle)[i], (*cycle)[i - 1]);
         }
         continue;
       }
@@ -721,14 +715,12 @@ private:
 
       bool found{false};
       for (const auto u : f.getNodes()) {
-        if (f.getDegree(u) != 0) {
-          for (const auto v : f.getNeighbours(u)) {
-            if (f.getDegree(v) == 0) {
-              curr.swap(u, v);
-              swaps.emplace_back(u, v);
-              found = true;
-              break;
-            }
+        for (const auto v : f.getNeighbours(u)) {
+          if (f.getDegree(v) == 0) {
+            curr.swap(u, v);
+            swaps.emplace_back(u, v);
+            found = true;
+            break;
           }
         }
 
@@ -737,7 +729,12 @@ private:
         }
       }
 
-      assert(found);
+      // If there are no happy or unhappy swaps anymore,
+      // the final placement of every token is reached.
+
+      if (!found) {
+        break;
+      }
     }
 
     return swaps;

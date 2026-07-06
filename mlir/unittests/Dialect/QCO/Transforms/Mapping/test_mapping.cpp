@@ -115,10 +115,6 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
             }
           }
         })
-        .Case<scf::YieldOp>([&](scf::YieldOp op) {
-          assert(isa<scf::ForOp>(op->getParentOp()));
-          auto forOp = cast<scf::ForOp>(op->getParentOp());
-        })
         .Case<ResetOp, MeasureOp>([&](auto op) {
           const auto pred = op.getQubitIn();
           const auto succ = op.getQubitOut();
