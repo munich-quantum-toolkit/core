@@ -420,13 +420,9 @@ versions, you can install it, for example, via
 
 Run the Bash script with the desired LLVM version and installation path:
 
-<!-- rumdl-disable MD013 -->
-
 ```console
 curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 22.1.0 -p /path/to/installation
 ```
-
-<!-- rumdl-enable MD013 -->
 
 Replace `/path/to/installation` with the directory where the LLVM distribution
 should be installed (e.g., `/opt/llvm-22.1.0`).
@@ -437,13 +433,9 @@ should be installed (e.g., `/opt/llvm-22.1.0`).
 
 Run the PowerShell script with the desired LLVM version and installation path:
 
-<!-- rumdl-disable MD013 -->
-
 ```console
 powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.ps1))) -llvm_version 22.1.0 -install_prefix \path\to\installation"
 ```
-
-<!-- rumdl-enable MD013 -->
 
 Replace `\path\to\installation` with the directory where the LLVM distribution
 should be installed (e.g., `C:\llvm-22.1.0`). For debug builds on Windows, add
