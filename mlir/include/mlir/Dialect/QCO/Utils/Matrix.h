@@ -428,8 +428,8 @@ struct Matrix4x4 {
    * m33)`.
    * @return Diagonal matrix with the given entries.
    */
-  [[nodiscard]] static constexpr Matrix4x4
-  fromDiagonal(const ArrayRef<Complex>& diagonalEntries) {
+  [[nodiscard]] static Matrix4x4
+  fromDiagonal(ArrayRef<Complex> diagonalEntries) {
     assert(diagonalEntries.size() == K_ROWS);
     return fromDiagonal(diagonalEntries[0], diagonalEntries[1],
                         diagonalEntries[2], diagonalEntries[3]);

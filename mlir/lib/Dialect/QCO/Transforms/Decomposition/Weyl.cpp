@@ -682,13 +682,23 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
   Value wire1 = qubit1;
   const auto& factors = native->singleQubitFactors;
   const std::uint8_t numBasisUses = native->numBasisUses;
+  const std::size_t requiredFactors = singleQubitFactorCount(numBasisUses);
+  if (factors.size() != requiredFactors) {
+    llvm::reportFatalInternalError(llvm::formatv(
+        "synthesizeUnitary2QWeyl: expected {0} single-qubit factors for "
+        "numBasisUses = {1}, got {2}",
+        requiredFactors, numBasisUses, factors.size()));
+  }
   const bool emitCz = spec.entangler == NativeGateKind::CZ;
   const auto emitFactor = [&](Value& wire, std::size_t index) {
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
         /*hasNonBasisGate=*/true, *spec.eulerBasis);
     if (!synthesized) {
-      llvm_unreachable("forced full synthesis must succeed");
+      llvm::reportFatalInternalError(llvm::formatv(
+          "synthesizeUnitary2QWeyl: euler synthesis failed for factor index "
+          "{0} (layer {1}, qubit {2})",
+          index, index / 2, (index % 2 == 0) ? 1 : 0));
     }
     wire = *synthesized;
   };
