@@ -322,48 +322,22 @@ private:
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of
   /// additional SSA values. Replaces the existing operation and returns the
   /// newly created one.
-  static scf::ForOp extend(scf::ForOp loop, ValueRange addons,
+  static scf::ForOp extend(scf::ForOp forOp, ValueRange addons,
                            IRRewriter& rewriter) {
     OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(loop);
+    rewriter.setInsertionPoint(forOp);
 
     const auto naddons = addons.size();
+    const auto res =
+        forOp.replaceWithAdditionalIterOperands(rewriter, addons, true);
+    assert(succeeded(res));
 
-    SmallVector<Value> inits;
-    llvm::append_range(inits, loop.getInits());
-    llvm::append_range(inits, addons);
-
-    auto newLoop = rewriter.create<scf::ForOp>(
-        loop.getLoc(), loop.getLowerBound(), loop.getUpperBound(),
-        loop.getStep(), inits);
-
-    Block* loopBody = loop.getBody();
-    Block* newLoopBody = newLoop.getBody();
-
-    rewriter.mergeBlocks(
-        loopBody, newLoopBody,
-        newLoopBody->getArguments().take_front(loopBody->getNumArguments()));
-
-    for (const auto [before, after] :
-         llvm::zip_first(loop.getResults(), newLoop.getResults())) {
-      rewriter.replaceAllUsesWith(before, after);
+    auto newForOp = cast<scf::ForOp>(*res);
+    for (const auto [oldUse, newResult] :
+         llvm::zip_equal(addons, newForOp.getResults().take_back(naddons))) {
+      rewriter.replaceAllUsesExcept(oldUse, newResult, newForOp);
     }
-
-    for (const auto [before, after] :
-         llvm::zip_equal(addons, newLoop.getResults().take_back(naddons))) {
-      rewriter.replaceAllUsesExcept(before, after, newLoop);
-    }
-
-    auto yield = cast<scf::YieldOp>(newLoopBody->getTerminator());
-
-    SmallVector<Value> results;
-    llvm::append_range(results, yield.getResults());
-    llvm::append_range(results, newLoop.getRegionIterArgs().take_back(naddons));
-    rewriter.setInsertionPoint(yield);
-    rewriter.replaceOpWithNewOp<scf::YieldOp>(yield, results);
-
-    rewriter.eraseOp(loop);
-    return newLoop;
+    return newForOp;
   }
 
   /// Return the wires of a dynamic computation.
