@@ -16,8 +16,8 @@
 
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Support/LLVM.h>
 
-#include <cstdint>
 #include <optional>
 #include <utility>
 
@@ -106,18 +106,16 @@ selectEntangler(const DenseSet<NativeGateKind>& gates) {
   return std::nullopt;
 }
 
-namespace {
-
-constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
+static constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
     Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,  // row 0
                             0.0, 1.0, 0.0, 0.0,  // row 1
                             0.0, 0.0, 0.0, 1.0,  // row 2
                             0.0, 0.0, 1.0, 0.0); // row 3
 
-constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
+static constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
     Matrix4x4::fromDiagonal(1., 1., 1., -1.);
 
-const TwoQubitBasisDecomposer&
+static const TwoQubitBasisDecomposer&
 cachedNativeBasisDecomposer(NativeGateKind entangler) {
   switch (entangler) {
   case NativeGateKind::CX: {
@@ -134,8 +132,6 @@ cachedNativeBasisDecomposer(NativeGateKind entangler) {
     llvm_unreachable("only CX/CZ are valid entanglers");
   }
 }
-
-} // namespace
 
 namespace detail {
 

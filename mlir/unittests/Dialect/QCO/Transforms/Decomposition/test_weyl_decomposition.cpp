@@ -772,9 +772,7 @@ TEST(NativeSpecTest, ResolvesEulerBasisFromGateset) {
   EXPECT_EQ(*zyz->eulerBasis, EulerBasis::ZYZ);
 }
 
-namespace {
-
-std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
+static std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
   return llvm::TypeSwitch<Operation*, std::optional<NativeGateKind>>(
              op.getOperation())
       .Case<UOp>([](UOp) { return NativeGateKind::U; })
@@ -787,7 +785,7 @@ std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
       .Default([](Operation*) { return std::nullopt; });
 }
 
-std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
+static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
   if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1 ||
       ctrl.getNumBodyUnitaries() != 1) {
     return std::nullopt;
@@ -799,7 +797,7 @@ std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
       .Default([](Operation*) { return std::nullopt; });
 }
 
-bool allowsOp(Operation* op, const NativeProfileSpec& spec) {
+static bool allowsOp(Operation* op, const NativeProfileSpec& spec) {
   return llvm::TypeSwitch<Operation*, bool>(op)
       .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
       .Case<CtrlOp>([&](CtrlOp ctrl) {
@@ -815,8 +813,6 @@ bool allowsOp(Operation* op, const NativeProfileSpec& spec) {
       })
       .Default([](Operation*) { return false; });
 }
-
-} // namespace
 
 TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {
   const auto spec = NativeProfileSpec::parse("u,cx");
