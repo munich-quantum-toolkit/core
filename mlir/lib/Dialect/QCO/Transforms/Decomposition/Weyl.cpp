@@ -12,11 +12,16 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <array>
@@ -659,6 +664,63 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     llvm_unreachable("unreachable specialization");
   }
   return flippedFromOriginal;
+}
+
+LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
+                                      Value qubit0, Value qubit1,
+                                      const Matrix4x4& target,
+                                      const NativeProfileSpec& spec,
+                                      Value& outQubit0, Value& outQubit1) {
+  const auto native = detail::decomposeNativeTarget(target, spec);
+  if (!native) {
+    return failure();
+  }
+  const auto basis = spec.tryEulerBasis();
+  if (!basis) {
+    return failure();
+  }
+
+  emitGPhaseIfNeeded(builder, loc, native->globalPhase);
+
+  Value wire0 = qubit0;
+  Value wire1 = qubit1;
+  const auto& factors = native->singleQubitFactors;
+  const std::uint8_t numBasisUses = native->numBasisUses;
+  const bool emitCz = spec.gates.contains(NativeGateKind::CZ) &&
+                      !spec.gates.contains(NativeGateKind::CX);
+  const auto emitFactor = [&](Value& wire, std::size_t index) {
+    const auto synthesized = synthesizeUnitary1QEuler(
+        builder, loc, wire, factors[index], /*runSize=*/0,
+        /*hasNonBasisGate=*/true, *basis);
+    if (!synthesized) {
+      llvm_unreachable("forced full synthesis must succeed");
+    }
+    wire = *synthesized;
+  };
+  const auto emitEntangler = [&]() {
+    auto ctrlOp = CtrlOp::create(
+        builder, loc, wire0, wire1,
+        [&](ValueRange targetArgs) -> SmallVector<Value> {
+          if (emitCz) {
+            return {ZOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
+          }
+          return {XOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
+        });
+    wire0 = ctrlOp.getOutputControl(0);
+    wire1 = ctrlOp.getOutputTarget(0);
+  };
+
+  for (std::uint8_t layer = 0; layer <= numBasisUses; ++layer) {
+    emitFactor(wire1, static_cast<std::size_t>(2 * layer));
+    emitFactor(wire0, static_cast<std::size_t>((2 * layer) + 1));
+    if (layer < numBasisUses) {
+      emitEntangler();
+    }
+  }
+
+  outQubit0 = wire0;
+  outQubit1 = wire1;
+  return success();
 }
 
 } // namespace mlir::qco::decomposition

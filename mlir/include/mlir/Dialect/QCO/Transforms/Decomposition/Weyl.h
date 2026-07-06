@@ -13,7 +13,11 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <array>
 #include <cmath>
@@ -338,5 +342,14 @@ decomposeTwoQubitWithBasis(
     const Matrix4x4& target, const Matrix4x4& basisMatrix,
     double basisFidelity = 1.0,
     std::optional<std::uint8_t> numBasisUses = std::nullopt);
+
+struct NativeProfileSpec;
+
+/** @brief Synthesizes a two-qubit unitary as gates allowed by @p spec. */
+[[nodiscard]] LogicalResult
+synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
+                        Value qubit1, const Matrix4x4& target,
+                        const NativeProfileSpec& spec, Value& outQubit0,
+                        Value& outQubit1);
 
 } // namespace mlir::qco::decomposition

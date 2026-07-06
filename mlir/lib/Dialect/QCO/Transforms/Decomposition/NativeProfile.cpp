@@ -19,31 +19,10 @@
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <utility>
-
-namespace {
-
-using mlir::qco::Matrix4x4;
-
-constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
-    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,  // row 0
-                            0.0, 1.0, 0.0, 0.0,  // row 1
-                            0.0, 0.0, 0.0, 1.0,  // row 2
-                            0.0, 0.0, 1.0, 0.0); // row 3
-
-constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
-    Matrix4x4::fromDiagonal(1., 1., 1., -1.);
-
-} // namespace
 
 namespace mlir::qco::decomposition {
 
@@ -128,24 +107,6 @@ selectEntangler(const DenseSet<NativeGateKind>& gates) {
   return std::nullopt;
 }
 
-static const TwoQubitBasisDecomposer&
-cachedBasisDecomposer(NativeGateKind entangler) {
-  switch (entangler) {
-  case NativeGateKind::CX: {
-    static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_X, 1.0);
-    return DECOMPOSER;
-  }
-  case NativeGateKind::CZ: {
-    static const TwoQubitBasisDecomposer DECOMPOSER =
-        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_Z, 1.0);
-    return DECOMPOSER;
-  }
-  default:
-    llvm_unreachable("only CX/CZ are valid entanglers");
-  }
-}
-
 static std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
   return TypeSwitch<Operation*, std::optional<NativeGateKind>>(
              op.getOperation())
@@ -171,9 +132,57 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
       .Default([](Operation*) { return std::nullopt; });
 }
 
+namespace {
+
+constexpr Matrix4x4 CANONICAL_CONTROLLED_X =
+    Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0,  // row 0
+                            0.0, 1.0, 0.0, 0.0,  // row 1
+                            0.0, 0.0, 0.0, 1.0,  // row 2
+                            0.0, 0.0, 1.0, 0.0); // row 3
+
+constexpr Matrix4x4 CANONICAL_CONTROLLED_Z =
+    Matrix4x4::fromDiagonal(1., 1., 1., -1.);
+
+const TwoQubitBasisDecomposer&
+cachedNativeBasisDecomposer(NativeGateKind entangler) {
+  switch (entangler) {
+  case NativeGateKind::CX: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_X, 1.0);
+    return DECOMPOSER;
+  }
+  case NativeGateKind::CZ: {
+    static const TwoQubitBasisDecomposer DECOMPOSER =
+        TwoQubitBasisDecomposer::create(CANONICAL_CONTROLLED_Z, 1.0);
+    return DECOMPOSER;
+  }
+  default:
+    llvm_unreachable("only CX/CZ are valid entanglers");
+  }
+}
+
+} // namespace
+
+namespace detail {
+
+std::optional<TwoQubitNativeDecomposition>
+decomposeNativeTarget(const Matrix4x4& target, const NativeProfileSpec& spec) {
+  const auto entangler = selectEntangler(spec.gates);
+  if (!entangler) {
+    return std::nullopt;
+  }
+  return cachedNativeBasisDecomposer(*entangler).decomposeTarget(target);
+}
+
+} // namespace detail
+
 EulerBasis NativeProfileSpec::eulerBasis() const {
   // Valid only for specs returned by @ref NativeProfileSpec::parse.
-  return *resolveEulerBasis(gates);
+  return *tryEulerBasis();
+}
+
+std::optional<EulerBasis> NativeProfileSpec::tryEulerBasis() const {
+  return resolveEulerBasis(gates);
 }
 
 std::optional<NativeProfileSpec>
@@ -185,73 +194,9 @@ NativeProfileSpec::parse(StringRef nativeGates) {
   return NativeProfileSpec{.gates = std::move(*gates)};
 }
 
-LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
-                                      Value qubit0, Value qubit1,
-                                      const Matrix4x4& target,
-                                      const NativeProfileSpec& spec,
-                                      Value& outQubit0, Value& outQubit1) {
-  const auto entangler = selectEntangler(spec.gates);
-  if (!entangler) {
-    return failure();
-  }
-  const auto native = cachedBasisDecomposer(*entangler).decomposeTarget(target);
-  if (!native) {
-    return failure();
-  }
-  const auto basis = resolveEulerBasis(spec.gates);
-  if (!basis) {
-    return failure();
-  }
-
-  emitGPhaseIfNeeded(builder, loc, native->globalPhase);
-
-  Value wire0 = qubit0;
-  Value wire1 = qubit1;
-  const auto& factors = native->singleQubitFactors;
-  const std::uint8_t numBasisUses = native->numBasisUses;
-  const bool emitCz = (*entangler == NativeGateKind::CZ);
-  const auto emitFactor = [&](Value& wire, std::size_t index) {
-    const auto synthesized = synthesizeUnitary1QEuler(
-        builder, loc, wire, factors[index], /*runSize=*/0,
-        /*hasNonBasisGate=*/true, *basis);
-    if (!synthesized) {
-      llvm_unreachable("forced full synthesis must succeed");
-    }
-    wire = *synthesized;
-  };
-  const auto emitEntangler = [&]() {
-    auto ctrlOp = CtrlOp::create(
-        builder, loc, wire0, wire1,
-        [&](ValueRange targetArgs) -> SmallVector<Value> {
-          if (emitCz) {
-            return {ZOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
-          }
-          return {XOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
-        });
-    wire0 = ctrlOp.getOutputControl(0);
-    wire1 = ctrlOp.getOutputTarget(0);
-  };
-
-  for (std::uint8_t layer = 0; layer <= numBasisUses; ++layer) {
-    emitFactor(wire1, static_cast<std::size_t>(2 * layer));
-    emitFactor(wire0, static_cast<std::size_t>((2 * layer) + 1));
-    if (layer < numBasisUses) {
-      emitEntangler();
-    }
-  }
-
-  outQubit0 = wire0;
-  outQubit1 = wire1;
-  return success();
-}
-
 std::optional<std::uint8_t>
 NativeProfileSpec::twoQubitEntanglerCount(const Matrix4x4& target) const {
-  const auto entangler = selectEntangler(gates);
-  if (!entangler) {
-    return std::nullopt;
-  }
-  const auto native = cachedBasisDecomposer(*entangler).decomposeTarget(target);
+  const auto native = detail::decomposeNativeTarget(target, *this);
   if (!native) {
     return std::nullopt;
   }

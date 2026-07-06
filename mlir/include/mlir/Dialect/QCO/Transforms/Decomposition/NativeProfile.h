@@ -14,12 +14,7 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/DenseSet.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 #include <cstdint>
 #include <optional>
@@ -61,6 +56,14 @@ struct NativeProfileSpec {
   [[nodiscard]] EulerBasis eulerBasis() const;
 
   /**
+   * @brief Resolves the Euler basis when @p gates supports synthesis.
+   *
+   * @return The basis, or `std::nullopt` when no supported single-qubit
+   *         strategy is present.
+   */
+  [[nodiscard]] std::optional<EulerBasis> tryEulerBasis() const;
+
+  /**
    * @brief Parses a comma-separated native gateset (e.g. `"u,cx"`).
    *
    * @param nativeGates Comma-separated gate tokens.
@@ -81,11 +84,14 @@ struct NativeProfileSpec {
   [[nodiscard]] bool allowsOp(Operation* op) const;
 };
 
-/** @brief Synthesizes a two-qubit unitary as gates allowed by @p spec. */
-[[nodiscard]] LogicalResult
-synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
-                        Value qubit1, const Matrix4x4& target,
-                        const NativeProfileSpec& spec, Value& outQubit0,
-                        Value& outQubit1);
+struct TwoQubitNativeDecomposition;
+
+namespace detail {
+
+/** @brief Basis decomposition of @p target under @p spec, if supported. */
+[[nodiscard]] std::optional<TwoQubitNativeDecomposition>
+decomposeNativeTarget(const Matrix4x4& target, const NativeProfileSpec& spec);
+
+} // namespace detail
 
 } // namespace mlir::qco::decomposition
