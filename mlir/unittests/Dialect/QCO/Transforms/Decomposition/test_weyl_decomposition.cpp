@@ -733,6 +733,7 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   ASSERT_TRUE(both);
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CZ));
+  EXPECT_EQ(both->entangler, NativeGateKind::CX);
 }
 
 TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
@@ -744,27 +745,27 @@ TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
 TEST(NativeSpecTest, ResolvesEulerBasisFromGateset) {
   const auto uGateset = NativeProfileSpec::parse("u,cx");
   ASSERT_TRUE(uGateset);
-  EXPECT_EQ(uGateset->eulerBasis(), EulerBasis::U);
+  EXPECT_EQ(*uGateset->eulerBasis, EulerBasis::U);
 
   const auto zsxx = NativeProfileSpec::parse("x,sx,rz,cx");
   ASSERT_TRUE(zsxx);
-  EXPECT_EQ(zsxx->eulerBasis(), EulerBasis::ZSXX);
+  EXPECT_EQ(*zsxx->eulerBasis, EulerBasis::ZSXX);
 
   const auto rGateset = NativeProfileSpec::parse("r,cz");
   ASSERT_TRUE(rGateset);
-  EXPECT_EQ(rGateset->eulerBasis(), EulerBasis::R);
+  EXPECT_EQ(*rGateset->eulerBasis, EulerBasis::R);
 
   const auto xzx = NativeProfileSpec::parse("rx,rz,cz");
   ASSERT_TRUE(xzx);
-  EXPECT_EQ(xzx->eulerBasis(), EulerBasis::XZX);
+  EXPECT_EQ(*xzx->eulerBasis, EulerBasis::XZX);
 
   const auto xyx = NativeProfileSpec::parse("rx,ry,cz");
   ASSERT_TRUE(xyx);
-  EXPECT_EQ(xyx->eulerBasis(), EulerBasis::XYX);
+  EXPECT_EQ(*xyx->eulerBasis, EulerBasis::XYX);
 
   const auto zyz = NativeProfileSpec::parse("ry,rz,cz");
   ASSERT_TRUE(zyz);
-  EXPECT_EQ(zyz->eulerBasis(), EulerBasis::ZYZ);
+  EXPECT_EQ(*zyz->eulerBasis, EulerBasis::ZYZ);
 }
 
 TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {

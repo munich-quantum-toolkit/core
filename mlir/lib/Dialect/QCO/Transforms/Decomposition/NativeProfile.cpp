@@ -63,7 +63,7 @@ parseGateSet(StringRef nativeGates) {
  * @brief Resolves the preferred single-qubit Euler basis for a parsed gateset.
  *
  * Returns `std::nullopt` when no supported single-qubit synthesis strategy is
- * present. Priority matches @ref NativeProfileSpec::eulerBasis.
+ * present. Cached on @ref NativeProfileSpec by @ref NativeProfileSpec::parse.
  */
 [[nodiscard]] static std::optional<EulerBasis>
 resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
@@ -169,31 +169,30 @@ namespace detail {
 
 std::optional<TwoQubitNativeDecomposition>
 decomposeNativeTarget(const Matrix4x4& target, const NativeProfileSpec& spec) {
-  const auto entangler = selectEntangler(spec.gates);
-  if (!entangler) {
+  if (!spec.entangler) {
     return std::nullopt;
   }
-  return cachedNativeBasisDecomposer(*entangler).decomposeTarget(target);
+  return cachedNativeBasisDecomposer(*spec.entangler).decomposeTarget(target);
 }
 
 } // namespace detail
 
-EulerBasis NativeProfileSpec::eulerBasis() const {
-  // Valid only for specs returned by @ref NativeProfileSpec::parse.
-  return *tryEulerBasis();
-}
-
-std::optional<EulerBasis> NativeProfileSpec::tryEulerBasis() const {
-  return resolveEulerBasis(gates);
-}
-
 std::optional<NativeProfileSpec>
 NativeProfileSpec::parse(StringRef nativeGates) {
   auto gates = parseGateSet(nativeGates);
-  if (!gates || !resolveEulerBasis(*gates) || !selectEntangler(*gates)) {
+  if (!gates) {
     return std::nullopt;
   }
-  return NativeProfileSpec{.gates = std::move(*gates)};
+  const auto euler = resolveEulerBasis(*gates);
+  const auto entangler = selectEntangler(*gates);
+  if (!euler || !entangler) {
+    return std::nullopt;
+  }
+  return NativeProfileSpec{
+      .gates = std::move(*gates),
+      .eulerBasis = euler,
+      .entangler = entangler,
+  };
 }
 
 std::optional<std::uint8_t>

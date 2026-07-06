@@ -39,29 +39,14 @@ enum class NativeGateKind : std::uint8_t {
 /**
  * @brief Resolved native gateset for two-qubit Weyl synthesis.
  *
- * @p gates is the parsed gateset. Euler decomposition and entangler choice are
- * derived from it with fixed priority (see @ref NativeProfileSpec::eulerBasis
- * and @ref NativeProfileSpec::parse). Gatesets must include a supported
- * single-qubit strategy and at least one of `cx` or `cz` (when both are
- * present, `cx` is preferred).
+ * Use @ref parse to obtain a profile with @p eulerBasis and @p entangler
+ * resolved from @p gates. When both `cx` and `cz` appear, `cx` is preferred as
+ * the entangler.
  */
 struct NativeProfileSpec {
   llvm::DenseSet<NativeGateKind> gates;
-
-  /**
-   * @brief Preferred single-qubit Euler basis for synthesis in this gateset.
-   *
-   * Only valid for specs returned by @ref parse.
-   */
-  [[nodiscard]] EulerBasis eulerBasis() const;
-
-  /**
-   * @brief Resolves the Euler basis when @p gates supports synthesis.
-   *
-   * @return The basis, or `std::nullopt` when no supported single-qubit
-   *         strategy is present.
-   */
-  [[nodiscard]] std::optional<EulerBasis> tryEulerBasis() const;
+  std::optional<EulerBasis> eulerBasis;
+  std::optional<NativeGateKind> entangler;
 
   /**
    * @brief Parses a comma-separated native gateset (e.g. `"u,cx"`).
