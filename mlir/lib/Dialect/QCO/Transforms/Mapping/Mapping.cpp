@@ -324,48 +324,83 @@ private:
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of
   /// additional SSA values. Replaces the existing operation and returns the
   /// newly created one.
-  static scf::ForOp extend(scf::ForOp loop, ValueRange addons,
+  static scf::ForOp extend(scf::ForOp forOp, ValueRange addons,
                            IRRewriter& rewriter) {
     OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(loop);
+    rewriter.setInsertionPoint(forOp);
+
+    const auto naddons = addons.size();
+    const auto res =
+        forOp.replaceWithAdditionalIterOperands(rewriter, addons, true);
+    assert(succeeded(res));
+
+    auto newForOp = cast<scf::ForOp>(*res);
+    for (const auto [before, after] :
+         llvm::zip_equal(addons, newForOp.getResults().take_back(naddons))) {
+      rewriter.replaceAllUsesExcept(before, after, newForOp);
+    }
+    return newForOp;
+  }
+
+  /// Extend the qubit arguments of an `qco::IfOp` by adding a given range of
+  /// additional SSA values. Replaces the existing operation and returns the
+  /// newly created one.
+  static qco::IfOp extend(qco::IfOp ifOp, ValueRange addons,
+                          IRRewriter& rewriter) {
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(ifOp);
 
     const auto naddons = addons.size();
 
     SmallVector<Value> inits;
-    llvm::append_range(inits, loop.getInits());
+    llvm::append_range(inits, ifOp.getQubits());
     llvm::append_range(inits, addons);
 
-    auto newLoop = rewriter.create<scf::ForOp>(
-        loop.getLoc(), loop.getLowerBound(), loop.getUpperBound(),
-        loop.getStep(), inits);
+    auto newIfOp =
+        rewriter.create<qco::IfOp>(ifOp->getLoc(), ifOp.getCondition(), inits);
 
-    Block* loopBody = loop.getBody();
-    Block* newLoopBody = newLoop.getBody();
+    // The qco::IfOp implements the SingleBlockImplicitTerminator trait.
+    assert(newIfOp.getThenRegion().hasOneBlock());
+    assert(newIfOp.getElseRegion().hasOneBlock());
 
-    rewriter.mergeBlocks(
-        loopBody, newLoopBody,
-        newLoopBody->getArguments().take_front(loopBody->getNumArguments()));
+    const std::array<Block*, 2> oldBlocks{
+        &ifOp.getThenRegion().getBlocks().front(),
+        &ifOp.getElseRegion().getBlocks().front(),
+    };
 
-    for (const auto [before, after] :
-         llvm::zip_first(loop.getResults(), newLoop.getResults())) {
-      rewriter.replaceAllUsesWith(before, after);
+    const std::array<Block*, 2> newBlocks{
+        &newIfOp.getThenRegion().getBlocks().front(),
+        &newIfOp.getElseRegion().getBlocks().front(),
+    };
+
+    for (const auto [oldBlock, newBlock] :
+         llvm::zip_equal(oldBlocks, newBlocks)) {
+      rewriter.mergeBlocks(
+          oldBlock, newBlock,
+          newBlock->getArguments().take_front(oldBlock->getNumArguments()));
+
+      auto yield = cast<scf::YieldOp>(newBlock->getTerminator());
+
+      SmallVector<Value> results;
+      llvm::append_range(results, yield.getResults());
+      llvm::append_range(results, newBlock->getArguments().take_back(naddons));
+      rewriter.setInsertionPoint(yield);
+      rewriter.replaceOpWithNewOp<scf::YieldOp>(yield, results);
     }
 
-    for (const auto [before, after] :
-         llvm::zip_equal(addons, newLoop.getResults().take_back(naddons))) {
-      rewriter.replaceAllUsesExcept(before, after, newLoop);
+    for (const auto [oldResult, newResult] :
+         llvm::zip_first(ifOp.getResults(), newIfOp.getResults())) {
+      rewriter.replaceAllUsesWith(oldResult, newResult);
     }
 
-    auto yield = cast<scf::YieldOp>(newLoopBody->getTerminator());
+    for (const auto [oldUse, newResult] :
+         llvm::zip_equal(addons, newIfOp.getResults().take_back(naddons))) {
+      rewriter.replaceAllUsesExcept(oldUse, newResult, newIfOp);
+    }
 
-    SmallVector<Value> results;
-    llvm::append_range(results, yield.getResults());
-    llvm::append_range(results, newLoop.getRegionIterArgs().take_back(naddons));
-    rewriter.setInsertionPoint(yield);
-    rewriter.replaceOpWithNewOp<scf::YieldOp>(yield, results);
+    rewriter.eraseOp(ifOp);
 
-    rewriter.eraseOp(loop);
-    return newLoop;
+    return newIfOp;
   }
 
   /// Return the wires of a dynamic computation.
@@ -512,12 +547,13 @@ private:
                 qubits.erase(pred);
               }
             })
-            .Case<scf::ForOp>([&](scf::ForOp loop) {
+            .Case<scf::ForOp>([&](scf::ForOp forOp) {
               assert(qubits.size() == layout.nqubits());
 
               DenseSet<Value> addons(qubits);
-              llvm::for_each(loop.getInits(), [&](auto v) { addons.erase(v); });
-              auto newLoop = extend(loop, to_vector(addons), rewriter);
+              llvm::for_each(forOp.getInits(),
+                             [&](auto v) { addons.erase(v); });
+              auto newLoop = extend(forOp, to_vector(addons), rewriter);
 
               for (OpOperand& operand : newLoop.getInitsMutable()) {
                 qubits.insert(newLoop.getTiedLoopResult(&operand));
@@ -928,8 +964,8 @@ private:
                 released.emplace_back(op);
               }
             })
-            .template Case<scf::ForOp>(
-                [&](scf::ForOp op) { stack.emplace_back(op, indices); });
+            .template Case<scf::ForOp, qco::IfOp>(
+                [&](auto op) { stack.emplace_back(op, indices); });
       }
 
       if (released.empty()) {
@@ -942,7 +978,7 @@ private:
     return stack;
   }
 
-  /// TODO: 
+  /// TODO:
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   LogicalResult dispatch(const RecursiveRoutingStackItem& item,
@@ -950,7 +986,7 @@ private:
                          IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = item;
     return TypeSwitch<Operation*, LogicalResult>(op)
-        .Case<scf::ForOp>([&](scf::ForOp forOp) {
+        .template Case<scf::ForOp>([&](scf::ForOp forOp) {
           RoutingBundle child{.layout = parent.layout};
 
           // Map parent (results) to child values (iter args). Going
@@ -995,6 +1031,77 @@ private:
 
           if constexpr (Mode == RoutingMode::Hot) {
             sortTopologically(forOp.getBody());
+          }
+
+          // Finally, move past the operation with nested regions by
+          // incrementing the respective global wires.
+
+          llvm::for_each(indices, [&](size_t i) {
+            std::advance(parent.wires[i],
+                         WireTraversalTraits<Direction>::stride());
+          });
+
+          return success();
+        })
+        .template Case<qco::IfOp>([&](qco::IfOp ifOp) {
+          std::array<RoutingBundle, 2> children{
+              RoutingBundle{.layout = parent.layout},
+              RoutingBundle{.layout = parent.layout}};
+
+          for (size_t i : indices) {
+            const auto prog = parent.infos.lookupProgram(i);
+            const auto res = cast<OpResult>(parent.wires[i].qubit());
+            const auto index = children[0].wires.size();
+
+            OpOperand* qubit = ifOp.getTiedQubit(res);
+            const std::array args{ifOp.getTiedThenBlockArgument(qubit),
+                                  ifOp.getTiedElseBlockArgument(qubit)};
+
+            if constexpr (Direction == WireDirection::Forward) {
+              for (size_t i = 0; i < children.size(); ++i) {
+                children[i].wires.emplace_back(args[i]);
+                children[i].infos.map(index, prog);
+              }
+            } else {
+              const std::array yields{
+                  ifOp.getTiedThenYieldedValue(args[0])->get(),
+                  ifOp.getTiedElseYieldedValue(args[1])->get()};
+              for (size_t i = 0; i < children.size(); ++i) {
+                children[i].wires.emplace_back(yields[i]);
+                children[i].infos.map(index, prog);
+              }
+            }
+          }
+
+          for (auto& child : children) {
+            const auto res = route<Direction, Mode>(child, stats, rewriter);
+            if (failed(res)) {
+              return failure();
+            }
+
+            const auto swaps = restore(child.layout, parent.layout);
+
+            if constexpr (Mode == RoutingMode::Hot) {
+
+              // After routing the loop body, all iterators point to
+              // std::default_sentinel. To move the iterators to the
+              // correct qubit SSA values for the epilogue SWAPs,
+              // decrement each twice: (sentinel → yield →
+              // unitary/block arg).
+
+              llvm::for_each(child.wires,
+                             [](auto& it) { std::advance(it, -2); });
+            }
+
+            insertSWAPs<Mode>(swaps, child, stats, rewriter);
+          }
+
+          if constexpr (Mode == RoutingMode::Hot) {
+            // llvm::for_each(ifOp.getRegions(), [](Region& region) {
+            //   llvm::for_each(region.getBlocks(),
+            //                  [](Block& block) { sortTopologically(&block);
+            //                  });
+            // });
           }
 
           // Finally, move past the operation with nested regions by
