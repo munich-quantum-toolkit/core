@@ -30,6 +30,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -237,7 +238,7 @@ private:
   std::vector<qc::Qubit> qubitPermutation;
   static constexpr uintptr_t MIN_DYN_RESULT_ADDRESS = 0x10000;
   std::unordered_map<Result*, ResultStruct> rRegister;
-  std::string recordedOutputs;
+  std::string measurements;
   uintptr_t currentMaxQubitAddress;
   qc::Qubit currentMaxQubitId;
   uintptr_t currentMaxResultAddress;
@@ -391,13 +392,17 @@ public:
   auto rFree(Result* result) -> void;
   auto equal(Result* result1, Result* result2) -> bool;
 
-  /// Append the value referenced by `result` to the recorded outputs bit
-  /// string in record order.
-  auto recordOutput(Result* result) -> void;
+  /// Append a measurement bit to the measurement string.
+  auto appendMeasurementBit(bool result) -> void;
 
-  /// @returns the outputs declared by the program as a bit string in record
-  /// order.
-  auto getRecordedOutputs() const -> const std::string&;
+  /// @returns the accumulated measurement string.
+  auto getMeasurements() const -> const std::string&;
+
+  /// Emit `label:\n` to the output stream.
+  auto outputContainer(int64_t elementCount, const char* label) const -> void;
+
+  /// Emit `label: valueStr\n` to the output stream.
+  auto outputValue(std::string_view valueStr, const char* label) const -> void;
 
   /// Move the quantum state out of the runtime.
   /// Then reset the runtime to a clean state ready for the next job.
@@ -406,7 +411,7 @@ public:
   /// @returns the moved @c QState from the runtime.
   auto takeState() -> QState;
 
-  auto getOstream() -> std::ostream&;
+  auto getOstream() const -> std::ostream&;
   auto setOstream(std::ostream& other) -> void;
   auto resetOstream() -> void;
 };
