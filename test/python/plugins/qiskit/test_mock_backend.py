@@ -90,7 +90,7 @@ class MockQDMIDevice:
             elif name in {"ry", "rz", "rx", "p", "phase"}:
                 self._qubits = 1
                 self._params = 1
-            elif name in {"cz", "cx", "cnot", "cy", "ch", "swap", "iswap"}:
+            elif name in {"cz", "cx", "cnot", "cy", "ch", "swap", "iswap", "move"}:
                 self._qubits = 2
                 self._params = 0
             elif name in {"rxx", "ryy", "rzz", "rzx"}:
@@ -355,6 +355,23 @@ def test_backend_warns_on_unmappable_operation(
         ), f"Expected warning about custom_unmappable_gate, got: {warning_messages}"
 
 
+def test_backend_exposes_move_operation(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+) -> None:
+    """Backend target should expose MOVE when the device reports it."""
+    mock_device = mock_qdmi_device_factory(
+        name="Test Device",
+        num_qubits=2,
+        operations=["move", "measure"],
+    )
+    _patch_session_devices(monkeypatch, [mock_device])
+
+    provider = QDMIProvider()
+    backend = provider.get_backend("Test Device")
+
+    assert "move" in backend.target.operation_names
+
+
 def test_backend_warns_on_missing_measurement_operation(
     monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
@@ -562,6 +579,14 @@ def test_map_operation_returns_none_for_unknown() -> None:
     assert QDMIBackend._map_operation_to_gate("") is None  # noqa: SLF001
 
 
+def test_map_operation_to_move_gate() -> None:
+    """MOVE operations map to an opaque 2-qubit gate."""
+    gate = QDMIBackend._map_operation_to_gate("move")  # noqa: SLF001
+    assert gate is not None
+    assert gate.name == "move"
+    assert gate.num_qubits == 2
+
+
 def test_map_qiskit_gate_to_operation_names() -> None:
     """Test the inverse gate name mapping function comprehensively."""
     # Basic gates map to themselves
@@ -590,6 +615,10 @@ def test_map_qiskit_gate_to_operation_names() -> None:
     # Case-insensitive matching
     assert QDMIBackend._map_qiskit_gate_to_operation_names("X") == {"x"}  # noqa: SLF001
     assert QDMIBackend._map_qiskit_gate_to_operation_names("CX") == {"cx", "cnot"}  # noqa: SLF001
+
+    # MOVE operation is represented as a real gate for IQM devices
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("move") == {"move"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("MOVE") == {"move"}  # noqa: SLF001
 
     # Fallback for unknown gates (returns lowercase name)
     assert QDMIBackend._map_qiskit_gate_to_operation_names("unknown") == {"unknown"}  # noqa: SLF001

@@ -134,12 +134,13 @@ template <typename RotationOp>
 }
 
 template <typename Fn> static void forEachBasis(Fn fn) {
-  const std::array<const char*, 6> bases = {"zyz", "zxz", "xzx",
-                                            "xyx", "u",   "zsxx"};
+  const std::array<const char*, 7> bases = {"zyz", "zxz",  "xzx", "xyx",
+                                            "u",   "zsxx", "r"};
   for (const char* basis : bases) {
     fn(StringRef{basis});
   }
 }
+
 [[nodiscard]] static WalkResult failMissingUnitaryMatrix(Operation* op,
                                                          bool& failed) {
   ADD_FAILURE() << "Expected constant unitary matrix for op: "
@@ -492,10 +493,24 @@ TEST(EulerAnglesCoverageTest, UBasisNonzeroThetaEmitsSingleUGate) {
   TestFixture fx;
   fx.setUp();
   const Matrix2x2 matrix = RYOp::unitaryMatrix(1.2);
+  const EulerAngles angles = anglesFromUnitary(matrix, U);
+  ASSERT_GT(std::abs(angles.theta), mlir::utils::TOLERANCE);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
                             EXPECT_EQ(countOps<UOp>(funcOp), 1U);
                             EXPECT_EQ(countZYZGates(funcOp), 0U);
+                          });
+}
+
+TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
+  TestFixture fx;
+  fx.setUp();
+  const Matrix2x2 matrix = HOp::getUnitaryMatrix();
+  const EulerAngles angles = anglesFromUnitary(matrix, R);
+  ASSERT_GT(std::abs(angles.theta), mlir::utils::TOLERANCE);
+  expectSynthesizedMatrix(fx.ctx(), matrix, R,
+                          [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
+                            EXPECT_EQ(countOps<ROp>(funcOp), 3U);
                           });
 }
 

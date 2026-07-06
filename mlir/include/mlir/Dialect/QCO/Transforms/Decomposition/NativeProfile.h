@@ -46,12 +46,19 @@ enum class NativeGateKind : std::uint8_t {
  * @brief Resolved native-gate menu for two-qubit Weyl synthesis.
  *
  * @p gates is the parsed menu. Euler decomposition and entangler choice are
- * derived from it with fixed priority (see @ref NativeProfileSpec::eulerBasis).
+ * derived from it with fixed priority (see @ref NativeProfileSpec::eulerBasis
+ * and @ref parseNativeSpec). Menus must include a supported single-qubit
+ * strategy and at least one of `cx` or `cz`; when both are present, `cx` is
+ * used for synthesis.
  */
 struct NativeProfileSpec {
   llvm::DenseSet<NativeGateKind> gates;
 
-  /** @brief Preferred single-qubit Euler basis for synthesis in this menu. */
+  /**
+   * @brief Preferred single-qubit Euler basis for synthesis in this menu.
+   *
+   * Only valid for specs returned by @ref parseNativeSpec.
+   */
   [[nodiscard]] EulerBasis eulerBasis() const;
 };
 
@@ -77,9 +84,10 @@ twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec);
 /**
  * @brief Returns true when @p op is already on the resolved native menu.
  *
- * Barriers and global phase are always allowed. Single-qubit primitives,
- * single-target `CtrlOp` shells (`X`/`Z` bodies), and `RZZ` are checked
- * against @p spec.gates.
+ * Barriers and global phase are always allowed. Single-qubit primitives and
+ * single-target `CtrlOp` shells (`X`/`Z` bodies) are checked against
+ * @p spec.gates. `RZZ` is allowed when listed, but two-qubit synthesis uses
+ * only `cx` or `cz` entanglers.
  */
 [[nodiscard]] bool allowsOp(Operation* op, const NativeProfileSpec& spec);
 

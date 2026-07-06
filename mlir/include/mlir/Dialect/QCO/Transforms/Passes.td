@@ -62,8 +62,9 @@ def FuseSingleQubitUnitaryRuns
     Currently, only operations whose unitary matrix can be obtained at compile
     time are fused.
   }];
-  let options = [Option<"basis", "basis", "std::string", "\"zyz\"",
-                        "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx).">];
+  let options = [Option<
+      "basis", "basis", "std::string", "\"zyz\"",
+      "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
 }
 
 def FuseTwoQubitUnitaryRuns

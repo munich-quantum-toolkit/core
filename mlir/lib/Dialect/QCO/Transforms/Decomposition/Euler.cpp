@@ -84,14 +84,7 @@ namespace mlir::qco::decomposition {
   return std::abs(angle) <= utils::TOLERANCE;
 }
 
-/**
- * @brief Emits `qco.gphase` when `phase` is outside tolerance.
- *
- * @param builder Builder for the operation.
- * @param loc Location of the operation.
- * @param phase Global phase in radians.
- */
-static void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, double phase) {
+void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   if (isNearZeroRotationAngle(mod2pi(phase))) {
     return;
   }
@@ -193,8 +186,6 @@ EulerAngles anglesFromUnitary(const Matrix2x2& matrix, const EulerBasis basis) {
     return paramsXZX(matrix);
   case EulerBasis::XYX:
   case EulerBasis::R:
-    // The `R` basis reuses the X-Y-X angles and lowers `Rx`/`Ry` to the native
-    // `R(theta, phi)` gate (`Rx(a) == R(a, 0)`, `Ry(a) == R(a, pi/2)`).
     return paramsXYX(matrix);
   case EulerBasis::U:
     return paramsU(matrix);
@@ -321,7 +312,6 @@ struct Unitary1QEulerPlan {
       phase = angles.phase;
       break;
     case EulerBasis::R:
-      // X-Y-X with `Rx(a) == R(a, 0)` and `Ry(a) == R(a, pi/2)`.
       appendRStep(angles.lambda, 0.0);
       steps.emplace_back(SynthesisStep::Kind::R, angles.theta,
                          std::numbers::pi / 2.0);
