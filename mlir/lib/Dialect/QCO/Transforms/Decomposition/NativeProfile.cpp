@@ -172,11 +172,12 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
 }
 
 EulerBasis NativeProfileSpec::eulerBasis() const {
-  // Valid only for specs returned by @ref parseNativeSpec.
+  // Valid only for specs returned by @ref NativeProfileSpec::parse.
   return *resolveEulerBasis(gates);
 }
 
-std::optional<NativeProfileSpec> parseNativeSpec(StringRef nativeGates) {
+std::optional<NativeProfileSpec>
+NativeProfileSpec::parse(StringRef nativeGates) {
   auto gates = parseGateSet(nativeGates);
   if (!gates || !resolveEulerBasis(*gates) || !selectEntangler(*gates)) {
     return std::nullopt;

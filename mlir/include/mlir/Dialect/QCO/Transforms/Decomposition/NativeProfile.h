@@ -47,9 +47,9 @@ enum class NativeGateKind : std::uint8_t {
  *
  * @p gates is the parsed menu. Euler decomposition and entangler choice are
  * derived from it with fixed priority (see @ref NativeProfileSpec::eulerBasis
- * and @ref parseNativeSpec). Menus must include a supported single-qubit
- * strategy and at least one of `cx` or `cz`; when both are present, `cx` is
- * used for synthesis.
+ * and @ref NativeProfileSpec::parse). Menus must include a supported
+ * single-qubit strategy and at least one of `cx` or `cz`; when both are
+ * present, `cx` is used for synthesis.
  */
 struct NativeProfileSpec {
   llvm::DenseSet<NativeGateKind> gates;
@@ -57,14 +57,19 @@ struct NativeProfileSpec {
   /**
    * @brief Preferred single-qubit Euler basis for synthesis in this menu.
    *
-   * Only valid for specs returned by @ref parseNativeSpec.
+   * Only valid for specs returned by @ref parse.
    */
   [[nodiscard]] EulerBasis eulerBasis() const;
-};
 
-/** @brief Parses a comma-separated native-gate menu (e.g. `"u,cx,rzz"`). */
-[[nodiscard]] std::optional<NativeProfileSpec>
-parseNativeSpec(StringRef nativeGates);
+  /**
+   * @brief Parses a comma-separated native-gate menu (e.g. `"u,cx,rzz"`).
+   *
+   * @param nativeGates Comma-separated gate tokens.
+   * @return Parsed profile, or `std::nullopt` when the menu is unsupported.
+   */
+  [[nodiscard]] static std::optional<NativeProfileSpec>
+  parse(StringRef nativeGates);
+};
 
 /** @brief Synthesizes a two-qubit unitary as gates allowed by @p spec. */
 [[nodiscard]] LogicalResult

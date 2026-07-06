@@ -608,7 +608,7 @@ protected:
 } // namespace
 
 TEST_P(WeylSynthesisTest, PreservesTargetUnitary) {
-  const auto spec = parseNativeSpec(GetParam().nativeGates);
+  const auto spec = NativeProfileSpec::parse(GetParam().nativeGates);
   ASSERT_TRUE(spec);
   expectSynthesized2QMatrix(mlir.ctx(), GetParam().target(), *spec);
 }
@@ -639,7 +639,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
   for (const char* menu : {"u,cx", "u,cz"}) {
-    const auto spec = parseNativeSpec(menu);
+    const auto spec = NativeProfileSpec::parse(menu);
     ASSERT_TRUE(spec) << menu;
     const auto count = twoQubitEntanglerCount(Matrix4x4::identity(), *spec);
     ASSERT_TRUE(count.has_value()) << menu;
@@ -648,7 +648,7 @@ TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
 }
 
 TEST(WeylSynthesisTest, RejectsMenuWithoutEntangler) {
-  EXPECT_FALSE(parseNativeSpec("u").has_value());
+  EXPECT_FALSE(NativeProfileSpec::parse("u").has_value());
 }
 
 TEST_F(NativeProfileMlirTest, ReconstructionRejectsUnhandledOps) {
@@ -707,72 +707,72 @@ TEST(WeylSynthesisTest, EntanglerCountFailsWithoutEntangler) {
 }
 
 TEST(NativeSpecTest, ParsesAndRejectsMenus) {
-  const auto ibm = parseNativeSpec("x,sx,rz,cx");
+  const auto ibm = NativeProfileSpec::parse("x,sx,rz,cx");
   ASSERT_TRUE(ibm);
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::X));
   EXPECT_FALSE(ibm->gates.contains(NativeGateKind::RZZ));
-  EXPECT_FALSE(parseNativeSpec("x,sx,rz,not-a-gate").has_value());
-  EXPECT_FALSE(parseNativeSpec("u").has_value());
+  EXPECT_FALSE(NativeProfileSpec::parse("x,sx,rz,not-a-gate").has_value());
+  EXPECT_FALSE(NativeProfileSpec::parse("u").has_value());
 
-  const auto whitespaceToken = parseNativeSpec("u, ,cx");
+  const auto whitespaceToken = NativeProfileSpec::parse("u, ,cx");
   ASSERT_TRUE(whitespaceToken);
   EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::U));
   EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::CX));
 
-  const auto pMenu = parseNativeSpec("x,sx,p,cx");
-  const auto rzMenu = parseNativeSpec("x,sx,rz,cx");
+  const auto pMenu = NativeProfileSpec::parse("x,sx,p,cx");
+  const auto rzMenu = NativeProfileSpec::parse("x,sx,rz,cx");
   ASSERT_TRUE(pMenu);
   ASSERT_TRUE(rzMenu);
   EXPECT_EQ(pMenu->gates, rzMenu->gates);
 
-  const auto cxOnly = parseNativeSpec("u,cx");
+  const auto cxOnly = NativeProfileSpec::parse("u,cx");
   ASSERT_TRUE(cxOnly);
   EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::U));
   EXPECT_TRUE(cxOnly->gates.contains(NativeGateKind::CX));
   EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::CZ));
   EXPECT_FALSE(cxOnly->gates.contains(NativeGateKind::X));
 
-  const auto both = parseNativeSpec("u,cx,cz");
+  const auto both = NativeProfileSpec::parse("u,cx,cz");
   ASSERT_TRUE(both);
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CZ));
 }
 
 TEST(NativeSpecTest, RejectsMenuWithoutSingleQubitStrategy) {
-  EXPECT_FALSE(parseNativeSpec("cx").has_value());
-  EXPECT_FALSE(parseNativeSpec("cz,rzz").has_value());
-  EXPECT_FALSE(parseNativeSpec("rx,cx").has_value());
+  EXPECT_FALSE(NativeProfileSpec::parse("cx").has_value());
+  EXPECT_FALSE(NativeProfileSpec::parse("cz,rzz").has_value());
+  EXPECT_FALSE(NativeProfileSpec::parse("rx,cx").has_value());
 }
 
 TEST(NativeSpecTest, ResolvesEulerBasisFromMenu) {
-  const auto uMenu = parseNativeSpec("u,cx");
+  const auto uMenu = NativeProfileSpec::parse("u,cx");
   ASSERT_TRUE(uMenu);
   EXPECT_EQ(uMenu->eulerBasis(), EulerBasis::U);
 
-  const auto zsxx = parseNativeSpec("x,sx,rz,cx");
+  const auto zsxx = NativeProfileSpec::parse("x,sx,rz,cx");
   ASSERT_TRUE(zsxx);
   EXPECT_EQ(zsxx->eulerBasis(), EulerBasis::ZSXX);
 
-  const auto rMenu = parseNativeSpec("r,cz");
+  const auto rMenu = NativeProfileSpec::parse("r,cz");
   ASSERT_TRUE(rMenu);
   EXPECT_EQ(rMenu->eulerBasis(), EulerBasis::R);
 
-  const auto xzx = parseNativeSpec("rx,rz,cz");
+  const auto xzx = NativeProfileSpec::parse("rx,rz,cz");
   ASSERT_TRUE(xzx);
   EXPECT_EQ(xzx->eulerBasis(), EulerBasis::XZX);
 
-  const auto xyx = parseNativeSpec("rx,ry,cz");
+  const auto xyx = NativeProfileSpec::parse("rx,ry,cz");
   ASSERT_TRUE(xyx);
   EXPECT_EQ(xyx->eulerBasis(), EulerBasis::XYX);
 
-  const auto zyz = parseNativeSpec("ry,rz,cz");
+  const auto zyz = NativeProfileSpec::parse("ry,rz,cz");
   ASSERT_TRUE(zyz);
   EXPECT_EQ(zyz->eulerBasis(), EulerBasis::ZYZ);
 }
 
 TEST_F(NativeProfileMlirTest, AllowsOpMatchesMenu) {
-  const auto spec = parseNativeSpec("u,cx,rzz");
+  const auto spec = NativeProfileSpec::parse("u,cx,rzz");
   ASSERT_TRUE(spec);
 
   OpBuilder builder(mlir.ctx());
@@ -815,7 +815,7 @@ TEST_F(NativeProfileMlirTest, AllowsOpMatchesMenu) {
   EXPECT_FALSE(
       allowsOp(RXXOp::create(builder, loc, q0, q1, 0.2).getOperation(), *spec));
 
-  const auto pSpec = parseNativeSpec("x,sx,p,cx");
+  const auto pSpec = NativeProfileSpec::parse("x,sx,p,cx");
   ASSERT_TRUE(pSpec);
   EXPECT_TRUE(
       allowsOp(POp::create(builder, loc, q0, 0.3).getOperation(), *pSpec));
@@ -842,7 +842,7 @@ TEST_F(NativeProfileMlirTest, AllowsOpMatchesMenu) {
       });
   EXPECT_FALSE(allowsOp(ccx.getOperation(), *spec));
 
-  const auto czSpec = parseNativeSpec("u,cz");
+  const auto czSpec = NativeProfileSpec::parse("u,cz");
   ASSERT_TRUE(czSpec);
   auto cz = CtrlOp::create(
       builder, loc, ValueRange{q0}, ValueRange{q1},
