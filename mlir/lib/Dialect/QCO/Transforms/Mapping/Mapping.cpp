@@ -831,6 +831,107 @@ private:
     return swaps;
   }
 
+  /// Return the sequence of SWAPs to move from one layout to another.
+  /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
+  std::pair<SmallVector<IndexPairType>, SmallVector<IndexPairType>>
+  converge(const Layout& from, const Layout& to) {
+
+    Layout lhs(from);
+    Layout rhs(to);
+
+    Graph lhsF(device->qubits());
+    Graph rhsF(device->qubits());
+
+    SmallVector<IndexPairType> lhsSwaps;
+    SmallVector<IndexPairType> rhsSwaps;
+
+    const auto shouldAddEdge = [&](size_t u, size_t v, const Layout& f,
+                                   const Layout& t) {
+      const auto prog = f.getProgramIndex(u);
+      const auto hwGoal = t.getHardwareIndex(prog);
+      return device->distanceBetween(v, hwGoal) <
+             device->distanceBetween(u, hwGoal);
+    };
+
+    while (true) {
+
+      // Build F-graph: Add edges to F for each edge in the coupling graph.
+      // Note that this assumes that the coupling graph is directed, but
+      // symmetric (essentially: undirected).
+
+      lhsF.clearEdges();
+      rhsF.clearEdges();
+
+      for (const auto u : device->qubits()) {
+        for (const auto v : device->neighboursOf(u)) {
+          if (shouldAddEdge(u, v, lhs, rhs)) {
+            lhsF.addEdge(u, v);
+          }
+        }
+      }
+
+      for (const auto u : device->qubits()) {
+        for (const auto v : device->neighboursOf(u)) {
+          if (shouldAddEdge(u, v, rhs, lhs)) {
+            rhsF.addEdge(u, v);
+          }
+        }
+      }
+
+      // Try to find a directed cycle in the F graph. If there is one,
+      // we can apply a happy swap chain. Note that this happy swap chain
+      // does not include the final back edge closing the cycle because the
+      // first SWAP changes the token (the qubit) on the target, invalidating
+      // the edge in F.
+
+      if (const auto cycle = lhsF.findCycle(); cycle) {
+        for (size_t i = cycle->size() - 1; i > 0; --i) {
+          lhs.swap((*cycle)[i], (*cycle)[i - 1]);
+          lhsSwaps.emplace_back((*cycle)[i], (*cycle)[i - 1]);
+        }
+        continue;
+      }
+
+      if (const auto cycle = rhsF.findCycle(); cycle) {
+        for (size_t i = cycle->size() - 1; i > 0; --i) {
+          rhs.swap((*cycle)[i], (*cycle)[i - 1]);
+          rhsSwaps.emplace_back((*cycle)[i], (*cycle)[i - 1]);
+        }
+        continue;
+      }
+
+      // Otherwise, search for an unhappy SWAP. That is, search for an edge (u,
+      // v), where exchanging u and v, reduces u's distance to its target
+      // location (by one) and increases v's distance from 0 (already at the
+      // correct location) to one.
+
+      bool found{false};
+      for (const auto u : lhsF.getNodes()) {
+        for (const auto v : lhsF.getNeighbours(u)) {
+          if (lhsF.getDegree(v) == 0) {
+            lhs.swap(u, v);
+            lhsSwaps.emplace_back(u, v);
+            found = true;
+            break;
+          }
+        }
+
+        if (found) {
+          break;
+        }
+      }
+
+      // If there are no happy or unhappy swaps anymore,
+      // the final placement of every token is reached.
+
+      if (!found) {
+        break;
+      }
+    }
+
+    return std::make_pair(lhsSwaps, rhsSwaps);
+  }
+
   /// Skip to the end of the two-qubit block for both wire iterators, where
   /// initially both must point at the same two-qubit operation.
   template <WireDirection Direction>
@@ -1102,21 +1203,21 @@ private:
               return failure();
             }
 
-            const auto swaps = restore(child.layout, parent.layout);
+            const auto swaps = converge(child.layout, parent.layout);
 
-            if constexpr (Mode == RoutingMode::Hot) {
+            // if constexpr (Mode == RoutingMode::Hot) {
 
-              // After routing the loop body, all iterators point to
-              // std::default_sentinel. To move the iterators to the
-              // correct qubit SSA values for the epilogue SWAPs,
-              // decrement each twice: (sentinel → yield →
-              // unitary/block arg).
+            //   // After routing the loop body, all iterators point to
+            //   // std::default_sentinel. To move the iterators to the
+            //   // correct qubit SSA values for the epilogue SWAPs,
+            //   // decrement each twice: (sentinel → yield →
+            //   // unitary/block arg).
 
-              llvm::for_each(child.wires,
-                             [](auto& it) { std::advance(it, -2); });
-            }
+            //   llvm::for_each(child.wires,
+            //                  [](auto& it) { std::advance(it, -2); });
+            // }
 
-            insertSWAPs<Mode>(swaps, child, stats, rewriter);
+            // insertSWAPs<Mode>(swaps, child, stats, rewriter);
           }
 
           if constexpr (Mode == RoutingMode::Hot) {
