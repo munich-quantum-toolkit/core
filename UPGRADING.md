@@ -267,8 +267,8 @@ gate and was only used in a single method (in [MQT QMAP]), which is bound to be
 removed as part of [MQT QMAP] `v3.0.0`.
 
 [MQT QCEC], [MQT QMAP], and [MQT DDSIM] have been updated to use the new API,
-which will be released in [MQT QCEC] `v3.0.0`, [MQT QMAP] `v3.0.0` and [MQT
-DDSIM] `v2.0.0`.
+which will be released in [MQT QCEC] `v3.0.0`, [MQT QMAP] `v3.0.0` and
+[MQT DDSIM] `v2.0.0`.
 
 ### DD Package
 
@@ -290,8 +290,8 @@ released in [MQT QCEC] `v3.0.0` and [MQT DDSIM] `v2.0.0`.
 The `NAComputation` class hierarchy has been refactored to use an MLIR-inspired
 design. This will act as a foundation for future extensions and improvements.
 
-[MQT QMAP] has been updated to use the new API, which will be released in [MQT
-QMAP] `v3.0.0`.
+[MQT QMAP] has been updated to use the new API, which will be released in
+[MQT QMAP] `v3.0.0`.
 
 ### General
 
@@ -304,8 +304,8 @@ accordingly.
 
 MQT Core now ships all its C++ libraries as shared libraries with the `mqt-core`
 Python package. Depending packages can now solely rely on the Python package for
-obtaining the C++ libraries. This is demonstrated in [MQT QCEC] `v3.0.0`, [MQT
-QMAP] `v3.0.0` and [MQT DDSIM] `v2.0.0`, which will be released in the near
+obtaining the C++ libraries. This is demonstrated in [MQT QCEC] `v3.0.0`,
+[MQT QMAP] `v3.0.0` and [MQT DDSIM] `v2.0.0`, which will be released in the near
 future.
 
 MQT Core now requires CMake 3.24 or higher. Most modern operating systems should
