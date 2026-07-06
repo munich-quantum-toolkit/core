@@ -69,17 +69,21 @@ void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRXX>(context);
 }
 
-std::optional<Matrix4x4> RXXOp::getUnitaryMatrix() {
+Matrix4x4 RXXOp::unitaryMatrix(const double theta) {
   using namespace std::complex_literals;
 
+  const auto m0 = 0i;
+  const auto mc = std::cos(theta / 2);
+  const auto ms = -1i * std::sin(theta / 2);
+  return Matrix4x4::fromElements(mc, m0, m0, ms,  // row 0
+                                 m0, mc, ms, m0,  // row 1
+                                 m0, ms, mc, m0,  // row 2
+                                 ms, m0, m0, mc); // row 3
+}
+
+std::optional<Matrix4x4> RXXOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m0 = 0i;
-    const auto mc = std::cos(*theta / 2);
-    const auto ms = -1i * std::sin(*theta / 2);
-    return Matrix4x4::fromElements(mc, m0, m0, ms,  // row 0
-                                   m0, mc, ms, m0,  // row 1
-                                   m0, ms, mc, m0,  // row 2
-                                   ms, m0, m0, mc); // row 3
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

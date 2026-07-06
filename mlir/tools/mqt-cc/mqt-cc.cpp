@@ -14,11 +14,17 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
 #include <llvm/Support/CommandLine.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/SystemUtils.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Bytecode/BytecodeWriter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -32,7 +38,11 @@
 #include <mlir/Support/FileUtilities.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
+#include <mlir/Target/LLVMIR/Export.h>
 
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -89,7 +99,7 @@ static llvm::cl::opt<bool> enableHadamardLifting(
     llvm::cl::init(false));
 
 /**
- * @brief Load and parse a .qasm file
+ * @brief Load and parse a `.qasm` file
  */
 static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
                                           MLIRContext* context) {
@@ -107,7 +117,7 @@ static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
 }
 
 /**
- * @brief Load and parse a .mlir file
+ * @brief Load and parse an `.mlir` file
  */
 static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
                                           MLIRContext* context) {
@@ -125,9 +135,10 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
 }
 
 /**
- * @brief Write the module to the output file
+ * @brief Write a module to an output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
+template <typename ModuleType>
+static mlir::LogicalResult writeOutput(ModuleType mod, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -135,7 +146,28 @@ static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
     return mlir::failure();
   }
 
-  module.print(output->os());
+  if constexpr (std::is_same_v<ModuleType, mlir::ModuleOp>) {
+    if (filename == "-") {
+      mod.print(output->os());
+    } else {
+      writeBytecodeToFile(mod, output->os());
+    }
+  } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
+    if (filename == "-") {
+      mod->print(output->os(), nullptr);
+    } else {
+      llvm::WriteBitcodeToFile(*mod, output->os());
+    }
+  } else {
+    llvm_unreachable("Unsupported module type");
+  }
+
+  output->os().flush();
+  if (output->os().has_error()) {
+    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
+    return mlir::failure();
+  }
+
   output->keep();
   return mlir::success();
 }
@@ -153,18 +185,20 @@ int main(int argc, char** argv) {
       .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
               LLVM::LLVMDialect, memref::MemRefDialect, qc::QCDialect,
               qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
+  registerBuiltinDialectTranslation(registry);
+  registerLLVMDialectTranslation(registry);
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
   // Load the input .mlir file
-  OwningOpRef<ModuleOp> module;
+  OwningOpRef<ModuleOp> mod;
   if (inputFilename.getValue().ends_with(".qasm")) {
-    module = loadQASMFile(inputFilename, &context);
+    mod = loadQASMFile(inputFilename, &context);
   } else {
-    module = loadMLIRFile(inputFilename, &context);
+    mod = loadMLIRFile(inputFilename, &context);
   }
-  if (!module) {
+  if (!mod) {
     return 1;
   }
 
@@ -183,8 +217,7 @@ int main(int argc, char** argv) {
   // Run the compilation pipeline
   CompilationRecord record;
   if (const QuantumCompilerPipeline pipeline(config);
-      pipeline
-          .runPipeline(module.get(), recordIntermediates ? &record : nullptr)
+      pipeline.runPipeline(mod.get(), recordIntermediates ? &record : nullptr)
           .failed()) {
     llvm::errs() << "Compilation pipeline failed\n";
     return 1;
@@ -213,8 +246,18 @@ int main(int argc, char** argv) {
   }
 
   // Write the output
-  if (writeOutput(module.get(), outputFilename).failed()) {
-    llvm::errs() << "Failed to write output file: " << outputFilename << "\n";
+  if (convertToQIRBase || convertToQIRAdaptive) {
+    llvm::LLVMContext llvmContext;
+    std::unique_ptr<llvm::Module> llvmMod =
+        translateModuleToLLVMIR(*mod, llvmContext);
+    if (!llvmMod) {
+      llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
+      return 1;
+    }
+    if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
+      return 1;
+    }
+  } else if (writeOutput<ModuleOp>(mod.get(), outputFilename).failed()) {
     return 1;
   }
 

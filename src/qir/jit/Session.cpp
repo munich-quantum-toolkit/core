@@ -164,13 +164,13 @@ void JitSession::registerRuntimeSymbols() {
     REGISTER_SYMBOL(__quantum__qis__z__body);
     REGISTER_SYMBOL(__quantum__qis__h__body);
     REGISTER_SYMBOL(__quantum__qis__s__body);
-    REGISTER_SYMBOL(__quantum__qis__sdg__body);
+    REGISTER_SYMBOL(__quantum__qis__s__adj);
     REGISTER_SYMBOL(__quantum__qis__sx__body);
-    REGISTER_SYMBOL(__quantum__qis__sxdg__body);
+    REGISTER_SYMBOL(__quantum__qis__sx__adj);
     REGISTER_SYMBOL(__quantum__qis__sqrtx__body);
-    REGISTER_SYMBOL(__quantum__qis__sqrtxdg__body);
+    REGISTER_SYMBOL(__quantum__qis__sqrtx__adj);
     REGISTER_SYMBOL(__quantum__qis__t__body);
-    REGISTER_SYMBOL(__quantum__qis__tdg__body);
+    REGISTER_SYMBOL(__quantum__qis__t__adj);
     REGISTER_SYMBOL(__quantum__qis__r__body);
     REGISTER_SYMBOL(__quantum__qis__prx__body);
     REGISTER_SYMBOL(__quantum__qis__rx__body);
@@ -208,6 +208,11 @@ void JitSession::registerRuntimeSymbols() {
     REGISTER_SYMBOL(__quantum__rt__initialize);
     REGISTER_SYMBOL(__quantum__rt__read_result);
     REGISTER_SYMBOL(__quantum__rt__result_record_output);
+    REGISTER_SYMBOL(__quantum__rt__bool_record_output);
+    REGISTER_SYMBOL(__quantum__rt__int_record_output);
+    REGISTER_SYMBOL(__quantum__rt__float_record_output);
+    REGISTER_SYMBOL(__quantum__rt__tuple_record_output);
+    REGISTER_SYMBOL(__quantum__rt__array_record_output);
   });
 }
 

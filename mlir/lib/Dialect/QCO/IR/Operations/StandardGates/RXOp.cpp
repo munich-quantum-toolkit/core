@@ -65,14 +65,18 @@ void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRX>(context);
 }
 
-std::optional<Matrix2x2> RXOp::getUnitaryMatrix() {
+Matrix2x2 RXOp::unitaryMatrix(const double theta) {
   using namespace std::complex_literals;
 
+  const auto diag = std::cos(theta / 2);
+  const auto offDiag = -1i * std::sin(theta / 2);
+  return Matrix2x2::fromElements(diag, offDiag,  // row 0
+                                 offDiag, diag); // row 1
+}
+
+std::optional<Matrix2x2> RXOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto diag = std::cos(*theta / 2);
-    const auto offDiag = -1i * std::sin(*theta / 2);
-    return Matrix2x2::fromElements(diag, offDiag,  // row 0
-                                   offDiag, diag); // row 1
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }
