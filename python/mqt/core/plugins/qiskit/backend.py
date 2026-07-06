@@ -324,23 +324,7 @@ class QDMIBackend(BackendV2):
 
         # Add the operation without properties and populate them iteratively later
         target.add_instruction(gate, dict.fromkeys(qargs))
-        self._update_instruction_properties(target, gate_name, op, qargs)
 
-    @staticmethod
-    def _update_instruction_properties(
-        target: Target,
-        gate_name: str,
-        op: fomac.Device.Operation,
-        qargs: list[tuple[int]] | list[tuple[int, int]] | list[None],
-    ) -> None:
-        """Populate per-qarg InstructionProperties for a 1- or 2-qubit operation.
-
-        Args:
-            target: The Target being constructed.
-            gate_name: The Qiskit gate name the properties are registered under.
-            op: The device operation the properties are derived from.
-            qargs: The qubit argument tuples previously registered for ``gate_name``.
-        """
         num_qubits = op.qubits_num()
         if num_qubits == 1:
             op_sites = op.sites()
@@ -355,8 +339,9 @@ class QDMIBackend(BackendV2):
                         error=error,
                     )
                     target.update_instruction_properties(gate_name, qarg, props)
+            return
 
-        elif num_qubits == 2:
+        if num_qubits == 2:
             op_site_pairs = op.site_pairs()
             assert op_site_pairs is not None
             for qarg, (site1, site2) in zip(qargs, op_site_pairs, strict=True):
@@ -369,6 +354,7 @@ class QDMIBackend(BackendV2):
                         error=error,
                     )
                     target.update_instruction_properties(gate_name, qarg, props)
+            return
 
     @staticmethod
     def _map_operation_to_gate(op_name: str) -> Instruction | type[Instruction] | None:
