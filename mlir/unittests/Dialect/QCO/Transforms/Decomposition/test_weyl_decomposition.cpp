@@ -638,16 +638,16 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  for (const char* menu : {"u,cx", "u,cz"}) {
-    const auto spec = NativeProfileSpec::parse(menu);
-    ASSERT_TRUE(spec) << menu;
+  for (const char* gateset : {"u,cx", "u,cz"}) {
+    const auto spec = NativeProfileSpec::parse(gateset);
+    ASSERT_TRUE(spec) << gateset;
     const auto count = twoQubitEntanglerCount(Matrix4x4::identity(), *spec);
-    ASSERT_TRUE(count.has_value()) << menu;
-    EXPECT_EQ(*count, 0U) << menu;
+    ASSERT_TRUE(count.has_value()) << gateset;
+    EXPECT_EQ(*count, 0U) << gateset;
   }
 }
 
-TEST(WeylSynthesisTest, RejectsMenuWithoutEntangler) {
+TEST(WeylSynthesisTest, RejectsGatesetWithoutEntangler) {
   EXPECT_FALSE(NativeProfileSpec::parse("u").has_value());
 }
 
@@ -706,7 +706,7 @@ TEST(WeylSynthesisTest, EntanglerCountFailsWithoutEntangler) {
   EXPECT_FALSE(twoQubitEntanglerCount(Matrix4x4::identity(), spec).has_value());
 }
 
-TEST(NativeSpecTest, ParsesAndRejectsMenus) {
+TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   const auto ibm = NativeProfileSpec::parse("x,sx,rz,cx");
   ASSERT_TRUE(ibm);
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::CX));
@@ -720,11 +720,11 @@ TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::U));
   EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::CX));
 
-  const auto pMenu = NativeProfileSpec::parse("x,sx,p,cx");
-  const auto rzMenu = NativeProfileSpec::parse("x,sx,rz,cx");
-  ASSERT_TRUE(pMenu);
-  ASSERT_TRUE(rzMenu);
-  EXPECT_EQ(pMenu->gates, rzMenu->gates);
+  const auto pGateset = NativeProfileSpec::parse("x,sx,p,cx");
+  const auto rzGateset = NativeProfileSpec::parse("x,sx,rz,cx");
+  ASSERT_TRUE(pGateset);
+  ASSERT_TRUE(rzGateset);
+  EXPECT_EQ(pGateset->gates, rzGateset->gates);
 
   const auto cxOnly = NativeProfileSpec::parse("u,cx");
   ASSERT_TRUE(cxOnly);
@@ -739,24 +739,24 @@ TEST(NativeSpecTest, ParsesAndRejectsMenus) {
   EXPECT_TRUE(both->gates.contains(NativeGateKind::CZ));
 }
 
-TEST(NativeSpecTest, RejectsMenuWithoutSingleQubitStrategy) {
+TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
   EXPECT_FALSE(NativeProfileSpec::parse("cx").has_value());
   EXPECT_FALSE(NativeProfileSpec::parse("cz,rzz").has_value());
   EXPECT_FALSE(NativeProfileSpec::parse("rx,cx").has_value());
 }
 
-TEST(NativeSpecTest, ResolvesEulerBasisFromMenu) {
-  const auto uMenu = NativeProfileSpec::parse("u,cx");
-  ASSERT_TRUE(uMenu);
-  EXPECT_EQ(uMenu->eulerBasis(), EulerBasis::U);
+TEST(NativeSpecTest, ResolvesEulerBasisFromGateset) {
+  const auto uGateset = NativeProfileSpec::parse("u,cx");
+  ASSERT_TRUE(uGateset);
+  EXPECT_EQ(uGateset->eulerBasis(), EulerBasis::U);
 
   const auto zsxx = NativeProfileSpec::parse("x,sx,rz,cx");
   ASSERT_TRUE(zsxx);
   EXPECT_EQ(zsxx->eulerBasis(), EulerBasis::ZSXX);
 
-  const auto rMenu = NativeProfileSpec::parse("r,cz");
-  ASSERT_TRUE(rMenu);
-  EXPECT_EQ(rMenu->eulerBasis(), EulerBasis::R);
+  const auto rGateset = NativeProfileSpec::parse("r,cz");
+  ASSERT_TRUE(rGateset);
+  EXPECT_EQ(rGateset->eulerBasis(), EulerBasis::R);
 
   const auto xzx = NativeProfileSpec::parse("rx,rz,cz");
   ASSERT_TRUE(xzx);
@@ -771,7 +771,7 @@ TEST(NativeSpecTest, ResolvesEulerBasisFromMenu) {
   EXPECT_EQ(zyz->eulerBasis(), EulerBasis::ZYZ);
 }
 
-TEST_F(NativeProfileMlirTest, AllowsOpMatchesMenu) {
+TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {
   const auto spec = NativeProfileSpec::parse("u,cx,rzz");
   ASSERT_TRUE(spec);
 

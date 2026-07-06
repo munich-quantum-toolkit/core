@@ -27,7 +27,7 @@
 namespace mlir::qco::decomposition {
 
 /**
- * @brief Gate token in a comma-separated native menu (e.g. `"u,cx,rzz"`).
+ * @brief Gate token in a comma-separated native gateset (e.g. `"u,cx,rzz"`).
  */
 enum class NativeGateKind : std::uint8_t {
   U,
@@ -43,11 +43,11 @@ enum class NativeGateKind : std::uint8_t {
 };
 
 /**
- * @brief Resolved native-gate menu for two-qubit Weyl synthesis.
+ * @brief Resolved native gateset for two-qubit Weyl synthesis.
  *
- * @p gates is the parsed menu. Euler decomposition and entangler choice are
+ * @p gates is the parsed gateset. Euler decomposition and entangler choice are
  * derived from it with fixed priority (see @ref NativeProfileSpec::eulerBasis
- * and @ref NativeProfileSpec::parse). Menus must include a supported
+ * and @ref NativeProfileSpec::parse). Gatesets must include a supported
  * single-qubit strategy and at least one of `cx` or `cz`; when both are
  * present, `cx` is used for synthesis.
  */
@@ -55,17 +55,17 @@ struct NativeProfileSpec {
   llvm::DenseSet<NativeGateKind> gates;
 
   /**
-   * @brief Preferred single-qubit Euler basis for synthesis in this menu.
+   * @brief Preferred single-qubit Euler basis for synthesis in this gateset.
    *
    * Only valid for specs returned by @ref parse.
    */
   [[nodiscard]] EulerBasis eulerBasis() const;
 
   /**
-   * @brief Parses a comma-separated native-gate menu (e.g. `"u,cx,rzz"`).
+   * @brief Parses a comma-separated native gateset (e.g. `"u,cx,rzz"`).
    *
    * @param nativeGates Comma-separated gate tokens.
-   * @return Parsed profile, or `std::nullopt` when the menu is unsupported.
+   * @return Parsed profile, or `std::nullopt` when the gateset is unsupported.
    */
   [[nodiscard]] static std::optional<NativeProfileSpec>
   parse(StringRef nativeGates);
@@ -87,7 +87,7 @@ synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
 twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec);
 
 /**
- * @brief Returns true when @p op is already on the resolved native menu.
+ * @brief Returns true when @p op is already in the resolved native gateset.
  *
  * Barriers and global phase are always allowed. Single-qubit primitives and
  * single-target `CtrlOp` shells (`X`/`Z` bodies) are checked against

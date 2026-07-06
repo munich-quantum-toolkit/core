@@ -82,7 +82,7 @@ parseGateSet(StringRef nativeGates) {
 }
 
 /**
- * @brief Resolves the preferred single-qubit Euler basis for a parsed menu.
+ * @brief Resolves the preferred single-qubit Euler basis for a parsed gateset.
  *
  * Returns `std::nullopt` when no supported single-qubit synthesis strategy is
  * present. Priority matches @ref NativeProfileSpec::eulerBasis.
@@ -115,7 +115,7 @@ resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
 /**
  * @brief Picks the two-qubit entangler for Weyl synthesis.
  *
- * When both `cx` and `cz` appear in the menu, `cx` is preferred.
+ * When both `cx` and `cz` appear in the gateset, `cx` is preferred.
  */
 [[nodiscard]] static std::optional<NativeGateKind>
 selectEntangler(const DenseSet<NativeGateKind>& gates) {
