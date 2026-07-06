@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/DenseSet.h>
-#include <mlir/IR/Operation.h>
 
 #include <cstdint>
 #include <optional>
@@ -56,17 +55,6 @@ struct NativeProfileSpec {
    */
   [[nodiscard]] static std::optional<NativeProfileSpec>
   parse(StringRef nativeGates);
-
-  /**
-   * @brief Entangling basis gates needed to synthesize @p target.
-   *
-   * @return Count, or `std::nullopt` when synthesis is impossible.
-   */
-  [[nodiscard]] std::optional<std::uint8_t>
-  twoQubitEntanglerCount(const Matrix4x4& target) const;
-
-  /** @brief Returns true when @p op is already in this native gateset. */
-  [[nodiscard]] bool allowsOp(Operation* op) const;
 };
 
 struct TwoQubitNativeDecomposition;
