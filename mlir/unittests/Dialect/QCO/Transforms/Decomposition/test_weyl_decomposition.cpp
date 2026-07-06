@@ -711,7 +711,6 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   ASSERT_TRUE(ibm);
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::CX));
   EXPECT_TRUE(ibm->gates.contains(NativeGateKind::X));
-  EXPECT_FALSE(ibm->gates.contains(NativeGateKind::RZZ));
   EXPECT_FALSE(NativeProfileSpec::parse("x,sx,rz,not-a-gate").has_value());
   EXPECT_FALSE(NativeProfileSpec::parse("u").has_value());
 
@@ -741,7 +740,7 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
 
 TEST(NativeSpecTest, RejectsGatesetWithoutSingleQubitStrategy) {
   EXPECT_FALSE(NativeProfileSpec::parse("cx").has_value());
-  EXPECT_FALSE(NativeProfileSpec::parse("cz,rzz").has_value());
+  EXPECT_FALSE(NativeProfileSpec::parse("cz").has_value());
   EXPECT_FALSE(NativeProfileSpec::parse("rx,cx").has_value());
 }
 
@@ -772,7 +771,7 @@ TEST(NativeSpecTest, ResolvesEulerBasisFromGateset) {
 }
 
 TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {
-  const auto spec = NativeProfileSpec::parse("u,cx,rzz");
+  const auto spec = NativeProfileSpec::parse("u,cx");
   ASSERT_TRUE(spec);
 
   OpBuilder builder(mlir.ctx());
@@ -793,8 +792,6 @@ TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {
       allowsOp(GPhaseOp::create(builder, loc, 0.1).getOperation(), *spec));
   EXPECT_TRUE(allowsOp(
       UOp::create(builder, loc, q0, 0.1, 0.2, 0.3).getOperation(), *spec));
-  EXPECT_TRUE(
-      allowsOp(RZZOp::create(builder, loc, q0, q1, 0.4).getOperation(), *spec));
 
   auto cx = CtrlOp::create(
       builder, loc, ValueRange{q0}, ValueRange{q1},

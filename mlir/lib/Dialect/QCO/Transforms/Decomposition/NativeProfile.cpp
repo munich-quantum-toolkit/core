@@ -58,7 +58,6 @@ static std::optional<NativeGateKind> parseGateToken(StringRef name) {
       .Case("r", NativeGateKind::R)
       .Case("cx", NativeGateKind::CX)
       .Case("cz", NativeGateKind::CZ)
-      .Case("rzz", NativeGateKind::RZZ)
       .Default(std::nullopt);
 }
 
@@ -115,7 +114,8 @@ resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
 /**
  * @brief Picks the two-qubit entangler for Weyl synthesis.
  *
- * When both `cx` and `cz` appear in the gateset, `cx` is preferred.
+ * Only `cx` and `cz` are supported by @ref TwoQubitBasisDecomposer. When both
+ * appear in the gateset, `cx` is preferred.
  */
 [[nodiscard]] static std::optional<NativeGateKind>
 selectEntangler(const DenseSet<NativeGateKind>& gates) {
@@ -265,8 +265,6 @@ bool allowsOp(Operation* op, const NativeProfileSpec& spec) {
         const auto kind = entanglerKindFor(ctrl);
         return kind && spec.gates.contains(*kind);
       })
-      .Case<RZZOp>(
-          [&](RZZOp) { return spec.gates.contains(NativeGateKind::RZZ); })
       .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
         if (!unitary.isSingleQubit()) {
           return false;

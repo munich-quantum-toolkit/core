@@ -27,7 +27,7 @@
 namespace mlir::qco::decomposition {
 
 /**
- * @brief Gate token in a comma-separated native gateset (e.g. `"u,cx,rzz"`).
+ * @brief Gate token in a comma-separated native gateset (e.g. `"u,cx"`).
  */
 enum class NativeGateKind : std::uint8_t {
   U,
@@ -39,7 +39,6 @@ enum class NativeGateKind : std::uint8_t {
   R,
   CX,
   CZ,
-  RZZ,
 };
 
 /**
@@ -48,8 +47,8 @@ enum class NativeGateKind : std::uint8_t {
  * @p gates is the parsed gateset. Euler decomposition and entangler choice are
  * derived from it with fixed priority (see @ref NativeProfileSpec::eulerBasis
  * and @ref NativeProfileSpec::parse). Gatesets must include a supported
- * single-qubit strategy and at least one of `cx` or `cz`; when both are
- * present, `cx` is used for synthesis.
+ * single-qubit strategy and at least one of `cx` or `cz` (when both are
+ * present, `cx` is preferred).
  */
 struct NativeProfileSpec {
   llvm::DenseSet<NativeGateKind> gates;
@@ -62,7 +61,7 @@ struct NativeProfileSpec {
   [[nodiscard]] EulerBasis eulerBasis() const;
 
   /**
-   * @brief Parses a comma-separated native gateset (e.g. `"u,cx,rzz"`).
+   * @brief Parses a comma-separated native gateset (e.g. `"u,cx"`).
    *
    * @param nativeGates Comma-separated gate tokens.
    * @return Parsed profile, or `std::nullopt` when the gateset is unsupported.
@@ -86,14 +85,7 @@ synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0,
 [[nodiscard]] std::optional<std::uint8_t>
 twoQubitEntanglerCount(const Matrix4x4& target, const NativeProfileSpec& spec);
 
-/**
- * @brief Returns true when @p op is already in the resolved native gateset.
- *
- * Barriers and global phase are always allowed. Single-qubit primitives and
- * single-target `CtrlOp` shells (`X`/`Z` bodies) are checked against
- * @p spec.gates. `RZZ` is allowed when listed, but two-qubit synthesis uses
- * only `cx` or `cz` entanglers.
- */
+/** @brief Returns true when @p op is already in the resolved native gateset. */
 [[nodiscard]] bool allowsOp(Operation* op, const NativeProfileSpec& spec);
 
 } // namespace mlir::qco::decomposition
