@@ -12,11 +12,16 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <array>
@@ -331,11 +336,9 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
                                       Matrix4x4 p, std::array<double, 3> cs,
                                       const std::array<double, 4>& dReal,
                                       double globalPhase) {
-  std::array<Complex, 4> tempDiag{};
-  for (std::size_t k = 0; k < tempDiag.size(); ++k) {
-    tempDiag[k] = std::exp(1i * dReal[k]);
-  }
-  const Matrix4x4 temp = Matrix4x4::fromDiagonal(tempDiag);
+  const Matrix4x4 temp =
+      Matrix4x4::fromDiagonal(std::exp(1i * dReal[0]), std::exp(1i * dReal[1]),
+                              std::exp(1i * dReal[2]), std::exp(1i * dReal[3]));
 
   Matrix4x4 k1 = uP * p * temp;
   assert((k1.transpose() * k1).isIdentity(WEYL_TOLERANCE));
@@ -347,12 +350,11 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
   assert(k2.determinant().real() > 0.0);
   k2 = magicBasisTransform(k2, /*outOfMagicBasis=*/false);
 
-  std::array<Complex, 4> tempConjDiag{};
-  for (std::size_t k = 0; k < tempConjDiag.size(); ++k) {
-    tempConjDiag[k] = std::conj(tempDiag[k]);
-  }
   assert((k1 *
-          magicBasisTransform(Matrix4x4::fromDiagonal(tempConjDiag),
+          magicBasisTransform(Matrix4x4::fromDiagonal(std::exp(-1i * dReal[0]),
+                                                      std::exp(-1i * dReal[1]),
+                                                      std::exp(-1i * dReal[2]),
+                                                      std::exp(-1i * dReal[3])),
                               /*outOfMagicBasis=*/false) *
           k2)
              .isApprox(u, WEYL_TOLERANCE));
@@ -664,6 +666,68 @@ bool TwoQubitWeylDecomposition::applySpecialization(
     llvm_unreachable("unreachable specialization");
   }
   return flippedFromOriginal;
+}
+
+LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
+                                      Value qubit0, Value qubit1,
+                                      const Matrix4x4& target,
+                                      const NativeGateset& spec,
+                                      Value& outQubit0, Value& outQubit1) {
+  const auto native = spec.decomposeTarget(target);
+  if (!native || !spec.eulerBasis) {
+    return failure();
+  }
+
+  emitGPhaseIfNeeded(builder, loc, native->globalPhase);
+
+  Value wire0 = qubit0;
+  Value wire1 = qubit1;
+  const auto& factors = native->singleQubitFactors;
+  const std::uint8_t numBasisUses = native->numBasisUses;
+  const std::size_t requiredFactors = singleQubitFactorCount(numBasisUses);
+  if (factors.size() != requiredFactors) {
+    llvm::reportFatalInternalError(llvm::formatv(
+        "synthesizeUnitary2QWeyl: expected {0} single-qubit factors for "
+        "numBasisUses = {1}, got {2}",
+        requiredFactors, numBasisUses, factors.size()));
+  }
+  const bool emitCz = spec.entangler == NativeGateKind::CZ;
+  const auto emitFactor = [&](Value& wire, std::size_t index) {
+    const auto synthesized = synthesizeUnitary1QEuler(
+        builder, loc, wire, factors[index], /*runSize=*/0,
+        /*hasNonBasisGate=*/true, *spec.eulerBasis);
+    if (!synthesized) {
+      llvm::reportFatalInternalError(llvm::formatv(
+          "synthesizeUnitary2QWeyl: euler synthesis failed for factor index "
+          "{0} (layer {1}, qubit {2})",
+          index, index / 2, (index % 2 == 0) ? 1 : 0));
+    }
+    wire = *synthesized;
+  };
+  const auto emitEntangler = [&]() {
+    auto ctrlOp = CtrlOp::create(
+        builder, loc, wire0, wire1,
+        [&](ValueRange targetArgs) -> SmallVector<Value> {
+          if (emitCz) {
+            return {ZOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
+          }
+          return {XOp::create(builder, loc, targetArgs[0]).getOutputQubit(0)};
+        });
+    wire0 = ctrlOp.getOutputControl(0);
+    wire1 = ctrlOp.getOutputTarget(0);
+  };
+
+  for (std::uint8_t layer = 0; layer <= numBasisUses; ++layer) {
+    emitFactor(wire1, static_cast<std::size_t>(2 * layer));
+    emitFactor(wire0, static_cast<std::size_t>((2 * layer) + 1));
+    if (layer < numBasisUses) {
+      emitEntangler();
+    }
+  }
+
+  outQubit0 = wire0;
+  outQubit1 = wire1;
+  return success();
 }
 
 } // namespace mlir::qco::decomposition

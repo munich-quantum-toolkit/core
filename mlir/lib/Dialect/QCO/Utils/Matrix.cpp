@@ -441,17 +441,6 @@ std::array<Complex, Matrix4x4::K_ROWS> Matrix4x4::diagonal() const {
   return {data[0], data[5], data[10], data[15]};
 }
 
-Matrix4x4 Matrix4x4::fromDiagonal(const ArrayRef<Complex> diagonalEntries) {
-  assert(diagonalEntries.size() == K_ROWS &&
-         "fromDiagonal requires exactly K_ROWS entries");
-  Matrix4x4 out{};
-  out.data[0] = diagonalEntries[0];
-  out.data[5] = diagonalEntries[1];
-  out.data[10] = diagonalEntries[2];
-  out.data[15] = diagonalEntries[3];
-  return out;
-}
-
 Matrix4x4 Matrix4x4::kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
   const auto& a = lhs.data;
   const auto& b = rhs.data;
