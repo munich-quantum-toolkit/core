@@ -152,7 +152,9 @@ diagonalizeComplexSymmetric(const Matrix4x4& m,
     for (std::size_t k = 0; k < m2Real.size(); ++k) {
       m2Real[k] = (randA * mReal[k]) + (randB * mImag[k]);
     }
-    const Matrix4x4 p = Matrix4x4::symmetricEigen4(m2Real).eigenvectors;
+    const Matrix4x4 p = Matrix4x4::fromRealRowMajor(m2Real)
+                            .symmetricEigenDecomposition()
+                            .eigenvectors;
     const std::array<Complex, 4> d = (p.transpose() * m * p).diagonal();
 
     const auto compare = p * Matrix4x4::fromDiagonal(d) * p.transpose();
