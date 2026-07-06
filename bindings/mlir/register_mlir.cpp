@@ -46,12 +46,12 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
 
-#include <cctype>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 
 namespace mqt {
@@ -104,6 +104,22 @@ moduleFromJeffFile(mlir::MLIRContext* context, const std::string& path) {
 }
 
 /**
+ * @brief Open a file and wrap it in a `SourceMgr` ready for parsing.
+ */
+[[nodiscard]] llvm::SourceMgr openSourceMgr(const std::string& path) {
+  std::string errorMessage;
+  auto file = mlir::openInputFile(path, &errorMessage);
+  if (!file) {
+    throw std::runtime_error(std::string("Failed to load file '") + path +
+                             "': '" + errorMessage + "'");
+  }
+
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
+  return sourceMgr;
+}
+
+/**
  * @brief Parse an MLIR source string into a module.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
@@ -117,15 +133,7 @@ moduleFromMlirString(mlir::MLIRContext* context, const std::string& text) {
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromMlirFile(mlir::MLIRContext* context, const std::string& path) {
-  std::string errorMessage;
-  auto file = mlir::openInputFile(path, &errorMessage);
-  if (!file) {
-    throw std::runtime_error(std::string("Failed to load file '") + path +
-                             "': '" + errorMessage + "'");
-  }
-
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
+  const auto sourceMgr = openSourceMgr(path);
   return parseSourceFile<mlir::ModuleOp>(sourceMgr, context);
 }
 
@@ -143,20 +151,12 @@ moduleFromQasmString(mlir::MLIRContext* context,
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromQasmFile(mlir::MLIRContext* context, const std::string& path) {
-  std::string errorMessage;
-  auto file = mlir::openInputFile(path, &errorMessage);
-  if (!file) {
-    throw std::runtime_error(std::string("Failed to load file '") + path +
-                             "': '" + errorMessage + "'");
-  }
-
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(std::move(file), llvm::SMLoc());
+  auto sourceMgr = openSourceMgr(path);
   return mlir::qc::translateQASM3ToQC(sourceMgr, context);
 }
 
 /**
- * @brief Parse a source string into an MLR module.
+ * @brief Parse a source string into an MLIR module.
  */
 [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
 moduleFromSourceString(mlir::MLIRContext* context, const std::string& input) {
@@ -188,40 +188,36 @@ moduleFromString(mlir::MLIRContext* context, const std::string& input) {
   }
 
   std::error_code ec;
-  const auto pathExists = std::filesystem::exists(path, ec);
+  const auto status = std::filesystem::status(path, ec);
   if (ec) {
     throw std::runtime_error(std::string("Failed to inspect path '") + input +
                              "': " + ec.message());
   }
-  if (!pathExists) {
+  if (!std::filesystem::exists(status)) {
     throw std::runtime_error(std::string("Input file '") + input +
                              "' does not exist.");
   }
-
-  const auto isFile = std::filesystem::is_regular_file(path, ec);
-  if (ec) {
-    throw std::runtime_error(std::string("Failed to inspect path '") + input +
-                             "': " + ec.message());
-  }
-  if (!isFile) {
+  if (!std::filesystem::is_regular_file(status)) {
     throw std::runtime_error(std::string("Input path '") + input +
                              "' is not a file.");
   }
 
+  using ModuleLoader = mlir::OwningOpRef<mlir::ModuleOp> (*)(
+      mlir::MLIRContext*, const std::string&);
+  static const std::unordered_map<std::string, ModuleLoader> loaders{
+      {".jeff", &moduleFromJeffFile},
+      {".mlir", &moduleFromMlirFile},
+      {".qasm", &moduleFromQasmFile},
+  };
+
   const auto extension = path.extension().string();
-  if (extension != ".jeff" && extension != ".mlir" && extension != ".qasm") {
+  const auto it = loaders.find(extension);
+  if (it == loaders.end()) {
     throw std::runtime_error(std::string("Input file '") + input +
                              "' has unsupported extension '" + extension +
                              "'.");
   }
-
-  if (extension == ".jeff") {
-    return moduleFromJeffFile(context, input);
-  }
-  if (extension == ".mlir") {
-    return moduleFromMlirFile(context, input);
-  }
-  return moduleFromQasmFile(context, input);
+  return it->second(context, input);
 }
 
 /**
@@ -294,8 +290,8 @@ compileProgram(const nb::object& program, const bool convertToQIRBase,
   config.enableTiming = enableTiming;
   config.enableStatistics = enableStatistics;
 
-  const mlir::QuantumCompilerPipeline pipeline(config);
-  if (mlir::failed(pipeline.runPipeline(mod.get()))) {
+  if (const mlir::QuantumCompilerPipeline pipeline(config);
+      mlir::failed(pipeline.runPipeline(mod.get()))) {
     throw std::runtime_error("Failed to run compilation pipeline.");
   }
 
