@@ -12,12 +12,8 @@ releases may include breaking changes.
 
 ### Added
 
-- ✨ Export IQM's `move` gate to IQM JSON for job submission, and add generic
-  `QDMIBackend` extension seams for device-specific `Target`/circuit
-  customization (used to support star-topology compilation in QDMI-on-IQM)
-  ([#1848])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
-  ([#1844]) ([**@burgholzer**])
+  ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
   ([#1826]) ([**@ystade])
 - 🐳 Add dev container configuration for consistent local development
