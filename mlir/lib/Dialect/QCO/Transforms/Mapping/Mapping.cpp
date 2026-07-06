@@ -25,6 +25,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -360,17 +361,21 @@ private:
         rewriter.create<qco::IfOp>(ifOp->getLoc(), ifOp.getCondition(), inits);
 
     // The qco::IfOp implements the SingleBlockImplicitTerminator trait.
-    assert(newIfOp.getThenRegion().hasOneBlock());
-    assert(newIfOp.getElseRegion().hasOneBlock());
+    assert(ifOp.getThenRegion().hasOneBlock());
+    assert(ifOp.getElseRegion().hasOneBlock());
 
     const std::array<Block*, 2> oldBlocks{
         &ifOp.getThenRegion().getBlocks().front(),
         &ifOp.getElseRegion().getBlocks().front(),
     };
 
+    SmallVector<Type> argTypes(inits.size(),
+                               QubitType::get(rewriter.getContext()));
+    SmallVector locs(inits.size(), newIfOp->getLoc());
+
     const std::array<Block*, 2> newBlocks{
-        &newIfOp.getThenRegion().getBlocks().front(),
-        &newIfOp.getElseRegion().getBlocks().front(),
+        rewriter.createBlock(&newIfOp.getThenRegion(), {}, argTypes, locs),
+        rewriter.createBlock(&newIfOp.getElseRegion(), {}, argTypes, locs),
     };
 
     for (const auto [oldBlock, newBlock] :
@@ -379,13 +384,13 @@ private:
           oldBlock, newBlock,
           newBlock->getArguments().take_front(oldBlock->getNumArguments()));
 
-      auto yield = cast<scf::YieldOp>(newBlock->getTerminator());
+      auto yield = cast<qco::YieldOp>(newBlock->getTerminator());
 
       SmallVector<Value> results;
-      llvm::append_range(results, yield.getResults());
+      llvm::append_range(results, yield.getTargets());
       llvm::append_range(results, newBlock->getArguments().take_back(naddons));
       rewriter.setInsertionPoint(yield);
-      rewriter.replaceOpWithNewOp<scf::YieldOp>(yield, results);
+      rewriter.replaceOpWithNewOp<qco::YieldOp>(yield, results);
     }
 
     for (const auto [oldResult, newResult] :
@@ -553,17 +558,39 @@ private:
               DenseSet<Value> addons(qubits);
               llvm::for_each(forOp.getInits(),
                              [&](auto v) { addons.erase(v); });
-              auto newLoop = extend(forOp, to_vector(addons), rewriter);
+              auto newForOp = extend(forOp, to_vector(addons), rewriter);
 
-              for (OpOperand& operand : newLoop.getInitsMutable()) {
-                qubits.insert(newLoop.getTiedLoopResult(&operand));
+              for (OpOperand& operand : newForOp.getInitsMutable()) {
+                qubits.insert(newForOp.getTiedLoopResult(&operand));
                 qubits.erase(operand.get());
               }
 
               stack.emplace_back(
-                  newLoop.getRegion(),
-                  DenseSet<Value>(newLoop.getRegionIterArgs().begin(),
-                                  newLoop.getRegionIterArgs().end()));
+                  newForOp.getRegion(),
+                  DenseSet<Value>(newForOp.getRegionIterArgs().begin(),
+                                  newForOp.getRegionIterArgs().end()));
+            })
+            .Case<qco::IfOp>([&](IfOp ifOp) {
+              assert(qubits.size() == layout.nqubits());
+
+              DenseSet<Value> addons(qubits);
+              llvm::for_each(ifOp.getQubits(),
+                             [&](auto v) { addons.erase(v); });
+              auto newIfOp = extend(ifOp, to_vector(addons), rewriter);
+
+              for (OpOperand& operand : newIfOp.getQubitsMutable()) {
+                qubits.insert(newIfOp.getTiedResult(&operand));
+                qubits.erase(operand.get());
+              }
+
+              const auto thenArgs = newIfOp.getThenRegion().getArguments();
+              const auto elseArgs = newIfOp.getElseRegion().getArguments();
+              stack.emplace_back(
+                  newIfOp.getThenRegion(),
+                  DenseSet<Value>(thenArgs.begin(), thenArgs.end()));
+              stack.emplace_back(
+                  newIfOp.getElseRegion(),
+                  DenseSet<Value>(elseArgs.begin(), elseArgs.end()));
             })
             .Case<ResetOp, MeasureOp>([&](auto op) {
               qubits.insert(op.getQubitOut());
@@ -731,7 +758,6 @@ private:
   /// Return the sequence of SWAPs to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
-
     Layout curr(from);
     Graph f(device->qubits());
     SmallVector<IndexPairType> swaps;
@@ -741,6 +767,13 @@ private:
       const auto hwGoal = to.getHardwareIndex(prog);
       return device->distanceBetween(v, hwGoal) <
              device->distanceBetween(u, hwGoal);
+    };
+
+    const auto printLayout = [](const Layout& l) {
+      for (const auto j : l.getProgramToHardware()) {
+        llvm::dbgs() << j << " ";
+      }
+      llvm::dbgs() << '\n';
     };
 
     while (true) {
@@ -1041,9 +1074,8 @@ private:
           return success();
         })
         .template Case<qco::IfOp>([&](qco::IfOp ifOp) {
-          std::array<RoutingBundle, 2> children{
-              RoutingBundle{.layout = parent.layout},
-              RoutingBundle{.layout = parent.layout}};
+          std::array children{RoutingBundle{.layout = parent.layout},
+                              RoutingBundle{.layout = parent.layout}};
 
           for (size_t i : indices) {
             const auto prog = parent.infos.lookupProgram(i);
@@ -1078,27 +1110,29 @@ private:
 
             const auto swaps = restore(child.layout, parent.layout);
 
-            if constexpr (Mode == RoutingMode::Hot) {
+            // if constexpr (Mode == RoutingMode::Hot) {
 
-              // After routing the loop body, all iterators point to
-              // std::default_sentinel. To move the iterators to the
-              // correct qubit SSA values for the epilogue SWAPs,
-              // decrement each twice: (sentinel → yield →
-              // unitary/block arg).
+            //   // After routing the loop body, all iterators point to
+            //   // std::default_sentinel. To move the iterators to the
+            //   // correct qubit SSA values for the epilogue SWAPs,
+            //   // decrement each twice: (sentinel → yield →
+            //   // unitary/block arg).
 
-              llvm::for_each(child.wires,
-                             [](auto& it) { std::advance(it, -2); });
-            }
+            //   llvm::for_each(child.wires,
+            //                  [](auto& it) { std::advance(it, -2); });
+            // }
 
-            insertSWAPs<Mode>(swaps, child, stats, rewriter);
+            // insertSWAPs<Mode>(swaps, child, stats, rewriter);
           }
 
           if constexpr (Mode == RoutingMode::Hot) {
-            // llvm::for_each(ifOp.getRegions(), [](Region& region) {
-            //   llvm::for_each(region.getBlocks(),
-            //                  [](Block& block) { sortTopologically(&block);
-            //                  });
-            // });
+
+            // The qco::IfOp implements the SingleBlockImplicitTerminator trait.
+            assert(ifOp.getThenRegion().hasOneBlock());
+            assert(ifOp.getElseRegion().hasOneBlock());
+
+            sortTopologically(&ifOp.getThenRegion().getBlocks().front());
+            sortTopologically(&ifOp.getElseRegion().getBlocks().front());
           }
 
           // Finally, move past the operation with nested regions by
@@ -1134,7 +1168,6 @@ private:
         if (stack.empty()) {
           break;
         }
-
         for (const auto& item : stack) {
           if (dispatch<Direction, Mode>(item, bundle, stats, rewriter)
                   .failed()) {

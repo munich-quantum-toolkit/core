@@ -590,5 +590,53 @@ TEST_P(MappingPassTest, Sabre) {
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
+TEST_P(MappingPassTest, RandomGHZ) {
+  const auto& device = GetParam();
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value tensor = builder.qtensorAlloc(9);
+  SmallVector<Value> qubits(9);
+  SmallVector<Value> cregs(9);
+
+  for (int64_t i = 0; i < 9; ++i) {
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
+
+  qubits[0] = builder.h(qubits[0]);
+  std::tie(qubits[0], cregs[0]) = builder.measure(qubits[0]);
+
+  qubits = builder.qcoIf(cregs[0], qubits, [&](ValueRange args) {
+    SmallVector<Value> values(args);
+    values[0] = builder.h(values[0]);
+    for (size_t i = 1; i < 9; ++i) {
+      std::tie(values[0], values[i]) = builder.cx(values[0], values[i]);
+    }
+    return values;
+  });
+
+  qubits = builder.barrier(qubits);
+
+  for (int64_t i = 0; i < 9; ++i) {
+    std::tie(qubits[i], cregs[i]) = builder.measure(qubits[i]);
+  }
+
+  for (int64_t i = 0; i < 9; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+  }
+
+  builder.qtensorDealloc(tensor);
+
+  auto m = builder.finalize();
+  auto res =
+      runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
+  auto entry = getEntryPoint(m.get());
+
+  m->dump();
+  ASSERT_TRUE(res.succeeded());
+  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+}
+
 INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,
                          testing::Values(getNineQubitSquareGrid()));
