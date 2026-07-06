@@ -94,9 +94,9 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
         sites = device.sites()
         instructions: list[dict[str, Any]] = []
 
-        def _two_qubit_locus(two_qargs: Sequence[Qubit]) -> list[str]:
-            qubit_index1 = circuit.find_bit(two_qargs[0]).index
-            qubit_index2 = circuit.find_bit(two_qargs[1]).index
+        def _two_qubit_locus(two_qargs: Sequence[Qubit]) -> list[str | None]:
+            qubit_index1: int = circuit.find_bit(two_qargs[0]).index
+            qubit_index2: int = circuit.find_bit(two_qargs[1]).index
             return [sites[qubit_index1].name(), sites[qubit_index2].name()]
 
         for instruction in circuit.data:
@@ -116,18 +116,10 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
                     },
                 })
 
-            # CZ gate
-            elif isinstance(operation, CZGate):
+            # CZ or Move gate
+            elif isinstance(operation, CZGate | MoveGate):
                 instructions.append({
-                    "name": "cz",
-                    "locus": _two_qubit_locus(qargs),
-                    "args": {},
-                })
-
-            # MOVE gate (IQM star-topology architectures)
-            elif isinstance(operation, MoveGate):
-                instructions.append({
-                    "name": "move",
+                    "name": operation.name,
                     "locus": _two_qubit_locus(qargs),
                     "args": {},
                 })
