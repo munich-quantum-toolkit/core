@@ -31,7 +31,7 @@ static std::optional<NativeGateKind> parseGateToken(StringRef name) {
       .Case("u", NativeGateKind::U)
       .Case("x", NativeGateKind::X)
       .Case("sx", NativeGateKind::SX)
-      .Cases({"rz", "p"}, NativeGateKind::RZ)
+      .Case("rz", NativeGateKind::RZ)
       .Case("rx", NativeGateKind::RX)
       .Case("ry", NativeGateKind::RY)
       .Case("r", NativeGateKind::R)
@@ -67,24 +67,26 @@ parseGateSet(StringRef nativeGates) {
  */
 [[nodiscard]] static std::optional<EulerBasis>
 resolveEulerBasis(const DenseSet<NativeGateKind>& gates) {
-  const auto has = [&](NativeGateKind kind) { return gates.contains(kind); };
-  if (has(NativeGateKind::U)) {
+  if (gates.contains(NativeGateKind::U)) {
     return EulerBasis::U;
   }
-  if (has(NativeGateKind::X) && has(NativeGateKind::SX) &&
-      has(NativeGateKind::RZ)) {
+  if (gates.contains(NativeGateKind::X) && gates.contains(NativeGateKind::SX) &&
+      gates.contains(NativeGateKind::RZ)) {
     return EulerBasis::ZSXX;
   }
-  if (has(NativeGateKind::R)) {
+  if (gates.contains(NativeGateKind::R)) {
     return EulerBasis::R;
   }
-  if (has(NativeGateKind::RX) && has(NativeGateKind::RZ)) {
+  if (gates.contains(NativeGateKind::RX) &&
+      gates.contains(NativeGateKind::RZ)) {
     return EulerBasis::XZX;
   }
-  if (has(NativeGateKind::RX) && has(NativeGateKind::RY)) {
+  if (gates.contains(NativeGateKind::RX) &&
+      gates.contains(NativeGateKind::RY)) {
     return EulerBasis::XYX;
   }
-  if (has(NativeGateKind::RY) && has(NativeGateKind::RZ)) {
+  if (gates.contains(NativeGateKind::RY) &&
+      gates.contains(NativeGateKind::RZ)) {
     return EulerBasis::ZYZ;
   }
   return std::nullopt;
@@ -113,7 +115,7 @@ static std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
       .Case<UOp>([](UOp) { return NativeGateKind::U; })
       .Case<XOp>([](XOp) { return NativeGateKind::X; })
       .Case<SXOp>([](SXOp) { return NativeGateKind::SX; })
-      .Case<RZOp, POp>([](auto) { return NativeGateKind::RZ; })
+      .Case<RZOp>([](RZOp) { return NativeGateKind::RZ; })
       .Case<RXOp>([](RXOp) { return NativeGateKind::RX; })
       .Case<RYOp>([](RYOp) { return NativeGateKind::RY; })
       .Case<ROp>([](ROp) { return NativeGateKind::R; })

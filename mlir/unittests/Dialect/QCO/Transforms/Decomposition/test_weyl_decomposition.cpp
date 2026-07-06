@@ -719,11 +719,8 @@ TEST(NativeSpecTest, ParsesAndRejectsGatesets) {
   EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::U));
   EXPECT_TRUE(whitespaceToken->gates.contains(NativeGateKind::CX));
 
-  const auto pGateset = NativeProfileSpec::parse("x,sx,p,cx");
-  const auto rzGateset = NativeProfileSpec::parse("x,sx,rz,cx");
-  ASSERT_TRUE(pGateset);
-  ASSERT_TRUE(rzGateset);
-  EXPECT_EQ(pGateset->gates, rzGateset->gates);
+  EXPECT_FALSE(NativeProfileSpec::parse("x,sx,p,cx").has_value());
+  EXPECT_FALSE(NativeProfileSpec::parse("ry,p,cz").has_value());
 
   const auto cxOnly = NativeProfileSpec::parse("u,cx");
   ASSERT_TRUE(cxOnly);
@@ -811,10 +808,12 @@ TEST_F(NativeProfileMlirTest, AllowsOpMatchesGateset) {
   EXPECT_FALSE(
       spec->allowsOp(RXXOp::create(builder, loc, q0, q1, 0.2).getOperation()));
 
-  const auto pSpec = NativeProfileSpec::parse("x,sx,p,cx");
-  ASSERT_TRUE(pSpec);
+  const auto rzSpec = NativeProfileSpec::parse("x,sx,rz,cx");
+  ASSERT_TRUE(rzSpec);
   EXPECT_TRUE(
-      pSpec->allowsOp(POp::create(builder, loc, q0, 0.3).getOperation()));
+      rzSpec->allowsOp(RZOp::create(builder, loc, q0, 0.3).getOperation()));
+  EXPECT_FALSE(
+      rzSpec->allowsOp(POp::create(builder, loc, q0, 0.3).getOperation()));
 
   auto hCtrl = CtrlOp::create(
       builder, loc, ValueRange{q0}, ValueRange{q1},
