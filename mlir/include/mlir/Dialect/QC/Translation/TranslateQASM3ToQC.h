@@ -26,7 +26,8 @@ namespace qc {
  * @brief Translate an OpenQASM 3 program to a QC program.
  *
  * @param sourceMgr Source manager containing the OpenQASM3 program.
- * @param context MLIRContext to create the module in.
+ * @param context The MLIRContext to create the module in.
+ * @return A module containing the QC program.
  */
 [[nodiscard]] OwningOpRef<ModuleOp>
 translateQASM3ToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context);
@@ -35,7 +36,8 @@ translateQASM3ToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context);
  * @brief Translate an OpenQASM 3 program to a QC program.
  *
  * @param source String containing the OpenQASM3 program.
- * @param context MLIRContext to create the module in.
+ * @param context The MLIRContext to create the module in.
+ * @return A module containing the QC program.
  */
 [[nodiscard]] OwningOpRef<ModuleOp> translateQASM3ToQC(StringRef source,
                                                        MLIRContext* context);

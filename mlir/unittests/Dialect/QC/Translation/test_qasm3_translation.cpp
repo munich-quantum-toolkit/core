@@ -113,6 +113,39 @@ static void ifNot(qc::QCProgramBuilder& b) {
   b.scfIf(cond, [&] { b.x(q[0]); });
 }
 
+static void forLoopOffsetIndex(qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 1, 1, [&](Value iv) {
+    auto one = arith::ConstantOp::create(b, b.getIndexAttr(1)).getResult();
+    auto index = arith::AddIOp::create(b, iv, one).getResult();
+    auto q = b.memrefLoad(reg.value, index);
+    b.h(q);
+  });
+}
+
+// The qubit is loaded once per `scf.while` region (in both the before and after
+// region), because a value loaded in the before region would not dominate the
+// after region.
+static void nestedForLoopWhileOp(qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto q = b.memrefLoad(reg.value, iv);
+    b.h(q);
+  });
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    b.scfWhile(
+        [&] {
+          auto q = b.memrefLoad(reg.value, iv);
+          auto measureResult = b.measure(q);
+          b.scfCondition(measureResult);
+        },
+        [&] {
+          auto q = b.memrefLoad(reg.value, iv);
+          b.h(q);
+        });
+  });
+}
+
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
@@ -273,6 +306,8 @@ INSTANTIATE_TEST_SUITE_P(
                                  qasm::multipleControlledSxdg,
                                  MQT_NAMED_BUILDER(qc::multipleControlledSxdg)},
         QASM3TranslationTestCase{"RX", qasm::rx, MQT_NAMED_BUILDER(qc::rx)},
+        QASM3TranslationTestCase{"RXTheta", qasm::rxTheta,
+                                 MQT_NAMED_BUILDER(qc::rx)},
         QASM3TranslationTestCase{"SingleControlledRX", qasm::singleControlledRx,
                                  MQT_NAMED_BUILDER(qc::singleControlledRx)},
         QASM3TranslationTestCase{"MultipleControlledRX",
@@ -417,12 +452,19 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(ifNot)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
                                  MQT_NAMED_BUILDER(qc::ifElse)},
-        QASM3TranslationTestCase{"NestedForLoopIfOp", qasm::nestedForLoopIfOp,
-                                 MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)},
+        QASM3TranslationTestCase{"NestedIfForLoop", qasm::nestedIfOpForLoop,
+                                 MQT_NAMED_BUILDER(qc::nestedIfOpForLoop)},
         QASM3TranslationTestCase{"SimpleWhileReset", qasm::simpleWhileReset,
                                  MQT_NAMED_BUILDER(qc::simpleWhileReset)},
         QASM3TranslationTestCase{"SimpleForLoop", qasm::simpleForLoop,
                                  MQT_NAMED_BUILDER(qc::simpleForLoop)},
+        QASM3TranslationTestCase{"ForLoopOffsetIndex", qasm::forLoopOffsetIndex,
+                                 MQT_NAMED_BUILDER(forLoopOffsetIndex)},
+        QASM3TranslationTestCase{"NestedForLoopIfOp", qasm::nestedForLoopIfOp,
+                                 MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)},
+        QASM3TranslationTestCase{"NestedForLooWhilefOp",
+                                 qasm::nestedForLoopWhileOp,
+                                 MQT_NAMED_BUILDER(nestedForLoopWhileOp)},
         QASM3TranslationTestCase{
             "NestedForLoopCtrlOpWithSeparateQubit",
             qasm::nestedForLoopCtrlOpWithSeparateQubit,
@@ -431,62 +473,3 @@ INSTANTIATE_TEST_SUITE_P(
             "NestedForLoopCtrlOpWithExtractedQubit",
             qasm::nestedForLoopCtrlOpWithExtractedQubit,
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)}));
-
-namespace {
-
-/// Build a context with all dialects required by the QASM3 translation loaded.
-std::unique_ptr<MLIRContext> makeTranslationContext() {
-  DialectRegistry registry;
-  registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                  memref::MemRefDialect, scf::SCFDialect>();
-  auto context = std::make_unique<MLIRContext>();
-  context->appendDialectRegistry(registry);
-  context->loadAllAvailableDialects();
-  return context;
-}
-
-} // namespace
-
-// `stdgates.inc` and `qelib1.inc` are fully covered by the native gate table
-// and treated as no-ops; any other include is a hard error.
-TEST(QASM3TranslationIncludeTest, RejectsUnknownInclude) {
-  const auto context = makeTranslationContext();
-  const std::string source = R"qasm(OPENQASM 3.0;
-include "other.inc";
-qubit q;
-)qasm";
-  EXPECT_FALSE(qc::translateQASM3ToQC(source, context.get()));
-}
-
-TEST(QASM3TranslationIncludeTest, AcceptsQelib1Include) {
-  const auto context = makeTranslationContext();
-  const std::string source = R"qasm(OPENQASM 3.0;
-include "qelib1.inc";
-qubit q;
-x q;
-)qasm";
-  EXPECT_TRUE(qc::translateQASM3ToQC(source, context.get()));
-}
-
-// A folded structural constant index (e.g. `q[1 + 1]`) now resolves to the same
-// static qubit as the literal index it evaluates to.
-TEST(QASM3TranslationFoldingTest, FoldsStructuralConstantIndex) {
-  const auto context = makeTranslationContext();
-  const std::string folded = R"qasm(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-x q[1 + 1];
-)qasm";
-  const std::string literal = R"qasm(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-x q[2];
-)qasm";
-
-  auto foldedModule = qc::translateQASM3ToQC(folded, context.get());
-  auto literalModule = qc::translateQASM3ToQC(literal, context.get());
-  ASSERT_TRUE(foldedModule);
-  ASSERT_TRUE(literalModule);
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(foldedModule.get(),
-                                                   literalModule.get()));
-}

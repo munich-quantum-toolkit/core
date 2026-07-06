@@ -355,6 +355,13 @@ qubit[1] q;
 rx(0.123) q[0];
 )qasm";
 
+const std::string rxTheta = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+const float theta = 2 * (0.123 + 0.1 - 0.1) / 2;
+qubit[1] q;
+rx(theta) q[0];
+)qasm";
+
 const std::string singleControlledRx = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -711,6 +718,8 @@ gate compound q0, q1 {
 ctrl(2) @ compound q[0], q[1], q[2], q[3];
 )qasm";
 
+// --- IfOp ----------------------------------------------------------------- //
+
 const std::string simpleIf = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;
@@ -765,6 +774,42 @@ if (c) {
 }
 )qasm";
 
+const std::string nestedIfOpForLoop = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] q;
+qubit qCond;
+h qCond;
+bit c = measure qCond;
+if (c) {
+  h qCond;
+} else {
+  for uint i in [0:2] {
+    h q[i];
+  }
+}
+)qasm";
+
+// --- WhileOp -------------------------------------------------------------- //
+
+const std::string simpleWhileReset = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+h q;
+while (measure q) {
+  h q;
+}
+)qasm";
+
+// --- ForOp ---------------------------------------------------------------- //
+
+const std::string simpleForLoop = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:1] {
+  h q[i];
+}
+)qasm";
+
 const std::string nestedForLoopIfOp = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -777,20 +822,24 @@ for uint i in [0:1] {
 }
 )qasm";
 
-const std::string simpleWhileReset = R"qasm(OPENQASM 3.0;
-include "stdgates.inc";
-qubit q;
-h q;
-while (measure q) {
-  h q;
-}
-)qasm";
-
-const std::string simpleForLoop = R"qasm(OPENQASM 3.0;
+const std::string nestedForLoopWhileOp = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
 for uint i in [0:1] {
   h q[i];
+}
+for uint i in [0:1] {
+  while (measure q[i]) {
+    h q[i];
+  }
+}
+)qasm";
+
+const std::string forLoopOffsetIndex = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+for uint i in [0:0] {
+  h q[i + 1];
 }
 )qasm";
 

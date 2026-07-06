@@ -179,6 +179,9 @@ extern const std::string multipleControlledSxdg;
 /// Creates a circuit with just an RX gate.
 extern const std::string rx;
 
+/// Creates a circuit with an RX gate with a declared theta.
+extern const std::string rxTheta;
+
 /// Creates a circuit with a single controlled RX gate.
 extern const std::string singleControlledRx;
 
@@ -355,6 +358,8 @@ extern const std::string ctrlTwo;
 /// non-controlled gate.
 extern const std::string ctrlTwoMixed;
 
+// --- IfOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with a simple if operation with one qubit.
 extern const std::string simpleIf;
 
@@ -372,13 +377,29 @@ extern const std::string ifElse;
 
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.
-extern const std::string nestedForLoopIfOp;
+extern const std::string nestedIfOpForLoop;
+
+// --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
 extern const std::string simpleWhileReset;
 
+// --- ForOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with a simple for operation with a register.
 extern const std::string simpleForLoop;
+
+/// Creates a circuit with an if operation with a nested for operation with
+/// a register.
+extern const std::string nestedForLoopIfOp;
+
+/// Creates a circuit with a for operation with a register and a nested while
+/// operation.
+extern const std::string nestedForLoopWhileOp;
+
+/// Creates a circuit with a for operation that indexes a register with a
+/// non-trivial expression (`q[i + 1]`) in the loop variable.
+extern const std::string forLoopOffsetIndex;
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is separately allocated from the

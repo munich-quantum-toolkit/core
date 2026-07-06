@@ -23,28 +23,15 @@ class ModuleOp;
 namespace qc::detail {
 
 /**
- * @brief Parse an OpenQASM 3 program and emit the equivalent QC dialect module.
+ * @brief Parse an OpenQASM 3 program and emit a QC program.
  *
  * @details
- * Implementation detail of `translateQASM3ToQC`; not part of the public API
- * (this header lives with the library sources and is not installed). Prefer the
- * `translateQASM3ToQC` entry points declared in
- * `mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h`, which wrap this in the
- * diagnostic-reporting `try`/`catch`.
+ * Implementation detail of `translateQASM3ToQC`; not part of the public API.
+ * Prefer the `translateQASM3ToQC` entry points.
  *
- * This is a single-pass, hand-written recursive-descent parser that consumes
- * `qasm3::Scanner` tokens directly and emits QC operations via the
- * `QCProgramBuilder` as it parses, without building an intermediate AST. It
- * depends on the legacy `qasm3` package only for its `Scanner`/`Token` lexer,
- * the `GateInfo`/`NestedEnvironment` helpers, and `DebugInfo`/`CompilerError`
- * for diagnostics.
- *
- * On a malformed program it throws a `qasm3::CompilerError` (or another
- * `std::exception`); callers are expected to translate that into a diagnostic.
- *
- * @param source The OpenQASM 3 program text.
+ * @param source String containing the OpenQASM3 program.
  * @param context The MLIRContext to create the module in.
- * @return The constructed QC dialect module.
+ * @return A module containing the QC program
  */
 [[nodiscard]] OwningOpRef<ModuleOp> parseQASM3(std::string_view source,
                                                MLIRContext* context);
