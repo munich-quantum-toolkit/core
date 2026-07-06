@@ -1078,15 +1078,12 @@ decomposeComplexEigen2(const Matrix2x2& matrix) {
     }
     ComplexEigen2 result;
     result.eigenvalues = {a, d};
-    result.eigenvectors(0, 0) = 1.0;
-    result.eigenvectors(1, 0) = 0.0;
-    result.eigenvectors(0, 1) = 0.0;
-    result.eigenvectors(1, 1) = 1.0;
+    result.eigenvectors = Matrix2x2::identity();
     return result;
   }
 
   auto eigenvectorFor = [&](const Complex& lambda) -> SmallVector<Complex> {
-    SmallVector<Complex> vector(2, Complex{0.0, 0.0});
+    SmallVector<Complex> vector(2);
     if (std::abs(b) > MATRIX_TOLERANCE) {
       vector[0] = b;
       vector[1] = lambda - a;
