@@ -62,8 +62,7 @@ static constexpr Matrix4x4 TWO_QUBIT_CONTROLLED_X10 =
                             0.0, 1.0, 0.0, 0.0);
 
 static const Matrix4x4 TWO_QUBIT_CONTROLLED_Z =
-    Matrix4x4::fromDiagonal({Complex{1.0, 0.0}, Complex{1.0, 0.0},
-                             Complex{1.0, 0.0}, Complex{-1.0, 0.0}});
+    Matrix4x4::fromDiagonal({1, 1, 1, -1});
 
 [[nodiscard]] static bool
 isUnitaryMatrix(const auto& matrix, const double tolerance = MATRIX_TOLERANCE) {
