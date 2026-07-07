@@ -1173,8 +1173,8 @@ protected:
 To implement the logic of the pass, we utilize MLIR's rewrite patterns.
 Particularly, we add a class `CancelConsecutiveHadamardsPattern` which inherits
 from `OpRewritePattern<HOp>`, where the template variable `HOp` specifies that
-the pattern should match Hadamard operations. 
-The overridden `matchAndRewrite` method is called for each matched Hadamard operation.
+the pattern should match Hadamard operations. The overridden `matchAndRewrite`
+method is called for each matched Hadamard operation.
 
 ```{code-block} cpp
 :linenos:
