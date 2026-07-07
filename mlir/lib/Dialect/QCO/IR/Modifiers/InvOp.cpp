@@ -427,8 +427,7 @@ std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  // Composed single- or multi-qubit body (e.g. `inv { h; x }`, `inv { rx; ry }`
-  // on two targets).
+  // Composed body (e.g., `ctrl { h; x }` or `ctrl { swap; ry }`)
   if (const auto composed =
           composeNTargetBodyMatrix(*getBody(), getNumTargets())) {
     return composed->adjoint();

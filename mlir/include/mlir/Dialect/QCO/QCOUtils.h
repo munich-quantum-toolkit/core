@@ -38,7 +38,7 @@ inline constexpr std::size_t kMaxModifierTargetQubits = 10;
  * program order, or `std::nullopt` when the body cannot be composed.
  */
 [[nodiscard]] std::optional<DynamicMatrix>
-composeNTargetBodyMatrix(Block& block, std::size_t numTargets);
+composeBodyMatrix(Block& block, std::size_t numTargets);
 
 /**
  * @brief Check whether two parameter values match.

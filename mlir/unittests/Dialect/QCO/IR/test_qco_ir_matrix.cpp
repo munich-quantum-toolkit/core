@@ -119,7 +119,7 @@ static void inverseGphaseBarrierX(QCOProgramBuilder& b) {
   });
 }
 
-static void inverseNestedInvHt(QCOProgramBuilder& b) {
+static void inverseNestedInvHAndT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv(q[0], [&](ValueRange targets) {
     auto wire = b.inv({targets[0]}, [&](ValueRange inner) {
