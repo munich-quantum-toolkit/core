@@ -9,7 +9,9 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -39,9 +41,62 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
   }
 };
 
+/**
+ * @brief Remove dead gates.
+ */
+struct DeadGateElimination final : public OpRewritePattern<SinkOp> {
+
+  explicit DeadGateElimination(MLIRContext* context)
+      : OpRewritePattern(context) {}
+
+  LogicalResult matchAndRewrite(SinkOp op,
+                                PatternRewriter& rewriter) const override {
+    Value currentValue = op.getQubit();
+    auto* currentOp = currentValue.getDefiningOp();
+    bool success = false;
+    while (currentOp != nullptr) {
+      if (!checkDeadGate(currentOp)) {
+        break;
+      }
+
+      currentValue =
+          TypeSwitch<Operation*, Value>(currentOp)
+              .Case<MeasureOp>([&](auto measureOp) {
+                rewriter.replaceAllUsesWith(measureOp.getQubitOut(),
+                                            measureOp.getQubitIn());
+                rewriter.eraseOp(measureOp);
+                return measureOp.getQubitIn();
+              })
+              .Case<IfOp>([&](auto ifOp) {
+                auto newValue = ifOp.getInputForOutput(currentValue);
+                rewriter.replaceOp(ifOp, ifOp.getQubits());
+                return newValue;
+              })
+              .Case<ResetOp>([&](auto resetOp) {
+                rewriter.replaceOp(resetOp, resetOp->getOperands());
+                return resetOp.getQubitIn();
+              })
+              .Case<UnitaryOpInterface>([&](auto unitaryOp) {
+                auto newValue = unitaryOp.getInputForOutput(currentValue);
+                rewriter.replaceOp(unitaryOp, unitaryOp.getInputQubits());
+                return newValue;
+              })
+              .Default([&](auto) { return nullptr; });
+
+      if (currentValue == nullptr) {
+        break;
+      }
+      currentOp = currentValue.getDefiningOp();
+      success = true;
+    }
+
+    return llvm::success(success);
+  }
+};
+
 } // namespace
 
 void SinkOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<RemoveAllocSinkPair>(context);
+  results.add<RemoveAllocSinkPair, DeadGateElimination>(context);
 }

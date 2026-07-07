@@ -36,33 +36,6 @@ using namespace mlir;
 using namespace mlir::qco;
 
 //===----------------------------------------------------------------------===//
-// Dialect-Level Canonicalizers
-//===----------------------------------------------------------------------===//
-
-namespace {
-
-/**
- * @brief Remove dead gates.
- */
-struct DeadGateElimination final
-    : public OpInterfaceRewritePattern<UnitaryOpInterface> {
-
-  explicit DeadGateElimination(MLIRContext* context)
-      : OpInterfaceRewritePattern(context) {}
-
-  LogicalResult matchAndRewrite(UnitaryOpInterface op,
-                                PatternRewriter& rewriter) const override {
-    if (!checkDeadGate(op)) {
-      return failure();
-    }
-
-    rewriter.replaceOp(op, op.getInputQubits());
-    return success();
-  }
-};
-} // namespace
-
-//===----------------------------------------------------------------------===//
 // Custom Parsers
 //===----------------------------------------------------------------------===//
 
@@ -219,10 +192,6 @@ void QCODialect::initialize() {
 #include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
 
       >();
-}
-
-void QCODialect::getCanonicalizationPatterns(RewritePatternSet& results) const {
-  results.add<DeadGateElimination>(getContext());
 }
 
 //===----------------------------------------------------------------------===//

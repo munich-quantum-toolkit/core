@@ -135,7 +135,6 @@ def MeasureOp : QCOOp<"measure", [Pure]> {
         }]>];
 
   let hasVerifier = 1;
-  let hasCanonicalizer = 1;
 }
 
 def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {
@@ -1302,6 +1301,9 @@ def IfOp
 
         /// Return the yield of the else-block.
         YieldOp elseYield();
+
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
 
         /// Return the result that corresponds to the given qubit operand,
         /// or "empty" OpResult on failure.

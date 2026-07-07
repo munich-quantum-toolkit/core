@@ -235,29 +235,11 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
     return success(changed);
   }
 };
-
-/**
- * @brief Remove dead `IfOp` instructions.
- */
-struct DeadIfRemoval final : OpRewritePattern<IfOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(IfOp op,
-                                PatternRewriter& rewriter) const override {
-    if (!checkDeadGate(op)) {
-      return failure();
-    }
-
-    rewriter.replaceOp(op, op.getQubits());
-    return success();
-  }
-};
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveStaticCondition, ConditionPropagation>(context);
-  results.add<DeadIfRemoval>(context);
   populateRegionBranchOpInterfaceCanonicalizationPatterns(
       results, IfOp::getOperationName());
 }
@@ -298,6 +280,25 @@ LogicalResult IfOp::verify() {
   }
 
   return success();
+}
+
+Value IfOp::getInputForOutput(Value output) {
+  auto resultCount = getResults().size();
+  for (size_t i = 0; i < resultCount; ++i) {
+    if (output == getResult(i)) {
+      return getQubits()[i];
+    }
+  }
+  llvm::reportFatalUsageError("Given qubit is not an output of the operation");
+}
+Value IfOp::getOutputForInput(Value input) {
+  auto resultCount = getResults().size();
+  for (size_t i = 0; i < resultCount; ++i) {
+    if (input == getQubits()[i]) {
+      return getResult(i);
+    }
+  }
+  llvm::reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
 OpResult IfOp::getTiedResult(OpOperand* qubit) {

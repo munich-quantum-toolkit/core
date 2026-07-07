@@ -102,23 +102,6 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
   }
 };
 
-/**
- * @brief Remove dead resets.
- */
-struct DeadResetRemoval final : OpRewritePattern<ResetOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ResetOp op,
-                                PatternRewriter& rewriter) const override {
-    if (!checkDeadGate(op)) {
-      return failure();
-    }
-
-    rewriter.replaceOp(op, op->getOperands());
-    return success();
-  }
-};
-
 } // namespace
 
 OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
@@ -131,5 +114,5 @@ OpFoldResult ResetOp::fold(FoldAdaptor /*adaptor*/) {
 
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
-  results.add<RemoveResetAfterExtract, DeadResetRemoval>(context);
+  results.add<RemoveResetAfterExtract>(context);
 }

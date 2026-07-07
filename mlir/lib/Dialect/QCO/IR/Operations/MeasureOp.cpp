@@ -18,28 +18,6 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove dead measurements.
- */
-struct DeadMeasurementRemoval final : OpRewritePattern<MeasureOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(MeasureOp op,
-                                PatternRewriter& rewriter) const override {
-    if (!checkDeadGate(op)) {
-      return failure();
-    }
-
-    rewriter.replaceAllUsesWith(op.getQubitOut(), op.getQubitIn());
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-} // namespace
-
 LogicalResult MeasureOp::verify() {
   const auto registerName = getRegisterName();
   const auto registerSize = getRegisterSize();
@@ -61,9 +39,4 @@ LogicalResult MeasureOp::verify() {
     }
   }
   return success();
-}
-
-void MeasureOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                            MLIRContext* context) {
-  results.add<DeadMeasurementRemoval>(context);
 }
