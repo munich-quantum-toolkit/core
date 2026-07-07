@@ -487,6 +487,8 @@ public:
    */
   [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
 
+  auto operator<=>(const Job&) const noexcept = default;
+
 private:
   /**
    * @brief Constructs a Job object from a QDMI_Job handle.
