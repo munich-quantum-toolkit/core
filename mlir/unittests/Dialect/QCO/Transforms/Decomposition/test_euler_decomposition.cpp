@@ -99,6 +99,20 @@ class EulerSynthesisExactTest
     : public testing::TestWithParam<
           std::tuple<EulerBasis, Matrix2x2 (*)(MLIRContext*)>> {};
 
+static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
+measureAndReturn(mlir::qco::QCOProgramBuilder& b,
+                 mlir::SmallVector<mlir::Value> qubits) {
+  mlir::SmallVector<mlir::Value> bits;
+  mlir::SmallVector<mlir::Type> bitTypes;
+  auto i1Type = b.getI1Type();
+  for (const auto& q : qubits) {
+    auto [q2, bit] = b.measure(q);
+    bits.push_back(bit);
+    bitTypes.push_back(i1Type);
+  }
+  return {bits, bitTypes};
+}
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -765,7 +779,8 @@ static void runFuseInParent(MLIRContext* ctx, ProgramT program,
 
 // --- Fuse program fixtures --- //
 
-static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
@@ -774,44 +789,56 @@ static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
     return {b.sx(targets[0])};
   })[0];
   q[0] = b.ry(-0.456, q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
   q[0] = b.rz(0.321, q[0]);
   q[0] = b.sx(q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   q[0] = b.barrier({q[0]})[0];
   q[0] = b.rz(0.321, q[0]);
   q[0] = b.sx(q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void singleNonBasisGate(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+singleNonBasisGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void singlePauliX(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+singlePauliX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void canonicalZYZRun(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+canonicalZYZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.rz(0.3, q[0]);
   q[0] = b.ry(0.5, q[0]);
   q[0] = b.rz(0.7, q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void overlongZYZRun(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+overlongZYZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.rz(0.3, q[0]);
   q[0] = b.ry(0.5, q[0]);
@@ -819,27 +846,34 @@ static void overlongZYZRun(QCOProgramBuilder& b) {
   q[0] = b.ry(0.9, q[0]);
   q[0] = b.rz(1.1, q[0]);
   q[0] = b.ry(1.3, q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void overlongZSXXMixedPureZRun(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+overlongZSXXMixedPureZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.sx(q[0]);
   q[0] = b.rz(std::numbers::pi, q[0]);
   q[0] = b.sx(q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void singleQubitRunInScfFor(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+singleQubitRunInScfFor(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.scfFor(0, 1, 1, ValueRange{q[0]}, [&b](Value, ValueRange iterArgs) {
-    Value wire = iterArgs[0];
-    wire = b.h(wire);
-    wire = b.t(wire);
-    wire = b.rz(0.123, wire);
-    return SmallVector<Value>{wire};
-  });
+  auto res =
+      b.scfFor(0, 1, 1, ValueRange{q[0]}, [&b](Value, ValueRange iterArgs) {
+        Value wire = iterArgs[0];
+        wire = b.h(wire);
+        wire = b.t(wire);
+        wire = b.rz(0.123, wire);
+        return SmallVector<Value>{wire};
+      });
+  return measureAndReturn(b, {res[0]});
 }
 
-static void xInverseTwoX(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+xInverseTwoX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
   q[0] = b.inv({q[0]}, [&b](ValueRange targets) {
@@ -848,9 +882,11 @@ static void xInverseTwoX(QCOProgramBuilder& b) {
     return SmallVector{wire};
   })[0];
   q[0] = b.x(q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
-static void inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto outs =
       b.inv({q[0], q[1]}, [&b](ValueRange targets) -> SmallVector<Value> {
@@ -860,11 +896,13 @@ static void inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
       });
   q[0] = outs[0];
   q[1] = outs[1];
+  return measureAndReturn(b, {q[0]});
 }
 
-static void controlledInverseHT(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&b](ValueRange targets) {
+  auto res = b.ctrl(q[0], q[1], [&b](ValueRange targets) {
     auto wire = b.inv({targets[0]}, [&b](ValueRange innerTargets) {
       auto inner = b.h(innerTargets[0]);
       inner = b.t(inner);
@@ -872,24 +910,31 @@ static void controlledInverseHT(QCOProgramBuilder& b) {
     })[0];
     return SmallVector{wire};
   });
+  return measureAndReturn(b, {res.second[0]});
 }
 
-static void controlledH(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+controlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1],
-         [&b](ValueRange targets) { return SmallVector{b.h(targets[0])}; });
+  auto res = b.ctrl(q[0], q[1], [&b](ValueRange targets) {
+    return SmallVector{b.h(targets[0])};
+  });
+  return measureAndReturn(b, {res.second[0]});
 }
 
-static void singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
-  b.scfFor(0, 1, 1, ValueRange{q[0]}, [&b](Value, ValueRange iterArgs) {
-    Value wire = iterArgs[0];
-    wire = b.rz(0.321, wire);
-    wire = b.sx(wire);
-    return SmallVector<Value>{wire};
-  });
+  auto res =
+      b.scfFor(0, 1, 1, ValueRange{q[0]}, [&b](Value, ValueRange iterArgs) {
+        Value wire = iterArgs[0];
+        wire = b.rz(0.321, wire);
+        wire = b.sx(wire);
+        return SmallVector<Value>{wire};
+      });
+  return measureAndReturn(b, {res[0]});
 }
 
 //===----------------------------------------------------------------------===//
@@ -910,7 +955,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesProgramsAllBases) {
   fx.setUp();
 
   struct Case {
-    void (*program)(QCOProgramBuilder&);
+    std::pair<SmallVector<Value>, SmallVector<Type>> (*program)(
+        QCOProgramBuilder&);
     void (*extra)(func::FuncOp, StringRef);
   };
   const std::array<Case, 2> cases = {{
@@ -990,7 +1036,8 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBoundariesAllBases) {
   fx.setUp();
 
   struct Case {
-    void (*program)(QCOProgramBuilder&);
+    std::pair<SmallVector<Value>, SmallVector<Type>> (*program)(
+        QCOProgramBuilder&);
     void (*check)(func::FuncOp, StringRef, MLIRContext*);
   };
   const std::array<Case, 3> cases = {{
