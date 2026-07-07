@@ -202,7 +202,7 @@ checkedFlatIndex(const int64_t row, const int64_t col, const int64_t dim) {
 [[nodiscard]] static int64_t checkedHilbertDim(const size_t numQubits) {
   assert(numQubits < std::numeric_limits<int64_t>::digits &&
          "Hilbert-space dimension must fit in int64_t");
-  return int64_t{static_cast<int64_t>(uint64_t{1} << numQubits)};
+  return static_cast<int64_t>(uint64_t{1} << numQubits);
 }
 
 static void validateCornerDims(const int64_t matrixDim,
