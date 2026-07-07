@@ -1236,16 +1236,10 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
 
     getState().entryPointName = op.getSymName();
 
-    // Update function signature and remove passthrough attribute
+    // Remove passthrough attribute from function signature
     rewriter.startOpModification(op);
-    op.setType(FunctionType::get(rewriter.getContext(), {}, {}));
     op->removeAttr("passthrough");
     rewriter.finalizeOpModification(op);
-
-    // Replace return operation
-    rewriter.setInsertionPointToEnd(block);
-    func::ReturnOp::create(rewriter, returnOp->getLoc());
-    rewriter.eraseOp(returnOp);
 
     return success();
   }

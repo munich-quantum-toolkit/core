@@ -3348,11 +3348,11 @@ ifWithAngle(QCOProgramBuilder& b) {
   auto theta = b.floatConstant(0.123);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
-  b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
+  q0 = b.qcoIf(measureResult, measuredQubit, [&](ValueRange args) {
     auto innerQubit = b.rx(theta, args[0]);
     return SmallVector{innerQubit};
-  });
-  return measureAndReturn(b, {q[0]});
+  })[0];
+  return measureAndReturn(b, {q0});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3659,7 +3659,8 @@ forLoopWithAngle(QCOProgramBuilder& b) {
         auto insert = b.qtensorInsert(q1, t0, iv);
         return SmallVector{insert};
       });
-  return measureAndReturn(b, {scfFor[0]});
+  auto [newReg, q] = b.qtensorExtract(scfFor[0], 0);
+  return measureAndReturn(b, {q});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -3799,7 +3800,7 @@ nestedIfOpForLoopWithAngle(QCOProgramBuilder& b) {
             });
         return SmallVector{scfFor[0], args[1]};
       });
-  return measureAndReturn(b, {res[0]});
+  return measureAndReturn(b, {res[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
