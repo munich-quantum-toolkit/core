@@ -433,7 +433,7 @@ Returns:
                                                .custom5 = custom5};
         auto* const qdmiDevice = qdmi::Driver::get().addDynamicDeviceLibrary(
             libraryPath, prefix, config);
-        return fomac::Device::fromQDMIDevice(qdmiDevice);
+        return fomac::Session::createSessionlessDevice(qdmiDevice);
       },
       "library_path"_a, "prefix"_a, nb::kw_only(), "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,

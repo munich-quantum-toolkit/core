@@ -195,10 +195,9 @@ std::vector<Site> Device::getSites() const {
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
   std::vector<Site> sites;
   sites.reserve(qdmiSites.size());
-  std::ranges::transform(qdmiSites, std::back_inserter(sites),
-                         [device = device_](const QDMI_Site& site) -> Site {
-                           return {device, site};
-                         });
+  std::ranges::transform(
+      qdmiSites, std::back_inserter(sites),
+      [this](const QDMI_Site& site) -> Site { return {this, site}; });
   return sites;
 }
 
@@ -226,9 +225,7 @@ std::vector<Operation> Device::getOperations() const {
   operations.reserve(qdmiOperations.size());
   std::ranges::transform(
       qdmiOperations, std::back_inserter(operations),
-      [device = device_](const QDMI_Operation& op) -> Operation {
-        return {device, op};
-      });
+      [this](const QDMI_Operation& op) -> Operation { return {this, op}; });
   return operations;
 }
 
@@ -240,13 +237,14 @@ Device::getCouplingMap() const {
   if (!qdmiCouplingMap.has_value()) {
     return std::nullopt;
   }
+
   std::vector<std::pair<Site, Site>> couplingMap;
   couplingMap.reserve(qdmiCouplingMap->size());
   std::ranges::transform(*qdmiCouplingMap, std::back_inserter(couplingMap),
                          [this](const std::pair<QDMI_Site, QDMI_Site>& pair)
                              -> std::pair<Site, Site> {
-                           return {Site{device_, pair.first},
-                                   Site{device_, pair.second}};
+                           return {Site{this, pair.first},
+                                   Site{this, pair.second}};
                          });
   return couplingMap;
 }
@@ -616,6 +614,10 @@ std::map<std::string, double> Job::getSparseProbabilities() const {
     throw std::runtime_error("Sparse probabilities key/value count mismatch");
   }
   return probabilities;
+}
+
+Device Session::createSessionlessDevice(QDMI_Device device) {
+  return Device(device);
 }
 
 Session::Session(const SessionConfig& config) {
