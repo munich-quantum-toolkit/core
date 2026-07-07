@@ -330,7 +330,7 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(
                 mlir::qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(
-                mlir::qir::multipleClassicalRegistersAndMeasurements)},
+                mlir::qir::multipleClassicalRegistersAndMeasurements<true>)},
         CompilerPipelineTestCase{
             "MeasurementWithoutRegisters", nullptr,
             MQT_NAMED_BUILDER(mlir::qc::measurementWithoutRegisters),
