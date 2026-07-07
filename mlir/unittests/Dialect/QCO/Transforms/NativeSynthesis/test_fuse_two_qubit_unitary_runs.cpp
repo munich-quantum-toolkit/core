@@ -79,8 +79,8 @@ static bool allOpsNative(OwningOpRef<ModuleOp>& moduleOp,
 
 // --- Reference unitary reconstruction ------------------------------------ //
 
-static std::optional<Value> unitaryQubit(Value v, std::size_t index,
-                                         std::size_t numQubits) {
+static std::optional<Value> unitaryQubit(Value v, size_t index,
+                                         size_t numQubits) {
   if (index >= numQubits || !isa<QubitType>(v.getType())) {
     return std::nullopt;
   }
@@ -88,12 +88,12 @@ static std::optional<Value> unitaryQubit(Value v, std::size_t index,
 }
 
 static std::optional<Value> unitaryQubitOperand(UnitaryOpInterface op,
-                                                std::size_t index) {
+                                                size_t index) {
   return unitaryQubit(op->getOperand(index), index, op.getNumQubits());
 }
 
 static std::optional<Value> unitaryQubitResult(UnitaryOpInterface op,
-                                               std::size_t index) {
+                                               size_t index) {
   return unitaryQubit(op->getResult(index), index, op.getNumQubits());
 }
 
@@ -126,15 +126,15 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
     return std::nullopt;
   }
 
-  DenseMap<Value, std::size_t> qubitIds;
-  std::size_t nextQubitId = 0;
-  std::size_t numQubits = 0;
+  DenseMap<Value, size_t> qubitIds;
+  size_t nextQubitId = 0;
+  size_t numQubits = 0;
 
   for (auto func : module.getOps<func::FuncOp>()) {
     for (auto& block : func.getBlocks()) {
       for (auto& rawOp : block.getOperations()) {
         if (auto staticOp = dyn_cast<StaticOp>(&rawOp)) {
-          const auto index = static_cast<std::size_t>(staticOp.getIndex());
+          const auto index = static_cast<size_t>(staticOp.getIndex());
           qubitIds.try_emplace(staticOp.getQubit(), index);
           numQubits = std::max(numQubits, index + 1);
         } else if (auto alloc = dyn_cast<AllocOp>(&rawOp)) {
@@ -150,10 +150,10 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
   }
 
   DynamicMatrix unitary =
-      DynamicMatrix::identity(static_cast<std::int64_t>(1ULL << numQubits));
+      DynamicMatrix::identity(static_cast<int64_t>(1ULL << numQubits));
   Complex globalPhase{1.0, 0.0};
 
-  auto getQubitId = [&](Value qubit) -> std::optional<std::size_t> {
+  auto getQubitId = [&](Value qubit) -> std::optional<size_t> {
     const auto it = qubitIds.find(qubit);
     if (it == qubitIds.end()) {
       return std::nullopt;
@@ -171,7 +171,7 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
         if (isa<BarrierOp>(op.getOperation())) {
           // A barrier is an identity on its wires, but it still threads qubit
           // values, so carry each input's id over to the matching output.
-          for (std::size_t i = 0; i < op.getNumQubits(); ++i) {
+          for (size_t i = 0; i < op.getNumQubits(); ++i) {
             if (const auto id = getQubitId(op->getOperand(i))) {
               qubitIds[op->getResult(i)] = *id;
             }
@@ -466,8 +466,8 @@ constexpr StringRef FUSION_GATESET = "u,cx";
 struct FusionCase {
   const char* name;
   ProgramFn program;
-  std::optional<std::size_t> exactCtrlCount;
-  std::optional<std::size_t> minCtrlCount;
+  std::optional<size_t> exactCtrlCount;
+  std::optional<size_t> minCtrlCount;
   bool checkTwoQUnitary;
 };
 
@@ -550,16 +550,16 @@ protected:
     expectQcoModulesEquivalent(expected, fused);
   }
 
-  static std::size_t countCtrlOps(const OwningOpRef<ModuleOp>& moduleOp) {
-    std::size_t count = 0;
+  static size_t countCtrlOps(const OwningOpRef<ModuleOp>& moduleOp) {
+    size_t count = 0;
     moduleOp.get()->walk([&](CtrlOp) { ++count; });
     return count;
   }
 
   /// Counts unitaries acting on more than two qubits, i.e. gates left untouched
   /// for the dedicated multi-controlled synthesis pass.
-  static std::size_t countWideGates(const OwningOpRef<ModuleOp>& moduleOp) {
-    std::size_t count = 0;
+  static size_t countWideGates(const OwningOpRef<ModuleOp>& moduleOp) {
+    size_t count = 0;
     moduleOp.get()->walk([&](UnitaryOpInterface op) {
       if (op.getNumQubits() > 2) {
         ++count;

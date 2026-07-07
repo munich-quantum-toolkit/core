@@ -66,12 +66,12 @@ static bool isExcludedFromTopLevelUnitaryWalk(Operation* op) {
   if (op->getParentOfType<CtrlOp>()) {
     return true;
   }
-  return !llvm::isa<InvOp>(op) && op->getParentOfType<InvOp>();
+  return !isa<InvOp>(op) && op->getParentOfType<InvOp>();
 }
 
 /// Whether `op` is a unitary shell the pass may rewrite at top level.
 static bool isWalkableUnitaryShell(Operation* op) {
-  return !llvm::isa<BarrierOp, GPhaseOp>(op) &&
+  return !isa<BarrierOp, GPhaseOp>(op) &&
          !isExcludedFromTopLevelUnitaryWalk(op);
 }
 
@@ -80,14 +80,14 @@ static bool isWalkableUnitaryShell(Operation* op) {
 /// single-control/single-target, or an op whose matrix is not known at compile
 /// time.
 static bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
-  if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
+  if (auto ctrl = dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
     }
-    return llvm::cast<UnitaryOpInterface>(ctrl.getOperation())
+    return cast<UnitaryOpInterface>(ctrl.getOperation())
         .getUnitaryMatrix4x4(matrix);
   }
-  auto unitary = llvm::cast<UnitaryOpInterface>(op);
+  auto unitary = cast<UnitaryOpInterface>(op);
   assert(unitary.isTwoQubit() &&
          "only two-qubit unitary shells are passed to assignTwoQubitOpMatrix");
   return unitary.getUnitaryMatrix4x4(matrix);
@@ -120,7 +120,7 @@ static bool isTwoQubitRunMember(UnitaryOpInterface unitary) {
 static UnitaryOpInterface uniqueUnitaryUser(Value wire) {
   assert(wire.hasOneUse() &&
          "qubit values are single-use, so a run tail has exactly one user");
-  auto unitary = llvm::dyn_cast<UnitaryOpInterface>(*wire.user_begin());
+  auto unitary = dyn_cast<UnitaryOpInterface>(*wire.user_begin());
   if (!unitary) {
     return {};
   }
@@ -138,7 +138,7 @@ static UnitaryOpInterface uniqueUnitaryUser(Value wire) {
 static Operation* twoQubitGateAtEndOfOneQChain(Value wire) {
   Value cur = wire;
   while (Operation* def = cur.getDefiningOp()) {
-    auto unitary = llvm::dyn_cast<UnitaryOpInterface>(def);
+    auto unitary = dyn_cast<UnitaryOpInterface>(def);
     if (!unitary) {
       return nullptr;
     }
@@ -180,8 +180,8 @@ static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
   assert(assigned && "a two-qubit run member always exposes a 4x4 matrix");
   const Value in0 = op.getInputQubit(0);
   const Value in1 = op.getInputQubit(1);
-  std::size_t id0 = 0;
-  std::size_t id1 = 1;
+  size_t id0 = 0;
+  size_t id1 = 1;
   if (in0 == run.tailA && in1 == run.tailB) {
     run.tailA = op.getOutputQubit(0);
     run.tailB = op.getOutputQubit(1);
@@ -274,7 +274,7 @@ static void eraseFusableRun(PatternRewriter& rewriter,
 /// reported.
 static bool hasNonNativeOps(Operation* root, const NativeGateset& spec) {
   const WalkResult walkResult = root->walk([&](Operation* op) {
-    auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
+    auto unitary = dyn_cast<UnitaryOpInterface>(op);
     if (!unitary || !isWalkableUnitaryShell(op) || unitary.getNumQubits() > 2) {
       return WalkResult::advance();
     }
@@ -319,7 +319,7 @@ struct FuseTwoQubitUnitaryRunsPattern final
       return failure();
     }
 
-    auto firstOp = llvm::cast<UnitaryOpInterface>(run.ops.front());
+    auto firstOp = cast<UnitaryOpInterface>(run.ops.front());
     rewriter.setInsertionPoint(firstOp);
     Value newA;
     Value newB;
@@ -360,7 +360,7 @@ struct LowerTwoQubitOpPattern final
 
     Value in0;
     Value in1;
-    if (auto ctrl = llvm::dyn_cast<CtrlOp>(raw)) {
+    if (auto ctrl = dyn_cast<CtrlOp>(raw)) {
       in0 = ctrl.getInputControl(0);
       in1 = ctrl.getInputTarget(0);
     } else {
@@ -420,7 +420,7 @@ struct FuseTwoQubitUnitaryRunsPass final
 
 protected:
   void runOnOperation() override {
-    if (llvm::StringRef(nativeGates).trim().empty()) {
+    if (StringRef(nativeGates).trim().empty()) {
       return;
     }
     const auto spec = NativeGateset::parse(nativeGates);

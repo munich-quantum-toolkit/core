@@ -146,7 +146,7 @@ NativeGateset::decomposeTarget(const Matrix4x4& target) const {
 }
 
 static std::optional<NativeGateKind> gateKindFor(UnitaryOpInterface op) {
-  return llvm::TypeSwitch<Operation*, std::optional<NativeGateKind>>(
+  return TypeSwitch<Operation*, std::optional<NativeGateKind>>(
              op.getOperation())
       .Case<UOp>([](UOp) { return NativeGateKind::U; })
       .Case<XOp>([](XOp) { return NativeGateKind::X; })
@@ -163,7 +163,7 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
       ctrl.getNumBodyUnitaries() != 1) {
     return std::nullopt;
   }
-  return llvm::TypeSwitch<Operation*, std::optional<NativeGateKind>>(
+  return TypeSwitch<Operation*, std::optional<NativeGateKind>>(
              ctrl.getBodyUnitary(0).getOperation())
       .Case<XOp>([](XOp) { return NativeGateKind::CX; })
       .Case<ZOp>([](ZOp) { return NativeGateKind::CZ; })
@@ -171,7 +171,7 @@ static std::optional<NativeGateKind> entanglerKindFor(CtrlOp ctrl) {
 }
 
 bool NativeGateset::allowsOp(Operation* op) const {
-  return llvm::TypeSwitch<Operation*, bool>(op)
+  return TypeSwitch<Operation*, bool>(op)
       .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
       .Case<CtrlOp>([&](CtrlOp ctrl) {
         const auto kind = entanglerKindFor(ctrl);
