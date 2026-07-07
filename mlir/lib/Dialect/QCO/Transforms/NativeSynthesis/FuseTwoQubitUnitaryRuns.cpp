@@ -76,12 +76,10 @@ static bool isWalkableUnitaryShell(Operation* op) {
 }
 
 /// Builds the constant 4x4 matrix for a two-qubit op (bare or single-target
-/// `CtrlOp`). Returns false for barriers, global phase, non-two-qubit ops, and
-/// ops whose matrix is not known at compile time.
+/// `CtrlOp`). Returns false for a `CtrlOp` that is not
+/// single-control/single-target, or an op whose matrix is not known at compile
+/// time.
 static bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
-  if (llvm::isa<BarrierOp, GPhaseOp>(op)) {
-    return false;
-  }
   if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
     if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
       return false;
@@ -89,10 +87,9 @@ static bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
     return llvm::cast<UnitaryOpInterface>(ctrl.getOperation())
         .getUnitaryMatrix4x4(matrix);
   }
-  auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
-  if (!unitary || !unitary.isTwoQubit()) {
-    return false;
-  }
+  auto unitary = llvm::cast<UnitaryOpInterface>(op);
+  assert(unitary.isTwoQubit() &&
+         "only two-qubit unitary shells are passed to assignTwoQubitOpMatrix");
   return unitary.getUnitaryMatrix4x4(matrix);
 }
 
@@ -118,12 +115,11 @@ static bool isTwoQubitRunMember(UnitaryOpInterface unitary) {
 
 // --- Wire navigation ------------------------------------------------------ //
 
-/// The sole run-member consumer of `wire`, or a null interface when `wire` has
-/// no unique user or its user cannot join a run.
+/// The sole run-member consumer of `wire`, or a null interface when its unique
+/// user cannot join a run. `wire` is single-use by qubit linearity.
 static UnitaryOpInterface uniqueUnitaryUser(Value wire) {
-  if (!wire.hasOneUse()) {
-    return {};
-  }
+  assert(wire.hasOneUse() &&
+         "qubit values are single-use, so a run tail has exactly one user");
   auto unitary = llvm::dyn_cast<UnitaryOpInterface>(*wire.user_begin());
   if (!unitary) {
     return {};
