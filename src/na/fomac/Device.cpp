@@ -575,8 +575,6 @@ auto Session::Device::initOperationsFromDevice() -> bool {
   }
   return true;
 }
-Session::Device::Device(const fomac::Device& device)
-    : fomac::Device(device), na::Device{} {}
 
 auto Session::getDevices() -> std::vector<Device> {
   std::vector<Device> devices;

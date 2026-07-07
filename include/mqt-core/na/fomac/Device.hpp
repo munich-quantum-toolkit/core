@@ -86,7 +86,8 @@ public:
      * class. For their initialization, the corresponding `init*FromDevice`
      * methods must be called, see @ref tryCreateFromDevice.
      */
-    explicit Device(const fomac::Device& device);
+    explicit Device(const fomac::Device& device)
+        : fomac::Device(device), na::Device() {};
 
   public:
     /// @returns the length unit of the device.
