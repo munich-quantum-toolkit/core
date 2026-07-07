@@ -15,11 +15,15 @@ releases may include breaking changes.
 - ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
   unitary windows via Weyl/KAK resynthesis ([#1655]) ([**@simon1hofmann**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
-  ([#1844]) ([**@burgholzer**])
+  ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
   ([#1826]) ([**@ystade**])
 - 🐳 Add dev container configuration for consistent local development
   environment ([#1786]) ([**@denialhaag**])
+- ✨ Add two-qubit Weyl (KAK) decomposition and native-gateset synthesis support
+  ([#1803], [#1832]) ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Extend the QCO unitary matrix library ([#1774], [#1802], [#1809], [#1814])
+  ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
   single-qubit unitary runs via Euler resynthesis ([#1672])
   ([**@simon1hofmann**], [**@burgholzer**])
@@ -598,6 +602,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
 [#1832]: https://github.com/munich-quantum-toolkit/core/pull/1832
@@ -606,6 +611,7 @@ changelogs._
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1824]: https://github.com/munich-quantum-toolkit/core/pull/1824
 [#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
+[#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
 [#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
