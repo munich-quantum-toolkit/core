@@ -247,6 +247,9 @@ static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
 
     const bool aSingle = nextOnA && nextOnA.isSingleQubit() && !sameOp;
     const bool bSingle = nextOnB && nextOnB.isSingleQubit() && !sameOp;
+    if (aSingle && bSingle && nextOnA->getBlock() != nextOnB->getBlock()) {
+      break;
+    }
     if (aSingle && (!bSingle || nextOnA->isBeforeInBlock(nextOnB))) {
       absorbOneQubitIntoRun(run, nextOnA, spec, /*wireIndex=*/0);
       continue;

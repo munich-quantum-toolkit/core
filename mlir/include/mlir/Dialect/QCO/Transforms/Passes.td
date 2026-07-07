@@ -81,11 +81,11 @@ def FuseTwoQubitUnitaryRuns
     The gateset is a comma-separated list of gate tokens (order not
     significant) from which the pass resolves a single-qubit Euler basis
     (generic `qco.u` when `u` is present; IBM-style surface gates when all of
-    `x`, `sx`, and `rz`/`p` are present; IQM-style `qco.r` when `r` is present;
+    `x`, `sx`, and `rz` are present; IQM-style `qco.r` when `r` is present;
     or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus the
     two-qubit entangler `cx` or `cz`.
 
-    Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`, `cx`,
+    Recognised tokens: `u`, `x`, `sx`, `rz`, `rx`, `ry`, `r`, `cx`,
     `cz`. An empty or whitespace-only gateset is a no-op, which is the intended
     pipeline default when synthesis is not needed. An unrecognised token causes
     the pass to fail.
@@ -112,7 +112,7 @@ def FuseTwoQubitUnitaryRuns
   let options = [Option<
       "nativeGates", "native-gates", "std::string", "\"\"",
       "Comma-separated native gateset. Empty or whitespace-only is "
-      "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz. "
+      "a no-op. Tokens: u, x, sx, rz, rx, ry, r, cx, cz. "
       "Examples: x,sx,rz,cx; u,cx; r,cz; rx,rz,cx.">];
 }
 

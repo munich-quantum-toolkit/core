@@ -387,7 +387,8 @@ static void fusionCxSingleWireBarrierCx(mlir::qc::QCProgramBuilder& b) {
 
 /// An entangler followed by a three-qubit gate sharing both run wires: the run
 /// scan must stop at the wider gate (it is neither a single- nor a two-qubit
-/// run member), leaving the non-native three-qubit gate for the pass to reject.
+/// run member) and leave it untouched, since gates on more than two qubits are
+/// out of scope for this pass rather than a failure.
 static void fusionCxThenMultiControlledX(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
