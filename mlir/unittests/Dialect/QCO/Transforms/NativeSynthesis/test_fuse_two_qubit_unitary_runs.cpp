@@ -202,6 +202,7 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
 
   DynamicMatrix unitary =
       DynamicMatrix::identity(static_cast<std::int64_t>(1ULL << numQubits));
+  Complex globalPhase{1.0, 0.0};
 
   auto getQubitId = [&](Value qubit) -> std::optional<std::size_t> {
     const auto it = qubitIds.find(qubit);
@@ -218,7 +219,13 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
         if (!op) {
           continue;
         }
-        if (llvm::isa<BarrierOp, GPhaseOp>(op.getOperation())) {
+        if (llvm::isa<BarrierOp>(op.getOperation())) {
+          continue;
+        }
+        if (auto gphase = llvm::dyn_cast<GPhaseOp>(op.getOperation())) {
+          if (const auto matrix = gphase.getUnitaryMatrix()) {
+            globalPhase *= (*matrix)(0, 0);
+          }
           continue;
         }
 
@@ -275,7 +282,7 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
     }
   }
 
-  return unitary;
+  return globalPhase * unitary;
 }
 
 namespace {
@@ -339,7 +346,7 @@ protected:
     ASSERT_TRUE(lhsUnitary.has_value());
     const auto rhsUnitary = computeUnitaryFromQcoModule(rhs);
     ASSERT_TRUE(rhsUnitary.has_value());
-    EXPECT_TRUE(isEquivalentUpToGlobalPhase(*lhsUnitary, *rhsUnitary));
+    EXPECT_TRUE(lhsUnitary->isApprox(*rhsUnitary));
   }
 
   void expectNativeAfterSynthesis(ProgramFn program, StringRef nativeGates,
