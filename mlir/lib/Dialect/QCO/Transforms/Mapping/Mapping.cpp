@@ -390,7 +390,7 @@ private:
       }
     }
 
-    return std::make_pair(wires, infos);
+    return {wires, infos};
   }
 
   /// Perform placement by
@@ -511,7 +511,7 @@ private:
       }
     }
 
-    return std::make_pair(wires, infos);
+    return {wires, infos};
   }
 
   /// Execute `ntrials` many (parallel) initial layout refinement trials and
@@ -1053,7 +1053,7 @@ createMappingPass(const llvm::DenseSet<std::pair<size_t, size_t>>& couplingSet,
       return nullptr;
     }
 
-    if (!couplingSet.contains(std::make_pair(v, u))) {
+    if (!couplingSet.contains({v, u})) {
       llvm::reportFatalUsageError("Expected symmetric coupling set: edge (" +
                                   Twine(u) + ", " + Twine(v) +
                                   ") exists but (" + Twine(v) + ", " +
