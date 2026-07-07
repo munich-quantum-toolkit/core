@@ -506,28 +506,34 @@ inverseTwoX(QCOProgramBuilder& b) {
   return measureAndReturn(b, {res[0]});
 }
 
-void inverseGphaseX(QCOProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseGphaseX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) {
+  auto res = b.inv(q[0], [&](ValueRange qubits) {
     b.gphase(-0.123);
     return SmallVector{b.x(qubits[0])};
   });
+  return measureAndReturn(b, {res[0]});
 }
 
-void inverseGphaseBarrier(QCOProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseGphaseBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) -> SmallVector<Value> {
+  auto res = b.inv(q[0], [&](ValueRange qubits) -> SmallVector<Value> {
     b.gphase(0.123);
     return {b.barrier({qubits[0]})[0]};
   });
+  return measureAndReturn(b, {res[0]});
 }
 
-void inverseTwoBarriersInInv(QCOProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseTwoBarriersInInv(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) -> SmallVector<Value> {
+  auto res = b.inv(q[0], [&](ValueRange qubits) -> SmallVector<Value> {
     auto q0 = b.barrier({qubits[0]})[0];
     return {b.barrier({q0})[0]};
   });
+  return measureAndReturn(b, {res[0]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>> y(QCOProgramBuilder& b) {
@@ -1736,10 +1742,11 @@ canonicalizeRToRy(QCOProgramBuilder& b) {
   return measureAndReturn(b, {q[0]});
 }
 
-void twoR(QCOProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>> twoR(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.r(0.045, 0.456, q[0]);
   q[0] = b.r(0.078, 0.456, q[0]);
+  return measureAndReturn(b, {q[0]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>> u2(QCOProgramBuilder& b) {
@@ -2883,10 +2890,12 @@ twoXxPlusYYOppositePhase(QCOProgramBuilder& b) {
   return measureAndReturn(b, {q[0], q[1]});
 }
 
-void twoXxPlusYYSwappedTargets(QCOProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+twoXxPlusYYSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_plus_yy(0.045, 0.456, q[0], q[1]);
   std::tie(q[1], q[0]) = b.xx_plus_yy(0.078, 0.456, q[1], q[0]);
+  return measureAndReturn(b, {q[0], q[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -2984,10 +2993,12 @@ twoXxMinusYYOppositePhase(QCOProgramBuilder& b) {
   return measureAndReturn(b, {q[0], q[1]});
 }
 
-void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_minus_yy(0.045, 0.456, q[0], q[1]);
   std::tie(q[1], q[0]) = b.xx_minus_yy(0.078, 0.456, q[1], q[0]);
+  return measureAndReturn(b, {q[0], q[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>> barrier(QCOProgramBuilder& b) {
@@ -3789,6 +3800,31 @@ nestedIfOpForLoopWithAngle(QCOProgramBuilder& b) {
         return SmallVector{scfFor[0], args[1]};
       });
   return measureAndReturn(b, {res[0]});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+controlledXH(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto [ctrl, targ] = b.ctrl(q[0], q[1], [&](ValueRange targets) {
+    auto wire = b.x(targets[0]);
+    wire = b.h(wire);
+    return SmallVector{wire};
+  });
+  return measureAndReturn(b, {ctrl[0], targ[0]});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+controlledInverseHT(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto [ctrl, targ] = b.ctrl(q[0], q[1], [&](ValueRange targets) {
+    auto wire = b.inv({targets[0]}, [&](ValueRange innerTargets) {
+      auto inner = b.h(innerTargets[0]);
+      inner = b.t(inner);
+      return SmallVector{inner};
+    })[0];
+    return SmallVector{wire};
+  });
+  return measureAndReturn(b, {ctrl[0], targ[0]});
 }
 
 } // namespace mlir::qco

@@ -64,27 +64,6 @@ expectedMatrixFromComputation(const Fn& build,
       dd::buildFunctionality(comp, *package).getMatrix(numQubits));
 }
 
-static void controlledXH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange targets) {
-    auto wire = b.x(targets[0]);
-    wire = b.h(wire);
-    return SmallVector{wire};
-  });
-}
-
-static void controlledInverseHT(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange targets) {
-    auto wire = b.inv({targets[0]}, [&](ValueRange innerTargets) {
-      auto inner = b.h(innerTargets[0]);
-      inner = b.t(inner);
-      return SmallVector{inner};
-    })[0];
-    return SmallVector{wire};
-  });
-}
-
 namespace {
 
 struct QCOMatrixTestCase {

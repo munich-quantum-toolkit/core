@@ -244,15 +244,18 @@ inverseTwoX(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a global phase and an
 /// X gate.
-void inverseGphaseX(QCOProgramBuilder& b);
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseGphaseX(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a global phase and a
 /// barrier.
-void inverseGphaseBarrier(QCOProgramBuilder& b);
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseGphaseBarrier(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to two consecutive
 /// barriers.
-void inverseTwoBarriersInInv(QCOProgramBuilder& b);
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseTwoBarriersInInv(QCOProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
@@ -739,7 +742,7 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 canonicalizeRToRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with two R gates in a row with the same `phi`.
-void twoR(QCOProgramBuilder& b);
+std::pair<SmallVector<Value>, SmallVector<Type>> twoR(QCOProgramBuilder& b);
 
 // --- U2Op ----------------------------------------------------------------- //
 
@@ -1172,7 +1175,8 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 twoXxPlusYYOppositePhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with two XXPlusYY gates in a row with swapped targets.
-void twoXxPlusYYSwappedTargets(QCOProgramBuilder& b);
+std::pair<SmallVector<Value>, SmallVector<Type>>
+twoXxPlusYYSwappedTargets(QCOProgramBuilder& b);
 
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
@@ -1210,7 +1214,8 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with two XXMinusYY gates in a row with swapped targets.
-void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
+std::pair<SmallVector<Value>, SmallVector<Type>>
+twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 
@@ -1446,5 +1451,11 @@ qtensorChain(QCOProgramBuilder& b);
 /// order (2, 1, 0).
 std::pair<SmallVector<Value>, SmallVector<Type>>
 qtensorAlternativeChain(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+controlledXH(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+controlledInverseHT(QCOProgramBuilder& b);
 
 } // namespace mlir::qco
