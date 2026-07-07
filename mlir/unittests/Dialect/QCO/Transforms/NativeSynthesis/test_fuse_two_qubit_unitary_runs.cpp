@@ -52,9 +52,10 @@ using ProgramFn = void (*)(mlir::qc::QCProgramBuilder&);
 
 // --- Native-gateset membership check ------------------------------------- //
 
-/// Returns true when every operation in @p moduleOp is native to the gateset
-/// parsed from @p nativeGates. Operations nested inside a controlled shell are
-/// validated through the shell itself.
+/// Returns true when every single- or two-qubit operation in @p moduleOp is
+/// native to the gateset parsed from @p nativeGates. Operations nested inside a
+/// controlled shell are validated through the shell itself, and gates acting on
+/// more than two qubits are out of scope for this pass and thus ignored.
 static bool allOpsNative(OwningOpRef<ModuleOp>& moduleOp,
                          StringRef nativeGates) {
   const auto spec = decomposition::NativeGateset::parse(nativeGates);
@@ -64,7 +65,7 @@ static bool allOpsNative(OwningOpRef<ModuleOp>& moduleOp,
   bool ok = true;
   std::ignore = moduleOp->walk([&](UnitaryOpInterface op) {
     Operation* raw = op.getOperation();
-    if (isa_and_present<CtrlOp>(raw->getParentOp())) {
+    if (isa_and_present<CtrlOp>(raw->getParentOp()) || op.getNumQubits() > 2) {
       return WalkResult::advance();
     }
     if (!spec->allowsOp(raw)) {
@@ -168,6 +169,13 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
           continue;
         }
         if (isa<BarrierOp>(op.getOperation())) {
+          // A barrier is an identity on its wires, but it still threads qubit
+          // values, so carry each input's id over to the matching output.
+          for (std::size_t i = 0; i < op.getNumQubits(); ++i) {
+            if (const auto id = getQubitId(op->getOperand(i))) {
+              qubitIds[op->getResult(i)] = *id;
+            }
+          }
           continue;
         }
         if (auto gphase = dyn_cast<GPhaseOp>(op.getOperation())) {
@@ -366,6 +374,28 @@ static void fusionCxBarrierCx(mlir::qc::QCProgramBuilder& b) {
   b.cx(q0, q1);
 }
 
+/// A single-wire barrier between two entanglers: a non-walkable single-qubit
+/// shell terminates the run scan on wire A (and breaks the run-start chain of
+/// the second entangler), so neither entangler fuses.
+static void fusionCxSingleWireBarrierCx(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  b.cx(q0, q1);
+  b.barrier({q0});
+  b.cx(q0, q1);
+}
+
+/// An entangler followed by a three-qubit gate sharing both run wires: the run
+/// scan must stop at the wider gate (it is neither a single- nor a two-qubit
+/// run member), leaving the non-native three-qubit gate for the pass to reject.
+static void fusionCxThenMultiControlledX(mlir::qc::QCProgramBuilder& b) {
+  const auto q0 = b.allocQubit();
+  const auto q1 = b.allocQubit();
+  const auto q2 = b.allocQubit();
+  b.cx(q0, q1);
+  b.mcx({q0, q1}, q2);
+}
+
 static void fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
@@ -525,6 +555,18 @@ protected:
     return count;
   }
 
+  /// Counts unitaries acting on more than two qubits, i.e. gates left untouched
+  /// for the dedicated multi-controlled synthesis pass.
+  static std::size_t countWideGates(const OwningOpRef<ModuleOp>& moduleOp) {
+    std::size_t count = 0;
+    moduleOp.get()->walk([&](UnitaryOpInterface op) {
+      if (op.getNumQubits() > 2) {
+        ++count;
+      }
+    });
+    return count;
+  }
+
   std::unique_ptr<MLIRContext> context;
 };
 
@@ -557,7 +599,9 @@ INSTANTIATE_TEST_SUITE_P(
                         NamedProgram{"SurroundedCx", hCxSq1},
                         NamedProgram{"ThreeQubitGhz", threeQGhz},
                         NamedProgram{"InverseBody", inverseTwoX},
-                        NamedProgram{"ControlledBody", controlledXH}),
+                        NamedProgram{"ControlledBody", controlledXH},
+                        NamedProgram{"SingleWireBarrier",
+                                     fusionCxSingleWireBarrierCx}),
         testing::ValuesIn(GATESETS)),
     [](const testing::TestParamInfo<SynthesisParam>& info) {
       std::string gateset = std::get<1>(info.param);
@@ -596,6 +640,8 @@ INSTANTIATE_TEST_SUITE_P(
                    false},
         FusionCase{"BarrierBoundary", fusionCxBarrierCx, 2, std::nullopt,
                    false},
+        FusionCase{"SingleWireBarrierBoundary", fusionCxSingleWireBarrierCx, 2,
+                   std::nullopt, true},
         FusionCase{"SwappedWireOrder", fusionSwapCxPattern, std::nullopt,
                    std::nullopt, true},
         FusionCase{"OffMenuGateInWindow", fusionOffMenuGateInWindow,
@@ -637,8 +683,29 @@ TEST_F(FuseTwoQubitUnitaryRunsPassTest,
   expectSynthesisFailure(mlir::qc::singleControlledX, "cx,cz");
 }
 
-TEST_F(FuseTwoQubitUnitaryRunsPassTest, FailsForMultiControlledGateStructure) {
-  expectSynthesisFailure(mlir::qc::multipleControlledX, "x,sx,rz,cx");
+TEST_F(FuseTwoQubitUnitaryRunsPassTest, LeavesMultiControlledGateUntouched) {
+  // A multi-controlled gate is out of scope for this pass; it is left untouched
+  // (for a dedicated multi-controlled synthesis pass) and does not fail the
+  // run.
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), mlir::qc::multipleControlledX);
+  ASSERT_TRUE(module);
+  runFusePipeline(module, "x,sx,rz,cx");
+  EXPECT_TRUE(allOpsNative(module, "x,sx,rz,cx"));
+  EXPECT_EQ(countWideGates(module), 1U);
+}
+
+TEST_F(FuseTwoQubitUnitaryRunsPassTest,
+       LowersTwoQubitRunButLeavesWiderGateBoundary) {
+  // The `cx` is off-menu for this cz-family gateset, so it is Weyl-synthesized
+  // even though the run scan stops at the three-qubit boundary; the wider gate
+  // is left untouched, so the pass succeeds with the two-qubit run lowered.
+  auto module = mlir::qc::QCProgramBuilder::build(context.get(),
+                                                  fusionCxThenMultiControlledX);
+  ASSERT_TRUE(module);
+  runFusePipeline(module, "u,cz");
+  EXPECT_TRUE(allOpsNative(module, "u,cz"));
+  EXPECT_EQ(countWideGates(module), 1U);
 }
 
 TEST_F(FuseTwoQubitUnitaryRunsPassTest,

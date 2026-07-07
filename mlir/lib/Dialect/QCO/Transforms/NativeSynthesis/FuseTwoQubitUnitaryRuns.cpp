@@ -18,6 +18,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -28,6 +29,7 @@
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
+#include <cassert>
 #include <cstddef>
 #include <optional>
 #include <utility>
@@ -160,9 +162,9 @@ static Operation* twoQubitGateAtEndOfOneQChain(Value wire) {
 static bool feedsFromSameTwoQubitRun(UnitaryOpInterface op) {
   const Value in0 = op.getInputQubit(0);
   const Value in1 = op.getInputQubit(1);
-  if (!in0.hasOneUse() || !in1.hasOneUse()) {
-    return false;
-  }
+  assert(in0.hasOneUse() && in1.hasOneUse() &&
+         "qubit values are single-use, so a run member consumes each input "
+         "exactly once");
   Operation* gate0 = twoQubitGateAtEndOfOneQChain(in0);
   Operation* gate1 = twoQubitGateAtEndOfOneQChain(in1);
   return gate0 != nullptr && gate0 == gate1;
@@ -177,9 +179,9 @@ static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
                                   UnitaryOpInterface op,
                                   const NativeGateset& spec) {
   Matrix4x4 opMatrix;
-  if (!assignTwoQubitOpMatrix(op.getOperation(), opMatrix)) {
-    return;
-  }
+  [[maybe_unused]] const bool assigned =
+      assignTwoQubitOpMatrix(op.getOperation(), opMatrix);
+  assert(assigned && "a two-qubit run member always exposes a 4x4 matrix");
   const Value in0 = op.getInputQubit(0);
   const Value in1 = op.getInputQubit(1);
   std::size_t id0 = 0;
@@ -193,7 +195,8 @@ static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
     run.tailA = op.getOutputQubit(1);
     run.tailB = op.getOutputQubit(0);
   } else {
-    return;
+    llvm_unreachable(
+        "a unique user of both tail wires connects to both of them");
   }
   run.composed.premultiplyBy(opMatrix.reorderForQubits(id0, id1));
   run.ops.push_back(op.getOperation());
@@ -207,9 +210,8 @@ static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
                                   const NativeGateset& spec,
                                   unsigned wireIndex) {
   Matrix2x2 raw;
-  if (!op.getUnitaryMatrix2x2(raw)) {
-    return;
-  }
+  [[maybe_unused]] const bool assigned = op.getUnitaryMatrix2x2(raw);
+  assert(assigned && "a single-qubit run member always exposes a 2x2 matrix");
   run.composed.premultiplyBy(raw.embedInTwoQubit(wireIndex));
   run.ops.push_back(op.getOperation());
   run.hasNonNativeGate |= !spec.allowsOp(op.getOperation());
@@ -223,9 +225,9 @@ static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
 static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
                                                  const NativeGateset& spec) {
   FusableTwoQubitRun run;
-  if (!assignTwoQubitOpMatrix(head.getOperation(), run.composed)) {
-    return run;
-  }
+  [[maybe_unused]] const bool assigned =
+      assignTwoQubitOpMatrix(head.getOperation(), run.composed);
+  assert(assigned && "a run head is a two-qubit member with a 4x4 matrix");
   run.tailA = head.getOutputQubit(0);
   run.tailB = head.getOutputQubit(1);
   run.ops.push_back(head.getOperation());
@@ -266,11 +268,15 @@ static void eraseFusableRun(PatternRewriter& rewriter,
   }
 }
 
-/// Whether any two-qubit or single-qubit unitary (including `ctrl` shells)
-/// remains off the native gateset. Used as the pass' convergence check.
+/// Whether any single- or two-qubit unitary (including `ctrl` shells) remains
+/// off the native gateset. Used as the pass' convergence check. Gates acting on
+/// more than two qubits are out of scope here (a dedicated multi-controlled
+/// synthesis pass possibly lowers those) and are left untouched rather than
+/// reported.
 static bool hasNonNativeOps(Operation* root, const NativeGateset& spec) {
   const WalkResult walkResult = root->walk([&](Operation* op) {
-    if (!isWalkableUnitaryShell(op) || !llvm::isa<UnitaryOpInterface>(op)) {
+    auto unitary = llvm::dyn_cast<UnitaryOpInterface>(op);
+    if (!unitary || !isWalkableUnitaryShell(op) || unitary.getNumQubits() > 2) {
       return WalkResult::advance();
     }
     return spec.allowsOp(op) ? WalkResult::advance() : WalkResult::interrupt();

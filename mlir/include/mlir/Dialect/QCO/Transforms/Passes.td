@@ -73,8 +73,10 @@ def FuseTwoQubitUnitaryRuns
   let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
   let description = [{
     Rewrites unitaries to match the comma-separated `native-gates` gateset.
-    `qco.barrier` and `qco.gphase` are preserved; `qco.ctrl` must have a
-    single control and a single target.
+    `qco.barrier` and `qco.gphase` are preserved. A `qco.ctrl` is treated as a
+    two-qubit gate only when it has a single control and a single target; gates
+    acting on more than two qubits (e.g. multi-controlled `qco.ctrl`) are out of
+    scope and left untouched for a dedicated multi-controlled synthesis pass.
 
     The gateset is a comma-separated list of gate tokens (order not
     significant) from which the pass resolves a single-qubit Euler basis
@@ -99,8 +101,9 @@ def FuseTwoQubitUnitaryRuns
     Stages: fuse single-qubit runs (reusing `fuse-single-qubit-unitary-runs`,
     which also lowers lone off-gateset single-qubit gates); fuse two-qubit runs
     and lower any remaining off-gateset two-qubit ops via Weyl synthesis; fuse
-    the single-qubit seams introduced by that synthesis. The pass fails if
-    anything remains off the native gateset afterwards.
+    the single-qubit seams introduced by that synthesis. The pass fails if any
+    single- or two-qubit op remains off the native gateset afterwards; gates on
+    more than two qubits are left untouched and do not cause a failure.
 
     Lowering is deterministic: `cx` is preferred over `cz`, single-qubit
     factors use the resolved Euler basis, and two-qubit run replacement uses
