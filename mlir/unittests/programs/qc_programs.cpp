@@ -317,7 +317,7 @@ trivialControlledGlobalPhase(QCProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 inverseGlobalPhase(QCProgramBuilder& b) {
   b.inv({}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
-  return measureAndReturn(b, {});
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -339,6 +339,20 @@ singleControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cid(q[1], q[0]);
   return measureAndReturn(b, {q[0], q[1]});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+twoQubitsOneIdentity(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.id(q[1]);
+  return measureAndReturn(b, {q[0], q[1]});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+threeQubitsOneIdentity(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.id(q[2]);
+  return measureAndReturn(b, {q[0], q[1], q[2]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>

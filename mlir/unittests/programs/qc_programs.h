@@ -186,6 +186,14 @@ std::pair<SmallVector<Value>, SmallVector<Type>> identity(QCProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 singleControlledIdentity(QCProgramBuilder& b);
 
+/// Creates an identity gate on a single qubit in a two-qubit register.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+twoQubitsOneIdentity(QCProgramBuilder& b);
+
+/// Creates an identity gate on a single qubit in a three-qubit register.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+threeQubitsOneIdentity(QCProgramBuilder& b);
+
 /// Creates a multi-controlled identity gate with multiple control qubits.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 multipleControlledIdentity(QCProgramBuilder& b);

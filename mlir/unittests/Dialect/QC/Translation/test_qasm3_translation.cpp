@@ -37,7 +37,9 @@ namespace {
 struct QASM3TranslationTestCase {
   std::string name;
   std::string source;
-  mqt::test::NamedBuilder<qc::QCProgramBuilder> referenceBuilder;
+  mqt::test::NamedBuilder<qc::QCProgramBuilder,
+                          std::pair<SmallVector<Value>, SmallVector<Type>>>
+      referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QASM3TranslationTestCase& test);
@@ -67,32 +69,53 @@ protected:
 
 } // namespace
 
-static void twoX(qc::QCProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+twoX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
   b.x(q[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  return {{c0, c1}, {b.getI1Type(), b.getI1Type()}};
 }
 
-static void singleNegControlledX(qc::QCProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+singleNegControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
   b.cx(q[0], q[1]);
   b.x(q[0]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  return {{c0, c1}, {b.getI1Type(), b.getI1Type()}};
 }
 
-static void tripleControlledX(qc::QCProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+tripleControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcx({q[0], q[1], q[2]}, q[3]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  auto c2 = b.measure(q[2]);
+  auto c3 = b.measure(q[3]);
+  return {{c0, c1, c2, c3},
+          {b.getI1Type(), b.getI1Type(), b.getI1Type(), b.getI1Type()}};
 }
 
-static void mixedControlledX(qc::QCProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+mixedControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.x(q[1]);
   b.mcx({q[0], q[1]}, q[2]);
   b.x(q[1]);
+  auto c0 = b.measure(q[0]);
+  auto c1 = b.measure(q[1]);
+  auto c2 = b.measure(q[2]);
+  return {{c0, c1, c2}, {b.getI1Type(), b.getI1Type(), b.getI1Type()}};
 }
 
-static void twoMixedControlledX(qc::QCProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+twoMixedControlledX(qc::QCProgramBuilder& b) {
   auto q1 = b.allocQubitRegister(2);
   auto q2 = b.allocQubitRegister(2);
   auto q3 = b.allocQubitRegister(2);
@@ -102,15 +125,27 @@ static void twoMixedControlledX(qc::QCProgramBuilder& b) {
   b.x(q2[1]);
   b.mcx({q1[1], q2[1]}, q3[1]);
   b.x(q2[1]);
+  auto c0 = b.measure(q1[0]);
+  auto c1 = b.measure(q1[1]);
+  auto c2 = b.measure(q2[0]);
+  auto c3 = b.measure(q2[1]);
+  auto c4 = b.measure(q3[0]);
+  auto c5 = b.measure(q3[1]);
+  return {{c0, c1, c2, c3, c4, c5},
+          {b.getI1Type(), b.getI1Type(), b.getI1Type(), b.getI1Type(),
+           b.getI1Type(), b.getI1Type()}};
 }
 
-static void ifNot(qc::QCProgramBuilder& b) {
+static std::pair<SmallVector<Value>, SmallVector<Type>>
+ifNot(qc::QCProgramBuilder& b) {
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
   auto c = b.measure(q[0]);
   auto cond = arith::XOrIOp::create(b, c, trueValue).getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
+  auto out = b.measure(q[0]);
+  return {{out}, {b.getI1Type()}};
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
@@ -147,7 +182,7 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
 
         QASM3TranslationTestCase{"AllocQubit", qasm::allocQubit,
-                                 MQT_NAMED_BUILDER(qc::allocQubit)},
+                                 MQT_NAMED_BUILDER(qc::alloc1QubitRegister)},
         QASM3TranslationTestCase{"AllocQubitRegister", qasm::allocQubitRegister,
                                  MQT_NAMED_BUILDER(qc::allocQubitRegister)},
         QASM3TranslationTestCase{
@@ -185,12 +220,12 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(qc::inverseGlobalPhase)},
         QASM3TranslationTestCase{"Identity", qasm::identity,
                                  MQT_NAMED_BUILDER(qc::identity)},
-        QASM3TranslationTestCase{
-            "SingleControlledIdentity", qasm::singleControlledIdentity,
-            MQT_NAMED_BUILDER(qc::singleControlledIdentity)},
-        QASM3TranslationTestCase{
-            "MultipleControlledIdentity", qasm::multipleControlledIdentity,
-            MQT_NAMED_BUILDER(qc::multipleControlledIdentity)},
+        QASM3TranslationTestCase{"SingleControlledIdentity",
+                                 qasm::singleControlledIdentity,
+                                 MQT_NAMED_BUILDER(qc::twoQubitsOneIdentity)},
+        QASM3TranslationTestCase{"MultipleControlledIdentity",
+                                 qasm::multipleControlledIdentity,
+                                 MQT_NAMED_BUILDER(qc::threeQubitsOneIdentity)},
         QASM3TranslationTestCase{"X", qasm::x, MQT_NAMED_BUILDER(qc::x)},
         QASM3TranslationTestCase{"TwoX", qasm::twoX, MQT_NAMED_BUILDER(twoX)},
         QASM3TranslationTestCase{"SingleControlledX", qasm::singleControlledX,
