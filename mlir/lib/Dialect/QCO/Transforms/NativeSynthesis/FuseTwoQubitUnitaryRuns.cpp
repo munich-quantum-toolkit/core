@@ -42,7 +42,24 @@ using decomposition::NativeGateset;
 using decomposition::populateFuseSingleQubitUnitaryRunsPatterns;
 using decomposition::synthesizeUnitary2QWeyl;
 
-/// Skips unitaries nested under `ctrl`/`inv` bodies (handled on the shell op).
+namespace {
+
+/** Composed unitary and metadata for a fusable two-qubit run. */
+struct FusableTwoQubitRun {
+  SmallVector<Operation*, 8> ops; ///< Members in program order.
+  Matrix4x4 composed = Matrix4x4::identity();
+  unsigned numTwoQ = 0; ///< Number of two-qubit members (entanglers consumed).
+  bool hasNonNativeGate = false; ///< Any member off the native gateset.
+  Value tailA;                   ///< Current output wires of the run's tail.
+  Value tailB;
+};
+
+} // namespace
+
+// --- Run membership ------------------------------------------------------- //
+
+/// Whether `op` is nested under a `ctrl`/`inv` body. Such unitaries are handled
+/// through their shell op, so the top-level walk skips them.
 static bool isExcludedFromTopLevelUnitaryWalk(Operation* op) {
   if (op->getParentOfType<CtrlOp>()) {
     return true;
@@ -50,6 +67,7 @@ static bool isExcludedFromTopLevelUnitaryWalk(Operation* op) {
   return !llvm::isa<InvOp>(op) && op->getParentOfType<InvOp>();
 }
 
+/// Whether `op` is a unitary shell the pass may rewrite at top level.
 static bool isWalkableUnitaryShell(Operation* op) {
   return !llvm::isa<BarrierOp, GPhaseOp>(op) &&
          !isExcludedFromTopLevelUnitaryWalk(op);
@@ -76,7 +94,8 @@ static bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
   return unitary.getUnitaryMatrix4x4(matrix);
 }
 
-static bool isOneQubitWindowMember(UnitaryOpInterface unitary) {
+/// Whether `unitary` is a single-qubit gate that can join a run.
+static bool isOneQubitRunMember(UnitaryOpInterface unitary) {
   if (!unitary || !unitary.isSingleQubit() ||
       !isWalkableUnitaryShell(unitary.getOperation())) {
     return false;
@@ -85,6 +104,7 @@ static bool isOneQubitWindowMember(UnitaryOpInterface unitary) {
   return unitary.getUnitaryMatrix2x2(matrix);
 }
 
+/// Whether `unitary` is a two-qubit gate that can join a run.
 static bool isTwoQubitRunMember(UnitaryOpInterface unitary) {
   if (!unitary || !unitary.isTwoQubit() ||
       !isWalkableUnitaryShell(unitary.getOperation())) {
@@ -94,6 +114,10 @@ static bool isTwoQubitRunMember(UnitaryOpInterface unitary) {
   return assignTwoQubitOpMatrix(unitary.getOperation(), matrix);
 }
 
+// --- Wire navigation ------------------------------------------------------ //
+
+/// The sole run-member consumer of `wire`, or a null interface when `wire` has
+/// no unique user or its user cannot join a run.
 static UnitaryOpInterface uniqueUnitaryUser(Value wire) {
   if (!wire.hasOneUse()) {
     return {};
@@ -106,11 +130,13 @@ static UnitaryOpInterface uniqueUnitaryUser(Value wire) {
     return isTwoQubitRunMember(unitary) ? unitary : UnitaryOpInterface{};
   }
   if (unitary.isSingleQubit()) {
-    return isOneQubitWindowMember(unitary) ? unitary : UnitaryOpInterface{};
+    return isOneQubitRunMember(unitary) ? unitary : UnitaryOpInterface{};
   }
   return {};
 }
 
+/// Traces `wire` upstream through single-qubit gates to the two-qubit run
+/// member terminating the chain, or `nullptr` if the chain is broken.
 static Operation* twoQubitGateAtEndOfOneQChain(Value wire) {
   Value cur = wire;
   while (Operation* def = cur.getDefiningOp()) {
@@ -121,7 +147,7 @@ static Operation* twoQubitGateAtEndOfOneQChain(Value wire) {
     if (unitary.isTwoQubit()) {
       return isTwoQubitRunMember(unitary) ? def : nullptr;
     }
-    if (!isOneQubitWindowMember(unitary)) {
+    if (!isOneQubitRunMember(unitary)) {
       return nullptr;
     }
     cur = unitary.getInputQubit(0);
@@ -129,7 +155,9 @@ static Operation* twoQubitGateAtEndOfOneQChain(Value wire) {
   return nullptr;
 }
 
-static bool feedsFromSameTwoQubitWindow(UnitaryOpInterface op) {
+/// Whether both input wires of `op` come from one earlier two-qubit run, making
+/// `op` a continuation of that run rather than a fresh run start.
+static bool feedsFromSameTwoQubitRun(UnitaryOpInterface op) {
   const Value in0 = op.getInputQubit(0);
   const Value in1 = op.getInputQubit(1);
   if (!in0.hasOneUse() || !in1.hasOneUse()) {
@@ -140,19 +168,11 @@ static bool feedsFromSameTwoQubitWindow(UnitaryOpInterface op) {
   return gate0 != nullptr && gate0 == gate1;
 }
 
-namespace {
+// --- Run scanning --------------------------------------------------------- //
 
-struct FusableTwoQubitRun {
-  SmallVector<Operation*, 8> ops;
-  Matrix4x4 composed = Matrix4x4::identity();
-  unsigned numTwoQ = 0;
-  bool anyNonNative = false;
-  Value tailA;
-  Value tailB;
-};
-
-} // namespace
-
+/// Appends a two-qubit gate to `run`, composing its matrix. No-op unless both
+/// of `op`'s inputs are the run's current tail wires (in either order), keeping
+/// the run confined to a single pair of wires.
 static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
                                   UnitaryOpInterface op,
                                   const NativeGateset& spec) {
@@ -178,9 +198,10 @@ static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
   run.composed.premultiplyBy(opMatrix.reorderForQubits(id0, id1));
   run.ops.push_back(op.getOperation());
   ++run.numTwoQ;
-  run.anyNonNative |= !spec.allowsOp(op.getOperation());
+  run.hasNonNativeGate |= !spec.allowsOp(op.getOperation());
 }
 
+/// Appends a single-qubit gate on run wire `wireIndex` (0 = A, 1 = B).
 static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
                                   UnitaryOpInterface op,
                                   const NativeGateset& spec,
@@ -191,10 +212,14 @@ static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
   }
   run.composed.premultiplyBy(raw.embedInTwoQubit(wireIndex));
   run.ops.push_back(op.getOperation());
-  run.anyNonNative |= !spec.allowsOp(op.getOperation());
+  run.hasNonNativeGate |= !spec.allowsOp(op.getOperation());
   (wireIndex == 0 ? run.tailA : run.tailB) = op.getOutputQubit(0);
 }
 
+/// Walks forward from `head`, composing the run's matrix and metadata. Absorbs
+/// a following two-qubit gate when it keeps both run wires together, otherwise
+/// the single-qubit gate first in program order; stops at the first boundary
+/// that would split the run's two wires.
 static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
                                                  const NativeGateset& spec) {
   FusableTwoQubitRun run;
@@ -205,7 +230,7 @@ static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
   run.tailB = head.getOutputQubit(1);
   run.ops.push_back(head.getOperation());
   run.numTwoQ = 1;
-  run.anyNonNative |= !spec.allowsOp(head.getOperation());
+  run.hasNonNativeGate |= !spec.allowsOp(head.getOperation());
 
   while (true) {
     UnitaryOpInterface nextOnA = uniqueUnitaryUser(run.tailA);
@@ -233,8 +258,16 @@ static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
   return run;
 }
 
-/// Whether any two-qubit or single-qubit unitary op (including `ctrl` shells)
-/// remains off the native gateset. Used as the pass' final convergence check.
+/// Erases all run members, successors first so each is dead when erased.
+static void eraseFusableRun(PatternRewriter& rewriter,
+                            const FusableTwoQubitRun& run) {
+  for (Operation* member : llvm::reverse(run.ops)) {
+    rewriter.eraseOp(member);
+  }
+}
+
+/// Whether any two-qubit or single-qubit unitary (including `ctrl` shells)
+/// remains off the native gateset. Used as the pass' convergence check.
 static bool hasNonNativeOps(Operation* root, const NativeGateset& spec) {
   const WalkResult walkResult = root->walk([&](Operation* op) {
     if (!isWalkableUnitaryShell(op) || !llvm::isa<UnitaryOpInterface>(op)) {
@@ -247,18 +280,26 @@ static bool hasNonNativeOps(Operation* root, const NativeGateset& spec) {
 
 namespace {
 
-/// Fuses a maximal window of two-qubit gates (plus interleaved single-qubit
-/// gates) into a single composed unitary and resynthesizes it to the native
-/// gateset when that is beneficial.
-struct FuseTwoQubitWindowPattern final
+/// Fuses a maximal two-qubit run into one composed unitary and resynthesizes it
+/// to the native gateset when beneficial.
+struct FuseTwoQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
-  FuseTwoQubitWindowPattern(MLIRContext* ctx, NativeGateset specIn)
+  FuseTwoQubitUnitaryRunsPattern(MLIRContext* ctx, NativeGateset specIn)
       : OpInterfaceRewritePattern(ctx), spec(std::move(specIn)) {}
 
+  NativeGateset spec;
+
+  /// Whether `op` anchors a run: a two-qubit run member whose two wires are not
+  /// both fed by the same earlier run (which would make it a continuation).
+  static bool isRunStart(UnitaryOpInterface op) {
+    return isTwoQubitRunMember(op) && !feedsFromSameTwoQubitRun(op);
+  }
+
+  /// Fuses the run anchored at `op` if it contains an off-gateset gate or Weyl
+  /// resynthesis uses fewer entanglers than the run's two-qubit members.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    // Only anchor on a run start: a run member not fed by an earlier window.
-    if (!isTwoQubitRunMember(op) || feedsFromSameTwoQubitWindow(op)) {
+    if (!isRunStart(op)) {
       return failure();
     }
 
@@ -267,10 +308,9 @@ struct FuseTwoQubitWindowPattern final
       return failure();
     }
 
-    // Replace when off-gateset ops must be lowered, or when resynthesis uses
-    // fewer entanglers than the fused window.
     const auto native = spec.decomposeTarget(run.composed);
-    if (!native || (!run.anyNonNative && native->numBasisUses >= run.numTwoQ)) {
+    if (!native ||
+        (!run.hasNonNativeGate && native->numBasisUses >= run.numTwoQ)) {
       return failure();
     }
 
@@ -286,23 +326,21 @@ struct FuseTwoQubitWindowPattern final
     }
     rewriter.replaceAllUsesWith(run.tailA, newA);
     rewriter.replaceAllUsesWith(run.tailB, newB);
-    for (Operation* member : llvm::reverse(run.ops)) {
-      rewriter.eraseOp(member);
-    }
+    eraseFusableRun(rewriter, run);
     return success();
   }
-
-  NativeGateset spec;
 };
 
-/// Lowers a single off-gateset two-qubit op (bare or single-target `CtrlOp`)
-/// to the native entangler plus native single-qubit factors via Weyl synthesis.
-/// Native two-qubit ops and windows fusable by @ref FuseTwoQubitWindowPattern
-/// are left to that pattern.
+/// Lowers a single off-gateset two-qubit op (bare or single-target `CtrlOp`) to
+/// the native entangler plus native single-qubit factors via Weyl synthesis.
+/// Native two-qubit ops and fusable runs are left to
+/// @ref FuseTwoQubitUnitaryRunsPattern.
 struct LowerTwoQubitOpPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   LowerTwoQubitOpPattern(MLIRContext* ctx, NativeGateset specIn)
       : OpInterfaceRewritePattern(ctx), spec(std::move(specIn)) {}
+
+  NativeGateset spec;
 
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
@@ -335,17 +373,13 @@ struct LowerTwoQubitOpPattern final
     rewriter.replaceOp(raw, ValueRange{out0, out1});
     return success();
   }
-
-  NativeGateset spec;
 };
 
 } // namespace
 
 /// Fuses single-qubit runs (and lowers lone off-gateset single-qubit ops) by
-/// reusing the `fuse-single-qubit-unitary-runs` rewrite.
-///
-/// `qco.ctrl` bodies are skipped so the `X`/`Z` bodies of native entanglers are
-/// preserved (both before and after two-qubit synthesis).
+/// reusing the `fuse-single-qubit-unitary-runs` rewrite. `qco.ctrl` bodies are
+/// skipped so the `X`/`Z` bodies of native entanglers are preserved.
 static LogicalResult fuseSingleQubitRuns(ModuleOp module,
                                          const EulerBasis basis) {
   RewritePatternSet patterns(module.getContext());
@@ -354,15 +388,14 @@ static LogicalResult fuseSingleQubitRuns(ModuleOp module,
   return applyPatternsGreedily(module, std::move(patterns));
 }
 
-/// Fuses two-qubit windows, then lowers any remaining off-gateset two-qubit
-/// ops.
+/// Fuses two-qubit runs, then lowers any remaining off-gateset two-qubit ops.
 static LogicalResult fuseAndLowerTwoQubitOps(ModuleOp module,
                                              const NativeGateset& spec) {
   MLIRContext* ctx = module.getContext();
   {
-    RewritePatternSet windowPatterns(ctx);
-    windowPatterns.add<FuseTwoQubitWindowPattern>(ctx, spec);
-    if (failed(applyPatternsGreedily(module, std::move(windowPatterns)))) {
+    RewritePatternSet runPatterns(ctx);
+    runPatterns.add<FuseTwoQubitUnitaryRunsPattern>(ctx, spec);
+    if (failed(applyPatternsGreedily(module, std::move(runPatterns)))) {
       return failure();
     }
   }
@@ -397,7 +430,7 @@ protected:
 
     // 1. Fuse single-qubit runs (also lowers lone off-gateset single-qubit
     // ops).
-    // 2. Fuse two-qubit windows and lower remaining off-gateset two-qubit ops.
+    // 2. Fuse two-qubit runs and lower remaining off-gateset two-qubit ops.
     // 3. Fuse the single-qubit seams introduced by two-qubit synthesis.
     if (failed(fuseSingleQubitRuns(module, basis)) ||
         failed(fuseAndLowerTwoQubitOps(module, *spec)) ||

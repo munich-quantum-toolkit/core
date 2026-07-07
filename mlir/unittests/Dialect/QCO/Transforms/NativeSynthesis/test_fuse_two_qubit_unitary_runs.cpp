@@ -236,9 +236,7 @@ computeUnitaryFromQcoModule(const OwningOpRef<ModuleOp>& moduleOp) {
 
 // --- Expressive circuits -------------------------------------------------- //
 //
-// A handful of circuits, each covering a distinct pass behavior. They are
-// crossed with the gateset table below so that every native basis exercises the
-// same structural variety, instead of pairing each circuit with a single menu.
+// A handful of circuits, which are crossed with the gateset table below.
 
 /// A bare SWAP (three-entangler class), the canonical two-qubit decomposition.
 static void swapTwoQ(mlir::qc::QCProgramBuilder& b) {

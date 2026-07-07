@@ -97,13 +97,13 @@ def FuseTwoQubitUnitaryRuns
       Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
 
     Stages: fuse single-qubit runs (reusing `fuse-single-qubit-unitary-runs`,
-    which also lowers lone off-gateset single-qubit gates); fuse two-qubit
-    windows and lower any remaining off-gateset two-qubit ops via Weyl
-    synthesis; fuse the single-qubit seams introduced by that synthesis. The
-    pass fails if anything remains off the native gateset afterwards.
+    which also lowers lone off-gateset single-qubit gates); fuse two-qubit runs
+    and lower any remaining off-gateset two-qubit ops via Weyl synthesis; fuse
+    the single-qubit seams introduced by that synthesis. The pass fails if
+    anything remains off the native gateset afterwards.
 
     Lowering is deterministic: `cx` is preferred over `cz`, single-qubit
-    factors use the resolved Euler basis, and two-qubit window replacement uses
+    factors use the resolved Euler basis, and two-qubit run replacement uses
     the minimal entangler count from the synthesizer.
   }];
   let options = [Option<
