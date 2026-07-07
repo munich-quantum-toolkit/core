@@ -12,9 +12,15 @@ llvm_map_components_to_libnames(llvm_native_libs bitwriter)
 target_link_libraries(
   mqt-cc
   PRIVATE MQTCompilerPipeline
+          # Required for parsing .mlir files
           MLIRParser
+          # Required for file I/O
           MLIRSupport
+          # Required for OpenQASM parsing
+          MQT::CoreQASM
+          MQT::CoreIR
           MLIRQCTranslation
+          MLIRMemRefDialect
           MLIRBytecodeWriter
           MLIRTargetLLVMIRExport
           MLIRBuiltinToLLVMIRTranslation
