@@ -26,8 +26,8 @@
 namespace mlir::qco {
 
 /// Maximum number of modifier targets supported by @ref
-/// composeNTargetBodyMatrix.
-inline constexpr std::size_t kMaxModifierTargetQubits = 10;
+/// composeBodyMatrix.
+inline constexpr size_t kMaxModifierTargetQubits = 10;
 
 /**
  * @brief Composes compile-time unitaries in a modifier body on @p numTargets
@@ -37,8 +37,8 @@ inline constexpr std::size_t kMaxModifierTargetQubits = 10;
  * matching @ref Matrix2x2::embedInNqubit). Returns the composed unitary in
  * program order, or `std::nullopt` when the body cannot be composed.
  */
-[[nodiscard]] std::optional<DynamicMatrix>
-composeBodyMatrix(Block& block, std::size_t numTargets);
+[[nodiscard]] std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
+                                                             size_t numTargets);
 
 /**
  * @brief Check whether two parameter values match.

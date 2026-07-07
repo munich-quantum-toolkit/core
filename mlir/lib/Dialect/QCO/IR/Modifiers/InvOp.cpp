@@ -428,8 +428,7 @@ std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
   }
 
   // Composed body (e.g., `ctrl { h; x }` or `ctrl { swap; ry }`)
-  if (const auto composed =
-          composeNTargetBodyMatrix(*getBody(), getNumTargets())) {
+  if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
     return composed->adjoint();
   }
   return std::nullopt;

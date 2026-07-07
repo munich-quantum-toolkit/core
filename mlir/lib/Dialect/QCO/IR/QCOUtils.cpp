@@ -31,8 +31,8 @@ namespace mlir::qco {
 
 /// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
 /// untracked.
-[[nodiscard]] static std::optional<std::size_t>
-lookupWireId(const DenseMap<Value, std::size_t>& wireIds, Value wire) {
+[[nodiscard]] static std::optional<size_t>
+lookupWireId(const DenseMap<Value, size_t>& wireIds, Value wire) {
   if (const auto it = wireIds.find(wire); it != wireIds.end()) {
     return it->second;
   }
@@ -41,7 +41,7 @@ lookupWireId(const DenseMap<Value, std::size_t>& wireIds, Value wire) {
 
 /// Propagates wire indices from unitary inputs to outputs via @p wireIds.
 static void propagateWireIds(UnitaryOpInterface unitary,
-                             DenseMap<Value, std::size_t>& wireIds) {
+                             DenseMap<Value, size_t>& wireIds) {
   for (Value input : unitary.getInputQubits()) {
     if (const auto wire = lookupWireId(wireIds, input)) {
       wireIds[unitary.getOutputForInput(input)] = *wire;
@@ -51,9 +51,8 @@ static void propagateWireIds(UnitaryOpInterface unitary,
 
 /// Embeds a compile-time 1Q/2Q @p unitary into @p acc on @p numTargets modifier
 /// wires using @p wireIds.
-static bool applyUnitaryInBody(UnitaryOpInterface unitary,
-                               std::size_t numTargets,
-                               const DenseMap<Value, std::size_t>& wireIds,
+static bool applyUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
+                               const DenseMap<Value, size_t>& wireIds,
                                DynamicMatrix& acc) {
   const auto numOpQubits = unitary.getNumQubits();
   if (numOpQubits == 0 || numOpQubits > 2) {
@@ -84,8 +83,8 @@ static bool applyUnitaryInBody(UnitaryOpInterface unitary,
   return true;
 }
 
-std::optional<DynamicMatrix> composeNTargetBodyMatrix(Block& block,
-                                                      std::size_t numTargets) {
+std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
+                                               size_t numTargets) {
   if (numTargets == 0 || numTargets > kMaxModifierTargetQubits ||
       block.getNumArguments() != numTargets) {
     return std::nullopt;
@@ -95,8 +94,8 @@ std::optional<DynamicMatrix> composeNTargetBodyMatrix(Block& block,
   Complex global{1.0, 0.0};
   bool found = false;
 
-  DenseMap<Value, std::size_t> wireIds;
-  for (std::size_t i = 0; i < numTargets; ++i) {
+  DenseMap<Value, size_t> wireIds;
+  for (size_t i = 0; i < numTargets; ++i) {
     wireIds[block.getArgument(i)] = i;
   }
 
@@ -122,7 +121,7 @@ std::optional<DynamicMatrix> composeNTargetBodyMatrix(Block& block,
               }
               if (!acc.has_value()) {
                 acc = DynamicMatrix::identity(
-                    static_cast<std::int64_t>(1ULL << numTargets));
+                    static_cast<int64_t>(1ULL << numTargets));
               }
               if (!applyUnitaryInBody(unitary, numTargets, wireIds, *acc)) {
                 return false;
@@ -148,8 +147,7 @@ std::optional<DynamicMatrix> composeNTargetBodyMatrix(Block& block,
     return std::nullopt;
   }
   if (!acc.has_value()) {
-    acc =
-        DynamicMatrix::identity(static_cast<std::int64_t>(1ULL << numTargets));
+    acc = DynamicMatrix::identity(static_cast<int64_t>(1ULL << numTargets));
   }
   *acc *= global;
   return acc;
