@@ -422,7 +422,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       result = loadedResults.at({registerName, registerIndex});
     } else {
       rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-      auto index = state.numResults++;
+      auto index = resultPtrs.size();
       if (shouldRecord) {
         state.recordedIndices.insert(index);
       }
