@@ -14,16 +14,16 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 #include <numbers>
-#include <tuple>
 #include <utility>
 
 static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
 measureAndReturn(mlir::qc::QCProgramBuilder& b,
-                 mlir::SmallVector<mlir::Value> qubits) {
+                 const mlir::SmallVector<mlir::Value>& qubits) {
   mlir::SmallVector<mlir::Value> bits;
   mlir::SmallVector<mlir::Type> bitTypes;
   auto i1Type = b.getI1Type();

@@ -28,6 +28,8 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
@@ -35,6 +37,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 using namespace qco;

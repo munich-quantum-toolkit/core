@@ -14,11 +14,14 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
 #include <numbers>
-#include <tuple>
+#include <utility>
+#include <vector>
 
 static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
 measureAndReturnQTensor(mlir::qco::QCOProgramBuilder& b, mlir::Value qTensor,
@@ -38,7 +41,7 @@ measureAndReturnQTensor(mlir::qco::QCOProgramBuilder& b, mlir::Value qTensor,
 
 static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
 measureAndReturn(mlir::qco::QCOProgramBuilder& b,
-                 mlir::SmallVector<mlir::Value> qubits) {
+                 const mlir::SmallVector<mlir::Value>& qubits) {
   mlir::SmallVector<mlir::Value> bits;
   mlir::SmallVector<mlir::Type> bitTypes;
   auto i1Type = b.getI1Type();
@@ -65,7 +68,7 @@ allocQubit(QCOProgramBuilder& b) {
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubitNoMeasure(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
+  (void)b.allocQubit();
   return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
@@ -102,8 +105,8 @@ allocLargeRegister(QCOProgramBuilder& b) {
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 staticQubitsNoMeasure(QCOProgramBuilder& b) {
-  auto q1 = b.staticQubit(0);
-  auto q2 = b.staticQubit(1);
+  (void)b.staticQubit(0);
+  (void)b.staticQubit(1);
   return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
@@ -3486,7 +3489,7 @@ nestedFalseIf(QCOProgramBuilder& b) {
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 qtensorAlloc(QCOProgramBuilder& b) {
-  auto qtensor = b.qtensorAlloc(3);
+  (void)b.qtensorAlloc(3);
   return measureAndReturn(b, {});
 }
 
@@ -3502,7 +3505,7 @@ qtensorFromElements(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto q1 = b.allocQubit();
   auto q2 = b.allocQubit();
-  auto t = b.qtensorFromElements({q0, q1, q2});
+  (void)b.qtensorFromElements({q0, q1, q2});
   return measureAndReturn(b, {});
 }
 
@@ -3518,7 +3521,7 @@ qtensorInsert(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto q1 = b.h(q0);
-  auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
+  (void)b.qtensorInsert(q1, extractOutTensor, 0);
   return measureAndReturn(b, {});
 }
 
@@ -3526,7 +3529,7 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
-  auto insertOutTensor = b.qtensorInsert(q0, extractOutTensor, 1);
+  (void)b.qtensorInsert(q0, extractOutTensor, 1);
   return measureAndReturn(b, {});
 }
 
@@ -3534,7 +3537,7 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 qtensorExtractInsertSameIndex(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
-  auto insertOutTensor = b.qtensorInsert(q0, extractOutTensor, 0);
+  (void)b.qtensorInsert(q0, extractOutTensor, 0);
   return measureAndReturn(b, {});
 }
 

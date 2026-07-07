@@ -33,7 +33,10 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -41,6 +44,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qtensor;
