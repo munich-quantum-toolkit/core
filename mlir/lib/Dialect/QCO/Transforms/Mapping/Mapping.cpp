@@ -390,7 +390,7 @@ private:
       }
     }
 
-    return {wires, infos};
+    return std::make_pair(wires, infos);
   }
 
   /// Perform placement by
