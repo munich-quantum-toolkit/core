@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <sstream>
@@ -525,6 +526,53 @@ TEST_F(QIRRuntimeTest, TakeStateReturnsStateAndResetsRuntime) {
   // After takeState the runtime is reset and usable again.
   EXPECT_NO_THROW(__quantum__rt__initialize(nullptr));
   EXPECT_NO_THROW(__quantum__qis__h__body(q0));
+}
+
+TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
+  __quantum__rt__initialize(nullptr);
+  auto* q0 = __quantum__rt__qubit_allocate();
+  auto* q1 = __quantum__rt__qubit_allocate();
+  auto* q2 = __quantum__rt__qubit_allocate();
+  __quantum__qis__h__body(q0);
+  __quantum__qis__h__body(q1);
+  __quantum__qis__h__body(q2);
+  auto* r0 = __quantum__qis__m__body(q0);
+  auto* r1 = __quantum__qis__m__body(q1);
+  auto* r2 = __quantum__qis__m__body(q2);
+  const auto b0 = __quantum__rt__read_result(r0);
+  const auto b1 = __quantum__rt__read_result(r1);
+  const auto b2 = __quantum__rt__read_result(r2);
+  __quantum__rt__qubit_release(q0);
+  __quantum__rt__qubit_release(q1);
+  __quantum__rt__qubit_release(q2);
+
+  // Classical compute: Hamming weight and its mean.
+  const int64_t weight =
+      static_cast<int>(b0) + static_cast<int>(b1) + static_cast<int>(b2);
+  const double mean = static_cast<double>(weight) / 3.0;
+
+  // Output: tuple of 3 elements (array of 3 bools, int weight, float mean).
+  __quantum__rt__tuple_record_output(3, "outputs");
+  __quantum__rt__array_record_output(3, "  measurements");
+  __quantum__rt__bool_record_output(b0, "    m0");
+  __quantum__rt__bool_record_output(b1, "    m1");
+  __quantum__rt__bool_record_output(b2, "    m2");
+  __quantum__rt__int_record_output(weight, "  hamming_weight");
+  __quantum__rt__float_record_output(mean, "  mean");
+
+  std::ostringstream expected;
+  expected << "outputs:\n"
+           << "  measurements:\n"
+           << "    m0: " << b0 << "\n"
+           << "    m1: " << b1 << "\n"
+           << "    m2: " << b2 << "\n"
+           << "  hamming_weight: " << weight << "\n"
+           << "  mean: " << mean << "\n";
+  EXPECT_EQ(sink.str(), expected.str());
+
+  __quantum__rt__result_update_reference_count(r0, -1);
+  __quantum__rt__result_update_reference_count(r1, -1);
+  __quantum__rt__result_update_reference_count(r2, -1);
 }
 
 namespace {

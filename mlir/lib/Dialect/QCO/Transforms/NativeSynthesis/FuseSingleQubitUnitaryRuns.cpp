@@ -80,6 +80,7 @@ static bool isTargetBasisGate(Operation* op,
       })
       .Case<UOp>([&](auto) { return basis == EulerBasis::U; })
       .Case<SXOp, XOp>([&](auto) { return basis == EulerBasis::ZSXX; })
+      .Case<ROp>([&](auto) { return basis == EulerBasis::R; })
       .Default([](auto) { return false; });
 }
 
@@ -200,7 +201,8 @@ protected:
     const auto parsed = decomposition::parseEulerBasis(basis);
     if (!parsed) {
       module.emitError() << "Invalid Euler basis '" << basis
-                         << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx.";
+                         << "'. Expected one of: zyz, zxz, xzx, xyx, u, zsxx, "
+                            "r.";
       signalPassFailure();
       return;
     }
