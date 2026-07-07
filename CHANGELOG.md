@@ -13,7 +13,8 @@ releases may include breaking changes.
 ### Added
 
 - ✨ Add a `fuse-two-qubit-unitary-runs` pass for fusing compile-time two-qubit
-  unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**])
+  unitary windows via Weyl/KAK resynthesis ([#1865]) ([**@simon1hofmann**],
+  [**@burgholzer**])
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
