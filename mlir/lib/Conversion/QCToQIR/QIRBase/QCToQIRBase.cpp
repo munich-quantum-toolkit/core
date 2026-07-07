@@ -102,10 +102,10 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     // Switch to entry block
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
+    auto nqubits = state.staticQubits.size();
     auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
-                                        static_cast<int64_t>(state.numQubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(state.numQubits++),
-                                   qubit);
+                                        static_cast<int64_t>(nqubits));
+    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
     rewriter.replaceOp(op, qubit);
 
     return success();
@@ -157,10 +157,10 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
 
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
+    const auto nqubits = state.staticQubits.size();
     auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
-                                        static_cast<int64_t>(state.numQubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(state.numQubits++),
-                                   qubit);
+                                        static_cast<int64_t>(nqubits));
+    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
     rewriter.replaceOp(op, qubit);
 
     return success();
@@ -223,20 +223,17 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     const bool shouldRecord =
         state.returnedMeasurements.contains(op.getOperation());
 
+    const auto nresults = resultPtrs.size();
     if (op.getRegisterIndex() && op.getRegisterName() && op.getRegisterSize()) {
       const auto registerName = op.getRegisterName().value();
-      const auto registerSize = op.getRegisterSize().value();
       const auto registerIndex = op.getRegisterIndex().value();
 
       // Assign a base offset to this register if not yet seen
-      if (!state.registerOffsets.contains(registerName)) {
-        state.registerOffsets.try_emplace(registerName, state.numResults);
-        state.numResults += registerSize;
-      }
-      resultIndex = state.registerOffsets[registerName] +
-                    static_cast<int64_t>(registerIndex);
+      const auto [it, _] =
+          state.registerOffsets.try_emplace(registerName, nresults);
+      resultIndex = it->second + static_cast<int64_t>(registerIndex);
     } else {
-      resultIndex = static_cast<int64_t>(state.numResults++);
+      resultIndex = static_cast<int64_t>(nresults);
     }
 
     if (shouldRecord) {
@@ -250,9 +247,6 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       rewriter.setInsertionPoint(state.entryBlock->getTerminator());
       result = createPointerFromIndex(rewriter, op.getLoc(), resultIndex);
       resultPtrs.try_emplace(resultIndex, result);
-      if (std::cmp_greater_equal(resultIndex, state.numResults)) {
-        state.numResults = resultIndex + 1;
-      }
     }
 
     // Switch to measurements block
@@ -386,7 +380,7 @@ protected:
    * @brief Executes the QC to QIR conversion pass
    *
    * @details
-   * Performs the conversion in seven stages:
+   * Performs the conversion in six stages:
    *
    * **Stage 1: Func to LLVM**
    * Convert func dialect operations (main function) to LLVM dialect
@@ -403,15 +397,11 @@ protected:
    * Convert QC dialect operations to QIR calls and add output recording to the
    * output block.
    *
-   * **Stage 5: QIR attributes**
-   * Add QIR base profile metadata to the main function, including qubit/result
-   * counts and version information.
-   *
-   * **Stage 6: Standard dialects to LLVM**
+   * **Stage 5: Standard dialects to LLVM**
    * Convert arith and control flow dialects to LLVM (for index arithmetic and
    * function control flow).
    *
-   * **Stage 7: Reconcile casts**
+   * **Stage 6: Reconcile casts**
    * Clean up any unrealized cast operations introduced during type conversion.
    */
   void runOnOperation() override {
@@ -469,10 +459,7 @@ protected:
       addOutputRecording(main, ctx, state);
     }
 
-    // Stage 5: Set QIR metadata attributes
-    setQIRAttributes(main, state);
-
-    // Stage 6: Convert standard dialects to LLVM
+    // Stage 5: Convert standard dialects to LLVM
     {
       RewritePatternSet stdPatterns(ctx);
       target.addIllegalDialect<arith::ArithDialect>();
@@ -489,7 +476,7 @@ protected:
       }
     }
 
-    // Stage 7: Reconcile unrealized casts
+    // Stage 6: Reconcile unrealized casts
     PassManager passManager(ctx);
     passManager.addPass(createReconcileUnrealizedCastsPass());
     if (passManager.run(moduleOp).failed()) {

@@ -506,6 +506,30 @@ inverseTwoX(QCOProgramBuilder& b) {
   return measureAndReturn(b, {res[0]});
 }
 
+void inverseGphaseX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange qubits) {
+    b.gphase(-0.123);
+    return SmallVector{b.x(qubits[0])};
+  });
+}
+
+void inverseGphaseBarrier(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange qubits) -> SmallVector<Value> {
+    b.gphase(0.123);
+    return {b.barrier({qubits[0]})[0]};
+  });
+}
+
+void inverseTwoBarriersInInv(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange qubits) -> SmallVector<Value> {
+    auto q0 = b.barrier({qubits[0]})[0];
+    return {b.barrier({q0})[0]};
+  });
+}
+
 std::pair<SmallVector<Value>, SmallVector<Type>> y(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.y(q[0]);
@@ -1712,6 +1736,12 @@ canonicalizeRToRy(QCOProgramBuilder& b) {
   return measureAndReturn(b, {q[0]});
 }
 
+void twoR(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.r(0.045, 0.456, q[0]);
+  q[0] = b.r(0.078, 0.456, q[0]);
+}
+
 std::pair<SmallVector<Value>, SmallVector<Type>> u2(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.u2(0.234, 0.567, q[0]);
@@ -2853,6 +2883,12 @@ twoXxPlusYYOppositePhase(QCOProgramBuilder& b) {
   return measureAndReturn(b, {q[0], q[1]});
 }
 
+void twoXxPlusYYSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_plus_yy(0.045, 0.456, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.xx_plus_yy(0.078, 0.456, q[1], q[0]);
+}
+
 std::pair<SmallVector<Value>, SmallVector<Type>>
 xxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
@@ -2946,6 +2982,12 @@ twoXxMinusYYOppositePhase(QCOProgramBuilder& b) {
   std::tie(q[0], q[1]) = b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
   std::tie(q[0], q[1]) = b.xx_minus_yy(-0.123, 0.456, q[0], q[1]);
   return measureAndReturn(b, {q[0], q[1]});
+}
+
+void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_minus_yy(0.045, 0.456, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.xx_minus_yy(0.078, 0.456, q[1], q[0]);
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>> barrier(QCOProgramBuilder& b) {

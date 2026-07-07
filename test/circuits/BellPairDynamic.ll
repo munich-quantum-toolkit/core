@@ -1,5 +1,5 @@
-; ModuleID = 'bell'
-source_filename = "bell"
+; ModuleID = 'Dynamic module implementing Bell pair'
+source_filename = "BellPairDynamic.ll"
 
 %Qubit = type opaque
 %Result = type opaque
@@ -10,8 +10,8 @@ source_filename = "bell"
 define i32 @main() #0 {
 entry:
   call void @__quantum__rt__initialize(i8* null)
-  %q0 = call %Qubit* @__quantum__rt__qubit_allocate();
-  %q1 = call %Qubit* @__quantum__rt__qubit_allocate();
+  %q0 = call %Qubit* @__quantum__rt__qubit_allocate()
+  %q1 = call %Qubit* @__quantum__rt__qubit_allocate()
   call void @__quantum__qis__h__body(%Qubit* %q0)
   call void @__quantum__qis__cnot__body(%Qubit* %q0, %Qubit* %q1)
   %r0 = call %Result* @__quantum__qis__m__body(%Qubit* %q0)
@@ -46,7 +46,7 @@ attributes #1 = { "irreversible" }
 
 !llvm.module.flags = !{!0, !1, !2, !3}
 
-!0 = !{i32 1, !"qir_major_version", i32 1}
-!1 = !{i32 7, !"qir_minor_version", i32 0}
-!2 = !{i32 1, !"dynamic_qubit_management", i1 false}
-!3 = !{i32 1, !"dynamic_result_management", i1 false}
+!0 = !{i32 1, !"qir_major_version", i32 2}
+!1 = !{i32 7, !"qir_minor_version", i32 1}
+!2 = !{i32 1, !"dynamic_qubit_management", i1 true}
+!3 = !{i32 1, !"dynamic_result_management", i1 true}

@@ -299,11 +299,6 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
     }
     rewriter.replaceOp(op, qubit);
 
-    // Track maximum qubit index
-    if (std::cmp_greater_equal(index, state.numQubits)) {
-      state.numQubits = index + 1;
-    }
-
     return success();
   }
 };

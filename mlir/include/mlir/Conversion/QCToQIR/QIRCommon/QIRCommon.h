@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
-
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
@@ -26,7 +24,6 @@
 #include <utility>
 
 namespace mlir {
-using namespace qir;
 
 /** @brief Qubit allocation mode */
 enum class AllocationMode : std::uint8_t {
@@ -38,7 +35,7 @@ enum class AllocationMode : std::uint8_t {
 /**
  * @brief State object for tracking lowering information during QIR conversion
  */
-struct LoweringState : QIRMetadata {
+struct LoweringState {
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 

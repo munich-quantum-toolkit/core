@@ -8,7 +8,7 @@
 
 [build-system]
 requires = [
-  "nanobind~=2.12.0",
+  "nanobind~=2.13.0",
   "scikit-build-core>=0.12.2",
   "setuptools-scm>=9.2.2",
 ]
@@ -293,7 +293,6 @@ environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin" }
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
-before-build = "uv pip install delvewheel>=1.11.2"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 
 [[tool.cibuildwheel.overrides]]
@@ -328,7 +327,7 @@ exclude = [
 
 [dependency-groups]
 build = [
-  "nanobind~=2.12.0",
+  "nanobind~=2.13.0",
   "scikit-build-core>=0.12.2",
   "setuptools-scm>=9.2.2",
 ]

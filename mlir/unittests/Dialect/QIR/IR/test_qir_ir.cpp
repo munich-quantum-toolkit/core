@@ -74,7 +74,7 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(program.get(), "Original QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  EXPECT_TRUE(runQIRCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(runQIRCleanupPipeline(program.get(), true).succeeded());
   printer.record(program.get(), "Canonicalized QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -84,7 +84,7 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  EXPECT_TRUE(runQIRCleanupPipeline(reference.get()).succeeded());
+  EXPECT_TRUE(runQIRCleanupPipeline(reference.get(), true).succeeded());
   printer.record(reference.get(), "Canonicalized Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 

@@ -599,7 +599,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"CanonicalizeRToRx", MQT_NAMED_BUILDER(canonicalizeRToRx),
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeRToRy", MQT_NAMED_BUILDER(canonicalizeRToRy),
-                    MQT_NAMED_BUILDER(ry)}));
+                    MQT_NAMED_BUILDER(ry)},
+        QCOTestCase{"TwoR", MQT_NAMED_BUILDER(twoR), MQT_NAMED_BUILDER(r)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/RxOp.cpp
@@ -1119,7 +1120,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledXxMinusYY)},
         QCOTestCase{"TwoXXMinusYYOppositePhase",
                     MQT_NAMED_BUILDER(twoXxMinusYYOppositePhase),
-                    MQT_NAMED_BUILDER(alloc2QubitRegister)}));
+                    MQT_NAMED_BUILDER(alloc2QubitRegister)},
+        QCOTestCase{"TwoXXMinusYYSwappedTargets",
+                    MQT_NAMED_BUILDER(twoXxMinusYYSwappedTargets),
+                    MQT_NAMED_BUILDER(xxMinusYY)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/XxPlusYyOp.cpp
@@ -1148,7 +1152,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledXxPlusYY)},
         QCOTestCase{"TwoXXPlusYYOppositePhase",
                     MQT_NAMED_BUILDER(twoXxPlusYYOppositePhase),
-                    MQT_NAMED_BUILDER(alloc2QubitRegister)}));
+                    MQT_NAMED_BUILDER(alloc2QubitRegister)},
+        QCOTestCase{"TwoXXPlusYYSwappedTargets",
+                    MQT_NAMED_BUILDER(twoXxPlusYYSwappedTargets),
+                    MQT_NAMED_BUILDER(xxPlusYY)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/YOp.cpp

@@ -13,7 +13,7 @@ if(TARGET MQT::CoreQIRRunner)
   package_add_test(${TARGET_NAME} "" test_qir_runner.cpp)
   # Collect QIR files
   set(QIR_FILES "")
-  set(QIR_FILES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
+  set(QIR_FILES_DIR ${PROJECT_SOURCE_DIR}/test/circuits)
   file(REAL_PATH "${QIR_FILES_DIR}" QIR_FILES_DIR)
   file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
   # transform QIR_FILES to comma separated list of string ("...")

@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-sdist:
     name: 🐍 Packaging
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@b17932e07095e11c8f8c0d74298bbcde43f77a15 # v2.1.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
 
   # Builds wheels on all supported platforms using cibuildwheel.
   # The wheels are uploaded as GitHub artifacts `dev-cibw-*` or `cibw-*`, depending on whether the workflow is triggered from a PR or a release.
@@ -30,7 +30,7 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@b17932e07095e11c8f8c0d74298bbcde43f77a15 # v2.1.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@e7f84f39ce2d3b6c5d1d04526b8f94f98e455143 # v2.2.0
     with:
       runs-on: ${{ matrix.runs-on }}
 
@@ -50,7 +50,7 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Generate artifact attestation for sdist and wheel(s)
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
           subject-path: dist/*
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0

@@ -111,7 +111,7 @@ protected:
     auto module = mlir::qir::QIRProgramBuilder::build(
         context.get(), builder.fn,
         mlir::qir::QIRProgramBuilder::Profile::Adaptive);
-    EXPECT_TRUE(runQIRCleanupPipeline(module.get()).succeeded());
+    EXPECT_TRUE(runQIRCleanupPipeline(module.get(), true).succeeded());
     return module;
   }
 

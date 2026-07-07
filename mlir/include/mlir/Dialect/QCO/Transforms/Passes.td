@@ -40,6 +40,33 @@ def MergeSingleQubitRotationGates
   }];
 }
 
+def FuseSingleQubitUnitaryRuns
+    : Pass<"fuse-single-qubit-unitary-runs", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::qtensor::QTensorDialect"];
+  let summary = "Fuse single-qubit unitary runs using Euler resynthesis";
+  let description = [{
+    Matches maximal runs of consecutive single-qubit unitary operations on the
+    same qubit wire (anchored at each run head), composes their constant unitary
+    matrices, and replaces a run with an equivalent sequence of basis gates when
+    beneficial: when the run contains a gate outside the target `basis`, or when
+    Euler resynthesis would shorten it (`synthesizeUnitary1QEuler`). Runs that are
+    already in the target `basis` and no shorter than the canonical synthesis
+    length are left unchanged.
+
+    The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
+    A `gphase` correction is inserted when needed so the rewritten sequence
+    matches the composed matrix exactly (not only up to global phase).
+
+    Currently, only operations whose unitary matrix can be obtained at compile
+    time are fused.
+  }];
+  let options = [Option<
+      "basis", "basis", "std::string", "\"zyz\"",
+      "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
+}
+
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
   let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];

@@ -299,3 +299,48 @@ LogicalResult IfOp::verify() {
 
   return success();
 }
+
+OpResult IfOp::getTiedResult(OpOperand* qubit) {
+  if (qubit->getOwner() != getOperation()) {
+    return {};
+  }
+  // Because the first operand is the if-condition, subtract one.
+  return getResults()[qubit->getOperandNumber() - 1];
+}
+
+OpOperand* IfOp::getTiedQubit(OpResult result) {
+  if (result.getDefiningOp() != getOperation()) {
+    return nullptr;
+  }
+  return &getQubitsMutable()[result.getResultNumber()];
+}
+
+BlockArgument IfOp::getTiedThenBlockArgument(OpOperand* qubit) {
+  if (qubit->getOwner() != getOperation()) {
+    return {};
+  }
+  // Because the first operand is the if-condition, subtract one.
+  return thenBlock()->getArguments()[qubit->getOperandNumber() - 1];
+}
+
+BlockArgument IfOp::getTiedElseBlockArgument(OpOperand* qubit) {
+  if (qubit->getOwner() != getOperation()) {
+    return {};
+  }
+  // Because the first operand is the if-condition, subtract one.
+  return elseBlock()->getArguments()[qubit->getOperandNumber() - 1];
+}
+
+OpOperand* IfOp::getTiedThenYieldedValue(BlockArgument bbArg) {
+  if (bbArg.getDefiningOp() != getOperation()) {
+    return nullptr;
+  }
+  return &thenYield().getTargetsMutable()[bbArg.getArgNumber()];
+}
+
+OpOperand* IfOp::getTiedElseYieldedValue(BlockArgument bbArg) {
+  if (bbArg.getDefiningOp() != getOperation()) {
+    return nullptr;
+  }
+  return &elseYield().getTargetsMutable()[bbArg.getArgNumber()];
+}

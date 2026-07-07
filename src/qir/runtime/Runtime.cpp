@@ -21,11 +21,15 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <numeric>
+#include <ostream>
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -47,14 +51,6 @@ Runtime& Runtime::getInstance() {
 }
 auto Runtime::reset() -> void {
   addressMode = AddressMode::UNKNOWN;
-  currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
-  currentMaxQubitId = 0;
-  currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
-  numQubitsInQState = 0;
-  dd->decRef(qState);
-  dd->garbageCollect();
-  qState = dd::vEdge::one();
-  mt.seed(generateRandomSeed());
   qRegister.clear();
   rRegister.clear();
   // NOLINTBEGIN(performance-no-int-to-ptr)
@@ -63,6 +59,12 @@ auto Runtime::reset() -> void {
   rRegister.emplace(reinterpret_cast<Result*>(RESULT_ONE_ADDRESS),
                     ResultStruct{.refcount = 0, .r = true});
   // NOLINTEND(performance-no-int-to-ptr)
+  measurements.clear();
+  currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
+  currentMaxQubitId = 0;
+  currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
+  qState.reset();
+  mt.seed(generateRandomSeed());
 }
 
 Runtime::Runtime() : Runtime(generateRandomSeed()) {}
@@ -70,9 +72,7 @@ Runtime::Runtime() : Runtime(generateRandomSeed()) {}
 Runtime::Runtime(const uint64_t randomSeed)
     : addressMode(AddressMode::UNKNOWN),
       currentMaxQubitAddress(MIN_DYN_QUBIT_ADDRESS), currentMaxQubitId(0),
-      currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), numQubitsInQState(0),
-      dd(std::make_unique<dd::Package>()), qState(dd::vEdge::one()),
-      mt(randomSeed) {
+      currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), mt(randomSeed) {
   qRegister = std::unordered_map<const Qubit*, qc::Qubit>();
   rRegister = std::unordered_map<Result*, ResultStruct>();
   // NOLINTBEGIN(performance-no-int-to-ptr)
@@ -84,32 +84,33 @@ Runtime::Runtime(const uint64_t randomSeed)
 }
 
 auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
-  if (maxQubit >= numQubitsInQState) {
-    const auto d = maxQubit - numQubitsInQState + 1;
-    qubitPermutation.resize(numQubitsInQState + d);
-    std::iota(qubitPermutation.begin() +
-                  static_cast<std::vector<qc::Qubit>::difference_type>(
-                      numQubitsInQState),
-              qubitPermutation.end(), numQubitsInQState);
-    numQubitsInQState += static_cast<dd::Qubit>(d);
+  if (maxQubit >= qState.numQubits) {
+    const auto d = maxQubit - qState.numQubits + 1;
+    qubitPermutation.resize(qState.numQubits + d);
+    std::iota(qubitPermutation.begin() + qState.numQubits,
+              qubitPermutation.end(), qState.numQubits);
+    qState.numQubits += static_cast<dd::Qubit>(d);
 
-    // resize the DD package only if necessary
-    if (dd->qubits() < numQubitsInQState) {
-      dd->resize(numQubitsInQState);
+    // Resize the DD package only if necessary.
+    if (qState.dd->qubits() < qState.numQubits) {
+      qState.dd->resize(qState.numQubits);
     }
 
-    // if the state is terminal, we need to create a new node
-    if (qState.isTerminal()) {
-      qState = makeZeroState(d, *dd);
+    // If the state is terminal, we need to create a new node.
+    if (qState.edge.isTerminal()) {
+      qState.edge = makeZeroState(d, *qState.dd);
       return;
     }
 
-    // enlarge state
-    for (auto q = qState.p->v; q < numQubitsInQState; ++q) {
-      auto old = qState;
-      qState = dd->makeDDNode(q + 1U, std::array{qState, dd::vEdge::zero()});
-      dd->incRef(qState);
-      dd->decRef(old);
+    // Enlarge state.
+    // Each iteration adds one level above the current root, raising root.v by
+    // one. After the loop, root.v == numQubits - 1.
+    for (auto q = qState.edge.p->v; q + 1 < qState.numQubits; ++q) {
+      auto old = qState.edge;
+      qState.edge = qState.dd->makeDDNode(
+          q + 1U, std::array{qState.edge, dd::vEdge::zero()});
+      qState.dd->incRef(qState.edge);
+      qState.dd->decRef(old);
     }
   }
 }
@@ -163,5 +164,35 @@ auto Runtime::deref(Result* result) -> ResultStruct& {
 auto Runtime::equal(Result* result1, Result* result2) -> bool {
   return deref(result1).r == deref(result2).r;
 }
+
+auto Runtime::appendMeasurementBit(bool result) -> void {
+  measurements.push_back(result ? '1' : '0');
+}
+
+auto Runtime::getMeasurements() const -> const std::string& {
+  return measurements;
+}
+
+auto Runtime::takeState() -> QState {
+  QState ret = std::move(qState);
+  reset();
+  return ret;
+}
+
+auto Runtime::outputContainer(int64_t /* elementCount */,
+                              const char* label) const -> void {
+  *os << (label != nullptr ? label : "") << ":\n";
+}
+
+auto Runtime::outputValue(std::string_view valueStr, const char* label) const
+    -> void {
+  *os << (label != nullptr ? label : "") << ": " << valueStr << "\n";
+}
+
+auto Runtime::getOstream() const -> std::ostream& { return *os; }
+
+auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
+
+auto Runtime::resetOstream() -> void { os = &std::cout; }
 
 } // namespace qir

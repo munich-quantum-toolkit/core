@@ -9,13 +9,16 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
@@ -64,6 +67,31 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
   }
 };
 
+/**
+ * @brief Merge subsequent R operations on the same qubit with matching `phi`.
+ */
+struct MergeSubsequentR final : OpRewritePattern<ROp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ROp op,
+                                PatternRewriter& rewriter) const override {
+    auto nextOp = dyn_cast<ROp>(*op.getOutputQubit(0).user_begin());
+    if (!nextOp) {
+      return failure();
+    }
+
+    if (!valuesMatchWithinTolerance(op.getPhi(), nextOp.getPhi())) {
+      return failure();
+    }
+
+    auto newParameter = arith::AddFOp::create(rewriter, op.getLoc(),
+                                              op.getTheta(), nextOp.getTheta());
+    op->setOperand(1, newParameter.getResult());
+    rewriter.replaceOp(nextOp, op.getResult());
+    return success();
+  }
+};
+
 } // namespace
 
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -77,7 +105,18 @@ void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 
 void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<ReplaceRWithRX, ReplaceRWithRY>(context);
+  results.add<ReplaceRWithRX, ReplaceRWithRY, MergeSubsequentR>(context);
+}
+
+Matrix2x2 ROp::unitaryMatrix(const double theta, const double phi) {
+  using namespace std::complex_literals;
+  const auto halfTheta = theta / 2;
+  const auto c = std::cos(halfTheta);
+  const auto s = std::sin(halfTheta);
+  const auto m01 = s * std::exp(1i * (-phi - (std::numbers::pi / 2)));
+  const auto m10 = s * std::exp(1i * (phi - (std::numbers::pi / 2)));
+  return Matrix2x2::fromElements(c, m01,  // row 0
+                                 m10, c); // row 1
 }
 
 std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
@@ -86,11 +125,5 @@ std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
   if (!theta || !phi) {
     return std::nullopt;
   }
-
-  const auto thetaSin = std::sin(*theta / 2);
-  const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
-  const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
-  const auto thetaCos = std::cos(*theta / 2);
-  return Matrix2x2::fromElements(thetaCos, m01,  // row 0
-                                 m10, thetaCos); // row 1
+  return unitaryMatrix(*theta, *phi);
 }

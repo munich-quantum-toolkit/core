@@ -1,5 +1,5 @@
-; ModuleID = 'bell'
-source_filename = "bell"
+; ModuleID = 'Static module implementing Bell pair'
+source_filename = "BellPairStatic.ll"
 
 %Qubit = type opaque
 %Result = type opaque
@@ -34,7 +34,7 @@ attributes #1 = { "irreversible" }
 
 !llvm.module.flags = !{!0, !1, !2, !3}
 
-!0 = !{i32 1, !"qir_major_version", i32 1}
-!1 = !{i32 7, !"qir_minor_version", i32 0}
+!0 = !{i32 1, !"qir_major_version", i32 2}
+!1 = !{i32 7, !"qir_minor_version", i32 1}
 !2 = !{i32 1, !"dynamic_qubit_management", i1 false}
 !3 = !{i32 1, !"dynamic_result_management", i1 false}
