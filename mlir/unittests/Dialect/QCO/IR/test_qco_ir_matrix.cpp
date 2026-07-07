@@ -64,6 +64,15 @@ expectedMatrixFromComputation(const Fn& build,
       dd::buildFunctionality(comp, *package).getMatrix(numQubits));
 }
 
+static void controlledXH(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](ValueRange targets) {
+    auto wire = b.x(targets[0]);
+    wire = b.h(wire);
+    return SmallVector{wire};
+  });
+}
+
 static void controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl(q[0], q[1], [&](ValueRange targets) {
@@ -72,15 +81,6 @@ static void controlledInverseHT(QCOProgramBuilder& b) {
       inner = b.t(inner);
       return SmallVector{inner};
     })[0];
-    return SmallVector{wire};
-  });
-}
-
-static void controlledXH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange targets) {
-    auto wire = b.x(targets[0]);
-    wire = b.h(wire);
     return SmallVector{wire};
   });
 }
@@ -155,9 +155,12 @@ TEST_F(QCOMatrixTest, ControlledXHOpMatrix) {
   auto matrix = ctrlOp.getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
-  DynamicMatrix expected = DynamicMatrix::identity(4);
-  expected.setBottomRightCorner(HOp::getUnitaryMatrix() *
-                                XOp::getUnitaryMatrix());
+  const Matrix4x4 expected =
+      expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
+        comp.addQubitRegister(2, "q");
+        comp.cx(1, 0);
+        comp.ch(1, 0);
+      });
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
