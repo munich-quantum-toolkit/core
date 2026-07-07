@@ -1108,6 +1108,7 @@ First, we need to define the pass in the QCO's TableGen file responsible for
 transformations.
 
 ```{code-block} cpp
+:linenos:
 // file: mlir/include/mlir/Dialect/QCO/Transforms/Passes.td
 
 def CancelConsecutiveHadamards : Pass<"cancel-consecutive-hadamards", "mlir::ModuleOp"> {
@@ -1138,6 +1139,7 @@ instead let the tool generate it. To generate these files, build the
 follows.
 
 ```{code-block} cpp
+:linenos:
 // file: mlir/lib/Dialect/QCO/Transforms/Optimizations/CancelConsecutiveHadamards.cpp
 
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
@@ -1171,13 +1173,21 @@ protected:
 To implement the logic of the pass, we utilize MLIR's rewrite patterns.
 Particularly, we add a class `CancelConsecutiveHadamardsPattern` which inherits
 from `OpRewritePattern<HOp>`, where the template variable `HOp` specifies that
-the pattern should match Hadamard operations. The overridden `matchAndRewrite`
-method is called for each matched Hadamard operation.
+the pattern should match Hadamard operations. 
+The overridden `matchAndRewrite` method is called for each matched Hadamard operation.
 
-```cpp
+```{code-block} cpp
+:linenos:
+:emphasize-lines: 4, 11-39
 // file: mlir/lib/Dialect/QCO/Transforms/Optimizations/CancelConsecutiveHadamards.cpp
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h" // Newly added.
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+
+namespace mlir::qco {
+
+#define GEN_PASS_DEF_CANCELCONSECUTIVEHADAMARDS
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 struct CancelConsecutiveHadamardsPattern final : OpRewritePattern<HOp> {
 
@@ -1208,6 +1218,14 @@ struct CancelConsecutiveHadamardsPattern final : OpRewritePattern<HOp> {
     rewriter.eraseOp(op);
   }
 };
+
+/**
+ * @brief Cancel two consecutive Hadamard gates.
+ */
+struct CancelConsecutiveHadamards final ... {
+  ...
+}
+} // namespace mlir::qco
 ```
 
 Finally, we implement the `runOnOperation` method by initializing a pattern set
@@ -1215,20 +1233,47 @@ with `CancelConsecutiveHadamardsPattern` and calling `applyPatternsGreedily`,
 which repeatedly applies the pattern until no matches remain.
 
 ```{code-block} cpp
+:linenos:
+:emphasize-lines: 27-38
 // file: mlir/lib/Dialect/QCO/Transforms/Optimizations/CancelConsecutiveHadamards.cpp
 
-void runOnOperation() override {
-  ModuleOp entryPoint = getOperation();
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-  // Create the pattern set.
-  RewritePatternSet patterns(&getContext());
-  patterns.add<CancelConsecutiveHadamardsPattern>();
+namespace mlir::qco {
 
-  // Apply patterns in an iterative and greedy manner.
-  if (failed(applyPatternsGreedily(entryPoint, std::move(patterns)))) {
-    signalPassFailure();
-  }
+#define GEN_PASS_DEF_CANCELCONSECUTIVEHADAMARDS
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+
+struct CancelConsecutiveHadamardsPattern final : OpRewritePattern<HOp> {
+  ...
 }
+
+/**
+ * @brief Cancel two consecutive Hadamard gates.
+ */
+struct CancelConsecutiveHadamards final
+    : impl::CancelConsecutiveHadamardsBase<CancelConsecutiveHadamards> {
+
+  // Inherit the constructor of the base class.
+  using CancelConsecutiveHadamardsBase::CancelConsecutiveHadamardsBase;
+
+protected:
+
+  // This method is invoked for every entry point operation. Here: mlir::ModuleOp.
+  void runOnOperation() override {
+    ModuleOp entryPoint = getOperation();
+
+    // Create the pattern set.
+    RewritePatternSet patterns(&getContext());
+    patterns.add<CancelConsecutiveHadamardsPattern>();
+
+    // Apply patterns in an iterative and greedy manner.
+    if (failed(applyPatternsGreedily(entryPoint, std::move(patterns)))) {
+      signalPassFailure();
+    }
+  }
+};
 ```
 
 Congratulations, you have written your first optimization pass in MLIR! 🎉
