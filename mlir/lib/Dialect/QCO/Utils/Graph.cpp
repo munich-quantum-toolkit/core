@@ -19,6 +19,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -34,7 +35,7 @@ SmallVector<size_t> Graph::getNodes() const { return to_vector(adj_.keys()); }
 size_t Graph::getMaxDegree() const {
   size_t deg = 0;
   for (const auto& [u, nbrs] : adj_) {
-    deg = std::max(deg, nbrs.size());
+    deg = std::ranges::max(deg, nbrs.size());
   }
   return deg;
 }
@@ -46,7 +47,7 @@ void Graph::clearEdges() {
 Graph::DistanceMatrix Graph::getDistMatrix() const {
   const auto n = getNumNodes();
 
-  Graph::DistanceMatrix dist(n, UINT64_MAX);
+  Graph::DistanceMatrix dist(n, std::numeric_limits<size_t>::max());
   for (const auto& [u, nbrs] : adj_) {
     for (const auto& v : nbrs) {
       dist[u][v] = 1;
@@ -59,7 +60,8 @@ Graph::DistanceMatrix Graph::getDistMatrix() const {
   for (size_t k = 0; k < n; ++k) {
     for (size_t i = 0; i < n; ++i) {
       for (size_t j = 0; j < n; ++j) {
-        if (dist[i][k] == UINT64_MAX || dist[k][j] == UINT64_MAX) {
+        if (dist[i][k] == std::numeric_limits<size_t>::max() ||
+            dist[k][j] == std::numeric_limits<size_t>::max()) {
           continue; // Avoid overflow with "infinite" distances.
         }
 
