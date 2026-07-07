@@ -867,7 +867,7 @@ TEST_F(CompilerPipelineNativeSynthesisConfigTest,
 }
 
 TEST_F(CompilerPipelineNativeSynthesisConfigTest,
-       LeavesIRUnchangedWhenNoNativeProfileIsConfigured) {
+       LeavesIRUnchangedWhenNoNativeGatesetIsConfigured) {
   config.nativeGates = "";
 
   const auto record = runPipelineAndExpectSuccess();

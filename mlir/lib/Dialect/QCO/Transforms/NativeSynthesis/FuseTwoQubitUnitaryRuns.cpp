@@ -11,13 +11,15 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
-#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeProfile.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/NativeGateset.h"
+#include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
@@ -38,6 +40,60 @@ namespace mlir::qco {
 
 #define GEN_PASS_DEF_FUSETWOQUBITUNITARYRUNS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+
+namespace {
+
+using decomposition::NativeGateKind;
+using decomposition::NativeGateset;
+
+std::optional<NativeGateKind> nativeGateKindFor(UnitaryOpInterface op) {
+  return llvm::TypeSwitch<Operation*, std::optional<NativeGateKind>>(
+             op.getOperation())
+      .Case<UOp>([](UOp) { return NativeGateKind::U; })
+      .Case<XOp>([](XOp) { return NativeGateKind::X; })
+      .Case<SXOp>([](SXOp) { return NativeGateKind::SX; })
+      .Case<RZOp, POp>([](auto) { return NativeGateKind::RZ; })
+      .Case<RXOp>([](RXOp) { return NativeGateKind::RX; })
+      .Case<RYOp>([](RYOp) { return NativeGateKind::RY; })
+      .Case<ROp>([](ROp) { return NativeGateKind::R; })
+      .Default([](Operation*) { return std::nullopt; });
+}
+
+std::optional<NativeGateKind> nativeEntanglerKindFor(CtrlOp ctrl) {
+  if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1 ||
+      ctrl.getNumBodyUnitaries() != 1) {
+    return std::nullopt;
+  }
+  return llvm::TypeSwitch<Operation*, std::optional<NativeGateKind>>(
+             ctrl.getBodyUnitary(0).getOperation())
+      .Case<XOp>([](XOp) { return NativeGateKind::CX; })
+      .Case<ZOp>([](ZOp) { return NativeGateKind::CZ; })
+      .Default([](Operation*) { return std::nullopt; });
+}
+
+/// Returns true when @p op is already on the resolved native gateset.
+///
+/// Barriers and global phase are always allowed. Single-qubit primitives and
+/// single-target `CtrlOp` shells (`X`/`Z` bodies) are checked against
+/// @p spec.gates.
+bool allowsOp(Operation* op, const NativeGateset& spec) {
+  return llvm::TypeSwitch<Operation*, bool>(op)
+      .Case<BarrierOp, GPhaseOp>([](auto) { return true; })
+      .Case<CtrlOp>([&](CtrlOp ctrl) {
+        const auto kind = nativeEntanglerKindFor(ctrl);
+        return kind && spec.gates.contains(*kind);
+      })
+      .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+        if (!unitary.isSingleQubit()) {
+          return false;
+        }
+        const auto gate = nativeGateKindFor(unitary);
+        return gate && spec.gates.contains(*gate);
+      })
+      .Default([](Operation*) { return false; });
+}
+
+} // namespace
 
 /// Skips unitaries nested under `ctrl`/`inv` bodies (handled on the shell op).
 static bool isExcludedFromTopLevelUnitaryWalk(Operation* op) {
@@ -183,10 +239,9 @@ struct OneQubitRun {
 
 } // namespace
 
-static void
-markNonNativeIfNeeded(FusableTwoQubitRun& run, Operation* op,
-                      const decomposition::NativeProfileSpec& spec) {
-  if (!decomposition::allowsOp(op, spec)) {
+static void markNonNativeIfNeeded(FusableTwoQubitRun& run, Operation* op,
+                                  const decomposition::NativeGateset& spec) {
+  if (!allowsOp(op, spec)) {
     run.anyNonNative = true;
   }
 }
@@ -201,9 +256,9 @@ static bool shouldApplyTwoQubitRunReplacement(const FusableTwoQubitRun& run,
   return numBasisUses < run.numTwoQ;
 }
 
-static void
-absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
-                      const decomposition::NativeProfileSpec& spec) {
+static void absorbTwoQubitIntoRun(FusableTwoQubitRun& run,
+                                  UnitaryOpInterface op,
+                                  const decomposition::NativeGateset& spec) {
   Matrix4x4 opMatrix;
   if (!assignTwoQubitOpMatrix(op.getOperation(), opMatrix)) {
     return;
@@ -230,7 +285,7 @@ absorbTwoQubitIntoRun(FusableTwoQubitRun& run, UnitaryOpInterface op,
 
 static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
                                   UnitaryOpInterface op,
-                                  const decomposition::NativeProfileSpec& spec,
+                                  const decomposition::NativeGateset& spec,
                                   unsigned wireIndex) {
   Matrix2x2 raw;
   if (!op.getUnitaryMatrix2x2(raw)) {
@@ -249,7 +304,7 @@ static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
 
 static FusableTwoQubitRun
 scanFusableTwoQubitRun(UnitaryOpInterface head,
-                       const decomposition::NativeProfileSpec& spec) {
+                       const decomposition::NativeGateset& spec) {
   FusableTwoQubitRun run;
   run.tailA = head.getOutputQubit(0);
   run.tailB = head.getOutputQubit(1);
@@ -311,7 +366,7 @@ static void eraseFusableTwoQubitRun(PatternRewriter& rewriter,
 
 static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
                          const decomposition::EulerBasis basis,
-                         const decomposition::NativeProfileSpec& spec) {
+                         const decomposition::NativeGateset& spec) {
   Matrix2x2 fused = Matrix2x2::identity();
   for (UnitaryOpInterface u : run.ops) {
     Matrix2x2 m;
@@ -322,7 +377,7 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
   }
 
   const bool anyNonNative = llvm::any_of(run.ops, [&](UnitaryOpInterface u) {
-    return !decomposition::allowsOp(u.getOperation(), spec);
+    return !allowsOp(u.getOperation(), spec);
   });
 
   Operation* firstOp = run.ops.front().getOperation();
@@ -344,7 +399,7 @@ static bool maybeFuseRun(IRRewriter& rewriter, OneQubitRun& run,
 }
 
 static bool hasNonNativeOps(Operation* root,
-                            const decomposition::NativeProfileSpec& spec,
+                            const decomposition::NativeGateset& spec,
                             bool singleQubitOnly) {
   const mlir::WalkResult walkResult = root->walk([&](Operation* op) {
     if (!isWalkableUnitaryShell(op)) {
@@ -358,7 +413,7 @@ static bool hasNonNativeOps(Operation* root,
     } else if (!llvm::isa<CtrlOp>(op) && !llvm::isa<UnitaryOpInterface>(op)) {
       return mlir::WalkResult::advance();
     }
-    if (!decomposition::allowsOp(op, spec)) {
+    if (!allowsOp(op, spec)) {
       return mlir::WalkResult::interrupt();
     }
     return mlir::WalkResult::advance();
@@ -368,9 +423,9 @@ static bool hasNonNativeOps(Operation* root,
 
 static LogicalResult synthesizeTwoQubitOp(
     IRRewriter& rewriter, Operation* op, Location loc, Value in0, Value in1,
-    const decomposition::NativeProfileSpec& spec, llvm::Twine matrixErrorMsg,
+    const decomposition::NativeGateset& spec, llvm::Twine matrixErrorMsg,
     llvm::Twine synthesisErrorMsg) {
-  if (decomposition::allowsOp(op, spec)) {
+  if (allowsOp(op, spec)) {
     return success();
   }
   Matrix4x4 matrix;
@@ -395,7 +450,7 @@ namespace {
 struct FuseTwoQubitWindowPattern
     : public OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseTwoQubitWindowPattern(MLIRContext* ctx,
-                            decomposition::NativeProfileSpec specIn)
+                            decomposition::NativeGateset specIn)
       : OpInterfaceRewritePattern(ctx), spec(std::move(specIn)) {}
 
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
@@ -409,10 +464,9 @@ struct FuseTwoQubitWindowPattern
       return failure();
     }
 
-    const auto numBasisUses =
-        decomposition::twoQubitEntanglerCount(run.composed, spec);
-    if (!numBasisUses ||
-        !shouldApplyTwoQubitRunReplacement(run, *numBasisUses)) {
+    const auto native = spec.decomposeTarget(run.composed);
+    if (!native ||
+        !shouldApplyTwoQubitRunReplacement(run, native->numBasisUses)) {
       return failure();
     }
 
@@ -436,14 +490,14 @@ struct FuseTwoQubitWindowPattern
     return success();
   }
 
-  decomposition::NativeProfileSpec spec;
+  decomposition::NativeGateset spec;
 };
 
 } // namespace
 
 static LogicalResult
 fuseTwoQubitUnitaryRuns(Operation* root,
-                        const decomposition::NativeProfileSpec& spec) {
+                        const decomposition::NativeGateset& spec) {
   RewritePatternSet patterns(root->getContext());
   patterns.add<FuseTwoQubitWindowPattern>(patterns.getContext(), spec);
   return applyPatternsGreedily(root, std::move(patterns));
@@ -463,16 +517,15 @@ protected:
     if (llvm::StringRef(nativeGates).trim().empty()) {
       return;
     }
-    auto specOpt = decomposition::parseNativeSpec(nativeGates);
+    auto specOpt = decomposition::NativeGateset::parse(nativeGates);
     if (!specOpt) {
-      getOperation().emitError()
-          << "unsupported native gate menu (native-gates='" << nativeGates
-          << "')";
+      getOperation().emitError() << "unsupported native gateset (native-gates='"
+                                 << nativeGates << "')";
       signalPassFailure();
       return;
     }
     const auto& spec = *specOpt;
-    const decomposition::EulerBasis oneQubitBasis = spec.eulerBasis();
+    const decomposition::EulerBasis oneQubitBasis = *spec.eulerBasis;
 
     IRRewriter rewriter(&getContext());
 
@@ -521,7 +574,7 @@ protected:
 
 private:
   void fuseOneQubitRuns(IRRewriter& rewriter,
-                        const decomposition::NativeProfileSpec& spec,
+                        const decomposition::NativeGateset& spec,
                         const decomposition::EulerBasis basis) {
     SmallVector<OneQubitRun> runs;
     llvm::DenseMap<Operation*, size_t> tailOpToRun;
@@ -557,10 +610,9 @@ private:
     }
   }
 
-  LogicalResult
-  synthesizeRemainingOps(IRRewriter& rewriter,
-                         const decomposition::NativeProfileSpec& spec,
-                         const decomposition::EulerBasis basis) {
+  LogicalResult synthesizeRemainingOps(IRRewriter& rewriter,
+                                       const decomposition::NativeGateset& spec,
+                                       const decomposition::EulerBasis basis) {
     SmallVector<Operation*, 32> ops;
     collectUnitaryOpsInPreOrder(getOperation(), ops);
     llvm::DenseSet<Operation*> erasedOps;
@@ -574,7 +626,7 @@ private:
       }
 
       if (auto ctrl = llvm::dyn_cast<CtrlOp>(op)) {
-        const bool wasAlreadyNative = decomposition::allowsOp(op, spec);
+        const bool wasAlreadyNative = allowsOp(op, spec);
         if (failed(synthesizeControlled(rewriter, ctrl, spec))) {
           return failure();
         }
@@ -590,7 +642,7 @@ private:
       }
 
       if (unitary.isSingleQubit()) {
-        if (!decomposition::allowsOp(op, spec)) {
+        if (!allowsOp(op, spec)) {
           if (failed(rewriteSingleQubit(rewriter, op, unitary, basis))) {
             return failure();
           }
@@ -629,24 +681,24 @@ private:
 
   static LogicalResult
   synthesizeControlled(IRRewriter& rewriter, CtrlOp ctrl,
-                       const decomposition::NativeProfileSpec& spec) {
+                       const decomposition::NativeGateset& spec) {
     return synthesizeTwoQubitOp(
         rewriter, ctrl.getOperation(), ctrl.getLoc(), ctrl.getInputControl(0),
         ctrl.getInputTarget(0), spec,
         "native synthesis: cannot build a constant 4x4 matrix for this "
         "controlled gate (unsupported body or non-constant parameters)",
-        "controlled gate not allowed by selected profile");
+        "controlled gate not allowed by selected gateset");
   }
 
   static LogicalResult
   synthesizeBareTwoQubit(IRRewriter& rewriter, Operation* op,
                          UnitaryOpInterface unitary,
-                         const decomposition::NativeProfileSpec& spec) {
+                         const decomposition::NativeGateset& spec) {
     return synthesizeTwoQubitOp(
         rewriter, op, op->getLoc(), unitary.getInputQubit(0),
         unitary.getInputQubit(1), spec,
-        "unsupported two-qubit operation for selected profile",
-        "unsupported two-qubit operation for selected profile");
+        "unsupported two-qubit operation for selected gateset",
+        "unsupported two-qubit operation for selected gateset");
   }
 };
 

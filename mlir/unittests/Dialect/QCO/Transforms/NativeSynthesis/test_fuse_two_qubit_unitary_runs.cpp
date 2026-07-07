@@ -109,9 +109,6 @@ static bool onlyGenericU3CxOps(OwningOpRef<ModuleOp>& m) {
 static bool onlyIqmDefaultOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<ROp>(m, false, true);
 }
-static bool onlyIbmFractionalOps(OwningOpRef<ModuleOp>& m) {
-  return onlyTheseOps<XOp, SXOp, RZOp, POp, RXOp, RZZOp>(m, false, true);
-}
 static bool onlyAxisPairRxRzCxOps(OwningOpRef<ModuleOp>& m) {
   return onlyTheseOps<RXOp, RZOp, POp>(m, true, false);
 }
@@ -457,15 +454,6 @@ static void fusionSwapCxPattern(mlir::qc::QCProgramBuilder& b) {
   b.cx(q0, q1);
 }
 
-static void fusionHRzzSRzz(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.h(q0);
-  b.rzz(-0.29, q0, q1);
-  b.s(q1);
-  b.rzz(0.17, q0, q1);
-}
-
 static void fusionOffMenuGateInWindow(mlir::qc::QCProgramBuilder& b) {
   const auto q0 = b.allocQubit();
   const auto q1 = b.allocQubit();
@@ -512,18 +500,6 @@ static void zeroAngleThenCz(mlir::qc::QCProgramBuilder& b) {
   b.rz(0.0, q0);
   b.p(0.0, q1);
   b.cz(q0, q1);
-}
-
-static void ibmFractionalGateFamilies(mlir::qc::QCProgramBuilder& b) {
-  const auto q0 = b.allocQubit();
-  const auto q1 = b.allocQubit();
-  b.h(q0);
-  b.rx(0.13, q1);
-  b.cx(q0, q1);
-  b.cz(q1, q0);
-  b.swap(q0, q1);
-  b.rzz(-0.33, q0, q1);
-  b.rzx(0.41, q0, q1);
 }
 
 static void hstycxTwoQ(mlir::qc::QCProgramBuilder& b) {
@@ -646,8 +622,6 @@ INSTANTIATE_TEST_SUITE_P(
         ProfileCase{"HCxTIbmCz", hCxTOnQ1, "x,sx,rz,cz", onlyIbmBasicCzOps,
                     false},
         ProfileCase{"XYSXCzIqm", xYSXCz, "r,cz", onlyIqmDefaultOps, false},
-        ProfileCase{"IbmFractional", ibmFractionalGateFamilies,
-                    "x,sx,rz,rx,rzz,cz", onlyIbmFractionalOps, false},
         ProfileCase{"HYCxRxRz", hYCx, "rx,rz,cx", onlyAxisPairRxRzCxOps, false},
         ProfileCase{"ZCxRxRy", zCx, "rx,ry,cx", onlyAxisPairRxRyCxOps, false},
         ProfileCase{"Hq0Yq1CxSq0", hq0Yq1CxSq0, "u,cx", onlyGenericU3CxOps,
@@ -779,8 +753,6 @@ INSTANTIATE_TEST_SUITE_P(
                     FusionCase{"BarrierBoundary", fusionCxBarrierCx, "u,cx", 2,
                                std::nullopt, false},
                     FusionCase{"SwappedWireOrder", fusionSwapCxPattern, "u,cx",
-                               std::nullopt, std::nullopt, true},
-                    FusionCase{"RzzBlock", fusionHRzzSRzz, "x,sx,rz,rx,rzz,cz",
                                std::nullopt, std::nullopt, true},
                     FusionCase{"OffMenuGateInWindow", fusionOffMenuGateInWindow,
                                "u,cx", std::nullopt, std::nullopt, true},
