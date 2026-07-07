@@ -18,7 +18,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>

@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -562,7 +561,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::ValuesIn(GATESETS)),
     [](const testing::TestParamInfo<SynthesisParam>& info) {
       std::string gateset = std::get<1>(info.param);
-      std::replace(gateset.begin(), gateset.end(), ',', '_');
+      std::ranges::replace(gateset, ',', '_');
       return std::string(std::get<0>(info.param).name) + "__" + gateset;
     });
 
