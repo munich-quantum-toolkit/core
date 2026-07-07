@@ -67,6 +67,54 @@ def FuseSingleQubitUnitaryRuns
       "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r).">];
 }
 
+def FuseTwoQubitUnitaryRuns
+    : Pass<"fuse-two-qubit-unitary-runs", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Lower QCO unitary gates to a user-specified native gate menu.";
+  let description = [{
+    Rewrites unitaries to match the comma-separated `native-gates` menu.
+    `qco.barrier` and `qco.gphase` are preserved; `qco.ctrl` must have a
+    single control and a single target.
+
+    The menu is a comma-separated list of gate tokens (order not significant)
+    from which the pass builds a profile: a single-qubit synthesis mode
+    (generic `qco.u` when `u` is present; IBM-style surface gates when all of
+    `x`, `sx`, and `rz`/`p` are present; IQM-style `qco.r` when `r` is present;
+    or a supported rotation pair chosen from `rx`, `ry`, `rz`) plus optional
+    two-qubit entanglers `cx`, `cz`, and optional `rzz`.
+
+    Recognised tokens: `u`, `x`, `sx`, `rz` (or `p`), `rx`, `ry`, `r`, `cx`,
+    `cz`, `rzz`. An empty or whitespace-only menu is a no-op, which is the
+    intended pipeline default when synthesis is not needed. An unrecognised
+    token causes the pass to fail.
+
+    Example menus (each line is one illustrative menu; pick either `cx` or
+    `cz` as the entangler, or list both if both are native):
+    - IBM basic (no fractional two-qubit): `x,sx,rz,cx` or `x,sx,rz,cz`
+    - IBM fractional: `x,sx,rz,rx,rzz,cx` or `x,sx,rz,rx,rzz,cz`
+    - Generic single-qubit U: `u,cx` or `u,cz`
+    - IQM default: `r,cz` (or `r,cx` if CX is the native entangler)
+    - Rotation pair + entangler: `rx,rz,cx`, `rx,ry,cz`, `ry,rz,cx`, etc.
+      Supported pairs are exactly `rx`+`rz`, `rx`+`ry`, and `ry`+`rz`.
+
+    Stages: fuse single-qubit runs; fuse two-qubit windows; up to four
+    synthesis sweeps over remaining off-menu ops; fuse 1q seams; up to four
+    further synthesis and fusion rounds until the full menu holds. The pass
+    fails if anything remains off-menu after those caps.
+
+    Lowering is deterministic: `cx` is preferred over `cz`, single-qubit
+    factors use the first emitter's Euler basis, and two-qubit window
+    replacement uses the minimal entangler count from the synthesizer.
+  }];
+  let options = [Option<
+      "nativeGates", "native-gates", "std::string", "\"\"",
+      "Comma-separated native gate menu. Empty or whitespace-only is "
+      "a no-op. Tokens: u, x, sx, rz (or p), rx, ry, r, cx, cz, rzz. "
+      "Examples: x,sx,rz,cx; x,sx,rz,rx,rzz,cz; u,cx; r,cz; rx,rz,cx.">];
+}
+
+//===----------------------------------------------------------------------===//
+
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
   let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];

@@ -14,6 +14,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <array>
+#include <cmath>
 #include <complex>
 #include <concepts>
 #include <cstddef>
@@ -832,6 +833,32 @@ template <typename T>
 concept SupportedMatrix =
     std::same_as<T, Matrix1x1> || std::same_as<T, Matrix2x2> ||
     std::same_as<T, Matrix4x4> || std::same_as<T, DynamicMatrix>;
+
+/**
+ * @brief Checks whether two unitaries are equal up to a global phase.
+ *
+ * Uses `trace(rhs.adjoint() * lhs)` to infer a unit-modulus phase factor, then
+ * compares `lhs` to `factor * rhs` with @ref isApprox. A near-zero overlap
+ * (`|trace| <= tol`) is treated as not equivalent to avoid dividing by a tiny
+ * number.
+ *
+ * @tparam Matrix Any supported fixed- or dynamic-size matrix type.
+ * @param lhs Left-hand unitary.
+ * @param rhs Right-hand unitary.
+ * @param tol Absolute tolerance for overlap and entry-wise comparison.
+ * @return True when @p lhs and @p rhs differ only by a global phase.
+ */
+template <SupportedMatrix Matrix>
+[[nodiscard]] bool isEquivalentUpToGlobalPhase(const Matrix& lhs,
+                                               const Matrix& rhs,
+                                               double tol = MATRIX_TOLERANCE) {
+  const auto overlap = (rhs.adjoint() * lhs).trace();
+  if (std::abs(overlap) <= tol) {
+    return false;
+  }
+  const auto factor = overlap / std::abs(overlap);
+  return lhs.isApprox(factor * rhs, tol);
+}
 
 /// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
 /// `matrix * scalar`). Provided so generic code can scale a matrix from
