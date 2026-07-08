@@ -56,7 +56,8 @@ releases may include breaking changes.
 
 ### Changed
 
-- ♻️ Improve implementation and usability of FoMaC classes ([#1849]) ([**@MatthiasReumann**])
+- ♻️ Improve implementation and usability of FoMaC classes ([#1849])
+  ([**@MatthiasReumann**])
 - ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660],
   [#1737]) ([**@denialhaag**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
