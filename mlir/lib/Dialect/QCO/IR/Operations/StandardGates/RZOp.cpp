@@ -65,12 +65,16 @@ void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentRZ>(context);
 }
 
+Matrix2x2 RZOp::unitaryMatrix(const double theta) {
+  const auto m00 = std::polar(1.0, -theta / 2);
+  const auto m11 = std::polar(1.0, theta / 2);
+  return Matrix2x2::fromElements(m00, 0,  // row 0
+                                 0, m11); // row 1
+}
+
 std::optional<Matrix2x2> RZOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    const auto m00 = std::polar(1.0, -*theta / 2);
-    const auto m11 = std::polar(1.0, *theta / 2);
-    return Matrix2x2::fromElements(m00, 0,  // row 0
-                                   0, m11); // row 1
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

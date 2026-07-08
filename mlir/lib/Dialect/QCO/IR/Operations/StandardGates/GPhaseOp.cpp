@@ -61,9 +61,13 @@ void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveTrivialGPhase>(context);
 }
 
+Matrix1x1 GPhaseOp::unitaryMatrix(const double theta) {
+  return Matrix1x1::fromElements(std::polar(1.0, theta));
+}
+
 std::optional<Matrix1x1> GPhaseOp::getUnitaryMatrix() {
   if (const auto theta = valueToDouble(getTheta())) {
-    return Matrix1x1::fromElements(std::polar(1.0, *theta));
+    return unitaryMatrix(*theta);
   }
   return std::nullopt;
 }

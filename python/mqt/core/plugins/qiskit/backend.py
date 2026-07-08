@@ -38,10 +38,11 @@ from .exceptions import (
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
+from .gates import MoveGate
 from .job import QDMIJob
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Mapping, MutableSet, Sequence
 
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
@@ -81,6 +82,7 @@ def _build_gate_mappings_for_backend(
         "mcphase": MCPhaseGate,
         "mcp": MCPhaseGate,
         "mcx_gray": MCXGate,
+        "move": MoveGate(),
     })
 
     qiskit_to_qdmi: dict[str, set[str]] = {}
@@ -186,22 +188,22 @@ class QDMIBackend(BackendV2):
 
     @property
     def target(self) -> Target:
-        """Return the Target describing backend capabilities."""
+        """The Target describing the capabilities of the backend."""
         return self._target
 
     @property
     def provider(self) -> Any | None:  # noqa: ANN401
-        """Return the provider that created this backend."""
+        """The provider that created the backend."""
         return self._provider
 
     @property
     def max_circuits(self) -> int | None:
-        """Maximum number of circuits that can be run in a single job."""
+        """The maximum number of circuits that can be run in a single job."""
         return None  # No limit, processed sequentially
 
     @property
     def options(self) -> Options:
-        """Return backend options."""
+        """The backend options."""
         return self._options
 
     @classmethod
@@ -213,6 +215,18 @@ class QDMIBackend(BackendV2):
         """
         return Options(shots=1024)
 
+    def _target_num_qubits(self) -> int:
+        """Number of addressable qubits to expose in the Target.
+
+        Subclasses may override this to hide device sites that should not be
+        directly addressable by the transpiler (e.g. computational
+        resonators on star-topology architectures).
+
+        Returns:
+            Number of qubits to expose in the Target.
+        """
+        return self._device.qubits_num()
+
     def _build_target(self) -> Target:
         """Construct a Qiskit Target from device capabilities.
 
@@ -221,7 +235,7 @@ class QDMIBackend(BackendV2):
         """
         target = Target(
             description=f"QDMI device: {self._device.name()}",
-            num_qubits=self._device.qubits_num(),
+            num_qubits=self._target_num_qubits(),
         )
 
         # Deduplicate operations by Qiskit gate name (not device operation name)
@@ -230,90 +244,7 @@ class QDMIBackend(BackendV2):
 
         # Add operations from device
         for op in self._device.operations():
-            # Map known operations to Qiskit gates
-            op_name = op.name().lower()
-
-            # Skip control flow operations that don't belong in the Target
-            # (barrier is handled separately by Qiskit, if_else is a circuit construct)
-            if op_name in {"barrier", "if_else"}:
-                continue
-
-            if op_name in self._QDMI_TO_QISKIT_GATE_MAP:
-                op_name = self._QDMI_TO_QISKIT_GATE_MAP[op_name]
-
-            gate = self._map_operation_to_gate(op_name)
-            if gate is None:
-                warnings.warn(
-                    f"Device operation '{op_name}' cannot be mapped to a Qiskit gate and will be skipped",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                continue
-
-            is_class = inspect.isclass(gate)
-
-            # Skip if we've already added this Qiskit gate to the target
-            gate_name = op_name if is_class else gate.name
-            if gate_name in seen_gate_names:
-                continue
-            seen_gate_names.add(gate_name)
-
-            # Determine which qubits this operation applies to
-            qargs = self._get_operation_qargs(op)
-
-            # Globally supported gates (such as MCX) must specify a name and no properties
-            if is_class:
-                target.add_instruction(gate, name=op_name)
-                continue
-
-            # If qargs is [None], it means the operation is available on all qubits
-            if qargs == [None]:
-                # Create instruction properties
-                props = None
-                duration = op.duration()
-                fidelity = op.fidelity()
-                if duration is not None or fidelity is not None:
-                    error = 1.0 - fidelity if fidelity is not None else None
-                    props = InstructionProperties(
-                        duration=duration,
-                        error=error,
-                    )
-                target.add_instruction(gate, {None: props})
-                continue
-
-            # Add the operation without properties and populate them iteratively later
-            target.add_instruction(gate, dict.fromkeys(qargs))
-
-            num_qubits = op.qubits_num()
-            if num_qubits == 1:
-                op_sites = op.sites()
-                assert op_sites is not None
-                for qarg, site in zip(qargs, op_sites, strict=True):
-                    duration = op.duration(sites=[site])
-                    fidelity = op.fidelity(sites=[site])
-                    if duration is not None or fidelity is not None:
-                        error = 1.0 - fidelity if fidelity is not None else None
-                        props = InstructionProperties(
-                            duration=duration,
-                            error=error,
-                        )
-                        target.update_instruction_properties(gate_name, qarg, props)
-                continue
-
-            if num_qubits == 2:
-                op_site_pairs = op.site_pairs()
-                assert op_site_pairs is not None
-                for qarg, (site1, site2) in zip(qargs, op_site_pairs, strict=True):
-                    duration = op.duration(sites=[site1, site2])
-                    fidelity = op.fidelity(sites=[site1, site2])
-                    if duration is not None or fidelity is not None:
-                        error = 1.0 - fidelity if fidelity is not None else None
-                        props = InstructionProperties(
-                            duration=duration,
-                            error=error,
-                        )
-                        target.update_instruction_properties(gate_name, qarg, props)
-                continue
+            self._add_operation_to_target(target, op, seen_gate_names)
 
         # Check if the measurement operation is defined
         if "measure" not in seen_gate_names:
@@ -324,6 +255,106 @@ class QDMIBackend(BackendV2):
             )
 
         return target
+
+    def _add_operation_to_target(
+        self, target: Target, op: fomac.Device.Operation, seen_gate_names: MutableSet[str]
+    ) -> None:
+        """Add a single device operation to the Target, if it maps to a Qiskit gate.
+
+        Subclasses may override this to customize how an individual device
+        operation is represented in the Target, e.g. substituting fictional
+        qubit-qubit loci for an operation that natively acts on non-qubit
+        sites (such as a qubit-resonator gate).
+
+        Args:
+            target: The Target being constructed.
+            op: The device operation to add.
+            seen_gate_names: Qiskit gate names already added to the target (mutated in place).
+        """
+        # Map known operations to Qiskit gates
+        op_name = op.name().lower()
+
+        # Skip control flow operations that don't belong in the Target
+        # (barrier is handled separately by Qiskit, if_else is a circuit construct)
+        if op_name in {"barrier", "if_else"}:
+            return
+
+        if op_name in self._QDMI_TO_QISKIT_GATE_MAP:
+            op_name = self._QDMI_TO_QISKIT_GATE_MAP[op_name]
+
+        gate = self._map_operation_to_gate(op_name)
+        if gate is None:
+            warnings.warn(
+                f"Device operation '{op_name}' cannot be mapped to a Qiskit gate and will be skipped",
+                UserWarning,
+                stacklevel=2,
+            )
+            return
+
+        is_class = inspect.isclass(gate)
+
+        # Skip if we've already added this Qiskit gate to the target
+        gate_name = op_name if is_class else gate.name
+        if gate_name in seen_gate_names:
+            return
+        seen_gate_names.add(gate_name)
+
+        # Determine which qubits this operation applies to
+        qargs = self._get_operation_qargs(op)
+
+        # Globally supported gates (such as MCX) must specify a name and no properties
+        if is_class:
+            target.add_instruction(gate, name=op_name)
+            return
+
+        # If qargs is [None], it means the operation is available on all qubits
+        if qargs == [None]:
+            # Create instruction properties
+            props = None
+            duration = op.duration()
+            fidelity = op.fidelity()
+            if duration is not None or fidelity is not None:
+                error = 1.0 - fidelity if fidelity is not None else None
+                props = InstructionProperties(
+                    duration=duration,
+                    error=error,
+                )
+            target.add_instruction(gate, {None: props})
+            return
+
+        # Add the operation without properties and populate them iteratively later
+        target.add_instruction(gate, dict.fromkeys(qargs))
+
+        num_qubits = op.qubits_num()
+        if num_qubits == 1:
+            op_sites = op.sites()
+            assert op_sites is not None
+            for qarg, site in zip(qargs, op_sites, strict=True):
+                duration = op.duration(sites=[site])
+                fidelity = op.fidelity(sites=[site])
+                if duration is not None or fidelity is not None:
+                    error = 1.0 - fidelity if fidelity is not None else None
+                    props = InstructionProperties(
+                        duration=duration,
+                        error=error,
+                    )
+                    target.update_instruction_properties(gate_name, qarg, props)
+            return
+
+        if num_qubits == 2:
+            op_site_pairs = op.site_pairs()
+            assert op_site_pairs is not None
+            for qarg, (site1, site2) in zip(qargs, op_site_pairs, strict=True):
+                duration = op.duration(sites=[site1, site2])
+                fidelity = op.fidelity(sites=[site1, site2])
+                if duration is not None or fidelity is not None:
+                    error = 1.0 - fidelity if fidelity is not None else None
+                    props = InstructionProperties(
+                        duration=duration,
+                        error=error,
+                    )
+                    target.update_instruction_properties(gate_name, qarg, props)
+            return
 
     @staticmethod
     def _map_operation_to_gate(op_name: str) -> Instruction | type[Instruction] | None:
@@ -409,6 +440,24 @@ class QDMIBackend(BackendV2):
 
         # Operation has unspecified qubit count or 3+ qubits -> assume it applies to all qubits
         return [None]
+
+    def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # noqa: PLR6301
+        """Rewrite a bound circuit before validation and conversion.
+
+        Called once per circuit in :meth:`run`, after parameter binding and
+        before operation-support validation and program conversion.
+        Subclasses may override this to transform a circuit into a
+        device-native equivalent, e.g. inserting MOVE gates and widening the
+        circuit to address computational resonators. The default
+        implementation is the identity function.
+
+        Args:
+            circuit: The bound circuit to preprocess.
+
+        Returns:
+            The (possibly rewritten) circuit to use for validation and conversion.
+        """
+        return circuit
 
     def _convert_circuit(
         self, circuit: QuantumCircuit, supported_program_formats: Iterable[fomac.ProgramFormat]
@@ -612,6 +661,8 @@ class QDMIBackend(BackendV2):
                     f"Circuit contains unbound parameters: {params}. Provide `parameter_values` or bind them manually."
                 )
                 raise CircuitValidationError(msg)
+
+            bound_circuit = self._preprocess_circuit(bound_circuit)
 
             # Validate operations are supported
             for instruction in bound_circuit.data:
