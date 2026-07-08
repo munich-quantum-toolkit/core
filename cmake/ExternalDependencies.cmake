@@ -86,6 +86,8 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
+set(QDMI_MINIMUM_VERSION 1.3.0
+        CACHE STRING "Minimum QDMI version")
 set(QDMI_VERSION 1.3.2
         CACHE STRING "QDMI version")
 set(QDMI_REV "d05a0b418f42e54e9585d2e00af8ce23e745fd83" # v1.3.0
@@ -98,7 +100,7 @@ FetchContent_Declare(
   qdmi
   GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
   GIT_TAG ${QDMI_REV}
-  FIND_PACKAGE_ARGS ${QDMI_VERSION})
+  FIND_PACKAGE_ARGS ${QDMI_MINIMUM_VERSION})
 list(APPEND FETCH_PACKAGES qdmi)
 
 set(SPDLOG_VERSION
