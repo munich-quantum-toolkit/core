@@ -40,7 +40,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#370)._
 ### Fixed
 
 - 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
-  Device ([#1843]) ([**@MatthiasReumann**])
+  Device ([#1842]) ([**@MatthiasReumann**])
 
 ## [3.6.1] - 2026-05-20
 
@@ -569,7 +569,7 @@ changelogs._
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
-[#1843]: https://github.com/munich-quantum-toolkit/core/pull/1843
+[#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
