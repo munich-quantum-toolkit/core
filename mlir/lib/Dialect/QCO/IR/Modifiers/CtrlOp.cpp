@@ -195,38 +195,6 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
 
 } // namespace
 
-namespace {
-
-void initializeSingleTargetCtrlState(OperationState& odsState,
-                                     const int32_t numControls,
-                                     TypeRange controlTypes, Type targetType,
-                                     ValueRange controls, Value target) {
-  odsState.addOperands(controls);
-  odsState.addOperands(target);
-  llvm::copy(llvm::ArrayRef<int32_t>({numControls, 1}),
-             odsState.getOrAddProperties<CtrlOp::Properties>()
-                 .operandSegmentSizes.begin());
-  odsState.addRegion();
-  odsState.addTypes(controlTypes);
-  odsState.addTypes(targetType);
-  llvm::copy(llvm::ArrayRef<int32_t>({numControls, 1}),
-             odsState.getOrAddProperties<CtrlOp::Properties>()
-                 .resultSegmentSizes.begin());
-}
-
-void buildSingleTargetCtrlBody(OpBuilder& odsBuilder, OperationState& odsState,
-                               function_ref<Value(Value)> bodyBuilder) {
-  auto& block = odsState.regions.front()->emplaceBlock();
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  const auto targetArg = block.addArgument(qubitType, odsState.location);
-
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  YieldOp::create(odsBuilder, odsState.location, bodyBuilder(targetArg));
-}
-
-} // namespace
-
 size_t CtrlOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -272,10 +240,26 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, Value target,
                    function_ref<Value(Value)> bodyBuilder) {
-  initializeSingleTargetCtrlState(
-      odsState, static_cast<int32_t>(controls.size()), controls.getTypes(),
-      target.getType(), controls, target);
-  buildSingleTargetCtrlBody(odsBuilder, odsState, bodyBuilder);
+  const auto numControls = static_cast<int32_t>(controls.size());
+  odsState.addOperands(controls);
+  odsState.addOperands(target);
+  llvm::copy(llvm::ArrayRef<int32_t>({numControls, 1}),
+             odsState.getOrAddProperties<CtrlOp::Properties>()
+                 .operandSegmentSizes.begin());
+  odsState.addRegion();
+  odsState.addTypes(controls.getTypes());
+  odsState.addTypes(target.getType());
+  llvm::copy(llvm::ArrayRef<int32_t>({numControls, 1}),
+             odsState.getOrAddProperties<CtrlOp::Properties>()
+                 .resultSegmentSizes.begin());
+
+  auto& block = odsState.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  const auto targetArg = block.addArgument(qubitType, odsState.location);
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  YieldOp::create(odsBuilder, odsState.location, bodyBuilder(targetArg));
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
