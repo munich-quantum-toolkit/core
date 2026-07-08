@@ -246,7 +246,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(ValueRange controls,         \
                                                   Value target) {              \
     ctrl(controls, target,                                                     \
-         [&](Value target) { OP_CLASS::create(*this, target); });              \
+         [&](Value targetArg) { OP_CLASS::create(*this, targetArg); });        \
     return *this;                                                              \
   }
 
@@ -283,7 +283,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       Value target) {                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     ctrl(controls, target,                                                     \
-         [&](Value target) { OP_CLASS::create(*this, target, param); });       \
+         [&](Value targetArg) { OP_CLASS::create(*this, targetArg, param); }); \
     return *this;                                                              \
   }
 
@@ -316,8 +316,8 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
       Value target) {                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    ctrl(controls, target, [&](Value target) {                                 \
-      OP_CLASS::create(*this, target, param1, param2);                         \
+    ctrl(controls, target, [&](Value targetArg) {                              \
+      OP_CLASS::create(*this, targetArg, param1, param2);                      \
     });                                                                        \
     return *this;                                                              \
   }
@@ -354,8 +354,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
-    ctrl(controls, target, [&](Value target) {                                 \
-      OP_CLASS::create(*this, target, param1, param2, param3);                 \
+    ctrl(controls, target, [&](Value targetArg) {                              \
+      OP_CLASS::create(*this, targetArg, param1, param2, param3);              \
     });                                                                        \
     return *this;                                                              \
   }

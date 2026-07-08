@@ -705,12 +705,13 @@ LogicalResult synthesizeUnitary2QWeyl(OpBuilder& builder, Location loc,
     wire = *synthesized;
   };
   const auto emitEntangler = [&]() {
-    auto ctrlOp = CtrlOp::create(builder, loc, wire0, wire1, [&](Value target) {
-      if (emitCz) {
-        return ZOp::create(builder, loc, target).getOutputQubit(0);
-      }
-      return XOp::create(builder, loc, target).getOutputQubit(0);
-    });
+    auto ctrlOp =
+        CtrlOp::create(builder, loc, wire0, wire1, [&](Value targetQubit) {
+          if (emitCz) {
+            return ZOp::create(builder, loc, targetQubit).getOutputQubit(0);
+          }
+          return XOp::create(builder, loc, targetQubit).getOutputQubit(0);
+        });
     wire0 = ctrlOp.getOutputControl(0);
     wire1 = ctrlOp.getOutputTarget(0);
   };

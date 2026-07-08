@@ -878,8 +878,8 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
 
   const auto czSpec = NativeGateset::parse("u,cz");
   ASSERT_TRUE(czSpec);
-  auto cz = CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
-    return ZOp::create(builder, loc, target).getOutputQubit(0);
+  auto cz = CtrlOp::create(builder, loc, q0, q1, [&](Value t) {
+    return ZOp::create(builder, loc, t).getOutputQubit(0);
   });
   EXPECT_TRUE(allowsOp(cz.getOperation(), *czSpec));
   EXPECT_FALSE(allowsOp(cx.getOperation(), *czSpec));

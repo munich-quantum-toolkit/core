@@ -26,7 +26,6 @@
 
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -165,6 +164,21 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
 
 } // namespace
 
+static void
+buildModifierBody(OpBuilder& odsBuilder, OperationState& odsState,
+                  const size_t numBlockArgs,
+                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
+  auto& block = odsState.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < numBlockArgs; ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  emitBody(odsBuilder, block);
+}
+
 size_t CtrlOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -177,38 +191,22 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, ValueRange targets,
                    const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, controls, targets);
-  auto& block = odsState.regions.front()->emplaceBlock();
-
-  auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < targets.size(); ++i) {
-    block.addArgument(qubitType, odsState.location);
-  }
-
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  body(block.getArguments());
-  YieldOp::create(odsBuilder, odsState.location);
+  buildModifierBody(odsBuilder, odsState, targets.size(),
+                    [&](OpBuilder& builder, Block& block) {
+                      body(block.getArguments());
+                      YieldOp::create(builder, odsState.location);
+                    });
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, Value target,
                    const function_ref<void(Value)>& bodyBuilder) {
-  const auto numControls = static_cast<int32_t>(controls.size());
-  odsState.addOperands(controls);
-  odsState.addOperands(target);
-  llvm::copy(llvm::ArrayRef<int32_t>({numControls, 1}),
-             odsState.getOrAddProperties<CtrlOp::Properties>()
-                 .operandSegmentSizes.begin());
-  odsState.addRegion();
-
-  auto& block = odsState.regions.front()->emplaceBlock();
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  const auto targetArg = block.addArgument(qubitType, odsState.location);
-
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  bodyBuilder(targetArg);
-  YieldOp::create(odsBuilder, odsState.location);
+  build(odsBuilder, odsState, controls, ValueRange{target});
+  buildModifierBody(odsBuilder, odsState, 1,
+                    [&](OpBuilder& builder, Block& block) {
+                      bodyBuilder(block.getArgument(0));
+                      YieldOp::create(builder, odsState.location);
+                    });
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,

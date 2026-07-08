@@ -301,6 +301,21 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
 
 } // namespace
 
+static void
+buildModifierBody(OpBuilder& odsBuilder, OperationState& odsState,
+                  const size_t numBlockArgs,
+                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
+  auto& block = odsState.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < numBlockArgs; ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  emitBody(odsBuilder, block);
+}
+
 size_t InvOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -313,32 +328,21 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   ValueRange qubits,
                   const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, qubits);
-  auto& block = odsState.regions.front()->emplaceBlock();
-
-  auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < qubits.size(); ++i) {
-    block.addArgument(qubitType, odsState.location);
-  }
-
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  body(block.getArguments());
-  YieldOp::create(odsBuilder, odsState.location);
+  buildModifierBody(odsBuilder, odsState, qubits.size(),
+                    [&](OpBuilder& builder, Block& block) {
+                      body(block.getArguments());
+                      YieldOp::create(builder, odsState.location);
+                    });
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   const function_ref<void(Value)>& bodyBuilder) {
-  odsState.addOperands(qubit);
-  odsState.addRegion();
-
-  auto& block = odsState.regions.front()->emplaceBlock();
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  const auto qubitArg = block.addArgument(qubitType, odsState.location);
-
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  bodyBuilder(qubitArg);
-  YieldOp::create(odsBuilder, odsState.location);
+  build(odsBuilder, odsState, ValueRange{qubit});
+  buildModifierBody(odsBuilder, odsState, 1,
+                    [&](OpBuilder& builder, Block& block) {
+                      bodyBuilder(block.getArgument(0));
+                      YieldOp::create(builder, odsState.location);
+                    });
 }
 
 LogicalResult InvOp::verify() {

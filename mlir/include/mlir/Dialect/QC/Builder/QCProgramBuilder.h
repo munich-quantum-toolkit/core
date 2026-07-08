@@ -925,6 +925,11 @@ public:
   /**
    * @brief Apply a control modifier with a single target and one-qubit body.
    *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @param body Function that builds the body containing the target operation
+   * @return Reference to this builder for method chaining
+   *
    * @par Example:
    * ```c++
    * builder.ctrl({q0_in, q1_in}, q2_in, [&](Value target) {
@@ -937,6 +942,11 @@ public:
 
   /**
    * @brief Apply a control modifier with one control and one target.
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @param body Function that builds the body containing the target operation
+   * @return Reference to this builder for method chaining
    *
    * @par Example:
    * ```c++
@@ -972,6 +982,11 @@ public:
 
   /**
    * @brief Apply an inverse modifier on a single qubit.
+   *
+   * @param qubit Qubit involved in the operation
+   * @param body Function that builds the body containing the operation to
+   * invert
+   * @return Reference to this builder for method chaining
    *
    * @par Example:
    * ```c++
