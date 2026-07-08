@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;

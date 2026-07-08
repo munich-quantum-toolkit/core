@@ -13,10 +13,12 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -24,6 +26,23 @@ using namespace mlir;
 using namespace mlir::qco;
 
 namespace {
+
+/**
+ * @brief Check if given quantum operation is unused (i.e., only used by
+ * sinks and no memory effects).
+ *
+ * @param op The operation to check.
+ * @return bool True if the operation is unused, false otherwise.
+ */
+inline bool checkDeadGate(Operation* op) {
+  if (!isMemoryEffectFree(op)) {
+    // This ignores operations and regions that have children with memory
+    // effects, which should never be considered dead.
+    return false;
+  }
+  return llvm::all_of(op->getUsers(),
+                      [](Operation* user) { return isa<SinkOp>(user); });
+}
 
 /**
  * @brief Remove matching alloc/static and sink pairs without operations

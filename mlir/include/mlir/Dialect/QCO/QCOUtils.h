@@ -17,7 +17,6 @@
 #include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -259,23 +258,6 @@ LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
     return failure();
   }
   return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, true);
-}
-
-/**
- * @brief Check if given quantum operation is unused (i.e., only used by
- * sinks and no memory effects).
- *
- * @param op The operation to check.
- * @return bool True if the operation is unused, false otherwise.
- */
-inline bool checkDeadGate(Operation* op) {
-  if (!isMemoryEffectFree(op)) {
-    // This ignores operations and regions that have children with memory
-    // effects, which should never be considered dead.
-    return false;
-  }
-  return llvm::all_of(op->getUsers(),
-                      [](Operation* user) { return isa<SinkOp>(user); });
 }
 
 } // namespace mlir::qco

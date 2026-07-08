@@ -14,7 +14,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/BuiltinTypes.h> // NOLINT(misc-include-cleaner)
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -37,15 +37,20 @@ measureAndReturn(mlir::qc::QCProgramBuilder& b,
 
 namespace mlir::qc {
 
-std::pair<SmallVector<Value>, SmallVector<Type>>
-emptyQC([[maybe_unused]] QCProgramBuilder& builder) {
-  return measureAndReturn(builder, {});
+std::pair<SmallVector<Value>, SmallVector<Type>> emptyQC(QCProgramBuilder& b) {
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubit(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   return measureAndReturn(b, {q});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+allocQubitNoMeasure(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -90,6 +95,13 @@ staticQubits(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   return measureAndReturn(b, {q0, q1});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsNoMeasure(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -287,6 +299,13 @@ globalPhase(QCProgramBuilder& b) {
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
+globalPhaseAndMeasure(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(0.123);
+  return measureAndReturn(b, {q[0]});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
 singleControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.cgphase(0.123, q[0]);
@@ -305,7 +324,7 @@ nestedControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(q[0], {q[1]},
          [&](ValueRange targets) { b.cgphase(0.123, targets[0]); });
-  return measureAndReturn(b, {q[0], q[1], q[2]});
+  return measureAndReturn(b, {q[0], q[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -338,7 +357,7 @@ std::pair<SmallVector<Value>, SmallVector<Type>> identity(QCProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 singleControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.cid(q[1], q[0]);
+  b.cid(q[0], q[1]);
   return measureAndReturn(b, {q[0], q[1]});
 }
 
@@ -359,15 +378,22 @@ threeQubitsOneIdentity(QCProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 multipleControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.mcid({q[2], q[1]}, q[0]);
+  b.mcid({q[0], q[1]}, q[2]);
   return measureAndReturn(b, {q[0], q[1], q[2]});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+twoQubitsOneBarrier(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.barrier(q[0]);
+  return measureAndReturn(b, {q[0], q[1]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 nestedControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.ctrl(q[2], {q[0], q[1]},
-         [&](ValueRange targets) { b.cid(targets[1], targets[0]); });
+  b.ctrl(q[0], {q[1], q[2]},
+         [&](ValueRange targets) { b.cid(targets[0], targets[1]); });
   return measureAndReturn(b, {q[0], q[1], q[2]});
 }
 
@@ -1999,6 +2025,7 @@ invCtrlSandwich(QCProgramBuilder& b) {
       });
     });
   });
+  return measureAndReturn(b, {q[0], q[1], q[2]});
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>> invTwo(QCProgramBuilder& b) {

@@ -14,13 +14,14 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/BuiltinTypes.h> // NOLINT(misc-include-cleaner)
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
 #include <numbers>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -3549,7 +3550,7 @@ qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b) {
   auto q1 = b.h(q0);
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
   auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 1);
-  auto insertOutTensor1 = b.qtensorInsert(q2, extractOutTensor1, 0);
+  (void)b.qtensorInsert(q2, extractOutTensor1, 0);
   return measureAndReturn(b, {});
 }
 
@@ -3560,7 +3561,7 @@ qtensorInsertExtractSameIndex(QCOProgramBuilder& b) {
   auto q1 = b.h(q0);
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
   auto [extractOutTensor1, q2] = b.qtensorExtract(insertOutTensor, 0);
-  auto insertOutTensor1 = b.qtensorInsert(q2, extractOutTensor1, 0);
+  (void)b.qtensorInsert(q2, extractOutTensor1, 0);
   return measureAndReturn(b, {});
 }
 

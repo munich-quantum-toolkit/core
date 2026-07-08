@@ -13,15 +13,13 @@
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringMap.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/FormatVariadic.h>
-#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
 #include <numbers>
+#include <utility>
 
 /**
  * @brief Measures the given qubits and returns the measurement outcomes as a
@@ -45,7 +43,8 @@ measureAndRecord(mlir::qir::QIRProgramBuilder& b,
   }
   mlir::qir::QIRProgramBuilder::ClassicalRegister resultArray;
   if (inRegister) {
-    resultArray = b.allocClassicalBitRegister(qubits.size(), "meas");
+    resultArray = b.allocClassicalBitRegister(
+        static_cast<int64_t>(qubits.size()), "meas");
   }
 
   for (auto i = 0L; i < qubits.size(); ++i) {
@@ -460,7 +459,7 @@ std::pair<Value, Type> multipleControlledSdg(QIRProgramBuilder& b) {
   return measureAndRecord(b, {q[0], q[1], q[2]}, IntoRegister);
 }
 
-template <bool IntoRegister> std::pair<Value, Type> t_(QIRProgramBuilder& b) {
+template <bool IntoRegister> std::pair<Value, Type> t(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.t(q[0]);
   return measureAndRecord(b, {q[0]}, IntoRegister);
@@ -1111,7 +1110,7 @@ template std::pair<Value, Type>
 singleControlledSdg<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type>
 multipleControlledSdg<false>(QIRProgramBuilder& b);
-template std::pair<Value, Type> t_<false>(QIRProgramBuilder& b);
+template std::pair<Value, Type> t<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type> singleControlledT<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type>
 multipleControlledT<false>(QIRProgramBuilder& b);
@@ -1287,7 +1286,7 @@ template std::pair<Value, Type> sdg<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type> singleControlledSdg<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type>
 multipleControlledSdg<true>(QIRProgramBuilder& b);
-template std::pair<Value, Type> t_<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> t<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type> singleControlledT<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type> multipleControlledT<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type> tdg<true>(QIRProgramBuilder& b);

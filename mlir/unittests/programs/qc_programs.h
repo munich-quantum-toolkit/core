@@ -29,6 +29,10 @@ emptyQC(QCProgramBuilder& builder);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubit(QCProgramBuilder& b);
 
+/// Allocates a single qubit without measuring it.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+allocQubitNoMeasure(QCProgramBuilder& b);
+
 /// Allocates a qubit register of size `1`.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 alloc1QubitRegister(QCProgramBuilder& b);
@@ -52,6 +56,10 @@ allocLargeRegister(QCProgramBuilder& b);
 /// Allocates two inline qubits.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 staticQubits(QCProgramBuilder& b);
+
+/// Allocates two inline qubits without measuring them.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+staticQubitsNoMeasure(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
 std::pair<SmallVector<Value>, SmallVector<Type>>
@@ -153,6 +161,10 @@ repeatedResetAfterSingleOp(QCProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 globalPhase(QCProgramBuilder& b);
 
+/// Creates a circuit with just a global phase and a single measured qubit.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+globalPhaseAndMeasure(QCProgramBuilder& b);
+
 /// Creates a controlled global phase gate with a single control qubit.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 singleControlledGlobalPhase(QCProgramBuilder& b);
@@ -198,6 +210,10 @@ threeQubitsOneIdentity(QCProgramBuilder& b);
 /// Creates a multi-controlled identity gate with multiple control qubits.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 multipleControlledIdentity(QCProgramBuilder& b);
+
+/// Creates an barrier gate on a single qubit in a two-qubit register.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+twoQubitsOneBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled identity gate.
 std::pair<SmallVector<Value>, SmallVector<Type>>
