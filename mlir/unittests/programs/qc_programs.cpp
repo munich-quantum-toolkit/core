@@ -49,7 +49,7 @@ allocQubit(QCProgramBuilder& b) {
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubitNoMeasure(QCProgramBuilder& b) {
-  auto q = b.allocQubit();
+  b.allocQubit();
   return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 
@@ -99,8 +99,8 @@ staticQubits(QCProgramBuilder& b) {
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
 staticQubitsNoMeasure(QCProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.staticQubit(1);
+  b.staticQubit(0);
+  b.staticQubit(1);
   return {{b.intConstant(0)}, {b.getI64Type()}};
 }
 

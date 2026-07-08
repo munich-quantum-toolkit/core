@@ -314,14 +314,14 @@ std::pair<Value, Type> singleControlledIdentity(QIRProgramBuilder& b) {
 template <bool IntoRegister>
 std::pair<Value, Type> twoQubitsOneIdentity(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.id(q[0]);
+  b.id(q[1]);
   return measureAndRecord(b, {q[0], q[1]}, IntoRegister);
 }
 
 template <bool IntoRegister>
 std::pair<Value, Type> threeQubitsOneIdentity(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.id(q[0]);
+  b.id(q[2]);
   return measureAndRecord(b, {q[0], q[1], q[2]}, IntoRegister);
 }
 
@@ -459,7 +459,8 @@ std::pair<Value, Type> multipleControlledSdg(QIRProgramBuilder& b) {
   return measureAndRecord(b, {q[0], q[1], q[2]}, IntoRegister);
 }
 
-template <bool IntoRegister> std::pair<Value, Type> t_(QIRProgramBuilder& b) {
+template <bool IntoRegister>
+std::pair<Value, Type> t_(QIRProgramBuilder& b) { // NOLINT(*-identifier-naming)
   auto q = b.allocQubitRegister(1);
   b.t(q[0]);
   return measureAndRecord(b, {q[0]}, IntoRegister);

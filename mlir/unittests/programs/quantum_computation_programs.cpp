@@ -111,7 +111,7 @@ void identity(QuantumComputation& comp) {
 
 void singleControlledIdentity(QuantumComputation& comp) {
   comp.addQubitRegister(2, "q");
-  comp.ci(1, 0);
+  comp.ci(0, 1);
   comp.measureAll(true, false);
 }
 

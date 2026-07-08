@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/MLIRContext.h>
@@ -34,7 +34,7 @@ namespace {
  * @param op The operation to check.
  * @return bool True if the operation is unused, false otherwise.
  */
-inline bool checkDeadGate(Operation* op) {
+static inline bool checkDeadGate(Operation* op) {
   if (!isMemoryEffectFree(op)) {
     // This ignores operations and regions that have children with memory
     // effects, which should never be considered dead.
