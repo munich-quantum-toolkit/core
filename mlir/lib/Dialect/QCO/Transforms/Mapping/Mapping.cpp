@@ -1151,6 +1151,11 @@ private:
           std::array children{RoutingBundle{.layout = parent.layout},
                               RoutingBundle{.layout = parent.layout}};
 
+          // Map parent (results) to child values (qubits). Going
+          // forwards, the recursive routing starts at block
+          // arguments, while the backwards go starts at the yielded
+          // values.
+
           for (size_t i : indices) {
             const auto prog = parent.infos.lookupProgram(i);
             const auto res = cast<OpResult>(parent.wires[i].qubit());
