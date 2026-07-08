@@ -316,13 +316,13 @@ Job Device::submitJob(const std::string& program,
 
 QDMI_Job_Status Job::check() const {
   QDMI_Job_Status status{};
-  qdmi::throwIfError(QDMI_job_check(job_.get(), &status),
+  qdmi::throwIfError(QDMI_job_check(job_, &status),
                      "Checking job status");
   return status;
 }
 
 bool Job::wait(const size_t timeout) const {
-  const auto ret = QDMI_job_wait(job_.get(), timeout);
+  const auto ret = QDMI_job_wait(job_, timeout);
   if (ret == QDMI_SUCCESS) {
     return true;
   }
@@ -334,16 +334,16 @@ bool Job::wait(const size_t timeout) const {
 }
 
 void Job::cancel() const {
-  qdmi::throwIfError(QDMI_job_cancel(job_.get()), "Cancelling job");
+  qdmi::throwIfError(QDMI_job_cancel(job_), "Cancelling job");
 }
 
 std::string Job::getId() const {
   size_t size = 0;
-  qdmi::throwIfError(QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_ID,
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID,
                                              0, nullptr, &size),
                      "Querying job ID size");
   std::string id(size - 1, '\0');
-  qdmi::throwIfError(QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_ID,
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID,
                                              size, id.data(), nullptr),
                      "Querying job ID");
   return id;
@@ -351,7 +351,7 @@ std::string Job::getId() const {
 
 QDMI_Program_Format Job::getProgramFormat() const {
   QDMI_Program_Format format{};
-  qdmi::throwIfError(QDMI_job_query_property(job_.get(),
+  qdmi::throwIfError(QDMI_job_query_property(job_,
                                              QDMI_JOB_PROPERTY_PROGRAMFORMAT,
                                              sizeof(format), &format, nullptr),
                      "Querying program format");
@@ -360,13 +360,13 @@ QDMI_Program_Format Job::getProgramFormat() const {
 
 std::string Job::getProgram() const {
   size_t size = 0;
-  qdmi::throwIfError(QDMI_job_query_property(job_.get(),
+  qdmi::throwIfError(QDMI_job_query_property(job_,
                                              QDMI_JOB_PROPERTY_PROGRAM, 0,
                                              nullptr, &size),
                      "Querying program size");
 
   std::string program(size - 1, '\0');
-  qdmi::throwIfError(QDMI_job_query_property(job_.get(),
+  qdmi::throwIfError(QDMI_job_query_property(job_,
                                              QDMI_JOB_PROPERTY_PROGRAM, size,
                                              program.data(), nullptr),
                      "Querying program");
@@ -376,7 +376,7 @@ std::string Job::getProgram() const {
 size_t Job::getNumShots() const {
   size_t numShots = 0;
   qdmi::throwIfError(
-      QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_SHOTSNUM,
+      QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_SHOTSNUM,
                               sizeof(numShots), &numShots, nullptr),
       "Querying number of shots");
   return numShots;
@@ -384,7 +384,7 @@ size_t Job::getNumShots() const {
 
 std::vector<std::string> Job::getShots() const {
   size_t shotsSize = 0;
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_SHOTS, 0,
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, 0,
                                           nullptr, &shotsSize),
                      "Querying shots size");
 
@@ -393,7 +393,7 @@ std::vector<std::string> Job::getShots() const {
   }
 
   std::string shots(shotsSize - 1, '\0');
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_SHOTS,
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS,
                                           shotsSize, shots.data(), nullptr),
                      "Querying shots");
 
@@ -416,7 +416,7 @@ std::vector<std::string> Job::getShots() const {
 std::map<std::string, size_t> Job::getCounts() const {
   // Get the histogram keys
   size_t keysSize = 0;
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_HIST_KEYS,
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS,
                                           0, nullptr, &keysSize),
                      "Querying histogram keys size");
 
@@ -425,13 +425,13 @@ std::map<std::string, size_t> Job::getCounts() const {
   }
 
   std::string keys(keysSize - 1, '\0');
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_HIST_KEYS,
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS,
                                           keysSize, keys.data(), nullptr),
                      "Querying histogram keys");
 
   // Get the histogram values
   size_t valuesSize = 0;
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
+  qdmi::throwIfError(QDMI_job_get_results(job_,
                                           QDMI_JOB_RESULT_HIST_VALUES, 0,
                                           nullptr, &valuesSize),
                      "Querying histogram values size");
@@ -442,7 +442,7 @@ std::map<std::string, size_t> Job::getCounts() const {
   }
 
   std::vector<size_t> values(valuesSize / sizeof(size_t));
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
+  qdmi::throwIfError(QDMI_job_get_results(job_,
                                           QDMI_JOB_RESULT_HIST_VALUES,
                                           valuesSize, values.data(), nullptr),
                      "Querying histogram values");
@@ -468,7 +468,7 @@ std::map<std::string, size_t> Job::getCounts() const {
 
 std::vector<std::complex<double>> Job::getDenseStateVector() const {
   size_t size = 0;
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
+  qdmi::throwIfError(QDMI_job_get_results(job_,
                                           QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
                                           nullptr, &size),
                      "Querying dense state vector size");
@@ -480,7 +480,7 @@ std::vector<std::complex<double>> Job::getDenseStateVector() const {
 
   std::vector<std::complex<double>> stateVector(size /
                                                 sizeof(std::complex<double>));
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
+  qdmi::throwIfError(QDMI_job_get_results(job_,
                                           QDMI_JOB_RESULT_STATEVECTOR_DENSE,
                                           size, stateVector.data(), nullptr),
                      "Querying dense state vector");
@@ -489,7 +489,7 @@ std::vector<std::complex<double>> Job::getDenseStateVector() const {
 
 std::vector<double> Job::getDenseProbabilities() const {
   size_t size = 0;
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
+  qdmi::throwIfError(QDMI_job_get_results(job_,
                                           QDMI_JOB_RESULT_PROBABILITIES_DENSE,
                                           0, nullptr, &size),
                      "Querying dense probabilities size");
@@ -500,7 +500,7 @@ std::vector<double> Job::getDenseProbabilities() const {
   }
 
   std::vector<double> probabilities(size / sizeof(double));
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
+  qdmi::throwIfError(QDMI_job_get_results(job_,
                                           QDMI_JOB_RESULT_PROBABILITIES_DENSE,
                                           size, probabilities.data(), nullptr),
                      "Querying dense probabilities");
@@ -510,7 +510,7 @@ std::vector<double> Job::getDenseProbabilities() const {
 std::map<std::string, std::complex<double>> Job::getSparseStateVector() const {
   size_t keysSize = 0;
   qdmi::throwIfError(
-      QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
                            0, nullptr, &keysSize),
       "Querying sparse state vector keys size");
 
@@ -520,13 +520,13 @@ std::map<std::string, std::complex<double>> Job::getSparseStateVector() const {
 
   std::string keys(keysSize - 1, '\0');
   qdmi::throwIfError(
-      QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
                            keysSize, keys.data(), nullptr),
       "Querying sparse state vector keys");
 
   size_t valuesSize = 0;
   qdmi::throwIfError(QDMI_job_get_results(
-                         job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+                         job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
                          0, nullptr, &valuesSize),
                      "Querying sparse state vector values size");
 
@@ -539,7 +539,7 @@ std::map<std::string, std::complex<double>> Job::getSparseStateVector() const {
   std::vector<std::complex<double>> values(valuesSize /
                                            sizeof(std::complex<double>));
   qdmi::throwIfError(QDMI_job_get_results(
-                         job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+                         job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
                          valuesSize, values.data(), nullptr),
                      "Querying sparse state vector values");
 
@@ -565,7 +565,7 @@ std::map<std::string, std::complex<double>> Job::getSparseStateVector() const {
 std::map<std::string, double> Job::getSparseProbabilities() const {
   size_t keysSize = 0;
   qdmi::throwIfError(QDMI_job_get_results(
-                         job_.get(), QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+                         job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
                          0, nullptr, &keysSize),
                      "Querying sparse probabilities keys size");
 
@@ -575,13 +575,13 @@ std::map<std::string, double> Job::getSparseProbabilities() const {
 
   std::string keys(keysSize - 1, '\0');
   qdmi::throwIfError(QDMI_job_get_results(
-                         job_.get(), QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+                         job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
                          keysSize, keys.data(), nullptr),
                      "Querying sparse probabilities keys");
 
   size_t valuesSize = 0;
   qdmi::throwIfError(
-      QDMI_job_get_results(job_.get(),
+      QDMI_job_get_results(job_,
                            QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, 0,
                            nullptr, &valuesSize),
       "Querying sparse probabilities values size");
@@ -593,7 +593,7 @@ std::map<std::string, double> Job::getSparseProbabilities() const {
 
   std::vector<double> values(valuesSize / sizeof(double));
   qdmi::throwIfError(
-      QDMI_job_get_results(job_.get(),
+      QDMI_job_get_results(job_,
                            QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
                            valuesSize, values.data(), nullptr),
       "Querying sparse probabilities values");
@@ -634,7 +634,7 @@ Session::Session(const SessionConfig& config) {
                                    QDMI_Session_Parameter param) -> void {
     if (value) {
       const auto status = static_cast<QDMI_STATUS>(QDMI_session_set_parameter(
-          session_.get(), param, value->size() + 1, value->c_str()));
+          session_, param, value->size() + 1, value->c_str()));
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         // Optional parameter not supported by session - skip it
         SPDLOG_INFO("Session parameter {} not supported (skipped)",
@@ -705,7 +705,7 @@ Session::Session(const SessionConfig& config) {
     setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
 
     // Initialize the session
-    qdmi::throwIfError(QDMI_session_init(session_.get()),
+    qdmi::throwIfError(QDMI_session_init(session_),
                        "Initializing session");
   } catch (...) {
     throw;
