@@ -134,12 +134,13 @@ template <typename RotationOp>
 }
 
 template <typename Fn> static void forEachBasis(Fn fn) {
-  const std::array<const char*, 6> bases = {"zyz", "zxz", "xzx",
-                                            "xyx", "u",   "zsxx"};
+  const std::array<const char*, 7> bases = {"zyz", "zxz",  "xzx", "xyx",
+                                            "u",   "zsxx", "r"};
   for (const char* basis : bases) {
     fn(StringRef{basis});
   }
 }
+
 [[nodiscard]] static WalkResult failMissingUnitaryMatrix(Operation* op,
                                                          bool& failed) {
   ADD_FAILURE() << "Expected constant unitary matrix for op: "
@@ -254,6 +255,8 @@ template <typename OpTy>
     return countOps<UOp>(funcOp);
   case ZSXX:
     return countZSXXGates(funcOp);
+  case R:
+    return countOps<ROp>(funcOp);
   }
   return 0;
 }
@@ -490,10 +493,24 @@ TEST(EulerAnglesCoverageTest, UBasisNonzeroThetaEmitsSingleUGate) {
   TestFixture fx;
   fx.setUp();
   const Matrix2x2 matrix = RYOp::unitaryMatrix(1.2);
+  const EulerAngles angles = anglesFromUnitary(matrix, U);
+  ASSERT_GT(std::abs(angles.theta), mlir::utils::TOLERANCE);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
                             EXPECT_EQ(countOps<UOp>(funcOp), 1U);
                             EXPECT_EQ(countZYZGates(funcOp), 0U);
+                          });
+}
+
+TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
+  TestFixture fx;
+  fx.setUp();
+  const Matrix2x2 matrix = HOp::getUnitaryMatrix();
+  const EulerAngles angles = anglesFromUnitary(matrix, R);
+  ASSERT_GT(std::abs(angles.theta), mlir::utils::TOLERANCE);
+  expectSynthesizedMatrix(fx.ctx(), matrix, R,
+                          [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
+                            EXPECT_EQ(countOps<ROp>(funcOp), 3U);
                           });
 }
 
@@ -537,6 +554,8 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
     return isa<UOp>(op);
   case ZSXX:
     return isa<RZOp, SXOp, XOp>(op);
+  case R:
+    return isa<ROp>(op);
   }
   return false;
 }
@@ -751,9 +770,7 @@ static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   q[0] = b.rz(0.123, q[0]);
-  q[0] = b.inv({q[0]}, [&b](ValueRange targets) -> SmallVector<Value> {
-    return {b.sx(targets[0])};
-  })[0];
+  q[0] = b.inv(q[0], [&b](Value qubit) { return b.sx(qubit); });
   q[0] = b.ry(-0.456, q[0]);
 }
 
@@ -823,11 +840,10 @@ static void singleQubitRunInScfFor(QCOProgramBuilder& b) {
 static void xInverseTwoX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
-  q[0] = b.inv({q[0]}, [&b](ValueRange targets) {
-    Value wire = b.x(targets[0]);
-    wire = b.x(wire);
-    return SmallVector{wire};
-  })[0];
+  q[0] = b.inv(q[0], [&b](Value qubit) {
+    qubit = b.x(qubit);
+    return b.x(qubit);
+  });
   q[0] = b.x(q[0]);
 }
 
@@ -845,20 +861,17 @@ static void inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
 
 static void controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&b](ValueRange targets) {
-    auto wire = b.inv({targets[0]}, [&b](ValueRange innerTargets) {
-      auto inner = b.h(innerTargets[0]);
-      inner = b.t(inner);
-      return SmallVector{inner};
-    })[0];
-    return SmallVector{wire};
+  b.ctrl(q[0], q[1], [&b](Value target) {
+    return b.inv(target, [&b](Value qubit) {
+      qubit = b.h(qubit);
+      return b.t(qubit);
+    });
   });
 }
 
 static void controlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1],
-         [&b](ValueRange targets) { return SmallVector{b.h(targets[0])}; });
+  b.ctrl(q[0], q[1], [&b](Value target) { return b.h(target); });
 }
 
 static void singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {

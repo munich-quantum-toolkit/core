@@ -16,6 +16,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -24,7 +25,9 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cassert>
 #include <cstddef>
+#include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -163,6 +166,21 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
 
 } // namespace
 
+static void
+buildModifierBody(OpBuilder& odsBuilder, OperationState& odsState,
+                  const size_t numBlockArgs,
+                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
+  auto& block = odsState.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < numBlockArgs; ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  emitBody(odsBuilder, block);
+}
+
 size_t CtrlOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -175,17 +193,34 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, ValueRange targets,
                    const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, controls, targets);
-  auto& block = odsState.regions.front()->emplaceBlock();
+  buildModifierBody(odsBuilder, odsState, targets.size(),
+                    [&](OpBuilder& builder, Block& block) {
+                      body(block.getArguments());
+                      YieldOp::create(builder, odsState.location);
+                    });
+}
 
-  auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < targets.size(); ++i) {
-    block.addArgument(qubitType, odsState.location);
-  }
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   ValueRange controls, Value target,
+                   const function_ref<void(Value)>& bodyBuilder) {
+  odsState.addOperands(controls);
+  odsState.addOperands(target);
+  llvm::copy(
+      llvm::ArrayRef<int32_t>({static_cast<int32_t>(controls.size()), 1}),
+      odsState.getOrAddProperties<CtrlOp::Properties>()
+          .operandSegmentSizes.begin());
+  odsState.addRegion();
+  buildModifierBody(odsBuilder, odsState, 1,
+                    [&](OpBuilder& builder, Block& block) {
+                      bodyBuilder(block.getArgument(0));
+                      YieldOp::create(builder, odsState.location);
+                    });
+}
 
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  body(block.getArguments());
-  YieldOp::create(odsBuilder, odsState.location);
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   Value control, Value target,
+                   const function_ref<void(Value)>& bodyBuilder) {
+  build(odsBuilder, odsState, ValueRange{control}, target, bodyBuilder);
 }
 
 LogicalResult CtrlOp::verify() {
