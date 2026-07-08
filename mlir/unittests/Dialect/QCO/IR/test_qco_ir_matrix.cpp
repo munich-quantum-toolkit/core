@@ -323,6 +323,40 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
 }
 /// @}
 
+/// \name QCO/Operations/StandardGates/RCCXOp.cpp
+/// @{
+[[nodiscard]] static DynamicMatrix elementaryRCCXUnitary() {
+  constexpr Matrix4x4 cx =
+      Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                              0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
+
+  DynamicMatrix unitary = DynamicMatrix::identity(8);
+  const auto apply1 = [&](const Matrix2x2& gate, const std::size_t qubit) {
+    unitary = gate.embedInNqubit(3, qubit) * unitary;
+  };
+  const auto applyCx = [&](const std::size_t control,
+                           const std::size_t target) {
+    unitary = cx.embedInNqubit(3, control, target) * unitary;
+  };
+
+  apply1(HOp::getUnitaryMatrix(), 2);
+  apply1(TOp::getUnitaryMatrix(), 2);
+  applyCx(1, 2);
+  apply1(TdgOp::getUnitaryMatrix(), 2);
+  applyCx(0, 2);
+  apply1(TOp::getUnitaryMatrix(), 2);
+  applyCx(1, 2);
+  apply1(TdgOp::getUnitaryMatrix(), 2);
+  apply1(HOp::getUnitaryMatrix(), 2);
+  return unitary;
+}
+
+TEST_F(QCOMatrixTest, RCCXOpMatrix) {
+  const DynamicMatrix matrix = RCCXOp::getUnitaryMatrix();
+  ASSERT_TRUE(matrix.isApprox(elementaryRCCXUnitary()));
+}
+/// @}
+
 /// \name QCO/Operations/StandardGates/DcxOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, DCXOpMatrix) {

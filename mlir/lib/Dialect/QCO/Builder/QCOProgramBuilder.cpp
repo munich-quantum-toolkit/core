@@ -789,6 +789,16 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+std::tuple<Value, Value, Value>
+QCOProgramBuilder::rccx(Value qubit0, Value qubit1, Value qubit2) {
+  checkFinalized();
+  auto op = RCCXOp::create(*this, qubit0, qubit1, qubit2);
+  updateQubitTracking(qubit0, op.getQubit0Out());
+  updateQubitTracking(qubit1, op.getQubit1Out());
+  updateQubitTracking(qubit2, op.getQubit2Out());
+  return {op.getQubit0Out(), op.getQubit1Out(), op.getQubit2Out()};
+}
+
 // BarrierOp
 
 ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
