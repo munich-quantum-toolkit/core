@@ -249,7 +249,8 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, Value target,
                    function_ref<Value(Value)> bodyBuilder) {
-  build(odsBuilder, odsState, controls, ValueRange{target});
+  build(odsBuilder, odsState, controls.getTypes(), target.getType(), controls,
+        target);
   buildModifierBody(odsBuilder, odsState, 1,
                     [&](OpBuilder& builder, Block& block) {
                       YieldOp::create(builder, odsState.location,

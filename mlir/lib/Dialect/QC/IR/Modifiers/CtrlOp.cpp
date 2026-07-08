@@ -202,7 +202,13 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, Value target,
                    const function_ref<void(Value)>& bodyBuilder) {
-  build(odsBuilder, odsState, controls, ValueRange{target});
+  odsState.addOperands(controls);
+  odsState.addOperands(target);
+  llvm::copy(
+      llvm::ArrayRef<int32_t>({static_cast<int32_t>(controls.size()), 1}),
+      odsState.getOrAddProperties<CtrlOp::Properties>()
+          .operandSegmentSizes.begin());
+  odsState.addRegion();
   buildModifierBody(odsBuilder, odsState, 1,
                     [&](OpBuilder& builder, Block& block) {
                       bodyBuilder(block.getArgument(0));

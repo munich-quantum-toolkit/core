@@ -372,7 +372,7 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   function_ref<Value(Value)> bodyBuilder) {
-  build(odsBuilder, odsState, ValueRange{qubit});
+  build(odsBuilder, odsState, qubit.getType(), qubit);
   buildModifierBody(odsBuilder, odsState, 1,
                     [&](OpBuilder& builder, Block& block) {
                       YieldOp::create(builder, odsState.location,

@@ -338,7 +338,8 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   const function_ref<void(Value)>& bodyBuilder) {
-  build(odsBuilder, odsState, ValueRange{qubit});
+  odsState.addOperands(qubit);
+  odsState.addRegion();
   buildModifierBody(odsBuilder, odsState, 1,
                     [&](OpBuilder& builder, Block& block) {
                       bodyBuilder(block.getArgument(0));
