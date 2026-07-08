@@ -560,70 +560,14 @@ changelogs._
 
 <!-- PR links -->
 
-<<<<<<< HEAD
-||||||| parent of 8dd985ce (⬆️ Update QDMI to version 1.3.2 (#1873))
-[#1869]: https://github.com/munich-quantum-toolkit/core/pull/1869
-=======
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
-[#1869]: https://github.com/munich-quantum-toolkit/core/pull/1869
->>>>>>> 8dd985ce (⬆️ Update QDMI to version 1.3.2 (#1873))
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1843]: https://github.com/munich-quantum-toolkit/core/pull/1843
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
-<<<<<<< HEAD
-||||||| parent of 8dd985ce (⬆️ Update QDMI to version 1.3.2 (#1873))
-[#1824]: https://github.com/munich-quantum-toolkit/core/pull/1824
-[#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
-[#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
-[#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
-[#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
-[#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
-[#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
-[#1805]: https://github.com/munich-quantum-toolkit/core/pull/1805
-[#1803]: https://github.com/munich-quantum-toolkit/core/pull/1803
-[#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
-[#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
-[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
-[#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
-[#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
-[#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
-[#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
-[#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
-[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
-[#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
-[#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
-[#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
-[#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
-[#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
-=======
-[#1824]: https://github.com/munich-quantum-toolkit/core/pull/1824
-[#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
 [#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
-[#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
-[#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
-[#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
-[#1807]: https://github.com/munich-quantum-toolkit/core/pull/1807
-[#1806]: https://github.com/munich-quantum-toolkit/core/pull/1806
-[#1805]: https://github.com/munich-quantum-toolkit/core/pull/1805
-[#1803]: https://github.com/munich-quantum-toolkit/core/pull/1803
-[#1802]: https://github.com/munich-quantum-toolkit/core/pull/1802
-[#1787]: https://github.com/munich-quantum-toolkit/core/pull/1787
-[#1786]: https://github.com/munich-quantum-toolkit/core/pull/1786
-[#1782]: https://github.com/munich-quantum-toolkit/core/pull/1782
-[#1781]: https://github.com/munich-quantum-toolkit/core/pull/1781
-[#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
-[#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
-[#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
-[#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
-[#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
-[#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
-[#1751]: https://github.com/munich-quantum-toolkit/core/pull/1751
-[#1749]: https://github.com/munich-quantum-toolkit/core/pull/1749
-[#1748]: https://github.com/munich-quantum-toolkit/core/pull/1748
->>>>>>> 8dd985ce (⬆️ Update QDMI to version 1.3.2 (#1873))
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
