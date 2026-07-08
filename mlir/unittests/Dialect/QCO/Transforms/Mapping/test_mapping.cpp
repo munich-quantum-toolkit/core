@@ -37,6 +37,7 @@
 #include <cstdint>
 #include <memory>
 #include <tuple>
+#include <array>
 #include <utility>
 
 using namespace mlir;
