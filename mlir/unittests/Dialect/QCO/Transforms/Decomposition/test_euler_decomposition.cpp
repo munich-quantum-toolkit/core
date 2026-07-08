@@ -770,7 +770,7 @@ static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   q[0] = b.rz(0.123, q[0]);
-  q[0] = b.inv(q[0], [&b](Value qubit) { return b.sx(qubit); })[0];
+  q[0] = b.inv(q[0], [&b](Value qubit) { return b.sx(qubit); });
   q[0] = b.ry(-0.456, q[0]);
 }
 
@@ -843,7 +843,7 @@ static void xInverseTwoX(QCOProgramBuilder& b) {
   q[0] = b.inv(q[0], [&b](Value qubit) {
     qubit = b.x(qubit);
     return b.x(qubit);
-  })[0];
+  });
   q[0] = b.x(q[0]);
 }
 
@@ -865,7 +865,7 @@ static void controlledInverseHT(QCOProgramBuilder& b) {
     return b.inv(target, [&b](Value qubit) {
       qubit = b.h(qubit);
       return b.t(qubit);
-    })[0];
+    });
   });
 }
 

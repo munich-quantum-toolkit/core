@@ -67,7 +67,7 @@ void staticQubitsWithCtrl(QCOProgramBuilder& b) {
 
 void staticQubitsWithInv(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
-  q0 = b.inv(q0, [&](Value qubit) { return b.t(qubit); })[0];
+  q0 = b.inv(q0, [&](Value qubit) { return b.t(qubit); });
 }
 
 void allocSinkPair(QCOProgramBuilder& b) {
@@ -209,8 +209,7 @@ void nestedControlledIdentity(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.id(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -254,8 +253,7 @@ void nestedControlledX(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.x(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -365,8 +363,7 @@ void nestedControlledY(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.y(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -416,8 +413,7 @@ void nestedControlledZ(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.z(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -467,8 +463,7 @@ void nestedControlledH(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.h(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -523,8 +518,7 @@ void nestedControlledS(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.s(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -580,8 +574,7 @@ void nestedControlledSdg(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.sdg(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -637,8 +630,7 @@ void nestedControlledT(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.t(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -694,8 +686,7 @@ void nestedControlledTdg(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.tdg(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -751,8 +742,7 @@ void nestedControlledSx(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.sx(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -808,8 +798,7 @@ void nestedControlledSxdg(QCOProgramBuilder& b) {
   b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](ValueRange targets) {
     const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
         targets[0], targets[1], [&](Value target) { return b.sxdg(target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -866,8 +855,7 @@ void nestedControlledRx(QCOProgramBuilder& b) {
     const auto& [innerControlsOut, innerTargetsOut] =
         b.ctrl(targets[0], targets[1],
                [&](Value target) { return b.rx(0.123, target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -923,8 +911,7 @@ void nestedControlledRy(QCOProgramBuilder& b) {
     const auto& [innerControlsOut, innerTargetsOut] =
         b.ctrl(targets[0], targets[1],
                [&](Value target) { return b.ry(0.456, target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -979,8 +966,7 @@ void nestedControlledRz(QCOProgramBuilder& b) {
     const auto& [innerControlsOut, innerTargetsOut] =
         b.ctrl(targets[0], targets[1],
                [&](Value target) { return b.rz(0.789, target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -1031,8 +1017,7 @@ void nestedControlledP(QCOProgramBuilder& b) {
     const auto& [innerControlsOut, innerTargetsOut] =
         b.ctrl(targets[0], targets[1],
                [&](Value target) { return b.p(0.123, target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -1083,8 +1068,7 @@ void nestedControlledR(QCOProgramBuilder& b) {
     const auto& [innerControlsOut, innerTargetsOut] =
         b.ctrl(targets[0], targets[1],
                [&](Value target) { return b.r(0.123, 0.456, target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -1145,8 +1129,7 @@ void nestedControlledU2(QCOProgramBuilder& b) {
     const auto& [innerControlsOut, innerTargetsOut] =
         b.ctrl(targets[0], targets[1],
                [&](Value target) { return b.u2(0.234, 0.567, target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -1207,8 +1190,7 @@ void nestedControlledU(QCOProgramBuilder& b) {
     const auto& [innerControlsOut, innerTargetsOut] =
         b.ctrl(targets[0], targets[1],
                [&](Value target) { return b.u(0.1, 0.2, 0.3, target); });
-    return llvm::to_vector(
-        llvm::concat<Value>(innerControlsOut, innerTargetsOut));
+    return SmallVector{innerControlsOut, innerTargetsOut};
   });
 }
 
@@ -1959,16 +1941,6 @@ void emptyCtrl(QCOProgramBuilder& b) {
   b.ctrl(q[0], q[1], [&](Value target) { return target; });
 }
 
-void singleTargetCtrl(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](Value target) { return b.h(target); });
-}
-
-void singleTargetTwoControlled(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.ctrl({q[0], q[1]}, q[2], [&](Value target) { return b.x(target); });
-}
-
 void nestedCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange targets) {
@@ -2480,10 +2452,10 @@ void nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {
   b.scfFor(0, 3, 1, {reg.value, control1}, [&](Value iv, ValueRange iterArgs) {
     auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
     auto q1 = b.h(q0);
-    auto [controls, targets] =
+    auto [controlOut, targetOut] =
         b.ctrl(iterArgs[1], q1, [&](Value target) { return b.x(target); });
-    auto insert = b.qtensorInsert(targets[0], t0, iv);
-    return SmallVector{insert, controls[0]};
+    auto insert = b.qtensorInsert(targetOut, t0, iv);
+    return SmallVector{insert, controlOut};
   });
 }
 
@@ -2493,10 +2465,10 @@ void nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b) {
   b.scfFor(1, 4, 1, {reg.value, control}, [&](Value iv, ValueRange iterArgs) {
     auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
     auto q1 = b.h(q0);
-    auto [controls, targets] =
+    auto [controlOut, targetOut] =
         b.ctrl(iterArgs[1], q1, [&](Value target) { return b.x(target); });
-    auto insert = b.qtensorInsert(targets[0], t0, iv);
-    return SmallVector{insert, controls[0]};
+    auto insert = b.qtensorInsert(targetOut, t0, iv);
+    return SmallVector{insert, controlOut};
   });
 }
 

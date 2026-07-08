@@ -164,6 +164,33 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
 
 } // namespace
 
+namespace {
+
+void initializeSingleTargetCtrlOperands(OperationState& odsState,
+                                        const int32_t numControls,
+                                        ValueRange controls, Value target) {
+  odsState.addOperands(controls);
+  odsState.addOperands(target);
+  llvm::copy(llvm::ArrayRef<int32_t>({numControls, 1}),
+             odsState.getOrAddProperties<CtrlOp::Properties>()
+                 .operandSegmentSizes.begin());
+  odsState.addRegion();
+}
+
+void buildSingleTargetCtrlBody(OpBuilder& odsBuilder, OperationState& odsState,
+                               const function_ref<void(Value)>& bodyBuilder) {
+  auto& block = odsState.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  const auto targetArg = block.addArgument(qubitType, odsState.location);
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  bodyBuilder(targetArg);
+  YieldOp::create(odsBuilder, odsState.location);
+}
+
+} // namespace
+
 size_t CtrlOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -192,40 +219,15 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, Value target,
                    const function_ref<void(Value)>& bodyBuilder) {
-  build(odsBuilder, odsState, controls, ValueRange{target},
-        [&](ValueRange targets) {
-          assert(targets.size() == 1 &&
-                 "single-target ctrl body expects exactly one target");
-          bodyBuilder(targets.front());
-        });
+  initializeSingleTargetCtrlOperands(
+      odsState, static_cast<int32_t>(controls.size()), controls, target);
+  buildSingleTargetCtrlBody(odsBuilder, odsState, bodyBuilder);
 }
 
-CtrlOp CtrlOp::create(OpBuilder& builder, Location location,
-                      ValueRange controls, Value target,
-                      const function_ref<void(Value)>& bodyBuilder) {
-  OperationState state(location, getOperationName());
-  build(builder, state, controls, target, bodyBuilder);
-  auto op = dyn_cast<CtrlOp>(builder.create(state));
-  assert(op && "builder didn't return the right type");
-  return op;
-}
-
-CtrlOp CtrlOp::create(ImplicitLocOpBuilder& builder, ValueRange controls,
-                      Value target,
-                      const function_ref<void(Value)>& bodyBuilder) {
-  return create(builder, builder.getLoc(), controls, target, bodyBuilder);
-}
-
-CtrlOp CtrlOp::create(OpBuilder& builder, Location location, Value control,
-                      Value target,
-                      const function_ref<void(Value)>& bodyBuilder) {
-  return create(builder, location, ValueRange{control}, target, bodyBuilder);
-}
-
-CtrlOp CtrlOp::create(ImplicitLocOpBuilder& builder, Value control,
-                      Value target,
-                      const function_ref<void(Value)>& bodyBuilder) {
-  return create(builder, builder.getLoc(), control, target, bodyBuilder);
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   Value control, Value target,
+                   const function_ref<void(Value)>& bodyBuilder) {
+  build(odsBuilder, odsState, ValueRange{control}, target, bodyBuilder);
 }
 
 LogicalResult CtrlOp::verify() {

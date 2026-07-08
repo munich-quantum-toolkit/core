@@ -468,7 +468,7 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, q1_out} = builder.mc##OP_NAME(PARAM, {q0_in, q1_in});            \
+   * auto [q0_out, q1_out] = builder.mc##OP_NAME(PARAM, {q0_in, q1_in});       \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.ctrl(%q0_in, %q1_in) {                             \
@@ -519,7 +519,7 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, q1_out} = builder.c##OP_NAME(q0_in, q1_in);                      \
+   * auto [q0_out, q1_out] = builder.c##OP_NAME(q0_in, q1_in);                 \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
@@ -542,7 +542,8 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {controls_out, target_out} = builder.mc##OP_NAME({q0_in, q1_in}, q2_in);  \
+   * auto [controls_out, target_out] = builder.mc##OP_NAME({q0_in, q1_in},     \
+   * q2_in);                                                                   \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
@@ -605,7 +606,7 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, q1_out} = builder.c##OP_NAME(PARAM, q0_in, q1_in);               \
+   * auto [q0_out, q1_out] = builder.c##OP_NAME(PARAM, q0_in, q1_in);          \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
@@ -630,8 +631,8 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {controls_out, target_out} = builder.mc##OP_NAME(PARAM, {q0_in, q1_in},   \
-   * q2_in);                                                                   \
+   * auto [controls_out, target_out] = builder.mc##OP_NAME(PARAM, {q0_in,      \
+   * q1_in}, q2_in);                                                           \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
@@ -693,7 +694,7 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, q1_out} = builder.c##OP_NAME(PARAM1, PARAM2, q0_in, q1_in);      \
+   * auto [q0_out, q1_out] = builder.c##OP_NAME(PARAM1, PARAM2, q0_in, q1_in); \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.ctrl(%q0_in) %q1_in {                              \
@@ -722,8 +723,8 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {controls_out, target_out} = builder.mc##OP_NAME(PARAM1, PARAM2, {q0_in,  \
-   * q1_in}, q2_in);                                                           \
+   * auto [controls_out, target_out] = builder.mc##OP_NAME(PARAM1, PARAM2,     \
+   * {q0_in, q1_in}, q2_in);                                                   \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
@@ -789,7 +790,7 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, q1_out} = builder.c##OP_NAME(PARAM1, PARAM2, PARAM3, q0_in,      \
+   * auto [q0_out, q1_out] = builder.c##OP_NAME(PARAM1, PARAM2, PARAM3, q0_in, \
    * q1_in);                                                                   \
    * ```                                                                       \
    * ```mlir                                                                   \
@@ -821,8 +822,8 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {controls_out, target_out} = builder.mc##OP_NAME(PARAM1, PARAM2, PARAM3,  \
-   * {q0_in, q1_in}, q2_in);                                                   \
+   * auto [controls_out, target_out] = builder.mc##OP_NAME(PARAM1, PARAM2,     \
+   * PARAM3, {q0_in, q1_in}, q2_in);                                           \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %controls_out, %target_out = qco.ctrl(%q0_in, %q1_in) %q2_in {            \
@@ -859,7 +860,7 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, q1_out} = builder.OP_NAME(q0_in, q1_in);                         \
+   * auto [q0_out, q1_out] = builder.OP_NAME(q0_in, q1_in);                    \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.OP_NAME %q0_in, %q1_in : !qco.qubit, !qco.qubit    \
@@ -881,7 +882,8 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, {q1_out, q2_out}} = builder.c##OP_NAME(q0_in, q1_in, q2_in);     \
+   * auto [q0_out, targets_out] = builder.c##OP_NAME(q0_in, q1_in, q2_in);     \
+   * auto [q1_out, q2_out] = targets_out;                                      \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
@@ -908,8 +910,9 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {controls_out, {q1_out, q2_out}} = builder.mc##OP_NAME({q0_in, q1_in},    \
+   * auto [controls_out, targets_out] = builder.mc##OP_NAME({q0_in, q1_in},    \
    * q2_in, q3_in);                                                            \
+   * auto [q1_out, q2_out] = targets_out;                                      \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %controls_out, %q1_out, %q2_out = qco.ctrl(%q0_in, %q1_in) %q2_in,        \
@@ -948,7 +951,7 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, q1_out} = builder.OP_NAME(PARAM, q0_in, q1_in);                  \
+   * auto [q0_out, q1_out] = builder.OP_NAME(PARAM, q0_in, q1_in);             \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.OP_NAME(%PARAM) %q0_in, %q1_in : !qco.qubit,       \
@@ -973,8 +976,9 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, {q1_out, q2_out}} = builder.c##OP_NAME(PARAM, q0_in, q1_in,      \
+   * auto [q0_out, targets_out] = builder.c##OP_NAME(PARAM, q0_in, q1_in,      \
    * q2_in);                                                                   \
+   * auto [q1_out, q2_out] = targets_out;                                      \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
@@ -1003,8 +1007,9 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {controls_out, {q1_out, q2_out}} = builder.mc##OP_NAME(PARAM, {q0_in,     \
+   * auto [controls_out, targets_out] = builder.mc##OP_NAME(PARAM, {q0_in,     \
    * q1_in}, q2_in, q3_in);                                                    \
+   * auto [q1_out, q2_out] = targets_out;                                      \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %controls_out, %q1_out, %q2_out = qco.ctrl(%q0_in, %q1_in) %q2_in,        \
@@ -1045,7 +1050,7 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, q1_out} = builder.OP_NAME(PARAM1, PARAM2, q0_in, q1_in);         \
+   * auto [q0_out, q1_out] = builder.OP_NAME(PARAM1, PARAM2, q0_in, q1_in);    \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out = qco.OP_NAME(%PARAM1, %PARAM2) %q0_in, %q1_in :         \
@@ -1071,8 +1076,9 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {q0_out, {q1_out, q2_out}} = builder.c##OP_NAME(PARAM1, PARAM2, q0_in,    \
+   * auto [q0_out, targets_out] = builder.c##OP_NAME(PARAM1, PARAM2, q0_in,    \
    * q1_in, q2_in);                                                            \
+   * auto [q1_out, q2_out] = targets_out;                                      \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %q0_out, %q1_out, %q2_out = qco.ctrl(%q0_in) %q1_in, %q2_in {             \
@@ -1103,8 +1109,9 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * {controls_out, {q1_out, q2_out}} = builder.mc##OP_NAME(PARAM1, PARAM2,    \
+   * auto [controls_out, targets_out] = builder.mc##OP_NAME(PARAM1, PARAM2,    \
    * {q0_in, q1_in}, q2_in, q3_in);                                            \
+   * auto [q1_out, q2_out] = targets_out;                                      \
    * ```                                                                       \
    * ```mlir                                                                   \
    * %controls_out, %q1_out, %q2_out = qco.ctrl(%q0_in, %q1_in) %q2_in,        \
@@ -1159,7 +1166,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * {controls_out, targets_out} =
+   * auto [controls_out, targets_out] =
    *   builder.ctrl(q0_in, q1_in,
    *     [&](ValueRange targets) -> SmallVector<Value> {
    *       return {builder.x(targets[0])};
@@ -1181,28 +1188,28 @@ public:
    *
    * @par Example:
    * ```c++
-   * {controls_out, target_out} =
+   * auto [controls_out, target_out] =
    *   builder.ctrl(q0_in, q1_in, [&](Value target) {
    *     return builder.x(target);
    *   });
    * ```
    */
   std::pair<ValueRange, Value> ctrl(ValueRange controls, Value target,
-                                         function_ref<Value(Value)> body);
+                                    function_ref<Value(Value)> body);
 
   /**
    * @brief Apply a control modifier with one control and one target.
    *
    * @par Example:
    * ```c++
-   * {control_out, target_out} =
+   * auto [control_out, target_out] =
    *   builder.ctrl(q0_in, q1_in, [&](Value target) {
    *     return builder.x(target);
    *   });
    * ```
    */
   std::pair<Value, Value> ctrl(Value control, Value target,
-                                         function_ref<Value(Value)> body);
+                               function_ref<Value(Value)> body);
 
   /**
    * @brief Apply an inverse operation
@@ -1213,7 +1220,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * qubits_out = builder.inv(q0_in,
+   * auto qubits_out = builder.inv(q0_in,
    *   [&](ValueRange qubits) -> SmallVector<Value> {
    *     return {builder.s(qubits[0])};
    *   }
@@ -1234,7 +1241,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * qubit_out = builder.inv(q0_in, [&](Value qubit) {
+   * auto qubit_out = builder.inv(q0_in, [&](Value qubit) {
    *   return builder.s(qubit);
    * });
    * ```

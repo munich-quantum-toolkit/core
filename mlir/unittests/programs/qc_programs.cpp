@@ -1361,16 +1361,6 @@ void emptyCtrl(QCProgramBuilder& b) {
   b.ctrl(q[0], q[1], [&](Value /*target*/) {});
 }
 
-void singleTargetCtrl(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](Value target) { b.h(target); });
-}
-
-void singleTargetTwoControlled(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.ctrl({q[0], q[1]}, q[2], [&](Value target) { b.x(target); });
-}
-
 void nestedCtrl(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {

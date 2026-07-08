@@ -991,12 +991,6 @@ void trivialCtrl(QCOProgramBuilder& b);
 /// Creates a circuit with an empty ctrl modifier.
 void emptyCtrl(QCOProgramBuilder& b);
 
-/// Creates a circuit with a single-target ctrl modifier body.
-void singleTargetCtrl(QCOProgramBuilder& b);
-
-/// Creates a circuit with a multi-control, single-target ctrl modifier body.
-void singleTargetTwoControlled(QCOProgramBuilder& b);
-
 /// Creates a circuit with nested ctrl modifiers.
 void nestedCtrl(QCOProgramBuilder& b);
 

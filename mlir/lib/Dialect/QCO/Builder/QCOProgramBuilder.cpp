@@ -482,14 +482,14 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, target, [&](Value target) { return OP_NAME(target); });  \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       ValueRange controls, Value target) {                                     \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target, [&](Value target) { return OP_NAME(target); }); \
-    return {controlsOut, targetsOut[0]};                                       \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
@@ -525,7 +525,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, target,                                                  \
              [&](Value target) { return OP_NAME(param, target); });            \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
@@ -535,7 +535,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](Value target) { return OP_NAME(param, target); });            \
-    return {controlsOut, targetsOut[0]};                                       \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
@@ -567,7 +567,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, target,                                                  \
              [&](Value target) { return OP_NAME(param1, param2, target); });   \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -579,7 +579,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](Value target) { return OP_NAME(param1, param2, target); });   \
-    return {controlsOut, targetsOut[0]};                                       \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
@@ -614,7 +614,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
         ctrl(control, target, [&](Value target) {                              \
           return OP_NAME(param1, param2, param3, target);                      \
         });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -629,7 +629,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
         ctrl(controls, target, [&](Value target) {                             \
           return OP_NAME(param1, param2, param3, target);                      \
         });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
@@ -872,30 +872,54 @@ QCOProgramBuilder::inv(ValueRange qubits,
   return targetsOut;
 }
 
-std::pair<ValueRange, ValueRange>
+std::pair<ValueRange, Value>
 QCOProgramBuilder::ctrl(ValueRange controls, Value target,
                         function_ref<Value(Value)> body) {
-  return ctrl(controls, ValueRange{target},
-              [&](ValueRange targets) -> SmallVector<Value> {
-                assert(targets.size() == 1 &&
-                       "single-target ctrl body expects exactly one target");
-                return {body(targets.front())};
-              });
+  checkFinalized();
+
+  Value innerTargetOut;
+  auto ctrlOp =
+      CtrlOp::create(*this, controls, target, [&](Value targetArg) -> Value {
+        updateQubitTracking(target, targetArg);
+        innerTargetOut = body(targetArg);
+        return innerTargetOut;
+      });
+
+  const auto& controlsOut = ctrlOp.getControlsOut();
+  for (const auto& [control, controlOut] :
+       llvm::zip_equal(controls, controlsOut)) {
+    updateQubitTracking(control, controlOut);
+  }
+  const auto& targetsOut = ctrlOp.getTargetsOut();
+  assert(targetsOut.size() == 1);
+  updateQubitTracking(innerTargetOut, targetsOut.front());
+
+  return {controlsOut, targetsOut.front()};
 }
 
-std::pair<ValueRange, ValueRange>
+std::pair<Value, Value>
 QCOProgramBuilder::ctrl(Value control, Value target,
                         function_ref<Value(Value)> body) {
-  return ctrl(ValueRange{control}, target, body);
+  const auto [controlsOut, targetOut] = ctrl(ValueRange{control}, target, body);
+  assert(controlsOut.size() == 1);
+  return {controlsOut.front(), targetOut};
 }
 
-ValueRange QCOProgramBuilder::inv(Value qubit,
-                                  function_ref<Value(Value)> body) {
-  return inv(ValueRange{qubit}, [&](ValueRange qubits) -> SmallVector<Value> {
-    assert(qubits.size() == 1 &&
-           "single-qubit inv body expects exactly one qubit");
-    return {body(qubits.front())};
+Value QCOProgramBuilder::inv(Value qubit, function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerQubitOut;
+  auto invOp = InvOp::create(*this, qubit, [&](Value qubitArg) -> Value {
+    updateQubitTracking(qubit, qubitArg);
+    innerQubitOut = body(qubitArg);
+    return innerQubitOut;
   });
+
+  const auto& qubitsOut = invOp.getQubitsOut();
+  assert(qubitsOut.size() == 1);
+  updateQubitTracking(innerQubitOut, qubitsOut.front());
+
+  return qubitsOut.front();
 }
 
 //===----------------------------------------------------------------------===//

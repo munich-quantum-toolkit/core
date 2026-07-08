@@ -965,27 +965,14 @@ def CtrlOp
         Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
         OperandRange getParameters() { return {nullptr, 0}; }
         static StringRef getBaseSymbol() { return "ctrl"; }
-
-        /// Builds a control modifier with a single target and a one-qubit body.
-        static void build(OpBuilder &odsBuilder, OperationState &odsState,
-                          ValueRange controls, Value target,
-                          const function_ref<void(Value)> &bodyBuilder);
-        static CtrlOp create(OpBuilder &builder, Location location,
-                             ValueRange controls, Value target,
-                             const function_ref<void(Value)> &bodyBuilder);
-        static CtrlOp create(ImplicitLocOpBuilder &builder,
-                             ValueRange controls, Value target,
-                             const function_ref<void(Value)> &bodyBuilder);
-        static CtrlOp create(OpBuilder &builder, Location location,
-                             Value control, Value target,
-                             const function_ref<void(Value)> &bodyBuilder);
-        static CtrlOp create(ImplicitLocOpBuilder &builder, Value control,
-                             Value target,
-                             const function_ref<void(Value)> &bodyBuilder);
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets,
-      "const function_ref<void(ValueRange)>&":$body)>];
+                      "const function_ref<void(ValueRange)>&":$body)>,
+                  OpBuilder<(ins "ValueRange":$controls, "Value":$target,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>,
+                  OpBuilder<(ins "Value":$control, "Value":$target,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -1035,19 +1022,12 @@ def InvOp : QCOp<"inv",
         Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
         OperandRange getParameters() { return {nullptr, 0}; }
         static StringRef getBaseSymbol() { return "inv"; }
-
-        /// Builds an inverse modifier on a single qubit.
-        static void build(OpBuilder &odsBuilder, OperationState &odsState,
-                          Value qubit,
-                          const function_ref<void(Value)> &bodyBuilder);
-        static InvOp create(OpBuilder &builder, Location location, Value qubit,
-                            const function_ref<void(Value)> &bodyBuilder);
-        static InvOp create(ImplicitLocOpBuilder &builder, Value qubit,
-                            const function_ref<void(Value)> &bodyBuilder);
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits,
-      "const function_ref<void(ValueRange)>&":$body)>];
+                      "const function_ref<void(ValueRange)>&":$body)>,
+                  OpBuilder<(ins "Value":$qubit,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

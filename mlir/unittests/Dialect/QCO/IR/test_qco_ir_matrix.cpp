@@ -78,7 +78,7 @@ static void controlledInverseHT(QCOProgramBuilder& b) {
     return b.inv(target, [&](Value qubit) {
       qubit = b.h(qubit);
       return b.t(qubit);
-    })[0];
+    });
   });
 }
 

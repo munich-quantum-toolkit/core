@@ -314,7 +314,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   auto [q12, q0] = programBuilder.ctrl({q[1], q[2]}, q[0], [&](Value target) {
     return programBuilder.x(target);
   });
-  q[1] = programBuilder.h(q0[0]);
+  q[1] = programBuilder.h(q0);
   programBuilder.measure(q[1], b[0]);
   module = programBuilder.finalize();
 
@@ -326,7 +326,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
       referenceBuilder.ctrl({qRef[0], qRef[2]}, qRef[1], [&](Value target) {
         return referenceBuilder.x(target);
       });
-  referenceBuilder.h(q1Ref[0]);
+  referenceBuilder.h(q1Ref);
   referenceBuilder.measure(q02Ref[0], bRef[0]);
   reference = referenceBuilder.finalize();
 
@@ -390,7 +390,7 @@ TEST_F(QCOHadamardLiftingTest,
   auto [q34, q2] = programBuilder.ctrl({q[3], q[4]}, q[2], [&](Value target) {
     return programBuilder.x(target);
   });
-  q[2] = programBuilder.h(q2[0]);
+  q[2] = programBuilder.h(q2);
   programBuilder.measure(q[2], b[2]);
   programBuilder.measure(q34[0], b[3]);
   programBuilder.s(q34[1]);
@@ -408,7 +408,7 @@ TEST_F(QCOHadamardLiftingTest,
       referenceBuilder.ctrl({qRef[3], qRef[2]}, qRef[4], [&](Value target) {
         return referenceBuilder.x(target);
       });
-  qRef[4] = referenceBuilder.h(qRef4[0]);
+  qRef[4] = referenceBuilder.h(qRef4);
   referenceBuilder.measure(qRef32[1], bRef[2]);
   referenceBuilder.measure(qRef32[0], bRef[3]);
   referenceBuilder.s(qRef[4]);

@@ -363,26 +363,17 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   function_ref<Value(Value)> bodyBuilder) {
-  build(odsBuilder, odsState, qubit,
-        [&](ValueRange qubits) -> SmallVector<Value> {
-          assert(qubits.size() == 1 &&
-                 "single-qubit inv body expects exactly one qubit");
-          return {bodyBuilder(qubits.front())};
-        });
-}
+  odsState.addOperands(qubit);
+  odsState.addRegion();
+  odsState.addTypes(qubit.getType());
 
-InvOp InvOp::create(OpBuilder& builder, Location location, Value qubit,
-                    function_ref<Value(Value)> bodyBuilder) {
-  OperationState state(location, getOperationName());
-  build(builder, state, qubit, bodyBuilder);
-  auto op = dyn_cast<InvOp>(builder.create(state));
-  assert(op && "builder didn't return the right type");
-  return op;
-}
+  auto& block = odsState.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  const auto qubitArg = block.addArgument(qubitType, odsState.location);
 
-InvOp InvOp::create(ImplicitLocOpBuilder& builder, Value qubit,
-                    function_ref<Value(Value)> bodyBuilder) {
-  return create(builder, builder.getLoc(), qubit, bodyBuilder);
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  YieldOp::create(odsBuilder, odsState.location, bodyBuilder(qubitArg));
 }
 
 LogicalResult InvOp::verify() {

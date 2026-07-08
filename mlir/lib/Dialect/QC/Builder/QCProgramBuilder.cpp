@@ -479,17 +479,17 @@ QCProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
 QCProgramBuilder&
 QCProgramBuilder::ctrl(ValueRange controls, Value target,
                        const function_ref<void(Value)>& body) {
-  return ctrl(controls, ValueRange{target}, [&](ValueRange targets) {
-    assert(targets.size() == 1 &&
-           "single-target ctrl body expects exactly one target");
-    body(targets.front());
-  });
+  checkFinalized();
+  CtrlOp::create(*this, controls, target, body);
+  return *this;
 }
 
 QCProgramBuilder&
 QCProgramBuilder::ctrl(Value control, Value target,
                        const function_ref<void(Value)>& body) {
-  return ctrl(ValueRange{control}, target, body);
+  checkFinalized();
+  CtrlOp::create(*this, control, target, body);
+  return *this;
 }
 
 QCProgramBuilder&
@@ -502,11 +502,9 @@ QCProgramBuilder::inv(ValueRange qubits,
 
 QCProgramBuilder& QCProgramBuilder::inv(Value qubit,
                                         const function_ref<void(Value)>& body) {
-  return inv(ValueRange{qubit}, [&](ValueRange qubits) {
-    assert(qubits.size() == 1 &&
-           "single-qubit inv body expects exactly one qubit");
-    body(qubits.front());
-  });
+  checkFinalized();
+  InvOp::create(*this, qubit, body);
+  return *this;
 }
 
 //===----------------------------------------------------------------------===//
