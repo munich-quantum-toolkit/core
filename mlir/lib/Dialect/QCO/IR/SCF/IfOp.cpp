@@ -333,7 +333,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
   inits.append(getQubits().begin(), getQubits().end());
   inits.append(addons.begin(), addons.end());
 
-  auto newIfOp = rewriter.create<qco::IfOp>(getLoc(), getCondition(), inits);
+  auto newIfOp = rewriter.create<IfOp>(getLoc(), getCondition(), inits);
 
   const auto processRegion = [&](Region& oldRegion, Region& newRegion) {
     Block* oldBlock = &oldRegion.front();
@@ -349,7 +349,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
         newBlock->getArguments().take_front(oldBlock->getNumArguments()));
 
     // Update the yield operation to include additional qubits.
-    auto yield = cast<qco::YieldOp>(newBlock->getTerminator());
+    auto yield = cast<YieldOp>(newBlock->getTerminator());
 
     SmallVector<Value> newResults;
     newResults.reserve(inits.size());
@@ -358,7 +358,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
                       newBlock->getArguments().take_back(addons.size()).end());
 
     rewriter.setInsertionPoint(yield);
-    rewriter.replaceOpWithNewOp<qco::YieldOp>(yield, newResults);
+    rewriter.replaceOpWithNewOp<YieldOp>(yield, newResults);
   };
 
   // Process both regions
