@@ -198,9 +198,15 @@ TEST_F(QCOMatrixTest, PowRxxOpMatrix) {
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
   auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix.has_value());
 
-  // RXX(0.123)^2 requires eigendecomposition (not yet supported).
-  ASSERT_FALSE(matrix.has_value());
+  // RXX(0.123)^2 == RXX(0.123) * RXX(0.123) (integer power). Compare the
+  // eigendecomposition result against the direct square of the body unitary.
+  const auto body =
+      powOp.getBodyUnitary(0).getUnitaryMatrix<DynamicMatrix>();
+  ASSERT_TRUE(body.has_value());
+  const DynamicMatrix expected = *body * *body;
+  ASSERT_TRUE(matrix->isApprox(expected, 1e-10));
 }
 
 TEST_F(QCOMatrixTest, PowHalfXOpMatrix) {
@@ -210,9 +216,10 @@ TEST_F(QCOMatrixTest, PowHalfXOpMatrix) {
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
   auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix.has_value());
 
-  // X^0.5 requires eigendecomposition (not yet supported).
-  ASSERT_FALSE(matrix.has_value());
+  // X^0.5 == SX (principal branch: (-1)^0.5 = i).
+  ASSERT_TRUE(matrix->isApprox(SXOp::getUnitaryMatrix(), 1e-10));
 }
 
 TEST_F(QCOMatrixTest, PowNegHalfXOpMatrix) {
@@ -222,9 +229,24 @@ TEST_F(QCOMatrixTest, PowNegHalfXOpMatrix) {
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
   auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix.has_value());
 
-  // X^-0.5 requires eigendecomposition (not yet supported).
-  ASSERT_FALSE(matrix.has_value());
+  // X^-0.5 == SXdg (principal branch: (-1)^-0.5 = -i).
+  ASSERT_TRUE(matrix->isApprox(SXdgOp::getUnitaryMatrix(), 1e-10));
+}
+
+TEST_F(QCOMatrixTest, PowThirdXOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), powThirdX);
+  ASSERT_TRUE(moduleOp);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto powOp = *funcOp.getBody().getOps<PowOp>().begin();
+  auto matrix = powOp.getUnitaryMatrix();
+  ASSERT_TRUE(matrix.has_value());
+
+  // Fractional power: (X^(1/3))^3 == X.
+  const DynamicMatrix cubed = *matrix * *matrix * *matrix;
+  ASSERT_TRUE(cubed.isApprox(XOp::getUnitaryMatrix(), 1e-10));
 }
 /// @}
 

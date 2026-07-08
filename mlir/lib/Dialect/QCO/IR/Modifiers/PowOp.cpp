@@ -702,6 +702,18 @@ bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
                 });
 }
 
+/**
+ * @brief Computes the unitary matrix of `pow(p) { U }`, i.e. `U^p`.
+ *
+ * @details Short-circuits `U^1` and `U^0`; otherwise uses the
+ * eigendecomposition `U = V D V^{-1}` so that `U^p = V D^p V^{-1}`, with each
+ * eigenvalue raised to `p` on the principal branch. Since the body is unitary,
+ * `V` is unitary and `V^{-1} = V^\dagger`; this is verified before use because
+ * the eigensolver does not orthogonalize degenerate eigenspaces.
+ *
+ * @return `U^p`, or `std::nullopt` if the body is not a single known unitary,
+ * the exponent is non-constant, or `V` is not unitary.
+ */
 std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
   auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
   if (!bodyUnitary) {
@@ -728,6 +740,29 @@ std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
     return DynamicMatrix::identity(targetMatrix->cols());
   }
 
-  // General case requires eigendecomposition which is not supported yet.
-  return std::nullopt;
+  // General case: eigendecomposition U = V D V^{-1} => U^p = V D^p V^{-1}.
+  // PowOp bodies are unitary, so U is normal and its eigenvectors form a
+  // unitary V, giving V^{-1} = V^\dagger.
+  const auto eigen = targetMatrix->eigenDecomposition();
+  if (!eigen) {
+    return std::nullopt;
+  }
+  const auto& eigenvalues = eigen->eigenvalues;
+  const auto& v = eigen->eigenvectors;
+  const std::int64_t dim = v.cols();
+
+  // Reject non-orthonormal eigenvectors (e.g. unresolved degenerate subspaces).
+  constexpr double eigenSolverTol = 1e-10;
+  if (!(v * v.adjoint())
+           .isApprox(DynamicMatrix::identity(dim), eigenSolverTol)) {
+    return std::nullopt;
+  }
+
+  // Build D^p by raising each eigenvalue to the power p (principal branch).
+  DynamicMatrix powDiagonal(dim);
+  for (std::int64_t i = 0; i < dim; ++i) {
+    powDiagonal(i, i) = std::pow(eigenvalues[static_cast<size_t>(i)], p);
+  }
+
+  return v * powDiagonal * v.adjoint();
 }
