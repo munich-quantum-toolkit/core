@@ -128,16 +128,17 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
           return utils::getValueFromBlockArgument(v, outerQubits);
         });
 
-    auto newPow = PowOp::create(
-        rewriter, invOp.getLoc(), qubits, negExponent,
-        [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
-          auto* powBody = rewriter.getInsertionBlock();
-          rewriter.inlineBlockBefore(innerPow.getBody(), powBody,
-                                     powBody->begin(), powArgs);
-          auto yieldedValues = llvm::to_vector(powBody->back().getOperands());
-          rewriter.eraseOp(&powBody->back());
-          return yieldedValues;
-        });
+    auto newPow =
+        PowOp::create(rewriter, invOp.getLoc(), qubits, negExponent,
+                      [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
+                        auto* powBody = rewriter.getInsertionBlock();
+                        rewriter.inlineBlockBefore(innerPow.getBody(), powBody,
+                                                   powBody->begin(), powArgs);
+                        auto yieldedValues =
+                            llvm::to_vector(powBody->back().getOperands());
+                        rewriter.eraseOp(&powBody->back());
+                        return yieldedValues;
+                      });
 
     // The new pow's operands may be a permutation of the inv's, so map each
     // original qubit output to the new pow's output for the same input rather

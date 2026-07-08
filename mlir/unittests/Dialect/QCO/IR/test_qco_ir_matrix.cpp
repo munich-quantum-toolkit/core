@@ -202,8 +202,7 @@ TEST_F(QCOMatrixTest, PowRxxOpMatrix) {
 
   // RXX(0.123)^2 == RXX(0.123) * RXX(0.123) (integer power). Compare the
   // eigendecomposition result against the direct square of the body unitary.
-  const auto body =
-      powOp.getBodyUnitary(0).getUnitaryMatrix<DynamicMatrix>();
+  const auto body = powOp.getBodyUnitary(0).getUnitaryMatrix<DynamicMatrix>();
   ASSERT_TRUE(body.has_value());
   const DynamicMatrix expected = *body * *body;
   ASSERT_TRUE(matrix->isApprox(expected, 1e-10));
