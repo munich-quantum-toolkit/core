@@ -325,3 +325,45 @@ OpOperand* IfOp::getTiedElseYieldedValue(BlockArgument bbArg) {
   }
   return &elseYield().getTargetsMutable()[bbArg.getArgNumber()];
 }
+
+IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
+                                       ValueRange addons) {
+  SmallVector<Value> inits;
+  inits.reserve(getQubits().size() + addons.size());
+  inits.append(getQubits().begin(), getQubits().end());
+  inits.append(addons.begin(), addons.end());
+
+  auto newIfOp = rewriter.create<qco::IfOp>(getLoc(), getCondition(), inits);
+
+  const auto processRegion = [&](Region& oldRegion, Region& newRegion) {
+    Block* oldBlock = &oldRegion.front();
+    Block* newBlock = rewriter.createBlock(
+        &newRegion, {},
+        SmallVector<Type>(inits.size(), QubitType::get(rewriter.getContext())),
+        SmallVector<Location>(inits.size(), newIfOp.getLoc()));
+
+    // Merge the old block into the new block, 
+    // keeping only the original arguments.
+    rewriter.mergeBlocks(
+        oldBlock, newBlock,
+        newBlock->getArguments().take_front(oldBlock->getNumArguments()));
+
+    // Update the yield operation to include additional qubits.
+    auto yield = cast<qco::YieldOp>(newBlock->getTerminator());
+
+    SmallVector<Value> newResults;
+    newResults.reserve(inits.size());
+    newResults.append(yield.getTargets().begin(), yield.getTargets().end());
+    newResults.append(newBlock->getArguments().take_back(addons.size()).begin(),
+                      newBlock->getArguments().take_back(addons.size()).end());
+
+    rewriter.setInsertionPoint(yield);
+    rewriter.replaceOpWithNewOp<qco::YieldOp>(yield, newResults);
+  };
+
+  // Process both regions
+  processRegion(getThenRegion(), newIfOp.getThenRegion());
+  processRegion(getElseRegion(), newIfOp.getElseRegion());
+
+  return newIfOp;
+}
