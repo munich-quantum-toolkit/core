@@ -26,6 +26,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qc;
