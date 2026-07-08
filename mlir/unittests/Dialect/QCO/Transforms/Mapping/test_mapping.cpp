@@ -674,7 +674,6 @@ TEST_P(MappingPassTest, RandomGHZ) {
       runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
   auto entry = getEntryPoint(m.get());
 
-  m->dump();
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
