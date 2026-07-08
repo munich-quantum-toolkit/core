@@ -25,7 +25,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -52,6 +51,7 @@
 #include <cstdint>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <random>
 #include <ranges>
 #include <tuple>
@@ -238,6 +238,74 @@ private:
       }
       return costs;
     }
+  };
+
+  /// Describes the graph F of arXiv:1602.05150v3.
+  struct FGraph {
+    explicit FGraph(std::shared_ptr<AugmentedDevice> device)
+        : f_(device->qubits()), device_(std::move(device)) {};
+
+    /// Build F-graph: Add edges to F for each edge in the coupling graph.
+    /// Note that this assumes that the coupling graph is directed, but
+    /// symmetric (essentially: undirected).
+    void construct(const Layout& from, const Layout& to) {
+      for (const auto u : device_->qubits()) {
+        for (const auto v : device_->neighboursOf(u)) {
+          if (shouldAddEdge(u, v, from, to)) {
+            f_.addEdge(u, v);
+          }
+        }
+      }
+    }
+
+    /// Try to find a directed cycle in the F graph. If there is one,
+    /// we can apply a happy swap chain. Note that this happy swap chain
+    /// does not include the final back edge closing the cycle because the
+    /// first SWAP changes the token (the qubit) on the target, invalidating
+    /// the edge in F.
+    std::optional<SmallVector<IndexPairType>> findHappySWAPChain() {
+      const auto cycle = f_.findCycle();
+      if (!cycle) {
+        return std::nullopt;
+      }
+
+      SmallVector<IndexPairType> swaps;
+      for (size_t i = cycle->size() - 1; i > 0; --i) {
+        swaps.emplace_back((*cycle)[i], (*cycle)[i - 1]);
+      }
+      return swaps;
+    }
+
+    /// Find an unhappy SWAP. That is, find an edge (u, v), where exchanging u
+    /// and v, reduces u's distance to its target location (by one) and
+    /// increases v's distance from 0 (already at the correct location) to one.
+    std::optional<IndexPairType> findUnhappySWAP() {
+      for (const auto u : f_.getNodes()) {
+        for (const auto v : f_.getNeighbours(u)) {
+          if (f_.getDegree(v) == 0) {
+            return std::make_pair(u, v);
+          }
+        }
+      }
+
+      return std::nullopt;
+    }
+
+    /// Reset the F graph for rebuilding.
+    void reset() { f_.clearEdges(); }
+
+  private:
+    /// Return true, if moving the program qubit on hardware qubit u to hardware
+    /// qubit v brings it closer to its destination hardware qubit.
+    bool shouldAddEdge(size_t u, size_t v, const Layout& from,
+                       const Layout& to) {
+      const auto dest = to.getHardwareIndex(from.getProgramIndex(u));
+      return device_->distanceBetween(v, dest) <
+             device_->distanceBetween(u, dest);
+    }
+
+    Graph f_;
+    std::shared_ptr<AugmentedDevice> device_;
   };
 
 public:
@@ -755,181 +823,92 @@ private:
     return failure();
   }
 
-  /// Return the sequence of SWAPs to move from one layout to another.
+  /// Return the SWAP sequence to move from one layout to another.
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   SmallVector<IndexPairType> restore(const Layout& from, const Layout& to) {
-
     Layout curr(from);
-    Graph f(device->qubits());
+    FGraph f(device);
     SmallVector<IndexPairType> swaps;
 
-    const auto shouldAddEdge = [&](size_t u, size_t v) {
-      const auto prog = curr.getProgramIndex(u);
-      const auto hwGoal = to.getHardwareIndex(prog);
-      return device->distanceBetween(v, hwGoal) <
-             device->distanceBetween(u, hwGoal);
-    };
-
     while (true) {
+      f.reset();
+      f.construct(curr, to);
 
-      // Build F-graph: Add edges to F for each edge in the coupling graph.
-      // Note that this assumes that the coupling graph is directed, but
-      // symmetric (essentially: undirected).
-
-      f.clearEdges();
-      for (const auto u : device->qubits()) {
-        for (const auto v : device->neighboursOf(u)) {
-          if (shouldAddEdge(u, v)) {
-            f.addEdge(u, v);
-          }
-        }
-      }
-
-      // Try to find a directed cycle in the F graph. If there is one,
-      // we can apply a happy swap chain. Note that this happy swap chain
-      // does not include the final back edge closing the cycle because the
-      // first SWAP changes the token (the qubit) on the target, invalidating
-      // the edge in F.
-
-      if (const auto cycle = f.findCycle(); cycle) {
-        for (size_t i = cycle->size() - 1; i > 0; --i) {
-          curr.swap((*cycle)[i], (*cycle)[i - 1]);
-          swaps.emplace_back((*cycle)[i], (*cycle)[i - 1]);
+      const auto happy = f.findHappySWAPChain();
+      if (happy) {
+        for (const auto& swap : *happy) {
+          swaps.emplace_back(swap);
+          curr.swap(swap.first, swap.second);
         }
         continue;
-      }
-
-      // Otherwise, search for an unhappy SWAP. That is, search for an edge (u,
-      // v), where exchanging u and v, reduces u's distance to its target
-      // location (by one) and increases v's distance from 0 (already at the
-      // correct location) to one.
-
-      bool found{false};
-      for (const auto u : f.getNodes()) {
-        for (const auto v : f.getNeighbours(u)) {
-          if (f.getDegree(v) == 0) {
-            curr.swap(u, v);
-            swaps.emplace_back(u, v);
-            found = true;
-            break;
-          }
-        }
-
-        if (found) {
-          break;
-        }
       }
 
       // If there are no happy or unhappy swaps anymore,
       // the final placement of every token is reached.
 
-      if (!found) {
+      const auto unhappy = f.findUnhappySWAP();
+      if (!unhappy) {
         break;
       }
+
+      swaps.emplace_back(*unhappy);
+      curr.swap(unhappy->first, unhappy->second);
     }
 
     return swaps;
   }
 
-  /// Return the sequence of SWAPs to move from one layout to another.
-  /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
+  /// Return a pair of SWAP sequences to transform two layouts into each other.
+  /// Inspired by the 4-Approximation algorithm described in arXiv:1602.05150v3,
+  /// with the key difference that the goal permutation is not static.
   std::pair<SmallVector<IndexPairType>, SmallVector<IndexPairType>>
-  converge(const Layout& from, const Layout& to) {
+  converge(const Layout& lhs, const Layout& rhs) {
+    std::array layouts{Layout(lhs), Layout(rhs)};
+    std::array graphs{FGraph(device), FGraph(device)};
+    std::array<SmallVector<IndexPairType>, 2> swaps{};
 
-    Layout lhs(from);
-    Layout rhs(to);
-
-    Graph lhsF(device->qubits());
-    Graph rhsF(device->qubits());
-
-    SmallVector<IndexPairType> lhsSwaps;
-    SmallVector<IndexPairType> rhsSwaps;
-
-    const auto shouldAddEdge = [&](size_t u, size_t v, const Layout& f,
-                                   const Layout& t) {
-      const auto prog = f.getProgramIndex(u);
-      const auto hwGoal = t.getHardwareIndex(prog);
-      return device->distanceBetween(v, hwGoal) <
-             device->distanceBetween(u, hwGoal);
-    };
+    std::mt19937 gen(seed);
+    std::uniform_int_distribution<int> coin(0, 1);
 
     while (true) {
+      size_t i = 0;
+      for (; i < 2; ++i) {
+        FGraph& f = graphs[i];
 
-      // Build F-graph: Add edges to F for each edge in the coupling graph.
-      // Note that this assumes that the coupling graph is directed, but
-      // symmetric (essentially: undirected).
+        f.reset();
+        f.construct(layouts[i], layouts[(i + 1) % 2]);
 
-      lhsF.clearEdges();
-      rhsF.clearEdges();
-
-      for (const auto u : device->qubits()) {
-        for (const auto v : device->neighboursOf(u)) {
-          if (shouldAddEdge(u, v, lhs, rhs)) {
-            lhsF.addEdge(u, v);
+        const auto happy = f.findHappySWAPChain();
+        if (happy) {
+          for (const auto& swap : *happy) {
+            swaps[i].emplace_back(swap);
+            layouts[i].swap(swap.first, swap.second);
           }
-        }
-      }
-
-      for (const auto u : device->qubits()) {
-        for (const auto v : device->neighboursOf(u)) {
-          if (shouldAddEdge(u, v, rhs, lhs)) {
-            rhsF.addEdge(u, v);
-          }
-        }
-      }
-
-      // Try to find a directed cycle in the F graph. If there is one,
-      // we can apply a happy swap chain. Note that this happy swap chain
-      // does not include the final back edge closing the cycle because the
-      // first SWAP changes the token (the qubit) on the target, invalidating
-      // the edge in F.
-
-      if (const auto cycle = lhsF.findCycle(); cycle) {
-        for (size_t i = cycle->size() - 1; i > 0; --i) {
-          lhs.swap((*cycle)[i], (*cycle)[i - 1]);
-          lhsSwaps.emplace_back((*cycle)[i], (*cycle)[i - 1]);
-        }
-        continue;
-      }
-
-      if (const auto cycle = rhsF.findCycle(); cycle) {
-        for (size_t i = cycle->size() - 1; i > 0; --i) {
-          rhs.swap((*cycle)[i], (*cycle)[i - 1]);
-          rhsSwaps.emplace_back((*cycle)[i], (*cycle)[i - 1]);
-        }
-        continue;
-      }
-
-      // Otherwise, search for an unhappy SWAP. That is, search for an edge (u,
-      // v), where exchanging u and v, reduces u's distance to its target
-      // location (by one) and increases v's distance from 0 (already at the
-      // correct location) to one.
-
-      bool found{false};
-      for (const auto u : lhsF.getNodes()) {
-        for (const auto v : lhsF.getNeighbours(u)) {
-          if (lhsF.getDegree(v) == 0) {
-            lhs.swap(u, v);
-            lhsSwaps.emplace_back(u, v);
-            found = true;
-            break;
-          }
-        }
-
-        if (found) {
           break;
         }
       }
 
-      // If there are no happy or unhappy swaps anymore,
-      // the final placement of every token is reached.
+      // If we exit early from the loop, we've found a happy SWAP chain.
+      if (i != 2) {
+        continue;
+      }
 
-      if (!found) {
+      // Otherwise, we randomly apply an unhappy SWAP to one of the layouts.
+      // If there is no happy or unhappy swaps anymore, the final placement of
+      // every token is reached.
+
+      i = coin(gen);
+
+      const auto unhappy = graphs[i].findUnhappySWAP();
+      if (!unhappy) {
         break;
       }
+
+      swaps[i].emplace_back(*unhappy);
+      layouts[i].swap(unhappy->first, unhappy->second);
     }
 
-    return std::make_pair(lhsSwaps, rhsSwaps);
+    return std::make_pair(std::move(swaps[0]), std::move(swaps[1]));
   }
 
   /// Skip to the end of the two-qubit block for both wire iterators, where
@@ -1103,7 +1082,8 @@ private:
     return stack;
   }
 
-  /// TODO:
+  /// Processes the recursive stack item by routing the nested operation and
+  /// inserting epilogue SWAPs.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   LogicalResult dispatch(const RecursiveRoutingStackItem& item,
@@ -1134,8 +1114,7 @@ private:
             child.infos.map(index, prog);
           }
 
-          const auto res = route<Direction, Mode>(child, stats, rewriter);
-          if (failed(res)) {
+          if (failed(route<Direction, Mode>(child, stats, rewriter))) {
             return failure();
           }
 
@@ -1198,27 +1177,29 @@ private:
           }
 
           for (auto& child : children) {
-            const auto res = route<Direction, Mode>(child, stats, rewriter);
-            if (failed(res)) {
+            if (failed(route<Direction, Mode>(child, stats, rewriter))) {
               return failure();
             }
-
-            const auto swaps = converge(child.layout, parent.layout);
-
-            // if constexpr (Mode == RoutingMode::Hot) {
-
-            //   // After routing the loop body, all iterators point to
-            //   // std::default_sentinel. To move the iterators to the
-            //   // correct qubit SSA values for the epilogue SWAPs,
-            //   // decrement each twice: (sentinel → yield →
-            //   // unitary/block arg).
-
-            //   llvm::for_each(child.wires,
-            //                  [](auto& it) { std::advance(it, -2); });
-            // }
-
-            // insertSWAPs<Mode>(swaps, child, stats, rewriter);
           }
+
+          if constexpr (Mode == RoutingMode::Hot) {
+
+            // After routing the branch body, all iterators point to
+            // std::default_sentinel. To move the iterators to the
+            // correct qubit SSA values for the epilogue SWAPs,
+            // decrement each twice: (sentinel → yield →
+            // unitary/block arg).
+
+            llvm::for_each(children[0].wires,
+                           [](auto& it) { std::advance(it, -2); });
+            llvm::for_each(children[1].wires,
+                           [](auto& it) { std::advance(it, -2); });
+          }
+
+          const auto swaps = converge(children[0].layout, children[1].layout);
+
+          insertSWAPs<Mode>(swaps.first, children[0], stats, rewriter);
+          insertSWAPs<Mode>(swaps.second, children[1], stats, rewriter);
 
           if constexpr (Mode == RoutingMode::Hot) {
 
