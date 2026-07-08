@@ -20,6 +20,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/ImplicitLocOpBuilder.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -323,6 +324,29 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   odsBuilder.setInsertionPointToStart(&block);
   body(block.getArguments());
   YieldOp::create(odsBuilder, odsState.location);
+}
+
+void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
+                  const function_ref<void(Value)>& bodyBuilder) {
+  build(odsBuilder, odsState, ValueRange{qubit}, [&](ValueRange qubits) {
+    assert(qubits.size() == 1 &&
+           "single-qubit inv body expects exactly one qubit");
+    bodyBuilder(qubits.front());
+  });
+}
+
+InvOp InvOp::create(OpBuilder& builder, Location location, Value qubit,
+                    const function_ref<void(Value)>& bodyBuilder) {
+  OperationState state(location, getOperationName());
+  build(builder, state, qubit, bodyBuilder);
+  auto op = dyn_cast<InvOp>(builder.create(state));
+  assert(op && "builder didn't return the right type");
+  return op;
+}
+
+InvOp InvOp::create(ImplicitLocOpBuilder& builder, Value qubit,
+                    const function_ref<void(Value)>& bodyBuilder) {
+  return create(builder, builder.getLoc(), qubit, bodyBuilder);
 }
 
 LogicalResult InvOp::verify() {

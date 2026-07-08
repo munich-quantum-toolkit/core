@@ -237,6 +237,42 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   bodyBuilder(block.getArguments()));
 }
 
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   ValueRange controls, Value target,
+                   function_ref<Value(Value)> bodyBuilder) {
+  build(odsBuilder, odsState, controls, target,
+        [&](ValueRange targets) -> SmallVector<Value> {
+          assert(targets.size() == 1 &&
+                 "single-target ctrl body expects exactly one target");
+          return {bodyBuilder(targets.front())};
+        });
+}
+
+CtrlOp CtrlOp::create(OpBuilder& builder, Location location,
+                      ValueRange controls, Value target,
+                      function_ref<Value(Value)> bodyBuilder) {
+  OperationState state(location, getOperationName());
+  build(builder, state, controls, target, bodyBuilder);
+  auto op = dyn_cast<CtrlOp>(builder.create(state));
+  assert(op && "builder didn't return the right type");
+  return op;
+}
+
+CtrlOp CtrlOp::create(ImplicitLocOpBuilder& builder, ValueRange controls,
+                      Value target, function_ref<Value(Value)> bodyBuilder) {
+  return create(builder, builder.getLoc(), controls, target, bodyBuilder);
+}
+
+CtrlOp CtrlOp::create(OpBuilder& builder, Location location, Value control,
+                      Value target, function_ref<Value(Value)> bodyBuilder) {
+  return create(builder, location, ValueRange{control}, target, bodyBuilder);
+}
+
+CtrlOp CtrlOp::create(ImplicitLocOpBuilder& builder, Value control,
+                      Value target, function_ref<Value(Value)> bodyBuilder) {
+  return create(builder, builder.getLoc(), control, target, bodyBuilder);
+}
+
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
   if (llvm::any_of(block, [](Operation& op) {

@@ -834,18 +834,15 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   EXPECT_TRUE(allowsOp(
       UOp::create(builder, loc, q0, 0.1, 0.2, 0.3).getOperation(), *spec));
 
-  auto cx = CtrlOp::create(
-      builder, loc, ValueRange{q0}, ValueRange{q1},
-      [&builder, &loc](ValueRange targets) -> SmallVector<Value> {
-        return {XOp::create(builder, loc, targets[0]).getOutputQubit(0)};
-      });
+  auto cx = CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
+    return XOp::create(builder, loc, target).getOutputQubit(0);
+  });
   EXPECT_TRUE(allowsOp(cx.getOperation(), *spec));
 
-  auto cxWithInterleavedH = CtrlOp::create(
-      builder, loc, ValueRange{q0}, ValueRange{q1},
-      [&builder, &loc](ValueRange targets) -> SmallVector<Value> {
-        auto wire = XOp::create(builder, loc, targets[0]).getOutputQubit(0);
-        return {HOp::create(builder, loc, wire).getOutputQubit(0)};
+  auto cxWithInterleavedH =
+      CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
+        auto wire = XOp::create(builder, loc, target).getOutputQubit(0);
+        return HOp::create(builder, loc, wire).getOutputQubit(0);
       });
   EXPECT_FALSE(allowsOp(cxWithInterleavedH.getOperation(), *spec));
 
@@ -860,11 +857,9 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   EXPECT_FALSE(
       allowsOp(POp::create(builder, loc, q0, 0.3).getOperation(), *rzSpec));
 
-  auto hCtrl = CtrlOp::create(
-      builder, loc, ValueRange{q0}, ValueRange{q1},
-      [&builder, &loc](ValueRange targets) -> SmallVector<Value> {
-        return {HOp::create(builder, loc, targets[0]).getOutputQubit(0)};
-      });
+  auto hCtrl = CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
+    return HOp::create(builder, loc, target).getOutputQubit(0);
+  });
   EXPECT_FALSE(allowsOp(hCtrl.getOperation(), *spec));
 
   const auto funcTy3 = builder.getFunctionType({qubitTy, qubitTy, qubitTy},
@@ -875,20 +870,17 @@ TEST_F(NativeGatesetMlirTest, AllowsOpMatchesGateset) {
   Value c0 = entry3->getArgument(0);
   Value c1 = entry3->getArgument(1);
   Value target = entry3->getArgument(2);
-  auto ccx = CtrlOp::create(
-      builder, loc, ValueRange{c0, c1}, ValueRange{target},
-      [&builder, &loc](ValueRange targets) -> SmallVector<Value> {
-        return {XOp::create(builder, loc, targets[0]).getOutputQubit(0)};
+  auto ccx =
+      CtrlOp::create(builder, loc, ValueRange{c0, c1}, target, [&](Value t) {
+        return XOp::create(builder, loc, t).getOutputQubit(0);
       });
   EXPECT_FALSE(allowsOp(ccx.getOperation(), *spec));
 
   const auto czSpec = NativeGateset::parse("u,cz");
   ASSERT_TRUE(czSpec);
-  auto cz = CtrlOp::create(
-      builder, loc, ValueRange{q0}, ValueRange{q1},
-      [&builder, &loc](ValueRange targets) -> SmallVector<Value> {
-        return {ZOp::create(builder, loc, targets[0]).getOutputQubit(0)};
-      });
+  auto cz = CtrlOp::create(builder, loc, q0, q1, [&](Value target) {
+    return ZOp::create(builder, loc, target).getOutputQubit(0);
+  });
   EXPECT_TRUE(allowsOp(cz.getOperation(), *czSpec));
   EXPECT_FALSE(allowsOp(cx.getOperation(), *czSpec));
 }

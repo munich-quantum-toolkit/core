@@ -1177,6 +1177,34 @@ public:
        function_ref<SmallVector<Value>(ValueRange)> body);
 
   /**
+   * @brief Apply a control modifier with a single target and one-qubit body.
+   *
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} =
+   *   builder.ctrl(q0_in, q1_in, [&](Value target) {
+   *     return builder.x(target);
+   *   });
+   * ```
+   */
+  std::pair<ValueRange, ValueRange> ctrl(ValueRange controls, Value target,
+                                         function_ref<Value(Value)> body);
+
+  /**
+   * @brief Apply a control modifier with one control and one target.
+   *
+   * @par Example:
+   * ```c++
+   * {control_out, target_out} =
+   *   builder.ctrl(q0_in, q1_in, [&](Value target) {
+   *     return builder.x(target);
+   *   });
+   * ```
+   */
+  std::pair<ValueRange, ValueRange> ctrl(Value control, Value target,
+                                         function_ref<Value(Value)> body);
+
+  /**
    * @brief Apply an inverse operation
    *
    * @param qubits Qubits involved in the operation
@@ -1200,6 +1228,18 @@ public:
    */
   ValueRange inv(ValueRange qubits,
                  function_ref<SmallVector<Value>(ValueRange)> body);
+
+  /**
+   * @brief Apply an inverse modifier on a single qubit.
+   *
+   * @par Example:
+   * ```c++
+   * qubits_out = builder.inv(q0_in, [&](Value qubit) {
+   *   return builder.s(qubit);
+   * });
+   * ```
+   */
+  ValueRange inv(Value qubit, function_ref<Value(Value)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

@@ -360,6 +360,30 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   bodyBuilder(block.getArguments()));
 }
 
+void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
+                  function_ref<Value(Value)> bodyBuilder) {
+  build(odsBuilder, odsState, qubit,
+        [&](ValueRange qubits) -> SmallVector<Value> {
+          assert(qubits.size() == 1 &&
+                 "single-qubit inv body expects exactly one qubit");
+          return {bodyBuilder(qubits.front())};
+        });
+}
+
+InvOp InvOp::create(OpBuilder& builder, Location location, Value qubit,
+                    function_ref<Value(Value)> bodyBuilder) {
+  OperationState state(location, getOperationName());
+  build(builder, state, qubit, bodyBuilder);
+  auto op = dyn_cast<InvOp>(builder.create(state));
+  assert(op && "builder didn't return the right type");
+  return op;
+}
+
+InvOp InvOp::create(ImplicitLocOpBuilder& builder, Value qubit,
+                    function_ref<Value(Value)> bodyBuilder) {
+  return create(builder, builder.getLoc(), qubit, bodyBuilder);
+}
+
 LogicalResult InvOp::verify() {
   auto& block = *getBody();
   if (llvm::any_of(block, [](Operation& op) {

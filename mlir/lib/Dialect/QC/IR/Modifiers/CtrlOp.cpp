@@ -18,6 +18,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/ImplicitLocOpBuilder.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -186,6 +187,45 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   odsBuilder.setInsertionPointToStart(&block);
   body(block.getArguments());
   YieldOp::create(odsBuilder, odsState.location);
+}
+
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   ValueRange controls, Value target,
+                   const function_ref<void(Value)>& bodyBuilder) {
+  build(odsBuilder, odsState, controls, ValueRange{target},
+        [&](ValueRange targets) {
+          assert(targets.size() == 1 &&
+                 "single-target ctrl body expects exactly one target");
+          bodyBuilder(targets.front());
+        });
+}
+
+CtrlOp CtrlOp::create(OpBuilder& builder, Location location,
+                      ValueRange controls, Value target,
+                      const function_ref<void(Value)>& bodyBuilder) {
+  OperationState state(location, getOperationName());
+  build(builder, state, controls, target, bodyBuilder);
+  auto op = dyn_cast<CtrlOp>(builder.create(state));
+  assert(op && "builder didn't return the right type");
+  return op;
+}
+
+CtrlOp CtrlOp::create(ImplicitLocOpBuilder& builder, ValueRange controls,
+                      Value target,
+                      const function_ref<void(Value)>& bodyBuilder) {
+  return create(builder, builder.getLoc(), controls, target, bodyBuilder);
+}
+
+CtrlOp CtrlOp::create(OpBuilder& builder, Location location, Value control,
+                      Value target,
+                      const function_ref<void(Value)>& bodyBuilder) {
+  return create(builder, location, ValueRange{control}, target, bodyBuilder);
+}
+
+CtrlOp CtrlOp::create(ImplicitLocOpBuilder& builder, Value control,
+                      Value target,
+                      const function_ref<void(Value)>& bodyBuilder) {
+  return create(builder, builder.getLoc(), control, target, bodyBuilder);
 }
 
 LogicalResult CtrlOp::verify() {

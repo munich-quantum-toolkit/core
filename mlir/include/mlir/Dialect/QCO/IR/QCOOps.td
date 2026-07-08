@@ -1145,6 +1145,21 @@ def CtrlOp : QCOOp<"ctrl",
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
         [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
+
+        /// Builds a control modifier with a single target and a one-qubit body.
+        static void build(OpBuilder &odsBuilder, OperationState &odsState,
+                          ValueRange controls, Value target,
+                          function_ref<Value(Value)> bodyBuilder);
+        static CtrlOp create(OpBuilder &builder, Location location,
+                             ValueRange controls, Value target,
+                             function_ref<Value(Value)> bodyBuilder);
+        static CtrlOp create(ImplicitLocOpBuilder &builder, ValueRange controls,
+                             Value target, function_ref<Value(Value)> bodyBuilder);
+        static CtrlOp create(OpBuilder &builder, Location location,
+                             Value control, Value target,
+                             function_ref<Value(Value)> bodyBuilder);
+        static CtrlOp create(ImplicitLocOpBuilder &builder, Value control,
+                             Value target, function_ref<Value(Value)> bodyBuilder);
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets),
@@ -1219,6 +1234,14 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
         [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
+
+        /// Builds an inverse modifier on a single qubit.
+        static void build(OpBuilder &odsBuilder, OperationState &odsState,
+                          Value qubit, function_ref<Value(Value)> bodyBuilder);
+        static InvOp create(OpBuilder &builder, Location location, Value qubit,
+                            function_ref<Value(Value)> bodyBuilder);
+        static InvOp create(ImplicitLocOpBuilder &builder, Value qubit,
+                            function_ref<Value(Value)> bodyBuilder);
     }];
 
   let builders = [OpBuilder<(ins "ValueRange":$qubits), [{

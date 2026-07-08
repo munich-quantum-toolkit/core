@@ -311,10 +311,9 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   auto q = programBuilder.allocQubitRegister(3);
   const auto b = programBuilder.allocClassicalBitRegister(1);
-  auto [q12, q0] =
-      programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](const ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
-      });
+  auto [q12, q0] = programBuilder.ctrl({q[1], q[2]}, q[0], [&](Value target) {
+    return programBuilder.x(target);
+  });
   q[1] = programBuilder.h(q0[0]);
   programBuilder.measure(q[1], b[0]);
   module = programBuilder.finalize();
@@ -323,9 +322,9 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
   const auto bRef = referenceBuilder.allocClassicalBitRegister(1);
   qRef[0] = referenceBuilder.h(qRef[0]);
   qRef[1] = referenceBuilder.h(qRef[1]);
-  auto [q02Ref, q1Ref] = referenceBuilder.ctrl(
-      {qRef[0], qRef[2]}, {qRef[1]}, [&](const ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+  auto [q02Ref, q1Ref] =
+      referenceBuilder.ctrl({qRef[0], qRef[2]}, qRef[1], [&](Value target) {
+        return referenceBuilder.x(target);
       });
   referenceBuilder.h(q1Ref[0]);
   referenceBuilder.measure(q02Ref[0], bRef[0]);
@@ -388,10 +387,9 @@ TEST_F(QCOHadamardLiftingTest,
   q[0] = programBuilder.h(q0);
   programBuilder.measure(q[0], b[0]);
   programBuilder.measure(q1, b[1]);
-  auto [q34, q2] =
-      programBuilder.ctrl({q[3], q[4]}, {q[2]}, [&](const ValueRange target) {
-        return SmallVector{programBuilder.x(target[0])};
-      });
+  auto [q34, q2] = programBuilder.ctrl({q[3], q[4]}, q[2], [&](Value target) {
+    return programBuilder.x(target);
+  });
   q[2] = programBuilder.h(q2[0]);
   programBuilder.measure(q[2], b[2]);
   programBuilder.measure(q34[0], b[3]);
@@ -406,9 +404,9 @@ TEST_F(QCOHadamardLiftingTest,
   referenceBuilder.measure(qRef1, bRef[1]);
   qRef[2] = referenceBuilder.h(qRef[2]);
   qRef[4] = referenceBuilder.h(qRef[4]);
-  auto [qRef32, qRef4] = referenceBuilder.ctrl(
-      {qRef[3], qRef[2]}, {qRef[4]}, [&](const ValueRange target) {
-        return SmallVector{referenceBuilder.x(target[0])};
+  auto [qRef32, qRef4] =
+      referenceBuilder.ctrl({qRef[3], qRef[2]}, qRef[4], [&](Value target) {
+        return referenceBuilder.x(target);
       });
   qRef[4] = referenceBuilder.h(qRef4[0]);
   referenceBuilder.measure(qRef32[1], bRef[2]);
