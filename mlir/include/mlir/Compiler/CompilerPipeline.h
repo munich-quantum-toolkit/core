@@ -52,10 +52,13 @@ struct QuantumCompilerConfig {
   bool enableHadamardLifting = false;
 
   /// Decompose multi-controlled X/Z gates into elementary one- and two-qubit
-  /// gates.
+  /// gates. When enabled, @ref decomposeMultiControlledMinControls must be at
+  /// least 2; the pipeline rejects smaller values before running any passes.
   bool enableDecomposeMultiControlled = false;
 
   /// Minimum control count for @ref enableDecomposeMultiControlled (default 2).
+  /// Must be at least 2 when decomposition is enabled; values below 2 cause
+  /// @ref QuantumCompilerPipeline::runPipeline to fail.
   std::uint64_t decomposeMultiControlledMinControls = 2;
 };
 

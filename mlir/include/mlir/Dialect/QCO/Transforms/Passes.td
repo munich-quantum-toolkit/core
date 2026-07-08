@@ -234,7 +234,8 @@ def DecomposeMultiControlled
     `CCZ`, and larger `MCX`/`MCZ`) are decomposed, leaving single-control gates
     (e.g. `CX`, `CZ`) and bare one-qubit gates intact. Increase `min-controls`
     to keep smaller multi-controlled gates intact (e.g., when `CCX` is a native
-    gate of the target).
+    gate of the target). Values below 2 are rejected: the pass only targets
+    genuinely multi-controlled gates (two or more controls).
   }];
   let options = [Option<
       "minControls", "min-controls", "uint64_t", "2",
