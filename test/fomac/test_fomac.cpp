@@ -32,35 +32,35 @@ namespace fomac {
 
 namespace {
 
-class DeviceTest : public testing::TestWithParam<Session::Device> {
+class DeviceTest : public testing::TestWithParam<Device> {
 protected:
-  Session::Device device;
+  Device device;
 
   DeviceTest() : device(GetParam()) {}
 };
 
 class SiteTest : public DeviceTest {
 protected:
-  std::vector<Session::Device::Site> sites;
+  std::vector<Site> sites;
 
   void SetUp() override { sites = device.getSites(); }
 };
 
 class OperationTest : public DeviceTest {
 protected:
-  std::vector<Session::Device::Operation> operations;
+  std::vector<Operation> operations;
 
   void SetUp() override { operations = device.getOperations(); }
 };
 
 class DDSimulatorDeviceTest : public testing::Test {
 protected:
-  Session::Device device;
+  Device device;
 
   DDSimulatorDeviceTest() : device(getDDSimulatorDevice()) {}
 
 private:
-  static auto getDDSimulatorDevice() -> Session::Device {
+  static auto getDDSimulatorDevice() -> Device {
     Session session;
     for (const auto& dev : session.getDevices()) {
       if (dev.getName() == "MQT Core DDSIM QDMI Device") {
@@ -73,11 +73,11 @@ private:
 
 class JobTest : public DDSimulatorDeviceTest {
 protected:
-  Session::Job job;
+  Job job;
 
   JobTest() : job(createTestJob()) {}
 
-  [[nodiscard]] Session::Job createTestJob() const {
+  [[nodiscard]] Job createTestJob() const {
     const std::string qasm3Program = R"(
 OPENQASM 3.0;
 qubit[1] q;
@@ -91,11 +91,11 @@ c[0] = measure q[0];
 
 class SimulatorJobTest : public DDSimulatorDeviceTest {
 protected:
-  Session::Job job;
+  Job job;
 
   SimulatorJobTest() : job(createTestJob()) {}
 
-  [[nodiscard]] Session::Job createTestJob() const {
+  [[nodiscard]] Job createTestJob() const {
     const std::string qasm3Program = R"(
 OPENQASM 3.0;
 qubit[2] q;
@@ -993,7 +993,7 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
 namespace {
 // Helper function to get all devices for parameterized tests
-auto getDevices() -> std::vector<Session::Device> {
+auto getDevices() -> std::vector<Device> {
   Session session;
   return session.getDevices();
 }
@@ -1006,7 +1006,7 @@ INSTANTIATE_TEST_SUITE_P(
     DeviceTest,
     // Parameters to test with
     testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
+    [](const testing::TestParamInfo<Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -1020,7 +1020,7 @@ INSTANTIATE_TEST_SUITE_P(
     SiteTest,
     // Parameters to test with
     testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
+    [](const testing::TestParamInfo<Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -1034,7 +1034,7 @@ INSTANTIATE_TEST_SUITE_P(
     OperationTest,
     // Parameters to test with
     testing::ValuesIn(getDevices()),
-    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
+    [](const testing::TestParamInfo<Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
