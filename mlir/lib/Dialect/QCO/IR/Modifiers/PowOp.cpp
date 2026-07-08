@@ -168,17 +168,17 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
     rewriter.replaceOpWithNewOp<PowOp>(
         op, op.getQubitsIn(), -exp,
         [&](ValueRange powArgs) -> SmallVector<Value> {
-          return InvOp::create(rewriter, op.getLoc(), powArgs,
-                               [&](ValueRange invArgs) -> SmallVector<Value> {
-                                 auto* invBody = rewriter.getInsertionBlock();
-                                 rewriter.inlineBlockBefore(
-                                     op.getBody(), invBody, invBody->begin(),
-                                     invArgs);
-                                 auto yieldedValues =
-                                     llvm::to_vector(invBody->back().getOperands());
-                                 rewriter.eraseOp(&invBody->back());
-                                 return yieldedValues;
-                               })
+          return InvOp::create(
+                     rewriter, op.getLoc(), powArgs,
+                     [&](ValueRange invArgs) -> SmallVector<Value> {
+                       auto* invBody = rewriter.getInsertionBlock();
+                       rewriter.inlineBlockBefore(op.getBody(), invBody,
+                                                  invBody->begin(), invArgs);
+                       auto yieldedValues =
+                           llvm::to_vector(invBody->back().getOperands());
+                       rewriter.eraseOp(&invBody->back());
+                       return yieldedValues;
+                     })
               .getResults();
         });
 
@@ -202,14 +202,26 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
       return failure();
     }
 
-    auto merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
-
-    rewriter.moveOpBefore(innerPow, op);
-    rewriter.modifyOpInPlace(innerPow, [&]() {
-      innerPow.getExponentMutable().assign(merged);
-      innerPow.getQubitsInMutable().assign(op.getInputQubits());
-    });
-    rewriter.replaceOp(op, innerPow->getResults());
+    // The inner pow's operands alias the outer pow's block args, possibly in a
+    // different order / subset. Translate them back to the outer pow's operands
+    // so the merged pow's footprint matches the inner pow positionally.
+    auto outerQubits = op.getQubitsIn();
+    const auto qubits =
+        llvm::map_to_vector(innerPow.getInputQubits(), [&](Value v) {
+          return utils::getValueFromBlockArgument(v, outerQubits);
+        });
+    Value merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
+    rewriter.replaceOpWithNewOp<PowOp>(
+        op, qubits, merged,
+        [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
+          auto* newBody = rewriter.getInsertionBlock();
+          // Inner pow body args now match the new pow's args positionally.
+          rewriter.inlineBlockBefore(innerPow.getBody(), newBody,
+                                     newBody->begin(), powArgs);
+          auto yieldedValues = llvm::to_vector(newBody->back().getOperands());
+          rewriter.eraseOp(&newBody->back());
+          return yieldedValues;
+        });
     return success();
   }
 };
@@ -217,6 +229,7 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
 /// pow(p) { ctrl(q) { U } }  =>  ctrl(q) { pow(p) { U } }
 struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
+
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
@@ -228,11 +241,11 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
       return failure();
     }
 
-    // pow(p) { ctrl(x) } == ctrl(pow(p) { x }). The inner control's controls and
-    // targets are block arguments aliasing the power modifier's qubits. Pull the
-    // controls out to a new control modifier and wrap the inner body in a power
-    // modifier whose block arguments match the inner targets, so the inner body
-    // is reused verbatim.
+    // pow(p) { ctrl(x) } == ctrl(pow(p) { x }). The inner control's controls
+    // and targets are block arguments aliasing the power modifier's qubits.
+    // Pull the controls out to a new control modifier and wrap the inner body
+    // in a power modifier whose block arguments match the inner targets, so the
+    // inner body is reused verbatim.
     auto outerQubits = op.getQubitsIn();
     const auto controls =
         llvm::map_to_vector(innerCtrlOp.getControlsIn(), [&](Value c) {
@@ -246,8 +259,8 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
     auto newCtrl = CtrlOp::create(
         rewriter, op.getLoc(), controls, targets,
         [&](ValueRange targetArgs) -> SmallVector<Value> {
-          auto innerPow =
-              PowOp::create(rewriter, op.getLoc(), targetArgs, op.getExponent());
+          auto innerPow = PowOp::create(rewriter, op.getLoc(), targetArgs,
+                                        op.getExponent());
           rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
                                       innerPow.getRegion(),
                                       innerPow.getRegion().end());
@@ -628,8 +641,6 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 LogicalResult PowOp::verify() {
 
   auto& block = *getBody();
-  // The body may contain an arbitrary number of unitary (and classical) ops;
-  // only non-unitary quantum operations are disallowed.
   if (llvm::any_of(block, [](Operation& op) {
         return isa<AllocOp, SinkOp, MeasureOp, ResetOp, qtensor::ExtractOp,
                    qtensor::InsertOp>(op);
