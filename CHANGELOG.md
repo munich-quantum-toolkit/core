@@ -21,8 +21,10 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⬆️ Update QDMI to version 1.3.2 ([#1873]) ([**@denialhaag**])
 - ♻️ Improve implementation and usability of FoMaC classes ([#1849])
   ([**@MatthiasReumann**])
+- ⬆️ Update `nanobind` to version 2.13.0 ([#1817])
 - ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660],
   [#1737]) ([**@denialhaag**])
 
@@ -101,7 +103,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#350)._
 ### Changed
 
 - ⬆️ Update `nanobind` to version 2.12.0 ([#1528])
-- ⬆️ Update QDMI to `v1.3.0` ([#1652]) ([**@burgholzer**])
+- ⬆️ Update QDMI to version 1.3.0 ([#1652]) ([**@burgholzer**])
 - 📦 Switch to component-based installation for the MQT Core Python package
   ([#1596]) ([**@burgholzer**])
 - ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1593])
@@ -558,12 +560,14 @@ changelogs._
 
 <!-- PR links -->
 
+[#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1843]: https://github.com/munich-quantum-toolkit/core/pull/1843
 [#1828]: https://github.com/munich-quantum-toolkit/core/pull/1828
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
+[#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
 [#1737]: https://github.com/munich-quantum-toolkit/core/pull/1737
 [#1720]: https://github.com/munich-quantum-toolkit/core/pull/1720
 [#1719]: https://github.com/munich-quantum-toolkit/core/pull/1719
