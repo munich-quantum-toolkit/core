@@ -18,6 +18,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
