@@ -79,7 +79,7 @@ using namespace mlir::utils;
  * used.
  */
 static LogicalResult tryReplacePOpWithNamedGate(double angle, PowOp op,
-                                                  PatternRewriter& rewriter) {
+                                                PatternRewriter& rewriter) {
   const double norm = normalizeAngle(angle);
   const double pi = std::numbers::pi;
 
@@ -123,7 +123,8 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (std::abs(op.getExponentValue() - 1.0) > TOLERANCE) {
+    const auto exponent = op.getExponentValue();
+    if (!exponent || std::abs(*exponent - 1.0) > TOLERANCE) {
       return failure();
     }
 
@@ -138,7 +139,8 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (std::abs(op.getExponentValue()) > TOLERANCE) {
+    const auto exponent = op.getExponentValue();
+    if (!exponent || std::abs(*exponent) > TOLERANCE) {
       return failure();
     }
 
@@ -154,12 +156,14 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
 
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    const double exp = op.getExponentValue();
+    const auto exponent = op.getExponentValue();
     // U^{-r} = (U^{-1})^r only when r is an integer: for fractional r,
     // eigenvalue -1 yields (-1)^{-r} ≠ (-1)^r (conjugated phase factors).
-    if (exp >= 0.0 || !utils::isIntegerExponent(-exp)) {
+    if (!exponent || *exponent >= 0.0 ||
+        !utils::isIntegerExponent(-*exponent)) {
       return failure();
     }
+    const double exp = *exponent;
 
     rewriter.replaceOpWithNewOp<PowOp>(
         op, op.getQubitsIn(), -exp,
@@ -282,7 +286,11 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
       return failure();
     }
     auto* innerOp = bodyUnitary.getOperation();
-    const double r = op.getExponentValue();
+    const auto exponent = op.getExponentValue();
+    if (!exponent) {
+      return failure();
+    }
+    const double r = *exponent;
     auto loc = op.getLoc();
 
     // Pre-check: only proceed for gate types we can fold.
@@ -379,8 +387,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { z } => named gate if angle matches, else p(r*π)
             .Case<ZOp>([&](auto) {
               const double angle = r * std::numbers::pi;
-              if (succeeded(
-                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
+              if (succeeded(tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -394,8 +401,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // --- pow(r) { s } => named gate if angle matches, else p(r*π/2)
             .Case<SOp>([&](auto) {
               const double angle = r * std::numbers::pi / 2.0;
-              if (succeeded(
-                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
+              if (succeeded(tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -407,8 +413,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { sdg } => named gate if angle matches, else p(-r*π/2)
             .Case<SdgOp>([&](auto) {
               const double angle = r * -std::numbers::pi / 2.0;
-              if (succeeded(
-                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
+              if (succeeded(tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -420,8 +425,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { t } => named gate if angle matches, else p(r*π/4)
             .Case<TOp>([&](auto) {
               const double angle = r * std::numbers::pi / 4.0;
-              if (succeeded(
-                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
+              if (succeeded(tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -433,8 +437,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { tdg } => named gate if angle matches, else p(-r*π/4)
             .Case<TdgOp>([&](auto) {
               const double angle = r * -std::numbers::pi / 4.0;
-              if (succeeded(
-                      tryReplacePOpWithNamedGate(angle, op, rewriter))) {
+              if (succeeded(tryReplacePOpWithNamedGate(angle, op, rewriter))) {
                 return success();
               }
               rewriter.replaceOpWithNewOp<POp>(
@@ -550,10 +553,10 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
 
 } // namespace
 
-double PowOp::getExponentValue() {
+std::optional<double> PowOp::getExponentValue() {
   FloatAttr attr;
   if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    llvm::reportFatalUsageError("PowOp exponent must be a constant");
+    return std::nullopt;
   }
   return attr.getValueAsDouble();
 }
@@ -623,10 +626,6 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult PowOp::verify() {
-  FloatAttr attr;
-  if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    return emitOpError("exponent must be a constant");
-  }
 
   auto& block = *getBody();
   // The body may contain an arbitrary number of unitary (and classical) ops;
@@ -690,7 +689,11 @@ std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  const double p = getExponentValue();
+  const auto exponent = getExponentValue();
+  if (!exponent) {
+    return std::nullopt;
+  }
+  const double p = *exponent;
 
   // U^1 = U (no computation needed)
   if (std::abs(p - 1.0) < TOLERANCE) {

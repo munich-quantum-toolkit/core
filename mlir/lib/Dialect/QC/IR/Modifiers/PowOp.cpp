@@ -78,7 +78,7 @@ using namespace mlir::utils;
  * used.
  */
 static LogicalResult tryReplacePOpWithNamedGate(double angle, PowOp op,
-                                                  PatternRewriter& rewriter) {
+                                                PatternRewriter& rewriter) {
   const double norm = normalizeAngle(angle);
   const double pi = std::numbers::pi;
 
@@ -121,7 +121,8 @@ struct InlinePow1 final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (std::abs(op.getExponentValue() - 1.0) > TOLERANCE) {
+    const auto exponent = op.getExponentValue();
+    if (!exponent || std::abs(*exponent - 1.0) > TOLERANCE) {
       return failure();
     }
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
@@ -138,7 +139,8 @@ struct ErasePow0 final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
-    if (std::abs(op.getExponentValue()) > TOLERANCE) {
+    const auto exponent = op.getExponentValue();
+    if (!exponent || std::abs(*exponent) > TOLERANCE) {
       return failure();
     }
     rewriter.eraseOp(op);
@@ -155,12 +157,14 @@ struct NegPowToInvPow final : OpRewritePattern<PowOp> {
     if (!inner) {
       return failure();
     }
-    const double exp = op.getExponentValue();
+    const auto exponent = op.getExponentValue();
     // U^{-r} = (U^{-1})^r only when r is an integer: for fractional r,
     // eigenvalue -1 yields (-1)^{-r} ≠ (-1)^r (conjugated phase factors).
-    if (exp >= 0.0 || !utils::isIntegerExponent(-exp)) {
+    if (!exponent || *exponent >= 0.0 ||
+        !utils::isIntegerExponent(-*exponent)) {
       return failure();
     }
+    const double exp = *exponent;
     auto qubits = llvm::to_vector(op.getQubits());
     rewriter.replaceOpWithNewOp<PowOp>(
         op, -exp, qubits, [&](ValueRange powArgs) {
@@ -199,8 +203,7 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     });
     auto merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
     rewriter.replaceOpWithNewOp<PowOp>(
-        op, merged, qubits,
-        [&](ValueRange powArgs) {
+        op, merged, qubits, [&](ValueRange powArgs) {
           auto* newBody = rewriter.getInsertionBlock();
           // Inner pow body args now match the new pow's args positionally.
           rewriter.inlineBlockBefore(innerPow.getBody(), newBody,
@@ -214,6 +217,7 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
 /// pow(p) { ctrl(q) { U } }  =>  ctrl(q) { pow(p) { U } }
 struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
+
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
@@ -241,8 +245,8 @@ struct MoveCtrlOutside final : OpRewritePattern<PowOp> {
 
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange targetArgs) {
-          auto innerPow =
-              PowOp::create(rewriter, op.getLoc(), op.getExponent(), targetArgs);
+          auto innerPow = PowOp::create(rewriter, op.getLoc(), op.getExponent(),
+                                        targetArgs);
           rewriter.inlineRegionBefore(innerCtrlOp.getRegion(),
                                       innerPow.getRegion(),
                                       innerPow.getRegion().end());
@@ -273,7 +277,11 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
       return failure();
     }
     auto* innerOp = inner.getOperation();
-    const double r = op.getExponentValue();
+    const auto exponent = op.getExponentValue();
+    if (!exponent) {
+      return failure();
+    }
+    const double r = *exponent;
     auto loc = op.getLoc();
 
     // Pre-check: only proceed for gate types we can fold.
@@ -541,10 +549,10 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
 
 } // namespace
 
-double PowOp::getExponentValue() {
+std::optional<double> PowOp::getExponentValue() {
   FloatAttr attr;
   if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    llvm::reportFatalUsageError("PowOp exponent must be a constant");
+    return std::nullopt;
   }
   return attr.getValueAsDouble();
 }
@@ -577,10 +585,6 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult PowOp::verify() {
-  FloatAttr attr;
-  if (!matchPattern(getExponent(), m_Constant(&attr))) {
-    return emitOpError("exponent must be a constant");
-  }
   if (llvm::any_of(*getBody(), [](Operation& op) {
         return isa<AllocOp, DeallocOp, MeasureOp, ResetOp, memref::LoadOp,
                    memref::StoreOp>(op);

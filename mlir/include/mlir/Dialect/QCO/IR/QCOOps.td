@@ -1283,7 +1283,7 @@ def PowOp
         size_t getNumParams() { return 0; }
         Value getParameter(size_t i) { llvm::reportFatalUsageError("PowOp does not have parameters"); }
         OperandRange getParameters() { return {nullptr, 0}; }
-        double getExponentValue();
+        std::optional<double> getExponentValue();
         [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
         [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix();
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();

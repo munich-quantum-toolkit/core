@@ -1077,7 +1077,7 @@ def PowOp : QCOp<"pow",
           size_t getNumParams() { return 0; }
           Value getParameter(size_t i) { llvm::reportFatalUsageError("PowOp does not have parameters"); }
           OperandRange getParameters() { return {nullptr, 0}; }
-          double getExponentValue();
+          std::optional<double> getExponentValue();
           static StringRef getBaseSymbol() { return "pow"; }
       }];
 

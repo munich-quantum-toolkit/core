@@ -100,7 +100,9 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
     if (!innerPow) {
       return failure();
     }
-    const double exponent = innerPow.getExponentValue();
+
+    Value negExponent =
+        arith::NegFOp::create(rewriter, invOp.getLoc(), innerPow.getExponent());
     // The inner pow's operands alias the inv's block args; translate them back
     // to the outer qubits the inv aliases so the new pow is valid in the inv's
     // parent scope.
@@ -109,7 +111,7 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
       return utils::getValueFromBlockArgument(v, outerQubits);
     });
     rewriter.replaceOpWithNewOp<PowOp>(
-        invOp, -exponent, qubits, [&](ValueRange powArgs) {
+        invOp, negExponent, qubits, [&](ValueRange powArgs) {
           auto* powBody = rewriter.getInsertionBlock();
           // Inner pow body args now match the new pow's args positionally.
           rewriter.inlineBlockBefore(innerPow.getBody(), powBody,

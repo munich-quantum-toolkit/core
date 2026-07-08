@@ -1200,10 +1200,9 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
     const auto qcTargets = op.getTargets();
     auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
 
-    // Create qco.pow with exponent
-    const double exponent = op.getExponentValue();
+    // Create qco.pow with exponent.
     auto qcoOp =
-        qco::PowOp::create(rewriter, op.getLoc(), qcoTargets, exponent);
+        qco::PowOp::create(rewriter, op.getLoc(), qcoTargets, op.getExponent());
 
     assignMappedQubits(state, operation, qcTargets, qcoOp.getQubitsOut());
 
