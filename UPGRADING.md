@@ -54,6 +54,26 @@ Its functionality has only ever been used in [MQT QMAP] since its inception. As
 a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT
 Core version that includes this change.
 
+### Dev container
+
+A [dev container](https://containers.dev/) configuration is available to provide
+a consistent local development environment. Common IDEs like
+[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
+and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
+open the repository directly inside the container. If you are on Windows, we
+recommend using Docker Desktop with the WSL 2 backend.
+
+### QDMI updated to version 1.3.2
+
+While not a breaking change, this release updates the QDMI dependency to version
+1.3.2
+
+### `nanobind` updated to version 2.13.0
+
+This release updates the `nanobind` dependency to version 2.13.0, which includes
+an ABI bump. Any existing code that uses the `mqt-core` Python bindings will
+need to be recompiled with the new `nanobind` version.
+
 ### CMake presets
 
 [CMake presets] have been added to provide a standardized and reproducible way
@@ -74,15 +94,6 @@ Additionally, the `lint` preset can be used to configure and build MQT Core in
 preparation for a `clang-tidy` run.
 
 If you are on Windows, use the `debug-windows` and `release-windows` presets.
-
-### Dev container
-
-A [dev container](https://containers.dev/) configuration is available to provide
-a consistent local development environment. Common IDEs like
-[CLion](https://www.jetbrains.com/help/clion/dev-containers-starting-page.html)
-and [VS Code](https://code.visualstudio.com/docs/devcontainers/containers) can
-open the repository directly inside the container. If you are on Windows, we
-recommend using Docker Desktop with the WSL 2 backend.
 
 ## [3.6.0]
 
