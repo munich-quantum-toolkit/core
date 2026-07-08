@@ -333,14 +333,20 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
   inits.append(getQubits().begin(), getQubits().end());
   inits.append(addons.begin(), addons.end());
 
+  SmallVector<Type> types;
+  types.reserve(getQubits().size() + addons.size());
+  llvm::append_range(
+      types, llvm::map_range(getQubits(), [](Value q) { return q.getType(); }));
+  llvm::append_range(
+      types, llvm::map_range(addons, [](Value q) { return q.getType(); }));
+
+  SmallVector<Location> locs(getQubits().size() + addons.size(), getLoc());
+
   auto newIfOp = rewriter.create<IfOp>(getLoc(), getCondition(), inits);
 
   const auto processRegion = [&](Region& oldRegion, Region& newRegion) {
     Block* oldBlock = &oldRegion.front();
-    Block* newBlock = rewriter.createBlock(
-        &newRegion, {},
-        SmallVector<Type>(inits.size(), QubitType::get(rewriter.getContext())),
-        SmallVector<Location>(inits.size(), newIfOp.getLoc()));
+    Block* newBlock = rewriter.createBlock(&newRegion, {}, types, locs);
 
     // Merge the old block into the new block,
     // keeping only the original arguments.
@@ -357,7 +363,6 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
     newResults.append(newBlock->getArguments().take_back(addons.size()).begin(),
                       newBlock->getArguments().take_back(addons.size()).end());
 
-    rewriter.setInsertionPoint(yield);
     rewriter.replaceOpWithNewOp<YieldOp>(yield, newResults);
   };
 
