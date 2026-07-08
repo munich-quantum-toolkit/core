@@ -21,6 +21,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ♻️ Improve implementation and usability of FoMaC classes ([#1849])
+  ([**@MatthiasReumann**])
 - ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660],
   [#1737]) ([**@denialhaag**])
 
@@ -556,6 +558,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1843]: https://github.com/munich-quantum-toolkit/core/pull/1843
