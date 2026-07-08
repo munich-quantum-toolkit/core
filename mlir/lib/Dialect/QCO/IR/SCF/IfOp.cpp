@@ -342,7 +342,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
         SmallVector<Type>(inits.size(), QubitType::get(rewriter.getContext())),
         SmallVector<Location>(inits.size(), newIfOp.getLoc()));
 
-    // Merge the old block into the new block, 
+    // Merge the old block into the new block,
     // keeping only the original arguments.
     rewriter.mergeBlocks(
         oldBlock, newBlock,
