@@ -32,12 +32,12 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <tuple>
-#include <array>
 #include <utility>
 
 using namespace mlir;
