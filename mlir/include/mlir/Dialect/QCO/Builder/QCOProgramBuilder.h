@@ -1188,7 +1188,7 @@ public:
    * ```
    */
   std::pair<ValueRange, Value> ctrl(ValueRange controls, Value target,
-                                         function_ref<Value(Value)> body);
+                                    function_ref<Value(Value)> body);
 
   /**
    * @brief Apply a control modifier with one control and one target.
@@ -1202,7 +1202,7 @@ public:
    * ```
    */
   std::pair<Value, Value> ctrl(Value control, Value target,
-                                         function_ref<Value(Value)> body);
+                               function_ref<Value(Value)> body);
 
   /**
    * @brief Apply an inverse operation
