@@ -39,14 +39,16 @@ protected:
   void SetUp() override { Runtime::getInstance().setOstream(sink); }
   void TearDown() override {
     Runtime::getInstance().resetOstream();
-    Runtime::getInstance().setLabelingSchema(Runtime::LabelingSchema::Labeled);
+    Runtime::getInstance().setOutputSchema(Runtime::OutputSchema::Labeled);
   }
 };
 
 } // namespace
 
 // Any test that emits output relies on the runtime producing the spec-mandated
-// HEADER/START/END records around the per-shot OUTPUT block.
+// HEADER/START/METADATA/END records around the per-shot OUTPUT block.
+// The runtime picks @c Labeled as default output schema, which is why the
+// the framing emits `labeled` in both HEADER and METADATA here.
 TEST_F(QIRRuntimeTest, OutputFraming) {
   auto& runtime = Runtime::getInstance();
   runtime.outputProgramHeader();
@@ -56,15 +58,46 @@ TEST_F(QIRRuntimeTest, OutputFraming) {
   expected << "HEADER\tschema_id\tlabeled\n"
            << "HEADER\tschema_version\t2.1\n"
            << "START\n"
+           << "METADATA\toutput_labeling_schema\tlabeled\n"
            << "END\t0\n";
   EXPECT_EQ(sink.str(), expected.str());
 }
 
-// In Ordered mode, the HEADER announces `ordered` and OUTPUT records drop the
-// label column per spec.
+// In Labeled mode:
+// - the HEADER announces `labeled`,
+// - the per-shot METADATA line matches the output schema, and
+// - OUTPUT records carry the label column.
+TEST_F(QIRRuntimeTest, OutputFramingLabeled) {
+  auto& runtime = Runtime::getInstance();
+  runtime.outputProgramHeader();
+  runtime.outputShotStart();
+  runtime.outputBool(true, "bool_label");
+  runtime.outputInt(42, "int_label");
+  runtime.outputFloat(3.14, "double_label");
+  runtime.outputTuple(2, "tuple_label");
+  runtime.outputArray(3, "array_label");
+  runtime.outputShotEnd();
+  std::ostringstream expected;
+  expected << "HEADER\tschema_id\tlabeled\n"
+           << "HEADER\tschema_version\t2.1\n"
+           << "START\n"
+           << "METADATA\toutput_labeling_schema\tlabeled\n"
+           << "OUTPUT\tBOOL\ttrue\tbool_label\n"
+           << "OUTPUT\tINT\t42\tint_label\n"
+           << "OUTPUT\tDOUBLE\t3.14\tdouble_label\n"
+           << "OUTPUT\tTUPLE\t2\ttuple_label\n"
+           << "OUTPUT\tARRAY\t3\tarray_label\n"
+           << "END\t0\n";
+  EXPECT_EQ(sink.str(), expected.str());
+}
+
+// In Ordered mode:
+// - the HEADER announces `ordered`,
+// - the per-shot METADATA line matches the output schema, and
+// - OUTPUT records drop the label column.
 TEST_F(QIRRuntimeTest, OutputFramingOrdered) {
   auto& runtime = Runtime::getInstance();
-  runtime.setLabelingSchema(Runtime::LabelingSchema::Ordered);
+  runtime.setOutputSchema(Runtime::OutputSchema::Ordered);
   runtime.outputProgramHeader();
   runtime.outputShotStart();
   runtime.outputBool(true, "bool_label");
@@ -77,6 +110,7 @@ TEST_F(QIRRuntimeTest, OutputFramingOrdered) {
   expected << "HEADER\tschema_id\tordered\n"
            << "HEADER\tschema_version\t2.1\n"
            << "START\n"
+           << "METADATA\toutput_labeling_schema\tordered\n"
            << "OUTPUT\tBOOL\ttrue\n"
            << "OUTPUT\tINT\t42\n"
            << "OUTPUT\tDOUBLE\t3.14\n"

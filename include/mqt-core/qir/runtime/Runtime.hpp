@@ -228,7 +228,7 @@ public:
     }
   };
 
-  enum class LabelingSchema : uint8_t { Labeled, Ordered };
+  enum class OutputSchema : uint8_t { Labeled, Ordered };
 
 private:
   static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS = 0x10000;
@@ -247,7 +247,9 @@ private:
   QState qState;
   std::mt19937_64 mt;
   std::ostream* os = &std::cout;
-  LabelingSchema labelingSchema = LabelingSchema::Labeled;
+  // The QIR spec does not define a default output schema.
+  // The runtime picks @c Labeled when a program doesn't declare one.
+  OutputSchema outputSchema = OutputSchema::Labeled;
 
   Runtime();
   explicit Runtime(uint64_t randomSeed);
@@ -293,10 +295,11 @@ private:
     return {targets, Op, paramVec};
   }
 
-  // Emit an OUTPUT record honoring the active labeling schema.
+  // Helper function to output a type (bool, int...) to @c os, honoring the
+  // active @c outputSchema.
   // The label is included only in Labeled mode.
   // Tab separator between fields, newline at end.
-  void emitOutput(const char* type, std::string_view value,
+  void outputType(const char* type, std::string_view value,
                   const char* label) const;
 
 public:
@@ -441,15 +444,20 @@ public:
   /// `HEADER\tschema_version\t2.1`
   auto outputProgramHeader() const -> void;
 
-  /// Emit `START\n` (one per shot).
+  /// Emit `START\n` followed by
+  /// `METADATA\toutput_labeling_schema\t<labeled|ordered>\n` (one per shot).
   auto outputShotStart() const -> void;
 
   /// Emit `END\t0\n` (one per shot).
   /// The trailing `0` is a spec literal, not a runtime exit code.
   auto outputShotEnd() const -> void;
 
-  [[nodiscard]] auto getLabelingSchema() const -> LabelingSchema;
-  auto setLabelingSchema(LabelingSchema schema) -> void;
+  [[nodiscard]] auto getOutputSchema() const -> OutputSchema;
+  auto setOutputSchema(OutputSchema schema) -> void;
 };
+
+/// Write the schema's spec-mandated literal (`labeled` or `ordered`).
+auto operator<<(std::ostream& os, Runtime::OutputSchema schema)
+    -> std::ostream&;
 
 } // namespace qir

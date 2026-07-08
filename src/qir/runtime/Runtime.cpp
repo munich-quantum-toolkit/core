@@ -185,25 +185,25 @@ auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
 
 auto Runtime::resetOstream() -> void { os = &std::cout; }
 
-void Runtime::emitOutput(const char* type, std::string_view value,
+void Runtime::outputType(const char* type, std::string_view value,
                          const char* label) const {
   *os << "OUTPUT\t" << type << "\t" << value;
-  if (label != nullptr && labelingSchema == LabelingSchema::Labeled) {
+  if (label != nullptr && outputSchema == OutputSchema::Labeled) {
     *os << "\t" << label;
   }
   *os << "\n";
 }
 
 auto Runtime::outputResult(bool value, const char* label) const -> void {
-  emitOutput("RESULT", value ? "1" : "0", label);
+  outputType("RESULT", value ? "1" : "0", label);
 }
 
 auto Runtime::outputBool(bool value, const char* label) const -> void {
-  emitOutput("BOOL", value ? "true" : "false", label);
+  outputType("BOOL", value ? "true" : "false", label);
 }
 
 auto Runtime::outputInt(int64_t value, const char* label) const -> void {
-  emitOutput("INT", std::to_string(value), label);
+  outputType("INT", std::to_string(value), label);
 }
 
 auto Runtime::outputFloat(double value, const char* label) const -> void {
@@ -214,36 +214,41 @@ auto Runtime::outputFloat(double value, const char* label) const -> void {
   // outputs very small numbers with scientific notation.
   std::ostringstream oss;
   oss << value;
-  emitOutput("DOUBLE", oss.str(), label);
+  outputType("DOUBLE", oss.str(), label);
 }
 
 auto Runtime::outputTuple(int64_t elementCount, const char* label) const
     -> void {
-  emitOutput("TUPLE", std::to_string(elementCount), label);
+  outputType("TUPLE", std::to_string(elementCount), label);
 }
 
 auto Runtime::outputArray(int64_t elementCount, const char* label) const
     -> void {
-  emitOutput("ARRAY", std::to_string(elementCount), label);
+  outputType("ARRAY", std::to_string(elementCount), label);
 }
 
 auto Runtime::outputProgramHeader() const -> void {
-  const auto* schemaName =
-      labelingSchema == LabelingSchema::Labeled ? "labeled" : "ordered";
-  *os << "HEADER\tschema_id\t" << schemaName << "\n";
+  *os << "HEADER\tschema_id\t" << outputSchema << "\n";
   *os << "HEADER\tschema_version\t2.1\n";
 }
 
-auto Runtime::outputShotStart() const -> void { *os << "START\n"; }
+auto Runtime::outputShotStart() const -> void {
+  *os << "START\n";
+  *os << "METADATA\toutput_labeling_schema\t" << outputSchema << "\n";
+}
 
 auto Runtime::outputShotEnd() const -> void { *os << "END\t0\n"; }
 
-auto Runtime::getLabelingSchema() const -> LabelingSchema {
-  return labelingSchema;
+auto Runtime::getOutputSchema() const -> OutputSchema { return outputSchema; }
+
+auto Runtime::setOutputSchema(OutputSchema schema) -> void {
+  outputSchema = schema;
 }
 
-auto Runtime::setLabelingSchema(LabelingSchema schema) -> void {
-  labelingSchema = schema;
+auto operator<<(std::ostream& os, const Runtime::OutputSchema schema)
+    -> std::ostream& {
+  return os << (schema == Runtime::OutputSchema::Labeled ? "labeled"
+                                                         : "ordered");
 }
 
 } // namespace qir
