@@ -397,12 +397,13 @@ private:
   }
 
   /// Throw a `CompilerError` at the position of @p token.
-  static void error(const Token& token, const std::string& msg) {
+  [[noreturn]] static void error(const Token& token, const std::string& msg) {
     throw CompilerError(msg, makeDebugInfo(token));
   }
 
   /// Throw a `CompilerError` using an existing @p debugInfo.
-  static void error(const DebugInfo& debugInfo, const std::string& msg) {
+  [[noreturn]] static void error(const DebugInfo& debugInfo,
+                                 const std::string& msg) {
     throw CompilerError(msg, std::make_shared<DebugInfo>(debugInfo));
   }
 
@@ -599,14 +600,7 @@ private:
     }
     const auto id = expect(Token::Kind::Identifier).str;
     expect(Token::Kind::Semicolon);
-    registerDeclaredName(qubit, id);
-    if (size) {
-      const auto reg = builder.allocQubitRegister(*size);
-      qubitRegisters[id] = {.memref = reg.value, .qubits = reg.qubits};
-    } else {
-      qubitRegisters[id] = {.memref = nullptr,
-                            .qubits = {builder.allocQubit()}};
-    }
+    declareQubitRegister(qubit, id, size);
   }
 
   /// Parse `qreg <id>[<n>];`.
@@ -619,14 +613,7 @@ private:
       size = parseDesignator(debugInfo);
     }
     expect(Token::Kind::Semicolon);
-    registerDeclaredName(qreg, id);
-    if (size) {
-      const auto reg = builder.allocQubitRegister(*size);
-      qubitRegisters[id] = {.memref = reg.value, .qubits = reg.qubits};
-    } else {
-      qubitRegisters[id] = {.memref = nullptr,
-                            .qubits = {builder.allocQubit()}};
-    }
+    declareQubitRegister(qreg, id, size);
   }
 
   /// Parse `bit[<n>] <id> (= <measurement>);`.
@@ -650,9 +637,7 @@ private:
 
     expect(Token::Kind::Semicolon);
 
-    registerDeclaredName(bit, id);
-    classicalRegisters[id] =
-        builder.allocClassicalBitRegister(size.value_or(1), id);
+    declareClassicalRegister(bit, id, size);
 
     if (operand) {
       emitMeasureAssignment(ParsedBitRef{.name = id, .index = std::nullopt},
@@ -670,9 +655,7 @@ private:
       size = parseDesignator(debugInfo);
     }
     expect(Token::Kind::Semicolon);
-    registerDeclaredName(creg, id);
-    classicalRegisters[id] =
-        builder.allocClassicalBitRegister(size.value_or(1), id);
+    declareClassicalRegister(creg, id, size);
   }
 
   /// Parse a `[<expression>]` designator.
@@ -687,6 +670,25 @@ private:
     if (!declaredNames.insert(id).second) {
       error(token, "Identifier '" + id + "' already declared.");
     }
+  }
+
+  void declareQubitRegister(const Token& token, const std::string& id,
+                            const std::optional<int64_t>& size) {
+    registerDeclaredName(token, id);
+    if (size) {
+      const auto reg = builder.allocQubitRegister(*size);
+      qubitRegisters[id] = {.memref = reg.value, .qubits = reg.qubits};
+    } else {
+      qubitRegisters[id] = {.memref = nullptr,
+                            .qubits = {builder.allocQubit()}};
+    }
+  }
+
+  void declareClassicalRegister(const Token& token, const std::string& id,
+                                const std::optional<int64_t>& size) {
+    registerDeclaredName(token, id);
+    classicalRegisters[id] =
+        builder.allocClassicalBitRegister(size.value_or(1), id);
   }
 
   //===--- Assignments --------------------------------------------------===//
@@ -877,6 +879,11 @@ private:
       stop = parseExpression();
     } else {
       stop = second;
+    }
+
+    if (step.intValue < 1) {
+      error(*debugInfo,
+            "For loops with a non-positive step are not supported.");
     }
 
     expect(Token::Kind::RBracket);

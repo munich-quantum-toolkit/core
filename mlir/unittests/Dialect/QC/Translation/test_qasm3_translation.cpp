@@ -462,7 +462,7 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(forLoopOffsetIndex)},
         QASM3TranslationTestCase{"NestedForLoopIfOp", qasm::nestedForLoopIfOp,
                                  MQT_NAMED_BUILDER(qc::nestedForLoopIfOp)},
-        QASM3TranslationTestCase{"NestedForLooWhilefOp",
+        QASM3TranslationTestCase{"NestedForLoopWhileOp",
                                  qasm::nestedForLoopWhileOp,
                                  MQT_NAMED_BUILDER(nestedForLoopWhileOp)},
         QASM3TranslationTestCase{
