@@ -114,13 +114,12 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
               if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
                 return false;
               }
-              const auto embedded =
-                  embedUnitaryInBody(unitary, numTargets, wireIds);
+              auto embedded = embedUnitaryInBody(unitary, numTargets, wireIds);
               if (!embedded.has_value()) {
                 return false;
               }
               if (!acc.has_value()) {
-                acc = std::move(*embedded);
+                acc.swap(embedded);
               } else {
                 acc->premultiplyBy(*embedded);
               }
