@@ -40,7 +40,7 @@ releases may include breaking changes.
   [#1676], [#1706], [#1776]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with
   restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588],
-  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805]) ([**@MatthiasReumann**],
+  [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870]) ([**@MatthiasReumann**],
   [**@burgholzer**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264],
   [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464],
@@ -600,6 +600,7 @@ changelogs._
 
 <!-- PR links -->
 
+[#1870]: https://github.com/munich-quantum-toolkit/core/pull/1870
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
 [#1842]: https://github.com/munich-quantum-toolkit/core/pull/1842
