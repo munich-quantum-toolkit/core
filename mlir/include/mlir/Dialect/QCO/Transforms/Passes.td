@@ -210,38 +210,66 @@ def DecomposeMultiControlled
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
   let summary =
-      "Decompose multi-controlled gates into one- and two-qubit gates";
+      "Decompose four-or-more-controlled gates via Huang-Palsberg synthesis";
   let description = [{
-    Decomposes multi-controlled gates (`qco.ctrl`) into a sequence of one- and
-    two-qubit gates that can subsequently be handled by one- and two-qubit gate
-    synthesis methods.
+    Decomposes multi-controlled Pauli-X, Pauli-Z, and phase gates (`qco.ctrl`
+    with `qco.x`, `qco.z`, or `qco.p` body) with at least four controls via
+    @ref mlir::qco::decomposition::synthesizeMultiControlled.
 
-    The pass matches `qco.ctrl` operations with at least `min-controls` control
-    qubits whose body is a single `qco.x` or `qco.z` on one target
-    (multi-controlled Pauli-X or Pauli-Z). Other multi-controlled gates are left
-    unchanged. Support for further base gates will be added gradually.
+    Gates with exactly three controls are handled by
+    @c decompose-three-controlled. Subcircuits with two or three controls are
+    expanded inline when `min-controls` is at most the subcircuit control count;
+    otherwise the corresponding `qco.ctrl` building blocks are retained for
+    subsequent @c decompose-three-controlled and @c decompose-two-controlled
+    passes.
 
-    Multi-controlled X gates are decomposed using the Huang-Palsberg (PLDI 2024)
-    no-ancilla synthesis algorithm with a linear number of CX gates in the
-    number of controls, composing Iten et al. (Phys. Rev. A 93, 032318, 2016)
-    dirty-ancilla subcircuits for large control counts. Multi-controlled Z gates
-    use the same HP24 core (algebraically equivalent to
-    @f$H_{\text{target}}\,\mathrm{MCX}\,H_{\text{target}}@f$, without redundant
-    Hadamard bookends for @f$k \ge 2@f$). The pass emits `h`, `t`, `tdg`, `p`,
-    and `cx` gates.
-
-    By default (`min-controls=2`), gates with at least two controls (e.g. `CCX`,
-    `CCZ`, and larger `MCX`/`MCZ`) are decomposed, leaving single-control gates
-    (e.g. `CX`, `CZ`) and bare one-qubit gates intact. Increase `min-controls`
-    to keep smaller multi-controlled gates intact (e.g., when `CCX` is a native
-    gate of the target). Values below 2 are rejected: the pass only targets
-    genuinely multi-controlled gates (two or more controls).
+    The pass matches `qco.ctrl` operations with at least `min-controls` and at
+    least four control qubits.
   }];
   let options = [Option<
       "minControls", "min-controls", "uint64_t", "2",
-      "Minimum number of controls for which a controlled gate is "
-      "decomposed. Controlled gates with fewer controls are left "
-      "unchanged. Must be at least 2.">];
+      "Minimum control count for decomposing a top-level gate (must be at "
+      "least 4). Controlled gates with fewer than four controls are left to "
+      "@c decompose-three-controlled or @c decompose-two-controlled. Must be "
+      "at least 2.">];
+}
+
+def DecomposeThreeControlled
+    : Pass<"decompose-three-controlled", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary =
+      "Decompose three-control CCCX/CCCZ/CCCP gates via three-controlled "
+      "synthesis";
+  let description = [{
+    Decomposes three-control building-block gates (`CCCX`, `CCCZ`, and
+    `CCCPhase`) via @ref mlir::qco::decomposition::synthesizeThreeControlled.
+
+    Pauli-X and Pauli-Z gates are expanded to elementary one- and two-qubit
+    gates. Phase gates are lowered to a three-control `qco.ctrl` with a
+    `qco.p` body for subsequent passes.
+
+    The pass matches `qco.ctrl` operations with exactly three controls and a
+    single `qco.x`, `qco.z`, or `qco.p` body on one target. Gates with fewer
+    than three controls (e.g. `CX`, `CCX`) are left unchanged.
+  }];
+}
+
+def DecomposeTwoControlled
+    : Pass<"decompose-two-controlled", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+  let summary = "Decompose two-control CCX/CCZ/CCPhase and RCCX gates via "
+                "two-controlled synthesis";
+  let description = [{
+    Decomposes two-control building-block gates (`CCX`, `CCZ`, `CCPhase`) via
+    @ref mlir::qco::decomposition::synthesizeTwoControlled and standalone
+    `qco.rccx` gates via @ref mlir::qco::decomposition::synthesizeRCCX.
+
+    The pass matches `qco.ctrl` operations with exactly two controls and a
+    single `qco.x`, `qco.z`, or `qco.p` body on one target. Single-control
+    gates (e.g. `CX`, `CP`) are left unchanged.
+  }];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

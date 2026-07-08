@@ -51,9 +51,13 @@ struct QuantumCompilerConfig {
   /// Enable Hadamard lifting
   bool enableHadamardLifting = false;
 
-  /// Decompose multi-controlled X/Z gates into elementary one- and two-qubit
-  /// gates. When enabled, @ref decomposeMultiControlledMinControls must be at
-  /// least 2; the pipeline rejects smaller values before running any passes.
+  /// Decompose multi-controlled X/Z/phase gates through the full pass chain:
+  /// @c decompose-multi-controlled (k &ge; 4), @c decompose-three-controlled
+  /// (k = 3), and @c decompose-two-controlled (k = 2 and `qco.rccx`). @ref
+  /// decomposeMultiControlledMinControls governs when HP24 retains two- and
+  /// three-control building blocks versus expanding them inline. When enabled,
+  /// @ref decomposeMultiControlledMinControls must be at least 2; the pipeline
+  /// rejects smaller values before running any passes.
   bool enableDecomposeMultiControlled = false;
 
   /// Minimum control count for @ref enableDecomposeMultiControlled (default 2).

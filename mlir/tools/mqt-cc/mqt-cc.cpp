@@ -100,15 +100,15 @@ static llvm::cl::opt<bool> enableHadamardLifting(
 
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
     "decompose-multi-controlled",
-    llvm::cl::desc("Decompose multi-controlled gates into one- and two-qubit "
-                   "gates during optimization. Requires "
+    llvm::cl::desc("Decompose multi-controlled gates (k>=4 Huang-Palsberg, "
+                   "k=3 three-controlled, k=2 two-controlled/RCCX). Requires "
                    "--decompose-multi-controlled-min-controls >= 2."),
     llvm::cl::init(false));
 
 static llvm::cl::opt<unsigned> decomposeMultiControlledMinControls(
     "decompose-multi-controlled-min-controls",
-    llvm::cl::desc("Minimum number of controls to decompose when "
-                   "--decompose-multi-controlled is enabled (default 2; must "
+    llvm::cl::desc("Minimum top-level control count for "
+                   "--decompose-multi-controlled (k>=4 pass; default 2; must "
                    "be at least 2)"),
     llvm::cl::init(2));
 

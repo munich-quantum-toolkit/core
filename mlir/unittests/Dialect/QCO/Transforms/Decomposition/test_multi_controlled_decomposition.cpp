@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/MultiControlled.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <gtest/gtest.h>
@@ -40,6 +41,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -119,6 +121,39 @@ buildMczModule(MLIRContext* context, std::size_t numControls) {
   return buildControlledPauliModule(context, numControls, ControlledPauli::Z);
 }
 
+[[nodiscard]] static OwningOpRef<ModuleOp>
+buildTwoControlledXModule(MLIRContext* context) {
+  return buildMcxModule(context, 2);
+}
+
+[[nodiscard]] static OwningOpRef<ModuleOp>
+buildRCCXModule(MLIRContext* context) {
+  return QCOProgramBuilder::build(context, [](QCOProgramBuilder& b) {
+    std::ignore = b.rccx(b.staticQubit(0), b.staticQubit(1), b.staticQubit(2));
+  });
+}
+
+[[nodiscard]] static OwningOpRef<ModuleOp>
+buildTwoControlledPhaseModule(MLIRContext* context, double theta) {
+  return QCOProgramBuilder::build(context, [theta](QCOProgramBuilder& b) {
+    b.mcp(theta, {b.staticQubit(0), b.staticQubit(1)}, b.staticQubit(2));
+  });
+}
+
+static void appendRCCXElementaryOnQubits(qc::QuantumComputation& qc,
+                                         qc::Qubit control0, qc::Qubit control1,
+                                         qc::Qubit target) {
+  qc.h(target);
+  qc.t(target);
+  qc.cx(control1, target);
+  qc.tdg(target);
+  qc.cx(control0, target);
+  qc.t(target);
+  qc.cx(control1, target);
+  qc.tdg(target);
+  qc.h(target);
+}
+
 [[nodiscard]] static qc::QuantumComputation
 funcOpToQuantumComputation(func::FuncOp funcOp, std::size_t& numQubits) {
   DenseMap<Value, std::size_t> qubitIndex;
@@ -163,15 +198,78 @@ funcOpToQuantumComputation(func::FuncOp funcOp, std::size_t& numQubits) {
       qc.p(theta.value_or(0.0), q);
       continue;
     }
+    if (auto rzOp = dyn_cast<RZOp>(op)) {
+      const qc::Qubit q =
+          mapQubit(rzOp.getInputQubit(0), rzOp.getOutputQubit(0));
+      const auto theta = mlir::utils::valueToDouble(rzOp.getTheta());
+      EXPECT_TRUE(theta.has_value());
+      qc.rz(theta.value_or(0.0), q);
+      continue;
+    }
     if (auto ctrlOp = dyn_cast<CtrlOp>(op)) {
-      EXPECT_EQ(ctrlOp.getNumControls(), 1U)
-          << "decomposition must not leave multi-controlled gates";
+      EXPECT_LE(ctrlOp.getNumControls(), 2U)
+          << "decomposition must not leave gates with three or more controls";
       EXPECT_EQ(ctrlOp.getNumTargets(), 1U);
-      const qc::Qubit control =
-          mapQubit(ctrlOp.getControlsIn()[0], ctrlOp.getControlsOut()[0]);
       const qc::Qubit target =
           mapQubit(ctrlOp.getInputTarget(0), ctrlOp.getTargetsOut()[0]);
-      qc.cx(control, target);
+      auto inner =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*ctrlOp.getBody());
+      if (!inner) {
+        ADD_FAILURE() << "ctrl body must contain a single unitary gate";
+        continue;
+      }
+      if (ctrlOp.getNumControls() == 1U) {
+        const qc::Qubit control =
+            mapQubit(ctrlOp.getControlsIn()[0], ctrlOp.getControlsOut()[0]);
+        if (isa<XOp>(inner.getOperation())) {
+          qc.cx(control, target);
+          continue;
+        }
+        if (isa<ZOp>(inner.getOperation())) {
+          qc.cz(control, target);
+          continue;
+        }
+        if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
+          const auto theta = mlir::utils::valueToDouble(pOp.getTheta());
+          EXPECT_TRUE(theta.has_value());
+          qc.cp(theta.value_or(0.0), control, target);
+          continue;
+        }
+      } else {
+        const qc::Qubit control0 =
+            mapQubit(ctrlOp.getControlsIn()[0], ctrlOp.getControlsOut()[0]);
+        const qc::Qubit control1 =
+            mapQubit(ctrlOp.getControlsIn()[1], ctrlOp.getControlsOut()[1]);
+        qc::Controls controls;
+        controls.emplace(control0);
+        controls.emplace(control1);
+        if (isa<XOp>(inner.getOperation())) {
+          qc.mcx(controls, target);
+          continue;
+        }
+        if (isa<ZOp>(inner.getOperation())) {
+          qc.mcz(controls, target);
+          continue;
+        }
+        if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
+          const auto theta = mlir::utils::valueToDouble(pOp.getTheta());
+          EXPECT_TRUE(theta.has_value());
+          qc.mcp(theta.value_or(0.0), controls, target);
+          continue;
+        }
+      }
+      ADD_FAILURE() << "unexpected controlled gate in decomposed circuit: "
+                    << inner.getOperation()->getName().getStringRef().str();
+      continue;
+    }
+    if (auto rccxOp = dyn_cast<RCCXOp>(op)) {
+      const qc::Qubit control0 =
+          mapQubit(rccxOp.getQubit0In(), rccxOp.getQubit0Out());
+      const qc::Qubit control1 =
+          mapQubit(rccxOp.getQubit1In(), rccxOp.getQubit1Out());
+      const qc::Qubit target =
+          mapQubit(rccxOp.getQubit2In(), rccxOp.getQubit2Out());
+      appendRCCXElementaryOnQubits(qc, control0, control1, target);
       continue;
     }
     ADD_FAILURE() << "unexpected op in decomposed circuit: "
@@ -216,10 +314,53 @@ static void expectImplementsMcz(func::FuncOp funcOp, std::size_t numControls) {
   expectImplementsControlledPauli(funcOp, numControls, ControlledPauli::Z);
 }
 
-[[nodiscard]] static std::size_t countMultiControlledOps(ModuleOp moduleOp) {
+static void expectImplementsRCCX(func::FuncOp funcOp) {
+  std::size_t numQubits = 0;
+  auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
+  ASSERT_EQ(numQubits, 3U);
+
+  const auto dd = std::make_unique<dd::Package>(numQubits);
+
+  qc::QuantumComputation referenceQc(numQubits);
+  appendRCCXElementaryOnQubits(referenceQc, static_cast<qc::Qubit>(0),
+                               static_cast<qc::Qubit>(1),
+                               static_cast<qc::Qubit>(2));
+
+  const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
+  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
+  EXPECT_TRUE(dd->multiply(decomposedDD, dd->conjugateTranspose(referenceDD))
+                  .isIdentity(/*upToGlobalPhase=*/false));
+}
+
+static void expectImplementsTwoControlledX(func::FuncOp funcOp) {
+  expectImplementsMcx(funcOp, 2);
+}
+
+static void expectImplementsTwoControlledPhase(func::FuncOp funcOp,
+                                               double theta) {
+  std::size_t numQubits = 0;
+  auto decomposedQc = funcOpToQuantumComputation(funcOp, numQubits);
+  ASSERT_EQ(numQubits, 3U);
+
+  const auto dd = std::make_unique<dd::Package>(numQubits);
+
+  qc::QuantumComputation referenceQc(numQubits);
+  qc::Controls controls;
+  controls.emplace(static_cast<qc::Qubit>(0));
+  controls.emplace(static_cast<qc::Qubit>(1));
+  referenceQc.mcp(theta, controls, static_cast<qc::Qubit>(2));
+
+  const dd::MatrixDD decomposedDD = dd::buildFunctionality(decomposedQc, *dd);
+  const dd::MatrixDD referenceDD = dd::buildFunctionality(referenceQc, *dd);
+  EXPECT_TRUE(dd->multiply(decomposedDD, dd->conjugateTranspose(referenceDD))
+                  .isIdentity(/*upToGlobalPhase=*/false));
+}
+
+[[nodiscard]] static std::size_t
+countMultiControlledOps(ModuleOp moduleOp, std::size_t minControls = 2) {
   std::size_t count = 0;
-  moduleOp.walk([&count](CtrlOp op) {
-    if (op.getNumControls() >= 2) {
+  moduleOp.walk([&count, minControls](CtrlOp op) {
+    if (op.getNumControls() >= minControls) {
       ++count;
     }
   });
@@ -242,11 +383,32 @@ findSoleMultiControlledCtrlOp(ModuleOp moduleOp) {
   return found;
 }
 
-static LogicalResult
-runDecomposePass(ModuleOp moduleOp,
-                 const DecomposeMultiControlledOptions& options = {}) {
+static LogicalResult runMultiAndThreeControlledPasses(
+    ModuleOp moduleOp, const DecomposeMultiControlledOptions& options = {}) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createDecomposeMultiControlled(options));
+  pm.addPass(createDecomposeThreeControlled());
+  return pm.run(moduleOp);
+}
+
+static LogicalResult runThreeControlledPass(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
+  pm.addPass(createDecomposeThreeControlled());
+  return pm.run(moduleOp);
+}
+
+static LogicalResult runTwoControlledPass(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
+  pm.addPass(createDecomposeTwoControlled());
+  return pm.run(moduleOp);
+}
+
+static LogicalResult runFullDecompositionPipeline(
+    ModuleOp moduleOp, const DecomposeMultiControlledOptions& options = {}) {
+  PassManager pm(moduleOp.getContext());
+  pm.addPass(createDecomposeMultiControlled(options));
+  pm.addPass(createDecomposeThreeControlled());
+  pm.addPass(createDecomposeTwoControlled());
   return pm.run(moduleOp);
 }
 
@@ -254,7 +416,7 @@ TEST_P(McxDdTest, ImplementsMcx) {
   const std::size_t numControls = GetParam();
   auto moduleOp = buildMcxModule(context(), numControls);
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
 
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   expectImplementsMcx(funcOp, numControls);
@@ -270,7 +432,7 @@ TEST_P(MczDdTest, ImplementsMcz) {
   const std::size_t numControls = GetParam();
   auto moduleOp = buildMczModule(context(), numControls);
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
 
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   expectImplementsMcz(funcOp, numControls);
@@ -282,12 +444,12 @@ INSTANTIATE_TEST_SUITE_P(MczDd, MczDdTest,
                            return "controls" + std::to_string(info.param);
                          });
 
-TEST_P(LargeMcxTest, DecomposesWithoutMultiControlledGates) {
+TEST_P(LargeMcxTest, DecomposesWithoutThreeOrMoreControlledGates) {
   const std::size_t numControls = GetParam();
   auto moduleOp = buildMcxModule(context(), numControls);
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
-  EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 0U);
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
 }
 
 INSTANTIATE_TEST_SUITE_P(LargeMcx, LargeMcxTest,
@@ -296,12 +458,12 @@ INSTANTIATE_TEST_SUITE_P(LargeMcx, LargeMcxTest,
                            return "controls" + std::to_string(info.param);
                          });
 
-TEST_P(LargeMczTest, DecomposesWithoutMultiControlledGates) {
+TEST_P(LargeMczTest, DecomposesWithoutThreeOrMoreControlledGates) {
   const std::size_t numControls = GetParam();
   auto moduleOp = buildMczModule(context(), numControls);
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
-  EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 0U);
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
 }
 
 INSTANTIATE_TEST_SUITE_P(LargeMcz, LargeMczTest,
@@ -316,7 +478,7 @@ TEST_F(McxDecompositionTest, LeavesSingleControlledXUntouched) {
         builder.cx(builder.staticQubit(0), builder.staticQubit(1));
       });
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
 
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 0U);
 
@@ -335,7 +497,7 @@ TEST_F(McxDecompositionTest, LeavesSingleControlledZUntouched) {
         builder.cz(builder.staticQubit(0), builder.staticQubit(1));
       });
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
 
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 0U);
 
@@ -348,13 +510,125 @@ TEST_F(McxDecompositionTest, LeavesSingleControlledZUntouched) {
   EXPECT_EQ(singleControlledCount, 1U);
 }
 
+TEST_F(McxDecompositionTest, FullyDecomposesFourControlMcx) {
+  auto moduleOp = buildMcxModule(context(), 4);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runFullDecompositionPipeline(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 0U);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsMcx(funcOp, 4);
+}
+
+TEST_F(McxDecompositionTest, DecomposesRCCXToElementaryGates) {
+  auto moduleOp = buildRCCXModule(context());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runTwoControlledPass(moduleOp.get()).succeeded());
+
+  bool foundRCCX = false;
+  moduleOp->walk([&foundRCCX](RCCXOp) { foundRCCX = true; });
+  EXPECT_FALSE(foundRCCX);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsRCCX(funcOp);
+}
+
+TEST_F(McxDecompositionTest, DecomposesCcxViaTwoControlledPass) {
+  auto moduleOp = buildTwoControlledXModule(context());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runTwoControlledPass(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 0U);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsTwoControlledX(funcOp);
+}
+
+TEST_F(McxDecompositionTest, DecomposesCcPhaseViaTwoControlledPass) {
+  constexpr double theta = 0.37;
+  auto moduleOp = buildTwoControlledPhaseModule(context(), theta);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runTwoControlledPass(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 0U);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsTwoControlledPhase(funcOp, theta);
+}
+
+TEST_F(McxDecompositionTest, DecomposesCczViaTwoControlledPass) {
+  auto moduleOp = buildMczModule(context(), 2);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runTwoControlledPass(moduleOp.get()).succeeded());
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 0U);
+
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsMcz(funcOp, 2);
+}
+
+TEST_F(McxDecompositionTest,
+       LeavesSingleControlledXUntouchedByTwoControlledPass) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
+        builder.cx(builder.staticQubit(0), builder.staticQubit(1));
+      });
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runTwoControlledPass(moduleOp.get()).succeeded());
+
+  std::size_t singleControlledCount = 0;
+  moduleOp->walk([&singleControlledCount](CtrlOp op) {
+    if (op.getNumControls() == 1) {
+      ++singleControlledCount;
+    }
+  });
+  EXPECT_EQ(singleControlledCount, 1U);
+}
+
+TEST_F(McxDecompositionTest, LeavesTwoControlledXUntouched) {
+  auto moduleOp = buildMcxModule(context(), 2);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
+
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 1U);
+}
+
+TEST_F(McxDecompositionTest, LeavesTwoControlledZUntouched) {
+  auto moduleOp = buildMczModule(context(), 2);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
+
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 1U);
+}
+
+TEST_F(McxDecompositionTest, DecomposesThreeControlledXViaThreeControlledPass) {
+  auto moduleOp = buildMcxModule(context(), 3);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runThreeControlledPass(moduleOp.get()).succeeded());
+
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsMcx(funcOp, 3);
+}
+
+TEST_F(McxDecompositionTest, DecomposesThreeControlledZViaThreeControlledPass) {
+  auto moduleOp = buildMczModule(context(), 3);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(runThreeControlledPass(moduleOp.get()).succeeded());
+
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  expectImplementsMcz(funcOp, 3);
+}
+
 TEST_F(McxDecompositionTest, MinControlsKeepsToffoli) {
   auto moduleOp = buildMcxModule(context(), 2);
   ASSERT_TRUE(moduleOp);
 
   DecomposeMultiControlledOptions options;
   options.minControls = 3;
-  ASSERT_TRUE(runDecomposePass(moduleOp.get(), options).succeeded());
+  PassManager pm(moduleOp->getContext());
+  pm.addPass(createDecomposeMultiControlled(options));
+  ASSERT_TRUE(pm.run(moduleOp.get()).succeeded());
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
 }
 
@@ -364,7 +638,9 @@ TEST_F(McxDecompositionTest, MinControlsKeepsCcZ) {
 
   DecomposeMultiControlledOptions options;
   options.minControls = 3;
-  ASSERT_TRUE(runDecomposePass(moduleOp.get(), options).succeeded());
+  PassManager pm(moduleOp->getContext());
+  pm.addPass(createDecomposeMultiControlled(options));
+  ASSERT_TRUE(pm.run(moduleOp.get()).succeeded());
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
 }
 
@@ -378,9 +654,10 @@ TEST_F(McxDecompositionTest, DecomposesMcxAndMcz) {
                     builder.staticQubit(6));
       });
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
 
-  EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 0U);
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
+  EXPECT_GE(countMultiControlledOps(moduleOp.get(), 2), 1U);
 }
 
 TEST_F(McxDecompositionTest, PassFailsWhenMinControlsBelowTwo) {
@@ -389,7 +666,8 @@ TEST_F(McxDecompositionTest, PassFailsWhenMinControlsBelowTwo) {
 
   DecomposeMultiControlledOptions options;
   options.minControls = 1;
-  EXPECT_FALSE(runDecomposePass(moduleOp.get(), options).succeeded());
+  EXPECT_FALSE(
+      runMultiAndThreeControlledPasses(moduleOp.get(), options).succeeded());
 }
 
 TEST_F(McxDecompositionTest, LeavesMultiOpCtrlUntouched) {
@@ -405,7 +683,7 @@ TEST_F(McxDecompositionTest, LeavesMultiOpCtrlUntouched) {
                      });
       });
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
 
   const auto ctrlOpOpt = findSoleMultiControlledCtrlOp(moduleOp.get());
   ASSERT_TRUE(ctrlOpOpt.has_value());
@@ -425,7 +703,7 @@ TEST_F(McxDecompositionTest, LeavesMultiControlledHUntouched) {
                     builder.staticQubit(2));
       });
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposePass(moduleOp.get()).succeeded());
+  ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
 
   const auto ctrlOpOpt = findSoleMultiControlledCtrlOp(moduleOp.get());
   ASSERT_TRUE(ctrlOpOpt.has_value());
@@ -437,26 +715,60 @@ TEST_F(McxDecompositionTest, LeavesMultiControlledHUntouched) {
   EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
 }
 
-TEST_F(McxDecompositionTest, SynthesizeMcxRequiresTwoControls) {
+TEST_F(McxDecompositionTest, SynthesizeTwoControlledRequiresEightByEight) {
   EXPECT_DEATH(
       {
         QCOProgramBuilder builder(context());
         builder.initialize();
         const Value q0 = builder.staticQubit(0);
-        decomposition::synthesizeMcx(builder, builder.getLoc(), ValueRange{q0},
-                                     q0);
+        const Value q1 = builder.staticQubit(1);
+        const Value q2 = builder.staticQubit(2);
+        decomposition::synthesizeTwoControlled(
+            builder, builder.getLoc(), q0, q1, q2, DynamicMatrix::identity(4));
       },
-      "synthesizeMcx requires at least 2 control qubits");
+      "synthesizeTwoControlled requires an 8x8 unitary matrix");
 }
 
-TEST_F(McxDecompositionTest, SynthesizeMczRequiresTwoControls) {
+TEST_F(McxDecompositionTest, SynthesizeMultiControlledRequiresThreeControls) {
   EXPECT_DEATH(
       {
         QCOProgramBuilder builder(context());
         builder.initialize();
         const Value q0 = builder.staticQubit(0);
-        decomposition::synthesizeMcz(builder, builder.getLoc(), ValueRange{q0},
-                                     q0);
+        const Value q1 = builder.staticQubit(1);
+        decomposition::synthesizeMultiControlled(
+            builder, builder.getLoc(), ValueRange{q0}, q1, 2,
+            decomposition::ControlledTarget::X);
       },
-      "synthesizeMcz requires at least 2 control qubits");
+      "synthesizeMultiControlled requires at least 3 control qubits");
+}
+
+TEST_F(McxDecompositionTest, SynthesizeThreeControlledRequiresThreeControls) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context());
+        builder.initialize();
+        const Value q0 = builder.staticQubit(0);
+        const Value q1 = builder.staticQubit(1);
+        const Value q2 = builder.staticQubit(2);
+        decomposition::synthesizeThreeControlled(
+            builder, builder.getLoc(), ValueRange{q0, q1}, q2,
+            decomposition::ControlledTarget::X);
+      },
+      "three-controlled synthesis requires exactly 3 control qubits");
+}
+
+TEST_F(McxDecompositionTest, SynthesizeThreeControlledZRequiresThreeControls) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context());
+        builder.initialize();
+        const Value q0 = builder.staticQubit(0);
+        const Value q1 = builder.staticQubit(1);
+        const Value q2 = builder.staticQubit(2);
+        decomposition::synthesizeThreeControlled(
+            builder, builder.getLoc(), ValueRange{q0, q1}, q2,
+            decomposition::ControlledTarget::Z);
+      },
+      "three-controlled synthesis requires exactly 3 control qubits");
 }

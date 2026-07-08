@@ -22,23 +22,133 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cstdint>
-#include <utility>
+#include <optional>
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_DECOMPOSEMULTICONTROLLED
+#define GEN_PASS_DEF_DECOMPOSETHREECONTROLLED
+#define GEN_PASS_DEF_DECOMPOSETWOCONTROLLED
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 
-/**
- * @brief Decomposes a multi-controlled Pauli-X or Pauli-Z gate into elementary
- * one- and two-qubit gates.
- *
- * @details Matches `qco.ctrl` with a single `qco.x` or `qco.z` body when the
- * control count is at least `minControls_` (and at least two, as enforced by
- * the pass). Single-control `CX`/`CZ` and other gates are left unchanged.
- */
+struct ControlledGateSpec {
+  decomposition::ControlledTarget gate;
+  std::optional<double> theta;
+};
+
+[[nodiscard]] std::optional<ControlledGateSpec>
+matchControlledGate(UnitaryOpInterface inner) {
+  if (isa<XOp>(inner.getOperation())) {
+    return ControlledGateSpec{decomposition::ControlledTarget::X, std::nullopt};
+  }
+  if (isa<ZOp>(inner.getOperation())) {
+    return ControlledGateSpec{decomposition::ControlledTarget::Z, std::nullopt};
+  }
+  if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
+    if (const auto theta = utils::valueToDouble(pOp.getTheta())) {
+      return ControlledGateSpec{decomposition::ControlledTarget::Phase, *theta};
+    }
+  }
+  return std::nullopt;
+}
+
+struct DecomposeTwoControlledPattern final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumControls() != 2 || op.getNumTargets() != 1) {
+      return failure();
+    }
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    const auto spec = matchControlledGate(inner);
+    if (!spec) {
+      return failure();
+    }
+
+    rewriter.setInsertionPoint(op);
+    rewriter.replaceOp(op, decomposition::synthesizeTwoControlled(
+                               rewriter, op.getLoc(), op.getControlsIn()[0],
+                               op.getControlsIn()[1], op.getInputTarget(0),
+                               spec->gate, spec->theta));
+    return success();
+  }
+};
+
+struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RCCXOp op,
+                                PatternRewriter& rewriter) const override {
+    rewriter.setInsertionPoint(op);
+    rewriter.replaceOp(op, decomposition::synthesizeRCCX(
+                               rewriter, op.getLoc(), op.getInputQubit(0),
+                               op.getInputQubit(1), op.getInputQubit(2)));
+    return success();
+  }
+};
+
+struct DecomposeTwoControlled final
+    : impl::DecomposeTwoControlledBase<DecomposeTwoControlled> {
+  using DecomposeTwoControlledBase::DecomposeTwoControlledBase;
+
+protected:
+  void runOnOperation() override {
+    RewritePatternSet patterns(&getContext());
+    patterns.add<DecomposeTwoControlledPattern, DecomposeRCCXPattern>(
+        &getContext());
+
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+      signalPassFailure();
+    }
+  }
+};
+
+struct DecomposeThreeControlledPattern final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    if (op.getNumControls() != 3 || op.getNumTargets() != 1) {
+      return failure();
+    }
+    auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
+    if (!inner) {
+      return failure();
+    }
+    const auto spec = matchControlledGate(inner);
+    if (!spec) {
+      return failure();
+    }
+
+    rewriter.setInsertionPoint(op);
+    rewriter.replaceOp(op, decomposition::synthesizeThreeControlled(
+                               rewriter, op.getLoc(), op.getControlsIn(),
+                               op.getInputTarget(0), spec->gate, spec->theta));
+    return success();
+  }
+};
+
+struct DecomposeThreeControlled final
+    : impl::DecomposeThreeControlledBase<DecomposeThreeControlled> {
+  using DecomposeThreeControlledBase::DecomposeThreeControlledBase;
+
+protected:
+  void runOnOperation() override {
+    RewritePatternSet patterns(&getContext());
+    patterns.add<DecomposeThreeControlledPattern>(&getContext());
+
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+      signalPassFailure();
+    }
+  }
+};
+
 struct DecomposeMultiControlledPauliPattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeMultiControlledPauliPattern(MLIRContext* context,
                                                 uint64_t minControls)
@@ -46,40 +156,36 @@ struct DecomposeMultiControlledPauliPattern final : OpRewritePattern<CtrlOp> {
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumControls() < minControls_ || op.getNumTargets() != 1) {
+    const auto numControls = op.getNumControls();
+    if (numControls < minControls_ || numControls < 4 ||
+        op.getNumTargets() != 1) {
       return failure();
     }
     auto inner = utils::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
     }
+    const auto spec = matchControlledGate(inner);
+    if (!spec) {
+      return failure();
+    }
+    // HP24 core only supports Pauli-X/Z; leave k >= 4 phase gates untouched.
+    if (spec->gate == decomposition::ControlledTarget::Phase) {
+      return failure();
+    }
 
     rewriter.setInsertionPoint(op);
-    const auto controls = op.getControlsIn();
-    const auto target = op.getInputTarget(0);
-    const auto loc = op.getLoc();
-
-    if (isa<XOp>(inner.getOperation())) {
-      rewriter.replaceOp(
-          op, decomposition::synthesizeMcx(rewriter, loc, controls, target));
-      return success();
-    }
-    if (isa<ZOp>(inner.getOperation())) {
-      rewriter.replaceOp(
-          op, decomposition::synthesizeMcz(rewriter, loc, controls, target));
-      return success();
-    }
-    return failure();
+    rewriter.replaceOp(op, decomposition::synthesizeMultiControlled(
+                               rewriter, op.getLoc(), op.getControlsIn(),
+                               op.getInputTarget(0), minControls_, spec->gate,
+                               spec->theta));
+    return success();
   }
 
 private:
   uint64_t minControls_;
 };
 
-/**
- * @brief Pass that decomposes multi-controlled X and Z gates into elementary
- * gates.
- */
 struct DecomposeMultiControlled final
     : impl::DecomposeMultiControlledBase<DecomposeMultiControlled> {
   using DecomposeMultiControlledBase::DecomposeMultiControlledBase;

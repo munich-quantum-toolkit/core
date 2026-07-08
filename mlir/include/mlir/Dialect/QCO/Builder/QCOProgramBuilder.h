@@ -1126,6 +1126,17 @@ public:
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 
+  /**
+   * @brief Apply a relative-phase CCX (`RCCX`) gate to three qubits.
+   *
+   * @param qubit0 First control qubit (must be valid/unconsumed)
+   * @param qubit1 Second control qubit (must be valid/unconsumed)
+   * @param qubit2 Target qubit (must be valid/unconsumed)
+   * @return Output qubits `(qubit0, qubit1, qubit2)`
+   */
+  std::tuple<Value, Value, Value> rccx(Value qubit0, Value qubit1,
+                                       Value qubit2);
+
   // BarrierOp
 
   /**
