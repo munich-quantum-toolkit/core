@@ -148,7 +148,9 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(rxx)},
                     QCTestCase{"InvControlSandwich",
                                MQT_NAMED_BUILDER(invCtrlSandwich),
-                               MQT_NAMED_BUILDER(singleControlledRxx)}));
+                               MQT_NAMED_BUILDER(singleControlledRxx)},
+                    QCTestCase{"InverseT", MQT_NAMED_BUILDER(inverseT),
+                               MQT_NAMED_BUILDER(tdg)}));
 /// @}
 
 /// \name QC/Operations/MeasureOp.cpp
