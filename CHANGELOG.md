@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-07-09
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#370)._
+
 ### Added
 
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
@@ -539,7 +543,8 @@ changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.7.0
 [3.6.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.1
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
