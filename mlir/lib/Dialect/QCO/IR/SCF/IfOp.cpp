@@ -357,7 +357,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
     auto yield = cast<YieldOp>(newBlock->getTerminator());
 
     const auto args = newBlock->getArguments().take_back(addons.size());
-    
+
     SmallVector<Value> newResults;
     newResults.reserve(inits.size());
     newResults.append(yield.getTargets().begin(), yield.getTargets().end());
