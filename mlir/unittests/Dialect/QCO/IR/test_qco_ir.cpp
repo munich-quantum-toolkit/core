@@ -226,6 +226,11 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(rxx)},
         QCOTestCase{"EmptyCtrl", MQT_NAMED_BUILDER(emptyCtrl),
                     MQT_NAMED_BUILDER(rxx)},
+        QCOTestCase{"SingleTargetCtrl", MQT_NAMED_BUILDER(singleTargetCtrl),
+                    MQT_NAMED_BUILDER(singleControlledH)},
+        QCOTestCase{"SingleTargetTwoControlled",
+                    MQT_NAMED_BUILDER(singleTargetTwoControlled),
+                    MQT_NAMED_BUILDER(multipleControlledX)},
         QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
                     MQT_NAMED_BUILDER(multipleControlledRxx)},
         QCOTestCase{"TripleNestedCtrl", MQT_NAMED_BUILDER(tripleNestedCtrl),
@@ -254,7 +259,9 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(invCtrlSandwich),
                                 MQT_NAMED_BUILDER(singleControlledRxx)},
                     QCOTestCase{"InvCtrlTwo", MQT_NAMED_BUILDER(invCtrlTwo),
-                                MQT_NAMED_BUILDER(ctrlInvTwo)}));
+                                MQT_NAMED_BUILDER(ctrlInvTwo)},
+                    QCOTestCase{"InverseT", MQT_NAMED_BUILDER(inverseT),
+                                MQT_NAMED_BUILDER(tdg)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/BarrierOp.cpp

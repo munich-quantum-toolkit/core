@@ -1959,6 +1959,16 @@ void emptyCtrl(QCOProgramBuilder& b) {
   b.ctrl(q[0], q[1], [&](Value target) { return target; });
 }
 
+void singleTargetCtrl(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](Value target) { return b.h(target); });
+}
+
+void singleTargetTwoControlled(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.ctrl({q[0], q[1]}, q[2], [&](Value target) { return b.x(target); });
+}
+
 void nestedCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange targets) {

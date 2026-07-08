@@ -122,6 +122,11 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(rxx)},
         QCTestCase{"EmptyCtrl", MQT_NAMED_BUILDER(emptyCtrl),
                    MQT_NAMED_BUILDER(rxx)},
+        QCTestCase{"SingleTargetCtrl", MQT_NAMED_BUILDER(singleTargetCtrl),
+                   MQT_NAMED_BUILDER(singleControlledH)},
+        QCTestCase{"SingleTargetTwoControlled",
+                   MQT_NAMED_BUILDER(singleTargetTwoControlled),
+                   MQT_NAMED_BUILDER(multipleControlledX)},
         QCTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
                    MQT_NAMED_BUILDER(multipleControlledRxx)},
         QCTestCase{"TripleNestedCtrl", MQT_NAMED_BUILDER(tripleNestedCtrl),
@@ -148,7 +153,9 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(rxx)},
                     QCTestCase{"InvControlSandwich",
                                MQT_NAMED_BUILDER(invCtrlSandwich),
-                               MQT_NAMED_BUILDER(singleControlledRxx)}));
+                               MQT_NAMED_BUILDER(singleControlledRxx)},
+                    QCTestCase{"InverseT", MQT_NAMED_BUILDER(inverseT),
+                               MQT_NAMED_BUILDER(tdg)}));
 /// @}
 
 /// \name QC/Operations/MeasureOp.cpp
