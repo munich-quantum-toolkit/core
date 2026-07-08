@@ -41,7 +41,7 @@ void registerFomac(nb::module_& m) {
 
   nb::module_::import_("mqt.core.fomac");
 
-  auto device = nb::class_<na::Session::Device, fomac::Session::Device>(
+  auto device = nb::class_<na::Session::Device, fomac::Device>(
       m, "Device", "Represents a device with a lattice of traps.");
 
   auto lattice = nb::class_<na::Device::Lattice>(
@@ -122,7 +122,7 @@ void registerFomac(nb::module_& m) {
         return dev.getDecoherenceTimes().t2;
       },
       "The T2 time of the device.");
-  device.def("__repr__", [](const fomac::Session::Device& dev) {
+  device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
   device.def_static("try_create_from_device",
