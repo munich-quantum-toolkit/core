@@ -337,8 +337,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
   types.reserve(getQubits().size() + addons.size());
   llvm::append_range(
       types, llvm::map_range(getQubits(), [](Value q) { return q.getType(); }));
-  llvm::append_range(
-      types, llvm::map_range(addons, [](Value q) { return q.getType(); }));
+  llvm::append_range(types, addons.getTypes());
 
   SmallVector<Location> locs(getQubits().size() + addons.size(), getLoc());
 
@@ -357,11 +356,12 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
     // Update the yield operation to include additional qubits.
     auto yield = cast<YieldOp>(newBlock->getTerminator());
 
+    const auto args = newBlock->getArguments().take_back(addons.size());
+    
     SmallVector<Value> newResults;
     newResults.reserve(inits.size());
     newResults.append(yield.getTargets().begin(), yield.getTargets().end());
-    newResults.append(newBlock->getArguments().take_back(addons.size()).begin(),
-                      newBlock->getArguments().take_back(addons.size()).end());
+    newResults.append(args.begin(), args.end());
 
     rewriter.replaceOpWithNewOp<YieldOp>(yield, newResults);
   };
