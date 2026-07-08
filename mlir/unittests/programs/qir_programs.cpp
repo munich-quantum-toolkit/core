@@ -459,7 +459,7 @@ std::pair<Value, Type> multipleControlledSdg(QIRProgramBuilder& b) {
   return measureAndRecord(b, {q[0], q[1], q[2]}, IntoRegister);
 }
 
-template <bool IntoRegister> std::pair<Value, Type> t(QIRProgramBuilder& b) {
+template <bool IntoRegister> std::pair<Value, Type> t_(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.t(q[0]);
   return measureAndRecord(b, {q[0]}, IntoRegister);
@@ -1110,7 +1110,7 @@ template std::pair<Value, Type>
 singleControlledSdg<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type>
 multipleControlledSdg<false>(QIRProgramBuilder& b);
-template std::pair<Value, Type> t<false>(QIRProgramBuilder& b);
+template std::pair<Value, Type> t_<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type> singleControlledT<false>(QIRProgramBuilder& b);
 template std::pair<Value, Type>
 multipleControlledT<false>(QIRProgramBuilder& b);
@@ -1286,7 +1286,7 @@ template std::pair<Value, Type> sdg<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type> singleControlledSdg<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type>
 multipleControlledSdg<true>(QIRProgramBuilder& b);
-template std::pair<Value, Type> t<true>(QIRProgramBuilder& b);
+template std::pair<Value, Type> t_<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type> singleControlledT<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type> multipleControlledT<true>(QIRProgramBuilder& b);
 template std::pair<Value, Type> tdg<true>(QIRProgramBuilder& b);
