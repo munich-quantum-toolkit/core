@@ -1187,7 +1187,7 @@ public:
    *   });
    * ```
    */
-  std::pair<ValueRange, ValueRange> ctrl(ValueRange controls, Value target,
+  std::pair<ValueRange, Value> ctrl(ValueRange controls, Value target,
                                          function_ref<Value(Value)> body);
 
   /**
@@ -1201,7 +1201,7 @@ public:
    *   });
    * ```
    */
-  std::pair<ValueRange, ValueRange> ctrl(Value control, Value target,
+  std::pair<Value, Value> ctrl(Value control, Value target,
                                          function_ref<Value(Value)> body);
 
   /**
@@ -1234,12 +1234,12 @@ public:
    *
    * @par Example:
    * ```c++
-   * qubits_out = builder.inv(q0_in, [&](Value qubit) {
+   * qubit_out = builder.inv(q0_in, [&](Value qubit) {
    *   return builder.s(qubit);
    * });
    * ```
    */
-  ValueRange inv(Value qubit, function_ref<Value(Value)> body);
+  Value inv(Value qubit, function_ref<Value(Value)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
