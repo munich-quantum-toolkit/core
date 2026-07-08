@@ -1238,10 +1238,8 @@ private:
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   LogicalResult route(RoutingBundle& bundle, Statistics& stats,
                       IRRewriter* rewriter = nullptr) {
-    using Traits = WireTraversalTraits<Direction>;
-
     auto& [wires, infos, layout] = bundle;
-
+    
     while (true) {
 
       while (true) {
