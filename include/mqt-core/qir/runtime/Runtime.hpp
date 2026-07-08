@@ -214,7 +214,7 @@ public:
     /// If @c dd is currently populated, the existing package's `decRef` plus
     /// `garbageCollect` path is used so the package (and its internal caches)
     /// is kept warm.
-    /// If @c dd was moved out (e.g. by @ref Runtime::takeState), a new package
+    /// If @c dd was moved out (e.g., by @ref Runtime::takeState), a new package
     /// is allocated.
     auto reset() -> void {
       if (dd) {
