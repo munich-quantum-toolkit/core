@@ -211,17 +211,27 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
           return utils::getValueFromBlockArgument(v, outerQubits);
         });
     Value merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
-    rewriter.replaceOpWithNewOp<PowOp>(
-        op, qubits, merged,
-        [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
-          auto* newBody = rewriter.getInsertionBlock();
-          // Inner pow body args now match the new pow's args positionally.
-          rewriter.inlineBlockBefore(innerPow.getBody(), newBody,
-                                     newBody->begin(), powArgs);
-          auto yieldedValues = llvm::to_vector(newBody->back().getOperands());
-          rewriter.eraseOp(&newBody->back());
-          return yieldedValues;
-        });
+    auto newPow =
+        PowOp::create(rewriter, op.getLoc(), qubits, merged,
+                      [&](ValueRange powArgs) -> llvm::SmallVector<Value> {
+                        auto* newBody = rewriter.getInsertionBlock();
+                        // Inner pow body args now match the new pow's args
+                        // positionally.
+                        rewriter.inlineBlockBefore(innerPow.getBody(), newBody,
+                                                   newBody->begin(), powArgs);
+                        auto yieldedValues =
+                            llvm::to_vector(newBody->back().getOperands());
+                        rewriter.eraseOp(&newBody->back());
+                        return yieldedValues;
+                      });
+
+    // The merged pow's operands may be a permutation of the outer pow's, so map
+    // each original qubit output to the merged pow's output for the same input
+    // rather than replacing positionally.
+    rewriter.replaceOp(op,
+                       llvm::map_to_vector(op.getInputQubits(), [&](Value in) {
+                         return newPow.getOutputForInput(in);
+                       }));
     return success();
   }
 };
