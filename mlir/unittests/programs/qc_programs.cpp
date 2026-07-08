@@ -1871,6 +1871,30 @@ void invPowRx(QCProgramBuilder& b) {
   });
 }
 
+void invPowReordered(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange args) {
+    b.pow(0.5, {args[1], args[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+  });
+}
+
+void invPowReorderedRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(-0.5, {q[1], q[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+}
+
+void mergeNestedPowReordered(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.5, {q[0], q[1]}, [&](ValueRange o) {
+    b.pow(0.5, {o[1], o[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+  });
+}
+
+void mergeNestedPowReorderedRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.25, {q[1], q[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+}
+
 void powCtrlRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {

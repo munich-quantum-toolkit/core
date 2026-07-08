@@ -2731,6 +2731,46 @@ void invPowRx(QCOProgramBuilder& b) {
   });
 }
 
+void invPowReordered(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](mlir::ValueRange invArgs) {
+    auto inner =
+        b.pow({invArgs[1], invArgs[0]}, 0.5, [&](mlir::ValueRange powArgs) {
+          auto res = b.swap(powArgs[0], powArgs[1]);
+          return llvm::SmallVector<mlir::Value>{res.first, res.second};
+        });
+    return llvm::SmallVector<mlir::Value>{inner[1], inner[0]};
+  });
+}
+
+void invPowReorderedRef(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow({q[1], q[0]}, -0.5, [&](mlir::ValueRange powArgs) {
+    auto res = b.swap(powArgs[0], powArgs[1]);
+    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+  });
+}
+
+void mergeNestedPowReordered(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow({q[0], q[1]}, 0.5, [&](mlir::ValueRange outerArgs) {
+    auto inner =
+        b.pow({outerArgs[1], outerArgs[0]}, 0.5, [&](mlir::ValueRange powArgs) {
+          auto res = b.swap(powArgs[0], powArgs[1]);
+          return llvm::SmallVector<mlir::Value>{res.first, res.second};
+        });
+    return llvm::SmallVector<mlir::Value>{inner[1], inner[0]};
+  });
+}
+
+void mergeNestedPowReorderedRef(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow({q[1], q[0]}, 0.25, [&](mlir::ValueRange powArgs) {
+    auto res = b.swap(powArgs[0], powArgs[1]);
+    return llvm::SmallVector<mlir::Value>{res.first, res.second};
+  });
+}
+
 void powRxNeg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {

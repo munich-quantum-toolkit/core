@@ -1098,6 +1098,22 @@ void invPowSquaredZ(QCProgramBuilder& b);
 /// inv).
 void invPowRx(QCProgramBuilder& b);
 
+/// Creates inv(pow(0.5){swap}) whose inner pow aliases the inv's qubits in
+/// swapped order.
+void invPowReordered(QCProgramBuilder& b);
+
+/// Creates the reference for invPowReordered: pow(-0.5) over the swapped
+/// qubits.
+void invPowReorderedRef(QCProgramBuilder& b);
+
+/// Creates a nested pow whose inner pow aliases the outer pow's qubits in
+/// swapped order.
+void mergeNestedPowReordered(QCProgramBuilder& b);
+
+/// Creates the reference for mergeNestedPowReordered: pow(0.25) over the
+/// swapped qubits.
+void mergeNestedPowReorderedRef(QCProgramBuilder& b);
+
 /// Creates a circuit with pow wrapping ctrl wrapping RX (should move ctrl
 /// outside).
 void powCtrlRx(QCProgramBuilder& b);
