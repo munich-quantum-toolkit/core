@@ -50,14 +50,16 @@ releases may include breaking changes.
   [#1626], [#1627], [#1635], [#1638], [#1673], [#1675], [#1700], [#1710],
   [#1717], [#1728], [#1730], [#1749], [#1751], [#1762], [#1765], [#1780],
   [#1781], [#1782], [#1787], [#1806], [#1807], [#1808], [#1823], [#1824],
-  [#1830], [#1872]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
+  [#1830], [#1869], [#1872]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**],
   [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**],
   [**@simon1hofmann**])
 
 ### Changed
 
+- ⬆️ Update QDMI to version 1.3.2 ([#1873]) ([**@denialhaag**])
 - ♻️ Improve implementation and usability of FoMaC classes ([#1849])
   ([**@MatthiasReumann**])
+- ⬆️ Update `nanobind` to version 2.13.0 ([#1817])
 - ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660],
   [#1737]) ([**@denialhaag**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
@@ -145,7 +147,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#350)._
 ### Changed
 
 - ⬆️ Update `nanobind` to version 2.12.0 ([#1528])
-- ⬆️ Update QDMI to `v1.3.0` ([#1652]) ([**@burgholzer**])
+- ⬆️ Update QDMI to version 1.3.0 ([#1652]) ([**@burgholzer**])
 - 📦 Switch to component-based installation for the MQT Core Python package
   ([#1596]) ([**@burgholzer**])
 - ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1593])
@@ -602,7 +604,9 @@ changelogs._
 
 <!-- PR links -->
 
+[#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
+[#1869]: https://github.com/munich-quantum-toolkit/core/pull/1869
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
@@ -613,6 +617,7 @@ changelogs._
 [#1826]: https://github.com/munich-quantum-toolkit/core/pull/1826
 [#1824]: https://github.com/munich-quantum-toolkit/core/pull/1824
 [#1823]: https://github.com/munich-quantum-toolkit/core/pull/1823
+[#1817]: https://github.com/munich-quantum-toolkit/core/pull/1817
 [#1814]: https://github.com/munich-quantum-toolkit/core/pull/1814
 [#1809]: https://github.com/munich-quantum-toolkit/core/pull/1809
 [#1808]: https://github.com/munich-quantum-toolkit/core/pull/1808
