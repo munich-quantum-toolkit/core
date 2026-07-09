@@ -770,9 +770,7 @@ static void singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   q[0] = b.rz(0.123, q[0]);
-  q[0] = b.inv({q[0]}, [&b](ValueRange targets) -> SmallVector<Value> {
-    return {b.sx(targets[0])};
-  })[0];
+  q[0] = b.inv(q[0], [&b](Value qubit) { return b.sx(qubit); });
   q[0] = b.ry(-0.456, q[0]);
 }
 
@@ -842,11 +840,10 @@ static void singleQubitRunInScfFor(QCOProgramBuilder& b) {
 static void xInverseTwoX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
-  q[0] = b.inv({q[0]}, [&b](ValueRange targets) {
-    Value wire = b.x(targets[0]);
-    wire = b.x(wire);
-    return SmallVector{wire};
-  })[0];
+  q[0] = b.inv(q[0], [&b](Value qubit) {
+    qubit = b.x(qubit);
+    return b.x(qubit);
+  });
   q[0] = b.x(q[0]);
 }
 
@@ -864,20 +861,17 @@ static void inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
 
 static void controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&b](ValueRange targets) {
-    auto wire = b.inv({targets[0]}, [&b](ValueRange innerTargets) {
-      auto inner = b.h(innerTargets[0]);
-      inner = b.t(inner);
-      return SmallVector{inner};
-    })[0];
-    return SmallVector{wire};
+  b.ctrl(q[0], q[1], [&b](Value target) {
+    return b.inv(target, [&b](Value qubit) {
+      qubit = b.h(qubit);
+      return b.t(qubit);
+    });
   });
 }
 
 static void controlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1],
-         [&b](ValueRange targets) { return SmallVector{b.h(targets[0])}; });
+  b.ctrl(q[0], q[1], [&b](Value target) { return b.h(target); });
 }
 
 static void singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {

@@ -18,6 +18,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -345,6 +346,21 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
 
 } // namespace
 
+static void
+buildModifierBody(OpBuilder& odsBuilder, OperationState& odsState,
+                  const size_t numBlockArgs,
+                  const function_ref<void(OpBuilder&, Block&)>& emitBody) {
+  auto& block = odsState.regions.front()->emplaceBlock();
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < numBlockArgs; ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  emitBody(odsBuilder, block);
+}
+
 size_t InvOp::getNumBodyUnitaries() {
   return utils::getNumBodyUnitaries<UnitaryOpInterface>(*getBody());
 }
@@ -357,17 +373,22 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   ValueRange qubits,
                   const function_ref<void(ValueRange)>& body) {
   build(odsBuilder, odsState, qubits);
-  auto& block = odsState.regions.front()->emplaceBlock();
+  buildModifierBody(odsBuilder, odsState, qubits.size(),
+                    [&](OpBuilder& builder, Block& block) {
+                      body(block.getArguments());
+                      YieldOp::create(builder, odsState.location);
+                    });
+}
 
-  auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < qubits.size(); ++i) {
-    block.addArgument(qubitType, odsState.location);
-  }
-
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  body(block.getArguments());
-  YieldOp::create(odsBuilder, odsState.location);
+void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
+                  const function_ref<void(Value)>& bodyBuilder) {
+  odsState.addOperands(qubit);
+  odsState.addRegion();
+  buildModifierBody(odsBuilder, odsState, 1,
+                    [&](OpBuilder& builder, Block& block) {
+                      bodyBuilder(block.getArgument(0));
+                      YieldOp::create(builder, odsState.location);
+                    });
 }
 
 LogicalResult InvOp::verify() {

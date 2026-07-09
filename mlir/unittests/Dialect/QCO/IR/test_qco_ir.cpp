@@ -254,7 +254,9 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(invCtrlSandwich),
                                 MQT_NAMED_BUILDER(singleControlledRxx)},
                     QCOTestCase{"InvCtrlTwo", MQT_NAMED_BUILDER(invCtrlTwo),
-                                MQT_NAMED_BUILDER(ctrlInvTwo)}));
+                                MQT_NAMED_BUILDER(ctrlInvTwo)},
+                    QCOTestCase{"InverseT", MQT_NAMED_BUILDER(inverseT),
+                                MQT_NAMED_BUILDER(tdg)}));
 /// @}
 
 /// \name QCO/Modifiers/PowOp.cpp

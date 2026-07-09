@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/QCO/IR/QCODialect.h>
@@ -22,53 +23,130 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 
 namespace mlir::qco {
 
-std::optional<Matrix2x2> composeSingleQubitBodyMatrix(Block& block) {
-  Matrix2x2 acc = Matrix2x2::identity();
+/// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
+/// untracked.
+[[nodiscard]] static std::optional<size_t>
+lookupWireId(const DenseMap<Value, size_t>& wireIds, Value wire) {
+  if (const auto it = wireIds.find(wire); it != wireIds.end()) {
+    return it->second;
+  }
+  return std::nullopt;
+}
+
+/// Propagates wire indices from unitary inputs to outputs via @p wireIds.
+static void propagateWireIds(UnitaryOpInterface unitary,
+                             DenseMap<Value, size_t>& wireIds) {
+  for (auto [input, output] :
+       llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
+    if (const auto wire = lookupWireId(wireIds, input)) {
+      wireIds[output] = *wire;
+    }
+  }
+}
+
+/// Returns the @p unitary embedded on @p numTargets modifier wires using @p
+/// wireIds.
+[[nodiscard]] static std::optional<DynamicMatrix>
+embedUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
+                   const DenseMap<Value, size_t>& wireIds) {
+  const auto numOpQubits = unitary.getNumQubits();
+  if (numOpQubits == 0 || numOpQubits > 2) {
+    return std::nullopt;
+  }
+
+  if (numOpQubits == 1) {
+    const auto wire = lookupWireId(wireIds, unitary.getInputQubit(0));
+    if (!wire.has_value()) {
+      return std::nullopt;
+    }
+    return unitary.getUnitaryMatrix<Matrix2x2>()->embedInNqubit(numTargets,
+                                                                *wire);
+  }
+
+  const auto q0 = lookupWireId(wireIds, unitary.getInputQubit(0));
+  const auto q1 = lookupWireId(wireIds, unitary.getInputQubit(1));
+  if (!q0.has_value() || !q1.has_value()) {
+    return std::nullopt;
+  }
+  return unitary.getUnitaryMatrix<Matrix4x4>()->embedInNqubit(numTargets, *q0,
+                                                              *q1);
+}
+
+std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
+                                               size_t numTargets) {
+  if (numTargets == 0 || numTargets > kMaxModifierTargetQubits ||
+      block.getNumArguments() != numTargets) {
+    return std::nullopt;
+  }
+
+  std::optional<DynamicMatrix> acc;
   Complex global{1.0, 0.0};
   bool found = false;
+
+  DenseMap<Value, size_t> wireIds;
+  for (size_t i = 0; i < numTargets; ++i) {
+    wireIds[block.getArgument(i)] = i;
+  }
+
   for (Operation& op : block.without_terminator()) {
-    if (!TypeSwitch<Operation*, bool>(&op)
-             .Case<BarrierOp>([](auto) { return true; })
-             .Case<GPhaseOp>([&](GPhaseOp gphase) {
-               const auto matrix = gphase.getUnitaryMatrix();
-               if (!matrix) {
-                 return false;
-               }
-               global *= (*matrix)(0, 0);
-               found = true;
-               return true;
-             })
-             .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
-               if (!unitary.isSingleQubit() ||
-                   !unitary.hasCompileTimeKnownUnitaryMatrix()) {
-                 return false;
-               }
-               Matrix2x2 matrix;
-               if (!unitary.getUnitaryMatrix2x2(matrix)) {
-                 return false;
-               }
-               acc.premultiplyBy(matrix);
-               found = true;
-               return true;
-             })
-             .Default([](Operation* operation) {
-               const auto usesQubit = [](Value value) {
-                 return isa<QubitType>(value.getType());
-               };
-               return !llvm::any_of(operation->getOperands(), usesQubit) &&
-                      !llvm::any_of(operation->getResults(), usesQubit);
-             })) {
+    const bool handled =
+        TypeSwitch<Operation*, bool>(&op)
+            .Case<BarrierOp>([&](BarrierOp barrier) {
+              propagateWireIds(barrier, wireIds);
+              return true;
+            })
+            .Case<GPhaseOp>([&](GPhaseOp gphase) {
+              const auto matrix = gphase.getUnitaryMatrix();
+              if (!matrix) {
+                return false;
+              }
+              global *= matrix->value;
+              found = true;
+              return true;
+            })
+            .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+              if (!unitary.hasCompileTimeKnownUnitaryMatrix()) {
+                return false;
+              }
+              auto embedded = embedUnitaryInBody(unitary, numTargets, wireIds);
+              if (!embedded.has_value()) {
+                return false;
+              }
+              if (!acc.has_value()) {
+                acc.swap(embedded);
+              } else {
+                acc->premultiplyBy(*embedded);
+              }
+              found = true;
+              propagateWireIds(unitary, wireIds);
+              return true;
+            })
+            .Default([&](Operation* unknown) {
+              const auto usesQubit = [](Value value) {
+                return isa<QubitType>(value.getType());
+              };
+              return !llvm::any_of(unknown->getOperands(), usesQubit) &&
+                     !llvm::any_of(unknown->getResults(), usesQubit);
+            });
+
+    if (!handled) {
       return std::nullopt;
     }
   }
+
   if (!found) {
     return std::nullopt;
   }
-  acc *= global;
+  if (!acc.has_value()) {
+    acc = DynamicMatrix::identity(static_cast<int64_t>(1ULL << numTargets));
+  }
+  *acc *= global;
   return acc;
 }
 
