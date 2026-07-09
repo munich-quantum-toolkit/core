@@ -42,8 +42,16 @@ The `mqt-core-qir-runner` can be used to execute a QIR file (typically with a
 ./build/bin/mqt-core-qir-runner bell.ll
 ```
 
-This will simulate the circuit and print the measurement results to the console.
-The runner supports the QIR Base Profile.
+The runner prints the program's outputs to the console in one of the two
+[QIR Output Schemas][output-schemas] (Labeled or Ordered): the two `HEADER`
+records announce the schema, and each shot is wrapped in `START` and `END`
+records with a `METADATA\toutput_labeling_schema\t<schema>` line inside.
+
+The active schema is selected by the `output_labeling_schema` function attribute
+on the entry-point function of the QIR program. The value `ordered` selects
+Ordered; anything else, or a missing attribute, selects Labeled.
+
+[output-schemas]: https://github.com/qir-alliance/qir-spec/tree/main/specification/output_schemas
 
 ### QIR Support in the DDSIM QDMI Device
 

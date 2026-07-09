@@ -179,20 +179,76 @@ auto Runtime::takeState() -> QState {
   return ret;
 }
 
-auto Runtime::outputContainer(int64_t /* elementCount */,
-                              const char* label) const -> void {
-  *os << (label != nullptr ? label : "") << ":\n";
-}
-
-auto Runtime::outputValue(std::string_view valueStr, const char* label) const
-    -> void {
-  *os << (label != nullptr ? label : "") << ": " << valueStr << "\n";
-}
-
 auto Runtime::getOstream() const -> std::ostream& { return *os; }
 
 auto Runtime::setOstream(std::ostream& other) -> void { os = &other; }
 
 auto Runtime::resetOstream() -> void { os = &std::cout; }
+
+void Runtime::outputType(const char* type, std::string_view value,
+                         const char* label) const {
+  *os << "OUTPUT\t" << type << "\t" << value;
+  if (label != nullptr && outputSchema == OutputSchema::Labeled) {
+    *os << "\t" << label;
+  }
+  *os << "\n";
+}
+
+auto Runtime::outputResult(bool value, const char* label) const -> void {
+  outputType("RESULT", value ? "1" : "0", label);
+}
+
+auto Runtime::outputBool(bool value, const char* label) const -> void {
+  outputType("BOOL", value ? "true" : "false", label);
+}
+
+auto Runtime::outputInt(int64_t value, const char* label) const -> void {
+  outputType("INT", std::to_string(value), label);
+}
+
+auto Runtime::outputFloat(double value, const char* label) const -> void {
+  // Use std::ostringstream rather than std::to_string.
+  // std::to_string formats with six digits after the decimal point and
+  // can print 0.000000 for very small numbers.
+  // std::ostringstream uses six significant digits by default and
+  // outputs very small numbers with scientific notation.
+  std::ostringstream oss;
+  oss << value;
+  outputType("DOUBLE", oss.str(), label);
+}
+
+auto Runtime::outputTuple(int64_t elementCount, const char* label) const
+    -> void {
+  outputType("TUPLE", std::to_string(elementCount), label);
+}
+
+auto Runtime::outputArray(int64_t elementCount, const char* label) const
+    -> void {
+  outputType("ARRAY", std::to_string(elementCount), label);
+}
+
+auto Runtime::outputProgramHeader() const -> void {
+  *os << "HEADER\tschema_id\t" << outputSchema << "\n";
+  *os << "HEADER\tschema_version\t2.1\n";
+}
+
+auto Runtime::outputShotStart() const -> void {
+  *os << "START\n";
+  *os << "METADATA\toutput_labeling_schema\t" << outputSchema << "\n";
+}
+
+auto Runtime::outputShotEnd() const -> void { *os << "END\t0\n"; }
+
+auto Runtime::getOutputSchema() const -> OutputSchema { return outputSchema; }
+
+auto Runtime::setOutputSchema(OutputSchema schema) -> void {
+  outputSchema = schema;
+}
+
+auto operator<<(std::ostream& os, const Runtime::OutputSchema schema)
+    -> std::ostream& {
+  return os << (schema == Runtime::OutputSchema::Labeled ? "labeled"
+                                                         : "ordered");
+}
 
 } // namespace qir
