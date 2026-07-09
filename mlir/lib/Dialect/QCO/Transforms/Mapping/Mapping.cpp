@@ -398,14 +398,13 @@ private:
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(forOp);
 
-    const auto naddons = addons.size();
     const auto res =
         forOp.replaceWithAdditionalIterOperands(rewriter, addons, true);
     assert(succeeded(res));
-
     auto newForOp = cast<scf::ForOp>(*res);
-    for (const auto [before, after] :
-         llvm::zip_equal(addons, newForOp.getResults().take_back(naddons))) {
+
+    for (const auto [before, after] : llvm::zip_equal(
+             addons, newForOp.getResults().take_back(addons.size()))) {
       rewriter.replaceAllUsesExcept(before, after, newForOp);
     }
     return newForOp;
@@ -419,59 +418,12 @@ private:
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(ifOp);
 
-    const auto naddons = addons.size();
+    auto newIfOp = ifOp.replaceWithAdditionalQubits(rewriter, addons);
 
-    SmallVector<Value> inits;
-    llvm::append_range(inits, ifOp.getQubits());
-    llvm::append_range(inits, addons);
-
-    auto newIfOp =
-        rewriter.create<qco::IfOp>(ifOp->getLoc(), ifOp.getCondition(), inits);
-
-    // The qco::IfOp implements the SingleBlockImplicitTerminator trait.
-    assert(ifOp.getThenRegion().hasOneBlock());
-    assert(ifOp.getElseRegion().hasOneBlock());
-
-    const std::array<Block*, 2> oldBlocks{
-        &ifOp.getThenRegion().getBlocks().front(),
-        &ifOp.getElseRegion().getBlocks().front(),
-    };
-
-    SmallVector<Type> argTypes(inits.size(),
-                               QubitType::get(rewriter.getContext()));
-    SmallVector locs(inits.size(), newIfOp->getLoc());
-
-    const std::array<Block*, 2> newBlocks{
-        rewriter.createBlock(&newIfOp.getThenRegion(), {}, argTypes, locs),
-        rewriter.createBlock(&newIfOp.getElseRegion(), {}, argTypes, locs),
-    };
-
-    for (const auto [oldBlock, newBlock] :
-         llvm::zip_equal(oldBlocks, newBlocks)) {
-      rewriter.mergeBlocks(
-          oldBlock, newBlock,
-          newBlock->getArguments().take_front(oldBlock->getNumArguments()));
-
-      auto yield = cast<qco::YieldOp>(newBlock->getTerminator());
-
-      SmallVector<Value> results;
-      llvm::append_range(results, yield.getTargets());
-      llvm::append_range(results, newBlock->getArguments().take_back(naddons));
-      rewriter.setInsertionPoint(yield);
-      rewriter.replaceOpWithNewOp<qco::YieldOp>(yield, results);
+    for (const auto [before, after] : llvm::zip_equal(
+             addons, newIfOp->getResults().take_back(addons.size()))) {
+      rewriter.replaceAllUsesExcept(before, after, newIfOp);
     }
-
-    for (const auto [oldResult, newResult] :
-         llvm::zip_first(ifOp.getResults(), newIfOp.getResults())) {
-      rewriter.replaceAllUsesWith(oldResult, newResult);
-    }
-
-    for (const auto [oldUse, newResult] :
-         llvm::zip_equal(addons, newIfOp.getResults().take_back(naddons))) {
-      rewriter.replaceAllUsesExcept(oldUse, newResult, newIfOp);
-    }
-
-    rewriter.eraseOp(ifOp);
 
     return newIfOp;
   }
@@ -1239,7 +1191,7 @@ private:
   LogicalResult route(RoutingBundle& bundle, Statistics& stats,
                       IRRewriter* rewriter = nullptr) {
     auto& [wires, infos, layout] = bundle;
-    
+
     while (true) {
 
       while (true) {
