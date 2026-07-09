@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
-#include "mlir/Support/SuperconductingDevice.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -20,6 +19,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 #include "mlir/Support/Graph.h"
+#include "mlir/Support/SuperconductingDevice.h"
 
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>

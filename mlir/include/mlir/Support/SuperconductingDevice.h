@@ -23,7 +23,7 @@ class SuperconductingDevice {
 public:
   /// Construct a superconducting device from qubits and a coupling map.
   /// A coupling is a directed edge from qubit u → v. Thus, for undirected
-  /// architectures, for each (u, v) the coupling also contains (v, u). 
+  /// architectures, for each (u, v) the coupling also contains (v, u).
   SuperconductingDevice(ArrayRef<size_t> qubits,
                         const DenseSet<std::pair<size_t, size_t>>& coupling)
       : coupling_(qubits, coupling), dist_(coupling_.getDistMatrix()),

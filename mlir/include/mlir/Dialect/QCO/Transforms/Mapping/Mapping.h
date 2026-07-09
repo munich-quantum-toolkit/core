@@ -10,8 +10,8 @@
 
 #pragma once
 
-#include "mlir/Support/SuperconductingDevice.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Support/SuperconductingDevice.h"
 
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Region.h>

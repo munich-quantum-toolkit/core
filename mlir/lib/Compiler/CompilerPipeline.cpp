@@ -10,7 +10,6 @@
 
 #include "mlir/Compiler/CompilerPipeline.h"
 
-#include "mlir/Support/SuperconductingDevice.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
@@ -19,6 +18,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
+#include "mlir/Support/SuperconductingDevice.h"
 
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>

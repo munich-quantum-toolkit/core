@@ -18,15 +18,15 @@
 #include <memory>
 
 void mlir::qdmi::listAvailableDevices(fomac::Session& session,
-                                          llvm::raw_ostream& os) {
+                                      llvm::raw_ostream& os) {
   os << "Available QDMI devices:\n";
   for (auto dev : session.getDevices()) {
     os << '\t' << dev.getName() << '\n';
   }
 }
 
-std::shared_ptr<fomac::Device>
-mlir::qdmi::getDevice(fomac::Session& session, StringRef name) {
+std::shared_ptr<fomac::Device> mlir::qdmi::getDevice(fomac::Session& session,
+                                                     StringRef name) {
   const auto devices = session.getDevices();
 
   auto it = devices.begin();
