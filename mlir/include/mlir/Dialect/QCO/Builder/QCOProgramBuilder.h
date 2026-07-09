@@ -1133,6 +1133,106 @@ public:
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 
+  // ThreeTargetZeroParameter
+
+#define DECLARE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                 \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @details                                                                  \
+   * Consumes the input qubits and produces new output qubit SSA values. The   \
+   * inputs are validated and the tracking is updated.                         \
+   *                                                                           \
+   * @param qubit0 Input qubit (must be valid/unconsumed)                      \
+   * @param qubit1 Input qubit (must be valid/unconsumed)                      \
+   * @param qubit2 Input qubit (must be valid/unconsumed)                      \
+   * @return Output qubits                                                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * auto [q0_out, q1_out, q2_out] = builder.OP_NAME(q0_in, q1_in, q2_in);     \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * %q0_out, %q1_out, %q2_out = qco.OP_NAME %q0_in, %q1_in, %q2_in :          \
+   * !qco.qubit, !qco.qubit, !qco.qubit                                        \
+   * -> !qco.qubit, !qco.qubit, !qco.qubit                                     \
+   * ```                                                                       \
+   */                                                                          \
+  std::tuple<Value, Value, Value> OP_NAME(Value qubit0, Value qubit1,          \
+                                          Value qubit2);                       \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @details                                                                  \
+   * Consumes the input control and target qubits and produces new output      \
+   * qubit SSA values. The inputs are validated and the tracking is updated.   \
+   *                                                                           \
+   * @param control Input control qubit (must be valid/unconsumed)             \
+   * @param qubit0 Target qubit (must be valid/unconsumed)                     \
+   * @param qubit1 Target qubit (must be valid/unconsumed)                     \
+   * @param qubit2 Target qubit (must be valid/unconsumed)                     \
+   * @return Pair of (output_control_qubit, (output_qubit0, output_qubit1,     \
+   * output_qubit2))                                                           \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * auto [q0_out, targets_out] = builder.c##OP_NAME(q0_in, q1_in, q2_in,      \
+   * q3_in);                                                                   \
+   * auto [q1_out, q2_out, q3_out] = targets_out;                              \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * %q0_out, %q1_out, %q2_out, %q3_out = qco.ctrl(%q0_in) %q1_in, %q2_in,     \
+   * %q3_in {                                                                  \
+   *   %q1_res, %q2_res, %q3_res = qco.OP_NAME %q1_in, %q2_in, %q3_in :        \
+   * !qco.qubit, !qco.qubit, !qco.qubit                                        \
+   * -> !qco.qubit, !qco.qubit, !qco.qubit                                     \
+   *   qco.yield %q1_res, %q2_res, %q3_res : !qco.qubit, !qco.qubit,           \
+   * !qco.qubit                                                                \
+   * } : ({!qco.qubit}, {!qco.qubit, !qco.qubit, !qco.qubit}) ->               \
+   * ({!qco.qubit}, {!qco.qubit, !qco.qubit, !qco.qubit})                      \
+   * ```                                                                       \
+   */                                                                          \
+  std::pair<Value, std::tuple<Value, Value, Value>> c##OP_NAME(                \
+      Value control, Value qubit0, Value qubit1, Value qubit2);                \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Consumes the input control and target qubits and produces new output      \
+   * qubit SSA values. The inputs are validated and the tracking is updated.   \
+   *                                                                           \
+   * @param controls Input control qubits (must be valid/unconsumed)           \
+   * @param qubit0 Target qubit (must be valid/unconsumed)                     \
+   * @param qubit1 Target qubit (must be valid/unconsumed)                     \
+   * @param qubit2 Target qubit (must be valid/unconsumed)                     \
+   * @return Pair of (output_control_qubits, (output_qubit0, output_qubit1,    \
+   * output_qubit2))                                                           \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * auto [controls_out, targets_out] = builder.mc##OP_NAME(                   \
+   *     {q0_in, q1_in}, q2_in, q3_in, q4_in);                                 \
+   * auto [q2_out, q3_out, q4_out] = targets_out;                              \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * %controls_out, %q2_out, %q3_out, %q4_out = qco.ctrl(%q0_in, %q1_in)       \
+   * %q2_in, %q3_in, %q4_in {                                                  \
+   *   %q2_res, %q3_res, %q4_res = qco.OP_NAME %q2_in, %q3_in, %q4_in :        \
+   * !qco.qubit, !qco.qubit, !qco.qubit                                        \
+   * -> !qco.qubit, !qco.qubit, !qco.qubit                                     \
+   *   qco.yield %q2_res, %q3_res, %q4_res : !qco.qubit, !qco.qubit,           \
+   * !qco.qubit                                                                \
+   * } : ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit, !qco.qubit}) ->   \
+   * ({!qco.qubit, !qco.qubit}, {!qco.qubit, !qco.qubit, !qco.qubit})          \
+   * ```                                                                       \
+   */                                                                          \
+  std::pair<ValueRange, std::tuple<Value, Value, Value>> mc##OP_NAME(          \
+      ValueRange controls, Value qubit0, Value qubit1, Value qubit2);
+
+  DECLARE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
+
+#undef DECLARE_THREE_TARGET_ZERO_PARAMETER
+
   // BarrierOp
 
   /**
