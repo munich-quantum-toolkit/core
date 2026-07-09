@@ -85,6 +85,12 @@ allocQubitRegister(QCProgramBuilder& b) {
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
+alloc3QubitRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  return measureAndReturn(b, {q[0], q[1], q[2]});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
 allocMultipleQubitRegisters(QCProgramBuilder& b) {
   auto q0 = b.allocQubitRegister(2);
   auto q1 = b.allocQubitRegister(3);

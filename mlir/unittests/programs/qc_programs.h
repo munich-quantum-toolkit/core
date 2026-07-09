@@ -41,6 +41,10 @@ alloc1QubitRegister(QCProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubitRegister(QCProgramBuilder& b);
 
+/// Allocates a qubit register of size `3`.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+alloc3QubitRegister(QCProgramBuilder& b);
+
 /// Allocates two qubit registers of size `2` and `3`.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocMultipleQubitRegisters(QCProgramBuilder& b);

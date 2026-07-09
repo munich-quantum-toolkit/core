@@ -373,8 +373,8 @@ INSTANTIATE_TEST_SUITE_P(
         CompilerPipelineTestCase{
             "MultipleControlledIdentity",
             MQT_NAMED_BUILDER(qc::multipleControlledIdentity), nullptr,
-            MQT_NAMED_BUILDER(mlir::qc::alloc1QubitRegister),
-            MQT_NAMED_BUILDER(mlir::qir::alloc1QubitRegister<true>)},
+            MQT_NAMED_BUILDER(mlir::qc::alloc3QubitRegister),
+            MQT_NAMED_BUILDER(mlir::qir::alloc3QubitRegister<true>)},
         CompilerPipelineTestCase{"X", MQT_NAMED_BUILDER(qc::x), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::x),
                                  MQT_NAMED_BUILDER(mlir::qir::x<true>)},
