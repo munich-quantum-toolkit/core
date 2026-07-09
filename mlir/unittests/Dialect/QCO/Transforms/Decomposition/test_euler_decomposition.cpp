@@ -99,6 +99,15 @@ class EulerSynthesisExactTest
     : public testing::TestWithParam<
           std::tuple<EulerBasis, Matrix2x2 (*)(MLIRContext*)>> {};
 
+} // namespace
+
+/**
+ * @brief Measures the given qubits and return the measurement outcomes and
+ * their types.
+ * @param b The `ProgramBuilder` used to perform the measurements.
+ * @param qubits The qubits to be measured.
+ * @return A pair containing the result values and their types.
+ */
 static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
 measureAndReturn(mlir::qco::QCOProgramBuilder& b,
                  const mlir::SmallVector<mlir::Value>& qubits) {
@@ -112,8 +121,6 @@ measureAndReturn(mlir::qco::QCOProgramBuilder& b,
   }
   return {bits, bitTypes};
 }
-
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // Euler synthesis support

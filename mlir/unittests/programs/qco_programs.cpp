@@ -25,6 +25,13 @@
 #include <utility>
 #include <vector>
 
+/**
+ * @brief Measures the given `qtensor` and return the measurement outcomes and
+ * their types.
+ * @param b The `ProgramBuilder` used to perform the measurements.
+ * @param qTensor The `qtensor` to be measured.
+ * @return A pair containing the result values and their types.
+ */
 static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
 measureAndReturnQTensor(mlir::qco::QCOProgramBuilder& b, mlir::Value qTensor,
                         int64_t size) {
@@ -41,6 +48,13 @@ measureAndReturnQTensor(mlir::qco::QCOProgramBuilder& b, mlir::Value qTensor,
   return {bits, bitTypes};
 }
 
+/**
+ * @brief Measures the given qubits and return the measurement outcomes and
+ * their types.
+ * @param b The `ProgramBuilder` used to perform the measurements.
+ * @param qubits The qubits to be measured.
+ * @return A pair containing the result values and their types.
+ */
 static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
 measureAndReturn(mlir::qco::QCOProgramBuilder& b,
                  const mlir::SmallVector<mlir::Value>& qubits) {

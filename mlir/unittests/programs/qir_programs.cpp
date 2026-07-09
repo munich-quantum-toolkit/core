@@ -22,8 +22,8 @@
 #include <utility>
 
 /**
- * @brief Measures the given qubits and returns the measurement outcomes as a
- * struct value or a single `i1`.
+ * @brief Measures the given qubits, records the outcomes and returns
+ * a single `i64` exit code with the value 0.
  * @param b The QIRProgramBuilder used to perform the measurements and create
  * the struct.
  * @param qubits The qubits to be measured.
