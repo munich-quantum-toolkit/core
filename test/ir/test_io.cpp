@@ -504,7 +504,7 @@ TEST_F(IO, NativeThreeQubitGateImportAndExport) {
     qc = qasm3::Importer::imports(target);
     std::cout << qc << "\n";
     std::ostringstream oss{};
-    qc.dumpOpenQASM(oss, false);
+    qc.dumpOpenQASM(oss, true);
     std::cout << oss.str() << "\n";
     EXPECT_STREQ(oss.str().c_str(), target.c_str());
     qc.reset();
