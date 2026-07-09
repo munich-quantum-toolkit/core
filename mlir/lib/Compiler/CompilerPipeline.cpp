@@ -20,7 +20,6 @@
 #include "mlir/Support/PrettyPrinting.h"
 #include "mlir/Support/SuperconductingDevice.h"
 
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
