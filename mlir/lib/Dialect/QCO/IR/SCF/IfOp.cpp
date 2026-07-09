@@ -328,46 +328,38 @@ OpOperand* IfOp::getTiedElseYieldedValue(BlockArgument bbArg) {
 
 IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
                                        ValueRange addons) {
-  SmallVector<Value> inits;
-  inits.reserve(getQubits().size() + addons.size());
-  inits.append(getQubits().begin(), getQubits().end());
-  inits.append(addons.begin(), addons.end());
+  if (addons.empty()) {
+    return *this;
+  }
 
-  SmallVector<Type> types;
-  types.reserve(getQubits().size() + addons.size());
-  types.append(getQubits().getTypes().begin(), getQubits().getTypes().end());
-  types.append(addons.getTypes().begin(), addons.getTypes().end());
+  SmallVector<Value> allQubits;
+  allQubits.reserve(getQubits().size() + addons.size());
+  allQubits.append(getQubits().begin(), getQubits().end());
+  allQubits.append(addons.begin(), addons.end());
+  const auto allQubitTypes = ValueRange(allQubits).getTypes();
 
-  SmallVector<Location> locs(getQubits().size() + addons.size(), getLoc());
+  auto newIfOp = create(rewriter, getLoc(), getCondition(), allQubits);
 
-  auto newIfOp = rewriter.create<IfOp>(getLoc(), getCondition(), inits);
+  const auto rewriteRegion = [&rewriter, &allQubitTypes,
+                              &addons](Region& oldRegion, Region& newRegion) {
+    auto* oldBlock = &oldRegion.front();
+    const auto numOldArgs = oldBlock->getNumArguments();
+    auto* newBlock = rewriter.createBlock(&newRegion, {}, allQubitTypes);
+    const auto oldArgs = newBlock->getArguments().take_front(numOldArgs);
+    const auto addonArgs = newBlock->getArguments().drop_front(numOldArgs);
 
-  const auto processRegion = [&](Region& oldRegion, Region& newRegion) {
-    Block* oldBlock = &oldRegion.front();
-    Block* newBlock = rewriter.createBlock(&newRegion, {}, types, locs);
+    rewriter.mergeBlocks(oldBlock, newBlock, oldArgs);
 
-    // Merge the old block into the new block,
-    // keeping only the original arguments.
-    rewriter.mergeBlocks(
-        oldBlock, newBlock,
-        newBlock->getArguments().take_front(oldBlock->getNumArguments()));
-
-    // Update the yield operation to include additional qubits.
     auto yield = cast<YieldOp>(newBlock->getTerminator());
-
-    const auto args = newBlock->getArguments().take_back(addons.size());
-
-    SmallVector<Value> newResults;
-    newResults.reserve(inits.size());
-    newResults.append(yield.getTargets().begin(), yield.getTargets().end());
-    newResults.append(args.begin(), args.end());
-
-    rewriter.replaceOpWithNewOp<YieldOp>(yield, newResults);
+    SmallVector<Value> yieldedValues;
+    yieldedValues.reserve(yield.getTargets().size() + addons.size());
+    yieldedValues.append(yield.getTargets().begin(), yield.getTargets().end());
+    yieldedValues.append(addonArgs.begin(), addonArgs.end());
+    rewriter.replaceOpWithNewOp<YieldOp>(yield, yieldedValues);
   };
 
-  // Process both regions
-  processRegion(getThenRegion(), newIfOp.getThenRegion());
-  processRegion(getElseRegion(), newIfOp.getElseRegion());
+  rewriteRegion(getThenRegion(), newIfOp.getThenRegion());
+  rewriteRegion(getElseRegion(), newIfOp.getElseRegion());
 
   rewriter.eraseOp(*this);
 
