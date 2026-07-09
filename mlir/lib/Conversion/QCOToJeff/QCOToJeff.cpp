@@ -1452,6 +1452,8 @@ protected:
         patterns, typeConverter, context, state, "iswap");
     addQCOToJeffGatePattern<JK::Custom, 2, 0, DCXOp, void, false>(
         patterns, typeConverter, context, state, "dcx");
+    addQCOToJeffGatePattern<JK::Custom, 3, 0, RCCXOp, void, false>(
+        patterns, typeConverter, context, state, "rccx");
     addQCOToJeffGatePattern<JK::Custom, 2, 0, ECROp, void, false>(
         patterns, typeConverter, context, state, "ecr");
     addQCOToJeffGatePattern<JK::PPR, 2, 1, RXXOp, void, false>(

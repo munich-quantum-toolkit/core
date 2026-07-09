@@ -81,6 +81,8 @@
         ::mlir::qir::getFnNameRZX)                                             \
   ENTRY(RZZ, 2, 1, ::mlir::qco::RZZOp, ::mlir::qc::RZZOp,                      \
         ::mlir::qir::getFnNameRZZ)                                             \
+  ENTRY(RCCX, 3, 0, ::mlir::qco::RCCXOp, ::mlir::qc::RCCXOp,                   \
+        ::mlir::qir::getFnNameRCCX)                                            \
   ENTRY(XXPlusYY, 2, 2, ::mlir::qco::XXPlusYYOp, ::mlir::qc::XXPlusYYOp,       \
         ::mlir::qir::getFnNameXXPLUSYY)                                        \
   ENTRY(XXMinusYY, 2, 2, ::mlir::qco::XXMinusYYOp, ::mlir::qc::XXMinusYYOp,    \

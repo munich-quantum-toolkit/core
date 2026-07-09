@@ -732,6 +732,14 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
       return createGateFromJeffArity<DCXOp, jeff::CustomOp, 2, 0>(
           op, rewriter, controls, targets, params);
     }
+    if (name == "rccx") {
+      if (targets.size() != 3 || !params.empty()) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom rccx expects three targets and no parameters");
+      }
+      return createGateFromJeffArity<RCCXOp, jeff::CustomOp, 3, 0>(
+          op, rewriter, controls, targets, params);
+    }
     if (name == "ecr") {
       if (targets.size() != 2 || !params.empty()) {
         return rewriter.notifyMatchFailure(

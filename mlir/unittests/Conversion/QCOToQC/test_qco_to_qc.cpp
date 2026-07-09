@@ -209,6 +209,21 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::multipleControlledDcx)}));
 /// @}
 
+/// \name QCOToQC/Operations/StandardGates/RCCXOp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORCCXOpTest, QCOToQCTest,
+    testing::Values(
+        QCOToQCTestCase{"RCCX", MQT_NAMED_BUILDER(qco::rccx),
+                        MQT_NAMED_BUILDER(qc::rccx)},
+        QCOToQCTestCase{"SingleControlledRCCX",
+                        MQT_NAMED_BUILDER(qco::singleControlledRccx),
+                        MQT_NAMED_BUILDER(qc::singleControlledRccx)},
+        QCOToQCTestCase{"MultipleControlledRCCX",
+                        MQT_NAMED_BUILDER(qco::multipleControlledRccx),
+                        MQT_NAMED_BUILDER(qc::multipleControlledRccx)}));
+/// @}
+
 /// \name QCOToQC/Operations/StandardGates/EcrOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
