@@ -325,3 +325,43 @@ OpOperand* IfOp::getTiedElseYieldedValue(BlockArgument bbArg) {
   }
   return &elseYield().getTargetsMutable()[bbArg.getArgNumber()];
 }
+
+IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
+                                       ValueRange addons) {
+  if (addons.empty()) {
+    return *this;
+  }
+
+  SmallVector<Value> allQubits;
+  allQubits.reserve(getQubits().size() + addons.size());
+  allQubits.append(getQubits().begin(), getQubits().end());
+  allQubits.append(addons.begin(), addons.end());
+  const auto allQubitTypes = ValueRange(allQubits).getTypes();
+
+  auto newIfOp = create(rewriter, getLoc(), getCondition(), allQubits);
+
+  const auto rewriteRegion = [&rewriter, &allQubitTypes,
+                              &addons](Region& oldRegion, Region& newRegion) {
+    auto* oldBlock = &oldRegion.front();
+    const auto numOldArgs = oldBlock->getNumArguments();
+    auto* newBlock = rewriter.createBlock(&newRegion, {}, allQubitTypes);
+    const auto oldArgs = newBlock->getArguments().take_front(numOldArgs);
+    const auto addonArgs = newBlock->getArguments().drop_front(numOldArgs);
+
+    rewriter.mergeBlocks(oldBlock, newBlock, oldArgs);
+
+    auto yield = cast<YieldOp>(newBlock->getTerminator());
+    SmallVector<Value> yieldedValues;
+    yieldedValues.reserve(yield.getTargets().size() + addons.size());
+    yieldedValues.append(yield.getTargets().begin(), yield.getTargets().end());
+    yieldedValues.append(addonArgs.begin(), addonArgs.end());
+    rewriter.replaceOpWithNewOp<YieldOp>(yield, yieldedValues);
+  };
+
+  rewriteRegion(getThenRegion(), newIfOp.getThenRegion());
+  rewriteRegion(getElseRegion(), newIfOp.getElseRegion());
+
+  rewriter.eraseOp(*this);
+
+  return newIfOp;
+}

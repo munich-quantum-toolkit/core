@@ -1147,13 +1147,17 @@ def CtrlOp : QCOOp<"ctrl",
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
-  let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets),
-                            [{
-           build($_builder, $_state, controls.getTypes(), targets.getTypes(), controls, targets);
-        }]>,
-                  OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets,
-                      "function_ref<SmallVector<Value>(ValueRange)"
-                      ">":$bodyBuilder)>];
+  let builders =
+      [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets), [{
+            build($_builder, $_state, controls.getTypes(), targets.getTypes(),
+                  controls, targets);
+          }]>,
+       OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets,
+           "function_ref<SmallVector<Value>(ValueRange)>":$bodyBuilder)>,
+       OpBuilder<(ins "ValueRange":$controls, "Value":$target,
+           "function_ref<Value(Value)>":$bodyBuilder)>,
+       OpBuilder<(ins "Value":$control, "Value":$target,
+           "function_ref<Value(Value)>":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -1221,12 +1225,14 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
         [[nodiscard]] std::optional<DynamicMatrix> getUnitaryMatrix();
     }];
 
-  let builders = [OpBuilder<(ins "ValueRange":$qubits), [{
-           build($_builder, $_state, qubits.getTypes(), qubits);
-        }]>,
-                  OpBuilder<(ins "ValueRange":$qubits,
-                      "function_ref<SmallVector<Value>(ValueRange)"
-                      ">":$bodyBuilder)>];
+  let builders =
+      [OpBuilder<(ins "ValueRange":$qubits), [{
+        build($_builder, $_state, qubits.getTypes(), qubits);
+      }]>,
+       OpBuilder<(ins "ValueRange":$qubits,
+           "function_ref<SmallVector<Value>(ValueRange)>":$bodyBuilder)>,
+       OpBuilder<(ins "Value":$qubit,
+           "function_ref<Value(Value)>":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -1319,6 +1325,13 @@ def IfOp
         /// Return the yielded value that corresponds to the given argument
         /// for the else-block, or `nullptr` on failure.
         OpOperand* getTiedElseYieldedValue(BlockArgument bbArg);
+
+        /// Append the specified additional "qubit" operands: replace this
+        /// if-op with a new if-op that has the additional qubit operands.
+        /// The operands can be of qubit or qtensor type.
+        /// The branch bodies of this if-op are moved over to the new if-op.
+        /// The newly added qubits are yielded from each branch.
+        IfOp replaceWithAdditionalQubits(RewriterBase& rewriter, ValueRange addons);
     }];
 
   let extraClassDefinition = [{
