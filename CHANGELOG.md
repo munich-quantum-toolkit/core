@@ -17,7 +17,7 @@ releases may include breaking changes.
 - ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
   ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
 - 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
-  ([#1826]) ([**@ystade])
+  ([#1826]) ([**@ystade**])
 - 🐳 Add dev container configuration for consistent local development
   environment ([#1786]) ([**@denialhaag**])
 - ✨ Add two-qubit Weyl (KAK) decomposition and native-gateset synthesis support
@@ -29,8 +29,6 @@ releases may include breaking changes.
   ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add QIR program format support to the DDSIM QDMI Device ([#1766])
   ([**@rturrado**])
-- 🚸 Add [CMake presets] to provide a standardized and reproducible way to
-  configure builds ([#1660]) ([**@denialhaag**])
 - ✨ Add a `quantum-loop-unroll` pass for unrolling for-loop operations
   containing quantum operations ([#1718]) ([**@MatthiasReumann**])
 - ✨ Add a `hadamard-lifting` pass for lifting Hadamard gates above Pauli gates
@@ -58,12 +56,6 @@ releases may include breaking changes.
 
 ### Changed
 
-- ⬆️ Update QDMI to version 1.3.2 ([#1873]) ([**@denialhaag**])
-- ♻️ Improve implementation and usability of FoMaC classes ([#1849])
-  ([**@MatthiasReumann**])
-- ⬆️ Update `nanobind` to version 2.13.0 ([#1817])
-- ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660],
-  [#1737]) ([**@denialhaag**])
 - ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**],
   [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**],
@@ -71,8 +63,6 @@ releases may include breaking changes.
 
 ### Removed
 
-- 📝 Remove support for generating LaTeX documentation ([#1828])
-  ([**@denialhaag**])
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
@@ -81,6 +71,36 @@ releases may include breaking changes.
 ### Fixed
 
 - 🐛 Fix QIR function names for adjoint gates ([#1830]) ([**@denialhaag**])
+
+## [3.7.0] - 2026-07-09
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#370)._
+
+### Added
+
+- ✨ Add support for IQM's `move` gate in the QDMI Qiskit backend converter
+  ([#1844], [#1848]) ([**@burgholzer**], [**@marcelwa**])
+- 🚸 Add `const` version of the `CompoundOperation`'s `getOps()` function
+  ([#1826]) ([**@ystade**])
+- 🚸 Add [CMake presets] to provide a standardized and reproducible way to
+  configure builds ([#1660]) ([**@denialhaag**])
+
+### Changed
+
+- ⬆️ Update QDMI to version 1.3.2 ([#1873]) ([**@denialhaag**])
+- ♻️ Improve implementation and usability of FoMaC classes ([#1849])
+  ([**@MatthiasReumann**])
+- ⬆️ Update `nanobind` to version 2.13.0 ([#1817])
+- ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660],
+  [#1737]) ([**@denialhaag**])
+
+### Removed
+
+- 📝 Remove support for generating LaTeX documentation ([#1828])
+  ([**@denialhaag**])
+
+### Fixed
+
 - 🐛 Fix invalid `prop_type` for `QDMI_DEVICE_PROPERTY_COUPLINGMAP` in QDMI SC
   Device ([#1842]) ([**@MatthiasReumann**])
 
@@ -585,7 +605,8 @@ changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.6.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.7.0
 [3.6.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.1
 [3.6.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.6.0
 [3.5.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.5.1
