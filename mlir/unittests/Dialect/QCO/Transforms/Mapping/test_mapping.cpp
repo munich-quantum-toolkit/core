@@ -138,6 +138,8 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
             m.try_emplace(succ, hw);
           }
 
+          std::array<SmallVector<size_t>, 2> finalPermutation{};
+
           for (size_t i = 0; i < 2; ++i) {
             Region* body = regions[i];
             if (!isExecutable(*body, mappings[i], couplingSet)) {
@@ -147,14 +149,14 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
 
             Block& block = body->getBlocks().front();
             auto yield = cast<qco::YieldOp>(block.getTerminator());
-            for (const auto& [arg, yielded] :
-                 llvm::zip_equal(body->getArguments(), yield.getTargets())) {
-              if (mappings[i].at(arg) != mappings[i].at(yielded)) {
-                llvm::dbgs() << "qco::IfOp: layout not restored!\n";
-                executable = false;
-                return;
-              }
+            for (const auto v : yield.getTargets()) {
+              finalPermutation[i].emplace_back(mappings[i].at(v));
             }
+          }
+
+          if (finalPermutation[0] != finalPermutation[1]) {
+            executable = false;
+            return;
           }
         })
         .Case<ResetOp, MeasureOp>([&](auto op) {
@@ -632,7 +634,7 @@ TEST_P(MappingPassTest, Sabre) {
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
 }
 
-TEST_P(MappingPassTest, RandomGHZ) {
+TEST_P(MappingPassTest, RandomOrderGHZ) {
   const auto& device = GetParam();
 
   QCOProgramBuilder builder(context.get());
@@ -649,14 +651,25 @@ TEST_P(MappingPassTest, RandomGHZ) {
   qubits[0] = builder.h(qubits[0]);
   std::tie(qubits[0], cregs[0]) = builder.measure(qubits[0]);
 
-  qubits = builder.qcoIf(cregs[0], qubits, [&](ValueRange args) {
-    SmallVector<Value> values(args);
-    values[0] = builder.h(values[0]);
-    for (size_t i = 1; i < 9; ++i) {
-      std::tie(values[0], values[i]) = builder.cx(values[0], values[i]);
-    }
-    return values;
-  });
+  qubits = builder.qcoIf(
+      cregs[0], qubits,
+      [&](ValueRange args) {
+        SmallVector<Value> values(args);
+        values[0] = builder.h(values[0]);
+        for (size_t i = 1; i < 9; ++i) {
+          std::tie(values[0], values[i]) = builder.cx(values[0], values[i]);
+        }
+        return values;
+      },
+      [&](ValueRange args) {
+        SmallVector<Value> values(args);
+        values[8] = builder.h(values[8]);
+        for (size_t i = 8; i > 0; --i) {
+          std::tie(values[8], values[i - 1]) =
+              builder.cx(values[8], values[i - 1]);
+        }
+        return values;
+      });
 
   qubits = builder.barrier(qubits);
 
@@ -674,6 +687,8 @@ TEST_P(MappingPassTest, RandomGHZ) {
   auto res =
       runPass(m.get(), device.couplingSet, MappingPassOptions{.ntrials = 1});
   auto entry = getEntryPoint(m.get());
+
+  // entry->dumpPretty();
 
   ASSERT_TRUE(res.succeeded());
   EXPECT_TRUE(isExecutable(entry, device.couplingSet));
