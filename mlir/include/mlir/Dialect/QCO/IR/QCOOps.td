@@ -1334,6 +1334,13 @@ def IfOp
         /// Return the yielded value that corresponds to the given argument
         /// for the else-block, or `nullptr` on failure.
         OpOperand* getTiedElseYieldedValue(BlockArgument bbArg);
+
+        /// Append the specified additional "qubit" operands: replace this
+        /// if-op with a new if-op that has the additional qubit operands.
+        /// The operands can be of qubit or qtensor type.
+        /// The branch bodies of this if-op are moved over to the new if-op.
+        /// The newly added qubits are yielded from each branch.
+        IfOp replaceWithAdditionalQubits(RewriterBase& rewriter, ValueRange addons);
     }];
 
   let extraClassDefinition = [{
