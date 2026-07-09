@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -711,58 +712,75 @@ bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
  * `V` is unitary and `V^{-1} = V^\dagger`; this is verified before use because
  * the eigensolver does not orthogonalize degenerate eigenspaces.
  *
- * @return `U^p`, or `std::nullopt` if the body is not a single known unitary,
- * the exponent is non-constant, or `V` is not unitary.
+ * The body matrix `U` comes either from a single inner unitary (e.g.
+ * `pow(p) { h }`) or, for a composed body (e.g. `pow(p) { h; x }`), from
+ * @ref composeBodyMatrix over all targets.
+ *
+ * @return `U^p`, or `std::nullopt` if the exponent is non-constant, the body is
+ * not fully compile-time known, or `V` is not unitary.
  */
 std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
-  auto bodyUnitary = utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody());
-  if (!bodyUnitary) {
-    return std::nullopt;
-  }
-  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<DynamicMatrix>();
-  if (!targetMatrix) {
-    return std::nullopt;
-  }
-
   const auto exponent = getExponentValue();
   if (!exponent) {
     return std::nullopt;
   }
   const double p = *exponent;
 
-  // U^1 = U (no computation needed)
-  if (std::abs(p - 1.0) < TOLERANCE) {
-    return targetMatrix;
-  }
+  // Raise a fully compile-time-known body matrix U to the power p via the
+  // eigendecomposition U = V D V^{-1} => U^p = V D^p V^{-1}. PowOp bodies are
+  // unitary, so U is normal and its eigenvectors form a unitary V, giving
+  // V^{-1} = V^\dagger.
+  const auto raiseToPow =
+      [p](const DynamicMatrix& u) -> std::optional<DynamicMatrix> {
+    // U^1 = U (no computation needed)
+    if (std::abs(p - 1.0) < TOLERANCE) {
+      return u;
+    }
 
-  // U^0 = I
-  if (std::abs(p) < TOLERANCE) {
-    return DynamicMatrix::identity(targetMatrix->cols());
-  }
+    // U^0 = I
+    if (std::abs(p) < TOLERANCE) {
+      return DynamicMatrix::identity(u.cols());
+    }
 
-  // General case: eigendecomposition U = V D V^{-1} => U^p = V D^p V^{-1}.
-  // PowOp bodies are unitary, so U is normal and its eigenvectors form a
-  // unitary V, giving V^{-1} = V^\dagger.
-  const auto eigen = targetMatrix->eigenDecomposition();
-  if (!eigen) {
+    const auto eigen = u.eigenDecomposition();
+    if (!eigen) {
+      return std::nullopt;
+    }
+    const auto& eigenvalues = eigen->eigenvalues;
+    const auto& v = eigen->eigenvectors;
+    const std::int64_t dim = v.cols();
+
+    // Reject non-orthonormal eigenvectors (e.g. unresolved degenerate
+    // subspaces).
+    constexpr double eigenSolverTol = 1e-10;
+    if (!(v * v.adjoint())
+             .isApprox(DynamicMatrix::identity(dim), eigenSolverTol)) {
+      return std::nullopt;
+    }
+
+    // Build D^p by raising each eigenvalue to the power p (principal branch).
+    DynamicMatrix powDiagonal(dim);
+    for (std::int64_t i = 0; i < dim; ++i) {
+      powDiagonal(i, i) = std::pow(eigenvalues[static_cast<size_t>(i)], p);
+    }
+
+    return v * powDiagonal * v.adjoint();
+  };
+
+  // Single inner unitary (e.g. `pow(p) { h }`, `pow(p) { rz(theta) }`).
+  if (auto bodyUnitary =
+          utils::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
+    if (const auto targetMatrix =
+            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
+      return raiseToPow(*targetMatrix);
+    }
     return std::nullopt;
   }
-  const auto& eigenvalues = eigen->eigenvalues;
-  const auto& v = eigen->eigenvectors;
-  const std::int64_t dim = v.cols();
 
-  // Reject non-orthonormal eigenvectors (e.g. unresolved degenerate subspaces).
-  constexpr double eigenSolverTol = 1e-10;
-  if (!(v * v.adjoint())
-           .isApprox(DynamicMatrix::identity(dim), eigenSolverTol)) {
-    return std::nullopt;
+  // Composed body (e.g., `pow(p) { h; x }`).
+  if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
+    return raiseToPow(*composed);
   }
 
-  // Build D^p by raising each eigenvalue to the power p (principal branch).
-  DynamicMatrix powDiagonal(dim);
-  for (std::int64_t i = 0; i < dim; ++i) {
-    powDiagonal(i, i) = std::pow(eigenvalues[static_cast<size_t>(i)], p);
-  }
-
-  return v * powDiagonal * v.adjoint();
+  return std::nullopt;
 }
