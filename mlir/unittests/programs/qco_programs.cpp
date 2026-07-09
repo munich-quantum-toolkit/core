@@ -1645,7 +1645,8 @@ trivialControlledR(QCOProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 inverseR(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto res = b.inv(q[0], [&](Value qubit) { return b.r(-0.123, 0.456, qubit); });
+  auto res =
+      b.inv(q[0], [&](Value qubit) { return b.r(-0.123, 0.456, qubit); });
   q[0] = res[0];
   return measureAndReturn(b, {q[0]});
 }
@@ -1736,8 +1737,8 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 inverseU2(QCOProgramBuilder& b) {
   constexpr double pi = std::numbers::pi;
   auto q = b.allocQubitRegister(1);
-  auto res = b.inv(q[0],
-        [&](Value qubit) { return b.u2(-0.567 + pi, -0.234 - pi, qubit); });
+  auto res = b.inv(
+      q[0], [&](Value qubit) { return b.u2(-0.567 + pi, -0.234 - pi, qubit); });
   q[0] = res[0];
   return measureAndReturn(b, {q[0]});
 }
@@ -1828,7 +1829,8 @@ trivialControlledU(QCOProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 inverseU(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto res = b.inv(q[0], [&](Value qubit) { return b.u(-0.1, -0.3, -0.2, qubit); });
+  auto res =
+      b.inv(q[0], [&](Value qubit) { return b.u(-0.1, -0.3, -0.2, qubit); });
   q[0] = res[0];
   return measureAndReturn(b, {q[0]});
 }
@@ -2959,7 +2961,8 @@ barrierMultipleQubits(QCOProgramBuilder& b) {
 std::pair<SmallVector<Value>, SmallVector<Type>>
 singleControlledBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto res = b.ctrl(q[1], q[0], [&](Value target) { return b.barrier({target})[0]; });
+  auto res =
+      b.ctrl(q[1], q[0], [&](Value target) { return b.barrier({target})[0]; });
   q[1] = res.first[0];
   q[0] = res.second[0];
   return measureAndReturn(b, {q[0]});
@@ -3642,14 +3645,15 @@ nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto control0 = b.allocQubit();
   auto control1 = b.h(control0);
-  auto scfFor = b.scfFor(0, 3, 1, {reg.value, control1}, [&](Value iv, ValueRange iterArgs) {
-    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-    auto q1 = b.h(q0);
-    auto [controlOut, targetOut] =
-        b.ctrl(iterArgs[1], q1, [&](Value target) { return b.x(target); });
-    auto insert = b.qtensorInsert(targetOut, t0, iv);
-    return SmallVector{insert, controlOut};
-  });
+  auto scfFor = b.scfFor(
+      0, 3, 1, {reg.value, control1}, [&](Value iv, ValueRange iterArgs) {
+        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+        auto q1 = b.h(q0);
+        auto [controlOut, targetOut] =
+            b.ctrl(iterArgs[1], q1, [&](Value target) { return b.x(target); });
+        auto insert = b.qtensorInsert(targetOut, t0, iv);
+        return SmallVector{insert, controlOut};
+      });
   return measureAndReturn(b, {scfFor[1]});
 }
 
@@ -3657,14 +3661,15 @@ std::pair<SmallVector<Value>, SmallVector<Type>>
 nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   auto control = b.h(reg[0]);
-  auto scfFor = b.scfFor(1, 4, 1, {reg.value, control}, [&](Value iv, ValueRange iterArgs) {
-    auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
-    auto q1 = b.h(q0);
-    auto [controlOut, targetOut] =
-        b.ctrl(iterArgs[1], q1, [&](Value target) { return b.x(target); });
-    auto insert = b.qtensorInsert(targetOut, t0, iv);
-    return SmallVector{insert, controlOut};
-  });
+  auto scfFor = b.scfFor(
+      1, 4, 1, {reg.value, control}, [&](Value iv, ValueRange iterArgs) {
+        auto [t0, q0] = b.qtensorExtract(iterArgs[0], iv);
+        auto q1 = b.h(q0);
+        auto [controlOut, targetOut] =
+            b.ctrl(iterArgs[1], q1, [&](Value target) { return b.x(target); });
+        auto insert = b.qtensorInsert(targetOut, t0, iv);
+        return SmallVector{insert, controlOut};
+      });
   return measureAndReturn(b, {scfFor[1]});
 }
 

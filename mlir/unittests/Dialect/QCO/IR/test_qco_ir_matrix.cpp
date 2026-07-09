@@ -40,8 +40,8 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace qco;
