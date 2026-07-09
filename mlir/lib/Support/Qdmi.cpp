@@ -26,11 +26,10 @@
 namespace {
 template <typename T>
 void getJsonStringIfExists(const nlohmann::json& jsonObj,
-                           const std::string& field,
-                           T& target) {
-    if (jsonObj.contains(field) && jsonObj[field].is_string()) {
-        target = jsonObj[field].get<std::string>();
-    }
+                           const std::string& field, T& target) {
+  if (jsonObj.contains(field) && jsonObj[field].is_string()) {
+    target = jsonObj[field].get<std::string>();
+  }
 }
 } // namespace
 
