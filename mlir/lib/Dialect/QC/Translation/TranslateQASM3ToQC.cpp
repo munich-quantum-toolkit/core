@@ -119,9 +119,6 @@ static llvm::StringMap<GateFn> buildGateDispatch() {
   d["dcx"] = [](auto& b, auto q, auto) { b.dcx(q[0], q[1]); };
   d["ecr"] = [](auto& b, auto q, auto) { b.ecr(q[0], q[1]); };
 
-  // ThreeTargetZeroParameter
-  d["rccx"] = [](auto& b, auto q, auto) { b.rccx(q[0], q[1], q[2]); };
-
   // TwoTargetOneParameter
   d["rxx"] = [](auto& b, auto q, auto p) { b.rxx(p[0], q[0], q[1]); };
   d["ryy"] = [](auto& b, auto q, auto p) { b.ryy(p[0], q[0], q[1]); };
@@ -135,6 +132,9 @@ static llvm::StringMap<GateFn> buildGateDispatch() {
   d["xx_minus_yy"] = [](auto& b, auto q, auto p) {
     b.xx_minus_yy(p[0], p[1], q[0], q[1]);
   };
+
+  // ThreeTargetZeroParameter
+  d["rccx"] = [](auto& b, auto q, auto) { b.rccx(q[0], q[1], q[2]); };
 
   // Controlled OneTargetZeroParameter
   d["cx"] = [](auto& b, auto q, auto) { b.cx(q[0], q[1]); };

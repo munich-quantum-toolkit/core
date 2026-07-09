@@ -626,23 +626,6 @@ void inverseDcx(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
 void inverseMultipleControlledDcx(QCProgramBuilder& b);
 
-// --- RCCXOp --------------------------------------------------------------- //
-
-/// Creates a circuit with just an RCCX gate.
-void rccx(QCProgramBuilder& b);
-
-/// Creates a circuit with a single controlled RCCX gate.
-void singleControlledRccx(QCProgramBuilder& b);
-
-/// Creates a circuit with a multi-controlled RCCX gate.
-void multipleControlledRccx(QCProgramBuilder& b);
-
-/// Creates a circuit with a nested controlled RCCX gate.
-void nestedControlledRccx(QCProgramBuilder& b);
-
-/// Creates a circuit with a trivial controlled RCCX gate.
-void trivialControlledRccx(QCProgramBuilder& b);
-
 // --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.
@@ -811,6 +794,23 @@ void inverseXxMinusYY(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled XXMinusYY
 /// gate.
 void inverseMultipleControlledXxMinusYY(QCProgramBuilder& b);
+
+// --- RCCXOp --------------------------------------------------------------- //
+
+/// Creates a circuit with just an RCCX gate.
+void rccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a single controlled RCCX gate.
+void singleControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+void multipleControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a nested controlled RCCX gate.
+void nestedControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a trivial controlled RCCX gate.
+void trivialControlledRccx(QCProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 

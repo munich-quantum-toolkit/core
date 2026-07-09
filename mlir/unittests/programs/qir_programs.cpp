@@ -505,21 +505,6 @@ void multipleControlledDcx(QIRProgramBuilder& b) {
   b.mcdcx({q[0], q[1]}, q[2], q[3]);
 }
 
-void rccx(QIRProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.rccx(q[0], q[1], q[2]);
-}
-
-void singleControlledRccx(QIRProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.crccx(q[0], q[1], q[2], q[3]);
-}
-
-void multipleControlledRccx(QIRProgramBuilder& b) {
-  auto q = b.allocQubitRegister(5);
-  b.mcrccx({q[0], q[1]}, q[2], q[3], q[4]);
-}
-
 void ecr(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ecr(q[0], q[1]);
@@ -628,6 +613,21 @@ void singleControlledXxMinusYY(QIRProgramBuilder& b) {
 void multipleControlledXxMinusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcxx_minus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
+}
+
+void rccx(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.rccx(q[0], q[1], q[2]);
+}
+
+void singleControlledRccx(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.crccx(q[0], q[1], q[2], q[3]);
+}
+
+void multipleControlledRccx(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  b.mcrccx({q[0], q[1]}, q[2], q[3], q[4]);
 }
 
 void simpleIf(QIRProgramBuilder& b) {

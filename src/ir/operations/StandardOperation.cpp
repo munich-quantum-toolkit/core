@@ -427,9 +427,6 @@ void StandardOperation::dumpGateType(
   case DCX:
     op << "dcx";
     break;
-  case RCCX:
-    op << "rccx";
-    break;
   case ECR:
     op << "ecr";
     break;
@@ -450,6 +447,9 @@ void StandardOperation::dumpGateType(
     break;
   case XXplusYY:
     op << "xx_plus_yy(" << parameter[0] << "," << parameter[1] << ")";
+    break;
+  case RCCX:
+    op << "rccx";
     break;
   case SWAP:
     op << "swap";

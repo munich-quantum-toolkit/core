@@ -326,6 +326,9 @@ TEST_F(QFRFunctionality, gateShortCutsAndCloning) {
   qc.xx_plus_yy(PI, PI, 0, 1);
   qc.cxx_plus_yy(PI, PI, 2, 0, 1);
   qc.mcxx_plus_yy(PI, PI, {2, 3_nc}, 0, 1);
+  qc.rccx(0, 1, 2);
+  qc.crccx(2, 0, 1, 2);
+  qc.mcrccx({2, 3_nc}, 0, 1, 2);
   qc.measure(0, 0);
   qc.measure({1, 2}, {1, 2});
   qc.barrier(0);

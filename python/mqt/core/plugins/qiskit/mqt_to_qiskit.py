@@ -145,7 +145,6 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
         OpType.sx: SXGate(),
         OpType.sxdg: SXdgGate(),
         OpType.dcx: DCXGate(),
-        OpType.rccx: RCCXGate(),
         OpType.ecr: ECRGate(),
         OpType.swap: SwapGate(),
         OpType.iswap: iSwapGate(),
@@ -211,6 +210,18 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
                 gate(parameter1, parameter2, parameter3).control(len(controls), ctrl_state=ctrl_state),
                 [*controls, *targets],
             )
+        return
+
+    gate_map_three_target_zero: dict[OpType, SingletonGate] = {
+        OpType.rccx: RCCXGate(),
+    }
+
+    if op.type_ in gate_map_three_target_zero:
+        gate = gate_map_three_target_zero[op.type_]
+        if len(controls) == 0:
+            circ.append(gate, targets)
+        else:
+            circ.append(gate.control(len(controls), ctrl_state=ctrl_state), [*controls, *targets])
         return
 
     msg = f"Unsupported operation type: {op.type_}"

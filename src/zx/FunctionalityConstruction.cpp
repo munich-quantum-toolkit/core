@@ -306,6 +306,20 @@ void FunctionalityConstruction::addXXminusYY(
   addRz(diag, PiExpression(-PiRational(1, 2)), qubit1, qubits);
 }
 
+void FunctionalityConstruction::addRccx(ZXDiagram& diag, const Qubit qubit0,
+                                        const Qubit qubit1, const Qubit qubit2,
+                                        std::vector<Vertex>& qubits) {
+  addZSpider(diag, qubit2, qubits, PiExpression(), EdgeType::Hadamard);
+  addZSpider(diag, qubit2, qubits, PiExpression(PiRational(1, 4)));
+  addCnot(diag, qubit1, qubit2, qubits);
+  addZSpider(diag, qubit2, qubits, PiExpression(PiRational(-1, 4)));
+  addCnot(diag, qubit0, qubit2, qubits);
+  addZSpider(diag, qubit2, qubits, PiExpression(PiRational(1, 4)));
+  addCnot(diag, qubit1, qubit2, qubits);
+  addZSpider(diag, qubit2, qubits, PiExpression(PiRational(-1, 4)));
+  addZSpider(diag, qubit2, qubits, PiExpression(), EdgeType::Hadamard);
+}
+
 void FunctionalityConstruction::addSwap(ZXDiagram& diag, const Qubit target1,
                                         const Qubit target2,
                                         std::vector<Vertex>& qubits) {
@@ -635,6 +649,12 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
     case qc::OpType::DCX: {
       const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
       addDcx(diag, target, target2, qubits);
+      break;
+    }
+    case qc::OpType::RCCX: {
+      const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
+      const auto target3 = static_cast<Qubit>(p.at(op->getTargets()[2]));
+      addRccx(diag, target, target2, target3, qubits);
       break;
     }
     case qc::OpType::ECR: {
@@ -982,6 +1002,7 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::ECR:
     case qc::OpType::XXplusYY:
     case qc::OpType::XXminusYY:
+    case qc::OpType::RCCX:
       return true;
     default:
       return false;
@@ -1023,6 +1044,13 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::RZZ:
     case qc::OpType::RXX:
     case qc::OpType::RZX:
+      return true;
+    default:
+      return false;
+    }
+  } else if (op->getNtargets() == 3) {
+    switch (op->getType()) {
+    case qc::OpType::RCCX:
       return true;
     default:
       return false;

@@ -729,73 +729,6 @@ public:
 
 #undef DECLARE_TWO_TARGET_ZERO_PARAMETER
 
-  // ThreeTargetZeroParameter
-
-#define DECLARE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                 \
-  /**                                                                          \
-   * @brief Apply a OP_CLASS                                                   \
-   *                                                                           \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(q0, q1, q2);                                              \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.OP_NAME %q0, %q1, %q2 : !qc.qubit, !qc.qubit, !qc.qubit                \
-   * ```                                                                       \
-   */                                                                          \
-  QCProgramBuilder& OP_NAME(Value qubit0, Value qubit1, Value qubit2);         \
-  /**                                                                          \
-   * @brief Apply a controlled OP_CLASS                                        \
-   *                                                                           \
-   * @param control Control qubit                                              \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(q0, q1, q2, q3);                                       \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2, %a2 = %q3) {                   \
-   *   qc.OP_NAME %a0, %a1, %a2 : !qc.qubit, !qc.qubit, !qc.qubit              \
-   * } : !qc.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
-  QCProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1,      \
-                               Value qubit2);                                  \
-  /**                                                                          \
-   * @brief Apply a multi-controlled OP_CLASS                                  \
-   *                                                                           \
-   * @param controls Control qubits                                            \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME({q0, q1}, q2, q3, q4);                                \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3, %a2 = %q4) {              \
-   *   qc.OP_NAME %a0, %a1, %a2 : !qc.qubit, !qc.qubit, !qc.qubit              \
-   * } : !qc.qubit, !qc.qubit                                                  \
-   * ```                                                                       \
-   */                                                                          \
-  QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,             \
-                                Value qubit1, Value qubit2);
-
-  DECLARE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
-
-#undef DECLARE_THREE_TARGET_ZERO_PARAMETER
-
   // TwoTargetOneParameter
 
 #define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
@@ -944,6 +877,73 @@ public:
   DECLARE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
+
+  // ThreeTargetZeroParameter
+
+#define DECLARE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                 \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q0, q1, q2);                                              \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME %q0, %q1, %q2 : !qc.qubit, !qc.qubit, !qc.qubit                \
+   * ```                                                                       \
+   */                                                                          \
+  QCProgramBuilder& OP_NAME(Value qubit0, Value qubit1, Value qubit2);         \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1, q2, q3);                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2, %a2 = %q3) {                   \
+   *   qc.OP_NAME %a0, %a1, %a2 : !qc.qubit, !qc.qubit, !qc.qubit              \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
+  QCProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1,      \
+                               Value qubit2);                                  \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2, q3, q4);                                \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3, %a2 = %q4) {              \
+   *   qc.OP_NAME %a0, %a1, %a2 : !qc.qubit, !qc.qubit, !qc.qubit              \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
+  QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,             \
+                                Value qubit1, Value qubit2);
+
+  DECLARE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
+
+#undef DECLARE_THREE_TARGET_ZERO_PARAMETER
 
   // BarrierOp
 

@@ -806,73 +806,6 @@ public:
 
 #undef DECLARE_TWO_TARGET_ZERO_PARAMETER
 
-  // ThreeTargetZeroParameter
-
-#define DECLARE_THREE_TARGET_ZERO_PARAMETER(OP_NAME, QIR_NAME)                 \
-  /**                                                                          \
-   * @brief Apply a QIR_NAME operation                                         \
-   *                                                                           \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(q0, q1, q2);                                              \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q0, %q1, %q2) :            \
-   * (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                                   \
-   * ```                                                                       \
-   */                                                                          \
-  QIRProgramBuilder& OP_NAME(Value qubit0, Value qubit1, Value qubit2);        \
-  /**                                                                          \
-   * @brief Apply a controlled QIR_NAME operation                              \
-   *                                                                           \
-   * @param control Control qubit                                              \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(q0, q1, q2, q3);                                       \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %q2, %q3) :      \
-   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                        \
-   * ```                                                                       \
-   */                                                                          \
-  QIRProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1,     \
-                                Value qubit2);                                 \
-  /**                                                                          \
-   * @brief Apply a multi-controlled QIR_NAME operation                        \
-   *                                                                           \
-   * @param controls Control qubits                                            \
-   * @param qubit0 Target qubit                                                \
-   * @param qubit1 Target qubit                                                \
-   * @param qubit2 Target qubit                                                \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME({q0, q1}, q2, q3, q4);                                \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %q3, %q4)  \
-   * :                                                                         \
-   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()             \
-   * ```                                                                       \
-   */                                                                          \
-  QIRProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,            \
-                                 Value qubit1, Value qubit2);
-
-  DECLARE_THREE_TARGET_ZERO_PARAMETER(rccx, rccx)
-
-#undef DECLARE_THREE_TARGET_ZERO_PARAMETER
-
   // TwoTargetOneParameter
 
 #define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_NAME, QIR_NAME, PARAM)             \
@@ -1019,6 +952,73 @@ public:
   DECLARE_TWO_TARGET_TWO_PARAMETER(xx_minus_yy, xx_minus_yy, theta, beta)
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
+
+  // ThreeTargetZeroParameter
+
+#define DECLARE_THREE_TARGET_ZERO_PARAMETER(OP_NAME, QIR_NAME)                 \
+  /**                                                                          \
+   * @brief Apply a QIR_NAME operation                                         \
+   *                                                                           \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q0, q1, q2);                                              \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q0, %q1, %q2) :            \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                                   \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& OP_NAME(Value qubit0, Value qubit1, Value qubit2);        \
+  /**                                                                          \
+   * @brief Apply a controlled QIR_NAME operation                              \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1, q2, q3);                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %q2, %q3) :      \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                        \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1,     \
+                                Value qubit2);                                 \
+  /**                                                                          \
+   * @brief Apply a multi-controlled QIR_NAME operation                        \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2, q3, q4);                                \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %q3, %q4)  \
+   * :                                                                         \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()             \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,            \
+                                 Value qubit1, Value qubit2);
+
+  DECLARE_THREE_TARGET_ZERO_PARAMETER(rccx, rccx)
+
+#undef DECLARE_THREE_TARGET_ZERO_PARAMETER
 
   //===--------------------------------------------------------------------===//
   // SCF Operations

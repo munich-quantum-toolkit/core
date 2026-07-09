@@ -737,23 +737,6 @@ void twoDcx(QCOProgramBuilder& b);
 /// Creates a circuit with two DCX gates in a row with swapped targets.
 void twoDcxSwappedTargets(QCOProgramBuilder& b);
 
-// --- RCCXOp --------------------------------------------------------------- //
-
-/// Creates a circuit with just an RCCX gate.
-void rccx(QCOProgramBuilder& b);
-
-/// Creates a circuit with a single controlled RCCX gate.
-void singleControlledRccx(QCOProgramBuilder& b);
-
-/// Creates a circuit with a multi-controlled RCCX gate.
-void multipleControlledRccx(QCOProgramBuilder& b);
-
-/// Creates a circuit with a nested controlled RCCX gate.
-void nestedControlledRccx(QCOProgramBuilder& b);
-
-/// Creates a circuit with a trivial controlled RCCX gate.
-void trivialControlledRccx(QCOProgramBuilder& b);
-
 // --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.
@@ -979,6 +962,23 @@ void twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with two XXMinusYY gates in a row with swapped targets.
 void twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
+
+// --- RCCXOp --------------------------------------------------------------- //
+
+/// Creates a circuit with just an RCCX gate.
+void rccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a single controlled RCCX gate.
+void singleControlledRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+void multipleControlledRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a nested controlled RCCX gate.
+void nestedControlledRccx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a trivial controlled RCCX gate.
+void trivialControlledRccx(QCOProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 

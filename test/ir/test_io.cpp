@@ -489,6 +489,29 @@ TEST_F(IO, NativeTwoQubitGateImportAndExport) {
   }
 }
 
+TEST_F(IO, NativeThreeQubitGateImportAndExport) {
+  const auto gates = std::vector<std::string>{"rccx"};
+
+  const std::string header = "// i 0 1 2\n"
+                             "// o 0 1 2\n"
+                             "OPENQASM 3.0;\n"
+                             "include \"stdgates.inc\";\n"
+                             "qubit[3] q;\n";
+  for (const auto& gate : gates) {
+    std::stringstream ss{};
+    ss << header << gate << " q[0], q[1], q[2];\n";
+    const auto target = ss.str();
+    qc = qasm3::Importer::imports(target);
+    std::cout << qc << "\n";
+    std::ostringstream oss{};
+    qc.dumpOpenQASM(oss, false);
+    std::cout << oss.str() << "\n";
+    EXPECT_STREQ(oss.str().c_str(), target.c_str());
+    qc.reset();
+    std::cout << "---\n";
+  }
+}
+
 TEST_F(IO, UseQelib1Gate) {
   qc = qasm3::Importer::imports("include \"qelib1.inc\";"
                                 "qreg q[3];"

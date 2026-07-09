@@ -1948,6 +1948,36 @@ TEST(DDPackageTest, DCXGateDDConstruction) {
   }
 }
 
+TEST(DDPackageTest, RCCXGateDDConstruction) {
+  constexpr auto nrQubits = 3U;
+  const auto dd = std::make_unique<Package>(nrQubits);
+
+  const auto rccxGateDD =
+      getDD(qc::StandardOperation(qc::Targets{0, 1, 2}, qc::RCCX), *dd);
+
+  auto gateDD = dd->makeIdent();
+  const auto applySingle = [&](const qc::OpType type, const qc::Qubit target) {
+    gateDD =
+        dd->multiply(getDD(qc::StandardOperation(target, type), *dd), gateDD);
+  };
+  const auto applyCx = [&](const qc::Qubit ctrl, const qc::Qubit target) {
+    gateDD = dd->multiply(
+        getDD(qc::StandardOperation(ctrl, target, qc::X), *dd), gateDD);
+  };
+
+  applySingle(qc::H, 2);
+  applySingle(qc::T, 2);
+  applyCx(1, 2);
+  applySingle(qc::Tdg, 2);
+  applyCx(0, 2);
+  applySingle(qc::T, 2);
+  applyCx(1, 2);
+  applySingle(qc::Tdg, 2);
+  applySingle(qc::H, 2);
+
+  EXPECT_EQ(rccxGateDD, gateDD);
+}
+
 TEST(DDPackageTest, RZZGateDDConstruction) {
   constexpr auto nrQubits = 5U;
   const auto dd = std::make_unique<Package>(nrQubits);
