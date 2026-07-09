@@ -285,8 +285,12 @@ std::vector<QDMI_Program_Format> Device::getSupportedProgramFormats() const {
 }
 
 Job Device::submitJob(const std::string& program,
-                      const QDMI_Program_Format format,
-                      const size_t numShots) const {
+                      const QDMI_Program_Format format, const size_t numShots,
+                      const std::optional<std::string>& custom1,
+                      const std::optional<std::string>& custom2,
+                      const std::optional<std::string>& custom3,
+                      const std::optional<std::string>& custom4,
+                      const std::optional<std::string>& custom5) const {
   QDMI_Job job = nullptr;
   qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job}; // RAII wrapper to prevent leaks in case of exceptions
@@ -308,6 +312,38 @@ Job Device::submitJob(const std::string& program,
                                             QDMI_JOB_PARAMETER_SHOTSNUM,
                                             sizeof(numShots), &numShots),
                      "Setting number of shots");
+
+  // Set custom parameters if provided
+  if (custom1.has_value()) {
+    qdmi::throwIfError(
+        QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1,
+                               custom1->size() + 1, custom1->c_str()),
+        "Setting custom1");
+  }
+  if (custom2.has_value()) {
+    qdmi::throwIfError(
+        QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM2,
+                               custom2->size() + 1, custom2->c_str()),
+        "Setting custom2");
+  }
+  if (custom3.has_value()) {
+    qdmi::throwIfError(
+        QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM3,
+                               custom3->size() + 1, custom3->c_str()),
+        "Setting custom3");
+  }
+  if (custom4.has_value()) {
+    qdmi::throwIfError(
+        QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM4,
+                               custom4->size() + 1, custom4->c_str()),
+        "Setting custom4");
+  }
+  if (custom5.has_value()) {
+    qdmi::throwIfError(
+        QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5,
+                               custom5->size() + 1, custom5->c_str()),
+        "Setting custom5");
+  }
 
   // Submit the job
   qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");

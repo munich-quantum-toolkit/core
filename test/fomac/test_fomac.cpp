@@ -556,6 +556,25 @@ c = measure q;)";
   EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
 }
 
+TEST_F(DDSimulatorDeviceTest, SubmitJobAcceptsCustomParameters) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+  const std::optional<std::string> custom1 = "custom_value1";
+  const std::optional<std::string> custom2 = "custom_value2";
+  const std::optional<std::string> custom3 = "custom_value3";
+  const std::optional<std::string> custom4 = "custom_value4";
+  const std::optional<std::string> custom5 = "custom_value5";
+
+  EXPECT_THROW(std::ignore = device.submitJob(
+                   qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10, custom1,
+                   custom2, custom3, custom4, custom5),
+               std::runtime_error);
+}
+
 TEST_F(DDSimulatorDeviceTest, SubmitJobPreservesNumShots) {
   const std::string qasm3Program = R"(
 OPENQASM 3.0;

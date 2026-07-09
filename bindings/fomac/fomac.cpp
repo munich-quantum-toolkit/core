@@ -269,9 +269,23 @@ Returns:
              &fomac::Device::getSupportedProgramFormats,
              "Returns the list of program formats supported by the device.");
 
-  device.def("submit_job", &fomac::Device::submitJob, "program"_a,
-             "program_format"_a, "num_shots"_a,
-             nb::rv_policy::reference_internal, "Submits a job to the device.");
+  device.def(
+      "submit_job",
+      [](const fomac::Device& self, const std::string& program,
+         const QDMI_Program_Format programFormat, const size_t numShots,
+         const std::optional<std::string>& custom1,
+         const std::optional<std::string>& custom2,
+         const std::optional<std::string>& custom3,
+         const std::optional<std::string>& custom4,
+         const std::optional<std::string>& custom5) {
+        return self.submitJob(program, programFormat, numShots, custom1,
+                              custom2, custom3, custom4, custom5);
+      },
+      "program"_a, "program_format"_a, "num_shots"_a, nb::kw_only(),
+      "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
+      "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
+      "custom5"_a = std::nullopt, nb::rv_policy::reference_internal,
+      "Submits a job to the device.");
 
   device.def("__repr__", [](const fomac::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";

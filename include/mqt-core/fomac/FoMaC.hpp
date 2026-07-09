@@ -319,8 +319,12 @@ public:
 
   /// @see QDMI_job_submit
   [[nodiscard]] Job submitJob(const std::string& program,
-                              QDMI_Program_Format format,
-                              size_t numShots) const;
+                              QDMI_Program_Format format, size_t numShots,
+                              const std::optional<std::string>& custom1,
+                              const std::optional<std::string>& custom2,
+                              const std::optional<std::string>& custom3,
+                              const std::optional<std::string>& custom4,
+                              const std::optional<std::string>& custom5) const;
 
   auto operator<=>(const Device&) const noexcept = default;
 
