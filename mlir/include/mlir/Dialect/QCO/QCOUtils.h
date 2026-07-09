@@ -20,18 +20,25 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <optional>
 
 namespace mlir::qco {
 
+/// Maximum number of modifier targets supported by @ref
+/// composeBodyMatrix.
+inline constexpr size_t kMaxModifierTargetQubits = 10;
+
 /**
- * @brief Composes compile-time single-qubit unitaries in a modifier body.
+ * @brief Composes compile-time unitaries in a modifier body on @p numTargets
+ * wires.
  *
- * @return The composed 2x2 target unitary in program order, or `std::nullopt`
- *         when the body cannot be composed.
+ * @details Block arguments map to wire indices `0..numTargets-1` (MSB-first,
+ * matching @ref Matrix2x2::embedInNqubit). Returns the composed unitary in
+ * program order, or `std::nullopt` when the body cannot be composed.
  */
-[[nodiscard]] std::optional<Matrix2x2>
-composeSingleQubitBodyMatrix(Block& block);
+[[nodiscard]] std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
+                                                             size_t numTargets);
 
 /**
  * @brief Check whether two parameter values match.

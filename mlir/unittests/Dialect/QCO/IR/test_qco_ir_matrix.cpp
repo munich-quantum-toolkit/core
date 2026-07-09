@@ -20,6 +20,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "qco_programs.h"
 
@@ -31,10 +32,13 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 using namespace qco;
@@ -55,8 +59,7 @@ matrix4FromDefinition(const Definition& definition) {
 
 template <typename Fn>
 [[nodiscard]] static Matrix4x4
-expectedMatrixFromComputation(const Fn& build,
-                              const std::size_t numQubits = 2) {
+expectedMatrixFromComputation(const Fn& build, const size_t numQubits = 2) {
   qc::QuantumComputation comp;
   build(comp);
   const auto package = std::make_unique<dd::Package>(numQubits);
@@ -66,23 +69,144 @@ expectedMatrixFromComputation(const Fn& build,
 
 static void controlledXH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange targets) {
-    auto wire = b.x(targets[0]);
-    wire = b.h(wire);
-    return SmallVector{wire};
+  b.ctrl(q[0], q[1], [&](Value target) {
+    target = b.x(target);
+    return b.h(target);
+  });
+}
+
+static void inverseTwoRxRy(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange targets) {
+    auto w0 = b.rx(0.2, targets[0]);
+    auto w1 = b.ry(0.3, targets[1]);
+    return SmallVector{w0, w1};
+  });
+}
+
+static void inverseCxThenRz(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange targets) {
+    auto w0 = targets[0];
+    auto w1 = targets[1];
+    std::tie(w0, w1) = b.cx(w0, w1);
+    w1 = b.rz(0.4, w1);
+    return SmallVector{w0, w1};
+  });
+}
+
+static void inverseDcxThenRz(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange targets) {
+    auto w0 = targets[0];
+    auto w1 = targets[1];
+    std::tie(w0, w1) = b.dcx(w0, w1);
+    w1 = b.rz(0.4, w1);
+    return SmallVector{w0, w1};
   });
 }
 
 static void controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](ValueRange targets) {
-    auto wire = b.inv({targets[0]}, [&](ValueRange innerTargets) {
-      auto inner = b.h(innerTargets[0]);
-      inner = b.t(inner);
-      return SmallVector{inner};
-    })[0];
-    return SmallVector{wire};
+  b.ctrl(q[0], q[1], [&](Value target) {
+    return b.inv(target, [&](Value qubit) {
+      qubit = b.h(qubit);
+      return b.t(qubit);
+    });
   });
+}
+
+static void inverseGphaseBarrierX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](Value target) {
+    b.gphase(0.25);
+    auto wire = b.barrier({target})[0];
+    wire = b.x(wire);
+    return wire;
+  });
+}
+
+static void inverseNestedInvHAndT(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](Value target) {
+    auto wire = b.inv(target, [&](Value inner) { return b.h(inner); });
+    return b.t(wire);
+  });
+}
+
+static void inverseNestedInvHAndX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange targets) {
+    auto w0 = b.inv(targets[0], [&](Value inner) { return b.h(inner); });
+    auto w1 = b.x(targets[1]);
+    return SmallVector{w0, w1};
+  });
+}
+
+static void inverseThreeWireRxRyRz(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
+    auto w0 = b.rx(0.2, targets[0]);
+    auto w1 = b.ry(0.3, targets[1]);
+    auto w2 = b.rz(0.4, targets[2]);
+    return SmallVector{w0, w1, w2};
+  });
+}
+
+static void inverseThreeWireNestedTwoInv(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
+    auto inner = b.inv({targets[0], targets[1]}, [&](ValueRange innerTargets) {
+      auto w0 = b.rx(0.2, innerTargets[0]);
+      auto w1 = b.ry(0.3, innerTargets[1]);
+      return SmallVector{w0, w1};
+    });
+    auto w2 = b.rz(0.4, targets[2]);
+    return SmallVector{inner[0], inner[1], w2};
+  });
+}
+
+static void inverseWithThreeQubitOpInBody(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
+    auto [controls, innerTarget] =
+        b.ctrl({targets[0], targets[1]}, targets[2],
+               [&](Value inner) { return b.x(inner); });
+    return SmallVector<Value>{controls[0], controls[1], innerTarget};
+  });
+}
+
+[[nodiscard]] static InvOp firstInvOp(ModuleOp module) {
+  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
+  return *funcOp.getBody().getOps<InvOp>().begin();
+}
+
+[[nodiscard]] static CtrlOp firstCtrlOp(ModuleOp module) {
+  auto funcOp = cast<func::FuncOp>(module.getBody()->front());
+  return *funcOp.getBody().getOps<CtrlOp>().begin();
+}
+
+[[nodiscard]] static std::optional<DynamicMatrix> invMatrix(ModuleOp module) {
+  return firstInvOp(module).getUnitaryMatrix();
+}
+
+template <typename Builder>
+static void assertInvBodyAdjoint(MLIRContext* ctx, Builder&& build,
+                                 const DynamicMatrix& body) {
+  auto moduleOp = QCOProgramBuilder::build(ctx, std::forward<Builder>(build));
+  ASSERT_TRUE(moduleOp);
+  const auto matrix = invMatrix(*moduleOp);
+  ASSERT_TRUE(matrix);
+  ASSERT_TRUE(matrix->isApprox(body.adjoint()));
+}
+
+template <typename Builder>
+static void expectComposeNTargetFails(MLIRContext* ctx, Builder&& build,
+                                      size_t numTargets) {
+  auto moduleOp = QCOProgramBuilder::build(ctx, std::forward<Builder>(build));
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), numTargets)
+                   .has_value());
 }
 
 namespace {
@@ -114,10 +238,8 @@ TEST_F(QCOMatrixTest, CXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), singleControlledX);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
-  auto matrix = ctrlOp.getUnitaryMatrix();
+  const auto matrix = firstCtrlOp(*moduleOp).getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
 
   const Matrix4x4 expected =
       expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
@@ -132,9 +254,7 @@ TEST_F(QCOMatrixTest, ControlledHOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), singleControlledH);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
-  auto matrix = ctrlOp.getUnitaryMatrix();
+  const auto matrix = firstCtrlOp(*moduleOp).getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
   const Matrix4x4 expected =
@@ -150,9 +270,7 @@ TEST_F(QCOMatrixTest, ControlledXHOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), controlledXH);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
-  auto matrix = ctrlOp.getUnitaryMatrix();
+  const auto matrix = firstCtrlOp(*moduleOp).getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
   const Matrix4x4 expected =
@@ -169,9 +287,7 @@ TEST_F(QCOMatrixTest, ControlledInverseHTOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), controlledInverseHT);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto ctrlOp = *funcOp.getBody().getOps<CtrlOp>().begin();
-  auto matrix = ctrlOp.getUnitaryMatrix();
+  const auto matrix = firstCtrlOp(*moduleOp).getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
   const Matrix4x4 expected =
@@ -186,6 +302,118 @@ TEST_F(QCOMatrixTest, ControlledInverseHTOpMatrix) {
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
+
+TEST_F(QCOMatrixTest, InverseTwoRxRyOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseTwoRxRy);
+  ASSERT_TRUE(moduleOp);
+
+  const auto matrix = invMatrix(*moduleOp);
+  ASSERT_TRUE(matrix);
+
+  const DynamicMatrix body = RYOp::unitaryMatrix(0.3).embedInNqubit(2, 1) *
+                             RXOp::unitaryMatrix(0.2).embedInNqubit(2, 0);
+  ASSERT_TRUE(matrix->isApprox(body.adjoint()));
+}
+
+TEST_F(QCOMatrixTest, InverseCxThenRzOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseCxThenRz);
+  ASSERT_TRUE(moduleOp);
+
+  const auto matrix = invMatrix(*moduleOp);
+  ASSERT_TRUE(matrix);
+
+  const Matrix4x4 cx = Matrix4x4::fromElements(1.0, 0.0, 0.0, 0.0, //
+                                               0.0, 1.0, 0.0, 0.0, //
+                                               0.0, 0.0, 0.0, 1.0, //
+                                               0.0, 0.0, 1.0, 0.0);
+  const DynamicMatrix body =
+      RZOp::unitaryMatrix(0.4).embedInNqubit(2, 1) * cx.embedInNqubit(2, 0, 1);
+  ASSERT_TRUE(matrix->isApprox(body.adjoint()));
+}
+
+TEST_F(QCOMatrixTest, InverseDcxThenRzOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseDcxThenRz);
+  ASSERT_TRUE(moduleOp);
+
+  const auto matrix = invMatrix(*moduleOp);
+  ASSERT_TRUE(matrix);
+
+  const DynamicMatrix body = RZOp::unitaryMatrix(0.4).embedInNqubit(2, 1) *
+                             DCXOp::getUnitaryMatrix().embedInNqubit(2, 0, 1);
+  ASSERT_TRUE(matrix->isApprox(body.adjoint()));
+}
+
+TEST_F(QCOMatrixTest, InvCtrlTwoOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), invCtrlTwo);
+  ASSERT_TRUE(moduleOp);
+
+  const auto matrix = invMatrix(*moduleOp);
+  ASSERT_TRUE(matrix);
+
+  DynamicMatrix body = RXXOp::unitaryMatrix(0.123).embedInNqubit(2, 0, 1) *
+                       XOp::getUnitaryMatrix().embedInNqubit(2, 0);
+  DynamicMatrix ctrl = DynamicMatrix::identity(8);
+  ctrl.setBottomRightCorner(body);
+  ASSERT_TRUE(matrix->isApprox(ctrl.adjoint()));
+}
+
+TEST_F(QCOMatrixTest, InverseGphaseBarrierXOpMatrix) {
+  DynamicMatrix body;
+  body.assignFrom(XOp::getUnitaryMatrix());
+  body *= std::exp(Complex{0.0, 0.25});
+  assertInvBodyAdjoint(context.get(), inverseGphaseBarrierX, body);
+}
+
+TEST_F(QCOMatrixTest, InverseModifierWiresOpMatrix) {
+  assertInvBodyAdjoint(
+      context.get(), inverseNestedInvHAndT,
+      DynamicMatrix(TOp::getUnitaryMatrix() * HOp::getUnitaryMatrix()));
+  assertInvBodyAdjoint(context.get(), inverseNestedInvHAndX,
+                       XOp::getUnitaryMatrix().embedInNqubit(2, 1) *
+                           HOp::getUnitaryMatrix().embedInNqubit(2, 0));
+  assertInvBodyAdjoint(context.get(), inverseThreeWireRxRyRz,
+                       RZOp::unitaryMatrix(0.4).embedInNqubit(3, 2) *
+                           RYOp::unitaryMatrix(0.3).embedInNqubit(3, 1) *
+                           RXOp::unitaryMatrix(0.2).embedInNqubit(3, 0));
+  assertInvBodyAdjoint(context.get(), inverseThreeWireNestedTwoInv,
+                       RZOp::unitaryMatrix(0.4).embedInNqubit(3, 2) *
+                           (RYOp::unitaryMatrix(0.3).embedInNqubit(3, 1) *
+                            RXOp::unitaryMatrix(0.2).embedInNqubit(3, 0))
+                               .adjoint());
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsExcessiveTargets) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), inverseTwoRxRy);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(composeBodyMatrix(*firstInvOp(*moduleOp).getBody(),
+                                 kMaxModifierTargetQubits + 1)
+                   .has_value());
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsThreeQubitOp) {
+  expectComposeNTargetFails(context.get(), inverseWithThreeQubitOpInBody, 3);
+}
+
+TEST_F(QCOMatrixTest, ComposeNTargetRejectsRuntimeGphase) {
+  constexpr auto mlirCode = R"(
+    module {
+      func.func @test(%theta: f64) -> !qco.qubit {
+        %q_in = qco.alloc : !qco.qubit
+        %q_out = qco.inv (%q = %q_in) {
+          qco.gphase(%theta)
+          %q_1 = qco.x %q : !qco.qubit -> !qco.qubit
+          qco.yield %q_1 : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %q_out : !qco.qubit
+      }
+    }
+  )";
+
+  auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(
+      composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), 1).has_value());
+}
 /// @}
 
 /// \name QCO/Modifiers/InvOp.cpp
@@ -194,10 +422,8 @@ TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseIswap);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  auto matrix = invOp.getUnitaryMatrix();
+  const auto matrix = invMatrix(*moduleOp);
+  ASSERT_TRUE(matrix);
 
   const Matrix4x4 expected =
       expectedMatrixFromComputation([](qc::QuantumComputation& comp) {
@@ -212,9 +438,7 @@ TEST_F(QCOMatrixTest, InverseTwoXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseTwoX);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  const auto matrix = invOp.getUnitaryMatrix();
+  const auto matrix = invMatrix(*moduleOp);
   ASSERT_TRUE(matrix);
 
   DynamicMatrix expected;
@@ -226,9 +450,7 @@ TEST_F(QCOMatrixTest, InverseXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseX);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  const auto matrix = invOp.getUnitaryMatrix();
+  const auto matrix = invMatrix(*moduleOp);
   ASSERT_TRUE(matrix);
 
   DynamicMatrix expected;
@@ -240,9 +462,7 @@ TEST_F(QCOMatrixTest, InverseSxOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseSx);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  const auto matrix = invOp.getUnitaryMatrix();
+  const auto matrix = invMatrix(*moduleOp);
   ASSERT_TRUE(matrix);
 
   DynamicMatrix expected;
@@ -254,9 +474,7 @@ TEST_F(QCOMatrixTest, InverseGphaseXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseGphaseX);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  const auto matrix = invOp.getUnitaryMatrix();
+  const auto matrix = invMatrix(*moduleOp);
   ASSERT_TRUE(matrix);
 
   const auto composeGlobal = std::polar(1.0, -0.123);
@@ -269,9 +487,7 @@ TEST_F(QCOMatrixTest, InverseGphaseBarrierOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseGphaseBarrier);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  const auto matrix = invOp.getUnitaryMatrix();
+  const auto matrix = invMatrix(*moduleOp);
   ASSERT_TRUE(matrix);
 
   const auto global = std::conj(std::polar(1.0, 0.123));
@@ -284,19 +500,20 @@ TEST_F(QCOMatrixTest, InverseTwoBarriersInInvOpMatrix) {
   auto moduleOp =
       QCOProgramBuilder::build(context.get(), inverseTwoBarriersInInv);
   ASSERT_TRUE(moduleOp);
-
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  EXPECT_FALSE(invOp.getUnitaryMatrix());
+  EXPECT_FALSE(invMatrix(*moduleOp).has_value());
 }
 
 TEST_F(QCOMatrixTest, InvTwoOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), invTwo);
   ASSERT_TRUE(moduleOp);
 
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  EXPECT_FALSE(invOp.getUnitaryMatrix());
+  const auto matrix = invMatrix(*moduleOp);
+  ASSERT_TRUE(matrix);
+
+  const DynamicMatrix body =
+      RXXOp::unitaryMatrix(0.123).embedInNqubit(2, 0, 1) *
+      XOp::getUnitaryMatrix().embedInNqubit(2, 0);
+  ASSERT_TRUE(matrix->isApprox(body.adjoint()));
 }
 
 TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
@@ -316,10 +533,7 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
 
   auto moduleOp = parseSourceString<ModuleOp>(mlirCode, context.get());
   ASSERT_TRUE(moduleOp);
-
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  auto invOp = *funcOp.getBody().getOps<InvOp>().begin();
-  EXPECT_FALSE(invOp.getUnitaryMatrix());
+  EXPECT_FALSE(invMatrix(*moduleOp).has_value());
 }
 /// @}
 

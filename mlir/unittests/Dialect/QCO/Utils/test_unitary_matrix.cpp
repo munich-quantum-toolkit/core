@@ -43,9 +43,9 @@ static_assert(!SupportedMatrix<int>);
                                  0, 0, 0, 1); // row 3
 }
 
-[[nodiscard]] static DynamicMatrix cyclicPermutation(const std::int64_t dim) {
+[[nodiscard]] static DynamicMatrix cyclicPermutation(const int64_t dim) {
   DynamicMatrix matrix(dim);
-  for (std::int64_t row = 0; row < dim; ++row) {
+  for (int64_t row = 0; row < dim; ++row) {
     matrix(row, (row + 1) % dim) = 1.0;
   }
   return matrix;
@@ -66,7 +66,7 @@ static void verifyMatrix2x2FixedMatchesDynamic() {
   ASSERT_TRUE(dynamic.has_value());
   EXPECT_TRUE(DynamicMatrix(fixed->eigenvectors)
                   .isApprox(dynamic->eigenvectors, MATRIX_TOLERANCE));
-  for (std::size_t i = 0; i < 2; ++i) {
+  for (size_t i = 0; i < 2; ++i) {
     EXPECT_TRUE(complexesAreApprox(fixed->eigenvalues[i],
                                    dynamic->eigenvalues[i], MATRIX_TOLERANCE));
   }
@@ -83,7 +83,7 @@ static void verifyMatrix4x4FixedMatchesDynamic() {
   ASSERT_TRUE(dynamic.has_value());
   EXPECT_TRUE(DynamicMatrix(fixed->eigenvectors)
                   .isApprox(dynamic->eigenvectors, MATRIX_TOLERANCE));
-  for (std::size_t i = 0; i < 4; ++i) {
+  for (size_t i = 0; i < 4; ++i) {
     EXPECT_TRUE(complexesAreApprox(fixed->eigenvalues[i],
                                    dynamic->eigenvalues[i], MATRIX_TOLERANCE));
   }
@@ -93,17 +93,16 @@ static void verifyMatrix4x4FixedMatchesDynamic() {
 eigenpairsSatisfy(const DynamicMatrix& matrix,
                   const EigenDecomposition& decomposition,
                   const double tol = MATRIX_TOLERANCE) {
-  const std::int64_t dim = matrix.rows();
-  for (std::size_t colIdx = 0; colIdx < decomposition.eigenvalues.size();
-       ++colIdx) {
+  const int64_t dim = matrix.rows();
+  for (size_t colIdx = 0; colIdx < decomposition.eigenvalues.size(); ++colIdx) {
     DynamicMatrix eigenvector(dim);
-    for (std::int64_t row = 0; row < dim; ++row) {
+    for (int64_t row = 0; row < dim; ++row) {
       eigenvector(row, 0) =
-          decomposition.eigenvectors(row, static_cast<std::int64_t>(colIdx));
+          decomposition.eigenvectors(row, static_cast<int64_t>(colIdx));
     }
     const DynamicMatrix image = matrix * eigenvector;
     const Complex lambda = decomposition.eigenvalues[colIdx];
-    for (std::int64_t row = 0; row < dim; ++row) {
+    for (int64_t row = 0; row < dim; ++row) {
       if (!complexesAreApprox(image(row, 0), lambda * eigenvector(row, 0),
                               tol)) {
         return false;
@@ -115,9 +114,9 @@ eigenpairsSatisfy(const DynamicMatrix& matrix,
 
 [[nodiscard]] static double matrixFrobeniusNorm(const DynamicMatrix& matrix) {
   double sumSq = 0.0;
-  const std::int64_t dim = matrix.rows();
-  for (std::int64_t row = 0; row < dim; ++row) {
-    for (std::int64_t col = 0; col < dim; ++col) {
+  const int64_t dim = matrix.rows();
+  for (int64_t row = 0; row < dim; ++row) {
+    for (int64_t col = 0; col < dim; ++col) {
       sumSq += std::norm(matrix(row, col));
     }
   }
@@ -127,18 +126,17 @@ eigenpairsSatisfy(const DynamicMatrix& matrix,
 [[nodiscard]] static double
 maxEigenpairResidual(const DynamicMatrix& matrix,
                      const EigenDecomposition& decomposition) {
-  const std::int64_t dim = matrix.rows();
+  const int64_t dim = matrix.rows();
   double worst = 0.0;
-  for (std::size_t colIdx = 0; colIdx < decomposition.eigenvalues.size();
-       ++colIdx) {
+  for (size_t colIdx = 0; colIdx < decomposition.eigenvalues.size(); ++colIdx) {
     DynamicMatrix eigenvector(dim);
-    for (std::int64_t row = 0; row < dim; ++row) {
+    for (int64_t row = 0; row < dim; ++row) {
       eigenvector(row, 0) =
-          decomposition.eigenvectors(row, static_cast<std::int64_t>(colIdx));
+          decomposition.eigenvectors(row, static_cast<int64_t>(colIdx));
     }
     const DynamicMatrix image = matrix * eigenvector;
     const Complex lambda = decomposition.eigenvalues[colIdx];
-    for (std::int64_t row = 0; row < dim; ++row) {
+    for (int64_t row = 0; row < dim; ++row) {
       worst = std::max(worst,
                        std::abs(image(row, 0) - lambda * eigenvector(row, 0)));
     }
@@ -148,8 +146,7 @@ maxEigenpairResidual(const DynamicMatrix& matrix,
 
 [[nodiscard]] static double
 generalEigenpairTolerance(const DynamicMatrix& matrix) {
-  const auto dim =
-      static_cast<double>(std::max<std::int64_t>(matrix.rows(), 1));
+  const auto dim = static_cast<double>(std::max<int64_t>(matrix.rows(), 1));
   const double scale = std::max(1.0, matrixFrobeniusNorm(matrix));
   // EISPACK backward error scales with dimension and ||A||_F.
   return std::max(1e-10, 1e-11 * dim * scale);
@@ -162,7 +159,7 @@ static void expectEigenDecomposition(const DynamicMatrix& matrix) {
       << "eigenDecomposition failed for " << matrix.rows() << "x"
       << matrix.cols();
   ASSERT_EQ(decomposition->eigenvalues.size(),
-            static_cast<std::size_t>(matrix.rows()));
+            static_cast<size_t>(matrix.rows()));
   ASSERT_EQ(decomposition->eigenvectors.rows(), matrix.rows());
   ASSERT_EQ(decomposition->eigenvectors.cols(), matrix.cols());
   for (const Complex& eigenvalue : decomposition->eigenvalues) {
@@ -178,7 +175,7 @@ static void expectGeneralEigenDecomposition(const DynamicMatrix& matrix) {
       << "eigenDecomposition failed for " << matrix.rows() << "x"
       << matrix.cols();
   ASSERT_EQ(decomposition->eigenvalues.size(),
-            static_cast<std::size_t>(matrix.rows()));
+            static_cast<size_t>(matrix.rows()));
   ASSERT_EQ(decomposition->eigenvectors.rows(), matrix.rows());
   ASSERT_EQ(decomposition->eigenvectors.cols(), matrix.cols());
   const double tol = generalEigenpairTolerance(matrix);
@@ -193,21 +190,21 @@ static void expectGeneralEigenDecomposition(const DynamicMatrix& matrix) {
   EXPECT_TRUE(complexesAreApprox(matrix.trace(), eigenTrace, tol));
 }
 
-[[nodiscard]] static DynamicMatrix randomComplexMatrix(const std::int64_t dim,
+[[nodiscard]] static DynamicMatrix randomComplexMatrix(const int64_t dim,
                                                        std::mt19937& rng) {
   std::uniform_real_distribution dist(-3.0, 3.0);
   DynamicMatrix matrix(dim);
-  for (std::int64_t row = 0; row < dim; ++row) {
-    for (std::int64_t col = 0; col < dim; ++col) {
+  for (int64_t row = 0; row < dim; ++row) {
+    for (int64_t col = 0; col < dim; ++col) {
       matrix(row, col) = Complex{dist(rng), dist(rng)};
     }
   }
   return matrix;
 }
 
-[[nodiscard]] static DynamicMatrix diagonalUnitary(const std::int64_t dim) {
+[[nodiscard]] static DynamicMatrix diagonalUnitary(const int64_t dim) {
   DynamicMatrix matrix(dim);
-  for (std::int64_t i = 0; i < dim; ++i) {
+  for (int64_t i = 0; i < dim; ++i) {
     matrix(i, i) = std::exp(1i * (0.1 * static_cast<double>(i)));
   }
   return matrix;
@@ -415,6 +412,49 @@ TEST(DynamicMatrix, ScalarMultiplyAssign) {
   matrix *= std::exp(Complex{0.0, 0.5});
   EXPECT_TRUE(matrix.isApprox(DynamicMatrix::identity(2) *
                               std::exp(Complex{0.0, 0.5})));
+}
+
+TEST(DynamicMatrix, PremultiplyBy) {
+  const DynamicMatrix x(pauliX());
+  const auto y =
+      DynamicMatrix(Matrix2x2::fromElements(1, 0, 0, std::exp(1i * 0.5)));
+  DynamicMatrix acc = DynamicMatrix::identity(2);
+  acc.premultiplyBy(x);
+  acc.premultiplyBy(y);
+  EXPECT_TRUE(acc.isApprox(y * x));
+}
+
+TEST(DynamicMatrix, PremultiplyByEmbeddedMatchesDense) {
+  const Matrix2x2 x = pauliX();
+  const Matrix4x4 swap = swapMatrix();
+  for (const size_t numQubits : {2U, 3U}) {
+    for (size_t wire = 0; wire < numQubits; ++wire) {
+      DynamicMatrix dense =
+          DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+      dense.premultiplyBy(x.embedInNqubit(numQubits, wire));
+      DynamicMatrix structured =
+          DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+      structured.premultiplyByEmbedded1Q(x, numQubits, wire);
+      EXPECT_TRUE(dense.isApprox(structured));
+    }
+  }
+  for (const std::array<size_t, 2> wires :
+       {std::array<size_t, 2>{0, 1}, std::array<size_t, 2>{0, 2},
+        std::array<size_t, 2>{1, 2}}) {
+    constexpr size_t numQubits = 3;
+    DynamicMatrix dense =
+        DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+    dense.premultiplyBy(swap.embedInNqubit(numQubits, wires[0], wires[1]));
+    DynamicMatrix structured =
+        DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+    structured.premultiplyByEmbedded2Q(swap, numQubits, wires[0], wires[1]);
+    EXPECT_TRUE(dense.isApprox(structured));
+  }
+  DynamicMatrix dense2 = DynamicMatrix::identity(4);
+  dense2.premultiplyBy(swap.embedInNqubit(2, 1, 0));
+  DynamicMatrix structured2 = DynamicMatrix::identity(4);
+  structured2.premultiplyByEmbedded2Q(swap.reorderForQubits(1, 0), 2, 0, 1);
+  EXPECT_TRUE(dense2.isApprox(structured2));
 }
 
 TEST(DynamicMatrix, AssignFrom) {
@@ -744,7 +784,7 @@ TEST(SymmetricEigensolver, Matrix4x4Overload) {
       Matrix4x4::fromRealRowMajor(a).symmetricEigenDecomposition();
   const SymmetricEigenDecomposition4x4 fromMatrix =
       matrix.symmetricEigenDecomposition();
-  for (std::size_t i = 0; i < 4; ++i) {
+  for (size_t i = 0; i < 4; ++i) {
     EXPECT_NEAR(fromMatrix.eigenvalues[i], fromArray.eigenvalues[i],
                 MATRIX_TOLERANCE);
   }
@@ -756,8 +796,8 @@ TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
   std::uniform_real_distribution dist(-2.0, 2.0);
   for (int trial = 0; trial < 50; ++trial) {
     std::array<double, 16> a{};
-    for (std::size_t i = 0; i < 4; ++i) {
-      for (std::size_t j = i; j < 4; ++j) {
+    for (size_t i = 0; i < 4; ++i) {
+      for (size_t j = i; j < 4; ++j) {
         const double value = dist(rng);
         a[(i * 4) + j] = value;
         a[(j * 4) + i] = value;
@@ -767,7 +807,7 @@ TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
         Matrix4x4::fromRealRowMajor(a).symmetricEigenDecomposition();
 
     // Eigenvalues are ascending.
-    for (std::size_t i = 0; i + 1 < 4; ++i) {
+    for (size_t i = 0; i + 1 < 4; ++i) {
       EXPECT_LE(result.eigenvalues[i],
                 result.eigenvalues[i + 1] + MATRIX_TOLERANCE);
     }
@@ -794,7 +834,7 @@ TEST(SymmetricEigensolver, HandlesDegenerateSpectrum) {
   // A scalar multiple of the identity: every vector is an eigenvector, but the
   // returned basis must still be orthonormal.
   std::array<double, 16> a{};
-  for (std::size_t i = 0; i < 4; ++i) {
+  for (size_t i = 0; i < 4; ++i) {
     a[(i * 4) + i] = 2.5;
   }
   const SymmetricEigenDecomposition4x4 result =
@@ -951,7 +991,7 @@ TEST(SymmetricEigensolver, SparseCornerElement) {
   const SymmetricEigenDecomposition4x4 fromArray =
       Matrix4x4::fromRealRowMajor(sparse).symmetricEigenDecomposition();
   EXPECT_NEAR(fromArray.eigenvalues[3], 7.0, MATRIX_TOLERANCE);
-  for (std::size_t i = 0; i + 1 < 4; ++i) {
+  for (size_t i = 0; i + 1 < 4; ++i) {
     EXPECT_NEAR(fromArray.eigenvalues[i], 0.0, MATRIX_TOLERANCE);
   }
 }
