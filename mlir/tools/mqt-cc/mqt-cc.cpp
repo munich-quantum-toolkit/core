@@ -13,7 +13,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Support/qdmi.h"
+#include "mlir/Support/Qdmi.h"
 
 #include <llvm/Bitcode/BitcodeWriter.h>
 #include <llvm/IR/LLVMContext.h>
@@ -213,6 +213,7 @@ int main(int argc, char** argv) {
     if (!config.device) {
       llvm::errs() << "Device not found!\n";
       mlir::qdmi::listAvailableDevices(session, llvm::errs());
+      return 1;
     }
   }
 
@@ -260,6 +261,10 @@ int main(int argc, char** argv) {
     llvm::outs() << "After Optimization:\n" << record.afterOptimization << "\n";
     llvm::outs() << "After Final QCO Canonicalization:\n"
                  << record.afterOptimizationCanon << "\n";
+    llvm::outs() << "After Transpilation:\n"
+                 << record.afterTranspilation << "\n";
+    llvm::outs() << "After Transpilation Canonicalization:\n"
+                 << record.afterTranspilationCanon << "\n";
     llvm::outs() << "After QCO-to-QC Conversion:\n"
                  << record.afterQCConversion << "\n";
     llvm::outs() << "After Final QC Canonicalization:\n"

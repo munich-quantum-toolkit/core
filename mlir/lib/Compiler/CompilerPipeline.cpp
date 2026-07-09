@@ -102,6 +102,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (convertToQIR) {
     totalStages += 2;
   }
+  if (config_.device != nullptr) {
+    totalStages += 2;
+  }
   auto currentStage = 0;
 
   // Stage 1: QC import
@@ -180,7 +183,6 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // Stage 7: Transpilation passes (optional)
   // Assume superconducting devices for now.
   if (config_.device != nullptr) {
-    SuperconductingDevice scDevice(config_.device);
     if (failed(runStage([&](PassManager& pm) {
           pm.addPass(qco::createMappingPass(
               std::make_shared<SuperconductingDevice>(config_.device),

@@ -30,6 +30,8 @@ public:
         device_(nullptr) {}
 
   /// Construct a superconducting device from a QDMI device.
+  /// Assumes that the given QDMI device is a superconducting device that has
+  /// a coupling map.
   explicit SuperconductingDevice(std::shared_ptr<fomac::Device> device)
       : coupling_(getCouplingGraph(device)), dist_(coupling_.getDistMatrix()),
         device_(std::move(device)) {}

@@ -131,7 +131,7 @@ static bool isExecutable(func::FuncOp entry,
   return isExecutable(entry.getFunctionBody(), m, device);
 }
 
-/// Return a 9x9 square-grid coupling set.
+/// Return a 3x3 square-grid coupling set.
 static std::shared_ptr<SuperconductingDevice> getNineQubitSquareGrid() {
   SmallVector<size_t> qubits(9);
   std::iota(qubits.begin(), qubits.end(), 0);

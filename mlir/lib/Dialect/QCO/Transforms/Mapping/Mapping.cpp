@@ -203,7 +203,7 @@ public:
   /// Construct default mapping pass with options.
   explicit MappingPass(MappingPassOptions options) : MappingPassBase(options) {}
 
-  /// Construct mapping from coupling set.
+  /// Construct mapping pass from superconducting device.
   explicit MappingPass(std::shared_ptr<SuperconductingDevice> device,
                        MappingPassOptions options)
       : MappingPassBase(options), device(std::move(device)) {}

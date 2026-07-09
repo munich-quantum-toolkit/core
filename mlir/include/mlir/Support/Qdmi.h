@@ -18,9 +18,11 @@
 #include <memory>
 
 namespace mlir::qdmi {
+/// Output a list of all available QDMI devices to @p os.
 void listAvailableDevices(fomac::Session& session,
                           llvm::raw_ostream& os = llvm::outs());
 
+/// Find a QDMI device with the given name and return its FoMaC class.
 std::shared_ptr<fomac::Device> getDevice(fomac::Session& session,
                                          StringRef name);
 } // namespace mlir::qdmi
