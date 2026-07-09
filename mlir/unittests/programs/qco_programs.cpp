@@ -190,7 +190,7 @@ void inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
 }
 
 void powGphaseScaled(QCOProgramBuilder& b) {
-  b.pow({}, 3.0, [&](mlir::ValueRange /*qubits*/) {
+  b.pow(3.0, {}, [&](mlir::ValueRange /*qubits*/) {
     b.gphase(0.123);
     return llvm::SmallVector<mlir::Value>{};
   });
@@ -199,7 +199,7 @@ void powGphaseScaled(QCOProgramBuilder& b) {
 void powGphaseScaledRef(QCOProgramBuilder& b) { b.gphase(3.0 * 0.123); }
 
 void negPowGphase(QCOProgramBuilder& b) {
-  b.pow({}, -3.0, [&](mlir::ValueRange /*qubits*/) {
+  b.pow(-3.0, {}, [&](mlir::ValueRange /*qubits*/) {
     b.gphase(0.123);
     return llvm::SmallVector<mlir::Value>{};
   });
@@ -253,7 +253,7 @@ void inverseMultipleControlledIdentity(QCOProgramBuilder& b) {
 
 void powId(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.id(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -346,7 +346,7 @@ void inverseTwoX(QCOProgramBuilder& b) {
 }
 void powHalfX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 0.5, [&](mlir::ValueRange qubits) {
+  b.pow(0.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.x(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -359,7 +359,7 @@ void powHalfXRef(QCOProgramBuilder& b) {
 
 void powNegHalfX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, -0.5, [&](mlir::ValueRange qubits) {
+  b.pow(-0.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.x(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -367,7 +367,7 @@ void powNegHalfX(QCOProgramBuilder& b) {
 
 void powThirdX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0 / 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0 / 3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.x(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -455,7 +455,7 @@ void twoY(QCOProgramBuilder& b) {
 
 void powHalfY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 0.5, [&](mlir::ValueRange qubits) {
+  b.pow(0.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.y(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -519,7 +519,7 @@ void twoZ(QCOProgramBuilder& b) {
 
 void powHalfZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 0.5, [&](mlir::ValueRange qubits) {
+  b.pow(0.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.z(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -527,7 +527,7 @@ void powHalfZ(QCOProgramBuilder& b) {
 
 void powThreeHalvesZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.5, [&](mlir::ValueRange qubits) {
+  b.pow(1.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.z(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -535,7 +535,7 @@ void powThreeHalvesZ(QCOProgramBuilder& b) {
 
 void powThirdZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0 / 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0 / 3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.z(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -603,7 +603,7 @@ void hWithoutRegister(QCOProgramBuilder& b) {
 
 void powEvenH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.h(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -611,7 +611,7 @@ void powEvenH(QCOProgramBuilder& b) {
 
 void powOddH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.h(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -675,7 +675,7 @@ void twoS(QCOProgramBuilder& b) {
 
 void powTwoS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.s(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -683,7 +683,7 @@ void powTwoS(QCOProgramBuilder& b) {
 
 void powFourS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 4.0, [&](mlir::ValueRange qubits) {
+  b.pow(4.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.s(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -691,7 +691,7 @@ void powFourS(QCOProgramBuilder& b) {
 
 void powHalfS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 0.5, [&](mlir::ValueRange qubits) {
+  b.pow(0.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.s(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -699,7 +699,7 @@ void powHalfS(QCOProgramBuilder& b) {
 
 void powThirdS(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0 / 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0 / 3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.s(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -768,7 +768,7 @@ void twoSdg(QCOProgramBuilder& b) {
 
 void powTwoSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.sdg(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -776,7 +776,7 @@ void powTwoSdg(QCOProgramBuilder& b) {
 
 void powHalfSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 0.5, [&](mlir::ValueRange qubits) {
+  b.pow(0.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.sdg(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -784,7 +784,7 @@ void powHalfSdg(QCOProgramBuilder& b) {
 
 void powThirdSdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0 / 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0 / 3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.sdg(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -853,7 +853,7 @@ void twoT(QCOProgramBuilder& b) {
 
 void powTwoT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.t(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -861,7 +861,7 @@ void powTwoT(QCOProgramBuilder& b) {
 
 void powThirdT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0 / 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0 / 3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.t(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -930,7 +930,7 @@ void twoTdg(QCOProgramBuilder& b) {
 
 void powTwoTdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.tdg(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -938,7 +938,7 @@ void powTwoTdg(QCOProgramBuilder& b) {
 
 void powThirdTdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0 / 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0 / 3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.tdg(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -1007,7 +1007,7 @@ void twoSx(QCOProgramBuilder& b) {
 
 void powTwoSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.sx(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -1020,7 +1020,7 @@ void powTwoSxRef(QCOProgramBuilder& b) {
 
 void powThirdSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0 / 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0 / 3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.sx(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -1090,7 +1090,7 @@ void twoSxdg(QCOProgramBuilder& b) {
 
 void powTwoSxdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.sxdg(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -1103,7 +1103,7 @@ void powTwoSxdgRef(QCOProgramBuilder& b) {
 
 void powThirdSxdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0 / 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0 / 3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.sxdg(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -1173,7 +1173,7 @@ void rxPiOver2(QCOProgramBuilder& b) {
 
 void powRxScaled(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.rx(0.123, qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -1388,7 +1388,7 @@ void inverseMultipleControlledR(QCOProgramBuilder& b) {
 
 void powRScaled(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(3.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.r(0.123, 0.456, qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -1606,7 +1606,7 @@ void twoSwapSwappedTargets(QCOProgramBuilder& b) {
 
 void powEvenSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.swap(qubits[0], qubits[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
@@ -1614,7 +1614,7 @@ void powEvenSwap(QCOProgramBuilder& b) {
 
 void powOddSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(3.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.swap(qubits[0], qubits[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
@@ -1673,7 +1673,7 @@ void inverseMultipleControlledIswap(QCOProgramBuilder& b) {
 
 void powHalfIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 0.5, [&](mlir::ValueRange qubits) {
+  b.pow(0.5, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.iswap(qubits[0], qubits[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
@@ -1806,7 +1806,7 @@ void twoEcr(QCOProgramBuilder& b) {
 
 void powEvenEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.ecr(qubits[0], qubits[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
@@ -1814,7 +1814,7 @@ void powEvenEcr(QCOProgramBuilder& b) {
 
 void powOddEcr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(3.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto res = b.ecr(qubits[0], qubits[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
@@ -2172,7 +2172,7 @@ void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b) {
 
 void powXxPlusYYScaled(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(3.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto [q0, q1] = b.xx_plus_yy(0.123, 0.456, qubits[0], qubits[1]);
     return llvm::SmallVector<mlir::Value>{q0, q1};
   });
@@ -2249,7 +2249,7 @@ void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b) {
 
 void powXxMinusYYScaled(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 3.0, [&](mlir::ValueRange qubits) {
+  b.pow(3.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto [q0, q1] = b.xx_minus_yy(0.123, 0.456, qubits[0], qubits[1]);
     return llvm::SmallVector<mlir::Value>{q0, q1};
   });
@@ -2299,7 +2299,7 @@ void inverseBarrier(QCOProgramBuilder& b) {
 
 void powBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.barrier(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -2454,7 +2454,7 @@ void emptyInv(QCOProgramBuilder& b) {
 void emptyPow(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
-  b.pow({q[0], q[1]}, 2.0, [&](ValueRange qubits) { return qubits; });
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) { return qubits; });
 }
 
 void nestedInv(QCOProgramBuilder& b) {
@@ -2513,7 +2513,7 @@ void invTwo(QCOProgramBuilder& b) {
 
 void powTwo(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 2.0, [&](ValueRange qubits) {
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
     auto i0 = qubits[0];
     auto i1 = qubits[1];
     i0 = b.x(i0);
@@ -2539,7 +2539,7 @@ void invCtrlTwo(QCOProgramBuilder& b) {
 
 void pow1Inline(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 1.0, [&](mlir::ValueRange qubits) {
+  b.pow(1.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.rx(0.123, qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -2547,16 +2547,27 @@ void pow1Inline(QCOProgramBuilder& b) {
 
 void pow0Erase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 0.0, [&](mlir::ValueRange qubits) {
+  b.pow(0.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.rx(0.123, qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
 }
 
+void pow0Two(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    auto i0 = qubits[0];
+    auto i1 = qubits[1];
+    i0 = b.x(i0);
+    std::tie(i0, i1) = b.rxx(0.123, i0, i1);
+    return SmallVector{i0, i1};
+  });
+}
+
 void nestedPow(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 3.0, [&](mlir::ValueRange qubits) {
-    auto inner = b.pow({qubits[0]}, 2.0, [&](mlir::ValueRange innerQubits) {
+  b.pow(3.0, {q[0]}, [&](mlir::ValueRange qubits) {
+    auto inner = b.pow(2.0, {qubits[0]}, [&](mlir::ValueRange innerQubits) {
       auto q0 = b.rx(0.123, innerQubits[0]);
       return llvm::SmallVector<mlir::Value>{q0};
     });
@@ -2566,7 +2577,7 @@ void nestedPow(QCOProgramBuilder& b) {
 
 void powSingleExponent(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 6.0, [&](mlir::ValueRange qubits) {
+  b.pow(6.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.rx(0.123, qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -2574,7 +2585,7 @@ void powSingleExponent(QCOProgramBuilder& b) {
 
 void powRxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     auto [q0, q1] = b.rxx(0.123, qubits[0], qubits[1]);
     return llvm::SmallVector<mlir::Value>{q0, q1};
   });
@@ -2582,7 +2593,7 @@ void powRxx(QCOProgramBuilder& b) {
 
 void negPowRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, -2.0, [&](mlir::ValueRange qubits) {
+  b.pow(-2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.rx(0.123, qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -2590,7 +2601,7 @@ void negPowRx(QCOProgramBuilder& b) {
 
 void negPowH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, -0.5, [&](mlir::ValueRange qubits) {
+  b.pow(-0.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.h(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -2599,7 +2610,7 @@ void negPowH(QCOProgramBuilder& b) {
 void invPowHFrac(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv({q[0]}, [&](mlir::ValueRange invArgs) {
-    auto inner = b.pow({invArgs[0]}, 0.5, [&](mlir::ValueRange powArgs) {
+    auto inner = b.pow(0.5, {invArgs[0]}, [&](mlir::ValueRange powArgs) {
       auto q0 = b.h(powArgs[0]);
       return llvm::SmallVector<mlir::Value>{q0};
     });
@@ -2609,7 +2620,7 @@ void invPowHFrac(QCOProgramBuilder& b) {
 
 void powHFracNeg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, -0.5, [&](mlir::ValueRange qubits) {
+  b.pow(-0.5, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.h(qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -2618,7 +2629,7 @@ void powHFracNeg(QCOProgramBuilder& b) {
 void invPowEvenH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv({q[0]}, [&](mlir::ValueRange invArgs) {
-    auto inner = b.pow({invArgs[0]}, 2.0, [&](mlir::ValueRange powArgs) {
+    auto inner = b.pow(2.0, {invArgs[0]}, [&](mlir::ValueRange powArgs) {
       auto q0 = b.h(powArgs[0]);
       return llvm::SmallVector<mlir::Value>{q0};
     });
@@ -2630,7 +2641,7 @@ void invPowEvenSwap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](mlir::ValueRange invArgs) {
     auto inner =
-        b.pow({invArgs[0], invArgs[1]}, 2.0, [&](mlir::ValueRange powArgs) {
+        b.pow(2.0, {invArgs[0], invArgs[1]}, [&](mlir::ValueRange powArgs) {
           auto res = b.swap(powArgs[0], powArgs[1]);
           return llvm::SmallVector<mlir::Value>{res.first, res.second};
         });
@@ -2641,7 +2652,7 @@ void invPowEvenSwap(QCOProgramBuilder& b) {
 void invPowSquaredZ(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv({q[0]}, [&](mlir::ValueRange invArgs) {
-    auto inner = b.pow({invArgs[0]}, 2.0, [&](mlir::ValueRange powArgs) {
+    auto inner = b.pow(2.0, {invArgs[0]}, [&](mlir::ValueRange powArgs) {
       auto q0 = b.z(powArgs[0]);
       return llvm::SmallVector<mlir::Value>{q0};
     });
@@ -2652,7 +2663,7 @@ void invPowSquaredZ(QCOProgramBuilder& b) {
 void invPowRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv({q[0]}, [&](mlir::ValueRange invArgs) {
-    auto inner = b.pow({invArgs[0]}, 2.0, [&](mlir::ValueRange powArgs) {
+    auto inner = b.pow(2.0, {invArgs[0]}, [&](mlir::ValueRange powArgs) {
       auto q0 = b.rx(0.123, powArgs[0]);
       return llvm::SmallVector<mlir::Value>{q0};
     });
@@ -2664,7 +2675,7 @@ void invPowReordered(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](mlir::ValueRange invArgs) {
     auto inner =
-        b.pow({invArgs[1], invArgs[0]}, 0.5, [&](mlir::ValueRange powArgs) {
+        b.pow(0.5, {invArgs[1], invArgs[0]}, [&](mlir::ValueRange powArgs) {
           auto res = b.swap(powArgs[0], powArgs[1]);
           return llvm::SmallVector<mlir::Value>{res.first, res.second};
         });
@@ -2674,7 +2685,7 @@ void invPowReordered(QCOProgramBuilder& b) {
 
 void invPowReorderedRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[1], q[0]}, -0.5, [&](mlir::ValueRange powArgs) {
+  b.pow(-0.5, {q[1], q[0]}, [&](mlir::ValueRange powArgs) {
     auto res = b.swap(powArgs[0], powArgs[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
@@ -2682,9 +2693,9 @@ void invPowReorderedRef(QCOProgramBuilder& b) {
 
 void mergeNestedPowReordered(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 0.5, [&](mlir::ValueRange outerArgs) {
+  b.pow(0.5, {q[0], q[1]}, [&](mlir::ValueRange outerArgs) {
     auto inner =
-        b.pow({outerArgs[1], outerArgs[0]}, 0.5, [&](mlir::ValueRange powArgs) {
+        b.pow(0.5, {outerArgs[1], outerArgs[0]}, [&](mlir::ValueRange powArgs) {
           auto res = b.swap(powArgs[0], powArgs[1]);
           return llvm::SmallVector<mlir::Value>{res.first, res.second};
         });
@@ -2694,7 +2705,7 @@ void mergeNestedPowReordered(QCOProgramBuilder& b) {
 
 void mergeNestedPowReorderedRef(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[1], q[0]}, 0.25, [&](mlir::ValueRange powArgs) {
+  b.pow(0.25, {q[1], q[0]}, [&](mlir::ValueRange powArgs) {
     auto res = b.swap(powArgs[0], powArgs[1]);
     return llvm::SmallVector<mlir::Value>{res.first, res.second};
   });
@@ -2702,7 +2713,7 @@ void mergeNestedPowReorderedRef(QCOProgramBuilder& b) {
 
 void powRxNeg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+  b.pow(2.0, {q[0]}, [&](mlir::ValueRange qubits) {
     auto q0 = b.rx(-0.123, qubits[0]);
     return llvm::SmallVector<mlir::Value>{q0};
   });
@@ -2710,7 +2721,7 @@ void powRxNeg(QCOProgramBuilder& b) {
 
 void powCtrlRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, 2.0, [&](mlir::ValueRange powArgs) {
+  b.pow(2.0, {q[0], q[1]}, [&](mlir::ValueRange powArgs) {
     const auto& [controlsOut, targetsOut] =
         b.ctrl({powArgs[0]}, {powArgs[1]}, [&](mlir::ValueRange targets) {
           return llvm::SmallVector<mlir::Value>{b.rx(0.123, targets[0])};
@@ -2722,7 +2733,7 @@ void powCtrlRx(QCOProgramBuilder& b) {
 void ctrlPowRx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {
-    auto inner = b.pow({targets[0]}, 2.0, [&](mlir::ValueRange powArgs) {
+    auto inner = b.pow(2.0, {targets[0]}, [&](mlir::ValueRange powArgs) {
       auto q0 = b.rx(0.123, powArgs[0]);
       return llvm::SmallVector<mlir::Value>{q0};
     });
@@ -2732,7 +2743,7 @@ void ctrlPowRx(QCOProgramBuilder& b) {
 
 void negPowInvIswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.pow({q[0], q[1]}, -2.0, [&](mlir::ValueRange qubits) {
+  b.pow(-2.0, {q[0], q[1]}, [&](mlir::ValueRange qubits) {
     return b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange invArgs) {
       auto [q0, q1] = b.iswap(invArgs[0], invArgs[1]);
       return llvm::SmallVector<mlir::Value>{q0, q1};
@@ -2748,7 +2759,7 @@ void negPowInvIswapRef(QCOProgramBuilder& b) {
 void ctrlPowSx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl({q[0]}, {q[1]}, [&](mlir::ValueRange targets) {
-    auto inner = b.pow({targets[0]}, 1.0 / 3.0, [&](mlir::ValueRange powArgs) {
+    auto inner = b.pow(1.0 / 3.0, {targets[0]}, [&](mlir::ValueRange powArgs) {
       auto q0 = b.sx(powArgs[0]);
       return llvm::SmallVector<mlir::Value>{q0};
     });

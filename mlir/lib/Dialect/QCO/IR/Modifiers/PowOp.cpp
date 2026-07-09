@@ -213,6 +213,10 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
         llvm::map_to_vector(innerPow.getInputQubits(), [&](Value v) {
           return utils::getValueFromBlockArgument(v, outerQubits);
         });
+    // Move supporting ops (constants, arithmetic) out of the body so their
+    // Values are accessible from outside and survive PowOp erasure.
+    utils::hoistSupportingOpsBefore(*op.getBody(), innerPow.getOperation(), op,
+                                    rewriter);
     Value merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
     auto newPow =
         PowOp::create(rewriter, op.getLoc(), qubits, merged,

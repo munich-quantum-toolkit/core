@@ -1226,6 +1226,10 @@ void pow1Inline(QCOProgramBuilder& b);
 /// Creates a circuit with pow(0.0) modifier (should erase to identity).
 void pow0Erase(QCOProgramBuilder& b);
 
+/// pow(0) with a two-unitary body (x; rxx) — folds to identity (erased at top
+/// level).
+void pow0Two(QCOProgramBuilder& b);
+
 /// Creates a circuit with nested pow modifiers (should merge exponents).
 void nestedPow(QCOProgramBuilder& b);
 

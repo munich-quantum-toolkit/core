@@ -1266,15 +1266,15 @@ public:
   /**
    * @brief Apply a power modifier to a collection of gates
    *
-   * @param qubits Input qubits
    * @param exponent The exponent to raise the gates to
+   * @param qubits Input qubits
    * @param body Function that builds the body containing the gates to
    * exponentiate
    * @return Output qubits
    *
    * @par Example:
    * ```c++
-   * qubits_out = builder.pow(q0_in, 2.0,
+   * qubits_out = builder.pow(2.0, q0_in,
    *   [&](ValueRange qubits) -> SmallVector<Value> {
    *     return {builder.s(qubits[0])};
    *   }
@@ -1287,7 +1287,8 @@ public:
    * } : {!qco.qubit} -> {!qco.qubit}
    * ```
    */
-  ValueRange pow(ValueRange qubits, const std::variant<double, Value>& exponent,
+  ValueRange pow(const std::variant<double, Value>& exponent,
+                 ValueRange qubits,
                  function_ref<SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//

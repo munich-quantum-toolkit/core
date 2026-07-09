@@ -278,6 +278,28 @@ template <typename UnitaryInterface>
 }
 
 /**
+ * @brief Hoists a body's supporting ops out before the modifier is erased.
+ *
+ * @details Moves every operation in @p body except @p keep and the block
+ * terminator to just before @p target. This keeps Values that feed @p keep
+ * (e.g., an exponent produced by constants/arithmetic) available after the
+ * modifier's region is erased, avoiding dangling operands.
+ *
+ * Unlike @c inlineBlockBefore, this is selective (@p keep and the terminator
+ * stay in @p body) and does not remap block arguments; the moved ops are
+ * classical and never reference the body's block arguments.
+ */
+inline void hoistSupportingOpsBefore(Block& body, Operation* keep,
+                                     Operation* target,
+                                     RewriterBase& rewriter) {
+  for (auto& bodyOp : llvm::make_early_inc_range(body)) {
+    if (&bodyOp != keep && !bodyOp.hasTrait<OpTrait::IsTerminator>()) {
+      rewriter.moveOpBefore(&bodyOp, target);
+    }
+  }
+}
+
+/**
  * @brief Inlines a modifier body and replaces the modifier with its results.
  *
  * @details Inlines the operations of @p body in front of @p op, substituting

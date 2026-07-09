@@ -268,6 +268,8 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
                     MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"Pow0Two", MQT_NAMED_BUILDER(pow0Two),
+                    MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"EmptyPow", MQT_NAMED_BUILDER(emptyPow),
                     MQT_NAMED_BUILDER(rxx)},
         QCOTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),

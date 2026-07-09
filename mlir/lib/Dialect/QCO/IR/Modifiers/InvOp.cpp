@@ -118,6 +118,10 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
       return failure();
     }
 
+    // Move supporting ops (constants, arithmetic) out of the body so their
+    // Values are accessible from outside and survive InvOp erasure.
+    utils::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
+                                    invOp, rewriter);
     Value negExponent =
         arith::NegFOp::create(rewriter, invOp.getLoc(), innerPow.getExponent());
     // The inner pow's operands alias the inv's block args; translate them back

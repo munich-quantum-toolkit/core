@@ -201,6 +201,10 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
     const auto qubits = llvm::map_to_vector(innerPow.getQubits(), [&](Value v) {
       return utils::getValueFromBlockArgument(v, outerQubits);
     });
+    // Move supporting ops (constants, arithmetic) out of the body so their
+    // Values are accessible from outside and survive PowOp erasure.
+    utils::hoistSupportingOpsBefore(*op.getBody(), innerPow.getOperation(), op,
+                                    rewriter);
     auto merged = scaleByExponent(innerPow.getExponent(), op, rewriter);
     rewriter.replaceOpWithNewOp<PowOp>(
         op, merged, qubits, [&](ValueRange powArgs) {
@@ -298,11 +302,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
 
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive PowOp erasure.
-    for (auto& bodyOp : llvm::make_early_inc_range(*op.getBody())) {
-      if (&bodyOp != innerOp && !isa<YieldOp>(&bodyOp)) {
-        rewriter.moveOpBefore(&bodyOp, op);
-      }
-    }
+    utils::hoistSupportingOpsBefore(*op.getBody(), innerOp, op, rewriter);
 
     return TypeSwitch<Operation*, LogicalResult>(innerOp)
         // --- Rotation gates: multiply angle by exponent ---

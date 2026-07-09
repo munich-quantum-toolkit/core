@@ -872,8 +872,8 @@ QCOProgramBuilder::inv(ValueRange qubits,
 }
 
 ValueRange
-QCOProgramBuilder::pow(ValueRange qubits,
-                       const std::variant<double, Value>& exponent,
+QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                       ValueRange qubits,
                        function_ref<SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
 
