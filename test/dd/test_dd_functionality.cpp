@@ -265,6 +265,8 @@ TEST_F(DDFunctionality, BuildCircuit) {
   qc.mcx({2, 3}, 0);
   qc.dcx(0, 1);
   qc.cdcx(2, 0, 1);
+  qc.rccx(0, 1, 2);
+  qc.crccx(3, 0, 1, 2);
   qc.ecr(0, 1);
   qc.cecr(2, 0, 1);
   const auto theta = dist(mt);
@@ -305,6 +307,9 @@ TEST_F(DDFunctionality, BuildCircuit) {
   qc.ecr(0, 1);
   qc.cdcx(2, 1, 0);
   qc.dcx(1, 0);
+  qc.mcrccx({3}, 0, 1, 2);
+  qc.crccx(3, 0, 1, 2);
+  qc.rccx(0, 1, 2);
   qc.mcx({2, 3}, 0);
   qc.cx(3, 2);
   qc.cx(0, 1);
