@@ -122,8 +122,6 @@ protected:
                const PiExpression& beta, Qubit qubit0, Qubit qubit1,
                std::vector<Vertex>& qubits,
                const std::optional<double>& unconvertedBeta = std::nullopt);
-  static void addRccx(ZXDiagram& diag, Qubit qubit0, Qubit qubit1, Qubit qubit2,
-                      std::vector<Vertex>& qubits);
   static void addCcx(ZXDiagram& diag, Qubit ctrl0, Qubit ctrl1, Qubit target,
                      std::vector<Vertex>& qubits);
   static void addCcz(ZXDiagram& diag, Qubit ctrl0, Qubit ctrl1, Qubit target,
