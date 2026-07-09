@@ -82,21 +82,21 @@ public:
 
   void cx(std::size_t control, std::size_t target) {
     auto ctrlOp = CtrlOp::create(
-        *builder_, loc_, ValueRange{wire(control)}, ValueRange{wire(target)},
-        [&](ValueRange args) -> SmallVector<Value> {
-          return {XOp::create(*builder_, loc_, args[0]).getOutputQubit(0)};
+        *builder_, loc_, wire(control), wire(target),
+        [&](Value targetArg) -> Value {
+          return XOp::create(*builder_, loc_, targetArg).getOutputQubit(0);
         });
     setWire(control, ctrlOp.getControlsOut()[0]);
     setWire(target, ctrlOp.getTargetsOut()[0]);
   }
 
   void cp(std::size_t control, std::size_t target, double theta) {
-    auto ctrlOp = CtrlOp::create(
-        *builder_, loc_, ValueRange{wire(control)}, ValueRange{wire(target)},
-        [&](ValueRange args) -> SmallVector<Value> {
-          return {
-              POp::create(*builder_, loc_, args[0], theta).getOutputQubit(0)};
-        });
+    auto ctrlOp =
+        CtrlOp::create(*builder_, loc_, wire(control), wire(target),
+                       [&](Value targetArg) -> Value {
+                         return POp::create(*builder_, loc_, targetArg, theta)
+                             .getOutputQubit(0);
+                       });
     setWire(control, ctrlOp.getControlsOut()[0]);
     setWire(target, ctrlOp.getTargetsOut()[0]);
   }
@@ -255,11 +255,10 @@ private:
     for (std::size_t control : controls) {
       controlValues.push_back(wire(control));
     }
-    auto ctrlOp =
-        CtrlOp::create(*builder_, loc_, controlValues, ValueRange{wire(target)},
-                       [&](ValueRange args) -> SmallVector<Value> {
-                         return {body(*builder_, loc_, args[0])};
-                       });
+    auto ctrlOp = CtrlOp::create(*builder_, loc_, controlValues, wire(target),
+                                 [&](Value targetArg) -> Value {
+                                   return body(*builder_, loc_, targetArg);
+                                 });
     for (std::size_t i = 0; i < controls.size(); ++i) {
       setWire(controls[i], ctrlOp.getControlsOut()[i]);
     }
@@ -716,9 +715,9 @@ SmallVector<Value> synthesizeThreeControlled(OpBuilder& builder, Location loc,
           "synthesizeThreeControlled: phase gate requires theta");
     }
     auto ctrlOp = CtrlOp::create(
-        builder, loc, ValueRange{wires[0], wires[1], wires[2]},
-        ValueRange{wires[3]}, [&](ValueRange args) -> SmallVector<Value> {
-          return {POp::create(builder, loc, args[0], *theta).getOutputQubit(0)};
+        builder, loc, ValueRange{wires[0], wires[1], wires[2]}, wires[3],
+        [&](Value targetArg) -> Value {
+          return POp::create(builder, loc, targetArg, *theta).getOutputQubit(0);
         });
     wires[0] = ctrlOp.getControlsOut()[0];
     wires[1] = ctrlOp.getControlsOut()[1];

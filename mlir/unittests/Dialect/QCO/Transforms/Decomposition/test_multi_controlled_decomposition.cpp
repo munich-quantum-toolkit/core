@@ -676,11 +676,10 @@ TEST_F(McxDecompositionTest, LeavesMultiOpCtrlUntouched) {
         const Value c0 = builder.staticQubit(0);
         const Value c1 = builder.staticQubit(1);
         const Value target = builder.staticQubit(2);
-        builder.ctrl({c0, c1}, {target},
-                     [&](ValueRange targets) -> SmallVector<Value> {
-                       const Value afterX = builder.x(targets[0]);
-                       return {builder.y(afterX)};
-                     });
+        builder.ctrl({c0, c1}, target, [&](Value targetArg) -> Value {
+          const Value afterX = builder.x(targetArg);
+          return builder.y(afterX);
+        });
       });
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runMultiAndThreeControlledPasses(moduleOp.get()).succeeded());
