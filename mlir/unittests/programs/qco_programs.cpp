@@ -1411,6 +1411,36 @@ void twoDcxSwappedTargets(QCOProgramBuilder& b) {
   std::tie(q[1], q[0]) = b.dcx(q[1], q[0]);
 }
 
+void rccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.rccx(q[0], q[1], q[2]);
+}
+
+void singleControlledRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.crccx(q[0], q[1], q[2], q[3]);
+}
+
+void multipleControlledRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  b.mcrccx({q[0], q[1]}, q[2], q[3], q[4]);
+}
+
+void nestedControlledRccx(QCOProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(5);
+  b.ctrl(reg[0], {reg[1], reg[2], reg[3], reg[4]}, [&](ValueRange targets) {
+    const auto [controlOut, targetsOut] =
+        b.crccx(targets[0], targets[1], targets[2], targets[3]);
+    const auto& [q0, q1, q2] = targetsOut;
+    return SmallVector<Value>{controlOut, q0, q1, q2};
+  });
+}
+
+void trivialControlledRccx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcrccx({}, q[0], q[1], q[2]);
+}
+
 void ecr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ecr(q[0], q[1]);

@@ -345,6 +345,17 @@ void singleControlledDcx(QIRProgramBuilder& b);
 /// Creates a circuit with a multi-controlled DCX gate.
 void multipleControlledDcx(QIRProgramBuilder& b);
 
+// --- RCCXOp --------------------------------------------------------------- //
+
+/// Creates a circuit with just an RCCX gate.
+void rccx(QIRProgramBuilder& b);
+
+/// Creates a circuit with a single controlled RCCX gate.
+void singleControlledRccx(QIRProgramBuilder& b);
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+void multipleControlledRccx(QIRProgramBuilder& b);
+
 // --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.

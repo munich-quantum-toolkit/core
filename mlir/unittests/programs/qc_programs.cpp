@@ -1032,6 +1032,33 @@ void inverseMultipleControlledDcx(QCProgramBuilder& b) {
   });
 }
 
+void rccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.rccx(q[0], q[1], q[2]);
+}
+
+void singleControlledRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.crccx(q[0], q[1], q[2], q[3]);
+}
+
+void multipleControlledRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  b.mcrccx({q[0], q[1]}, q[2], q[3], q[4]);
+}
+
+void nestedControlledRccx(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(5);
+  b.ctrl(reg[0], {reg[1], reg[2], reg[3], reg[4]}, [&](ValueRange targets) {
+    b.crccx(targets[0], targets[1], targets[2], targets[3]);
+  });
+}
+
+void trivialControlledRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcrccx({}, q[0], q[1], q[2]);
+}
+
 void ecr(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ecr(q[0], q[1]);
