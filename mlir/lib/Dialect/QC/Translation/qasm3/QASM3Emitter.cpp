@@ -284,41 +284,83 @@ public:
   }
 
   LogicalResult scalarDecl(llvm::SMLoc loc, detail::ScalarType type,
-                           llvm::StringRef id, const Expr& initializer) {
+                           llvm::StringRef id, const Expr* initializer) {
     if (failed(declare(loc, id))) {
       return failure();
     }
     switch (type) {
-    case detail::ScalarType::Float: {
-      auto value = emitAngle(initializer);
-      if (failed(value)) {
-        return failure();
-      }
-      parameterConstants.insert(id, *value);
-      return success();
+    case detail::ScalarType::Float:
+      variableKinds[id] = VariableKind::Float;
+      break;
+    case detail::ScalarType::Int:
+      variableKinds[id] = VariableKind::Int;
+      break;
     }
-    case detail::ScalarType::Int: {
-      auto value = evaluateConstant(initializer);
-      if (failed(value)) {
-        return failure();
-      }
-      integerConstants.insert(id, *value);
-      return success();
+    if (initializer != nullptr) {
+      return assignScalar(id, *initializer);
     }
-    }
-    llvm_unreachable("unknown scalar type");
+    return success();
   }
 
   LogicalResult boolDecl(llvm::SMLoc loc, llvm::StringRef id,
-                         const Condition& initializer) {
+                         const Condition* initializer) {
     if (failed(declare(loc, id))) {
       return failure();
     }
-    auto value = emitCondition(initializer);
-    if (failed(value)) {
+    variableKinds[id] = VariableKind::Bool;
+    if (initializer != nullptr) {
+      return assignBool(id, *initializer);
+    }
+    return success();
+  }
+
+  LogicalResult scalarAssign(llvm::SMLoc /*loc*/, llvm::StringRef id,
+                             const Expr& value) {
+    return assignScalar(id, value);
+  }
+
+  LogicalResult boolAssign(llvm::SMLoc /*loc*/, llvm::StringRef id,
+                           const Condition& value) {
+    return assignBool(id, value);
+  }
+
+  [[nodiscard]] std::optional<detail::ClassicalKind>
+  classicalKind(llvm::StringRef id) const {
+    auto it = variableKinds.find(id);
+    if (it == variableKinds.end()) {
+      return std::nullopt;
+    }
+    return it->second == VariableKind::Bool ? detail::ClassicalKind::Boolean
+                                            : detail::ClassicalKind::Numeric;
+  }
+
+  /// Bind (or rebind) a numeric scalar `id` to the value of @p value. Shared by
+  /// `scalarDecl` and `scalarAssign`.
+  LogicalResult assignScalar(llvm::StringRef id, const Expr& value) {
+    if (variableKinds.lookup(id) == VariableKind::Float) {
+      auto emitted = emitAngle(value);
+      if (failed(emitted)) {
+        return failure();
+      }
+      parameterConstants.insert(id, *emitted);
+      return success();
+    }
+    auto emitted = evaluateConstant(value);
+    if (failed(emitted)) {
       return failure();
     }
-    booleanConstants.insert(id, *value);
+    integerConstants.insert(id, *emitted);
+    return success();
+  }
+
+  /// Bind (or rebind) a boolean scalar `id`. Shared by `boolDecl` and
+  /// `boolAssign`.
+  LogicalResult assignBool(llvm::StringRef id, const Condition& value) {
+    auto emitted = emitCondition(value);
+    if (failed(emitted)) {
+      return failure();
+    }
+    booleanConstants.insert(id, *emitted);
     return success();
   }
 
@@ -569,6 +611,10 @@ private:
   using ValueScope = llvm::ScopedHashTableScope<llvm::StringRef, Value>;
   using IntegerTable = llvm::ScopedHashTable<llvm::StringRef, int64_t>;
   using IntegerScope = llvm::ScopedHashTableScope<llvm::StringRef, int64_t>;
+
+  /// The declared type of a classical scalar variable, tracked so that
+  /// assignments know how to lower their right-hand side.
+  enum class VariableKind : uint8_t { Float, Int, Bool };
 
   //===--- Locations ----------------------------------------------------===//
 
@@ -1236,6 +1282,8 @@ private:
 
   llvm::BumpPtrAllocator keyStorage;
   llvm::StringSaver keySaver{keyStorage};
+
+  llvm::StringMap<VariableKind> variableKinds;
 
   QubitScope qubitRegisters;
   llvm::StringMap<QCProgramBuilder::ClassicalRegister> classicalRegisters;

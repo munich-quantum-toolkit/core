@@ -104,6 +104,10 @@ struct Condition {
 /// tracked here.
 enum class ScalarType : uint8_t { Float, Int };
 
+/// The kind of a declared classical variable, used to select the grammar of an
+/// assignment's right-hand side (arithmetic vs. boolean).
+enum class ClassicalKind : uint8_t { Numeric, Boolean };
+
 //===----------------------------------------------------------------------===//
 // Sink concept
 //===----------------------------------------------------------------------===//
@@ -132,8 +136,11 @@ concept QASMSink = requires(
   s.error(loc, str);
   s.version(d);
   s.include(loc, str);
-  s.scalarDecl(loc, scalarType, str, expr);
-  s.boolDecl(loc, str, condition);
+  s.scalarDecl(loc, scalarType, str, &expr);
+  s.boolDecl(loc, str, &condition);
+  s.scalarAssign(loc, str, expr);
+  s.boolAssign(loc, str, condition);
+  s.classicalKind(str);
   s.qubitRegister(loc, str, &expr);
   s.classicalRegister(loc, str, &expr);
   s.measure(loc, reference, operand);
@@ -378,31 +385,40 @@ private:
     const auto id = current().spelling;
     advance();
 
-    // Only initialized declarations are supported, since there is no classical
-    // assignment to give an uninitialized variable a value later.
-    if (failed(expect(TokenKind::Equals))) {
-      return failure();
+    // The initializer is optional; an uninitialized variable can be given a
+    // value later by an assignment.
+    const bool hasInitializer = current().kind == TokenKind::Equals;
+    if (hasInitializer) {
+      advance();
     }
 
     if (isBool) {
-      auto condition = parseCondition();
-      if (failed(condition)) {
-        return failure();
+      const Condition* initializer = nullptr;
+      if (hasInitializer) {
+        auto condition = parseCondition();
+        if (failed(condition)) {
+          return failure();
+        }
+        initializer = *condition;
       }
       if (failed(expect(TokenKind::Semicolon))) {
         return failure();
       }
-      return sink.boolDecl(loc, id, **condition);
+      return sink.boolDecl(loc, id, initializer);
     }
 
-    auto value = parseExpression();
-    if (failed(value)) {
-      return failure();
+    const Expr* initializer = nullptr;
+    if (hasInitializer) {
+      auto value = parseExpression();
+      if (failed(value)) {
+        return failure();
+      }
+      initializer = *value;
     }
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.scalarDecl(loc, scalarType, id, **value);
+    return sink.scalarDecl(loc, scalarType, id, initializer);
   }
 
   [[nodiscard]] LogicalResult parseQuantumDecl() {
@@ -509,30 +525,68 @@ private:
 
   //===--- Assignment and measurement -----------------------------------===//
 
+  /// Parse `<ref> = measure <operand>;` (measurement) or `<id> = <value>;`
+  /// (classical-scalar assignment). The value grammar follows the target's
+  /// declared kind.
   [[nodiscard]] LogicalResult parseAssignment() {
     const auto loc = current().loc;
     auto target = parseReference();
     if (failed(target)) {
       return failure();
     }
-    if (current().kind != TokenKind::Equals) {
+    const Reference& reference = *target;
+
+    if (current().kind == TokenKind::CompoundAssign) {
       return sink.error(current().loc,
-                        "classical computations are not supported yet");
+                        "compound assignments are not supported yet");
     }
-    advance();
-    if (current().kind != TokenKind::Measure) {
-      return sink.error(current().loc,
-                        "classical computations are not supported yet");
+    if (failed(expect(TokenKind::Equals))) {
+      return failure();
     }
-    advance();
-    auto operand = parseGateOperand();
-    if (failed(operand)) {
+
+    // Measurement assignment: `<ref> = measure <operand>;`.
+    if (current().kind == TokenKind::Measure) {
+      advance();
+      auto operand = parseGateOperand();
+      if (failed(operand)) {
+        return failure();
+      }
+      if (failed(expect(TokenKind::Semicolon))) {
+        return failure();
+      }
+      return sink.measure(loc, reference, *operand);
+    }
+
+    // Value assignment to a classical scalar.
+    const auto kind = sink.classicalKind(reference.identifier);
+    if (!kind) {
+      return sink.error(reference.loc,
+                        "cannot assign to '" + reference.identifier + "'");
+    }
+    if (reference.index != nullptr) {
+      return sink.error(reference.loc,
+                        "cannot assign to an element of a scalar");
+    }
+
+    if (*kind == ClassicalKind::Boolean) {
+      auto condition = parseCondition();
+      if (failed(condition)) {
+        return failure();
+      }
+      if (failed(expect(TokenKind::Semicolon))) {
+        return failure();
+      }
+      return sink.boolAssign(loc, reference.identifier, **condition);
+    }
+
+    auto value = parseExpression();
+    if (failed(value)) {
       return failure();
     }
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.measure(loc, *target, *operand);
+    return sink.scalarAssign(loc, reference.identifier, **value);
   }
 
   [[nodiscard]] LogicalResult parseMeasure() {
