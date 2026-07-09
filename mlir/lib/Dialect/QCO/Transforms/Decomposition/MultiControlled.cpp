@@ -247,7 +247,34 @@ public:
              });
   }
 
+  void addGadget(std::size_t q0, std::size_t q1, std::size_t q2, bool invert) {
+    if (!invert) {
+      emitGadgetBody(*this, q0, q1, q2);
+      return;
+    }
+    SmallVector<Value> invWires = {wire(q0), wire(q1), wire(q2)};
+    auto invOp = InvOp::create(
+        *builder_, loc_, invWires, [&](ValueRange args) -> SmallVector<Value> {
+          SmallVector<Value> local(args.begin(), args.end());
+          GateEmitter inner(*builder_, loc_, local, minControls_);
+          emitGadgetBody(inner, 0, 1, 2);
+          return local;
+        });
+    assignWires({invOp.getOutputQubit(0), invOp.getOutputQubit(1),
+                 invOp.getOutputQubit(2)},
+                {q0, q1, q2});
+  }
+
 private:
+  static void emitGadgetBody(GateEmitter& builder, std::size_t q0,
+                             std::size_t q1, std::size_t q2) {
+    builder.h(q2);
+    builder.t(q2);
+    builder.cx(q0, q2);
+    builder.tdg(q2);
+    builder.cx(q1, q2);
+  }
+
   void emitCtrl(ArrayRef<std::size_t> controls, std::size_t target,
                 llvm::function_ref<Value(OpBuilder&, Location, Value)> body) {
     SmallVector<Value> controlValues;
@@ -332,24 +359,6 @@ extractTwoControlledPhaseAngle(const DynamicMatrix& unitary) {
   return wires;
 }
 
-void addActionGadget(GateEmitter& builder, std::size_t q0, std::size_t q1,
-                     std::size_t q2) {
-  builder.h(q2);
-  builder.t(q2);
-  builder.cx(q0, q2);
-  builder.tdg(q2);
-  builder.cx(q1, q2);
-}
-
-void addResetGadget(GateEmitter& builder, std::size_t q0, std::size_t q1,
-                    std::size_t q2) {
-  builder.cx(q1, q2);
-  builder.t(q2);
-  builder.cx(q0, q2);
-  builder.tdg(q2);
-  builder.h(q2);
-}
-
 void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
   if (numControls == 1) {
     builder.cx(0, 1);
@@ -365,11 +374,11 @@ void synthMcxNDirtyI15(GateEmitter& builder, std::size_t numControls) {
     for (std::size_t pass = 0; pass < 2; ++pass) {
       builder.emitCcx(controlsEnd - 1, lastAncilla, target);
       for (std::size_t i = numControls - 3; i-- > 0;) {
-        addActionGadget(builder, i + 2, firstAncilla + i, firstAncilla + i + 1);
+        builder.addGadget(i + 2, firstAncilla + i, firstAncilla + i + 1, false);
       }
       builder.emitRCCX(0, 1, firstAncilla);
       for (std::size_t i = 0; i < numControls - 3; ++i) {
-        addResetGadget(builder, i + 2, firstAncilla + i, firstAncilla + i + 1);
+        builder.addGadget(i + 2, firstAncilla + i, firstAncilla + i + 1, true);
       }
     }
   }
@@ -475,9 +484,10 @@ void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
   const std::size_t controlsEnd = numControls;
 
   SmallVector<std::size_t, 16> map;
-  const auto relativeStep = [&](const double sign, const std::size_t begin,
-                                const std::size_t end, const std::size_t k) {
-    builder.p(target, sign * K_PI8);
+  const auto relativeStep = [&](const std::size_t begin, const std::size_t end,
+                                const std::size_t k,
+                                const bool positive = true) {
+    builder.p(target, positive ? K_PI8 : -K_PI8);
     map.clear();
     for (std::size_t q = begin; q < end; ++q) {
       map.push_back(q);
@@ -487,14 +497,14 @@ void synthRelativeMcx(GateEmitter& builder, std::size_t numControls) {
   };
 
   builder.h(target);
-  relativeStep(+1, block3Begin, controlsEnd, num3);
-  relativeStep(-1, block2Begin, block3Begin, num2);
-  relativeStep(+1, block3Begin, controlsEnd, num3);
-  relativeStep(-1, 0, block2Begin, num1);
-  relativeStep(+1, block3Begin, controlsEnd, num3);
-  relativeStep(-1, block2Begin, block3Begin, num2);
-  relativeStep(+1, block3Begin, controlsEnd, num3);
-  relativeStep(-1, 0, block2Begin, num1);
+  relativeStep(block3Begin, controlsEnd, num3);
+  relativeStep(block2Begin, block3Begin, num2, false);
+  relativeStep(block3Begin, controlsEnd, num3);
+  relativeStep(0, block2Begin, num1, false);
+  relativeStep(block3Begin, controlsEnd, num3);
+  relativeStep(block2Begin, block3Begin, num2, false);
+  relativeStep(block3Begin, controlsEnd, num3);
+  relativeStep(0, block2Begin, num1, false);
   builder.h(target);
 }
 
