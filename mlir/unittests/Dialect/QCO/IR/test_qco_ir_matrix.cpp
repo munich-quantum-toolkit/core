@@ -118,31 +118,26 @@ static void controlledInverseHT(QCOProgramBuilder& b) {
 
 static void inverseGphaseBarrierX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange targets) {
+  b.inv(q[0], [&](Value target) {
     b.gphase(0.25);
-    auto wire = b.barrier({targets[0]})[0];
+    auto wire = b.barrier({target})[0];
     wire = b.x(wire);
-    return SmallVector{wire};
+    return wire;
   });
 }
 
 static void inverseNestedInvHAndT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange targets) {
-    auto wire = b.inv({targets[0]}, [&](ValueRange inner) {
-      return SmallVector{b.h(inner[0])};
-    })[0];
-    wire = b.t(wire);
-    return SmallVector{wire};
+  b.inv(q[0], [&](Value target) {
+    auto wire = b.inv(target, [&](Value inner) { return b.h(inner); });
+    return b.t(wire);
   });
 }
 
 static void inverseNestedInvHAndX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = b.inv({targets[0]}, [&](ValueRange inner) {
-      return SmallVector{b.h(inner[0])};
-    })[0];
+    auto w0 = b.inv(targets[0], [&](Value inner) { return b.h(inner); });
     auto w1 = b.x(targets[1]);
     return SmallVector{w0, w1};
   });
@@ -174,10 +169,10 @@ static void inverseThreeWireNestedTwoInv(QCOProgramBuilder& b) {
 static void inverseWithThreeQubitOpInBody(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
-    auto [controls, innerTargets] =
-        b.ctrl({targets[0], targets[1]}, ValueRange{targets[2]},
-               [&](ValueRange inner) { return SmallVector{b.x(inner[0])}; });
-    return SmallVector<Value>{controls[0], controls[1], innerTargets[0]};
+    auto [controls, innerTarget] =
+        b.ctrl({targets[0], targets[1]}, targets[2],
+               [&](Value inner) { return b.x(inner); });
+    return SmallVector<Value>{controls[0], controls[1], innerTarget};
   });
 }
 
