@@ -91,7 +91,9 @@ struct DeadGateElimination final : public OpRewritePattern<SinkOp> {
                 return newValue;
               })
               .Case<IfOp>([&](auto ifOp) {
-                auto newValue = ifOp.getInputForOutput(currentValue);
+                auto* tiedQubit =
+                    ifOp.getTiedQubit(cast<OpResult>(currentValue));
+                auto newValue = tiedQubit->get();
                 rewriter.replaceOp(ifOp, ifOp.getQubits());
                 return newValue;
               })

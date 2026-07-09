@@ -142,9 +142,6 @@ TEST_F(QCOTest, DirectIfBuilder) {
                                       extractOp.getOutTensor(), c0);
   qtensor::DeallocOp::create(builder, r2);
 
-  EXPECT_EQ(ifOp.getInputForOutput(ifOp.getResult(0)), measureOp.getQubitOut());
-  EXPECT_EQ(ifOp.getOutputForInput(measureOp.getQubitOut()), ifOp.getResult(0));
-
   auto directBuilder =
       builder.finalize({measureOp.getResult(), finalMeasureOp.getResult()});
   ASSERT_TRUE(directBuilder);

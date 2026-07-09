@@ -1308,9 +1308,6 @@ def IfOp
         /// Return the yield of the else-block.
         YieldOp elseYield();
 
-        Value getInputForOutput(Value output);
-        Value getOutputForInput(Value input);
-
         /// Return the result that corresponds to the given qubit operand,
         /// or "empty" OpResult on failure.
         OpResult getTiedResult(OpOperand* qubit);

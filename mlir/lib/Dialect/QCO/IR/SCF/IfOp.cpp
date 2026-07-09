@@ -13,7 +13,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -29,7 +28,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
-#include <cstddef>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -281,25 +279,6 @@ LogicalResult IfOp::verify() {
   }
 
   return success();
-}
-
-Value IfOp::getInputForOutput(Value output) {
-  auto resultCount = getResults().size();
-  for (size_t i = 0; i < resultCount; ++i) {
-    if (output == getResult(i)) {
-      return getQubits()[i];
-    }
-  }
-  llvm::reportFatalUsageError("Given qubit is not an output of the operation");
-}
-Value IfOp::getOutputForInput(Value input) {
-  auto resultCount = getResults().size();
-  for (size_t i = 0; i < resultCount; ++i) {
-    if (input == getQubits()[i]) {
-      return getResult(i);
-    }
-  }
-  llvm::reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
 OpResult IfOp::getTiedResult(OpOperand* qubit) {
