@@ -85,10 +85,10 @@ struct DeadGateElimination final : public OpRewritePattern<SinkOp> {
       currentValue =
           TypeSwitch<Operation*, Value>(currentOp)
               .Case<MeasureOp>([&](auto measureOp) {
-                rewriter.replaceAllUsesWith(measureOp.getQubitOut(),
-                                            measureOp.getQubitIn());
+                auto newValue = measureOp.getQubitIn();
+                rewriter.replaceAllUsesWith(measureOp.getQubitOut(), newValue);
                 rewriter.eraseOp(measureOp);
-                return measureOp.getQubitIn();
+                return newValue;
               })
               .Case<IfOp>([&](auto ifOp) {
                 auto newValue = ifOp.getInputForOutput(currentValue);
@@ -96,8 +96,9 @@ struct DeadGateElimination final : public OpRewritePattern<SinkOp> {
                 return newValue;
               })
               .Case<ResetOp>([&](auto resetOp) {
+                auto newValue = resetOp.getQubitIn();
                 rewriter.replaceOp(resetOp, resetOp->getOperands());
-                return resetOp.getQubitIn();
+                return newValue;
               })
               .Case<UnitaryOpInterface>([&](auto unitaryOp) {
                 auto newValue = unitaryOp.getInputForOutput(currentValue);
