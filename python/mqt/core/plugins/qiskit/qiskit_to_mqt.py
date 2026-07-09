@@ -430,10 +430,8 @@ def _add_three_target_operation(
     targets = [target1, target2, target3]
     if any(isinstance(parameter, Expression) for parameter in parameters):
         qc.append(SymbolicOperation(controls, targets, type_, parameters))
-    elif controls:
-        qc.append(StandardOperation(controls, targets, type_, cast("list[float]", parameters)))
     else:
-        qc.append(StandardOperation(targets, type_, cast("list[float]", parameters)))
+        qc.append(StandardOperation(controls, targets, type_, cast("list[float]", parameters)))
     return parameters
 
 
