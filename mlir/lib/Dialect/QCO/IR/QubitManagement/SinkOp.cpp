@@ -34,7 +34,7 @@ namespace {
  * @param op The operation to check.
  * @return bool True if the operation is unused, false otherwise.
  */
-static inline bool checkDeadGate(Operation* op) {
+bool checkDeadGate(Operation* op) {
   if (!isMemoryEffectFree(op)) {
     // This ignores operations and regions that have children with memory
     // effects, which should never be considered dead.

@@ -99,7 +99,7 @@ class EulerSynthesisExactTest
     : public testing::TestWithParam<
           std::tuple<EulerBasis, Matrix2x2 (*)(MLIRContext*)>> {};
 
-std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
+static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
 measureAndReturn(mlir::qco::QCOProgramBuilder& b,
                  const mlir::SmallVector<mlir::Value>& qubits) {
   mlir::SmallVector<mlir::Value> bits;
