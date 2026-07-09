@@ -340,10 +340,10 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
   // Build `I_{2^controls} ⊗ U` by placing the target block in the bottom-right
   // corner of a `2^controls * targetDim` identity.
   const auto controlledMatrix =
-      [numControls](const std::int64_t targetDim,
+      [numControls](const int64_t targetDim,
                     const auto& targetBlock) -> DynamicMatrix {
     auto matrix = DynamicMatrix::identity(static_cast<int64_t>(
-        (1ULL << numControls) * static_cast<std::size_t>(targetDim)));
+        (1ULL << numControls) * static_cast<size_t>(targetDim)));
     matrix.setBottomRightCorner(targetBlock);
     return matrix;
   };
@@ -359,11 +359,9 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
     return std::nullopt;
   }
 
-  // Composed single-qubit body (e.g. `ctrl { h; x }`); embed the 2x2 directly.
-  if (getNumTargets() == 1) {
-    if (const auto composed = composeSingleQubitBodyMatrix(*getBody())) {
-      return controlledMatrix(2, *composed);
-    }
+  // Composed body (e.g., `ctrl { h; x }` or `ctrl { swap; ry }`)
+  if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
+    return controlledMatrix(composed->rows(), *composed);
   }
 
   return std::nullopt;
