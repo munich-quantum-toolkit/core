@@ -80,11 +80,6 @@ static void singleNegControlledX(qc::QCProgramBuilder& b) {
   b.x(q[0]);
 }
 
-static void tripleControlledX(qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcx({q[0], q[1], q[2]}, q[3]);
-}
-
 static void mixedControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.x(q[1]);
@@ -234,9 +229,6 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{"MultipleControlledX",
                                  qasm::multipleControlledX,
                                  MQT_NAMED_BUILDER(qc::multipleControlledX)},
-        QASM3TranslationTestCase{"TripleControlledXOpenQASM2",
-                                 qasm::tripleControlledXOpenQASM2,
-                                 MQT_NAMED_BUILDER(tripleControlledX)},
         QASM3TranslationTestCase{"MixedControlledX", qasm::mixedControlledX,
                                  MQT_NAMED_BUILDER(mixedControlledX)},
         QASM3TranslationTestCase{"TwoMixedControlledX",

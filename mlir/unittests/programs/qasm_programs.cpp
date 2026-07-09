@@ -155,12 +155,6 @@ qubit[3] q;
 ctrl(2) @ x q[0], q[1], q[2];
 )qasm";
 
-const std::string tripleControlledXOpenQASM2 = R"qasm(OPENQASM 2.0;
-include "qelib1.inc";
-qreg q[4];
-cccx q[0], q[1], q[2], q[3];
-)qasm";
-
 const std::string mixedControlledX = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;

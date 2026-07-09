@@ -10,17 +10,15 @@
 
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 
-#include "QASM3Parser.h"
+#include "mlir/Dialect/QC/Translation/qasm3/QASM3Emitter.h"
 
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Support/LLVM.h>
 
-#include <exception>
-#include <string_view>
 #include <utility>
 
 namespace mlir::qc {
@@ -31,15 +29,10 @@ namespace mlir::qc {
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
                                          MLIRContext* context) {
-  try {
-    const auto buffer =
-        sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer();
-    return detail::parseQASM3(std::string_view(buffer.data(), buffer.size()),
-                              context);
-  } catch (const std::exception& e) {
-    llvm::errs() << "Import error: " << e.what() << "\n";
-    return nullptr;
-  }
+  // Route diagnostics through the source manager so errors carry source
+  // locations and snippets.
+  const SourceMgrDiagnosticHandler handler(sourceMgr, context);
+  return detail::importQASM3(sourceMgr, context);
 }
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(StringRef source,

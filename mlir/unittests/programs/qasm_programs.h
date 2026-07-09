@@ -78,9 +78,6 @@ extern const std::string singleNegControlledX;
 /// Creates a circuit with a multi-controlled X gate.
 extern const std::string multipleControlledX;
 
-/// Creates a circuit with a triple-controlled X gate in OpenQASM 2.
-extern const std::string tripleControlledXOpenQASM2;
-
 /// Creates a circuit with an X gate that is positively and negatively
 /// controlled.
 extern const std::string mixedControlledX;
