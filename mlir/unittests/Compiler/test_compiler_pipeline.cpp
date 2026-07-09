@@ -597,6 +597,18 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::multipleControlledDcx), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledDcx),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledDcx)},
+        CompilerPipelineTestCase{"RCCX", MQT_NAMED_BUILDER(qc::rccx), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::rccx),
+                                 MQT_NAMED_BUILDER(mlir::qir::rccx)},
+        CompilerPipelineTestCase{
+            "SingleControlledRCCX", MQT_NAMED_BUILDER(qc::singleControlledRccx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRccx),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRccx)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRCCX",
+            MQT_NAMED_BUILDER(qc::multipleControlledRccx), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRccx),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRccx)},
         CompilerPipelineTestCase{"ECR", MQT_NAMED_BUILDER(qc::ecr), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::ecr),
                                  MQT_NAMED_BUILDER(mlir::qir::ecr)},
