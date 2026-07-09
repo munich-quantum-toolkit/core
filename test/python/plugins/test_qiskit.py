@@ -401,6 +401,7 @@ def test_operations() -> None:
     qc.append(U2Gate(0.5, 0.5), [0])
     qc.append(XXMinusYYGate(0.5, 0.5), [0, 1])
     qc.append(XXPlusYYGate(0.5, 0.5), [0, 1])
+    qc.rccx(0, 1, 2)
     print(qc)
 
     mqt_qc = qiskit_to_mqt(qc)

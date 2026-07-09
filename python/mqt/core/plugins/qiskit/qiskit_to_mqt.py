@@ -175,6 +175,7 @@ _NATIVELY_SUPPORTED_GATES = frozenset({
     "rzz",
     "xx_minus_yy",
     "xx_plus_yy",
+    "rccx",
     "if_else",
     "reset",
     "barrier",
@@ -317,6 +318,9 @@ def _emplace_operation(
     if name == "xx_plus_yy":
         return _add_two_target_operation(qc, OpType.xx_plus_yy, qargs, params, qubit_map)
 
+    if name == "rccx":
+        return _add_three_target_operation(qc, OpType.rccx, qargs, params, qubit_map)
+
     if name == "if_else":
         return _add_if_else_operation(qc, cast("IfElseOp", instr), qargs, cargs, qubit_map, clbit_map, cregs)
 
@@ -407,6 +411,29 @@ def _add_two_target_operation(
         qc.append(SymbolicOperation(controls, target1, target2, type_, parameters))
     else:
         qc.append(StandardOperation(controls, target1, target2, type_, cast("list[float]", parameters)))
+    return parameters
+
+
+def _add_three_target_operation(
+    qc: QuantumComputation | CompoundOperation,
+    type_: OpType,
+    qargs: Sequence[Qubit],
+    params: Sequence[float | ParameterExpression],
+    qubit_map: Mapping[Qubit, int],
+) -> list[float | ParameterExpression]:
+    qubits = [qubit_map[qubit] for qubit in qargs]
+    target3 = qubits.pop()
+    target2 = qubits.pop()
+    target1 = qubits.pop()
+    controls = {Control(qubit) for qubit in qubits}
+    parameters = [_parse_symbolic_expression(param) for param in params]
+    targets = [target1, target2, target3]
+    if any(isinstance(parameter, Expression) for parameter in parameters):
+        qc.append(SymbolicOperation(controls, targets, type_, parameters))
+    elif controls:
+        qc.append(StandardOperation(controls, targets, type_, cast("list[float]", parameters)))
+    else:
+        qc.append(StandardOperation(targets, type_, cast("list[float]", parameters)))
     return parameters
 
 
