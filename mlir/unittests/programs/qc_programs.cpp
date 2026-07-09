@@ -333,7 +333,8 @@ trivialControlledGlobalPhase(QCProgramBuilder& b) {
   return measureAndReturn(b, {q[0]});
 }
 
-void inverseGlobalPhase(QCProgramBuilder& b) {
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseGlobalPhase(QCProgramBuilder& b) {
   b.inv(ValueRange{}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
   return {{b.intConstant(0)}, {b.getI64Type()}};
 }

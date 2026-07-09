@@ -29,6 +29,10 @@ emptyQCO(QCOProgramBuilder& builder);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubit(QCOProgramBuilder& b);
 
+/// Allocates two individual qubits.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+alloc2Qubits(QCOProgramBuilder& b);
+
 /// Allocates a single qubit that is not measured.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubitNoMeasure(QCOProgramBuilder& b);
@@ -84,6 +88,19 @@ staticQubitsWithInv(QCOProgramBuilder& b);
 /// Allocates and explicitly sinks a single qubit.
 std::pair<SmallVector<Value>, SmallVector<Type>>
 allocSinkPair(QCOProgramBuilder& b);
+
+/// Allocates two qubits and performs a set of dead gates on them.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+deadGatesProgram(QCOProgramBuilder& b);
+
+/// Allocates two qubits and performs a set of dead gates on them, including
+/// `if` operations.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+deadGatesWithIfOpProgram(QCOProgramBuilder& b);
+
+/// Allocates two qubits and performs only non-dead `if` operations.
+std::pair<SmallVector<Value>, SmallVector<Type>>
+deadGatesWithIfOpSimplified(QCOProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 

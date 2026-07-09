@@ -69,6 +69,13 @@ allocQubit(QCOProgramBuilder& b) {
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
+alloc2Qubits(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto q1 = b.allocQubit();
+  return measureAndReturn(b, {q0, q1});
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
 allocQubitNoMeasure(QCOProgramBuilder& b) {
   (void)b.allocQubit();
   return {{b.intConstant(0)}, {b.getI64Type()}};
@@ -165,6 +172,81 @@ allocSinkPair(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   b.sink(q);
   return {{b.intConstant(0)}, {b.getI64Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+deadGatesProgram(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto q1 = b.allocQubit();
+
+  auto [q0M, m0] = b.measure(q0);
+  auto [q1M, m1] = b.measure(q1);
+
+  q0 = b.h(q0M);
+  auto [res0, res1] = b.cx(q0, q1M);
+  auto [_, c1] = b.measure(res1);
+
+  return {{m0, m1}, {b.getI1Type(), b.getI1Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+deadGatesWithIfOpProgram(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto q1 = b.allocQubit();
+  q0 = b.h(q0);
+  auto [r0, c0] = b.measure(q0);
+  q0 = r0;
+
+  // This is an `if` with memory effects - it can't be removed.
+  q1 = b.qcoIf(
+      c0, {q1},
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Then = b.x(qubits[0]);
+        b.gphase(0.5); // This adds memory effects to the `IfOp`.
+        return SmallVector<Value>{q1Then};
+      },
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Else = b.h(qubits[0]);
+        return SmallVector<Value>{q1Else};
+      })[0];
+
+  // This is an `if` without memory effects - it can be removed.
+  q1 = b.qcoIf(
+      c0, {q1},
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Then = b.x(qubits[0]);
+        return SmallVector<Value>{q1Then};
+      },
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Else = b.h(qubits[0]);
+        return SmallVector<Value>{q1Else};
+      })[0];
+
+  return {{c0}, {b.getI1Type()}};
+}
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+deadGatesWithIfOpSimplified(QCOProgramBuilder& b) {
+  auto q0 = b.allocQubit();
+  auto q1 = b.allocQubit();
+  q0 = b.h(q0);
+  auto [r0, c0] = b.measure(q0);
+  q0 = r0;
+
+  // This is an `if` with memory effects - it can't be removed.
+  q1 = b.qcoIf(
+      c0, {q1},
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Then = b.x(qubits[0]);
+        b.gphase(0.5); // Due to memory effect, the `IfOp` stays.
+        return SmallVector<Value>{q1Then};
+      },
+      [&](ValueRange qubits) -> SmallVector<Value> {
+        auto q1Else = b.h(qubits[0]);
+        return SmallVector<Value>{q1Else};
+      })[0];
+
+  return {{c0}, {b.getI1Type()}};
 }
 
 std::pair<SmallVector<Value>, SmallVector<Type>>
