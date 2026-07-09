@@ -14,6 +14,8 @@ add_mlir_library(
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Support
   LINK_LIBS
+  PRIVATE
+  nlohmann_json::nlohmann_json
   PUBLIC
   MLIRSupport
   MLIRIR

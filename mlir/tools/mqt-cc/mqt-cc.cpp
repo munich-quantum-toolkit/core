@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
@@ -111,6 +110,11 @@ static llvm::cl::opt<std::optional<std::string>>
                llvm::cl::desc("Specify a target device via QDMI"),
                llvm::cl::init(std::nullopt));
 
+static llvm::cl::opt<std::optional<std::string>> qdmiConfigPath(
+    "qdmi-config",
+    llvm::cl::desc("Specify the path to a JSON configuration file for QDMI"),
+    llvm::cl::init(std::nullopt));
+
 /**
  * @brief Load and parse a `.qasm` file
  */
@@ -204,7 +208,12 @@ int main(int argc, char** argv) {
       disableMergeSingleQubitRotationGates;
   config.enableHadamardLifting = enableHadamardLifting;
 
-  fomac::Session session; // TODO: Config?
+  auto session = [&] {
+    if (qdmiConfigPath) {
+      return mlir::qdmi::prepareSession(*qdmiConfigPath);
+    }
+    return mlir::qdmi::prepareSession();
+  }();
 
   if (qdmiListDevices) {
     mlir::qdmi::listAvailableDevices(session);

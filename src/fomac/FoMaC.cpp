@@ -302,7 +302,6 @@ Job Device::submitJob(const std::string& program,
       QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
                              program.size() + 1, program.c_str()),
       "Setting program");
-
   // Set number of shots
   qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
                                             QDMI_JOB_PARAMETER_SHOTSNUM,
