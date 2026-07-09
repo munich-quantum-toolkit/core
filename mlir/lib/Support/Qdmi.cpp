@@ -15,12 +15,13 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <memory>
 
 void mlir::qdmi::listAvailableDevices(fomac::Session& session,
                                       llvm::raw_ostream& os) {
   os << "Available QDMI devices:\n";
-  for (auto dev : session.getDevices()) {
+  for (const auto& dev : session.getDevices()) {
     os << '\t' << dev.getName() << '\n';
   }
 }
@@ -28,17 +29,7 @@ void mlir::qdmi::listAvailableDevices(fomac::Session& session,
 std::shared_ptr<fomac::Device> mlir::qdmi::getDevice(fomac::Session& session,
                                                      StringRef name) {
   const auto devices = session.getDevices();
-
-  auto it = devices.begin();
-  for (; it != devices.end(); ++it) {
-    if (it->getName() == name) {
-      break;
-    }
-  }
-
-  if (it == devices.end()) {
-    return nullptr;
-  }
-
-  return std::make_shared<fomac::Device>(*it);
+  const auto it = std::ranges::find_if(
+      devices, [&](const auto& dev) { return dev.getName() == name; });
+  return it != devices.end() ? std::make_shared<fomac::Device>(*it) : nullptr;
 }

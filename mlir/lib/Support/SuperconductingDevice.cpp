@@ -10,12 +10,18 @@
 
 #include "mlir/Support/SuperconductingDevice.h"
 
+#include "fomac/FoMaC.hpp"
+
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cassert>
 #include <cstddef>
 #include <limits>
-#include <stdexcept>
+#include <memory>
+#include <utility>
 
 using namespace mlir;
 

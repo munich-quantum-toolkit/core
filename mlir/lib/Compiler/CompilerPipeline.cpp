@@ -233,7 +233,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
       prettyPrintStage(module, "Final QC Cleanup", ++currentStage, totalStages);
     }
   }
-  // Stage 9: QC-to-QIR conversion (optional)
+  // Stage 11: QC-to-QIR conversion (optional)
   if (convertToQIR) {
     if (failed(runStage([&](PassManager& pm) {
           if (config_.convertToQIRAdaptive) {
@@ -251,7 +251,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                          totalStages);
       }
     }
-    // Stage 10: QIR cleanup (optional)
+    // Stage 12: QIR cleanup (optional)
     if (failed(runStage([&](PassManager& pm) {
           populateQIRCleanupPipeline(pm, config_.convertToQIRAdaptive);
         }))) {

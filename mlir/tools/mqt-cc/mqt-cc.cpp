@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "fomac/FoMaC.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
@@ -204,14 +205,16 @@ int main(int argc, char** argv) {
   config.enableHadamardLifting = enableHadamardLifting;
 
   fomac::Session session; // TODO: Config?
+
   if (qdmiListDevices) {
     mlir::qdmi::listAvailableDevices(session);
     return 0;
   }
+
   if (qdmiDevice != std::nullopt) {
     config.device = mlir::qdmi::getDevice(session, *qdmiDevice);
     if (!config.device) {
-      llvm::errs() << "Device not found!\n";
+      llvm::errs() << "Device '" << qdmiDevice << "' not found!\n";
       mlir::qdmi::listAvailableDevices(session, llvm::errs());
       return 1;
     }
