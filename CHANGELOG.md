@@ -20,8 +20,8 @@ releases may include breaking changes.
   environment ([#1786]) ([**@denialhaag**])
 - ✨ Add two-qubit Weyl (KAK) decomposition and native-gateset synthesis support
   ([#1803], [#1832]) ([**@simon1hofmann**], [**@burgholzer**])
-- ✨ Extend the QCO unitary matrix library ([#1774], [#1802], [#1809], [#1814])
-  ([**@simon1hofmann**], [**@burgholzer**])
+- ✨ Extend the QCO unitary matrix library ([#1774], [#1802], [#1809], [#1814],
+  [#1850]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add a `fuse-single-qubit-unitary-runs` pass for fusing compile-time
   single-qubit unitary runs via Euler resynthesis ([#1672])
   ([**@simon1hofmann**], [**@burgholzer**])
@@ -607,6 +607,7 @@ changelogs._
 [#1873]: https://github.com/munich-quantum-toolkit/core/pull/1873
 [#1872]: https://github.com/munich-quantum-toolkit/core/pull/1872
 [#1869]: https://github.com/munich-quantum-toolkit/core/pull/1869
+[#1850]: https://github.com/munich-quantum-toolkit/core/pull/1850
 [#1849]: https://github.com/munich-quantum-toolkit/core/pull/1849
 [#1848]: https://github.com/munich-quantum-toolkit/core/pull/1848
 [#1844]: https://github.com/munich-quantum-toolkit/core/pull/1844
