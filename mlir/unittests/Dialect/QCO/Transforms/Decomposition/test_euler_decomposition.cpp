@@ -785,9 +785,7 @@ singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   q[0] = b.rz(0.123, q[0]);
-  q[0] = b.inv({q[0]}, [&b](ValueRange targets) -> SmallVector<Value> {
-    return {b.sx(targets[0])};
-  })[0];
+  q[0] = b.inv(q[0], [&b](Value qubit) { return b.sx(qubit); });
   q[0] = b.ry(-0.456, q[0]);
   return measureAndReturn(b, {q[0]});
 }
@@ -876,11 +874,10 @@ static std::pair<SmallVector<Value>, SmallVector<Type>>
 xInverseTwoX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
-  q[0] = b.inv({q[0]}, [&b](ValueRange targets) {
-    Value wire = b.x(targets[0]);
-    wire = b.x(wire);
-    return SmallVector{wire};
-  })[0];
+  q[0] = b.inv(q[0], [&b](Value qubit) {
+    qubit = b.x(qubit);
+    return b.x(qubit);
+  });
   q[0] = b.x(q[0]);
   return measureAndReturn(b, {q[0]});
 }
@@ -902,13 +899,11 @@ inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
 static std::pair<SmallVector<Value>, SmallVector<Type>>
 controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto res = b.ctrl(q[0], q[1], [&b](ValueRange targets) {
-    auto wire = b.inv({targets[0]}, [&b](ValueRange innerTargets) {
-      auto inner = b.h(innerTargets[0]);
-      inner = b.t(inner);
-      return SmallVector{inner};
-    })[0];
-    return SmallVector{wire};
+  auto res = b.ctrl(q[0], q[1], [&b](Value target) {
+    return b.inv(target, [&b](Value qubit) {
+      qubit = b.h(qubit);
+      return b.t(qubit);
+    });
   });
   return measureAndReturn(b, {res.second[0]});
 }
@@ -916,9 +911,7 @@ controlledInverseHT(QCOProgramBuilder& b) {
 static std::pair<SmallVector<Value>, SmallVector<Type>>
 controlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto res = b.ctrl(q[0], q[1], [&b](ValueRange targets) {
-    return SmallVector{b.h(targets[0])};
-  });
+  auto res = b.ctrl(q[0], q[1], [&b](Value target) { return b.h(target); });
   return measureAndReturn(b, {res.second[0]});
 }
 

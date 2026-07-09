@@ -941,6 +941,42 @@ public:
                          const function_ref<void(ValueRange)>& body);
 
   /**
+   * @brief Apply a control modifier with a single target and one-qubit body.
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @param body Function that builds the body containing the target operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ctrl({q0_in, q1_in}, q2_in, [&](Value target) {
+   *   builder.x(target);
+   * });
+   * ```
+   */
+  QCProgramBuilder& ctrl(ValueRange controls, Value target,
+                         const function_ref<void(Value)>& body);
+
+  /**
+   * @brief Apply a control modifier with one control and one target.
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @param body Function that builds the body containing the target operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ctrl(q0_in, q1_in, [&](Value target) {
+   *   builder.x(target);
+   * });
+   * ```
+   */
+  QCProgramBuilder& ctrl(Value control, Value target,
+                         const function_ref<void(Value)>& body);
+
+  /**
    * @brief Apply an inverse (i.e., adjoint) operation.
    *
    * @param body Function that builds the body containing the operation to
@@ -961,6 +997,23 @@ public:
    */
   QCProgramBuilder& inv(ValueRange qubits,
                         const function_ref<void(ValueRange)>& body);
+
+  /**
+   * @brief Apply an inverse modifier on a single qubit.
+   *
+   * @param qubit Qubit involved in the operation
+   * @param body Function that builds the body containing the operation to
+   * invert
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.inv(q0_in, [&](Value qubit) {
+   *   builder.h(qubit);
+   * });
+   * ```
+   */
+  QCProgramBuilder& inv(Value qubit, const function_ref<void(Value)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
