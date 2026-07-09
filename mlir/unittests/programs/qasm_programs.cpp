@@ -541,6 +541,24 @@ qubit[4] q;
 ctrl(2) @ dcx q[0], q[1], q[2], q[3];
 )qasm";
 
+const std::string rccx = R"qasm(OPENQASM 3.0;
+include "qelib1.inc";
+qubit[3] q;
+rccx q[0], q[1], q[2];
+)qasm";
+
+const std::string singleControlledRccx = R"qasm(OPENQASM 3.0;
+include "qelib1.inc";
+qubit[4] q;
+ctrl @ rccx q[0], q[1], q[2], q[3];
+)qasm";
+
+const std::string multipleControlledRccx = R"qasm(OPENQASM 3.0;
+include "qelib1.inc";
+qubit[5] q;
+ctrl(2) @ rccx q[0], q[1], q[2], q[3], q[4];
+)qasm";
+
 const std::string ecr = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;

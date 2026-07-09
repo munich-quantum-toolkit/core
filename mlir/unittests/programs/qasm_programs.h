@@ -273,6 +273,15 @@ extern const std::string singleControlledDcx;
 /// Creates a circuit with a multi-controlled DCX gate.
 extern const std::string multipleControlledDcx;
 
+/// Creates a circuit with just an RCCX gate.
+extern const std::string rccx;
+
+/// Creates a circuit with a single controlled RCCX gate.
+extern const std::string singleControlledRccx;
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+extern const std::string multipleControlledRccx;
+
 /// Creates a circuit with just an ECR gate.
 extern const std::string ecr;
 
