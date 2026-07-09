@@ -70,7 +70,7 @@ struct TestFixture {
 
   void setUp() {
     DialectRegistry registry;
-    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect,
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
@@ -102,24 +102,15 @@ class EulerSynthesisExactTest
 } // namespace
 
 /**
- * @brief Measures the given qubits and return the measurement outcomes and
- * their types.
+ * @brief Measures the given qubits and returns the measurement outcomes.
  * @param b The `ProgramBuilder` used to perform the measurements.
  * @param qubits The qubits to be measured.
- * @return A pair containing the result values and their types.
+ * @return The result values.
  */
-static std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>
-measureAndReturn(mlir::qco::QCOProgramBuilder& b,
-                 const mlir::SmallVector<mlir::Value>& qubits) {
-  mlir::SmallVector<mlir::Value> bits;
-  mlir::SmallVector<mlir::Type> bitTypes;
-  auto i1Type = b.getI1Type();
-  for (const auto& q : qubits) {
-    auto [q2, bit] = b.measure(q);
-    bits.push_back(bit);
-    bitTypes.push_back(i1Type);
-  }
-  return {bits, bitTypes};
+static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
+                                           ValueRange qubits) {
+  return llvm::to_vector(
+      llvm::map_range(qubits, [&](Value q) { return b.measure(q).second; }));
 }
 
 //===----------------------------------------------------------------------===//
@@ -155,8 +146,8 @@ template <typename RotationOp>
 }
 
 template <typename Fn> static void forEachBasis(Fn fn) {
-  const std::array<const char*, 7> bases = {"zyz", "zxz",  "xzx", "xyx",
-                                            "u",   "zsxx", "r"};
+  constexpr std::array<const char*, 7> bases = {"zyz", "zxz",  "xzx", "xyx",
+                                                "u",   "zsxx", "r"};
   for (const char* basis : bases) {
     fn(StringRef{basis});
   }
@@ -382,7 +373,7 @@ INSTANTIATE_TEST_SUITE_P(
                     ZSXXShortcutCase{"ZYZNearZeroTheta",
                                      [](MLIRContext*) -> Matrix2x2 {
                                        constexpr double tol =
-                                           0.5 * mlir::utils::TOLERANCE;
+                                           0.5 * utils::TOLERANCE;
                                        return RZOp::unitaryMatrix(0.4) *
                                               RYOp::unitaryMatrix(tol) *
                                               RZOp::unitaryMatrix(0.3);
@@ -397,23 +388,21 @@ INSTANTIATE_TEST_SUITE_P(
                     ZSXXShortcutCase{"RYNearHalfPi",
                                      [](MLIRContext* ctx) -> Matrix2x2 {
                                        return rotationMatrix<RYOp>(
-                                           ctx,
-                                           (std::numbers::pi / 2.0) +
-                                               (0.5 * mlir::utils::TOLERANCE));
+                                           ctx, (std::numbers::pi / 2.0) +
+                                                    (0.5 * utils::TOLERANCE));
                                      },
                                      2, 1, 0},
                     ZSXXShortcutCase{"RYNearZero",
                                      [](MLIRContext* ctx) -> Matrix2x2 {
                                        return rotationMatrix<RYOp>(
-                                           ctx, 0.5 * mlir::utils::TOLERANCE);
+                                           ctx, 0.5 * utils::TOLERANCE);
                                      },
                                      0, 0, 0},
                     ZSXXShortcutCase{"RYNearPi",
                                      [](MLIRContext* ctx) -> Matrix2x2 {
                                        return rotationMatrix<RYOp>(
-                                           ctx,
-                                           std::numbers::pi -
-                                               (0.5 * mlir::utils::TOLERANCE));
+                                           ctx, std::numbers::pi -
+                                                    (0.5 * utils::TOLERANCE));
                                      },
                                      1, 0, 1}),
     [](const testing::TestParamInfo<ZSXXShortcutCase>& info) {
@@ -477,7 +466,7 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
 TEST(EulerAnglesCoverageTest, ParamsZYZUsesOffDiagonal01When10IsNearZero) {
   Matrix2x2 matrix = RXOp::unitaryMatrix(0.4);
   matrix(1, 0) = Complex{0.0, 0.0};
-  ASSERT_GT(std::abs(matrix(0, 1)), mlir::utils::TOLERANCE);
+  ASSERT_GT(std::abs(matrix(0, 1)), utils::TOLERANCE);
   const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
   EXPECT_TRUE(std::isfinite(angles.theta));
   EXPECT_TRUE(std::isfinite(angles.phi));
@@ -491,9 +480,9 @@ TEST(EulerAnglesCoverageTest, PhaseOnlyDecompositionSkipsRotationGates) {
   const Matrix2x2 matrix = Matrix2x2::fromElements(scale, 0, 0, scale);
   ASSERT_FALSE(matrix.isApprox(Matrix2x2::identity()));
   const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
-  EXPECT_LE(std::abs(angles.theta), mlir::utils::TOLERANCE);
-  EXPECT_LE(std::abs(angles.phi), mlir::utils::TOLERANCE);
-  EXPECT_LE(std::abs(angles.lambda), mlir::utils::TOLERANCE);
+  EXPECT_LE(std::abs(angles.theta), utils::TOLERANCE);
+  EXPECT_LE(std::abs(angles.phi), utils::TOLERANCE);
+  EXPECT_LE(std::abs(angles.lambda), utils::TOLERANCE);
   const auto circuit = synthesizeMatrix(fx.ctx(), matrix, ZYZ);
   ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
   EXPECT_EQ(countZYZGates(circuit.func), 0U);
@@ -515,7 +504,7 @@ TEST(EulerAnglesCoverageTest, UBasisNonzeroThetaEmitsSingleUGate) {
   fx.setUp();
   const Matrix2x2 matrix = RYOp::unitaryMatrix(1.2);
   const EulerAngles angles = anglesFromUnitary(matrix, U);
-  ASSERT_GT(std::abs(angles.theta), mlir::utils::TOLERANCE);
+  ASSERT_GT(std::abs(angles.theta), utils::TOLERANCE);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
                             EXPECT_EQ(countOps<UOp>(funcOp), 1U);
@@ -528,7 +517,7 @@ TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
   fx.setUp();
   const Matrix2x2 matrix = HOp::getUnitaryMatrix();
   const EulerAngles angles = anglesFromUnitary(matrix, R);
-  ASSERT_GT(std::abs(angles.theta), mlir::utils::TOLERANCE);
+  ASSERT_GT(std::abs(angles.theta), utils::TOLERANCE);
   expectSynthesizedMatrix(fx.ctx(), matrix, R,
                           [](func::FuncOp funcOp, const Matrix2x2& /*matrix*/) {
                             EXPECT_EQ(countOps<ROp>(funcOp), 3U);
@@ -538,7 +527,7 @@ TEST(EulerAnglesCoverageTest, RBasisNonzeroThetaEmitsThreeRGates) {
 TEST(EulerAnglesCoverageTest, Mod2PiMapsPiBoundaryThroughSynthesis) {
   TestFixture fx;
   fx.setUp();
-  constexpr double eps = 0.5 * mlir::utils::TOLERANCE;
+  constexpr double eps = 0.5 * utils::TOLERANCE;
   const Complex global = std::polar(1.0, std::numbers::pi - eps);
   const Matrix2x2 matrix = Matrix2x2::fromElements(global, 0, 0, global);
   expectSynthesizedMatrix(fx.ctx(), matrix, U,
@@ -553,7 +542,8 @@ TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
   fx.setUp();
   const Matrix2x2 matrix = Matrix2x2::fromElements(
       Complex{std::numeric_limits<double>::quiet_NaN(), 0}, 0, 0, 1);
-  EXPECT_NO_FATAL_FAILURE(synthesizeMatrix(fx.ctx(), matrix, ZYZ));
+  EXPECT_NO_FATAL_FAILURE(std::ignore =
+                              synthesizeMatrix(fx.ctx(), matrix, ZYZ));
 }
 
 //===----------------------------------------------------------------------===//
@@ -786,7 +776,7 @@ static void runFuseInParent(MLIRContext* ctx, ProgramT program,
 
 // --- Fuse program fixtures --- //
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
+static SmallVector<Value>
 singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
@@ -794,56 +784,50 @@ singleQubitRunWithSingleQubitGate(QCOProgramBuilder& b) {
   q[0] = b.rz(0.123, q[0]);
   q[0] = b.inv(q[0], [&b](Value qubit) { return b.sx(qubit); });
   q[0] = b.ry(-0.456, q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
+static SmallVector<Value> singleQubitRunsSplitByTwoQGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
   q[0] = b.rz(0.321, q[0]);
   q[0] = b.sx(q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
+static SmallVector<Value> singleQubitRunsSplitByBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
   q[0] = b.barrier({q[0]})[0];
   q[0] = b.rz(0.321, q[0]);
   q[0] = b.sx(q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-singleNonBasisGate(QCOProgramBuilder& b) {
+static SmallVector<Value> singleNonBasisGate(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-singlePauliX(QCOProgramBuilder& b) {
+static SmallVector<Value> singlePauliX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-canonicalZYZRun(QCOProgramBuilder& b) {
+static SmallVector<Value> canonicalZYZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.rz(0.3, q[0]);
   q[0] = b.ry(0.5, q[0]);
   q[0] = b.rz(0.7, q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-overlongZYZRun(QCOProgramBuilder& b) {
+static SmallVector<Value> overlongZYZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.rz(0.3, q[0]);
   q[0] = b.ry(0.5, q[0]);
@@ -851,20 +835,18 @@ overlongZYZRun(QCOProgramBuilder& b) {
   q[0] = b.ry(0.9, q[0]);
   q[0] = b.rz(1.1, q[0]);
   q[0] = b.ry(1.3, q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-overlongZSXXMixedPureZRun(QCOProgramBuilder& b) {
+static SmallVector<Value> overlongZSXXMixedPureZRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.sx(q[0]);
   q[0] = b.rz(std::numbers::pi, q[0]);
   q[0] = b.sx(q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-singleQubitRunInScfFor(QCOProgramBuilder& b) {
+static SmallVector<Value> singleQubitRunInScfFor(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto res =
       b.scfFor(0, 1, 1, ValueRange{q[0]}, [&b](Value, ValueRange iterArgs) {
@@ -874,11 +856,10 @@ singleQubitRunInScfFor(QCOProgramBuilder& b) {
         wire = b.rz(0.123, wire);
         return SmallVector<Value>{wire};
       });
-  return measureAndReturn(b, {res[0]});
+  return measureAndReturn(b, res);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-xInverseTwoX(QCOProgramBuilder& b) {
+static SmallVector<Value> xInverseTwoX(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.x(q[0]);
   q[0] = b.inv(q[0], [&b](Value qubit) {
@@ -886,10 +867,10 @@ xInverseTwoX(QCOProgramBuilder& b) {
     return b.x(qubit);
   });
   q[0] = b.x(q[0]);
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
+static SmallVector<Value>
 inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto outs =
@@ -900,11 +881,10 @@ inverseMultiQubitBodySingleQubitRun(QCOProgramBuilder& b) {
       });
   q[0] = outs[0];
   q[1] = outs[1];
-  return measureAndReturn(b, {q[0]});
+  return measureAndReturn(b, q.qubits);
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-controlledInverseHT(QCOProgramBuilder& b) {
+static SmallVector<Value> controlledInverseHT(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.ctrl(q[0], q[1], [&b](Value target) {
     return b.inv(target, [&b](Value qubit) {
@@ -915,15 +895,13 @@ controlledInverseHT(QCOProgramBuilder& b) {
   return measureAndReturn(b, {res.second});
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-controlledH(QCOProgramBuilder& b) {
+static SmallVector<Value> controlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.ctrl(q[0], q[1], [&b](Value target) { return b.h(target); });
   return measureAndReturn(b, {res.second});
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
+static SmallVector<Value> singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.h(q[0]);
   q[0] = b.t(q[0]);
@@ -934,7 +912,7 @@ singleQubitRunsSplitByScfFor(QCOProgramBuilder& b) {
         wire = b.sx(wire);
         return SmallVector<Value>{wire};
       });
-  return measureAndReturn(b, {res[0]});
+  return measureAndReturn(b, res);
 }
 
 //===----------------------------------------------------------------------===//
@@ -955,8 +933,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesProgramsAllBases) {
   fx.setUp();
 
   struct Case {
-    std::pair<SmallVector<Value>, SmallVector<Type>> (*program)(
-        QCOProgramBuilder&);
+    SmallVector<Value> (*program)(QCOProgramBuilder&);
     void (*extra)(func::FuncOp, StringRef);
   };
   const std::array<Case, 2> cases = {{
@@ -1036,8 +1013,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBoundariesAllBases) {
   fx.setUp();
 
   struct Case {
-    std::pair<SmallVector<Value>, SmallVector<Type>> (*program)(
-        QCOProgramBuilder&);
+    SmallVector<Value> (*program)(QCOProgramBuilder&);
     void (*check)(func::FuncOp, StringRef, MLIRContext*);
   };
   const std::array<Case, 3> cases = {{

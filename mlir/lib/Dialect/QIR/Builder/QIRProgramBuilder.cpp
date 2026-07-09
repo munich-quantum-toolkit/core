@@ -1077,13 +1077,12 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<std::pair<Value, Type>(QIRProgramBuilder&)>& buildFunc,
-    Profile profile) {
+    const function_ref<Value(QIRProgramBuilder&)>& buildFunc, Profile profile) {
   QIRProgramBuilder builder(context);
   builder.profile = profile;
   builder.initialize();
-  auto [result, resultType] = buildFunc(builder);
-  builder.retype(resultType);
+  auto result = buildFunc(builder);
+  builder.retype(result.getType());
   return builder.finalize(result);
 }
 

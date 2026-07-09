@@ -18,7 +18,6 @@
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
@@ -36,10 +35,8 @@ namespace {
 
 struct QIRTestCase {
   std::string name;
-  mqt::test::NamedBuilder<QIRProgramBuilder, std::pair<Value, Type>>
-      programBuilder;
-  mqt::test::NamedBuilder<QIRProgramBuilder, std::pair<Value, Type>>
-      referenceBuilder;
+  mqt::test::SingleResultBuilder<QIRProgramBuilder> programBuilder;
+  mqt::test::SingleResultBuilder<QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };

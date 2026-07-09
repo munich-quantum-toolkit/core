@@ -27,7 +27,6 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
@@ -46,12 +45,8 @@ namespace {
 
 struct JeffRoundTripTestCase {
   std::string name;
-  mqt::test::NamedBuilder<qco::QCOProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      programBuilder;
-  mqt::test::NamedBuilder<qco::QCOProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      referenceBuilder;
+  mqt::test::MultiResultBuilder<qco::QCOProgramBuilder> programBuilder;
+  mqt::test::MultiResultBuilder<qco::QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const JeffRoundTripTestCase& info);

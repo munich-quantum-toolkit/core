@@ -29,7 +29,6 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
@@ -106,12 +105,8 @@ namespace {
 
 struct QCOMatrixTestCase {
   std::string name;
-  mqt::test::NamedBuilder<QCOProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      programBuilder;
-  mqt::test::NamedBuilder<QCOProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      referenceBuilder;
+  mqt::test::MultiResultBuilder<QCOProgramBuilder> programBuilder;
+  mqt::test::MultiResultBuilder<QCOProgramBuilder> referenceBuilder;
 };
 
 class QCOMatrixTest : public testing::TestWithParam<QCOMatrixTestCase> {

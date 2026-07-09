@@ -21,7 +21,6 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
@@ -39,12 +38,8 @@ namespace {
 
 struct QCTestCase {
   std::string name;
-  mqt::test::NamedBuilder<QCProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      programBuilder;
-  mqt::test::NamedBuilder<QCProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      referenceBuilder;
+  mqt::test::MultiResultBuilder<QCProgramBuilder> programBuilder;
+  mqt::test::MultiResultBuilder<QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os, const QCTestCase& info);
 };

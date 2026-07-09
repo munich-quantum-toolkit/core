@@ -66,9 +66,8 @@ protected:
   }
 
   /// Build a module using the QCOProgramBuilder and run the cleanup pipeline.
-  [[nodiscard]] OwningOpRef<ModuleOp>
-  buildAndCanonicalize(std::pair<SmallVector<Value>, SmallVector<Type>> (
-      *buildFn)(QCOProgramBuilder&)) const {
+  [[nodiscard]] OwningOpRef<ModuleOp> buildAndCanonicalize(
+      SmallVector<Value> (*buildFn)(QCOProgramBuilder&)) const {
     auto module = QCOProgramBuilder::build(context.get(), buildFn);
     if (!module) {
       return {};
@@ -194,11 +193,10 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
 
 /// An alloc immediately followed by dealloc should be eliminated entirely.
 TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
-  auto canonicalized = buildAndCanonicalize(
-      [](QCOProgramBuilder& b)
-          -> std::pair<SmallVector<Value>, SmallVector<Type>> {
+  auto canonicalized =
+      buildAndCanonicalize([](QCOProgramBuilder& b) -> SmallVector<Value> {
         b.qtensorAlloc(3);
-        return {{b.intConstant(0)}, {b.getI64Type()}};
+        return {b.intConstant(0)};
       });
   ASSERT_TRUE(canonicalized);
   EXPECT_TRUE(verify(*canonicalized).succeeded());
@@ -425,12 +423,8 @@ TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
 
 struct QTensorIntegrationTestCase {
   std::string name;
-  mqt::test::NamedBuilder<QCOProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      programBuilder;
-  mqt::test::NamedBuilder<QCOProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      referenceBuilder;
+  mqt::test::MultiResultBuilder<QCOProgramBuilder> programBuilder;
+  mqt::test::MultiResultBuilder<QCOProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QTensorIntegrationTestCase& info);

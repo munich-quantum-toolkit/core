@@ -14,9 +14,11 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Value.h>
 
 #include <cstddef>
 #include <cstdlib>
@@ -46,6 +48,13 @@ template <typename BuilderT, typename RetT>
 namedBuilder(const char* name, RetT (*fn)(BuilderT&)) noexcept {
   return NamedBuilder<BuilderT, RetT>{name, fn};
 }
+
+template <typename BuilderT>
+using MultiResultBuilder =
+    NamedBuilder<BuilderT, mlir::SmallVector<mlir::Value>>;
+
+template <typename BuilderT>
+using SingleResultBuilder = NamedBuilder<BuilderT, mlir::Value>;
 
 [[nodiscard]] constexpr const char* displayName(const char* name) noexcept {
   return name != nullptr ? name : "<null>";

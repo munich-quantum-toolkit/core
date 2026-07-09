@@ -34,7 +34,6 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
@@ -48,11 +47,13 @@
 
 namespace mqt::test::compiler {
 
-using QCProgramBuilderFn = NamedBuilder<
-    mlir::qc::QCProgramBuilder,
-    std::pair<mlir::SmallVector<mlir::Value>, mlir::SmallVector<mlir::Type>>>;
-using QIRProgramBuilderFn = NamedBuilder<mlir::qir::QIRProgramBuilder,
-                                         std::pair<mlir::Value, mlir::Type>>;
+using namespace mlir;
+using namespace mlir::qc;
+using namespace mlir::qco;
+using namespace mlir::qir;
+
+using QCProgramBuilderFn = MultiResultBuilder<QCProgramBuilder>;
+using QIRProgramBuilderFn = SingleResultBuilder<QIRProgramBuilder>;
 using QuantumComputationBuilderFn = NamedBuilder<::qc::QuantumComputation>;
 
 namespace {
@@ -89,46 +90,44 @@ std::ostream& operator<<(std::ostream& os,
 class CompilerPipelineTest
     : public testing::TestWithParam<CompilerPipelineTestCase> {
 protected:
-  std::unique_ptr<mlir::MLIRContext> context;
+  std::unique_ptr<MLIRContext> context;
 
   void SetUp() override {
-    mlir::DialectRegistry registry;
-    registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
-                    mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
-                    mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
-                    mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
-                    mlir::LLVM::LLVMDialect>();
-    context = std::make_unique<mlir::MLIRContext>();
+    DialectRegistry registry;
+    registry
+        .insert<QCDialect, QCODialect, qtensor::QTensorDialect,
+                arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect>();
+    context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
 
-  [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+  [[nodiscard]] OwningOpRef<ModuleOp>
   buildQCReference(const QCProgramBuilderFn builder) const {
-    auto module = mlir::qc::QCProgramBuilder::build(context.get(), builder.fn);
+    auto module = QCProgramBuilder::build(context.get(), builder.fn);
     EXPECT_TRUE(runQCCleanupPipeline(module.get()).succeeded());
     return module;
   }
 
-  [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+  [[nodiscard]] OwningOpRef<ModuleOp>
   buildQIRReference(const QIRProgramBuilderFn builder) const {
-    auto module = mlir::qir::QIRProgramBuilder::build(
-        context.get(), builder.fn,
-        mlir::qir::QIRProgramBuilder::Profile::Adaptive);
+    auto module = QIRProgramBuilder::build(
+        context.get(), builder.fn, QIRProgramBuilder::Profile::Adaptive);
     EXPECT_TRUE(runQIRCleanupPipeline(module.get(), true).succeeded());
     return module;
   }
 
-  [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+  [[nodiscard]] OwningOpRef<ModuleOp>
   parseRecordedModule(const std::string& ir) const {
-    return mlir::parseSourceString<mlir::ModuleOp>(ir, context.get());
+    return parseSourceString<ModuleOp>(ir, context.get());
   }
 
-  static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
+  static void runPipeline(const ModuleOp module, const bool convertToQIR,
                           const bool disableMergeSingleQubitRotationGates,
                           const bool enableHadamardLifting,
-                          mlir::CompilationRecord& record) {
-    mlir::QuantumCompilerConfig config;
+                          CompilationRecord& record) {
+    QuantumCompilerConfig config;
     config.convertToQIRAdaptive = convertToQIR;
     config.disableMergeSingleQubitRotationGates =
         disableMergeSingleQubitRotationGates;
@@ -136,16 +135,16 @@ protected:
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 
-    mlir::QuantumCompilerPipeline pipeline(config);
+    QuantumCompilerPipeline pipeline(config);
     ASSERT_TRUE(pipeline.runPipeline(module, &record).succeeded());
   }
 
   void expectEquivalent(const std::string& stage, const std::string& ir,
-                        const mlir::ModuleOp expected) const {
+                        const ModuleOp expected) const {
     auto actual = parseRecordedModule(ir);
     ASSERT_TRUE(actual) << stage << " failed to parse";
-    EXPECT_TRUE(mlir::verify(*actual).succeeded());
-    EXPECT_TRUE(mlir::verify(expected).succeeded());
+    EXPECT_TRUE(verify(*actual).succeeded());
+    EXPECT_TRUE(verify(expected).succeeded());
     EXPECT_TRUE(areModulesEquivalentWithPermutations(actual.get(), expected));
   }
 };
@@ -157,25 +156,25 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   const auto name = " (" + testCase.name + ")";
   DeferredPrinter printer;
 
-  mlir::OwningOpRef<mlir::ModuleOp> module;
+  OwningOpRef<ModuleOp> module;
   if (testCase.startFromQuantumComputation) {
     ASSERT_TRUE(testCase.quantumComputationBuilder);
     ::qc::QuantumComputation comp;
     testCase.quantumComputationBuilder.fn(comp);
 
-    module = mlir::translateQuantumComputationToQC(context.get(), comp);
+    module = translateQuantumComputationToQC(context.get(), comp);
     ASSERT_TRUE(module);
     printer.record(module.get(), "QC Import" + name);
   } else {
     ASSERT_TRUE(testCase.qcProgramBuilder);
-    module = mlir::qc::QCProgramBuilder::build(context.get(),
-                                               testCase.qcProgramBuilder.fn);
+    module =
+        QCProgramBuilder::build(context.get(), testCase.qcProgramBuilder.fn);
     ASSERT_TRUE(module);
     printer.record(module.get(), "QC Input" + name);
   }
-  EXPECT_TRUE(mlir::verify(*module).succeeded());
+  EXPECT_TRUE(verify(*module).succeeded());
 
-  mlir::CompilationRecord record;
+  CompilationRecord record;
   runPipeline(module.get(), testCase.convertToQIR, false, false, record);
 
   ASSERT_TRUE(testCase.qcReferenceBuilder);
@@ -214,20 +213,16 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
  * Correctness of the pass is tested in a dedicated test.
  */
 TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
-  auto module = mlir::qc::QCProgramBuilder::build(
-      context.get(),
-      [&](mlir::qc::QCProgramBuilder& b)
-          -> std::pair<mlir::SmallVector<mlir::Value>,
-                       mlir::SmallVector<mlir::Type>> {
+  auto module = QCProgramBuilder::build(
+      context.get(), [&](QCProgramBuilder& b) -> SmallVector<Value> {
         auto q = b.allocQubit();
         b.rz(1.0, q);
         b.rx(1.0, q);
-        auto m = b.measure(q);
-        return {{m}, {b.getI1Type()}};
+        return {b.measure(q)};
       });
   ASSERT_TRUE(module);
 
-  mlir::CompilationRecord record;
+  CompilationRecord record;
   runPipeline(module.get(), false, false, false, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
@@ -242,20 +237,16 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
  * Correctness of the pass is tested in a dedicated test.
  */
 TEST_F(CompilerPipelineTest, HadamardLiftingPass) {
-  auto module = mlir::qc::QCProgramBuilder::build(
-      context.get(),
-      [&](mlir::qc::QCProgramBuilder& b)
-          -> std::pair<mlir::SmallVector<mlir::Value>,
-                       mlir::SmallVector<mlir::Type>> {
+  auto module = QCProgramBuilder::build(
+      context.get(), [&](QCProgramBuilder& b) -> SmallVector<Value> {
         auto q = b.allocQubit();
         b.x(q);
         b.h(q);
-        auto m = b.measure(q);
-        return {{m}, {b.getI1Type()}};
+        return {b.measure(q)};
       });
   ASSERT_TRUE(module);
 
-  mlir::CompilationRecord record;
+  CompilationRecord record;
   runPipeline(module.get(), false, true, true, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
@@ -295,41 +286,42 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithInv),
             MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithInv), false},
         CompilerPipelineTestCase{
-            "AllocQubit", MQT_NAMED_BUILDER(qc::allocQubit), nullptr,
+            "AllocQubit", MQT_NAMED_BUILDER(::qc::allocQubit), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::alloc1QubitRegister),
             MQT_NAMED_BUILDER(mlir::qir::alloc1QubitRegister<true>)},
         CompilerPipelineTestCase{
-            "AllocQubitRegister", MQT_NAMED_BUILDER(qc::allocQubitRegister),
+            "AllocQubitRegister", MQT_NAMED_BUILDER(::qc::allocQubitRegister),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::allocQubitRegister),
             MQT_NAMED_BUILDER(mlir::qir::allocQubitRegister<true>)},
         CompilerPipelineTestCase{
             "AllocMultipleQubitRegisters",
-            MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters), nullptr,
+            MQT_NAMED_BUILDER(::qc::allocMultipleQubitRegisters), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::allocMultipleQubitRegisters),
             MQT_NAMED_BUILDER(mlir::qir::allocMultipleQubitRegisters<true>)},
         CompilerPipelineTestCase{
-            "AllocLargeRegister", MQT_NAMED_BUILDER(qc::allocLargeRegister),
+            "AllocLargeRegister", MQT_NAMED_BUILDER(::qc::allocLargeRegister),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::allocLargeRegister),
             MQT_NAMED_BUILDER(mlir::qir::allocQubitRegister<true>)},
         CompilerPipelineTestCase{
             "SingleMeasurementToSingleBit",
-            MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit), nullptr,
+            MQT_NAMED_BUILDER(::qc::singleMeasurementToSingleBit), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleMeasurementToSingleBit),
             MQT_NAMED_BUILDER(mlir::qir::singleMeasurementToSingleBit<true>)},
         CompilerPipelineTestCase{
             "RepeatedMeasurementToSameBit",
-            MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit), nullptr,
+            MQT_NAMED_BUILDER(::qc::repeatedMeasurementToSameBit), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToSameBit),
             MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToSameBit<true>)},
         CompilerPipelineTestCase{
             "RepeatedMeasurementToDifferentBits",
-            MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits), nullptr,
+            MQT_NAMED_BUILDER(::qc::repeatedMeasurementToDifferentBits),
+            nullptr,
             MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToDifferentBits),
             MQT_NAMED_BUILDER(
                 mlir::qir::repeatedMeasurementToDifferentBits<true>)},
         CompilerPipelineTestCase{
             "MultipleClassicalRegistersAndMeasurements",
-            MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
+            MQT_NAMED_BUILDER(::qc::multipleClassicalRegistersAndMeasurements),
             nullptr,
             MQT_NAMED_BUILDER(
                 mlir::qc::multipleClassicalRegistersAndMeasurements),
@@ -343,80 +335,80 @@ INSTANTIATE_TEST_SUITE_P(
             false},
         CompilerPipelineTestCase{
             "ResetQubitAfterSingleOp",
-            MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp), nullptr,
+            MQT_NAMED_BUILDER(::qc::resetQubitAfterSingleOp), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::resetQubitAfterSingleOp),
             MQT_NAMED_BUILDER(mlir::qir::resetQubitAfterSingleOp<true>)},
         CompilerPipelineTestCase{
             "ResetMultipleQubitsAfterSingleOp",
-            MQT_NAMED_BUILDER(qc::resetMultipleQubitsAfterSingleOp), nullptr,
+            MQT_NAMED_BUILDER(::qc::resetMultipleQubitsAfterSingleOp), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::resetMultipleQubitsAfterSingleOp),
             MQT_NAMED_BUILDER(
                 mlir::qir::resetMultipleQubitsAfterSingleOp<true>)},
         CompilerPipelineTestCase{
             "RepeatedResetAfterSingleOp",
-            MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp), nullptr,
+            MQT_NAMED_BUILDER(::qc::repeatedResetAfterSingleOp), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::resetQubitAfterSingleOp),
             MQT_NAMED_BUILDER(mlir::qir::resetQubitAfterSingleOp<true>)},
         CompilerPipelineTestCase{
-            "GlobalPhase", MQT_NAMED_BUILDER(qc::globalPhase), nullptr,
+            "GlobalPhase", MQT_NAMED_BUILDER(::qc::globalPhase), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::globalPhase),
             MQT_NAMED_BUILDER(mlir::qir::globalPhase<true>)},
         CompilerPipelineTestCase{
-            "Identity", MQT_NAMED_BUILDER(qc::identity), nullptr,
+            "Identity", MQT_NAMED_BUILDER(::qc::identity), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::alloc1QubitRegister),
             MQT_NAMED_BUILDER(mlir::qir::alloc1QubitRegister<true>)},
         CompilerPipelineTestCase{
             "SingleControlledIdentity",
-            MQT_NAMED_BUILDER(qc::singleControlledIdentity), nullptr,
+            MQT_NAMED_BUILDER(::qc::singleControlledIdentity), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::allocQubitRegister),
             MQT_NAMED_BUILDER(mlir::qir::allocQubitRegister<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledIdentity",
-            MQT_NAMED_BUILDER(qc::multipleControlledIdentity), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledIdentity), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::alloc3QubitRegister),
             MQT_NAMED_BUILDER(mlir::qir::alloc3QubitRegister<true>)},
-        CompilerPipelineTestCase{"X", MQT_NAMED_BUILDER(qc::x), nullptr,
+        CompilerPipelineTestCase{"X", MQT_NAMED_BUILDER(::qc::x), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::x),
                                  MQT_NAMED_BUILDER(mlir::qir::x<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledX", MQT_NAMED_BUILDER(qc::singleControlledX),
+            "SingleControlledX", MQT_NAMED_BUILDER(::qc::singleControlledX),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledX),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledX<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledX", MQT_NAMED_BUILDER(qc::multipleControlledX),
+            "MultipleControlledX", MQT_NAMED_BUILDER(::qc::multipleControlledX),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledX),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledX<true>)},
-        CompilerPipelineTestCase{"Y", MQT_NAMED_BUILDER(qc::y), nullptr,
+        CompilerPipelineTestCase{"Y", MQT_NAMED_BUILDER(::qc::y), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::y),
                                  MQT_NAMED_BUILDER(mlir::qir::y<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledY", MQT_NAMED_BUILDER(qc::singleControlledY),
+            "SingleControlledY", MQT_NAMED_BUILDER(::qc::singleControlledY),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledY),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledY<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledY", MQT_NAMED_BUILDER(qc::multipleControlledY),
+            "MultipleControlledY", MQT_NAMED_BUILDER(::qc::multipleControlledY),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledY),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledY<true>)},
-        CompilerPipelineTestCase{"Z", MQT_NAMED_BUILDER(qc::z), nullptr,
+        CompilerPipelineTestCase{"Z", MQT_NAMED_BUILDER(::qc::z), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::z),
                                  MQT_NAMED_BUILDER(mlir::qir::z<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledZ", MQT_NAMED_BUILDER(qc::singleControlledZ),
+            "SingleControlledZ", MQT_NAMED_BUILDER(::qc::singleControlledZ),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledZ),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledZ<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledZ", MQT_NAMED_BUILDER(qc::multipleControlledZ),
+            "MultipleControlledZ", MQT_NAMED_BUILDER(::qc::multipleControlledZ),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledZ),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledZ<true>)},
-        CompilerPipelineTestCase{"H", MQT_NAMED_BUILDER(qc::h), nullptr,
+        CompilerPipelineTestCase{"H", MQT_NAMED_BUILDER(::qc::h), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::h),
                                  MQT_NAMED_BUILDER(mlir::qir::h<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledH", MQT_NAMED_BUILDER(qc::singleControlledH),
+            "SingleControlledH", MQT_NAMED_BUILDER(::qc::singleControlledH),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledH),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledH<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledH", MQT_NAMED_BUILDER(qc::multipleControlledH),
+            "MultipleControlledH", MQT_NAMED_BUILDER(::qc::multipleControlledH),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledH),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledH<true>)},
         CompilerPipelineTestCase{
@@ -424,292 +416,299 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
             MQT_NAMED_BUILDER(mlir::qc::hWithoutRegister),
             MQT_NAMED_BUILDER(mlir::qir::hWithoutRegister<true>), false},
-        CompilerPipelineTestCase{"S", MQT_NAMED_BUILDER(qc::s), nullptr,
+        CompilerPipelineTestCase{"S", MQT_NAMED_BUILDER(::qc::s), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::s),
                                  MQT_NAMED_BUILDER(mlir::qir::s<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledS", MQT_NAMED_BUILDER(qc::singleControlledS),
+            "SingleControlledS", MQT_NAMED_BUILDER(::qc::singleControlledS),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledS),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledS<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledS", MQT_NAMED_BUILDER(qc::multipleControlledS),
+            "MultipleControlledS", MQT_NAMED_BUILDER(::qc::multipleControlledS),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledS),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledS<true>)},
-        CompilerPipelineTestCase{"Sdg", MQT_NAMED_BUILDER(qc::sdg), nullptr,
+        CompilerPipelineTestCase{"Sdg", MQT_NAMED_BUILDER(::qc::sdg), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::sdg),
                                  MQT_NAMED_BUILDER(mlir::qir::sdg<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledSdg", MQT_NAMED_BUILDER(qc::singleControlledSdg),
+            "SingleControlledSdg", MQT_NAMED_BUILDER(::qc::singleControlledSdg),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledSdg),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledSdg<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledSdg",
-            MQT_NAMED_BUILDER(qc::multipleControlledSdg), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledSdg), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledSdg),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledSdg<true>)},
-        CompilerPipelineTestCase{"T", MQT_NAMED_BUILDER(qc::t_), nullptr,
+        CompilerPipelineTestCase{"T", MQT_NAMED_BUILDER(::qc::t_), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::t_),
                                  MQT_NAMED_BUILDER(mlir::qir::t_<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledT", MQT_NAMED_BUILDER(qc::singleControlledT),
+            "SingleControlledT", MQT_NAMED_BUILDER(::qc::singleControlledT),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledT),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledT<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledT", MQT_NAMED_BUILDER(qc::multipleControlledT),
+            "MultipleControlledT", MQT_NAMED_BUILDER(::qc::multipleControlledT),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledT),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledT<true>)},
-        CompilerPipelineTestCase{"Tdg", MQT_NAMED_BUILDER(qc::tdg), nullptr,
+        CompilerPipelineTestCase{"Tdg", MQT_NAMED_BUILDER(::qc::tdg), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::tdg),
                                  MQT_NAMED_BUILDER(mlir::qir::tdg<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledTdg", MQT_NAMED_BUILDER(qc::singleControlledTdg),
+            "SingleControlledTdg", MQT_NAMED_BUILDER(::qc::singleControlledTdg),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledTdg),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledTdg<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledTdg",
-            MQT_NAMED_BUILDER(qc::multipleControlledTdg), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledTdg), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledTdg),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledTdg<true>)},
-        CompilerPipelineTestCase{"SX", MQT_NAMED_BUILDER(qc::sx), nullptr,
+        CompilerPipelineTestCase{"SX", MQT_NAMED_BUILDER(::qc::sx), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::sx),
                                  MQT_NAMED_BUILDER(mlir::qir::sx<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledSX", MQT_NAMED_BUILDER(qc::singleControlledSx),
+            "SingleControlledSX", MQT_NAMED_BUILDER(::qc::singleControlledSx),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledSx),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledSx<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledSX", MQT_NAMED_BUILDER(qc::multipleControlledSx),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledSx),
+            "MultipleControlledSX",
+            MQT_NAMED_BUILDER(::qc::multipleControlledSx), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledSx),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledSx<true>)},
-        CompilerPipelineTestCase{"SXdg", MQT_NAMED_BUILDER(qc::sxdg), nullptr,
+        CompilerPipelineTestCase{"SXdg", MQT_NAMED_BUILDER(::qc::sxdg), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::sxdg),
                                  MQT_NAMED_BUILDER(mlir::qir::sxdg<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledSXdg", MQT_NAMED_BUILDER(qc::singleControlledSxdg),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledSxdg),
+            "SingleControlledSXdg",
+            MQT_NAMED_BUILDER(::qc::singleControlledSxdg), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledSxdg),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledSxdg<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledSXdg",
-            MQT_NAMED_BUILDER(qc::multipleControlledSxdg), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledSxdg), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledSxdg),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledSxdg<true>)},
-        CompilerPipelineTestCase{"RX", MQT_NAMED_BUILDER(qc::rx), nullptr,
+        CompilerPipelineTestCase{"RX", MQT_NAMED_BUILDER(::qc::rx), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::rx),
                                  MQT_NAMED_BUILDER(mlir::qir::rx<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledRX", MQT_NAMED_BUILDER(qc::singleControlledRx),
+            "SingleControlledRX", MQT_NAMED_BUILDER(::qc::singleControlledRx),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRx),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledRx<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledRX", MQT_NAMED_BUILDER(qc::multipleControlledRx),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledRx),
+            "MultipleControlledRX",
+            MQT_NAMED_BUILDER(::qc::multipleControlledRx), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRx),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledRx<true>)},
-        CompilerPipelineTestCase{"RY", MQT_NAMED_BUILDER(qc::ry), nullptr,
+        CompilerPipelineTestCase{"RY", MQT_NAMED_BUILDER(::qc::ry), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::ry),
                                  MQT_NAMED_BUILDER(mlir::qir::ry<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledRY", MQT_NAMED_BUILDER(qc::singleControlledRy),
+            "SingleControlledRY", MQT_NAMED_BUILDER(::qc::singleControlledRy),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRy),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledRy<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledRY", MQT_NAMED_BUILDER(qc::multipleControlledRy),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledRy),
+            "MultipleControlledRY",
+            MQT_NAMED_BUILDER(::qc::multipleControlledRy), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRy),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledRy<true>)},
-        CompilerPipelineTestCase{"RZ", MQT_NAMED_BUILDER(qc::rz), nullptr,
+        CompilerPipelineTestCase{"RZ", MQT_NAMED_BUILDER(::qc::rz), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::rz),
                                  MQT_NAMED_BUILDER(mlir::qir::rz<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledRZ", MQT_NAMED_BUILDER(qc::singleControlledRz),
+            "SingleControlledRZ", MQT_NAMED_BUILDER(::qc::singleControlledRz),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRz),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledRz<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledRZ", MQT_NAMED_BUILDER(qc::multipleControlledRz),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledRz),
+            "MultipleControlledRZ",
+            MQT_NAMED_BUILDER(::qc::multipleControlledRz), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRz),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledRz<true>)},
-        CompilerPipelineTestCase{"P", MQT_NAMED_BUILDER(qc::p), nullptr,
+        CompilerPipelineTestCase{"P", MQT_NAMED_BUILDER(::qc::p), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::p),
                                  MQT_NAMED_BUILDER(mlir::qir::p<true>)},
         CompilerPipelineTestCase{
             "SingleControlledP",
-            MQT_NAMED_BUILDER(qc::singleControlledP), nullptr,
+            MQT_NAMED_BUILDER(::qc::singleControlledP), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleControlledP),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledP<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledP", MQT_NAMED_BUILDER(qc::multipleControlledP),
+            "MultipleControlledP", MQT_NAMED_BUILDER(::qc::multipleControlledP),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledP),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledP<true>)},
-        CompilerPipelineTestCase{"R", MQT_NAMED_BUILDER(qc::r), nullptr,
+        CompilerPipelineTestCase{"R", MQT_NAMED_BUILDER(::qc::r), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::r),
                                  MQT_NAMED_BUILDER(mlir::qir::r<true>)},
         CompilerPipelineTestCase{
             "SingleControlledR",
-            MQT_NAMED_BUILDER(qc::singleControlledR), nullptr,
+            MQT_NAMED_BUILDER(::qc::singleControlledR), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleControlledR),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledR<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledR", MQT_NAMED_BUILDER(qc::multipleControlledR),
+            "MultipleControlledR", MQT_NAMED_BUILDER(::qc::multipleControlledR),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledR),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledR<true>)},
-        CompilerPipelineTestCase{"U2", MQT_NAMED_BUILDER(qc::u2), nullptr,
+        CompilerPipelineTestCase{"U2", MQT_NAMED_BUILDER(::qc::u2), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::u2),
                                  MQT_NAMED_BUILDER(mlir::qir::u2<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledU2", MQT_NAMED_BUILDER(qc::singleControlledU2),
+            "SingleControlledU2", MQT_NAMED_BUILDER(::qc::singleControlledU2),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledU2),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledU2<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledU2", MQT_NAMED_BUILDER(qc::multipleControlledU2),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledU2),
+            "MultipleControlledU2",
+            MQT_NAMED_BUILDER(::qc::multipleControlledU2), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledU2),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledU2<true>)},
-        CompilerPipelineTestCase{"U", MQT_NAMED_BUILDER(qc::u), nullptr,
+        CompilerPipelineTestCase{"U", MQT_NAMED_BUILDER(::qc::u), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::u),
                                  MQT_NAMED_BUILDER(mlir::qir::u<true>)},
         CompilerPipelineTestCase{
             "SingleControlledU",
-            MQT_NAMED_BUILDER(qc::singleControlledU), nullptr,
+            MQT_NAMED_BUILDER(::qc::singleControlledU), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleControlledU),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledU<true>)},
         CompilerPipelineTestCase{
-            "MultipleControlledU", MQT_NAMED_BUILDER(qc::multipleControlledU),
+            "MultipleControlledU", MQT_NAMED_BUILDER(::qc::multipleControlledU),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledU),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledU<true>)},
-        CompilerPipelineTestCase{"SWAP", MQT_NAMED_BUILDER(qc::swap), nullptr,
+        CompilerPipelineTestCase{"SWAP", MQT_NAMED_BUILDER(::qc::swap), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::swap),
                                  MQT_NAMED_BUILDER(mlir::qir::swap<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledSWAP", MQT_NAMED_BUILDER(qc::singleControlledSwap),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledSwap),
+            "SingleControlledSWAP",
+            MQT_NAMED_BUILDER(::qc::singleControlledSwap), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledSwap),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledSwap<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledSWAP",
-            MQT_NAMED_BUILDER(qc::multipleControlledSwap), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledSwap), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledSwap),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledSwap<true>)},
-        CompilerPipelineTestCase{"iSWAP", MQT_NAMED_BUILDER(qc::iswap), nullptr,
-                                 MQT_NAMED_BUILDER(mlir::qc::iswap),
+        CompilerPipelineTestCase{"iSWAP", MQT_NAMED_BUILDER(::qc::iswap),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::iswap),
                                  MQT_NAMED_BUILDER(mlir::qir::iswap<true>)},
         CompilerPipelineTestCase{
             "SingleControllediSWAP",
-            MQT_NAMED_BUILDER(qc::singleControlledIswap), nullptr,
+            MQT_NAMED_BUILDER(::qc::singleControlledIswap), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleControlledIswap),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledIswap<true>)},
         CompilerPipelineTestCase{
             "MultipleControllediSWAP",
-            MQT_NAMED_BUILDER(qc::multipleControlledIswap), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledIswap), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledIswap),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledIswap<true>)},
         CompilerPipelineTestCase{
-            "InverseISWAP", MQT_NAMED_BUILDER(qc::inverseIswap), nullptr,
+            "InverseISWAP", MQT_NAMED_BUILDER(::qc::inverseIswap), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::inverseIswap), nullptr, true, false},
         CompilerPipelineTestCase{
             "InverseMultiControlledISWAP",
-            MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap), nullptr,
+            MQT_NAMED_BUILDER(::qc::inverseMultipleControlledIswap), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::inverseMultipleControlledIswap),
             nullptr, true, false},
-        CompilerPipelineTestCase{"DCX", MQT_NAMED_BUILDER(qc::dcx), nullptr,
+        CompilerPipelineTestCase{"DCX", MQT_NAMED_BUILDER(::qc::dcx), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::dcx),
                                  MQT_NAMED_BUILDER(mlir::qir::dcx<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledDCX", MQT_NAMED_BUILDER(qc::singleControlledDcx),
+            "SingleControlledDCX", MQT_NAMED_BUILDER(::qc::singleControlledDcx),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledDcx),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledDcx<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledDCX",
-            MQT_NAMED_BUILDER(qc::multipleControlledDcx), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledDcx), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledDcx),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledDcx<true>)},
-        CompilerPipelineTestCase{"ECR", MQT_NAMED_BUILDER(qc::ecr), nullptr,
+        CompilerPipelineTestCase{"ECR", MQT_NAMED_BUILDER(::qc::ecr), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::ecr),
                                  MQT_NAMED_BUILDER(mlir::qir::ecr<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledECR", MQT_NAMED_BUILDER(qc::singleControlledEcr),
+            "SingleControlledECR", MQT_NAMED_BUILDER(::qc::singleControlledEcr),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledEcr),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledEcr<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledECR",
-            MQT_NAMED_BUILDER(qc::multipleControlledEcr), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledEcr), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledEcr),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledEcr<true>)},
-        CompilerPipelineTestCase{"RXX", MQT_NAMED_BUILDER(qc::rxx), nullptr,
+        CompilerPipelineTestCase{"RXX", MQT_NAMED_BUILDER(::qc::rxx), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::rxx),
                                  MQT_NAMED_BUILDER(mlir::qir::rxx<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledRXX", MQT_NAMED_BUILDER(qc::singleControlledRxx),
+            "SingleControlledRXX", MQT_NAMED_BUILDER(::qc::singleControlledRxx),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRxx),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledRxx<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledRXX",
-            MQT_NAMED_BUILDER(qc::multipleControlledRxx), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledRxx), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledRxx),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledRxx<true>)},
         CompilerPipelineTestCase{
-            "TripleControlledRXX", MQT_NAMED_BUILDER(qc::tripleControlledRxx),
+            "TripleControlledRXX", MQT_NAMED_BUILDER(::qc::tripleControlledRxx),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::tripleControlledRxx),
             MQT_NAMED_BUILDER(mlir::qir::tripleControlledRxx<true>)},
-        CompilerPipelineTestCase{"RYY", MQT_NAMED_BUILDER(qc::ryy), nullptr,
+        CompilerPipelineTestCase{"RYY", MQT_NAMED_BUILDER(::qc::ryy), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::ryy),
                                  MQT_NAMED_BUILDER(mlir::qir::ryy<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledRYY", MQT_NAMED_BUILDER(qc::singleControlledRyy),
+            "SingleControlledRYY", MQT_NAMED_BUILDER(::qc::singleControlledRyy),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRyy),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledRyy<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledRYY",
-            MQT_NAMED_BUILDER(qc::multipleControlledRyy), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledRyy), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledRyy),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledRyy<true>)},
-        CompilerPipelineTestCase{"RZX", MQT_NAMED_BUILDER(qc::rzx), nullptr,
+        CompilerPipelineTestCase{"RZX", MQT_NAMED_BUILDER(::qc::rzx), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::rzx),
                                  MQT_NAMED_BUILDER(mlir::qir::rzx<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledRZX", MQT_NAMED_BUILDER(qc::singleControlledRzx),
+            "SingleControlledRZX", MQT_NAMED_BUILDER(::qc::singleControlledRzx),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRzx),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledRzx<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledRZX",
-            MQT_NAMED_BUILDER(qc::multipleControlledRzx), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledRzx), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledRzx),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledRzx<true>)},
-        CompilerPipelineTestCase{"RZZ", MQT_NAMED_BUILDER(qc::rzz), nullptr,
+        CompilerPipelineTestCase{"RZZ", MQT_NAMED_BUILDER(::qc::rzz), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::rzz),
                                  MQT_NAMED_BUILDER(mlir::qir::rzz<true>)},
         CompilerPipelineTestCase{
-            "SingleControlledRZZ", MQT_NAMED_BUILDER(qc::singleControlledRzz),
+            "SingleControlledRZZ", MQT_NAMED_BUILDER(::qc::singleControlledRzz),
             nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRzz),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledRzz<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledRZZ",
-            MQT_NAMED_BUILDER(qc::multipleControlledRzz), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledRzz), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledRzz),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledRzz<true>)},
-        CompilerPipelineTestCase{"XXPlusYY", MQT_NAMED_BUILDER(qc::xxPlusYY),
+        CompilerPipelineTestCase{"XXPlusYY", MQT_NAMED_BUILDER(::qc::xxPlusYY),
                                  nullptr, MQT_NAMED_BUILDER(mlir::qc::xxPlusYY),
                                  MQT_NAMED_BUILDER(mlir::qir::xxPlusYY<true>)},
         CompilerPipelineTestCase{
             "SingleControlledXXPlusYY",
-            MQT_NAMED_BUILDER(qc::singleControlledXxPlusYY), nullptr,
+            MQT_NAMED_BUILDER(::qc::singleControlledXxPlusYY), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleControlledXxPlusYY),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledXxPlusYY<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledXXPlusYY",
-            MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledXxPlusYY), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxPlusYY),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxPlusYY<true>)},
-        CompilerPipelineTestCase{"XXMinusYY", MQT_NAMED_BUILDER(qc::xxMinusYY),
-                                 nullptr,
+        CompilerPipelineTestCase{"XXMinusYY",
+                                 MQT_NAMED_BUILDER(::qc::xxMinusYY), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::xxMinusYY),
                                  MQT_NAMED_BUILDER(mlir::qir::xxMinusYY<true>)},
         CompilerPipelineTestCase{
             "SingleControlledXXMinusYY",
-            MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY), nullptr,
+            MQT_NAMED_BUILDER(::qc::singleControlledXxMinusYY), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::singleControlledXxMinusYY),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledXxMinusYY<true>)},
         CompilerPipelineTestCase{
             "MultipleControlledXXMinusYY",
-            MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY), nullptr,
+            MQT_NAMED_BUILDER(::qc::multipleControlledXxMinusYY), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxMinusYY),
             MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxMinusYY<true>)},
-        CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+        CompilerPipelineTestCase{"CtrlTwo", MQT_NAMED_BUILDER(::qc::ctrlTwo),
                                  nullptr, MQT_NAMED_BUILDER(mlir::qc::ctrlTwo),
                                  MQT_NAMED_BUILDER(mlir::qir::ctrlTwo<true>)}));
 

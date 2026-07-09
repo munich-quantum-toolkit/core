@@ -1098,14 +1098,14 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   /**
-   * @brief Finalize the program with a given exit code and return the
+   * @brief Finalize the program with the given return value and return the
    * constructed module
-   * @param returnValue The value representing the exit code to return
+   * @param returnValue The return value of the main function
    *
    * @details
    * Automatically deallocates all remaining valid qubits and tensors of qubits,
-   * adds a return statement with a given exit code,
-   * and transfers ownership of the module to the caller. The builder should not
+   * adds a return statement with the given return value, and
+   * transfers ownership of the module to the caller. The builder should not
    * be used after calling this method.
    *
    * The return value must have the type indicated by the function signature
@@ -1123,12 +1123,12 @@ public:
    * and uses it to build the desired quantum program. The builder will be
    * properly initialized before calling this function, and the resulting module
    * will be finalized and returned after this function completes.
+   * @param profile The profile to use for the program. Defaults to Adaptive.
    * @return The module containing the quantum program built by buildFunc.
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const function_ref<
-            std::pair<mlir::Value, mlir::Type>(QIRProgramBuilder&)>& buildFunc,
+        const function_ref<Value(QIRProgramBuilder&)>& buildFunc,
         Profile profile = Profile::Adaptive);
 
 private:

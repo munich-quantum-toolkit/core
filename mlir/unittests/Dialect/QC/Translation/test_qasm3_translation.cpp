@@ -24,7 +24,6 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
@@ -41,9 +40,7 @@ namespace {
 struct QASM3TranslationTestCase {
   std::string name;
   std::string source;
-  mqt::test::NamedBuilder<qc::QCProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      referenceBuilder;
+  mqt::test::MultiResultBuilder<qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QASM3TranslationTestCase& test);
@@ -73,41 +70,36 @@ protected:
 
 } // namespace
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-twoX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> twoX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
   b.x(q[1]);
   auto c0 = b.measure(q[0]);
   auto c1 = b.measure(q[1]);
-  return {{c0, c1}, {b.getI1Type(), b.getI1Type()}};
+  return {c0, c1};
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-singleNegControlledX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> singleNegControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
   b.cx(q[0], q[1]);
   b.x(q[0]);
   auto c0 = b.measure(q[0]);
   auto c1 = b.measure(q[1]);
-  return {{c0, c1}, {b.getI1Type(), b.getI1Type()}};
+  return {c0, c1};
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-tripleControlledX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> tripleControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcx({q[0], q[1], q[2]}, q[3]);
   auto c0 = b.measure(q[0]);
   auto c1 = b.measure(q[1]);
   auto c2 = b.measure(q[2]);
   auto c3 = b.measure(q[3]);
-  return {{c0, c1, c2, c3},
-          {b.getI1Type(), b.getI1Type(), b.getI1Type(), b.getI1Type()}};
+  return {c0, c1, c2, c3};
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-mixedControlledX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> mixedControlledX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.x(q[1]);
   b.mcx({q[0], q[1]}, q[2]);
@@ -115,11 +107,10 @@ mixedControlledX(qc::QCProgramBuilder& b) {
   auto c0 = b.measure(q[0]);
   auto c1 = b.measure(q[1]);
   auto c2 = b.measure(q[2]);
-  return {{c0, c1, c2}, {b.getI1Type(), b.getI1Type(), b.getI1Type()}};
+  return {c0, c1, c2};
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-twoMixedControlledX(qc::QCProgramBuilder& b) {
+static SmallVector<Value> twoMixedControlledX(qc::QCProgramBuilder& b) {
   auto q1 = b.allocQubitRegister(2);
   auto q2 = b.allocQubitRegister(2);
   auto q3 = b.allocQubitRegister(2);
@@ -135,13 +126,10 @@ twoMixedControlledX(qc::QCProgramBuilder& b) {
   auto c3 = b.measure(q2[1]);
   auto c4 = b.measure(q3[0]);
   auto c5 = b.measure(q3[1]);
-  return {{c0, c1, c2, c3, c4, c5},
-          {b.getI1Type(), b.getI1Type(), b.getI1Type(), b.getI1Type(),
-           b.getI1Type(), b.getI1Type()}};
+  return {c0, c1, c2, c3, c4, c5};
 }
 
-static std::pair<SmallVector<Value>, SmallVector<Type>>
-ifNot(qc::QCProgramBuilder& b) {
+static SmallVector<Value> ifNot(qc::QCProgramBuilder& b) {
   auto trueValue = b.boolConstant(true);
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
@@ -149,7 +137,7 @@ ifNot(qc::QCProgramBuilder& b) {
   auto cond = arith::XOrIOp::create(b, c, trueValue).getResult();
   b.scfIf(cond, [&] { b.x(q[0]); });
   auto out = b.measure(q[0]);
-  return {{out}, {b.getI1Type()}};
+  return {out};
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {

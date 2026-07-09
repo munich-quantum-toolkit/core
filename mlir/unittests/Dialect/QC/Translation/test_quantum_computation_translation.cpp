@@ -25,7 +25,6 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
@@ -40,9 +39,8 @@ namespace {
 struct QuantumComputationTranslationTestCase {
   std::string name;
   mqt::test::NamedBuilder<::qc::QuantumComputation> programBuilder;
-  mqt::test::NamedBuilder<
-      mlir::qc::QCProgramBuilder,
-      std::pair<llvm::SmallVector<mlir::Value>, llvm::SmallVector<mlir::Type>>>
+  mqt::test::NamedBuilder<mlir::qc::QCProgramBuilder,
+                          llvm::SmallVector<mlir::Value>>
       referenceBuilder;
 
   friend std::ostream&

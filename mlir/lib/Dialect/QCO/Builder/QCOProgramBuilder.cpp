@@ -1225,12 +1225,11 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<std::pair<SmallVector<Value>, SmallVector<Type>>(
-        QCOProgramBuilder&)>& buildFunc) {
+    const function_ref<SmallVector<Value>(QCOProgramBuilder&)>& buildFunc) {
   QCOProgramBuilder builder(context);
   builder.initialize();
-  auto [result, resultTypes] = buildFunc(builder);
-  builder.retype(resultTypes);
+  auto result = buildFunc(builder);
+  builder.retype(ValueRange(result).getTypes());
   return builder.finalize(result);
 }
 

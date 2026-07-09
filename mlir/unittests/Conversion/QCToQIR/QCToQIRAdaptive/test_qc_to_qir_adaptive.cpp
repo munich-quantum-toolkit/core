@@ -27,7 +27,6 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
@@ -46,11 +45,8 @@ namespace {
 
 struct QCToQIRAdaptiveTestCase {
   std::string name;
-  mqt::test::NamedBuilder<qc::QCProgramBuilder,
-                          std::pair<SmallVector<Value>, SmallVector<Type>>>
-      programBuilder;
-  mqt::test::NamedBuilder<qir::QIRProgramBuilder, std::pair<Value, Type>>
-      referenceBuilder;
+  mqt::test::MultiResultBuilder<qc::QCProgramBuilder> programBuilder;
+  mqt::test::SingleResultBuilder<qir::QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQIRAdaptiveTestCase& info);

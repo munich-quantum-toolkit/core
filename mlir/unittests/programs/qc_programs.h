@@ -10,1162 +10,934 @@
 
 #pragma once
 
-#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-
-#include <utility>
 
 namespace mlir::qc {
 class QCProgramBuilder;
 
 /// Creates an empty QC Program.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-emptyQC(QCProgramBuilder& builder);
+SmallVector<Value> emptyQC(QCProgramBuilder& b);
 
 // --- Qubit Management ----------------------------------------------------- //
 
 /// Allocates a single qubit.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-allocQubit(QCProgramBuilder& b);
+SmallVector<Value> allocQubit(QCProgramBuilder& b);
 
 /// Allocates a single qubit without measuring it.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-allocQubitNoMeasure(QCProgramBuilder& b);
+SmallVector<Value> allocQubitNoMeasure(QCProgramBuilder& b);
 
 /// Allocates a qubit register of size `1`.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-alloc1QubitRegister(QCProgramBuilder& b);
+SmallVector<Value> alloc1QubitRegister(QCProgramBuilder& b);
 
 /// Allocates a qubit register of size `2`.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-allocQubitRegister(QCProgramBuilder& b);
+SmallVector<Value> allocQubitRegister(QCProgramBuilder& b);
 
 /// Allocates a qubit register of size `3`.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-alloc3QubitRegister(QCProgramBuilder& b);
+SmallVector<Value> alloc3QubitRegister(QCProgramBuilder& b);
 
 /// Allocates two qubit registers of size `2` and `3`.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-allocMultipleQubitRegisters(QCProgramBuilder& b);
+SmallVector<Value> allocMultipleQubitRegisters(QCProgramBuilder& b);
 
 /// Allocates two qubit registers of size `2` and `3` and applies operations.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-allocMultipleQubitRegistersWithOps(QCProgramBuilder& b);
+SmallVector<Value> allocMultipleQubitRegistersWithOps(QCProgramBuilder& b);
 
 /// Allocates a large qubit register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-allocLargeRegister(QCProgramBuilder& b);
+SmallVector<Value> allocLargeRegister(QCProgramBuilder& b);
 
 /// Allocates two inline qubits.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubits(QCProgramBuilder& b);
+SmallVector<Value> staticQubits(QCProgramBuilder& b);
 
 /// Allocates two inline qubits without measuring them.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubitsNoMeasure(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsNoMeasure(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubitsWithOps(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsWithOps(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies parametric gates.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubitsWithParametricOps(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsWithParametricOps(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies a two-target gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubitsWithTwoTargetOps(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsWithTwoTargetOps(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies a controlled gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubitsWithCtrl(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsWithCtrl(QCProgramBuilder& b);
 
 /// Allocates a static qubit and applies an inverse modifier.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubitsWithInv(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsWithInv(QCProgramBuilder& b);
 
 /// Allocates duplicate static qubits and applies operations on both.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubitsWithDuplicates(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsWithDuplicates(QCProgramBuilder& b);
 
 /// Same as `staticQubitsWithDuplicates`, but with canonical static qubit
 /// retrievals.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-staticQubitsCanonical(QCProgramBuilder& b);
+SmallVector<Value> staticQubitsCanonical(QCProgramBuilder& b);
 
 /// Allocates and explicitly deallocates a single qubit.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-allocDeallocPair(QCProgramBuilder& b);
+SmallVector<Value> allocDeallocPair(QCProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
 /// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
 /// alloc.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-mixedStaticThenDynamicQubit(QCProgramBuilder& b);
+SmallVector<Value> mixedStaticThenDynamicQubit(QCProgramBuilder& b);
 
 /// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
 /// static.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
+SmallVector<Value> mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleMeasurementToSingleBit(QCProgramBuilder& b);
+SmallVector<Value> singleMeasurementToSingleBit(QCProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into the same classical bit.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-repeatedMeasurementToSameBit(QCProgramBuilder& b);
+SmallVector<Value> repeatedMeasurementToSameBit(QCProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into different classical bits.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-repeatedMeasurementToDifferentBits(QCProgramBuilder& b);
+SmallVector<Value> repeatedMeasurementToDifferentBits(QCProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
-std::pair<SmallVector<Value>, SmallVector<Type>>
+SmallVector<Value>
 multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b);
 
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-measurementWithoutRegisters(QCProgramBuilder& b);
+SmallVector<Value> measurementWithoutRegisters(QCProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
 /// Resets a single qubit without any operations being applied.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-resetQubitWithoutOp(QCProgramBuilder& b);
+SmallVector<Value> resetQubitWithoutOp(QCProgramBuilder& b);
 
 /// Resets multiple qubits without any operations being applied.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-resetMultipleQubitsWithoutOp(QCProgramBuilder& b);
+SmallVector<Value> resetMultipleQubitsWithoutOp(QCProgramBuilder& b);
 
 /// Repeatedly resets a single qubit without any operations being applied.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-repeatedResetWithoutOp(QCProgramBuilder& b);
+SmallVector<Value> repeatedResetWithoutOp(QCProgramBuilder& b);
 
 /// Resets a single qubit after a single operation.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-resetQubitAfterSingleOp(QCProgramBuilder& b);
+SmallVector<Value> resetQubitAfterSingleOp(QCProgramBuilder& b);
 
 /// Resets multiple qubits after a single operation.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b);
+SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b);
 
 /// Repeatedly resets a single qubit after a single operation.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-repeatedResetAfterSingleOp(QCProgramBuilder& b);
+SmallVector<Value> repeatedResetAfterSingleOp(QCProgramBuilder& b);
 
 // --- GPhaseOp ------------------------------------------------------------- //
 
 /// Creates a circuit with just a global phase.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-globalPhase(QCProgramBuilder& b);
+SmallVector<Value> globalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with just a global phase and a single measured qubit.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-globalPhaseAndMeasure(QCProgramBuilder& b);
+SmallVector<Value> globalPhaseAndMeasure(QCProgramBuilder& b);
 
 /// Creates a controlled global phase gate with a single control qubit.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledGlobalPhase(QCProgramBuilder& b);
+SmallVector<Value> singleControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a multi-controlled global phase gate with multiple control qubits.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledGlobalPhase(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled global phase gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledGlobalPhase(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled global phase gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledGlobalPhase(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a global phase gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseGlobalPhase(QCProgramBuilder& b);
+SmallVector<Value> inverseGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled global
 /// phase gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledGlobalPhase(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledGlobalPhase(QCProgramBuilder& b);
 
 // --- IdOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an identity gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> identity(QCProgramBuilder& b);
+SmallVector<Value> identity(QCProgramBuilder& b);
 
 /// Creates a controlled identity gate with a single control qubit.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledIdentity(QCProgramBuilder& b);
+SmallVector<Value> singleControlledIdentity(QCProgramBuilder& b);
 
 /// Creates an identity gate on a single qubit in a two-qubit register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-twoQubitsOneIdentity(QCProgramBuilder& b);
+SmallVector<Value> twoQubitsOneIdentity(QCProgramBuilder& b);
 
 /// Creates an identity gate on a single qubit in a three-qubit register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-threeQubitsOneIdentity(QCProgramBuilder& b);
+SmallVector<Value> threeQubitsOneIdentity(QCProgramBuilder& b);
 
 /// Creates a multi-controlled identity gate with multiple control qubits.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledIdentity(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledIdentity(QCProgramBuilder& b);
 
 /// Creates an barrier gate on a single qubit in a two-qubit register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-twoQubitsOneBarrier(QCProgramBuilder& b);
+SmallVector<Value> twoQubitsOneBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled identity gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledIdentity(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledIdentity(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled identity gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledIdentity(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledIdentity(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an identity gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseIdentity(QCProgramBuilder& b);
+SmallVector<Value> inverseIdentity(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled identity
 /// gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledIdentity(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledIdentity(QCProgramBuilder& b);
 
 // --- XOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an X gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> x(QCProgramBuilder& b);
+SmallVector<Value> x(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled X gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledX(QCProgramBuilder& b);
+SmallVector<Value> singleControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled X gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledX(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled X gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledX(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled X gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledX(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with repeated controlled X gates.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-repeatedControlledX(QCProgramBuilder& b);
+SmallVector<Value> repeatedControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an X gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseX(QCProgramBuilder& b);
+SmallVector<Value> inverseX(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledX(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledX(QCProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Y gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> y(QCProgramBuilder& b);
+SmallVector<Value> y(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Y gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledY(QCProgramBuilder& b);
+SmallVector<Value> singleControlledY(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Y gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledY(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledY(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Y gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledY(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledY(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Y gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledY(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Y gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseY(QCProgramBuilder& b);
+SmallVector<Value> inverseY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Y gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledY(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledY(QCProgramBuilder& b);
 
 // --- ZOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Z gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> z(QCProgramBuilder& b);
+SmallVector<Value> z(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Z gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledZ(QCProgramBuilder& b);
+SmallVector<Value> singleControlledZ(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Z gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledZ(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledZ(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Z gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledZ(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledZ(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Z gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledZ(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledZ(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Z gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseZ(QCProgramBuilder& b);
+SmallVector<Value> inverseZ(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Z gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledZ(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledZ(QCProgramBuilder& b);
 
 // --- HOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an H gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> h(QCProgramBuilder& b);
+SmallVector<Value> h(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled H gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledH(QCProgramBuilder& b);
+SmallVector<Value> singleControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled H gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledH(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled H gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledH(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled H gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledH(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an H gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseH(QCProgramBuilder& b);
+SmallVector<Value> inverseH(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled H gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledH(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with just an H gate and no qubit register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-hWithoutRegister(QCProgramBuilder& b);
+SmallVector<Value> hWithoutRegister(QCProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> s(QCProgramBuilder& b);
+SmallVector<Value> s(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled S gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledS(QCProgramBuilder& b);
+SmallVector<Value> singleControlledS(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled S gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledS(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledS(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled S gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledS(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledS(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled S gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledS(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledS(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an S gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseS(QCProgramBuilder& b);
+SmallVector<Value> inverseS(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled S gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledS(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledS(QCProgramBuilder& b);
 
 // --- SdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an Sdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> sdg(QCProgramBuilder& b);
+SmallVector<Value> sdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Sdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledSdg(QCProgramBuilder& b);
+SmallVector<Value> singleControlledSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Sdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledSdg(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Sdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledSdg(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Sdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledSdg(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an Sdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseSdg(QCProgramBuilder& b);
+SmallVector<Value> inverseSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Sdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledSdg(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledSdg(QCProgramBuilder& b);
 
 // --- TOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a T gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-t_(QCProgramBuilder& b); // NOLINT(*-identifier-naming)
+SmallVector<Value> t_(QCProgramBuilder& b); // NOLINT(*-identifier-naming)
 
 /// Creates a circuit with a single controlled T gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledT(QCProgramBuilder& b);
+SmallVector<Value> singleControlledT(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled T gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledT(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledT(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled T gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledT(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledT(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled T gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledT(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledT(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a T gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseT(QCProgramBuilder& b);
+SmallVector<Value> inverseT(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled T gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledT(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledT(QCProgramBuilder& b);
 
 // --- TdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a Tdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> tdg(QCProgramBuilder& b);
+SmallVector<Value> tdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Tdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledTdg(QCProgramBuilder& b);
+SmallVector<Value> singleControlledTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Tdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledTdg(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Tdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledTdg(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Tdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledTdg(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Tdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseTdg(QCProgramBuilder& b);
+SmallVector<Value> inverseTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Tdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledTdg(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledTdg(QCProgramBuilder& b);
 
 // --- SXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an SX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> sx(QCProgramBuilder& b);
+SmallVector<Value> sx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledSx(QCProgramBuilder& b);
+SmallVector<Value> singleControlledSx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledSx(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledSx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledSx(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledSx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledSx(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledSx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an SX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseSx(QCProgramBuilder& b);
+SmallVector<Value> inverseSx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledSx(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledSx(QCProgramBuilder& b);
 
 // --- SXdgOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just an SXdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> sxdg(QCProgramBuilder& b);
+SmallVector<Value> sxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SXdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledSxdg(QCProgramBuilder& b);
+SmallVector<Value> singleControlledSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SXdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledSxdg(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SXdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledSxdg(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SXdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledSxdg(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an SXdg gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseSxdg(QCProgramBuilder& b);
+SmallVector<Value> inverseSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SXdg
 /// gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledSxdg(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledSxdg(QCProgramBuilder& b);
 
 // --- RXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> rx(QCProgramBuilder& b);
+SmallVector<Value> rx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledRx(QCProgramBuilder& b);
+SmallVector<Value> singleControlledRx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledRx(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledRx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledRx(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledRx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledRx(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledRx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseRx(QCProgramBuilder& b);
+SmallVector<Value> inverseRx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledRx(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledRx(QCProgramBuilder& b);
 
 // --- RYOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> ry(QCProgramBuilder& b);
+SmallVector<Value> ry(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledRy(QCProgramBuilder& b);
+SmallVector<Value> singleControlledRy(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledRy(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledRy(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledRy(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledRy(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledRy(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledRy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseRy(QCProgramBuilder& b);
+SmallVector<Value> inverseRy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledRy(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledRy(QCProgramBuilder& b);
 
 // --- RZOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> rz(QCProgramBuilder& b);
+SmallVector<Value> rz(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledRz(QCProgramBuilder& b);
+SmallVector<Value> singleControlledRz(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledRz(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledRz(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledRz(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledRz(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledRz(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledRz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseRz(QCProgramBuilder& b);
+SmallVector<Value> inverseRz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledRz(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledRz(QCProgramBuilder& b);
 
 // --- POp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a P gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> p(QCProgramBuilder& b);
+SmallVector<Value> p(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled P gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledP(QCProgramBuilder& b);
+SmallVector<Value> singleControlledP(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled P gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledP(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledP(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled P gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledP(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledP(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled P gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledP(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledP(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a P gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseP(QCProgramBuilder& b);
+SmallVector<Value> inverseP(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled P gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledP(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledP(QCProgramBuilder& b);
 
 // --- ROp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an R gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> r(QCProgramBuilder& b);
+SmallVector<Value> r(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled R gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledR(QCProgramBuilder& b);
+SmallVector<Value> singleControlledR(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled R gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledR(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledR(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled R gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledR(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledR(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled R gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledR(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledR(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an R gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseR(QCProgramBuilder& b);
+SmallVector<Value> inverseR(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled R gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledR(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledR(QCProgramBuilder& b);
 
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> u2(QCProgramBuilder& b);
+SmallVector<Value> u2(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled U2 gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledU2(QCProgramBuilder& b);
+SmallVector<Value> singleControlledU2(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled U2 gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledU2(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledU2(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled U2 gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledU2(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledU2(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled U2 gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledU2(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledU2(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a U2 gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseU2(QCProgramBuilder& b);
+SmallVector<Value> inverseU2(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled U2 gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledU2(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledU2(QCProgramBuilder& b);
 
 // --- UOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a U gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> u(QCProgramBuilder& b);
+SmallVector<Value> u(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled U gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledU(QCProgramBuilder& b);
+SmallVector<Value> singleControlledU(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled U gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledU(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledU(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled U gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledU(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledU(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled U gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledU(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledU(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a U gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> inverseU(QCProgramBuilder& b);
+SmallVector<Value> inverseU(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled U gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledU(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledU(QCProgramBuilder& b);
 
 // --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> swap(QCProgramBuilder& b);
+SmallVector<Value> swap(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledSwap(QCProgramBuilder& b);
+SmallVector<Value> singleControlledSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledSwap(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledSwap(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledSwap(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a SWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseSwap(QCProgramBuilder& b);
+SmallVector<Value> inverseSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SWAP
 /// gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledSwap(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledSwap(QCProgramBuilder& b);
 
 // --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> iswap(QCProgramBuilder& b);
+SmallVector<Value> iswap(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled iSWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledIswap(QCProgramBuilder& b);
+SmallVector<Value> singleControlledIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled iSWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledIswap(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled iSWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledIswap(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled iSWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledIswap(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an iSWAP gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseIswap(QCProgramBuilder& b);
+SmallVector<Value> inverseIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled iSWAP
 /// gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledIswap(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledIswap(QCProgramBuilder& b);
 
 // --- DCXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a DCX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> dcx(QCProgramBuilder& b);
+SmallVector<Value> dcx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled DCX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledDcx(QCProgramBuilder& b);
+SmallVector<Value> singleControlledDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled DCX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledDcx(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled DCX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledDcx(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled DCX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledDcx(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a DCX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseDcx(QCProgramBuilder& b);
+SmallVector<Value> inverseDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledDcx(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledDcx(QCProgramBuilder& b);
 
 // --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> ecr(QCProgramBuilder& b);
+SmallVector<Value> ecr(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled ECR gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledEcr(QCProgramBuilder& b);
+SmallVector<Value> singleControlledEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled ECR gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledEcr(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled ECR gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledEcr(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled ECR gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledEcr(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an ECR gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseEcr(QCProgramBuilder& b);
+SmallVector<Value> inverseEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled ECR gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledEcr(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledEcr(QCProgramBuilder& b);
 
 // --- RXXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> rxx(QCProgramBuilder& b);
+SmallVector<Value> rxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledRxx(QCProgramBuilder& b);
+SmallVector<Value> singleControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledRxx(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledRxx(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledRxx(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseRxx(QCProgramBuilder& b);
+SmallVector<Value> inverseRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledRxx(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a triple-controlled RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-tripleControlledRxx(QCProgramBuilder& b);
+SmallVector<Value> tripleControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a four-controlled RXX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-fourControlledRxx(QCProgramBuilder& b);
+SmallVector<Value> fourControlledRxx(QCProgramBuilder& b);
 
 // --- RYYOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> ryy(QCProgramBuilder& b);
+SmallVector<Value> ryy(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledRyy(QCProgramBuilder& b);
+SmallVector<Value> singleControlledRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledRyy(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledRyy(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledRyy(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseRyy(QCProgramBuilder& b);
+SmallVector<Value> inverseRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledRyy(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledRyy(QCProgramBuilder& b);
 
 // --- RZXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> rzx(QCProgramBuilder& b);
+SmallVector<Value> rzx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledRzx(QCProgramBuilder& b);
+SmallVector<Value> singleControlledRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledRzx(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledRzx(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledRzx(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseRzx(QCProgramBuilder& b);
+SmallVector<Value> inverseRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZX gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledRzx(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledRzx(QCProgramBuilder& b);
 
 // --- RZZOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> rzz(QCProgramBuilder& b);
+SmallVector<Value> rzz(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledRzz(QCProgramBuilder& b);
+SmallVector<Value> singleControlledRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledRzz(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledRzz(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledRzz(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseRzz(QCProgramBuilder& b);
+SmallVector<Value> inverseRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZZ gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledRzz(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledRzz(QCProgramBuilder& b);
 
 // --- XXPlusYYOp ----------------------------------------------------------- //
 
 /// Creates a circuit with just an XXPlusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> xxPlusYY(QCProgramBuilder& b);
+SmallVector<Value> xxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled XXPlusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledXxPlusYY(QCProgramBuilder& b);
+SmallVector<Value> singleControlledXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXPlusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledXxPlusYY(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled XXPlusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledXxPlusYY(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled XXPlusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledXxPlusYY(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an XXPlusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseXxPlusYY(QCProgramBuilder& b);
+SmallVector<Value> inverseXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled XXPlusYY
 /// gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledXxPlusYY(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledXxPlusYY(QCProgramBuilder& b);
 
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>> xxMinusYY(QCProgramBuilder& b);
+SmallVector<Value> xxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled XXMinusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledXxMinusYY(QCProgramBuilder& b);
+SmallVector<Value> singleControlledXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-multipleControlledXxMinusYY(QCProgramBuilder& b);
+SmallVector<Value> multipleControlledXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled XXMinusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedControlledXxMinusYY(QCProgramBuilder& b);
+SmallVector<Value> nestedControlledXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled XXMinusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialControlledXxMinusYY(QCProgramBuilder& b);
+SmallVector<Value> trivialControlledXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an XXMinusYY gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseXxMinusYY(QCProgramBuilder& b);
+SmallVector<Value> inverseXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled XXMinusYY
 /// gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseMultipleControlledXxMinusYY(QCProgramBuilder& b);
+SmallVector<Value> inverseMultipleControlledXxMinusYY(QCProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 
 /// Creates a circuit with a barrier.
-std::pair<SmallVector<Value>, SmallVector<Type>> barrier(QCProgramBuilder& b);
+SmallVector<Value> barrier(QCProgramBuilder& b);
 
 /// Creates a circuit with a barrier on two qubits.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-barrierTwoQubits(QCProgramBuilder& b);
+SmallVector<Value> barrierTwoQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with a barrier on multiple qubits.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-barrierMultipleQubits(QCProgramBuilder& b);
+SmallVector<Value> barrierMultipleQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled barrier.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-singleControlledBarrier(QCProgramBuilder& b);
+SmallVector<Value> singleControlledBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a barrier.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-inverseBarrier(QCProgramBuilder& b);
+SmallVector<Value> inverseBarrier(QCProgramBuilder& b);
 
 // --- CtrlOp --------------------------------------------------------------- //
 
 /// Creates a circuit with a trivial ctrl modifier.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-trivialCtrl(QCProgramBuilder& b);
+SmallVector<Value> trivialCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with an empty ctrl modifier.
-std::pair<SmallVector<Value>, SmallVector<Type>> emptyCtrl(QCProgramBuilder& b);
+SmallVector<Value> emptyCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with nested ctrl modifiers.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedCtrl(QCProgramBuilder& b);
+SmallVector<Value> nestedCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with triple nested ctrl modifiers.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-tripleNestedCtrl(QCProgramBuilder& b);
+SmallVector<Value> tripleNestedCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with double nested ctrl modifiers with two qubits each.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
+SmallVector<Value> doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-ctrlInvSandwich(QCProgramBuilder& b);
+SmallVector<Value> ctrlInvSandwich(QCProgramBuilder& b);
 
 /// Creates a circuit with a control modifier applied to two gates.
-std::pair<SmallVector<Value>, SmallVector<Type>> ctrlTwo(QCProgramBuilder& b);
+SmallVector<Value> ctrlTwo(QCProgramBuilder& b);
 
 /// Creates a circuit with a control modifier applied to a controlled and a
 /// non-controlled gate.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-ctrlTwoMixed(QCProgramBuilder& b);
+SmallVector<Value> ctrlTwoMixed(QCProgramBuilder& b);
 
 /// Creates a circuit with nested control modifiers applied to two gates.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedCtrlTwo(QCProgramBuilder& b);
+SmallVector<Value> nestedCtrlTwo(QCProgramBuilder& b);
 
 /// Creates a circuit with a control modifier applied to a inverse modifier
 /// applied to two gates.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-ctrlInvTwo(QCProgramBuilder& b);
+SmallVector<Value> ctrlInvTwo(QCProgramBuilder& b);
 
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with an empty inverse modifier.
-std::pair<SmallVector<Value>, SmallVector<Type>> emptyInv(QCProgramBuilder& b);
+SmallVector<Value> emptyInv(QCProgramBuilder& b);
 
 /// Creates a circuit with nested inverse modifiers.
-std::pair<SmallVector<Value>, SmallVector<Type>> nestedInv(QCProgramBuilder& b);
+SmallVector<Value> nestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with triple nested inverse modifiers.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-tripleNestedInv(QCProgramBuilder& b);
+SmallVector<Value> tripleNestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-invCtrlSandwich(QCProgramBuilder& b);
+SmallVector<Value> invCtrlSandwich(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to two gates.
-std::pair<SmallVector<Value>, SmallVector<Type>> invTwo(QCProgramBuilder& b);
+SmallVector<Value> invTwo(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a control modifier
 /// applied to two gates.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-invCtrlTwo(QCProgramBuilder& b);
+SmallVector<Value> invCtrlTwo(QCProgramBuilder& b);
 
 // --- IfOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
-std::pair<SmallVector<Value>, SmallVector<Type>> simpleIf(QCProgramBuilder& b);
+SmallVector<Value> simpleIf(QCProgramBuilder& b);
 
 /// Creates a circuit with an if operation with an else branch.
-std::pair<SmallVector<Value>, SmallVector<Type>> ifElse(QCProgramBuilder& b);
+SmallVector<Value> ifElse(QCProgramBuilder& b);
 
 /// Creates a circuit with an if operation with two qubits.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-ifTwoQubits(QCProgramBuilder& b);
+SmallVector<Value> ifTwoQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedIfOpForLoop(QCProgramBuilder& b);
+SmallVector<Value> nestedIfOpForLoop(QCProgramBuilder& b);
 
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-simpleWhileReset(QCProgramBuilder& b);
+SmallVector<Value> simpleWhileReset(QCProgramBuilder& b);
 
 /// Creates a circuit with a while operation using a do-while loop.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-simpleDoWhileReset(QCProgramBuilder& b);
+SmallVector<Value> simpleDoWhileReset(QCProgramBuilder& b);
 
 // --- ForOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple for operation with a register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-simpleForLoop(QCProgramBuilder& b);
+SmallVector<Value> simpleForLoop(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedForLoopIfOp(QCProgramBuilder& b);
+SmallVector<Value> nestedForLoopIfOp(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a nested while
 /// operation.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedForLoopWhileOp(QCProgramBuilder& b);
+SmallVector<Value> nestedForLoopWhileOp(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is separately allocated from the
 /// register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
+SmallVector<Value> nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is extracted from the register.
-std::pair<SmallVector<Value>, SmallVector<Type>>
-nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
+SmallVector<Value> nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
 
 } // namespace mlir::qc

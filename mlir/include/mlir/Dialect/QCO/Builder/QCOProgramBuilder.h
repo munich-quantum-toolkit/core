@@ -1471,15 +1471,15 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
   /**
-   * @brief Finalize the program with a given exit code and return the
+   * @brief Finalize the program with the given return values and return the
    * constructed module
    * @param returnValues Values representing the return values of the main
    * function.
    *
    * @details
    * Automatically deallocates all remaining valid qubits and tensors of qubits,
-   * adds a return statement with a given exit code,
-   * and transfers ownership of the module to the caller. The builder should not
+   * adds a return statement with the given return values, and
+   * transfers ownership of the module to the caller. The builder should not
    * be used after calling this method.
    *
    * The return values must have the types indicated by the function signature
@@ -1496,14 +1496,12 @@ public:
    * @param buildFunc A function that takes a reference to a QCOProgramBuilder
    * and uses it to build the desired quantum program. The builder will be
    * properly initialized before calling this function, and the resulting module
-   * will be finalized using the returned ValueRange after this function
-   * completes.
+   * will be finalized using the returned Values after this function completes.
    * @return The module containing the quantum program built by buildFunc.
    */
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
-        const function_ref<std::pair<SmallVector<Value>, SmallVector<Type>>(
-            QCOProgramBuilder&)>& buildFunc);
+        const function_ref<SmallVector<Value>(QCOProgramBuilder&)>& buildFunc);
 
 private:
   enum class AllocationMode : uint8_t { Unset, Static, Dynamic };
