@@ -905,14 +905,14 @@ controlledInverseHT(QCOProgramBuilder& b) {
       return b.t(qubit);
     });
   });
-  return measureAndReturn(b, {res.second[0]});
+  return measureAndReturn(b, {res.second});
 }
 
 static std::pair<SmallVector<Value>, SmallVector<Type>>
 controlledH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.ctrl(q[0], q[1], [&b](Value target) { return b.h(target); });
-  return measureAndReturn(b, {res.second[0]});
+  return measureAndReturn(b, {res.second});
 }
 
 static std::pair<SmallVector<Value>, SmallVector<Type>>
