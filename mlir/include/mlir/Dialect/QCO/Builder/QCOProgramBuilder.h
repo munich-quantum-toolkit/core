@@ -1473,7 +1473,8 @@ public:
   /**
    * @brief Finalize the program with a given exit code and return the
    * constructed module
-   * @param returnValues Values representing the exit code to return
+   * @param returnValues Values representing the return values of the main
+   * function.
    *
    * @details
    * Automatically deallocates all remaining valid qubits and tensors of qubits,
@@ -1492,7 +1493,6 @@ public:
   /**
    * @brief Convenience method for building quantum programs.
    * @param context The MLIR context to use for building the program
-   * @param returnTypes The types of the values to be returned by the program.
    * @param buildFunc A function that takes a reference to a QCOProgramBuilder
    * and uses it to build the desired quantum program. The builder will be
    * properly initialized before calling this function, and the resulting module

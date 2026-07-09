@@ -1194,16 +1194,11 @@ struct ConvertSCFForOpToJeff final : StatefulOpConversionPattern<scf::ForOp> {
  *
  * @par Example:
  * ```mlir
- * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
- *   %0 = arith.constant 0 : i64
- *   return %0
- * }
+ * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} { ... }
  * ```
  * is converted to
  * ```mlir
- * func.func @main() -> () {
- *   return
- * }
+ * func.func @main() -> i64 { ... }
  * ```
  */
 struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {

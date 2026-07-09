@@ -236,6 +236,13 @@ public:
                      << "' was never measured.\n";
         return nullptr;
       }
+
+      auto expectedSize = classicalRegisters[regName].size;
+      if (it->second.size() < expectedSize) {
+        llvm::errs() << "Not all bits of output register '" << regName
+                     << "' have been measured.\n";
+        return nullptr;
+      }
       for (auto bit : it->second) {
         if (!bit) {
           llvm::errs() << "Not all bits of output register '" << regName

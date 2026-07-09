@@ -117,9 +117,8 @@ void singleControlledIdentity(QuantumComputation& comp) {
 
 void multipleControlledIdentity(QuantumComputation& comp) {
   comp.addQubitRegister(3, "q");
-  comp.mci({2, 1}, 0);
-  comp.addClassicalRegister(1, "meas");
-  comp.measure(0, 0);
+  comp.mci({0, 1}, 2);
+  comp.measureAll(true, false);
 }
 
 void x(QuantumComputation& comp) {

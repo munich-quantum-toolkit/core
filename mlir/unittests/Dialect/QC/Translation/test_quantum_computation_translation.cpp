@@ -167,7 +167,7 @@ INSTANTIATE_TEST_SUITE_P(
         QuantumComputationTranslationTestCase{
             "MultipleControlledIdentity",
             MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-            MQT_NAMED_BUILDER(mlir::qc::identity)},
+            MQT_NAMED_BUILDER(mlir::qc::threeQubitsOneIdentity)},
         QuantumComputationTranslationTestCase{"X", MQT_NAMED_BUILDER(qc::x),
                                               MQT_NAMED_BUILDER(mlir::qc::x)},
         QuantumComputationTranslationTestCase{

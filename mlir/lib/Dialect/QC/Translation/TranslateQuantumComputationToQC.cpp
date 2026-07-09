@@ -885,9 +885,14 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
 
   // Finalize and return the module (adds return statement and transfers
   // ownership)
-  return quantumComputation.getNcbits() == 0
-             ? builder.finalize({builder.intConstant(0)})
-             : builder.finalize(state.results);
+  if (quantumComputation.getNcbits() > 0) {
+    if (llvm::any_of(state.results, [](Value v) { return !v; })) {
+      llvm::errs() << "Not all classical bits were measured.\n";
+      return nullptr;
+    }
+    return builder.finalize(state.results);
+  }
+  return builder.finalize();
 }
 
 } // namespace mlir

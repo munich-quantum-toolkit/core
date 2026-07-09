@@ -473,6 +473,19 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 
 void stripReturnedMeasurements(Operation* moduleOp, LoweringState& state) {
   moduleOp->walk([&](func::FuncOp funcOp) {
+    // First, check if the given function is the main entrypoint or not.
+    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
+    bool isEntryPoint = false;
+    if (passthrough) {
+      isEntryPoint = llvm::any_of(passthrough, [](Attribute attr) {
+        auto strAttr = dyn_cast<StringAttr>(attr);
+        return strAttr && strAttr.getValue() == "entry_point";
+      });
+    }
+    if (!isEntryPoint) {
+      return;
+    }
+
     funcOp.walk([&](func::ReturnOp returnOp) {
       SmallVector<Value> keptOperands;
       SmallVector<Type> keptReturnTypes;
