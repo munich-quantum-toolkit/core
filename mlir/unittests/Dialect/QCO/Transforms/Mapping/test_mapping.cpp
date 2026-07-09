@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Support/SuperconductingDevice.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
@@ -36,24 +37,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <numeric>
 #include <tuple>
 #include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-struct Device {
-  size_t nqubits{};
-  DenseSet<std::pair<size_t, size_t>> couplingSet;
-};
-} // namespace
-
 /// Return true, if the operations within a region fulfill the given coupling
 /// constraints.
-static bool
-isExecutable(Region& body, DenseMap<Value, size_t>& m,
-             const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
+static bool isExecutable(Region& body, DenseMap<Value, size_t>& m,
+                         const std::shared_ptr<SuperconductingDevice>& device) {
   for (Operation& rop : body.getOps()) {
     bool executable = true;
     TypeSwitch<Operation*>(&rop)
@@ -72,7 +66,7 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
           if (op.getNumQubits() > 1) {
             const auto hwA = m.at(op.getInputQubit(0));
             const auto hwB = m.at(op.getInputQubit(1));
-            if (!couplingSet.contains(std::make_pair(hwA, hwB))) {
+            if (!device->areAdjacent(hwA, hwB)) {
               llvm::dbgs() << "(" << hwA << ", " << hwB << ") "
                            << "not executable: \n";
               op->dump();
@@ -101,7 +95,7 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
             m.try_emplace(succ, hw);
           }
 
-          if (!isExecutable(op.getRegion(), loopM, couplingSet)) {
+          if (!isExecutable(op.getRegion(), loopM, device)) {
             executable = false;
             return;
           }
@@ -131,26 +125,30 @@ isExecutable(Region& body, DenseMap<Value, size_t>& m,
 }
 
 /// Return true, if the entry point fulfills the given coupling constraints.
-static bool
-isExecutable(func::FuncOp entry,
-             const DenseSet<std::pair<size_t, size_t>>& couplingSet) {
+static bool isExecutable(func::FuncOp entry,
+                         const std::shared_ptr<SuperconductingDevice>& device) {
   DenseMap<Value, size_t> m;
-  return isExecutable(entry.getFunctionBody(), m, couplingSet);
+  return isExecutable(entry.getFunctionBody(), m, device);
 }
 
 /// Return a 9x9 square-grid coupling set.
-static Device getNineQubitSquareGrid() {
-  return {.nqubits = 9,
-          .couplingSet = {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
-                          {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
-                          {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
-                          {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}}};
+static std::shared_ptr<SuperconductingDevice> getNineQubitSquareGrid() {
+  SmallVector<size_t> qubits(9);
+  std::iota(qubits.begin(), qubits.end(), 0);
+
+  DenseSet<std::pair<size_t, size_t>> coupling(
+      {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1}, {1, 2}, {2, 1},
+       {2, 5}, {5, 2}, {3, 6}, {6, 3}, {3, 4}, {4, 3}, {4, 7}, {7, 4},
+       {4, 5}, {5, 4}, {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}});
+
+  return std::make_shared<SuperconductingDevice>(qubits, coupling);
 }
 
 namespace {
 
 class MappingPassTest : public testing::Test,
-                        public testing::WithParamInterface<Device> {
+                        public testing::WithParamInterface<
+                            std::shared_ptr<SuperconductingDevice>> {
 protected:
   void SetUp() override {
     DialectRegistry registry;
@@ -161,14 +159,6 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static LogicalResult
-  runPass(ModuleOp m, const DenseSet<std::pair<size_t, size_t>>& couplingSet,
-          const MappingPassOptions& options) {
-    PassManager pm(m->getContext());
-    pm.addPass(createMappingPass(couplingSet, options));
-    return pm.run(m);
-  }
-
   std::unique_ptr<MLIRContext> context;
 };
 
@@ -177,13 +167,18 @@ protected:
 TEST_P(MappingPassTest, NoEntryPoint) {
   const auto& device = GetParam();
 
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
+
   OwningOpRef m = ModuleOp::create(UnknownLoc::get(context.get()));
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
-  ASSERT_TRUE(res.failed());
+  ASSERT_TRUE(pm.run(*m).failed());
 }
 
 TEST_P(MappingPassTest, NoQubitAllocations) {
   const auto& device = GetParam();
+
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -193,13 +188,14 @@ TEST_P(MappingPassTest, NoQubitAllocations) {
   builder.sink(q0);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
-
-  ASSERT_TRUE(res.failed());
+  ASSERT_TRUE(pm.run(*m).failed());
 }
 
 TEST_P(MappingPassTest, NoExtractAfterInsert) {
   const auto& device = GetParam();
+
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -218,14 +214,15 @@ TEST_P(MappingPassTest, NoExtractAfterInsert) {
   builder.qtensorDealloc(tensor0);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
-
-  ASSERT_TRUE(res.failed());
+  ASSERT_TRUE(pm.run(*m).failed());
 }
 
 TEST_P(MappingPassTest, TooManyQubitsForArch) {
   const auto& device = GetParam();
-  const auto n = static_cast<int64_t>(device.nqubits) + 1;
+  const auto n = static_cast<int64_t>(device->nqubits()) + 1;
+
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -246,13 +243,14 @@ TEST_P(MappingPassTest, TooManyQubitsForArch) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
-
-  ASSERT_TRUE(res.failed());
+  ASSERT_TRUE(pm.run(*m).failed());
 }
 
 TEST_P(MappingPassTest, GHZ) {
   const auto& device = GetParam();
+
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -278,22 +276,22 @@ TEST_P(MappingPassTest, GHZ) {
   builder.qtensorDealloc(tensor);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
+  auto res = pm.run(*m);
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  EXPECT_TRUE(isExecutable(entry, device));
 }
 
 TEST_P(MappingPassTest, GHZUnrolled) {
   const auto& device = GetParam();
-  const auto n = static_cast<int64_t>(device.nqubits);
+  const auto n = static_cast<int64_t>(device->nqubits());
 
   PassManager pm(context.get());
   pm.addNestedPass<func::FuncOp>(createQuantumLoopUnroll());
   pm.addPass(createCSEPass());
   pm.addPass(createCanonicalizerPass());
-  pm.addPass(createMappingPass(device.couplingSet, MappingPassOptions{}));
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -326,14 +324,14 @@ TEST_P(MappingPassTest, GHZUnrolled) {
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  EXPECT_TRUE(isExecutable(entry, device));
 }
 
 TEST_P(MappingPassTest, GroverLike) {
   const auto& device = GetParam();
 
   PassManager pm(context.get());
-  pm.addPass(createMappingPass(device.couplingSet, MappingPassOptions{}));
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -413,7 +411,7 @@ TEST_P(MappingPassTest, GroverLike) {
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  EXPECT_TRUE(isExecutable(entry, device));
 }
 
 TEST_P(MappingPassTest, ParallelLoops) {
@@ -421,7 +419,7 @@ TEST_P(MappingPassTest, ParallelLoops) {
   const auto& device = GetParam();
 
   PassManager pm(context.get());
-  pm.addPass(createMappingPass(device.couplingSet, MappingPassOptions{}));
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -493,11 +491,14 @@ TEST_P(MappingPassTest, ParallelLoops) {
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  EXPECT_TRUE(isExecutable(entry, device));
 }
 
 TEST_P(MappingPassTest, Sabre) {
   const auto& device = GetParam();
+
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(device, MappingPassOptions{}));
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -583,11 +584,11 @@ TEST_P(MappingPassTest, Sabre) {
   builder.qtensorDealloc(tensorDown);
 
   auto m = builder.finalize();
-  auto res = runPass(m.get(), device.couplingSet, MappingPassOptions{});
+  auto res = pm.run(m.get());
   auto entry = getEntryPoint(m.get());
 
   ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(isExecutable(entry, device.couplingSet));
+  EXPECT_TRUE(isExecutable(entry, device));
 }
 
 INSTANTIATE_TEST_SUITE_P(NineQubitSquareGrid, MappingPassTest,

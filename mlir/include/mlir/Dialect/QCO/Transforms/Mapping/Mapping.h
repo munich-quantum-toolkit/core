@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/Support/SuperconductingDevice.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <llvm/Support/LogicalResult.h>
@@ -20,12 +21,8 @@
 
 namespace mlir::qco {
 
-/**
- * @brief Create a mapping pass instance with the given target architecture.
- * @returns a pass object.
- */
-std::unique_ptr<Pass>
-createMappingPass(const llvm::DenseSet<std::pair<size_t, size_t>>&,
-                  MappingPassOptions);
+/// Create a superconducting mapping pass instance.
+std::unique_ptr<Pass> createMappingPass(std::shared_ptr<SuperconductingDevice>,
+                                        MappingPassOptions);
 
 } // namespace mlir::qco

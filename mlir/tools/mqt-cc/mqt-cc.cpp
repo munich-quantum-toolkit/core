@@ -9,7 +9,7 @@
  */
 
 #include "mlir/Compiler/CompilerPipeline.h"
-#include "mlir/Compiler/qdmi.h"
+#include "mlir/Support/qdmi.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -205,14 +205,14 @@ int main(int argc, char** argv) {
 
   fomac::Session session; // TODO: Config?
   if (qdmiListDevices) {
-    listAvailableQDMIDevices(session);
+    mlir::qdmi::listAvailableDevices(session);
     return 0;
   }
   if (qdmiDevice != std::nullopt) {
-    config.device = getQDMIDevice(session, *qdmiDevice);
+    config.device = mlir::qdmi::getDevice(session, *qdmiDevice);
     if (!config.device) {
       llvm::errs() << "Device not found!\n";
-      listAvailableQDMIDevices(session, llvm::errs());
+      mlir::qdmi::listAvailableDevices(session, llvm::errs());
     }
   }
 

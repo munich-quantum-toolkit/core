@@ -17,10 +17,10 @@
 
 #include <memory>
 
-namespace mlir {
-void listAvailableQDMIDevices(fomac::Session& session,
-                              llvm::raw_ostream& os = llvm::outs());
+namespace mlir::qdmi {
+void listAvailableDevices(fomac::Session& session,
+                          llvm::raw_ostream& os = llvm::outs());
 
-std::shared_ptr<fomac::Session::Device> getQDMIDevice(fomac::Session& session,
-                                                      StringRef name);
-} // namespace mlir
+std::shared_ptr<fomac::Device> getDevice(fomac::Session& session,
+                                         StringRef name);
+} // namespace mlir::qdmi

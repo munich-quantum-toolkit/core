@@ -54,7 +54,7 @@ struct QuantumCompilerConfig {
   bool enableHadamardLifting = false;
 
   /// Pointer to QDMI Device to compile to.
-  std::shared_ptr<fomac::Session::Device> device;
+  std::shared_ptr<fomac::Device> device;
 };
 
 /**

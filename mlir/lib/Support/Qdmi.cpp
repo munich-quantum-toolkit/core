@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/Qdmi.h"
+#include "mlir/Support/Qdmi.h"
 
 #include "fomac/FoMaC.hpp"
 
@@ -17,16 +17,16 @@
 
 #include <memory>
 
-void mlir::listAvailableQDMIDevices(fomac::Session& session,
-                                    llvm::raw_ostream& os) {
+void mlir::qdmi::listAvailableDevices(fomac::Session& session,
+                                          llvm::raw_ostream& os) {
   os << "Available QDMI devices:\n";
   for (auto dev : session.getDevices()) {
     os << '\t' << dev.getName() << '\n';
   }
 }
 
-std::shared_ptr<fomac::Session::Device>
-mlir::getQDMIDevice(fomac::Session& session, StringRef name) {
+std::shared_ptr<fomac::Device>
+mlir::qdmi::getDevice(fomac::Session& session, StringRef name) {
   const auto devices = session.getDevices();
 
   auto it = devices.begin();
@@ -40,5 +40,5 @@ mlir::getQDMIDevice(fomac::Session& session, StringRef name) {
     return nullptr;
   }
 
-  return std::make_shared<fomac::Session::Device>(*it);
+  return std::make_shared<fomac::Device>(*it);
 }

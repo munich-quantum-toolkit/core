@@ -14,9 +14,7 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/Algorithms.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
@@ -27,7 +25,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <string>
-#include <utility>
 
 namespace mlir {
 
@@ -185,15 +182,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
           // TODO: Update once scf.for pull request is in.
           if (const auto coupling = config_.device->getCouplingMap();
               coupling) {
-            qco::Edges edges;
-            for (const auto [s0, s1] : *coupling) {
-              // TODO: Does QDMI describe directed edges?
-              edges.insert(std::make_pair(s0.getIndex(), s1.getIndex()));
-              edges.insert(std::make_pair(s1.getIndex(), s0.getIndex()));
-            }
-            pm.addPass(qco::createMappingPass(config_.device->getQubitsNum(),
-                                              edges,
-                                              qco::MappingPassOptions{}));
+            // qco::Edges edges;
+            // for (const auto [s0, s1] : *coupling) {
+            //   // TODO: Does QDMI describe directed edges?
+            //   edges.insert(std::make_pair(s0.getIndex(), s1.getIndex()));
+            //   edges.insert(std::make_pair(s1.getIndex(), s0.getIndex()));
+            // }
+            // pm.addPass(qco::createMappingPass(config_.device->getQubitsNum(),
+            //                                   edges,
+            //                                   qco::MappingPassOptions{}));
           }
         }))) {
       return failure();

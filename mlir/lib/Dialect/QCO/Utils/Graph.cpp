@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Graph.h"
+#include "mlir/Support/Graph.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -23,7 +23,7 @@
 #include <optional>
 #include <utility>
 
-namespace mlir::qco {
+namespace mlir {
 void Graph::addEdge(size_t u, size_t v) {
   adj_[u].emplace_back(v);
   std::ignore = adj_[v]; // Ensure v exists in the map.
@@ -144,4 +144,4 @@ std::optional<SmallVector<size_t>> Graph::findCycle() const {
   return std::nullopt;
 }
 
-} // namespace mlir::qco
+} // namespace mlir

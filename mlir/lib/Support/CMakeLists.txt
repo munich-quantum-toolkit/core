@@ -6,11 +6,11 @@
 #
 # Licensed under the MIT License
 
+file(GLOB_RECURSE SUPPORT_CPP "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+
 add_mlir_library(
   MLIRSupportMQT
-  IRVerification.cpp
-  Passes.cpp
-  PrettyPrinting.cpp
+  ${SUPPORT_CPP}
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Support
   LINK_LIBS
@@ -27,7 +27,8 @@ add_mlir_library(
   MLIRQCTransforms
   MLIRQIRTransforms
   MLIRQTensorTransforms
-  MLIRQTensorDialect)
+  MLIRQTensorDialect
+  MQT::CoreFoMaC)
 
 mqt_mlir_target_use_project_options(MLIRSupportMQT)
 

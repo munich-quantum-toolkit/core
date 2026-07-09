@@ -19,6 +19,8 @@ add_mlir_library(
   MLIRArithDialect
   MLIRMathDialect
   MLIRSCFUtils
+  PUBLIC
+  MLIRSupportMQT
   DEPENDS
   MLIRQCOTransformsIncGen)
 
