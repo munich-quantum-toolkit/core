@@ -1287,8 +1287,7 @@ public:
    * } : {!qco.qubit} -> {!qco.qubit}
    * ```
    */
-  ValueRange pow(const std::variant<double, Value>& exponent,
-                 ValueRange qubits,
+  ValueRange pow(const std::variant<double, Value>& exponent, ValueRange qubits,
                  function_ref<SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
