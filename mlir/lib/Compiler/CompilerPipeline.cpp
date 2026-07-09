@@ -25,6 +25,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
+#include <memory>
 #include <string>
 
 namespace mlir {

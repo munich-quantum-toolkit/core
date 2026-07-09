@@ -13,26 +13,25 @@
 #include "fomac/FoMaC.hpp"
 #include "qdmi/driver/Driver.hpp"
 
+#include <llvm/Support/ErrorOr.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Support/LLVM.h>
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <memory>
-#include <optional>
 #include <string>
 
-namespace {
 template <typename T>
-void getJsonStringIfExists(const nlohmann::json& jsonObj,
-                           const std::string& field,
-                           T& target) {
-    if (jsonObj.contains(field) && jsonObj[field].is_string()) {
-        target = jsonObj[field].get<std::string>();
-    }
+static void getJsonStringIfExists(const nlohmann::json& jsonObj,
+                                  const std::string& field, T& target) {
+  if (jsonObj.contains(field) && jsonObj[field].is_string()) {
+    target = jsonObj[field].get<std::string>();
+  }
 }
-} // namespace
 
 mlir::qdmi::impl::Config mlir::qdmi::impl::Config::read(StringRef path) {
   using json = nlohmann::json;
