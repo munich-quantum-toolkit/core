@@ -1459,4 +1459,31 @@ controlledXH(QCOProgramBuilder& b);
 std::pair<SmallVector<Value>, SmallVector<Type>>
 controlledInverseHT(QCOProgramBuilder& b);
 
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseTwoRxRy(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseCxThenRz(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseDcxThenRz(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseGphaseBarrierX(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseNestedInvHAndT(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseNestedInvHAndX(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseThreeWireRxRyRz(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseThreeWireNestedTwoInv(QCOProgramBuilder& b);
+
+std::pair<SmallVector<Value>, SmallVector<Type>>
+inverseWithThreeQubitOpInBody(QCOProgramBuilder& b);
+
 } // namespace mlir::qco

@@ -40,8 +40,8 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
 using namespace qco;
@@ -68,115 +68,6 @@ expectedMatrixFromComputation(const Fn& build, const size_t numQubits = 2) {
   const auto package = std::make_unique<dd::Package>(numQubits);
   return matrix4FromDefinition(
       dd::buildFunctionality(comp, *package).getMatrix(numQubits));
-}
-
-static void controlledXH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](Value target) {
-    target = b.x(target);
-    return b.h(target);
-  });
-}
-
-static void inverseTwoRxRy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = b.rx(0.2, targets[0]);
-    auto w1 = b.ry(0.3, targets[1]);
-    return SmallVector{w0, w1};
-  });
-}
-
-static void inverseCxThenRz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = targets[0];
-    auto w1 = targets[1];
-    std::tie(w0, w1) = b.cx(w0, w1);
-    w1 = b.rz(0.4, w1);
-    return SmallVector{w0, w1};
-  });
-}
-
-static void inverseDcxThenRz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = targets[0];
-    auto w1 = targets[1];
-    std::tie(w0, w1) = b.dcx(w0, w1);
-    w1 = b.rz(0.4, w1);
-    return SmallVector{w0, w1};
-  });
-}
-
-static void controlledInverseHT(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl(q[0], q[1], [&](Value target) {
-    return b.inv(target, [&](Value qubit) {
-      qubit = b.h(qubit);
-      return b.t(qubit);
-    });
-  });
-}
-
-static void inverseGphaseBarrierX(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](Value target) {
-    b.gphase(0.25);
-    auto wire = b.barrier({target})[0];
-    wire = b.x(wire);
-    return wire;
-  });
-}
-
-static void inverseNestedInvHAndT(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](Value target) {
-    auto wire = b.inv(target, [&](Value inner) { return b.h(inner); });
-    return b.t(wire);
-  });
-}
-
-static void inverseNestedInvHAndX(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = b.inv(targets[0], [&](Value inner) { return b.h(inner); });
-    auto w1 = b.x(targets[1]);
-    return SmallVector{w0, w1};
-  });
-}
-
-static void inverseThreeWireRxRyRz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
-    auto w0 = b.rx(0.2, targets[0]);
-    auto w1 = b.ry(0.3, targets[1]);
-    auto w2 = b.rz(0.4, targets[2]);
-    return SmallVector{w0, w1, w2};
-  });
-}
-
-static void inverseThreeWireNestedTwoInv(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
-    auto inner = b.inv({targets[0], targets[1]}, [&](ValueRange innerTargets) {
-      auto w0 = b.rx(0.2, innerTargets[0]);
-      auto w1 = b.ry(0.3, innerTargets[1]);
-      return SmallVector{w0, w1};
-    });
-    auto w2 = b.rz(0.4, targets[2]);
-    return SmallVector{inner[0], inner[1], w2};
-  });
-}
-
-static void inverseWithThreeQubitOpInBody(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](ValueRange targets) {
-    auto [controls, innerTarget] =
-        b.ctrl({targets[0], targets[1]}, targets[2],
-               [&](Value inner) { return b.x(inner); });
-    return SmallVector<Value>{controls[0], controls[1], innerTarget};
-  });
 }
 
 [[nodiscard]] static InvOp firstInvOp(ModuleOp module) {
