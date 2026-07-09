@@ -240,6 +240,14 @@ class OpType(enum.Enum):
         :meth:`mqt.core.ir.QuantumComputation.dcx`
     """
 
+    rccx = 132
+    """
+    A relative-phase CCX gate.
+
+    See Also:
+        :meth:`mqt.core.ir.QuantumComputation.rccx`
+    """
+
     ecr = 88
     """
     An ECR gate.
