@@ -335,9 +335,8 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
 
   SmallVector<Type> types;
   types.reserve(getQubits().size() + addons.size());
-  llvm::append_range(
-      types, llvm::map_range(getQubits(), [](Value q) { return q.getType(); }));
-  llvm::append_range(types, addons.getTypes());
+  types.append(getQubits().getTypes().begin(), getQubits().getTypes().end());
+  types.append(addons.getTypes().begin(), addons.getTypes().end());
 
   SmallVector<Location> locs(getQubits().size() + addons.size(), getLoc());
 
