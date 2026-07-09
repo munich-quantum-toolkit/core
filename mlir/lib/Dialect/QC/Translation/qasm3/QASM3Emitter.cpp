@@ -283,16 +283,42 @@ public:
     return success();
   }
 
-  LogicalResult constDecl(llvm::SMLoc loc, llvm::StringRef id,
-                          const Expr& value) {
+  LogicalResult scalarDecl(llvm::SMLoc loc, detail::ScalarType type,
+                           llvm::StringRef id, const Expr& initializer) {
     if (failed(declare(loc, id))) {
       return failure();
     }
-    auto emitted = emitAngle(value);
-    if (failed(emitted)) {
+    switch (type) {
+    case detail::ScalarType::Float: {
+      auto value = emitAngle(initializer);
+      if (failed(value)) {
+        return failure();
+      }
+      parameterConstants.insert(id, *value);
+      return success();
+    }
+    case detail::ScalarType::Int: {
+      auto value = evaluateConstant(initializer);
+      if (failed(value)) {
+        return failure();
+      }
+      integerConstants.insert(id, *value);
+      return success();
+    }
+    }
+    llvm_unreachable("unknown scalar type");
+  }
+
+  LogicalResult boolDecl(llvm::SMLoc loc, llvm::StringRef id,
+                         const Condition& initializer) {
+    if (failed(declare(loc, id))) {
       return failure();
     }
-    parameterConstants.insert(id, *emitted);
+    auto value = emitCondition(initializer);
+    if (failed(value)) {
+      return failure();
+    }
+    booleanConstants.insert(id, *value);
     return success();
   }
 
@@ -541,6 +567,8 @@ public:
 private:
   using ScopedValueTable = llvm::ScopedHashTable<llvm::StringRef, Value>;
   using ValueScope = llvm::ScopedHashTableScope<llvm::StringRef, Value>;
+  using IntegerTable = llvm::ScopedHashTable<llvm::StringRef, int64_t>;
+  using IntegerScope = llvm::ScopedHashTableScope<llvm::StringRef, int64_t>;
 
   //===--- Locations ----------------------------------------------------===//
 
@@ -577,7 +605,16 @@ private:
       return builder.measure(std::get<Value>(*resolved));
     }
     case Condition::Kind::Bit:
+      // A bare identifier may name a declared `bool`; otherwise it is a
+      // classical bit reference.
+      if (condition.bit.index == nullptr) {
+        if (Value value = booleanConstants.lookup(condition.bit.identifier)) {
+          return value;
+        }
+      }
       return lookupBitValue(condition.bit);
+    case Condition::Kind::Literal:
+      return builder.boolConstant(condition.literalValue);
     case Condition::Kind::Not: {
       auto value = emitCondition(*condition.lhs);
       if (failed(value)) {
@@ -936,13 +973,14 @@ private:
     return std::variant<Value, SmallVector<Value>>{*loaded};
   }
 
-  static bool isConstantIndex(const Expr& expr) {
+  bool isConstantIndex(const Expr& expr) const {
     switch (expr.kind) {
     case Expr::Kind::Int:
     case Expr::Kind::Float:
       return true;
     case Expr::Kind::Ident:
-      return false;
+      // A declared integer constant folds; a loop variable does not.
+      return integerConstants.count(expr.ident) != 0;
     case Expr::Kind::Neg:
       return isConstantIndex(*expr.lhs);
     case Expr::Kind::Add:
@@ -1068,6 +1106,13 @@ private:
     if (Value value = parameterConstants.lookup(name)) {
       return value;
     }
+    // An integer constant used as an angle is materialized as an `f64`.
+    if (integerConstants.count(name) != 0) {
+      return arith::ConstantOp::create(
+                 builder, builder.getF64FloatAttr(static_cast<double>(
+                              integerConstants.lookup(name))))
+          .getResult();
+    }
     if (auto value = lookupBuiltinConstant(name, builder)) {
       return *value;
     }
@@ -1113,6 +1158,12 @@ private:
       if (Value value = loopVariables.lookup(expr.ident)) {
         return value;
       }
+      if (integerConstants.count(expr.ident) != 0) {
+        return arith::ConstantOp::create(
+                   builder,
+                   builder.getIndexAttr(integerConstants.lookup(expr.ident)))
+            .getResult();
+      }
       return error(expr.loc, "expected an integer expression");
     case Expr::Kind::Float:
       return error(expr.loc, "expected an integer expression");
@@ -1154,8 +1205,12 @@ private:
         return *lhs / *rhs;
       }
     }
-    case Expr::Kind::Float:
     case Expr::Kind::Ident:
+      if (integerConstants.count(expr.ident) != 0) {
+        return integerConstants.lookup(expr.ident);
+      }
+      return error(expr.loc, "expected a constant integer expression");
+    case Expr::Kind::Float:
       return error(expr.loc, "expected a constant integer expression");
     }
     llvm_unreachable("unknown expression kind");
@@ -1170,6 +1225,10 @@ private:
 
   ScopedValueTable parameterConstants;
   ValueScope parameterConstantsScope{parameterConstants};
+  IntegerTable integerConstants;
+  IntegerScope integerConstantsScope{integerConstants};
+  ScopedValueTable booleanConstants;
+  ValueScope booleanConstantsScope{booleanConstants};
   ScopedValueTable loopVariables;
   ValueScope loopVariablesScope{loopVariables};
   ScopedValueTable dynamicallyLoadedQubits;

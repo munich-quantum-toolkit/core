@@ -88,14 +88,21 @@ struct GateCall {
 /// are borrowed pointers. Register comparisons (e.g. `c == 5`) are not yet
 /// supported.
 struct Condition {
-  enum class Kind : uint8_t { Measurement, Bit, Not, And, Or };
+  enum class Kind : uint8_t { Measurement, Bit, Literal, Not, And, Or };
   Kind kind = Kind::Bit;
   Operand operand;                ///< For `Measurement`.
   Reference bit;                  ///< For `Bit`.
+  bool literalValue = false;      ///< For `Literal`.
   const Condition* lhs = nullptr; ///< For `Not`, `And`, and `Or`.
   const Condition* rhs = nullptr; ///< For `And` and `Or`.
   llvm::SMLoc loc;
 };
+
+/// A supported arithmetic scalar declaration type (`bool` is handled
+/// separately, as its initializer is a boolean condition). `const` and
+/// non-`const` declarations are lowered identically, so constness is not
+/// tracked here.
+enum class ScalarType : uint8_t { Float, Int };
 
 //===----------------------------------------------------------------------===//
 // Sink concept
@@ -115,33 +122,33 @@ struct Condition {
  * materialized.
  */
 template <class S>
-concept QASMSink =
-    requires(S s, llvm::SMLoc loc, llvm::StringRef str, const Expr& expr,
-             const Operand& operand, const Reference& reference,
-             const Condition& condition, const GateCall& call,
-             llvm::ArrayRef<Operand> operands,
-             llvm::ArrayRef<llvm::StringRef> names,
-             llvm::ArrayRef<GateCall> body,
-             llvm::function_ref<LogicalResult()> cont, double d, bool flag) {
-      s.error(loc, str);
-      s.version(d);
-      s.include(loc, str);
-      s.constDecl(loc, str, expr);
-      s.qubitRegister(loc, str, &expr);
-      s.classicalRegister(loc, str, &expr);
-      s.measure(loc, reference, operand);
-      s.reset(loc, operand);
-      s.barrier(loc, operands);
-      s.gateCall(call);
-      s.gateDefinition(loc, str, names, names, body);
-      s.conditionOnly(loc, condition);
-      s.ifBegin(loc, condition, flag);
-      s.forStmt(loc, str, expr, expr, expr, cont);
-      s.whileStmt(loc, condition, cont);
-      // The sink must additionally provide `ifElse(scope)` and `ifEnd(scope,
-      // bool)` taking the opaque scope returned by `ifBegin`; those are not
-      // expressible here without naming the scope type.
-    };
+concept QASMSink = requires(
+    S s, llvm::SMLoc loc, llvm::StringRef str, const Expr& expr,
+    const Operand& operand, const Reference& reference,
+    const Condition& condition, const GateCall& call,
+    llvm::ArrayRef<Operand> operands, llvm::ArrayRef<llvm::StringRef> names,
+    llvm::ArrayRef<GateCall> body, llvm::function_ref<LogicalResult()> cont,
+    double d, bool flag, ScalarType scalarType) {
+  s.error(loc, str);
+  s.version(d);
+  s.include(loc, str);
+  s.scalarDecl(loc, scalarType, str, expr);
+  s.boolDecl(loc, str, condition);
+  s.qubitRegister(loc, str, &expr);
+  s.classicalRegister(loc, str, &expr);
+  s.measure(loc, reference, operand);
+  s.reset(loc, operand);
+  s.barrier(loc, operands);
+  s.gateCall(call);
+  s.gateDefinition(loc, str, names, names, body);
+  s.conditionOnly(loc, condition);
+  s.ifBegin(loc, condition, flag);
+  s.forStmt(loc, str, expr, expr, expr, cont);
+  s.whileStmt(loc, condition, cont);
+  // The sink must additionally provide `ifElse(scope)` and `ifEnd(scope,
+  // bool)` taking the opaque scope returned by `ifBegin`; those are not
+  // expressible here without naming the scope type.
+};
 
 //===----------------------------------------------------------------------===//
 // Parser
@@ -227,7 +234,16 @@ private:
     case TokenKind::Include:
       return parseInclude();
     case TokenKind::Const:
-      return parseConstDecl();
+    case TokenKind::Int:
+    case TokenKind::Uint:
+    case TokenKind::Bool:
+    case TokenKind::Float:
+      return parseScalarDeclaration();
+    case TokenKind::Angle:
+    case TokenKind::Duration:
+      return sink.error(current().loc,
+                        "'angle' and 'duration' declarations are not supported "
+                        "yet");
     case TokenKind::Qubit:
       return parseQuantumDecl();
     case TokenKind::Qreg:
@@ -236,13 +252,6 @@ private:
       return parseOldStyleDecl(/*classical=*/true);
     case TokenKind::Bit:
       return parseClassicalDecl();
-    case TokenKind::Int:
-    case TokenKind::Uint:
-    case TokenKind::Bool:
-    case TokenKind::Float:
-    case TokenKind::Angle:
-    case TokenKind::Duration:
-      return sink.error(current().loc, "declaration type is not supported yet");
     case TokenKind::Gate:
       return parseGateDefinition();
     case TokenKind::Opaque:
@@ -331,20 +340,61 @@ private:
 
   //===--- Declarations -------------------------------------------------===//
 
-  [[nodiscard]] LogicalResult parseConstDecl() {
+  /// Parse `[const] (int|uint|float|bool) <id> = <initializer>;`. `const` and
+  /// non-`const` declarations are parsed and lowered identically. `bool`
+  /// initializers are boolean conditions; all others are arithmetic.
+  [[nodiscard]] LogicalResult parseScalarDeclaration() {
     const auto loc = current().loc;
-    advance(); // const
-    if (current().kind != TokenKind::Float ||
-        peek().kind != TokenKind::Identifier) {
-      return sink.error(loc, "only `const float <id> = <expression>;` "
-                             "declarations are supported for now");
+    if (current().kind == TokenKind::Const) {
+      advance(); // const
     }
-    advance(); // float
+
+    ScalarType scalarType = ScalarType::Float;
+    bool isBool = false;
+    switch (current().kind) {
+    case TokenKind::Float:
+      scalarType = ScalarType::Float;
+      break;
+    case TokenKind::Int:
+    case TokenKind::Uint:
+      scalarType = ScalarType::Int;
+      break;
+    case TokenKind::Bool:
+      isBool = true;
+      break;
+    case TokenKind::Angle:
+    case TokenKind::Duration:
+      return sink.error(current().loc,
+                        "'angle' and 'duration' declarations are not supported "
+                        "yet");
+    default:
+      return sink.error(current().loc, "expected a scalar type");
+    }
+    advance(); // type
+
+    if (current().kind != TokenKind::Identifier) {
+      return sink.error(current().loc, "expected identifier");
+    }
     const auto id = current().spelling;
     advance();
+
+    // Only initialized declarations are supported, since there is no classical
+    // assignment to give an uninitialized variable a value later.
     if (failed(expect(TokenKind::Equals))) {
       return failure();
     }
+
+    if (isBool) {
+      auto condition = parseCondition();
+      if (failed(condition)) {
+        return failure();
+      }
+      if (failed(expect(TokenKind::Semicolon))) {
+        return failure();
+      }
+      return sink.boolDecl(loc, id, **condition);
+    }
+
     auto value = parseExpression();
     if (failed(value)) {
       return failure();
@@ -352,7 +402,7 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.constDecl(loc, id, **value);
+    return sink.scalarDecl(loc, scalarType, id, **value);
   }
 
   [[nodiscard]] LogicalResult parseQuantumDecl() {
@@ -733,6 +783,16 @@ private:
   /// primaryCond := 'measure' gateOperand | '(' cond ')' | reference
   [[nodiscard]] mlir::FailureOr<const Condition*> parsePrimaryCondition() {
     const auto loc = current().loc;
+
+    if (current().kind == TokenKind::True ||
+        current().kind == TokenKind::False) {
+      auto* condition = makeCondition();
+      condition->kind = Condition::Kind::Literal;
+      condition->literalValue = current().kind == TokenKind::True;
+      condition->loc = loc;
+      advance();
+      return finishPrimaryCondition(condition);
+    }
 
     if (current().kind == TokenKind::Measure) {
       advance();

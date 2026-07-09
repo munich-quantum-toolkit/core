@@ -52,6 +52,8 @@ enum class TokenKind : uint8_t {
   Float,
   Angle,
   Duration,
+  True,
+  False,
 
   // Identifiers and literals
   Identifier,

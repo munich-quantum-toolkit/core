@@ -61,6 +61,8 @@ namespace {
       .Case("float", TokenKind::Float)
       .Case("angle", TokenKind::Angle)
       .Case("duration", TokenKind::Duration)
+      .Case("true", TokenKind::True)
+      .Case("false", TokenKind::False)
       .Default(TokenKind::Identifier);
 }
 
