@@ -400,24 +400,6 @@ public:
    */
   QIRProgramBuilder& reset(Value qubit);
 
-  /**
-   * @brief Read the value of the given measurement result.
-   *
-   * @details
-   * The value is read via `__quantum__rt__read_result`.
-   *
-   * @param result The value representing the measurement result
-   * @return An LLVM pointer to the measurement result
-   *
-   * @par Example:
-   * ```c++
-   * auto result = builder.measure(q0, 0);
-   * auto value = builder.readResult(result);
-   *
-   * ```
-   */
-  Value readResult(Value result);
-
   //===--------------------------------------------------------------------===//
   // Unitary Operations
   //===--------------------------------------------------------------------===//

@@ -445,17 +445,6 @@ QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
   return *this;
 }
 
-Value QIRProgramBuilder::readResult(mlir::Value result) {
-  checkFinalized();
-
-  const auto fnSig = LLVM::LLVMFunctionType::get(getI1Type(), {ptrType});
-  auto fnDec =
-      getOrCreateFunctionDeclaration(*this, module, QIR_READ_RESULT, fnSig);
-  auto readOp = LLVM::CallOp::create(*this, fnDec, result);
-
-  return readOp.getResult();
-}
-
 //===----------------------------------------------------------------------===//
 // Unitary Operations
 //===----------------------------------------------------------------------===//

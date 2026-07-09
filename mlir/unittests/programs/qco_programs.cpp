@@ -199,6 +199,7 @@ deadGatesProgram(QCOProgramBuilder& b) {
   q0 = b.h(q0M);
   auto [res0, res1] = b.cx(q0, q1M);
   auto [_, c1] = b.measure(res1);
+  q0 = b.reset(res0);
 
   return {{m0, m1}, {b.getI1Type(), b.getI1Type()}};
 }
