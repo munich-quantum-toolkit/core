@@ -10,10 +10,12 @@
 
 #include "mlir/Compiler/CompilerPipeline.h"
 
+#include "mlir/Support/SuperconductingDevice.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
@@ -177,21 +179,13 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
   }
   // Stage 7: Transpilation passes (optional)
+  // Assume superconducting devices for now.
   if (config_.device != nullptr) {
+    SuperconductingDevice scDevice(config_.device);
     if (failed(runStage([&](PassManager& pm) {
-          // TODO: Update once scf.for pull request is in.
-          if (const auto coupling = config_.device->getCouplingMap();
-              coupling) {
-            // qco::Edges edges;
-            // for (const auto [s0, s1] : *coupling) {
-            //   // TODO: Does QDMI describe directed edges?
-            //   edges.insert(std::make_pair(s0.getIndex(), s1.getIndex()));
-            //   edges.insert(std::make_pair(s1.getIndex(), s0.getIndex()));
-            // }
-            // pm.addPass(qco::createMappingPass(config_.device->getQubitsNum(),
-            //                                   edges,
-            //                                   qco::MappingPassOptions{}));
-          }
+          pm.addPass(qco::createMappingPass(
+              std::make_shared<SuperconductingDevice>(config_.device),
+              qco::MappingPassOptions{}));
         }))) {
       return failure();
     }
