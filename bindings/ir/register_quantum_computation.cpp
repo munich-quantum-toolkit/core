@@ -1978,9 +1978,9 @@ Args:
          R"pb(Apply a relative-phase CCX (RCCX) gate.
 
 Args:
-target1: The first target qubit
-target2: The second target qubit
-target3: The third target qubit)pb");
+    target1: The first target qubit
+    target2: The second target qubit
+    target3: The third target qubit)pb");
   qc.def("crccx", &qc::QuantumComputation::crccx, "control"_a, "target1"_a,
          "target2"_a, "target3"_a,
          nb::sig("def crccx(self, control: mqt.core.ir.operations.Control | "
@@ -1988,13 +1988,13 @@ target3: The third target qubit)pb");
          R"pb(Apply a controlled RCCX gate.
 
 See Also:
-:meth:`rccx`
+    :meth:`rccx`
 
 Args:
-control: The control qubit
-target1: The first target qubit
-target2: The second target qubit
-target3: The third target qubit)pb");
+    control: The control qubit
+    target1: The first target qubit
+    target2: The second target qubit
+    target3: The third target qubit)pb");
   qc.def("mcrccx", &qc::QuantumComputation::mcrccx, "controls"_a, "target1"_a,
          "target2"_a, "target3"_a,
          nb::sig("def mcrccx(self, controls: "
@@ -2003,13 +2003,13 @@ target3: The third target qubit)pb");
          R"pb(Apply a multi-controlled RCCX gate.
 
 See Also:
-:meth:`rccx`
+    :meth:`rccx`
 
 Args:
-controls: The control qubits
-target1: The first target qubit
-target2: The second target qubit
-target3: The third target qubit)pb");
+    controls: The control qubits
+    target1: The first target qubit
+    target2: The second target qubit
+    target3: The third target qubit)pb");
 
   qc.def("gphase", &qc::QuantumComputation::gphase, "phase"_a,
          R"pb(Apply a global phase gate.
