@@ -369,5 +369,7 @@ IfOp IfOp::replaceWithAdditionalQubits(RewriterBase& rewriter,
   processRegion(getThenRegion(), newIfOp.getThenRegion());
   processRegion(getElseRegion(), newIfOp.getElseRegion());
 
+  rewriter.eraseOp(*this);
+
   return newIfOp;
 }
