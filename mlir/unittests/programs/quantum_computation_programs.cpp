@@ -417,6 +417,21 @@ void multipleControlledDcx(QuantumComputation& comp) {
   comp.mcdcx({0, 1}, 2, 3);
 }
 
+void rccx(QuantumComputation& comp) {
+  comp.addQubitRegister(3);
+  comp.rccx(0, 1, 2);
+}
+
+void singleControlledRccx(QuantumComputation& comp) {
+  comp.addQubitRegister(4);
+  comp.crccx(0, 1, 2, 3);
+}
+
+void multipleControlledRccx(QuantumComputation& comp) {
+  comp.addQubitRegister(5);
+  comp.mcrccx({0, 1}, 2, 3, 4);
+}
+
 void ecr(QuantumComputation& comp) {
   comp.addQubitRegister(2, "q");
   comp.ecr(0, 1);

@@ -316,6 +316,17 @@ public:
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER_OPERATION
 
+#define DECLARE_THREE_TARGET_OPERATION(op)                                     \
+  void op(const Qubit target0, const Qubit target1, const Qubit target2);      \
+  void c##op(const Control& control, Qubit target0, Qubit target1,             \
+             Qubit target2);                                                   \
+  void mc##op(const Controls& controls, Qubit target0, Qubit target1,          \
+              Qubit target2);
+
+  DECLARE_THREE_TARGET_OPERATION(rccx)
+
+#undef DECLARE_THREE_TARGET_OPERATION
+
   void measure(Qubit qubit, std::size_t bit);
   void measure(const Targets& qubits, const std::vector<Bit>& bits);
 

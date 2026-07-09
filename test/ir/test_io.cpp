@@ -496,10 +496,8 @@ TEST_F(IO, UseQelib1Gate) {
   std::cout << qc << "\n";
   EXPECT_EQ(qc.getNqubits(), 3U);
   EXPECT_EQ(qc.getNops(), 1U);
-  EXPECT_EQ(qc.front()->getType(), qc::Compound);
-  const auto& op = dynamic_cast<const qc::CompoundOperation*>(qc.front().get());
-  ASSERT_NE(op, nullptr);
-  EXPECT_EQ(op->size(), 9U);
+  EXPECT_EQ(qc.front()->getType(), qc::RCCX);
+  EXPECT_EQ(qc.front()->getNtargets(), 3U);
 }
 
 TEST_F(IO, ParameterizedGateDefinition) {

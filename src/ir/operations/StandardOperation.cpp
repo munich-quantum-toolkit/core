@@ -427,6 +427,9 @@ void StandardOperation::dumpGateType(
   case DCX:
     op << "dcx";
     break;
+  case RCCX:
+    op << "rccx";
+    break;
   case ECR:
     op << "ecr";
     break;
