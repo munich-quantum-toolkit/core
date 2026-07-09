@@ -62,6 +62,7 @@
 namespace mlir::qco {
 
 using namespace mlir::qtensor;
+using namespace mlir::utils;
 
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"

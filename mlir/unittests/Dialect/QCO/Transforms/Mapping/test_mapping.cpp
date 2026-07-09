@@ -41,6 +41,7 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+using namespace mlir::utils;
 
 namespace {
 struct Device {

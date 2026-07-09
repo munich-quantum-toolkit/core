@@ -31,7 +31,6 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -70,7 +69,7 @@ void QCProgramBuilder::initialize(TypeRange returnTypes) {
 }
 
 void QCProgramBuilder::retype(TypeRange returnTypes) {
-  auto mainFunc = qco::getEntryPoint(mlir::cast<ModuleOp>(module));
+  auto mainFunc = getEntryPoint(mlir::cast<ModuleOp>(module));
   if (!mainFunc) {
     llvm::reportFatalUsageError("Main function not found for retyping");
   }
