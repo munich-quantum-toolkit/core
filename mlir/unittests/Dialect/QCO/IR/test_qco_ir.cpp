@@ -525,7 +525,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(trivialControlledIdentity),
                     MQT_NAMED_BUILDER(allocQubit)},
         QCOTestCase{"InverseIdentity", MQT_NAMED_BUILDER(inverseIdentity),
-                    MQT_NAMED_BUILDER(allocQubit)},
+                    MQT_NAMED_BUILDER(alloc1QubitRegister)},
         QCOTestCase{"InverseMultipleControlledIdentity",
                     MQT_NAMED_BUILDER(inverseMultipleControlledIdentity),
                     MQT_NAMED_BUILDER(alloc3QubitRegister)}));
