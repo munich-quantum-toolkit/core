@@ -320,9 +320,23 @@ Token Lexer::next() {
   case '/':
     return peek('=') ? twoChar(TokenKind::CompoundAssign)
                      : single(TokenKind::Slash);
-  case '%':
   case '&':
+    if (peek('&')) {
+      return twoChar(TokenKind::AmpAmp);
+    }
+    if (peek('=')) {
+      return twoChar(TokenKind::CompoundAssign);
+    }
+    break;
   case '|':
+    if (peek('|')) {
+      return twoChar(TokenKind::PipePipe);
+    }
+    if (peek('=')) {
+      return twoChar(TokenKind::CompoundAssign);
+    }
+    break;
+  case '%':
   case '^':
     if (peek('=')) {
       return twoChar(TokenKind::CompoundAssign);

@@ -576,16 +576,28 @@ private:
       }
       return builder.measure(std::get<Value>(*resolved));
     }
-    case Condition::Kind::NegatedBit: {
-      auto value = lookupBitValue(condition.bit);
+    case Condition::Kind::Bit:
+      return lookupBitValue(condition.bit);
+    case Condition::Kind::Not: {
+      auto value = emitCondition(*condition.lhs);
       if (failed(value)) {
         return failure();
       }
       auto trueValue = builder.boolConstant(true);
       return arith::XOrIOp::create(builder, *value, trueValue).getResult();
     }
-    case Condition::Kind::Bit:
-      return lookupBitValue(condition.bit);
+    case Condition::Kind::And:
+    case Condition::Kind::Or: {
+      auto lhs = emitCondition(*condition.lhs);
+      auto rhs = emitCondition(*condition.rhs);
+      if (failed(lhs) || failed(rhs)) {
+        return failure();
+      }
+      if (condition.kind == Condition::Kind::And) {
+        return arith::AndIOp::create(builder, *lhs, *rhs).getResult();
+      }
+      return arith::OrIOp::create(builder, *lhs, *rhs).getResult();
+    }
     }
     llvm_unreachable("unknown condition kind");
   }

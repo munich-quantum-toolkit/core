@@ -84,12 +84,16 @@ struct GateCall {
   llvm::SMLoc loc;
 };
 
-/// A branch condition. Only the restricted forms below are supported.
+/// A branch condition: a boolean-valued expression. Bump-allocated; children
+/// are borrowed pointers. Register comparisons (e.g. `c == 5`) are not yet
+/// supported.
 struct Condition {
-  enum class Kind : uint8_t { Measurement, Bit, NegatedBit };
+  enum class Kind : uint8_t { Measurement, Bit, Not, And, Or };
   Kind kind = Kind::Bit;
-  Operand operand; ///< For `Measurement`.
-  Reference bit;   ///< For `Bit`/`NegatedBit`.
+  Operand operand;                ///< For `Measurement`.
+  Reference bit;                  ///< For `Bit`.
+  const Condition* lhs = nullptr; ///< For `Not`, `And`, and `Or`.
+  const Condition* rhs = nullptr; ///< For `And` and `Or`.
   llvm::SMLoc loc;
 };
 
@@ -198,6 +202,10 @@ private:
 
   [[nodiscard]] Expr* makeExpr() {
     return new (allocator.Allocate<Expr>()) Expr();
+  }
+
+  [[nodiscard]] Condition* makeCondition() {
+    return new (allocator.Allocate<Condition>()) Condition();
   }
 
   template <class T>
@@ -543,6 +551,7 @@ private:
     if (failed(condition)) {
       return failure();
     }
+    const Condition& cond = **condition;
     if (failed(expect(TokenKind::RParen))) {
       return failure();
     }
@@ -553,10 +562,10 @@ private:
       advance(); // {
       advance(); // }
       if (current().kind != TokenKind::Else) {
-        return sink.conditionOnly(loc, *condition);
+        return sink.conditionOnly(loc, cond);
       }
       advance(); // else
-      auto scope = sink.ifBegin(loc, *condition, /*invert=*/true);
+      auto scope = sink.ifBegin(loc, cond, /*invert=*/true);
       if (failed(scope)) {
         return failure();
       }
@@ -566,7 +575,7 @@ private:
       return sink.ifEnd(*scope, /*hadElse=*/false);
     }
 
-    auto scope = sink.ifBegin(loc, *condition, /*invert=*/false);
+    auto scope = sink.ifBegin(loc, cond, /*invert=*/false);
     if (failed(scope)) {
       return failure();
     }
@@ -657,67 +666,141 @@ private:
     if (failed(condition)) {
       return failure();
     }
+    const Condition& cond = **condition;
     if (failed(expect(TokenKind::RParen))) {
       return failure();
     }
-    return sink.whileStmt(loc, *condition, [this] { return parseBlock(); });
+    return sink.whileStmt(loc, cond, [this] { return parseBlock(); });
   }
 
-  [[nodiscard]] mlir::FailureOr<Condition> parseCondition() {
-    Condition condition;
-    condition.loc = current().loc;
+  /// cond := andCond ('||' andCond)*
+  [[nodiscard]] mlir::FailureOr<const Condition*> parseCondition() {
+    auto lhs = parseAndCondition();
+    if (failed(lhs)) {
+      return failure();
+    }
+    const Condition* result = *lhs;
+    while (current().kind == TokenKind::PipePipe) {
+      const auto loc = current().loc;
+      advance();
+      auto rhs = parseAndCondition();
+      if (failed(rhs)) {
+        return failure();
+      }
+      result = makeBinaryCondition(Condition::Kind::Or, result, *rhs, loc);
+    }
+    return result;
+  }
+
+  /// andCond := unaryCond ('&&' unaryCond)*
+  [[nodiscard]] mlir::FailureOr<const Condition*> parseAndCondition() {
+    auto lhs = parseUnaryCondition();
+    if (failed(lhs)) {
+      return failure();
+    }
+    const Condition* result = *lhs;
+    while (current().kind == TokenKind::AmpAmp) {
+      const auto loc = current().loc;
+      advance();
+      auto rhs = parseUnaryCondition();
+      if (failed(rhs)) {
+        return failure();
+      }
+      result = makeBinaryCondition(Condition::Kind::And, result, *rhs, loc);
+    }
+    return result;
+  }
+
+  /// unaryCond := ('!' | '~') unaryCond | primaryCond
+  [[nodiscard]] mlir::FailureOr<const Condition*> parseUnaryCondition() {
+    if (current().kind == TokenKind::ExclamationPoint ||
+        current().kind == TokenKind::Tilde) {
+      const auto loc = current().loc;
+      advance();
+      auto operand = parseUnaryCondition();
+      if (failed(operand)) {
+        return failure();
+      }
+      auto* condition = makeCondition();
+      condition->kind = Condition::Kind::Not;
+      condition->loc = loc;
+      condition->lhs = *operand;
+      return condition;
+    }
+    return parsePrimaryCondition();
+  }
+
+  /// primaryCond := 'measure' gateOperand | '(' cond ')' | reference
+  [[nodiscard]] mlir::FailureOr<const Condition*> parsePrimaryCondition() {
+    const auto loc = current().loc;
 
     if (current().kind == TokenKind::Measure) {
       advance();
-      condition.kind = Condition::Kind::Measurement;
       auto operand = parseGateOperand();
       if (failed(operand)) {
         return failure();
       }
-      condition.operand = *operand;
-      return condition;
+      auto* condition = makeCondition();
+      condition->kind = Condition::Kind::Measurement;
+      condition->operand = *operand;
+      condition->loc = loc;
+      return finishPrimaryCondition(condition);
     }
 
-    if (current().kind == TokenKind::ExclamationPoint ||
-        current().kind == TokenKind::Tilde) {
+    if (current().kind == TokenKind::LParen) {
       advance();
-      if (current().kind != TokenKind::Identifier) {
-        return sink.error(current().loc,
-                          "unary expression has unsupported operand");
-      }
-      condition.kind = Condition::Kind::NegatedBit;
-      auto bit = parseReference();
-      if (failed(bit)) {
+      auto inner = parseCondition();
+      if (failed(inner)) {
         return failure();
       }
-      condition.bit = *bit;
-      return condition;
+      if (failed(expect(TokenKind::RParen))) {
+        return failure();
+      }
+      return finishPrimaryCondition(*inner);
     }
 
     if (current().kind == TokenKind::Identifier) {
-      condition.kind = Condition::Kind::Bit;
       auto bit = parseReference();
       if (failed(bit)) {
         return failure();
       }
-      condition.bit = *bit;
-      switch (current().kind) {
-      case TokenKind::EqualsEquals:
-      case TokenKind::NotEquals:
-      case TokenKind::Less:
-      case TokenKind::LessEquals:
-      case TokenKind::Greater:
-      case TokenKind::GreaterEquals:
-        return sink.error(condition.loc,
-                          "register comparisons are not supported");
-      default:
-        break;
-      }
-      return condition;
+      auto* condition = makeCondition();
+      condition->kind = Condition::Kind::Bit;
+      condition->bit = *bit;
+      condition->loc = loc;
+      return finishPrimaryCondition(condition);
     }
 
-    return sink.error(condition.loc,
-                      "unsupported condition expression in if statement");
+    return sink.error(loc, "unsupported condition expression");
+  }
+
+  /// Reject a register comparison (e.g. `c == 5`) trailing a primary.
+  [[nodiscard]] mlir::FailureOr<const Condition*>
+  finishPrimaryCondition(const Condition* condition) {
+    switch (current().kind) {
+    case TokenKind::EqualsEquals:
+    case TokenKind::NotEquals:
+    case TokenKind::Less:
+    case TokenKind::LessEquals:
+    case TokenKind::Greater:
+    case TokenKind::GreaterEquals:
+      return sink.error(current().loc,
+                        "register comparisons are not supported");
+    default:
+      return condition;
+    }
+  }
+
+  [[nodiscard]] Condition* makeBinaryCondition(const Condition::Kind kind,
+                                               const Condition* lhs,
+                                               const Condition* rhs,
+                                               const llvm::SMLoc loc) {
+    auto* condition = makeCondition();
+    condition->kind = kind;
+    condition->loc = loc;
+    condition->lhs = lhs;
+    condition->rhs = rhs;
+    return condition;
   }
 
   //===--- Gate definitions and calls -----------------------------------===//

@@ -81,6 +81,8 @@ enum class TokenKind : uint8_t {
   Slash,
   Tilde,
   ExclamationPoint,
+  AmpAmp,         // `&&`
+  PipePipe,       // `||`
   CompoundAssign, // any `<op>=` such as `+=`, `-=`, ...
 
   // Comparisons
