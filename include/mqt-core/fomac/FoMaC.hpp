@@ -317,15 +317,18 @@ public:
   [[nodiscard]] std::vector<QDMI_Program_Format>
   getSupportedProgramFormats() const;
 
+  template <typename T1 = std::monostate, typename T2 = std::monostate,
+            typename T3 = std::monostate, typename T4 = std::monostate,
+            typename T5 = std::monostate>
+
   /// @see QDMI_job_submit
   [[nodiscard]] Job
   submitJob(const std::string& program, QDMI_Program_Format format,
-            size_t numShots,
-            const std::optional<std::string>& custom1 = std::nullopt,
-            const std::optional<std::string>& custom2 = std::nullopt,
-            const std::optional<std::string>& custom3 = std::nullopt,
-            const std::optional<std::string>& custom4 = std::nullopt,
-            const std::optional<std::string>& custom5 = std::nullopt) const;
+            size_t numShots, const std::optional<T1>& custom1 = std::nullopt,
+            const std::optional<T2>& custom2 = std::nullopt,
+            const std::optional<T3>& custom3 = std::nullopt,
+            const std::optional<T4>& custom4 = std::nullopt,
+            const std::optional<T5>& custom5 = std::nullopt) const;
 
   auto operator<=>(const Device&) const noexcept = default;
 
@@ -398,6 +401,28 @@ private:
   QDMI_Device device_;
 
   friend class Session;
+
+  template <typename T>
+  static void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
+                                const std::optional<T>& value) {
+    if (!value.has_value()) {
+      return;
+    }
+
+    if constexpr (std::is_same_v<T, std::string>) {
+      qdmi::throwIfError(
+          QDMI_job_set_parameter(job, param, value->size() + 1, value->c_str()),
+          "Setting custom parameter");
+    } else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, float> ||
+                         std::is_same_v<T, double>) {
+      qdmi::throwIfError(
+          QDMI_job_set_parameter(job, param, sizeof(T), &value.value()),
+          "Setting custom parameter");
+    } else {
+      throw std::runtime_error("Unsupported custom job parameter type, must be "
+                               "string, int, float, or double");
+    }
+  }
 };
 
 /**
@@ -502,6 +527,41 @@ static_assert(!std::is_copy_constructible<Job>());
 static_assert(!std::is_copy_assignable<Job>());
 static_assert(std::is_move_constructible<Job>());
 static_assert(std::is_move_assignable<Job>());
+
+template <typename T1, typename T2, typename T3, typename T4, typename T5>
+Job Device::submitJob(const std::string& program,
+                      const QDMI_Program_Format format, const size_t numShots,
+                      const std::optional<T1>& custom1,
+                      const std::optional<T2>& custom2,
+                      const std::optional<T3>& custom3,
+                      const std::optional<T4>& custom4,
+                      const std::optional<T5>& custom5) const {
+  QDMI_Job job = nullptr;
+  qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
+  Job jobWrapper{job};
+
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                            sizeof(format), &format),
+                     "Setting program format");
+  qdmi::throwIfError(
+      QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
+                             program.size() + 1, program.c_str()),
+      "Setting program");
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_SHOTSNUM,
+                                            sizeof(numShots), &numShots),
+                     "Setting number of shots");
+
+  setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM1, custom1);
+  setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM2, custom2);
+  setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM3, custom3);
+  setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM4, custom4);
+  setCustomJobParam(jobWrapper, QDMI_JOB_PARAMETER_CUSTOM5, custom5);
+
+  qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
+  return jobWrapper;
+}
 
 /**
  * @brief Class representing a site (qubit) on the device.
