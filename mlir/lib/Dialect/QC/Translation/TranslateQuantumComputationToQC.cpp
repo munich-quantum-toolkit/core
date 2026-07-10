@@ -730,7 +730,7 @@ static LogicalResult addIfElseOp(QCProgramBuilder& builder,
  * @brief Translates an operation from QuantumComputation to QC dialect
  *
  * @param builder The QCProgramBuilder used to create operations
- * @param quantumComputation The quantum computation to translate
+ * @param operation The operation to translate
  * @param state The translation state
  * @return Success if all supported operations were translated
  */
@@ -850,10 +850,8 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQC(
     MLIRContext* context, const ::qc::QuantumComputation& quantumComputation) {
   // Create and initialize the builder (creates module and main function)
   QCProgramBuilder builder(context);
-  SmallVector<Type> resultTypes(quantumComputation.getNcbits());
-  for (auto i = 0; i < quantumComputation.getNcbits(); ++i) {
-    resultTypes[i] = builder.getI1Type();
-  }
+  SmallVector<Type> resultTypes(quantumComputation.getNcbits(),
+                                builder.getI1Type());
   if (quantumComputation.getNcbits() == 0) {
     // Without classical bits, we instead return an exit code 0.
     resultTypes.push_back(builder.getI64Type());
