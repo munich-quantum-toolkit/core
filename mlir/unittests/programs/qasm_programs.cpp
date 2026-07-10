@@ -43,6 +43,12 @@ bit[1] c;
 measure q[0] -> c[0];
 )qasm";
 
+const std::string singleMeasurementToTwoBits = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c = measure q;
+)qasm";
+
 const std::string repeatedMeasurementToSameBit = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[1] q;

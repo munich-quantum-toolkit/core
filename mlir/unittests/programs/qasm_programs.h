@@ -30,6 +30,9 @@ extern const std::string allocLargeRegister;
 /// Measures a single qubit into a single classical bit.
 extern const std::string singleMeasurementToSingleBit;
 
+/// Measures a two-qubit register into a two-bit register.
+extern const std::string singleMeasurementToTwoBits;
+
 /// Repeatedly measures a single qubit into the same classical bit.
 extern const std::string repeatedMeasurementToSameBit;
 

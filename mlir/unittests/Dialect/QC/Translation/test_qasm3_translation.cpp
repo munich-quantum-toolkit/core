@@ -67,6 +67,13 @@ protected:
 
 } // namespace
 
+static void singleMeasurementToTwoBits(qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  const auto& c = b.allocClassicalBitRegister(2);
+  b.measure(q[0], c[0]);
+  b.measure(q[1], c[1]);
+}
+
 static void twoX(qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.x(q[0]);
@@ -202,6 +209,9 @@ INSTANTIATE_TEST_SUITE_P(
         QASM3TranslationTestCase{
             "SingleMeasurementToSingleBit", qasm::singleMeasurementToSingleBit,
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit)},
+        QASM3TranslationTestCase{"SingleMeasurementToTwoBits",
+                                 qasm::singleMeasurementToTwoBits,
+                                 MQT_NAMED_BUILDER(singleMeasurementToTwoBits)},
         QASM3TranslationTestCase{
             "RepeatedMeasurementToSameBit", qasm::repeatedMeasurementToSameBit,
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit)},
