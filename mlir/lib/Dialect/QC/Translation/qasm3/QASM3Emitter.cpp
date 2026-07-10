@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QC/Translation/qasm3/QASM3Emitter.h"
 
-#include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -46,6 +45,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <utility>
@@ -84,8 +84,8 @@ struct StoredGate {
  *
  * @details
  * For top-level registers, `memref` holds the backing register and `qubits`
- * holds the eagerly extracted values. For compound gates, `memref` is null and
- * `qubits` holds the aliased values.
+ * holds the eagerly extracted values. For compound gates, `memref` is @c null
+ * and `qubits` holds the aliased values.
  */
 struct QubitBinding {
   Value memref;
@@ -102,13 +102,13 @@ std::optional<Value> lookupBuiltinConstant(StringRef name,
         .getResult();
   };
   if (name == "pi" || name == "π") {
-    return constant(::qc::PI);
+    return constant(std::numbers::pi);
   }
   if (name == "tau" || name == "τ") {
-    return constant(::qc::TAU);
+    return constant(2 * std::numbers::pi);
   }
   if (name == "euler" || name == "ℇ") {
-    return constant(::qc::E);
+    return constant(std::numbers::e);
   }
   return std::nullopt;
 }
@@ -233,7 +233,7 @@ llvm::StringMap<std::variant<GateInfo, StoredGate>> buildGateTable() {
     t.insert({name, standard->info});
   }
 
-  const GateInfo mcxInfo{
+  constexpr GateInfo mcxInfo{
       .nControls = 0, .nTargets = 0, .nParameters = 0, .type = ::qc::OpType::X};
   t["mcx"] = mcxInfo;
   t["mcx_gray"] = mcxInfo;
@@ -402,8 +402,8 @@ public:
       if (failed(count)) {
         return failure();
       }
-      const auto reg = builder.allocQubitRegister(*count);
-      qubitRegisters[id] = {.memref = reg.value, .qubits = reg.qubits};
+      const auto [value, qubits] = builder.allocQubitRegister(*count);
+      qubitRegisters[id] = {.memref = value, .qubits = qubits};
     } else {
       qubitRegisters[id] = {.memref = nullptr,
                             .qubits = {builder.allocQubit()}};
@@ -945,13 +945,13 @@ private:
       return error(operand.loc,
                    "unknown qubit register '" + operand.identifier + "'");
     }
-    const auto& binding = it->second;
+    const auto& [memref, qubits] = it->second;
 
     if (operand.index == nullptr) {
-      if (binding.qubits.size() == 1) {
-        return std::variant<Value, SmallVector<Value>>{binding.qubits[0]};
+      if (qubits.size() == 1) {
+        return std::variant<Value, SmallVector<Value>>{qubits[0]};
       }
-      return std::variant<Value, SmallVector<Value>>{binding.qubits};
+      return std::variant<Value, SmallVector<Value>>{qubits};
     }
 
     const auto& indexExpr = *operand.index;
@@ -961,18 +961,17 @@ private:
         return failure();
       }
       const auto i = static_cast<size_t>(*index);
-      if (i >= binding.qubits.size()) {
+      if (i >= qubits.size()) {
         return error(operand.loc, "qubit index out of bounds");
       }
-      return std::variant<Value, SmallVector<Value>>{binding.qubits[i]};
+      return std::variant<Value, SmallVector<Value>>{qubits[i]};
     }
 
-    if (!binding.memref) {
+    if (!memref) {
       return error(operand.loc,
                    "dynamic qubit indexing requires a qubit register");
     }
-    auto loaded =
-        loadDynamicElement(operand.identifier, binding.memref, indexExpr);
+    auto loaded = loadDynamicElement(operand.identifier, memref, indexExpr);
     if (failed(loaded)) {
       return failure();
     }
