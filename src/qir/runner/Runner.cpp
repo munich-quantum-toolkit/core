@@ -9,6 +9,7 @@
  */
 
 #include "qir/jit/Session.hpp"
+#include "qir/runtime/Runtime.hpp"
 
 #include <llvm/CodeGen/CommandFlags.h>
 #include <llvm/Support/CommandLine.h>
@@ -42,7 +43,12 @@ auto main(int argc, char* argv[]) -> int {
 
   try {
     auto jitSession = qir::JitSession(llvm::StringRef(InputFile));
-    return jitSession.run(InputArgv, InputFile);
+    auto& runtime = qir::Runtime::getInstance();
+    runtime.outputProgramHeader();
+    runtime.outputShotStart();
+    const auto rc = jitSession.run(InputArgv, InputFile);
+    runtime.outputShotEnd();
+    return rc;
   } catch (const std::exception& e) {
     ExitOnError(llvm::createStringError(e.what()));
   }
