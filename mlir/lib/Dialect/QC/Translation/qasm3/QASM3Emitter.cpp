@@ -285,13 +285,6 @@ public:
     return emitError(location, message);
   }
 
-  //===--- Version ------------------------------------------------------===//
-
-  LogicalResult version(double /*version*/) {
-    // The version declaration has no effect on the translation.
-    return success();
-  }
-
   //===--- Include ------------------------------------------------------===//
 
   LogicalResult include(SMLoc loc, StringRef filename) {

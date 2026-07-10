@@ -165,7 +165,6 @@ concept QASMSink =
              ArrayRef<GateCall> body, function_ref<LogicalResult()> cont,
              double d, bool flag, NumericType numericType) {
       s.error(loc, str);
-      s.version(d);
       s.include(loc, str);
       s.numericDecl(loc, numericType, str, &expr);
       s.boolDecl(loc, str, &condition);
@@ -374,7 +373,7 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.version(version);
+    return success();
   }
 
   //===--- Include ------------------------------------------------------===//
