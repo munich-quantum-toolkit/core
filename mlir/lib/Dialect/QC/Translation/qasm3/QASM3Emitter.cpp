@@ -709,11 +709,6 @@ private:
                                 call.modifiers, operands, call.loc);
     }
 
-    if (std::holds_alternative<StoredGate>(it->second)) {
-      return error(call.loc,
-                   "broadcasted compound gates are not supported yet");
-    }
-
     for (size_t b = 0; b < *broadcastWidth; ++b) {
       SmallVector<Value> operands;
       operands.reserve(resolvedOperands.size());

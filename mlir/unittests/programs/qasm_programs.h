@@ -407,5 +407,13 @@ extern const std::string nestedForLoopCtrlOpWithSeparateQubit;
 /// nested ctrl operation where the qubit is extracted from the register.
 extern const std::string nestedForLoopCtrlOpWithExtractedQubit;
 
+// --- Broadcasting --------------------------------------------------------- //
+
+/// Broadcasts a controlled X gate over a register and a single qubit.
+extern const std::string broadcastRegisterAndQubit;
+
+/// Broadcasts a compound gate over a register and a single qubit.
+extern const std::string broadcastCompoundGate;
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

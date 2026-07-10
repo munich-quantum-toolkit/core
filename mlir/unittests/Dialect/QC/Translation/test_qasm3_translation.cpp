@@ -118,9 +118,6 @@ static void forLoopOffsetIndex(qc::QCProgramBuilder& b) {
   });
 }
 
-// The qubit is loaded once per `scf.while` region (in both the before and after
-// region), because a value loaded in the before region would not dominate the
-// after region.
 static void nestedForLoopWhileOp(qc::QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
@@ -141,15 +138,23 @@ static void nestedForLoopWhileOp(qc::QCProgramBuilder& b) {
   });
 }
 
-// `cx q, r;` with a register `q` and a single qubit `r` broadcasts over the
-// register: the register is indexed per iteration while the single qubit is
-// repeated.
 static void broadcastRegisterAndQubit(qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  auto r = b.allocQubit();
-  b.cx(q[0], r);
-  b.cx(q[1], r);
-  b.cx(q[2], r);
+  auto r = b.allocQubitRegister(3);
+  auto q = b.allocQubit();
+  b.cx(r[0], q);
+  b.cx(r[1], q);
+  b.cx(r[2], q);
+}
+
+static void broadcastCompoundGate(qc::QCProgramBuilder& b) {
+  auto r = b.allocQubitRegister(3);
+  auto q = b.allocQubit();
+  b.x(r[0]);
+  b.cx(r[0], q);
+  b.x(r[1]);
+  b.cx(r[1], q);
+  b.x(r[2]);
+  b.cx(r[2], q);
 }
 
 TEST_P(QASM3TranslationTest, ProgramEquivalence) {
@@ -476,12 +481,9 @@ INSTANTIATE_TEST_SUITE_P(
             "NestedForLoopCtrlOpWithExtractedQubit",
             qasm::nestedForLoopCtrlOpWithExtractedQubit,
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit)},
-        QASM3TranslationTestCase{
-            "BroadcastRegisterAndQubit",
-            R"qasm(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[3] q;
-qubit r;
-cx q, r;
-)qasm",
-            MQT_NAMED_BUILDER(broadcastRegisterAndQubit)}));
+        QASM3TranslationTestCase{"BroadcastRegisterAndQubit",
+                                 qasm::broadcastRegisterAndQubit,
+                                 MQT_NAMED_BUILDER(broadcastRegisterAndQubit)},
+        QASM3TranslationTestCase{"BroadcastCompoundGate",
+                                 qasm::broadcastCompoundGate,
+                                 MQT_NAMED_BUILDER(broadcastCompoundGate)}));

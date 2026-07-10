@@ -860,5 +860,25 @@ for uint i in [1:3] {
 }
 )qasm";
 
+// --- Broadcasting --------------------------------------------------------- //
+
+const std::string broadcastRegisterAndQubit = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[3] r;
+qubit q;
+cx r, q;
+)qasm";
+
+const std::string broadcastCompoundGate = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+gate compound a, b {
+  x a;
+  cx a, b;
+}
+qubit[3] r;
+qubit q;
+compound r, q;
+)qasm";
+
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)
