@@ -298,6 +298,16 @@ namespace {
     return QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT;
   case QDMI_JOB_PARAMETER_SHOTSNUM:
     return QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM;
+  case QDMI_JOB_PARAMETER_CUSTOM1:
+    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM1;
+  case QDMI_JOB_PARAMETER_CUSTOM2:
+    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM2;
+  case QDMI_JOB_PARAMETER_CUSTOM3:
+    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM3;
+  case QDMI_JOB_PARAMETER_CUSTOM4:
+    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM4;
+  case QDMI_JOB_PARAMETER_CUSTOM5:
+    return QDMI_DEVICE_JOB_PARAMETER_CUSTOM5;
   default:
     return QDMI_DEVICE_JOB_PARAMETER_MAX;
   }
@@ -309,7 +319,8 @@ QDMI_Job_impl_d::~QDMI_Job_impl_d() {
 }
 auto QDMI_Job_impl_d::setParameter(QDMI_Job_Parameter param, const size_t size,
                                    const void* value) const -> int {
-  if ((value != nullptr && size == 0) || param >= QDMI_JOB_PARAMETER_MAX) {
+  if ((value != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(param, QDMI_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return device_->getLibrary().device_job_set_parameter(

@@ -318,9 +318,14 @@ public:
   getSupportedProgramFormats() const;
 
   /// @see QDMI_job_submit
-  [[nodiscard]] Job submitJob(const std::string& program,
-                              QDMI_Program_Format format,
-                              size_t numShots) const;
+  [[nodiscard]] Job
+  submitJob(const std::string& program, QDMI_Program_Format format,
+            size_t numShots,
+            const std::optional<std::string>& custom1 = std::nullopt,
+            const std::optional<std::string>& custom2 = std::nullopt,
+            const std::optional<std::string>& custom3 = std::nullopt,
+            const std::optional<std::string>& custom4 = std::nullopt,
+            const std::optional<std::string>& custom5 = std::nullopt) const;
 
   auto operator<=>(const Device&) const noexcept = default;
 
